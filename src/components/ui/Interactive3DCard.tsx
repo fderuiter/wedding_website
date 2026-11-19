@@ -100,7 +100,17 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
     const Component = as || 'div';
     const isInteractive = Component === 'button' || Component === 'a';
 
-    const step = 0.25;
+    const {
+      role: propRole,
+      tabIndex: propTabIndex,
+      'aria-describedby': propAriaDescribedBy,
+      onKeyDown: propOnKeyDown,
+      onFocus: propOnFocus,
+      onBlur: propOnBlur,
+      style: propStyle,
+      ...restProps
+    } = props as any;
+
     const { mixedHandlers, AccessibleElements, reduceMotion } = useUnified3DInput({
       domRef: internalRef as any,
       onDragMove: (norm) => {
@@ -111,43 +121,25 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
         x.set(0);
         y.set(0);
       },
-      accessibility: {
-        instructions: 'Use arrow keys to tilt the card.',
-        labels: {
-          up: 'Tilted up',
-          down: 'Tilted down',
-          left: 'Tilted left',
-          right: 'Tilted right',
-        },
-        onUp: () => y.set(Math.max(-0.5, y.get() - step)),
-        onDown: () => y.set(Math.min(0.5, y.get() + step)),
-        onLeft: () => x.set(Math.max(-0.5, x.get() - step)),
-        onRight: () => x.set(Math.min(0.5, x.get() + step)),
-        onAction: (e: any) => {
-          if (onClick) {
-            e.preventDefault();
-            onClick(e as any);
-          }
-        },
-      }
     });
 
     const handleFocus = (e: React.FocusEvent<HTMLElement>) => {
-      // Reset or give a slight tilt when focused to show activity
-      x.set(0.15);
-      y.set(-0.15);
-      
-      if (props.onFocus) {
-        (props.onFocus as any)(e);
+      if (!reduceMotion && e.target === e.currentTarget) {
+        x.set(0.15);
+        y.set(-0.15);
+      }
+
+      if (propOnFocus) {
+        propOnFocus(e);
       }
     };
 
     const handleBlur = (e: React.FocusEvent<HTMLElement>) => {
       x.set(0);
       y.set(0);
-      
-      if (props.onBlur) {
-        (props.onBlur as any)(e);
+
+      if (propOnBlur) {
+        propOnBlur(e);
       }
     };
 
@@ -161,38 +153,43 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
     }, [Component, isInteractive]);
 
     const {
-      'aria-describedby': _unusedDescribedBy,
-      onClick: _unusedClick,
-      onKeyDown: _unusedKeyDown,
+      'aria-describedby': mixedDescribedBy,
+      onClick: mixedOnClick,
+      onKeyDown: mixedOnKeyDown,
       ...restMixedHandlers
-    } = mixedHandlers;
+    } = mixedHandlers as any;
 
-    const cardRole = props.role || (onClick ? 'button' : (!isInteractive ? 'region' : undefined));
-    const cardTabIndex = props.tabIndex ?? 0;
-    const combinedDescribedBy = [props['aria-describedby'], mixedHandlers['aria-describedby']].filter(Boolean).join(' ') || undefined;
+    const shouldApplyButtonSemantics = Boolean(onClick) && propTabIndex !== -1 && !isInteractive;
+    const cardRole = propRole ?? (shouldApplyButtonSemantics ? 'button' : undefined);
+    const cardTabIndex = propTabIndex ?? (shouldApplyButtonSemantics ? 0 : undefined);
+    const combinedDescribedBy = [propAriaDescribedBy, mixedDescribedBy].filter(Boolean).join(' ') || undefined;
 
-    const handleCardClick = (e: React.MouseEvent<any>) => {
-      mixedHandlers.onClick?.(e);
-      if (props.onClick && props.onClick !== onClick) {
-        props.onClick(e);
+    const handleCardClick = onClick || mixedOnClick
+      ? (e: React.MouseEvent<any>) => {
+        mixedOnClick?.(e);
+        onClick?.(e);
       }
-    };
+      : undefined;
 
-    const handleCardKeyDown = (e: React.KeyboardEvent<any>) => {
-      mixedHandlers.onKeyDown?.(e);
-      if (props.onKeyDown) {
-        (props.onKeyDown as any)(e);
+    const handleCardKeyDown = onClick || propOnKeyDown || mixedOnKeyDown
+      ? (e: React.KeyboardEvent<any>) => {
+        mixedOnKeyDown?.(e);
+        if (onClick && Component !== 'a' && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onClick(e as any);
+        }
+        propOnKeyDown?.(e);
       }
-    };
+      : undefined;
 
     return (
       <MotionComponentWrapper
         asComponent={Component}
         ref={setRef}
+        {...restProps}
         role={cardRole}
         tabIndex={cardTabIndex}
         aria-describedby={combinedDescribedBy}
-        {...(props as any)}
         className={cn(
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all',
           className
@@ -210,7 +207,7 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
             transformStyle: 'preserve-3d',
             willChange: 'transform',
           }),
-          ...((props as any).style || {})
+          ...(propStyle || {})
         }}
       >
         {AccessibleElements}

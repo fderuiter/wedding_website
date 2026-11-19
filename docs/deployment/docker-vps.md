@@ -45,7 +45,7 @@ Configure environment variables in a `.env` file on the VPS or pass them directl
 | `MULTISITE_ENABLED` | No | `false` | Enable multi-tenant/multi-profile configuration and subdomain routing. |
 | `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | No | `false` | Set to `true` (or a positive hop count) when behind Caddy/Nginx so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
-| `GUEST_PASSCODE` | No | `wedding2026` | Passcode required for guest website access. |
+| `GUEST_PASSCODE` | Yes | — | Unique passcode required for guest website access (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | — | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | `50` | Maximum history versions to retain per content entry. |
 | `CRON_SECRET` | No | — | Secret authorization key for background cron triggers (e.g., `/api/cron/broadcasts`). |

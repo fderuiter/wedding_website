@@ -1,6 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { ThemeConfigurationPanel } from '../ThemeConfigurationPanel';
+
+expect.extend(toHaveNoViolations);
 
 describe('ThemeConfigurationPanel Component', () => {
   const defaultValues = {
@@ -95,5 +98,75 @@ describe('ThemeConfigurationPanel Component', () => {
         '--print-bg': '#fdf2f8',
       },
     });
+  });
+
+  test('links layout and border inputs to helper and error FormMessages via aria-describedby', () => {
+    const handleChange = jest.fn();
+    render(<ThemeConfigurationPanel values={defaultValues} onChange={handleChange} />);
+
+    const containerInput = screen.getByLabelText(/Container Max Width/i);
+    const gridGapInput = screen.getByLabelText(/Grid Gap/i);
+    const cardPaddingInput = screen.getByLabelText(/Card Padding/i);
+    const borderRadiusInput = screen.getByLabelText(/Border Radius/i);
+
+    expect(containerInput).toHaveAttribute('aria-describedby', 'layoutContainerMaxWidth-help');
+    expect(document.getElementById('layoutContainerMaxWidth-help')).toHaveTextContent(/64rem, 1200px/i);
+
+    expect(gridGapInput).toHaveAttribute('aria-describedby', 'layoutGridGap-help');
+    expect(document.getElementById('layoutGridGap-help')).toBeInTheDocument();
+
+    expect(cardPaddingInput).toHaveAttribute('aria-describedby', 'layoutCardPadding-help');
+    expect(document.getElementById('layoutCardPadding-help')).toBeInTheDocument();
+
+    expect(borderRadiusInput).toHaveAttribute('aria-describedby', 'layoutBorderRadius-help');
+    expect(document.getElementById('layoutBorderRadius-help')).toBeInTheDocument();
+
+    fireEvent.change(borderRadiusInput, { target: { value: 'bad-radius' } });
+    expect(borderRadiusInput).toHaveAttribute('aria-invalid', 'true');
+    expect(borderRadiusInput).toHaveAttribute('aria-describedby', 'layoutBorderRadius-error');
+    expect(document.getElementById('layoutBorderRadius-error')).toHaveTextContent(
+      /Invalid CSS length unit format/i
+    );
+  });
+
+  test('applies externalErrors across Typography, Layout, Border, and Brand Dimension controls and passes jest-axe', async () => {
+    const handleChange = jest.fn();
+    const { container } = render(
+      <ThemeConfigurationPanel
+        values={defaultValues}
+        onChange={handleChange}
+        errors={{
+          fontSizeBase: 'Invalid base font size.',
+          layoutGridGap: 'Server rejected grid gap.',
+          layoutBorderRadius: 'Server rejected border radius.',
+          brandHeroHeight: 'Server rejected hero height.',
+        }}
+      />
+    );
+
+    const fontBaseInput = screen.getByLabelText(/Base Font Size/i);
+    const gridGapInput = screen.getByLabelText(/Grid Gap/i);
+    const borderRadiusInput = screen.getByLabelText(/Border Radius/i);
+    const heroHeightInput = screen.getByLabelText(/Hero Background Height/i);
+
+    expect(fontBaseInput).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById(fontBaseInput.getAttribute('aria-describedby') || '')).toHaveTextContent(
+      'Invalid base font size.'
+    );
+
+    expect(gridGapInput).toHaveAttribute('aria-invalid', 'true');
+    expect(gridGapInput).toHaveAttribute('aria-describedby', 'layoutGridGap-error');
+    expect(document.getElementById('layoutGridGap-error')).toHaveTextContent('Server rejected grid gap.');
+
+    expect(borderRadiusInput).toHaveAttribute('aria-invalid', 'true');
+    expect(borderRadiusInput).toHaveAttribute('aria-describedby', 'layoutBorderRadius-error');
+
+    expect(heroHeightInput).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById(heroHeightInput.getAttribute('aria-describedby') || '')).toHaveTextContent(
+      'Server rejected hero height.'
+    );
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
   });
 });

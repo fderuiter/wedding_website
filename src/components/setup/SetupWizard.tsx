@@ -6,6 +6,7 @@ import { FormGroup, Label, Input, FormMessage, Checkbox } from '@/components/ui/
 import { AccessibleStep } from '@/components/ui/AccessibleStep';
 import { Container, Card, Heading } from '@/components/ui/Layout';
 import { Button } from '@/components/ui/Button';
+import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
@@ -509,35 +510,30 @@ function SetupWizardContent() {
               )}
 
               <div>
-                <FormGroup>
-                  <Label className="font-semibold block mb-2">Starter Archetype Preset</Label>
-                </FormGroup>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
+                <span
+                  id="starter-archetype-preset-label"
+                  className="block text-sm font-semibold mb-2 text-[var(--form-label-text,var(--color-primary-text,#111827))]"
+                >
+                  Starter Archetype Preset
+                </span>
+                <ToggleButtonGroup
+                  mode="radiogroup"
+                  aria-labelledby="starter-archetype-preset-label"
+                  value={sampleArchetype}
+                  onChange={(key) => {
+                    setSampleArchetype(key);
+                    setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions']);
+                  }}
+                  className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
+                  options={(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
                     const preset = ARCHETYPE_PRESETS[key];
-                    const isSelected = sampleArchetype === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => {
-                          setSampleArchetype(key);
-                          setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions']);
-                        }}
-                        className={`p-4 rounded-xl border text-left transition ${
-                          isSelected
-                            ? 'border-primary bg-primary/10 ring-2 ring-primary'
-                            : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'
-                        }`}
-                      >
-                        <div className="font-bold text-sm text-primary">{preset.name}</div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                          {preset.description}
-                        </div>
-                      </button>
-                    );
+                    return {
+                      value: key,
+                      label: preset.name,
+                      description: <span className="line-clamp-2">{preset.description}</span>,
+                    };
                   })}
-                </div>
+                />
               </div>
 
               <div>

@@ -16,10 +16,18 @@ export const SubEventSchema = z.object({
 
 export type SubEventDTO = z.infer<typeof SubEventSchema>;
 
+export const MAX_RSVP_PLUS_ONE_COUNT = 20;
+
 export const SubEventRsvpSubmissionItemSchema = z.object({
   subEventId: z.string().min(1, 'Sub-event ID is required.'),
   status: z.enum(['attending', 'declined', 'pending']),
-  plusOneCount: z.number().int().min(0).optional().default(0),
+  plusOneCount: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_RSVP_PLUS_ONE_COUNT, `Plus-one count cannot exceed ${MAX_RSVP_PLUS_ONE_COUNT}.`)
+    .optional()
+    .default(0),
   dietaryNotes: z.string().optional().default(''),
 });
 

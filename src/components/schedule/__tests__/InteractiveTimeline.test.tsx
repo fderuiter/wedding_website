@@ -1,7 +1,10 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import InteractiveTimeline from '../InteractiveTimeline';
 import type { ContentNodeDTO } from '@/features/content';
+
+expect.extend(toHaveNoViolations);
 
 describe('InteractiveTimeline Component', () => {
   const sampleEvents: ContentNodeDTO[] = [
@@ -397,7 +400,7 @@ describe('InteractiveTimeline Component', () => {
 
       // Edit Event 1 (Rehearsal Dinner) to Attending
       const event1Card = screen.getByTestId('rsvp-card-event-1');
-      const attendingBtn1 = event1Card.querySelector('button:nth-of-type(1)') as HTMLButtonElement;
+      const attendingBtn1 = within(event1Card).getByRole('radio', { name: /attending/i }) as HTMLButtonElement;
       fireEvent.click(attendingBtn1);
 
       // Now Event 1 should show "Unsaved changes"
@@ -492,7 +495,7 @@ describe('InteractiveTimeline Component', () => {
 
       // Modify Event 1
       const event1Card = screen.getByTestId('rsvp-card-event-1');
-      const attendingBtn = event1Card.querySelector('button:nth-of-type(1)') as HTMLButtonElement;
+      const attendingBtn = within(event1Card).getByRole('radio', { name: /attending/i }) as HTMLButtonElement;
       fireEvent.click(attendingBtn);
 
       const saveAllBtn = screen.getByRole('button', { name: /save all modified events/i });
@@ -525,7 +528,7 @@ describe('InteractiveTimeline Component', () => {
 
       // Save Event 1 individually
       const event1Card = screen.getByTestId('rsvp-card-event-1');
-      const attendingBtn = event1Card.querySelector('button:nth-of-type(1)') as HTMLButtonElement;
+      const attendingBtn = within(event1Card).getByRole('radio', { name: /attending/i }) as HTMLButtonElement;
       fireEvent.click(attendingBtn);
 
       const saveBtn = within(event1Card).getByRole('button', { name: 'Save RSVP' });
@@ -668,6 +671,40 @@ describe('InteractiveTimeline Component', () => {
       const errorAlert = await within(card).findByRole('alert');
       expect(errorAlert).toHaveTextContent('Plus-one count (3) exceeds your allocated limit of 2.');
       expect(plusOneInput.value).toBe('3');
+
+      // Selecting Declined resets plus-one count to 0 and disables the input
+      fireEvent.click(within(card).getByRole('radio', { name: /^declined$/i }));
+      expect(plusOneInput).toBeDisabled();
+      expect(plusOneInput.value).toBe('0');
+    });
+
+    it('exposes RSVP status controls as labelled radiogroups with arrow navigation, non-color indicators, and zero axe violations', async () => {
+      const { container } = render(<InteractiveTimeline events={sampleEventsWithRsvp} timezone="UTC" />);
+
+      const rehearsalRadioGroup = screen.getByRole('radiogroup', {
+        name: 'Your RSVP for Rehearsal Dinner',
+      });
+      expect(rehearsalRadioGroup).toBeInTheDocument();
+
+      const pendingRadio = within(rehearsalRadioGroup).getByRole('radio', { name: /pending/i });
+      const attendingRadio = within(rehearsalRadioGroup).getByRole('radio', { name: /attending/i });
+      const declinedRadio = within(rehearsalRadioGroup).getByRole('radio', { name: /declined/i });
+
+      expect(pendingRadio).toHaveAttribute('aria-checked', 'true');
+      expect(pendingRadio.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+      expect(attendingRadio).toHaveAttribute('aria-checked', 'false');
+
+      pendingRadio.focus();
+      fireEvent.keyDown(pendingRadio, { key: 'Home' });
+      expect(attendingRadio).toHaveFocus();
+      expect(attendingRadio).toHaveAttribute('aria-checked', 'true');
+
+      fireEvent.keyDown(attendingRadio, { key: 'ArrowRight' });
+      expect(declinedRadio).toHaveFocus();
+      expect(declinedRadio).toHaveAttribute('aria-checked', 'true');
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

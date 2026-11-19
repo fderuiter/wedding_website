@@ -1,10 +1,18 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
-import { renderBroadcastTemplate } from './template';
+import { renderBroadcastTemplate, sanitizeEmailSubject } from './template';
 import { getAttendanceStatus } from '@/features/registry';
 
 const RECIPIENT_CHUNK_SIZE = 250;
+const ADDRESS_COLLECTION_TAG = 'address-collection';
+
+function hasAddressCollectionTag(tags: unknown): boolean {
+  return (
+    Array.isArray(tags) &&
+    tags.some((tag) => typeof tag === 'string' && tag.trim().toLowerCase() === ADDRESS_COLLECTION_TAG)
+  );
+}
 import { MultiChannelMessagingProvider } from './providers';
 import {
   SendBroadcastInput,
@@ -23,7 +31,10 @@ export class BroadcastService {
    */
   static async resolveTargetGuests(filters?: BroadcastTargetFilters) {
     if (!filters) {
-      return prisma.invitationCode.findMany();
+      const allRecords = await prisma.invitationCode.findMany();
+      return Array.isArray(allRecords)
+        ? allRecords.filter((item) => !hasAddressCollectionTag((item as any).partyTags))
+        : allRecords;
     }
 
     const where: any = {};
@@ -72,6 +83,27 @@ export class BroadcastService {
 
     let records = await prisma.invitationCode.findMany({ where });
 
+    const explicitlyIncludesAddressCollection = Boolean(
+      filters.partyTags &&
+      filters.partyTags.some(
+        (tag) => typeof tag === 'string' && tag.trim().toLowerCase() === ADDRESS_COLLECTION_TAG
+      )
+    );
+
+    if (!explicitlyIncludesAddressCollection && Array.isArray(records)) {
+      const selectedIdSet =
+        filters.selectedIds && filters.selectedIds.length > 0
+          ? new Set(filters.selectedIds)
+          : null;
+
+      records = records.filter((item) => {
+        if (!hasAddressCollectionTag((item as any).partyTags)) {
+          return true;
+        }
+        return selectedIdSet !== null && selectedIdSet.has(item.id);
+      });
+    }
+
     if (filters.attendanceStatus && filters.attendanceStatus !== 'all') {
       records = records.filter((item) => getAttendanceStatus(item as any) === filters.attendanceStatus);
     }
@@ -116,8 +148,11 @@ export class BroadcastService {
       venueName: config.venueName || '',
     };
 
-    const renderedBody = renderBroadcastTemplate(input.body, context);
-    const renderedSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : undefined;
+    const isEmail = input.channel === 'EMAIL';
+    const renderedBody = renderBroadcastTemplate(input.body, context, { escapeHtml: isEmail });
+    const rawSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : undefined;
+    const renderedSubject =
+      rawSubject !== undefined && isEmail ? sanitizeEmailSubject(rawSubject) : rawSubject;
 
     const destination = input.channel === 'EMAIL'
       ? (sampleGuest.email || 'jane@example.com')
@@ -170,11 +205,15 @@ export class BroadcastService {
       venueName: config.venueName || '',
     };
 
-    const renderedBody = renderBroadcastTemplate(input.body, context);
+    const isEmail = input.channel === 'EMAIL';
+    const renderedBody = renderBroadcastTemplate(input.body, context, { escapeHtml: isEmail });
 
     let personalizedSubject: string | undefined = undefined;
-    if (input.channel === 'EMAIL') {
-      const baseSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : 'Broadcast Test';
+    if (isEmail) {
+      const sanitizedSubject = input.subject
+        ? sanitizeEmailSubject(renderBroadcastTemplate(input.subject, context))
+        : '';
+      const baseSubject = sanitizedSubject || 'Broadcast Test';
       personalizedSubject = baseSubject.startsWith('[TEST]') ? baseSubject : `[TEST] ${baseSubject}`;
     }
 
@@ -391,8 +430,13 @@ export class BroadcastService {
             venueName: config.venueName || '',
           };
 
-          const personalizedBody = renderBroadcastTemplate(body, context);
-          const personalizedSubject = subject ? renderBroadcastTemplate(subject, context) : '';
+          const isEmail = channel === 'EMAIL';
+          const personalizedBody = renderBroadcastTemplate(body, context, { escapeHtml: isEmail });
+          const personalizedSubject = subject
+            ? (isEmail
+              ? sanitizeEmailSubject(renderBroadcastTemplate(subject, context))
+              : renderBroadcastTemplate(subject, context))
+            : '';
 
           let result: DispatchResult;
           if (channel === 'EMAIL') {
@@ -601,8 +645,13 @@ export class BroadcastService {
             venueName: config.venueName || '',
           };
 
-          const personalizedBody = renderBroadcastTemplate(broadcast.body, context);
-          const personalizedSubject = broadcast.subject ? renderBroadcastTemplate(broadcast.subject, context) : '';
+          const isEmail = broadcast.channel === 'EMAIL';
+          const personalizedBody = renderBroadcastTemplate(broadcast.body, context, { escapeHtml: isEmail });
+          const personalizedSubject = broadcast.subject
+            ? (isEmail
+              ? sanitizeEmailSubject(renderBroadcastTemplate(broadcast.subject, context))
+              : renderBroadcastTemplate(broadcast.subject, context))
+            : '';
 
           let result: DispatchResult;
           if (broadcast.channel === 'EMAIL') {

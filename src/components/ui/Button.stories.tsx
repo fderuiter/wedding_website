@@ -17,6 +17,9 @@ const meta: Meta<typeof Button> = {
     disabled: {
       control: 'boolean',
     },
+    pressed: {
+      control: 'boolean',
+    },
   },
   args: {
     children: 'Click Me',
@@ -78,6 +81,19 @@ export const AllSizes: Story = {
       <Button size="sm">Small</Button>
       <Button size="md">Medium</Button>
       <Button size="lg">Large</Button>
+    </div>
+  ),
+};
+
+export const TogglePressed: Story = {
+  render: () => (
+    <div className="flex items-center gap-4">
+      <Button variant="outline" pressed={true} aria-label="Our Story: Visible">
+        Visible
+      </Button>
+      <Button variant="ghost" pressed={false} aria-label="Wedding Day Details: Hidden">
+        Hidden
+      </Button>
     </div>
   ),
 };

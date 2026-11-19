@@ -119,4 +119,46 @@ describe('POST /api/rsvp Route', () => {
     expect(json.success).toBe(false);
     expect(json.error).toBe('Plus-one count (3) exceeds your allocated limit of 1.');
   });
+
+  it('returns 400 when single or batch plusOneCount exceeds schema maximum of 20', async () => {
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'SOLO-GUEST',
+      guestName: 'Solo Guest',
+    });
+
+    const singleReq = new NextRequest('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      body: JSON.stringify({
+        subEventId: 'sub-ceremony-1',
+        status: 'attending',
+        plusOneCount: 25,
+        dietaryNotes: 'None',
+      }),
+    });
+
+    const singleRes = await POST(singleReq, {});
+    const singleJson = await singleRes.json();
+
+    expect(singleRes.status).toBe(400);
+    expect(singleJson.success).toBe(false);
+    expect(singleJson.error).toContain('Plus-one count cannot exceed 20.');
+
+    const batchReq = new NextRequest('http://localhost:3000/api/rsvp', {
+      method: 'POST',
+      body: JSON.stringify({
+        rsvps: [
+          { subEventId: 'sub-ceremony-1', status: 'attending', plusOneCount: 0 },
+          { subEventId: 'sub-reception-1', status: 'attending', plusOneCount: 21 },
+        ],
+      }),
+    });
+
+    const batchRes = await POST(batchReq, {});
+    const batchJson = await batchRes.json();
+
+    expect(batchRes.status).toBe(400);
+    expect(batchJson.success).toBe(false);
+    expect(batchJson.error).toContain('Plus-one count cannot exceed 20.');
+    expect(mockSubmitSubEventRsvps).not.toHaveBeenCalled();
+  });
 });

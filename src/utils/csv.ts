@@ -1,7 +1,7 @@
 import {
   normalizeInvitationCode,
   normalizePartyTags,
-  validateInvitationGuestFields,
+  validateInvitationGuestFieldsWithColumns,
 } from './invitationValidation';
 
 export interface ParsedCsvRow {
@@ -26,6 +26,7 @@ export interface ParsedCsvRow {
   extraFields?: Record<string, string>;
   isValid: boolean;
   errors: string[];
+  fieldErrors?: Record<string, string[]>;
   warnings: string[];
 }
 
@@ -582,7 +583,7 @@ export function validateSingleCsvRow(
 
   const plusOneAllocations =
     rawPlusOne !== '' && /^\d+$/.test(rawPlusOne) ? parseInt(rawPlusOne, 10) : undefined;
-  const errors = validateInvitationGuestFields(
+  const { errors, fieldErrors } = validateInvitationGuestFieldsWithColumns(
     {
       guestName,
       email,
@@ -604,7 +605,13 @@ export function validateSingleCsvRow(
 
   if (code) {
     if ((codeFrequency.get(code) || 0) > 1) {
-      errors.push(`Duplicate code "${code}" within CSV file.`);
+      const dupMsg = `Duplicate code "${code}" within CSV file.`;
+      errors.push(dupMsg);
+      if (!fieldErrors.code) {
+        fieldErrors.code = [dupMsg];
+      } else {
+        fieldErrors.code.push(dupMsg);
+      }
     } else if (existingDbCodes.has(code)) {
       warnings.push(`Code "${code}" already exists in database.`);
     }
@@ -651,6 +658,7 @@ export function validateSingleCsvRow(
     extraFields: Object.keys(extraFields).length > 0 ? extraFields : undefined,
     isValid: errors.length === 0,
     errors,
+    fieldErrors: errors.length > 0 ? fieldErrors : undefined,
     warnings,
   };
 }

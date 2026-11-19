@@ -1,19 +1,59 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe } from 'jest-axe';
 import HomePageClient from '../HomePageClient';
 import type { PublicAppConfig } from '@/lib/config';
 
 // Mock framer-motion
-jest.mock('framer-motion', () => ({
-  motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    h1: ({ children, ...props }: any) => <h1 {...props}>{children}</h1>,
-    p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
-    nav: ({ children, ...props }: any) => <nav {...props}>{children}</nav>,
-    section: ({ children, ...props }: any) => <section {...props}>{children}</section>,
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}));
+jest.mock('framer-motion', () => {
+  const ReactActual = jest.requireActual<typeof import('react')>('react');
+  const stripMotionProps = ({
+    variants: _variants,
+    initial: _initial,
+    animate: _animate,
+    whileInView: _whileInView,
+    viewport: _viewport,
+    custom: _custom,
+    style,
+    ...domProps
+  }: any) => {
+    if (!style) return domProps;
+    const {
+      transformPerspective: _tp,
+      rotateX: _rx,
+      rotateY: _ry,
+      ...restStyle
+    } = style;
+    return { ...domProps, style: restStyle };
+  };
+
+  const createTag = (Tag: any) => {
+    const Mocked = ReactActual.forwardRef(({ children, ...props }: any, ref: any) =>
+      ReactActual.createElement(Tag, { ref, ...stripMotionProps(props) }, children)
+    );
+    Mocked.displayName = `Motion(${String(Tag)})`;
+    return Mocked;
+  };
+
+  return {
+    motion: {
+      create: createTag,
+      div: createTag('div'),
+      article: createTag('article'),
+      h1: createTag('h1'),
+      p: createTag('p'),
+      nav: createTag('nav'),
+      section: createTag('section'),
+    },
+    AnimatePresence: ({ children }: any) => <>{children}</>,
+    useMotionValue: (initial: number) => ({
+      get: () => initial,
+      set: jest.fn(),
+    }),
+    useSpring: (val: any) => val,
+    useTransform: () => '0deg',
+  };
+});
 
 // Mock ThemeProvider
 jest.mock('@/components/ThemeProvider', () => ({
@@ -129,6 +169,61 @@ describe('HomePageClient', () => {
     expect(googleUrl.searchParams.get('ctz')).toBe('America/Chicago');
 
     openSpy.mockRestore();
+  });
+
+  test('renders travel cards as native article containers exposing h3 headings and descriptions without button roles and passes axe', async () => {
+    const travelContentNodes = [
+      {
+        id: 'travel-1',
+        type: 'Logistics' as const,
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Airport & Shuttle',
+          description: 'Fly into JFK or LGA; complimentary shuttles depart every 30 minutes.',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'travel-2',
+        type: 'Logistics' as const,
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Local Sightseeing',
+          description: 'Explore Central Park and Brooklyn Bridge before the ceremony.',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    const { container } = render(
+      <HomePageClient config={mockConfig} contentNodes={travelContentNodes as any} />
+    );
+
+    const travelSection = container.querySelector('#travel') as HTMLElement;
+    expect(travelSection).toBeInTheDocument();
+
+    const articles = within(travelSection).getAllByRole('article');
+    expect(articles).toHaveLength(2);
+    for (const article of articles) {
+      expect(article).not.toHaveAttribute('tabIndex');
+      expect(article).not.toHaveAttribute('aria-label');
+      expect(article).not.toHaveAttribute('aria-describedby');
+      expect(article).not.toHaveAttribute('role');
+      for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) {
+        expect(fireEvent.keyDown(article, { key })).toBe(true);
+      }
+    }
+
+    expect(within(travelSection).queryAllByRole('button')).toHaveLength(0);
+    expect(within(travelSection).getByRole('heading', { level: 3, name: 'Airport & Shuttle' })).toBeInTheDocument();
+    expect(within(travelSection).getByRole('heading', { level: 3, name: 'Local Sightseeing' })).toBeInTheDocument();
+    expect(within(travelSection).getByText(/complimentary shuttles depart every 30 minutes/i)).toBeInTheDocument();
+    expect(within(travelSection).getByText(/Explore Central Park and Brooklyn Bridge/i)).toBeInTheDocument();
+
+    const results = await axe(travelSection);
+    expect(results).toHaveNoViolations();
   });
 });
 

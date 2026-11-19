@@ -1,6 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+
+expect.extend(toHaveNoViolations);
 
 // Mock useRouter
 const mockPush = jest.fn();
@@ -89,5 +92,31 @@ describe('Admin Content Management - FAQ Category & Keywords', () => {
 
     expect(categoryInput).toHaveValue('Venue');
     expect(keywordsInput).toHaveValue('date, time, venue');
+  });
+
+  it('groups dynamic data fields in a fieldset/legend with unique sr-only labels per input and zero axe violations', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <ContentDashboardPage />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /edit content: faq/i }));
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Field/i }));
+
+    const group = screen.getByRole('group', { name: /Dynamic Data Fields/i });
+    expect(group.tagName).toBe('FIELDSET');
+
+    // Every dynamic key and value input exposes a unique programmatic label
+    for (let i = 1; i <= 5; i++) {
+      expect(within(group).getByLabelText(new RegExp(`^Dynamic field ${i} key$`, 'i'))).toBeInTheDocument();
+      expect(within(group).getByLabelText(new RegExp(`^Dynamic field ${i} value`, 'i'))).toBeInTheDocument();
+    }
+
+    const ids = Array.from(container.querySelectorAll('[id]')).map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
   });
 });
