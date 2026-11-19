@@ -5,9 +5,39 @@ import {
   PaymentIntentRequestSchema,
   PublicAddressCollectSchema,
   RegistryItemBaseSchema,
+  RegistryQuerySchema,
 } from '../schemas';
+import {
+  REGISTRY_DEFAULT_PAGE_LIMIT,
+  REGISTRY_MAX_CATALOG_LIMIT,
+} from '@/utils/registryPagination';
 
 describe('Registry Zod v4 Schema Validation', () => {
+  it('enforces bounded 500-item catalog limit while retaining default limit of 20 on RegistryQuerySchema', () => {
+    const defaultParsed = RegistryQuerySchema.safeParse({});
+    expect(defaultParsed.success).toBe(true);
+    if (defaultParsed.success) {
+      expect(defaultParsed.data.page).toBe(1);
+      expect(defaultParsed.data.limit).toBe(REGISTRY_DEFAULT_PAGE_LIMIT);
+    }
+
+    const maxParsed = RegistryQuerySchema.safeParse({
+      page: '1',
+      limit: String(REGISTRY_MAX_CATALOG_LIMIT),
+    });
+    expect(maxParsed.success).toBe(true);
+    if (maxParsed.success) {
+      expect(maxParsed.data.limit).toBe(500);
+    }
+
+    const exceededParsed = RegistryQuerySchema.safeParse({
+      limit: String(REGISTRY_MAX_CATALOG_LIMIT + 1),
+    });
+    expect(exceededParsed.success).toBe(false);
+    if (!exceededParsed.success) {
+      expect(exceededParsed.error.issues[0].message).toBe('Limit cannot exceed 500.');
+    }
+  });
   it('trims surrounding whitespace before validating emails across registry schemas', () => {
     const contribution = ContributionSchema.safeParse({
       itemId: 'item-1',

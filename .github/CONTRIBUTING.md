@@ -35,6 +35,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      npm run quality
      # or: npm run check:all
      ```
+     Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
    - **Individual Quality Checks:**
      - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
@@ -44,6 +45,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:env-docs` - Ensure environment variables match `.env.example` documentation.
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json` and `ARCHITECTURE.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
+     - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
      - `npm run typecheck` - Check TypeScript types across the project.
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.
