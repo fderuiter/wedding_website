@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
@@ -631,11 +631,73 @@ export default function MediaDashboardPage() {
     }
   };
 
+  const handleSetPage: React.Dispatch<React.SetStateAction<number>> = useCallback((nextPage) => {
+    setLoading(true);
+    setError(null);
+    setPage(nextPage);
+  }, []);
+
   useEffect(() => {
-    fetchMedia(page);
-    fetchPendingPhotos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+    let cancelled = false;
+
+    const loadMediaData = async () => {
+      const loadMediaPromise = (async () => {
+        try {
+          const res = await apiClient.get(`/api/media?page=${page}&limit=${limit}`);
+          if (cancelled) return;
+          if (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data)) {
+            setMedia(res.data);
+            setTotal(res.total ?? 0);
+            setTotalPages(res.totalPages ?? 1);
+            const resPage = res.page ?? page;
+            if (resPage !== page) {
+              setPage(resPage);
+            }
+          } else if (Array.isArray(res)) {
+            setMedia(res);
+            setTotal(res.length);
+            setTotalPages(1);
+          }
+          setError(null);
+        } catch (e) {
+          if (cancelled) return;
+          console.error(e);
+          const message = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to load media library.';
+          setError(message || 'Failed to load media library.');
+        } finally {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        }
+      })();
+
+      const loadPendingPromise = (async () => {
+        try {
+          const res = await apiClient.get('/api/admin/photos/moderation');
+          if (cancelled) return;
+          if (res && res.photos && Array.isArray(res.photos)) {
+            setPendingPhotos(res.photos);
+          } else if (res && res.data && Array.isArray(res.data)) {
+            setPendingPhotos(res.data);
+          } else if (Array.isArray(res)) {
+            setPendingPhotos(res);
+          }
+        } catch (e) {
+          if (!cancelled) {
+            console.error('Failed to load pending photos:', e);
+          }
+        }
+      })();
+
+      await Promise.all([loadMediaPromise, loadPendingPromise]);
+    };
+
+    void loadMediaData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, limit]);
 
   const handleRetry = async () => {
     await Promise.all([fetchMedia(page), fetchPendingPhotos()]);
@@ -654,7 +716,7 @@ export default function MediaDashboardPage() {
         page={page}
         totalPages={totalPages}
         total={total}
-        setPage={setPage}
+        setPage={handleSetPage}
         pendingPhotos={pendingPhotos}
         setPendingPhotos={setPendingPhotos}
         drawerOpen={drawerOpen}

@@ -2,7 +2,7 @@
 
 import { Icon } from '../ui/Icon';
 import { Overlay } from '../ui/Overlay';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
@@ -25,6 +25,33 @@ interface NavbarProps {
   config: PublicAppConfig;
 }
 
+function subscribeToHashChange(onStoreChange: () => void) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+  window.addEventListener('hashchange', onStoreChange);
+  return () => {
+    window.removeEventListener('hashchange', onStoreChange);
+  };
+}
+
+function getHashSnapshot() {
+  return typeof window === 'undefined' ? '' : window.location.hash;
+}
+
+function getServerHashSnapshot() {
+  return '';
+}
+
+const DEFAULT_HOME_FEATURES = [
+  { id: 'story', type: 'story', title: 'Our Story', visible: true },
+  { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
+  { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+  { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+  { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
+  { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true },
+];
+
 /**
  * @function Navbar
  * @description A responsive navigation bar component for the application.
@@ -36,43 +63,36 @@ interface NavbarProps {
 export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeHash, setActiveHash] = useState<string>('');
+  const browserHash = useSyncExternalStore(
+    subscribeToHashChange,
+    getHashSnapshot,
+    getServerHashSnapshot
+  );
+  const [manualHashOverride, setManualHashOverride] = useState<{ base: string; hash: string } | null>(null);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  const activeHash =
+    manualHashOverride && manualHashOverride.base === browserHash
+      ? manualHashOverride.hash
+      : browserHash;
 
-    setActiveHash(window.location.hash);
-
-    const handleHashChange = () => {
-      setActiveHash(window.location.hash);
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-    };
+  const setActiveHash = useCallback((hash: string) => {
+    setManualHashOverride({ base: getHashSnapshot(), hash });
   }, []);
 
   // Safely parse features array
-  let features: any[] = [];
-  try {
-    if (typeof config.features === 'string') {
-      features = JSON.parse(config.features);
-    } else if (Array.isArray(config.features)) {
-      features = config.features;
+  const features = useMemo(() => {
+    let parsed: any[] = [];
+    try {
+      if (typeof config.features === 'string') {
+        parsed = JSON.parse(config.features);
+      } else if (Array.isArray(config.features)) {
+        parsed = config.features;
+      }
+    } catch {
+      // Ignore malformed JSON and fall back to default sections
     }
-  } catch(e) {}
-
-  if (features.length === 0) {
-    features = [
-      { id: 'story', type: 'story', title: 'Our Story', visible: true },
-      { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
-      { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
-      { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
-      { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
-      { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true }
-    ];
-  }
+    return parsed.length > 0 ? parsed : DEFAULT_HOME_FEATURES;
+  }, [config.features]);
 
   useEffect(() => {
     if (pathname !== '/' || typeof window === 'undefined') return;
@@ -109,7 +129,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     return () => {
       observer.disconnect();
     };
-  }, [pathname, features]);
+  }, [pathname, features, setActiveHash]);
 
   const isLinkActive = (href: string) => {
     if (href.includes('#')) {

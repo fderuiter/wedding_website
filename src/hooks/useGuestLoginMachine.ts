@@ -146,15 +146,26 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
   const searchParams = useSearchParams();
 
   const optionsRef = useRef(options);
-  optionsRef.current = options;
 
-  const [state, dispatch] = useReducer(guestLoginMachineReducer, {
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
+  const [state, rawDispatch] = useReducer(guestLoginMachineReducer, {
     ...initialGuestLoginMachineState,
     ...options?.initialState,
   });
 
   const stateRef = useRef(state);
-  stateRef.current = state;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const dispatch = useCallback((action: GuestLoginMachineAction) => {
+    stateRef.current = guestLoginMachineReducer(stateRef.current, action);
+    rawDispatch(action);
+  }, []);
 
   const loginAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -229,12 +240,12 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
         }
       }
     },
-    [cancelInFlightLogin, navigateToDestination, getTargetCallbackUrl]
+    [cancelInFlightLogin, dispatch, navigateToDestination, getTargetCallbackUrl]
   );
 
   const setPasscode = useCallback((passcode: string) => {
     dispatch({ type: 'SET_PASSCODE', passcode });
-  }, []);
+  }, [dispatch]);
 
   const setShowPasscode = useCallback((show: boolean | ((_prev: boolean) => boolean)) => {
     if (typeof show === 'function') {
@@ -242,15 +253,15 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     } else {
       dispatch({ type: 'SET_SHOW_PASSCODE', show });
     }
-  }, []);
+  }, [dispatch]);
 
   const toggleShowPasscode = useCallback(() => {
     dispatch({ type: 'TOGGLE_SHOW_PASSCODE' });
-  }, []);
+  }, [dispatch]);
 
   const setShowHelp = useCallback((show: boolean) => {
     dispatch({ type: 'SET_SHOW_HELP', show });
-  }, []);
+  }, [dispatch]);
 
   useEffect(() => {
     return () => {

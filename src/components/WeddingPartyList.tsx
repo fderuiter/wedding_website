@@ -19,24 +19,31 @@ const TABS: { id: TabFilter; label: string }[] = [
 ];
 
 const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMembers }) => {
-  const [members, setMembers] = useState(initialMembers);
+  const [draftOverride, setDraftOverride] = useState<{
+    base: WeddingPartyMemberDTO[];
+    members: WeddingPartyMemberDTO[];
+  } | null>(null);
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
 
-  useEffect(() => {
-    setMembers(initialMembers);
-  }, [initialMembers]);
+  const members =
+    draftOverride && draftOverride.base === initialMembers
+      ? draftOverride.members
+      : initialMembers;
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window !== window.parent) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'wedding-party') {
-          setMembers(event.data.draftData);
+          setDraftOverride({
+            base: initialMembers,
+            members: event.data.draftData,
+          });
         }
       };
       window.addEventListener('message', handleMessage);
       return () => window.removeEventListener('message', handleMessage);
     }
-  }, []);
+  }, [initialMembers]);
 
   const filteredMembers = members.filter((member) => {
     if (activeTab === 'ALL') return true;

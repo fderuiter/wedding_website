@@ -37,7 +37,7 @@ interface ToastItemProps {
 
 const ToastItem = ({ toast, onClose, duration = 5000 }: ToastItemProps) => {
   const remainingRef = useRef<number>(duration);
-  const startTimeRef = useRef<number>(Date.now());
+  const startTimeRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHoveredRef = useRef<boolean>(false);
   const isFocusedRef = useRef<boolean>(false);

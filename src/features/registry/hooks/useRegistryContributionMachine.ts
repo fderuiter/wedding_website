@@ -106,34 +106,42 @@ export function useRegistryContributionMachine({
     clearSession,
   } = useGuestSession();
 
-  const [phase, setPhase] = useState<ContributionPhase>('idle');
+  const [phaseState, setPhase] = useState<ContributionPhase>('idle');
 
   // Form fields
-  const [contributorName, setContributorNameState] = useState(initialContributorName);
+  const [contributorNameState, setContributorNameState] = useState(initialContributorName);
+  const [hasEditedContributorName, setHasEditedContributorName] = useState(false);
   const [email, setEmailState] = useState(initialEmail);
   const [amount, setAmountState] = useState<number | string>(initialAmount);
   const [message, setMessageState] = useState(initialMessage);
   const [coverFee, setCoverFeeState] = useState(initialCoverFee);
-  const [invitationCode, setInvitationCodeState] = useState(initialInvitationCode);
+  const [invitationCodeState, setInvitationCodeState] = useState(initialInvitationCode);
+  const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
 
   // Partitioned error states
   const [fieldErrors, setFieldErrors] = useState<ContributionFieldErrors>({});
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeErrorState, setCodeError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [paymentTransactionId, setPaymentTransactionId] = useState<string | null>(null);
 
   // AbortController for cancelling in-flight validation requests
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Synchronize session state from GuestSessionContext
-  useEffect(() => {
-    if (isSessionVerified && sessionCode) {
-      setInvitationCodeState(sessionCode);
-      setContributorNameState((prev) => prev || sessionGuestName || '');
-      setPhase('code_locked');
-      setCodeError(null);
-    }
-  }, [isSessionVerified, sessionCode, sessionGuestName]);
+  const currentSessionKey =
+    isSessionVerified && sessionCode ? `${sessionCode}:${sessionGuestName || ''}` : null;
+  const isSessionSynced = Boolean(
+    currentSessionKey && dismissedSessionKey !== currentSessionKey
+  );
+
+  const phase: ContributionPhase =
+    isSessionSynced && (phaseState === 'idle' || phaseState === 'validating_code')
+      ? 'code_locked'
+      : phaseState;
+  const invitationCode = isSessionSynced && sessionCode ? sessionCode : invitationCodeState;
+  const contributorName = hasEditedContributorName
+    ? contributorNameState
+    : contributorNameState || (isSessionSynced ? sessionGuestName || '' : '');
+  const codeError = isSessionSynced ? null : codeErrorState;
 
   // Clean up any pending validation request on unmount
   useEffect(() => {
@@ -147,6 +155,7 @@ export function useRegistryContributionMachine({
 
   // Setters with error clearing
   const setContributorName = useCallback((name: string) => {
+    setHasEditedContributorName(true);
     setContributorNameState(name);
     setFieldErrors((prev) => {
       if (!prev.name) return prev;
@@ -194,9 +203,15 @@ export function useRegistryContributionMachine({
     setCoverFeeState(val);
   }, []);
 
-  const setInvitationCode = useCallback((code: string) => {
-    setInvitationCodeState(code);
-  }, []);
+  const setInvitationCode = useCallback(
+    (code: string) => {
+      if (currentSessionKey && code !== sessionCode) {
+        setDismissedSessionKey(currentSessionKey);
+      }
+      setInvitationCodeState(code);
+    },
+    [currentSessionKey, sessionCode]
+  );
 
   const handlePresetClick = useCallback((presetValue: number) => {
     setAmountState(presetValue);
@@ -241,12 +256,15 @@ export function useRegistryContributionMachine({
         }
 
         if (data && data.valid) {
+          const verifiedCode = data.code || code;
+          setInvitationCodeState(verifiedCode);
           if (data.guestName) {
             setContributorNameState(data.guestName);
           }
+          setDismissedSessionKey(null);
           setPhase('code_locked');
           setSession({
-            invitationCode: data.code || code,
+            invitationCode: verifiedCode,
             guestName: data.guestName || '',
             isVerified: true,
           });
@@ -284,6 +302,10 @@ export function useRegistryContributionMachine({
         abortControllerRef.current = null;
       }
 
+      if (currentSessionKey && val !== sessionCode) {
+        setDismissedSessionKey(currentSessionKey);
+      }
+
       setInvitationCodeState(val);
       setCodeError(null);
 
@@ -300,7 +322,7 @@ export function useRegistryContributionMachine({
         setPhase('idle');
       }
     },
-    [phase, verifyCode]
+    [currentSessionKey, sessionCode, phase, verifyCode]
   );
 
   // Action: Manual verification
@@ -314,14 +336,18 @@ export function useRegistryContributionMachine({
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (currentSessionKey) {
+      setDismissedSessionKey(currentSessionKey);
+    }
     await clearSession();
     setPhase('idle');
     setInvitationCodeState('');
+    setHasEditedContributorName(false);
     setContributorNameState('');
     setCodeError(null);
     setFieldErrors({});
     setSubmissionError(null);
-  }, [clearSession]);
+  }, [clearSession, currentSessionKey]);
 
   // Action: Submit contribution
   const handleSubmit = useCallback(

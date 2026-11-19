@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { SubEventRsvpSubmissionItem } from '@/features/sub-events';
 
 export type EventRsvpFiniteState = 'idle' | 'dirty' | 'submitting' | 'success' | 'error';
@@ -96,7 +96,9 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
   // Keep options in a ref to avoid recreating callbacks
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   const initializeEvents = useCallback(
     (events: Array<{ id: string; title?: string; isReadOnly?: boolean; userRsvp?: Partial<SubEventRsvpData> | null }>) => {

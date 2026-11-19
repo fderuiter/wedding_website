@@ -195,11 +195,6 @@ export default function InvitationCodesDashboardPage() {
 
   const selectAllRef = useRef<HTMLInputElement>(null);
 
-  // Guardrail: Reset selection state when active search query or filters change
-  useEffect(() => {
-    setSelectedIds([]);
-  }, [searchQuery, statusFilter, attendanceFilter, dietaryFilter, addressFilter, partyGroupFilter, selectedTagFilter]);
-
   const allUniqueTags = useMemo(() => {
     const set = new Set<string>();
     codes.forEach((c) => {
@@ -824,7 +819,10 @@ export default function InvitationCodesDashboardPage() {
                 type="text"
                 placeholder="Search by name, code, email, household, tag..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setSelectedIds([]);
+                }}
                 aria-label="Search invitation codes"
                 className="w-full"
               />
@@ -836,7 +834,10 @@ export default function InvitationCodesDashboardPage() {
                   id="party-group-filter"
                   aria-label="Filter by party side or group"
                   value={partyGroupFilter}
-                  onChange={(e) => setPartyGroupFilter(e.target.value)}
+                  onChange={(e) => {
+                    setPartyGroupFilter(e.target.value);
+                    setSelectedIds([]);
+                  }}
                   className="w-full sm:w-auto"
                 >
                   <option value="all">All Party Groups</option>
@@ -858,7 +859,10 @@ export default function InvitationCodesDashboardPage() {
                   id="dietary-filter"
                   aria-label="Filter by dietary category"
                   value={dietaryFilter}
-                  onChange={(e) => setDietaryFilter(e.target.value)}
+                  onChange={(e) => {
+                    setDietaryFilter(e.target.value);
+                    setSelectedIds([]);
+                  }}
                   className="w-full sm:w-auto"
                 >
                   <option value="all">All Dietary Categories</option>
@@ -880,7 +884,10 @@ export default function InvitationCodesDashboardPage() {
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Party Tags:</span>
               <button
                 type="button"
-                onClick={() => setSelectedTagFilter(null)}
+                onClick={() => {
+                  setSelectedTagFilter(null);
+                  setSelectedIds([]);
+                }}
                 className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
                   selectedTagFilter === null
                     ? 'bg-primary text-white font-bold'
@@ -893,7 +900,10 @@ export default function InvitationCodesDashboardPage() {
                 <button
                   key={tag}
                   type="button"
-                  onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                  onClick={() => {
+                    setSelectedTagFilter(selectedTagFilter === tag ? null : tag);
+                    setSelectedIds([]);
+                  }}
                   className={`px-2.5 py-1 text-xs rounded-full transition-colors font-medium ${
                     selectedTagFilter === tag
                       ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-300'
@@ -919,7 +929,10 @@ export default function InvitationCodesDashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={statusFilter === 'all'}
-                  onClick={() => setStatusFilter('all')}
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     statusFilter === 'all'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -932,7 +945,10 @@ export default function InvitationCodesDashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={statusFilter === 'redeemed'}
-                  onClick={() => setStatusFilter('redeemed')}
+                  onClick={() => {
+                    setStatusFilter('redeemed');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     statusFilter === 'redeemed'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -945,7 +961,10 @@ export default function InvitationCodesDashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={statusFilter === 'unused'}
-                  onClick={() => setStatusFilter('unused')}
+                  onClick={() => {
+                    setStatusFilter('unused');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     statusFilter === 'unused'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -963,7 +982,10 @@ export default function InvitationCodesDashboardPage() {
               <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
-                  onClick={() => setAddressFilter('all')}
+                  onClick={() => {
+                    setAddressFilter('all');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     addressFilter === 'all'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -974,7 +996,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddressFilter('complete')}
+                  onClick={() => {
+                    setAddressFilter('complete');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     addressFilter === 'complete'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -985,7 +1010,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddressFilter('missing')}
+                  onClick={() => {
+                    setAddressFilter('missing');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     addressFilter === 'missing'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1003,7 +1031,10 @@ export default function InvitationCodesDashboardPage() {
               <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('all')}
+                  onClick={() => {
+                    setAttendanceFilter('all');
+                    setSelectedIds([]);
+                  }}
                   aria-label={`All attendance (${attendanceCounts.all})`}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'all'
@@ -1015,7 +1046,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('attending')}
+                  onClick={() => {
+                    setAttendanceFilter('attending');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'attending'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1026,7 +1060,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('declined')}
+                  onClick={() => {
+                    setAttendanceFilter('declined');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'declined'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
@@ -1037,7 +1074,10 @@ export default function InvitationCodesDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAttendanceFilter('pending')}
+                  onClick={() => {
+                    setAttendanceFilter('pending');
+                    setSelectedIds([]);
+                  }}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     attendanceFilter === 'pending'
                       ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
