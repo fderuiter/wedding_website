@@ -78,11 +78,18 @@ jest.mock('@/lib/prisma', () => ({
     appConfig: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     contentNode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     media: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    seatingTable: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    invitationCode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     weddingPartyMember: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     attraction: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     registryItem: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     contributor: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
-    snapshotVersion: { findMany: jest.fn(), createMany: jest.fn() },
+    subEvent: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    subEventAccess: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    subEventRsvp: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    broadcastMessage: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    broadcastRecipient: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    snapshotVersion: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
     $transaction: jest.fn(),
   },
 }));
@@ -131,16 +138,32 @@ describe('Configuration Import/Export & Upgrade Safety', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         subdomain: null,
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.example.com',
+        smtpPort: 587,
+        smtpUser: 'mailer@example.com',
+        smtpPass: 'secret-smtp-pass',
+        resendApiKey: 're_secret',
+        sendgridApiKey: 'SG.secret',
+        twilioAccountSid: 'AC_PUBLIC_SID',
+        twilioAuthToken: 'secret-twilio-token',
         adminPassword: 'SuperSecretPasswordDoNotExport',
         databaseUrl: 'postgres://user:pass@localhost:5432/db',
       },
     ]);
     (prisma.contentNode.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.media.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.seatingTable.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.weddingPartyMember.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.attraction.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.registryItem.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.contributor.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.subEvent.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.subEventAccess.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.subEventRsvp.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.broadcastMessage.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.broadcastRecipient.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
 
     const req = new NextRequest('http://localhost/api/admin/maintenance/export', { method: 'GET' });
@@ -149,12 +172,19 @@ describe('Configuration Import/Export & Upgrade Safety', () => {
     expect(response.status).toBe(200);
     const body = await response.json();
 
-    expect(body.version).toBe('1.0');
-    expect(body.schemaVersion).toBe('1.0');
+    expect(body.version).toBe('2.0');
+    expect(body.schemaVersion).toBe('2.0');
     expect(body.exportedAt).toBeDefined();
 
     const exportedAppConfig = body.appConfig[0];
     expect(exportedAppConfig.brideName).toBe('Alice');
+    expect(exportedAppConfig.smtpHost).toBe('smtp.example.com');
+    expect(exportedAppConfig.twilioAccountSid).toBe('AC_PUBLIC_SID');
+    expect(exportedAppConfig.multisiteEnabled).toBeUndefined();
+    expect(exportedAppConfig.smtpPass).toBeUndefined();
+    expect(exportedAppConfig.resendApiKey).toBeUndefined();
+    expect(exportedAppConfig.sendgridApiKey).toBeUndefined();
+    expect(exportedAppConfig.twilioAuthToken).toBeUndefined();
     expect(exportedAppConfig.adminPassword).toBeUndefined();
     expect(exportedAppConfig.databaseUrl).toBeUndefined();
   });

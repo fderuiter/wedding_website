@@ -2154,13 +2154,9 @@
                         "createdAt": {},
                         "updatedAt": {},
                         "partner1Name": {
-                          "default": "",
-                          "description": "Primary display name for the first partner across headings, metadata, and monograms.",
                           "type": "string"
                         },
                         "partner2Name": {
-                          "default": "",
-                          "description": "Primary display name for the second partner across headings, metadata, and monograms.",
                           "type": "string"
                         },
                         "brideName": {
@@ -2170,6 +2166,11 @@
                         "groomName": {
                           "nullable": true,
                           "type": "string"
+                        },
+                        "subdomain": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
                         },
                         "weddingDate": {
                           "description": "Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports."
@@ -2301,16 +2302,109 @@
                           "type": "string",
                           "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
                         },
-                        "features": {
-                          "description": "Ordered homepage content section definitions controlling section titles, visibility, and copy.",
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {}
-                          ]
+                        "themePreset": {
+                          "type": "string",
+                          "maxLength": 100
                         },
+                        "themeTokens": {
+                          "nullable": true,
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "layoutContainerMaxWidth": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "layoutGridGap": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "layoutCardPadding": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "layoutBorderRadius": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "features": {},
                         "timezone": {
+                          "type": "string"
+                        },
+                        "showCountdown": {
+                          "type": "boolean"
+                        },
+                        "showAddToCalendar": {
+                          "type": "boolean"
+                        },
+                        "emailProvider": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "smtpHost": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "smtpPort": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "smtpUser": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "smtpFrom": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "smtpSecure": {
+                          "type": "boolean"
+                        },
+                        "resendFrom": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "sendgridFrom": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "smsProvider": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "twilioAccountSid": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "twilioFromNumber": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "broadcastBatchSize": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 10000
+                        },
+                        "broadcastBatchDelayMs": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 3600000
+                        },
+                        "smtpPass": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "resendApiKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "sendgridApiKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "twilioAuthToken": {
+                          "nullable": true,
                           "type": "string"
                         }
                       },
@@ -2377,12 +2471,196 @@
                         "isDecorative": {
                           "type": "boolean"
                         },
+                        "isSample": {
+                          "type": "boolean"
+                        },
                         "createdAt": {},
                         "updatedAt": {}
                       },
                       "required": [
                         "id",
                         "url",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "seatingTable": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "shape": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "capacity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        },
+                        "width": {
+                          "type": "number"
+                        },
+                        "height": {
+                          "type": "number"
+                        },
+                        "rotation": {
+                          "type": "number"
+                        },
+                        "isSample": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ]
+                    }
+                  },
+                  "invitationCode": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "code": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "guestName": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "addressLine1": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "city": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "state": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "zipCode": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "country": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "dietaryNotes": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "plusOneAllocations": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "plusOneFirstName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "plusOneLastName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "householdName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "partyGroup": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "partyTags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "extraFields": {
+                          "nullable": true,
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "used": {
+                          "type": "boolean"
+                        },
+                        "usedAt": {
+                          "nullable": true
+                        },
+                        "tableId": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "seatNumber": {
+                          "nullable": true,
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "isSample": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {},
+                        "updatedAt": {}
+                      },
+                      "required": [
+                        "id",
+                        "code",
+                        "guestName",
                         "createdAt",
                         "updatedAt"
                       ]
@@ -2408,6 +2686,7 @@
                           "type": "string"
                         },
                         "photoId": {
+                          "nullable": true,
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 255
@@ -2439,6 +2718,9 @@
                         },
                         "order": {
                           "type": "number"
+                        },
+                        "isSample": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -2447,8 +2729,7 @@
                         "updatedAt",
                         "name",
                         "role",
-                        "bio",
-                        "photoId"
+                        "bio"
                       ]
                     }
                   },
@@ -2516,6 +2797,9 @@
                         "isVisible": {
                           "type": "boolean"
                         },
+                        "isSample": {
+                          "type": "boolean"
+                        },
                         "promoCode": {
                           "nullable": true,
                           "type": "string"
@@ -2541,7 +2825,12 @@
                         },
                         "cutoffDate": {
                           "nullable": true,
-                          "type": "string"
+                          "anyOf": [
+                            {},
+                            {
+                              "type": "string"
+                            }
+                          ]
                         },
                         "shuttleInfo": {
                           "nullable": true,
@@ -2613,13 +2902,8 @@
                           "maximum": 9007199254740991
                         },
                         "itemType": {
-                          "default": "PHYSICAL",
                           "type": "string",
-                          "enum": [
-                            "PHYSICAL",
-                            "CASH_FUND",
-                            "EXPERIENCE_FUND"
-                          ]
+                          "maxLength": 100
                         },
                         "paymentHandleType": {
                           "nullable": true,
@@ -2668,17 +2952,17 @@
                           ]
                         },
                         "isMostWanted": {
-                          "default": false,
                           "type": "boolean"
                         },
                         "displayOrder": {
-                          "default": 0,
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
                         "purchased": {
-                          "default": false,
+                          "type": "boolean"
+                        },
+                        "isSample": {
                           "type": "boolean"
                         },
                         "purchaserName": {
@@ -2686,8 +2970,8 @@
                           "type": "string"
                         },
                         "amountContributed": {
-                          "default": 0,
-                          "type": "number"
+                          "type": "number",
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -2740,8 +3024,48 @@
                           "type": "number",
                           "minimum": 0
                         },
+                        "coverFee": {
+                          "type": "boolean"
+                        },
+                        "feeAmount": {
+                          "type": "number",
+                          "minimum": 0
+                        },
                         "date": {},
+                        "message": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "thankYouStatus": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "thankYouSentAt": {
+                          "nullable": true
+                        },
+                        "thankYouNote": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "stripePaymentIntentId": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "stripeChargeId": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "transactionTimestamp": {
+                          "nullable": true
+                        },
                         "registryItemId": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "invitationCodeId": {
                           "nullable": true,
                           "type": "string",
                           "maxLength": 255
@@ -2755,7 +3079,7 @@
                       ]
                     }
                   },
-                  "seatingTable": {
+                  "subEvent": {
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -2765,54 +3089,272 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "name": {
+                        "title": {
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "shape": {
+                        "description": {
+                          "nullable": true,
                           "type": "string"
                         },
-                        "capacity": {
+                        "startTime": {
+                          "nullable": true
+                        },
+                        "endTime": {
+                          "nullable": true
+                        },
+                        "locationName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "category": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "isPrivate": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {},
+                        "updatedAt": {}
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "subEventAccess": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "subEventId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "invitationCodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "createdAt": {}
+                      },
+                      "required": [
+                        "id",
+                        "subEventId",
+                        "invitationCodeId"
+                      ]
+                    }
+                  },
+                  "subEventRsvp": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "subEventId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "invitationCodeId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "status": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "plusOneCount": {
                           "type": "integer",
-                          "minimum": -9007199254740991,
+                          "minimum": 0,
                           "maximum": 9007199254740991
                         },
-                        "x": {
-                          "type": "number"
+                        "dietaryNotes": {
+                          "nullable": true,
+                          "type": "string"
                         },
-                        "y": {
-                          "type": "number"
+                        "createdAt": {},
+                        "updatedAt": {}
+                      },
+                      "required": [
+                        "id",
+                        "subEventId",
+                        "invitationCodeId"
+                      ]
+                    }
+                  },
+                  "broadcastMessage": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
                         },
-                        "width": {
-                          "type": "number"
+                        "channel": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
                         },
-                        "height": {
-                          "type": "number"
+                        "subject": {
+                          "nullable": true,
+                          "type": "string"
                         },
-                        "rotation": {
-                          "type": "number"
+                        "body": {
+                          "type": "string"
                         },
-                        "createdAt": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {}
-                          ]
+                        "targetFilters": {
+                          "nullable": true,
+                          "type": "object",
+                          "additionalProperties": {}
                         },
-                        "updatedAt": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {}
-                          ]
+                        "status": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "totalRecipients": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sentCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "failedCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "scheduledFor": {
+                          "nullable": true
+                        },
+                        "sentAt": {
+                          "nullable": true
+                        },
+                        "createdAt": {},
+                        "updatedAt": {}
+                      },
+                      "required": [
+                        "id",
+                        "channel",
+                        "body",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "broadcastRecipient": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "broadcastId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "invitationCodeId": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "guestName": {
+                          "type": "string"
+                        },
+                        "destination": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "status": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "error": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "sentAt": {
+                          "nullable": true
+                        },
+                        "createdAt": {},
+                        "updatedAt": {}
+                      },
+                      "required": [
+                        "id",
+                        "broadcastId",
+                        "guestName",
+                        "destination",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "snapshotVersion": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "entityType": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "entityId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "data": {},
+                        "createdAt": {},
+                        "author": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
                         }
                       },
                       "required": [
                         "id",
-                        "name"
+                        "entityType",
+                        "entityId",
+                        "data",
+                        "createdAt"
                       ]
                     }
                   }

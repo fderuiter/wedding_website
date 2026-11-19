@@ -296,6 +296,101 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   return partialSanitized as PublicAppConfig;
 }
 
+export const APP_CONFIG_SECRET_KEYS = [
+  'smtpPass',
+  'resendApiKey',
+  'sendgridApiKey',
+  'twilioAuthToken',
+] as const;
+
+export type AppConfigSecretKey = (typeof APP_CONFIG_SECRET_KEYS)[number];
+
+const APP_CONFIG_BACKUP_KEYS = [
+  'id',
+  'partner1Name',
+  'partner2Name',
+  'brideName',
+  'groomName',
+  'subdomain',
+  'weddingDate',
+  'baseUrl',
+  'venueName',
+  'venueAddress',
+  'venueCity',
+  'venueState',
+  'venueZip',
+  'latitude',
+  'longitude',
+  'storyText',
+  'venueDescription',
+  'travelAdvice',
+  'heroTitle',
+  'heroSubtitle',
+  'seoTitle',
+  'seoDescription',
+  'contactEmail',
+  'faviconUrl',
+  'ogImageUrl',
+  'brandMonogram',
+  'brandLogoUrl',
+  'brandLogoAlt',
+  'heroImageUrl',
+  'heroImageAlt',
+  'brandWatermarkUrl',
+  'brandWatermarkAlt',
+  'badgeGraphicUrl',
+  'badgeGraphicAlt',
+  'seoKeywords',
+  'colorPrimary',
+  'colorSecondary',
+  'themePreset',
+  'themeTokens',
+  'layoutContainerMaxWidth',
+  'layoutGridGap',
+  'layoutCardPadding',
+  'layoutBorderRadius',
+  'features',
+  'timezone',
+  'showCountdown',
+  'showAddToCalendar',
+  'emailProvider',
+  'smtpHost',
+  'smtpPort',
+  'smtpUser',
+  'smtpFrom',
+  'smtpSecure',
+  'resendFrom',
+  'sendgridFrom',
+  'smsProvider',
+  'twilioAccountSid',
+  'twilioFromNumber',
+  'broadcastBatchSize',
+  'broadcastBatchDelayMs',
+  'createdAt',
+  'updatedAt',
+] as const;
+
+/**
+ * Sanitize an `AppConfig` database row or snapshot payload for backup export by
+ * retaining only persisted non-secret database columns (excluding raw provider
+ * credentials and virtual DTO keys).
+ */
+export function sanitizeAppConfigForBackup(
+  config: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return {};
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const key of APP_CONFIG_BACKUP_KEYS) {
+    if (key in config && config[key] !== undefined) {
+      sanitized[key] = config[key];
+    }
+  }
+  return sanitized;
+}
+
 /**
  * Produce a masked admin view of the application configuration that omits raw
  * messaging secrets while preserving non-secret delivery settings and boolean

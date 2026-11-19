@@ -146,7 +146,7 @@ export default function MaintenanceHubPage() {
           <section className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-primary dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4 text-primary">Export Data</h2>
             <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Download a complete JSON backup of your wedding database, including registry items, settings, unified contributors, and snapshot history. Keep this file in a safe place, as it may contain PII (Personally Identifiable Information).
+              Download a unified JSON backup of all 15 wedding database domains, including site settings, content, media, wedding party, attractions, registry items, gift contributors, guest invitations, seating tables, sub-events, RSVPs, broadcasts, and snapshot history. Raw messaging provider credentials and server environment secrets are redacted—store them separately and keep this file secure as it contains guest PII.
             </p>
             <Button onClick={handleExport} size="lg">
               Export All Data
@@ -158,7 +158,7 @@ export default function MaintenanceHubPage() {
             <div>
               <h2 className="text-2xl font-bold mb-2 text-primary">Import Data</h2>
               <p className="text-gray-600 dark:text-gray-300">
-                Restore your database from a previously exported JSON backup. <strong>Warning:</strong> This will overwrite all current data. Proceed with caution.
+                Restore your database from a previously exported JSON backup (v2.0 or legacy v1.0). <strong>Warning:</strong> This will overwrite all current records in one transaction while keeping existing messaging provider credentials if omitted from the backup.
               </p>
             </div>
 
@@ -310,7 +310,49 @@ export default function MaintenanceHubPage() {
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
                         <span className="font-semibold text-gray-700 dark:text-gray-300">Seating Tables:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
-                          {preflightSummary.counts.seatingTable}
+                          {preflightSummary.counts.seatingTable ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Guests:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.invitationCode ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Sub-Events:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.subEvent ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Event Access:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.subEventAccess ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">RSVPs:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.subEventRsvp ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Broadcasts:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.broadcastMessage ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Broadcast Recipients:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.broadcastRecipient ?? 0}
+                        </span>
+                      </div>
+                      <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Snapshots:</span>
+                        <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                          {preflightSummary.counts.snapshotVersion ?? 0}
                         </span>
                       </div>
                     </div>

@@ -1,14 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { toPublicAppConfig } from '@/lib/config';
+import { sanitizeAppConfigForBackup } from '@/lib/config';
 
 const EXPORT_CHUNK_SIZE = 100;
+const BACKUP_SCHEMA_VERSION = '2.0';
 
 interface ModelExportConfig {
   key: string;
-  fetchChunks: (cursor?: string) => Promise<any[]>;
-  sanitize?: (item: any) => any;
+  fetchChunks: (cursor?: string) => Promise<Record<string, unknown>[]>;
+  sanitize?: (item: Record<string, unknown>) => Record<string, unknown>;
+}
+
+function sanitizeSnapshotForExport(snapshot: Record<string, unknown>): Record<string, unknown> {
+  if (
+    snapshot?.entityType === 'AppConfig' &&
+    snapshot.data &&
+    typeof snapshot.data === 'object' &&
+    !Array.isArray(snapshot.data)
+  ) {
+    return {
+      ...snapshot,
+      data: sanitizeAppConfigForBackup(snapshot.data as Record<string, unknown>),
+    };
+  }
+  return snapshot;
 }
 
 export const GET = withApiMiddleware(async (_request: NextRequest) => {
@@ -21,7 +37,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
           orderBy: { id: 'asc' },
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         }),
-      sanitize: (config) => toPublicAppConfig(config),
+      sanitize: (config) => sanitizeAppConfigForBackup(config),
     },
     {
       key: 'contentNode',
@@ -36,6 +52,24 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
       key: 'media',
       fetchChunks: (cursor) =>
         prisma.media.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
+      key: 'seatingTable',
+      fetchChunks: (cursor) =>
+        prisma.seatingTable.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
+      key: 'invitationCode',
+      fetchChunks: (cursor) =>
+        prisma.invitationCode.findMany({
           take: EXPORT_CHUNK_SIZE,
           orderBy: { id: 'asc' },
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -78,6 +112,51 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
         }),
     },
     {
+      key: 'subEvent',
+      fetchChunks: (cursor) =>
+        prisma.subEvent.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
+      key: 'subEventAccess',
+      fetchChunks: (cursor) =>
+        prisma.subEventAccess.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
+      key: 'subEventRsvp',
+      fetchChunks: (cursor) =>
+        prisma.subEventRsvp.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
+      key: 'broadcastMessage',
+      fetchChunks: (cursor) =>
+        prisma.broadcastMessage.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
+      key: 'broadcastRecipient',
+      fetchChunks: (cursor) =>
+        prisma.broadcastRecipient.findMany({
+          take: EXPORT_CHUNK_SIZE,
+          orderBy: { id: 'asc' },
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        }),
+    },
+    {
       key: 'snapshotVersion',
       fetchChunks: (cursor) =>
         prisma.snapshotVersion.findMany({
@@ -85,10 +164,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
           orderBy: { id: 'asc' },
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         }),
-      sanitize: (snapshot) =>
-        snapshot?.entityType === 'AppConfig' && snapshot.data && typeof snapshot.data === 'object'
-          ? { ...snapshot, data: toPublicAppConfig(snapshot.data) }
-          : snapshot,
+      sanitize: sanitizeSnapshotForExport,
     },
   ];
 
@@ -97,9 +173,9 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
       const encoder = new TextEncoder();
 
       try {
-        const headerJson = `{"version":"1.0","schemaVersion":"1.0","exportedAt":${JSON.stringify(
-          new Date().toISOString()
-        )}`;
+        const headerJson = `{"version":${JSON.stringify(BACKUP_SCHEMA_VERSION)},"schemaVersion":${JSON.stringify(
+          BACKUP_SCHEMA_VERSION,
+        )},"exportedAt":${JSON.stringify(new Date().toISOString())}`;
         controller.enqueue(encoder.encode(headerJson));
 
         for (const modelConfig of models) {
@@ -126,7 +202,7 @@ export const GET = withApiMiddleware(async (_request: NextRequest) => {
             }
 
             const lastId = chunk[chunk.length - 1]?.id;
-            if (!lastId || lastId === cursor) {
+            if (typeof lastId !== 'string' || !lastId || lastId === cursor) {
               break;
             }
             cursor = lastId;

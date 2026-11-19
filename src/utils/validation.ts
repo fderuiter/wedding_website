@@ -290,14 +290,22 @@ export const UpdateFeaturesSchema = z.object({
 export const ImportBackupSchema = z.object({
   version: z.string().optional(),
   schemaVersion: z.string().optional(),
-  exportedAt: z.string().optional(),
+  exportedAt: z.union([z.string(), z.date()]).optional(),
   appConfig: z.array(z.any()).optional(),
   contentNode: z.array(z.any()).optional(),
   media: z.array(z.any()).optional(),
+  seatingTable: z.array(z.any()).optional(),
+  invitationCode: z.array(z.any()).optional(),
   weddingPartyMember: z.array(z.any()).optional(),
   attraction: z.array(z.any()).optional(),
   registryItem: z.array(z.any()).optional(),
   contributor: z.array(z.any()).optional(),
+  subEvent: z.array(z.any()).optional(),
+  subEventAccess: z.array(z.any()).optional(),
+  subEventRsvp: z.array(z.any()).optional(),
+  broadcastMessage: z.array(z.any()).optional(),
+  broadcastRecipient: z.array(z.any()).optional(),
+  snapshotVersion: z.array(z.any()).optional(),
 });
 
 /**
