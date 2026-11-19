@@ -18,29 +18,53 @@ export interface PhotoItem {
 }
 
 export interface PhotoGalleryClientProps {
-  initialPhotos: string[];
+  initialPhotos: (PhotoItem | string)[];
   defaultTab?: PhotoCategory;
+  isAdmin?: boolean;
+}
+
+function normalizeInitialPhotos(items: (PhotoItem | string)[]): PhotoItem[] {
+  return items
+    .map((item, index): PhotoItem | null => {
+      if (typeof item === 'string') {
+        if (!item) return null;
+        return {
+          url: item,
+          title: `Wedding photo ${index + 1}`,
+          isGuestUpload: false,
+          category: 'curated',
+        };
+      }
+      if (!item?.url) return null;
+      const isGuest = Boolean(item.isGuestUpload || item.category === 'guest');
+      return {
+        id: item.id,
+        url: item.url,
+        title: item.title || (isGuest ? 'Guest Photo' : `Wedding photo ${index + 1}`),
+        isGuestUpload: isGuest,
+        category: isGuest ? 'guest' : 'curated',
+      };
+    })
+    .filter((p): p is PhotoItem => p !== null);
 }
 
 const emptySubscribe = () => () => {};
 const getClientHydratedSnapshot = () => true;
 const getServerHydratedSnapshot = () => false;
 
-export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryClientProps) {
+export function PhotoGalleryClient({
+  initialPhotos,
+  defaultTab,
+  isAdmin = false,
+}: PhotoGalleryClientProps) {
   const toast = useOptionalToast();
-  const [photos, setPhotos] = useState<PhotoItem[]>(() =>
-    initialPhotos.map((url, index) => ({
-      id: `curated-${index + 1}`,
-      url,
-      title: `Wedding photo ${index + 1}`,
-      isGuestUpload: false,
-      category: 'curated' as const,
-    }))
-  );
+  const [photos, setPhotos] = useState<PhotoItem[]>(() => normalizeInitialPhotos(initialPhotos));
 
-  const [activeTab, setActiveTab] = useState<PhotoCategory>(
-    defaultTab ?? (initialPhotos.length > 0 ? 'curated' : 'guest')
-  );
+  const [activeTab, setActiveTab] = useState<PhotoCategory>(() => {
+    if (defaultTab) return defaultTab;
+    const normalized = normalizeInitialPhotos(initialPhotos);
+    return normalized.some((p) => p.category === 'curated') ? 'curated' : 'guest';
+  });
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
@@ -76,9 +100,12 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
   };
 
   const handleUploadSuccess = (uploaded: UploadedPhoto) => {
+    if (uploaded.status !== 'APPROVED' || uploaded.isVisible === false) {
+      return;
+    }
     setPhotos((prev) => [
       {
-        id: uploaded.id,
+        id: uploaded.nodeId || uploaded.id,
         url: uploaded.url,
         title: uploaded.altText || 'Guest Photo',
         isGuestUpload: true,
@@ -380,55 +407,57 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
         </button>
       </div>
 
-      {/* Main Bulk Export Toolbar */}
-      <div
-        className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/60 shadow-sm"
-        data-testid="gallery-export-toolbar"
-      >
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={exportAllGuestPhotos}
-            disabled={isExporting}
-            variant="primary"
-            data-testid="export-all-guest-photos-btn"
-            className="flex items-center gap-2"
-          >
-            <Icon name="Download" className="w-4 h-4" />
-            {isExporting ? 'Preparing Archive...' : 'Export All Guest Photos (.zip)'}
-          </Button>
-
-          {visibleSelectedCount > 0 && (
+      {/* Main Bulk Export Toolbar (Admin Only) */}
+      {isAdmin && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700/60 shadow-sm"
+          data-testid="gallery-export-toolbar"
+        >
+          <div className="flex items-center gap-3">
             <Button
-              onClick={exportSelectedPhotos}
+              onClick={exportAllGuestPhotos}
               disabled={isExporting}
-              variant="secondary"
-              data-testid="export-selected-photos-btn"
+              variant="primary"
+              data-testid="export-all-guest-photos-btn"
               className="flex items-center gap-2"
             >
               <Icon name="Download" className="w-4 h-4" />
-              Export Selected ({visibleSelectedCount}) (.zip)
+              {isExporting ? 'Preparing Archive...' : 'Export All Guest Photos (.zip)'}
             </Button>
-          )}
-        </div>
 
-        {visiblePhotos.length > 0 && (
-          <div className="flex items-center gap-2 text-sm">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleSelectAll}
-              data-testid="toggle-select-all-photos-btn"
-            >
-              {isAllSelectedInView ? 'Deselect All' : 'Select All Photos'}
-            </Button>
             {visibleSelectedCount > 0 && (
-              <span className="text-xs text-stone-500 dark:text-stone-400">
-                ({visibleSelectedCount} of {visiblePhotos.length} selected)
-              </span>
+              <Button
+                onClick={exportSelectedPhotos}
+                disabled={isExporting}
+                variant="secondary"
+                data-testid="export-selected-photos-btn"
+                className="flex items-center gap-2"
+              >
+                <Icon name="Download" className="w-4 h-4" />
+                Export Selected ({visibleSelectedCount}) (.zip)
+              </Button>
             )}
           </div>
-        )}
-      </div>
+
+          {visiblePhotos.length > 0 && (
+            <div className="flex items-center gap-2 text-sm">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleSelectAll}
+                data-testid="toggle-select-all-photos-btn"
+              >
+                {isAllSelectedInView ? 'Deselect All' : 'Select All Photos'}
+              </Button>
+              {visibleSelectedCount > 0 && (
+                <span className="text-xs text-stone-500 dark:text-stone-400">
+                  ({visibleSelectedCount} of {visiblePhotos.length} selected)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Curated Photos Tab Panel */}
       {activeTab === 'curated' && (
@@ -467,20 +496,22 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
                         : 'border-stone-200 dark:border-stone-800'
                     } bg-stone-100 dark:bg-stone-900 transition-all hover:scale-[1.02]`}
                   >
-                    {/* Selection Checkbox */}
-                    <div
-                      className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelect(photo.url)}
-                        aria-label={`Select curated photo ${index + 1}`}
-                        data-testid={`photo-checkbox-${index}`}
-                        className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
-                      />
-                    </div>
+                    {/* Selection Checkbox (Admin Only) */}
+                    {isAdmin && (
+                      <div
+                        className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(photo.url)}
+                          aria-label={`Select curated photo ${index + 1}`}
+                          data-testid={`photo-checkbox-${index}`}
+                          className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
+                        />
+                      </div>
+                    )}
 
                     <button
                       type="button"
@@ -578,20 +609,22 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
                           : 'border-stone-200 dark:border-stone-800'
                       } bg-stone-100 dark:bg-stone-900 transition-all hover:scale-[1.02]`}
                     >
-                      {/* Selection Checkbox */}
-                      <div
-                        className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelect(photo.url)}
-                          aria-label={`Select guest photo ${index + 1}`}
-                          data-testid={`photo-checkbox-${index}`}
-                          className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
-                        />
-                      </div>
+                      {/* Selection Checkbox (Admin Only) */}
+                      {isAdmin && (
+                        <div
+                          className="absolute top-2 left-2 z-20 p-1 bg-black/40 backdrop-blur-sm rounded-md"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(photo.url)}
+                            aria-label={`Select guest photo ${index + 1}`}
+                            data-testid={`photo-checkbox-${index}`}
+                            className="w-4 h-4 rounded border-stone-300 text-primary focus:ring-primary cursor-pointer"
+                          />
+                        </div>
+                      )}
 
                       <button
                         type="button"

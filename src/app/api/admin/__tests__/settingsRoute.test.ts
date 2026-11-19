@@ -747,6 +747,7 @@ describe('toAppConfigDbPayload mapper', () => {
       badgeGraphicUrl: undefined,
       badgeGraphicAlt: undefined,
       contactEmail: undefined,
+      photoAlbumUrl: '',
       seoKeywords: 'wedding, austin',
       colorPrimary: '#123456',
       colorSecondary: '#654321',

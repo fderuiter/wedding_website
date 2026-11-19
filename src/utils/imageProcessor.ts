@@ -4,19 +4,25 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { logger } from '@/lib/logger';
 import { ApiError } from '@/utils/ApiError';
-import type { WorkerResult } from './imageProcessorWorker';
+import { processImageWorkerBuffer, type WorkerResult } from './imageProcessorWorker';
 
 function getWorkerPath(): string {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  const tsPath = path.join(currentDir, 'imageProcessorWorker.ts');
-  const jsPath = path.join(currentDir, 'imageProcessorWorker.js');
-  const mjsPath = path.join(currentDir, 'imageProcessorWorker.mjs');
+  try {
+    if (typeof import.meta.url === 'string' && import.meta.url.startsWith('file:')) {
+      const currentDir = path.dirname(fileURLToPath(import.meta.url));
+      const tsPath = path.join(currentDir, 'imageProcessorWorker.ts');
+      const jsPath = path.join(currentDir, 'imageProcessorWorker.js');
+      const mjsPath = path.join(currentDir, 'imageProcessorWorker.mjs');
 
-  if (fs.existsSync(tsPath)) return tsPath;
-  if (fs.existsSync(jsPath)) return jsPath;
-  if (fs.existsSync(mjsPath)) return mjsPath;
+      if (fs.existsSync(tsPath)) return tsPath;
+      if (fs.existsSync(jsPath)) return jsPath;
+      if (fs.existsSync(mjsPath)) return mjsPath;
+    }
+  } catch {
+    // Fall back to workspace path resolution below
+  }
 
-  return tsPath;
+  return path.join(process.cwd(), 'src', 'utils', 'imageProcessorWorker.ts');
 }
 
 function offloadSanitizeToWorker(buffer: Uint8Array, timeoutMs = 10000): Promise<Uint8Array> {
@@ -63,18 +69,30 @@ function offloadSanitizeToWorker(buffer: Uint8Array, timeoutMs = 10000): Promise
       worker.on('error', () => {
         if (settled) return;
         cleanup();
-        reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
+        processImageWorkerBuffer(buffer)
+          .then(resolve)
+          .catch(() => {
+            reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
+          });
       });
 
       worker.on('exit', (code) => {
         if (settled) return;
         cleanup();
         if (code !== 0) {
-          reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
+          processImageWorkerBuffer(buffer)
+            .then(resolve)
+            .catch(() => {
+              reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
+            });
         }
       });
     } catch {
-      reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
+      processImageWorkerBuffer(buffer)
+        .then(resolve)
+        .catch(() => {
+          reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
+        });
     }
   });
 }

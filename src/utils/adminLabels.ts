@@ -44,6 +44,7 @@ const FIELD_LABELS: Record<string, string> = {
   latitude: 'Latitude',
   longitude: 'Longitude',
   contactEmail: 'Contact Email',
+  photoAlbumUrl: 'External Photo Album URL',
   faviconUrl: 'Favicon Image',
   ogImageUrl: 'Social Sharing Image',
   seoTitle: 'SEO Title',

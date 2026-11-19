@@ -36,6 +36,7 @@ const APP_CONFIG_DELIVERY_KEYS = [
 
 const APP_CONFIG_OPTIONAL_BRAND_AND_LAYOUT_KEYS = [
   'contactEmail',
+  'photoAlbumUrl',
   'brandMonogram',
   'brandLogoUrl',
   'brandLogoAlt',

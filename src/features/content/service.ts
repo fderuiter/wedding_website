@@ -25,6 +25,26 @@ export class ContentService {
       : null;
     const sinceTime = sinceDate && !isNaN(sinceDate.getTime()) ? sinceDate.getTime() : null;
 
+    let excludedMediaIds = new Set<string>();
+    if (typeof this.repo.getEntityBoundMediaIds === 'function') {
+      const candidateMediaIds = Array.from(
+        new Set(
+          nodes
+            .map((node) => {
+              const data = node.data as { mediaId?: string; publishToGallery?: boolean } | undefined;
+              if (!data?.mediaId || data.publishToGallery === true || node.tags?.includes('guest-upload')) {
+                return null;
+              }
+              return data.mediaId;
+            })
+            .filter((id): id is string => Boolean(id))
+        )
+      );
+      if (candidateMediaIds.length > 0) {
+        excludedMediaIds = await this.repo.getEntityBoundMediaIds(candidateMediaIds);
+      }
+    }
+
     // Public gallery endpoints return only photos with status APPROVED or isVisible true (excluding PENDING and REJECTED)
     return nodes
       .filter((node) => {
@@ -33,6 +53,9 @@ export class ContentService {
         }
 
         const data = node.data as any;
+        if (data?.mediaId && data?.publishToGallery !== true && excludedMediaIds.has(data.mediaId)) {
+          return false;
+        }
         const status = data?.status;
         const isVisible = data?.isVisible;
 

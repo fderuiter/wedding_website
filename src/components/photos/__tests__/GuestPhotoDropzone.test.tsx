@@ -64,18 +64,23 @@ describe('GuestPhotoDropzone', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('successfully uploads valid photo file and invokes onUploadSuccess callback', async () => {
+  it('keeps pending guest uploads out of onUploadSuccess while displaying pending review notice', async () => {
     const handleSuccess = jest.fn();
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         success: true,
-        data: {
-          id: 'media-999',
-          url: '/uploads/photos/photo1.png',
-          altText: 'My Ceremony Photo',
-          createdAt: new Date().toISOString(),
-        },
+        data: [
+          {
+            id: 'media-999',
+            nodeId: 'node-999',
+            url: '/uploads/photos/photo1.png',
+            altText: 'My Ceremony Photo',
+            status: 'PENDING',
+            isVisible: false,
+            createdAt: new Date().toISOString(),
+          },
+        ],
       }),
     });
 
@@ -98,15 +103,50 @@ describe('GuestPhotoDropzone', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('upload-success-badge')).toHaveTextContent('Uploaded');
+      expect(screen.getByTestId('upload-success-badge')).toHaveTextContent('Uploaded (Pending Review)');
+      expect(screen.getByTestId('upload-pending-notice')).toBeInTheDocument();
     });
 
-    expect(handleSuccess).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'media-999',
-        url: '/uploads/photos/photo1.png',
-      })
-    );
+    expect(handleSuccess).not.toHaveBeenCalled();
+  });
+
+  it('invokes onUploadSuccess only when server returns an approved visible photo', async () => {
+    const handleSuccess = jest.fn();
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'media-999',
+          nodeId: 'node-999',
+          url: '/uploads/photos/photo1.png',
+          altText: 'My Ceremony Photo',
+          status: 'APPROVED',
+          isVisible: true,
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    });
+
+    render(<GuestPhotoDropzone onUploadSuccess={handleSuccess} />);
+
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const validFile = new File(['valid png bytes'], 'ceremony.png', {
+      type: 'image/png',
+    });
+
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    await waitFor(() => {
+      expect(handleSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'node-999',
+          url: '/uploads/photos/photo1.png',
+          status: 'APPROVED',
+          isVisible: true,
+        })
+      );
+    });
   });
 
   it('handles drag over and drop events', async () => {

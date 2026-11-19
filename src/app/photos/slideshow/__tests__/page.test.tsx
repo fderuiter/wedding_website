@@ -48,7 +48,7 @@ describe('PhotosSlideshowPage', () => {
     jest.clearAllMocks();
   });
 
-  it('renders slideshow client with fallback photos when no database photos exist', async () => {
+  it('renders slideshow client with empty photos array when no database photos exist', async () => {
     (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([]);
 
     const pageElement = await PhotosSlideshowPage();
@@ -56,8 +56,7 @@ describe('PhotosSlideshowPage', () => {
 
     const client = screen.getByTestId('reception-slideshow-client');
     expect(client).toBeInTheDocument();
-    // Default fallback photos count is 5
-    expect(client).toHaveAttribute('data-count', '5');
+    expect(client).toHaveAttribute('data-count', '0');
     expect(client).toHaveAttribute('data-upload-url', 'https://wedding.example.com/photos');
   });
 

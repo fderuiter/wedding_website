@@ -16,6 +16,7 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       createNode: jest.fn(),
       updateNode: jest.fn(),
       deleteNode: jest.fn(),
+      getEntityBoundMediaIds: jest.fn().mockResolvedValue(new Set()),
     };
     service = new ContentService(mockRepo);
   });

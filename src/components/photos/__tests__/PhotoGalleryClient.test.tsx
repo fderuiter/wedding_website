@@ -23,15 +23,36 @@ describe('PhotoGalleryClient', () => {
     global.fetch = originalFetch;
   });
 
-  it('renders export toolbar and export all guest photos button', () => {
-    render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />);
+  it('hides export toolbar and selection checkboxes from public guests by default', () => {
+    render(
+      <PhotoGalleryClient
+        initialPhotos={[
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            url: '/uploads/photo1.jpg',
+            title: 'Curated Photo',
+            category: 'curated',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.queryByTestId('gallery-export-toolbar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('export-all-guest-photos-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('export-selected-photos-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('toggle-select-all-photos-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('photo-checkbox-0')).not.toBeInTheDocument();
+  });
+
+  it('renders export toolbar and export all guest photos button for administrators', () => {
+    render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />);
 
     expect(screen.getByTestId('export-all-guest-photos-btn')).toBeInTheDocument();
     expect(screen.getByText('Export All Guest Photos (.zip)')).toBeInTheDocument();
   });
 
-  it('triggers zip export for all guest photos when button is clicked', async () => {
-    render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />);
+  it('triggers zip export for all guest photos when button is clicked by admin', async () => {
+    render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />);
 
     const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
     fireEvent.click(exportBtn);
@@ -41,35 +62,24 @@ describe('PhotoGalleryClient', () => {
     });
   });
 
-  it('allows multi-selecting photos and exporting selected items', async () => {
-    render(<PhotoGalleryClient initialPhotos={[]} />);
+  it('allows administrators to multi-select curated and guest photos and export using real UUIDs', async () => {
+    render(
+      <PhotoGalleryClient
+        isAdmin={true}
+        initialPhotos={[
+          {
+            id: '550e8400-e29b-41d4-a716-446655440000',
+            url: '/uploads/photos/approved-guest.jpg',
+            title: 'Approved Guest Toast',
+            isGuestUpload: true,
+            category: 'guest',
+          },
+        ]}
+      />
+    );
 
-    // Simulate uploading a photo
-    const fileInput = screen.getByTestId('guest-photo-file-input') as HTMLInputElement;
-    const testFile = new File(['image bytes'], 'test.jpg', { type: 'image/jpeg' });
-
-    // Mock upload response
-    (global.fetch as jest.Mock).mockImplementation(async (url) => {
-      if (url === '/api/guest/photos/upload') {
-        return {
-          ok: true,
-          json: async () => ({
-            success: true,
-            data: { id: 'upload-1', url: '/uploads/photos/test.jpg', altText: 'test.jpg' },
-          }),
-        };
-      }
-      return {
-        ok: true,
-        blob: async () => new Blob(['fake zip'], { type: 'application/zip' }),
-      };
-    });
-
-    fireEvent.change(fileInput, { target: { files: [testFile] } });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('guest-photos-section')).toBeInTheDocument();
+    expect(screen.getByText('Approved Guest Toast')).toBeInTheDocument();
 
     const checkbox = screen.getByTestId('photo-checkbox-0');
     fireEvent.click(checkbox);
@@ -85,7 +95,7 @@ describe('PhotoGalleryClient', () => {
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith('/api/media/export', expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ ids: ['upload-1'] }),
+        body: JSON.stringify({ ids: ['550e8400-e29b-41d4-a716-446655440000'] }),
       }));
     });
   });
@@ -106,7 +116,7 @@ describe('PhotoGalleryClient', () => {
 
       render(
         <ToastProvider>
-          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />
+          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />
         </ToastProvider>
       );
 
@@ -131,7 +141,7 @@ describe('PhotoGalleryClient', () => {
 
       render(
         <ToastProvider>
-          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />
+          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />
         </ToastProvider>
       );
 
@@ -156,7 +166,7 @@ describe('PhotoGalleryClient', () => {
 
       render(
         <ToastProvider>
-          <PhotoGalleryClient initialPhotos={['/curated/photo1.jpg', '/curated/photo2.jpg']} />
+          <PhotoGalleryClient initialPhotos={['/curated/photo1.jpg', '/curated/photo2.jpg']} isAdmin={true} />
         </ToastProvider>
       );
 
@@ -179,7 +189,7 @@ describe('PhotoGalleryClient', () => {
         status: 500,
       } as unknown as Response);
 
-      render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />);
+      render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />);
 
       const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
       fireEvent.click(exportBtn);
@@ -284,7 +294,7 @@ describe('PhotoGalleryClient', () => {
     });
 
     it('counts only visible photos in the active view and selects only items in active tab', () => {
-      render(<PhotoGalleryClient initialPhotos={['/c1.jpg', '/c2.jpg', '/c3.jpg']} />);
+      render(<PhotoGalleryClient initialPhotos={['/c1.jpg', '/c2.jpg', '/c3.jpg']} isAdmin={true} />);
 
       // Curated tab has 3 photos
       expect(screen.getByText('Select All Photos')).toBeInTheDocument();
@@ -329,16 +339,21 @@ describe('PhotoGalleryClient', () => {
     });
   });
 
-  it('renders guest photo grid when guest photo is uploaded', async () => {
+  it('keeps newly uploaded pending guest photos out of public gallery tabs until moderation approval', async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         success: true,
-        data: {
-          id: 'guest-1',
-          url: '/uploads/guest-photo.jpg',
-          altText: 'Guest Memory',
-        },
+        data: [
+          {
+            id: 'guest-1',
+            nodeId: 'node-guest-1',
+            url: '/uploads/guest-photo.jpg',
+            altText: 'Guest Memory',
+            status: 'PENDING',
+            isVisible: false,
+          },
+        ],
       }),
     });
 
@@ -352,10 +367,12 @@ describe('PhotoGalleryClient', () => {
     fireEvent.change(fileInput, { target: { files: [validFile] } });
 
     await waitFor(() => {
-      expect(screen.getByTestId('guest-photos-grid')).toBeInTheDocument();
+      expect(screen.getByTestId('upload-pending-notice')).toBeInTheDocument();
     });
 
-    expect(screen.queryByTestId('guest-photos-empty-state')).not.toBeInTheDocument();
+    expect(screen.getByTestId('guest-photos-empty-state')).toBeInTheDocument();
+    expect(screen.queryByTestId('guest-photos-grid')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tab-guest')).toHaveTextContent('0');
   });
 
   describe('Lightbox Carousel Modal', () => {
@@ -364,7 +381,7 @@ describe('PhotoGalleryClient', () => {
         ok: true,
         json: async () => ({
           success: true,
-          data: { id, url, altText },
+          data: { id, url, altText, status: 'APPROVED', isVisible: true },
         }),
       });
 
