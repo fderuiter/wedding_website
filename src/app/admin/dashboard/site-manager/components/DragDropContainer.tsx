@@ -126,6 +126,8 @@ export default function DragDropContainer({
                         </Button>
                         <Button
                           type="button"
+                          pressed={feature.visible}
+                          aria-label={`${feature.title || feature.id}: ${feature.visible ? 'Visible' : 'Hidden'}`}
                           onClick={(e) => {
                             // Stop propagation so it doesn't trigger drag
                             e.stopPropagation();

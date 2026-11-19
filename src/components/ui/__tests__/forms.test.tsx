@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { FormGroup, Label, Input, Checkbox, Textarea, Select, FormMessage } from '../forms';
+
+expect.extend(toHaveNoViolations);
 
 test('Form components render without crashing', () => {
   render(
@@ -337,5 +340,109 @@ test('Input inside FormGroup allows explicit state and sizeVariant prop override
   expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
   expect(input.className).toContain('h-7 px-2 py-1 text-xs');
   expect(input).toHaveAttribute('aria-invalid', 'true');
+});
+
+test('Custom id props on Input, Textarea, Select, and Checkbox sync with Label inside FormGroup', () => {
+  const { rerender } = render(
+    <FormGroup>
+      <Label>Custom Input Label</Label>
+      <Input id="custom-input-id" />
+    </FormGroup>
+  );
+  expect(screen.getByLabelText('Custom Input Label')).toHaveAttribute('id', 'custom-input-id');
+
+  rerender(
+    <FormGroup>
+      <Label>Custom Textarea Label</Label>
+      <Textarea id="custom-textarea-id" />
+    </FormGroup>
+  );
+  expect(screen.getByLabelText('Custom Textarea Label')).toHaveAttribute('id', 'custom-textarea-id');
+
+  rerender(
+    <FormGroup>
+      <Label>Custom Select Label</Label>
+      <Select id="custom-select-id">
+        <option value="a">Option A</option>
+      </Select>
+    </FormGroup>
+  );
+  expect(screen.getByLabelText('Custom Select Label')).toHaveAttribute('id', 'custom-select-id');
+
+  rerender(
+    <FormGroup>
+      <Checkbox id="custom-checkbox-id" />
+      <Label>Custom Checkbox Label</Label>
+    </FormGroup>
+  );
+  expect(screen.getByLabelText('Custom Checkbox Label')).toHaveAttribute('id', 'custom-checkbox-id');
+});
+
+test('Multiple controls inside one FormGroup produce unique non-duplicate id attributes', () => {
+  const { container } = render(
+    <FormGroup>
+      <Label>Primary Input</Label>
+      <Input data-testid="ctrl-1" />
+      <Input data-testid="ctrl-2" aria-label="Secondary Input" />
+      <Select data-testid="ctrl-3" aria-label="Secondary Select">
+        <option value="1">One</option>
+      </Select>
+      <Textarea data-testid="ctrl-4" aria-label="Secondary Textarea" />
+      <Checkbox data-testid="ctrl-5" aria-label="Secondary Checkbox" />
+    </FormGroup>
+  );
+
+  const elementsWithIds = Array.from(container.querySelectorAll('[id]'));
+  const ids = elementsWithIds.map((el) => el.id);
+  expect(ids.length).toBeGreaterThanOrEqual(5);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(screen.getByLabelText('Primary Input')).toBe(screen.getByTestId('ctrl-1'));
+});
+
+test('Custom id on FormMessage and caller aria-describedby on controls preserve merged references', () => {
+  render(
+    <div>
+      <p id="external-hint">External hint text</p>
+      <FormGroup state="error">
+        <Label>Merged Field</Label>
+        <Input id="merged-input" aria-describedby="external-hint" />
+        <Textarea aria-label="Merged Textarea" aria-describedby="external-hint" />
+        <Select aria-label="Merged Select" aria-describedby="external-hint">
+          <option value="x">X</option>
+        </Select>
+        <Checkbox aria-label="Merged Checkbox" aria-describedby="external-hint" />
+        <FormMessage id="custom-msg-id">Validation error text</FormMessage>
+        <FormMessage id="secondary-msg-id">Additional guidance</FormMessage>
+      </FormGroup>
+    </div>
+  );
+
+  const msg1 = screen.getByText('Validation error text');
+  const msg2 = screen.getByText('Additional guidance');
+  expect(msg1).toHaveAttribute('id', 'custom-msg-id');
+  expect(msg2).toHaveAttribute('id', 'secondary-msg-id');
+
+  const expectedDescribedBy = 'external-hint custom-msg-id secondary-msg-id';
+  expect(screen.getByLabelText('Merged Field')).toHaveAttribute('aria-describedby', expectedDescribedBy);
+  expect(screen.getByLabelText('Merged Textarea')).toHaveAttribute('aria-describedby', expectedDescribedBy);
+  expect(screen.getByLabelText('Merged Select')).toHaveAttribute('aria-describedby', expectedDescribedBy);
+  expect(screen.getByLabelText('Merged Checkbox')).toHaveAttribute('aria-describedby', expectedDescribedBy);
+});
+
+test('Form primitives report zero jest-axe accessibility violations', async () => {
+  const { container } = render(
+    <div>
+      <p id="ext-help">Helper description</p>
+      <FormGroup state="error">
+        <Label>Email Address</Label>
+        <Input id="axe-email" type="email" aria-describedby="ext-help" />
+        <Input aria-label="Backup Email Address" type="email" />
+        <FormMessage id="axe-email-error">Please enter a valid email.</FormMessage>
+      </FormGroup>
+    </div>
+  );
+
+  const results = await axe(container);
+  expect(results).toHaveNoViolations();
 });
 

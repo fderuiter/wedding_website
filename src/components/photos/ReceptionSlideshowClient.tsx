@@ -67,10 +67,12 @@ export function ReceptionSlideshowClient({
   const [duration, setDuration] = useState<5 | 8 | 10>(8);
   const [showQrCode, setShowQrCode] = useState(true);
   const [areControlsVisible, setAreControlsVisible] = useState(true);
+  const [areShortcutsEnabled, setAreShortcutsEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isControlsFocusedRef = useRef(false);
+  const wasPlayingRef = useRef(isPlaying);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const controlsRef = useRef<HTMLElement | null>(null);
@@ -119,7 +121,13 @@ export function ReceptionSlideshowClient({
     if (controlsRef.current?.contains(node) || headerRef.current?.contains(node)) {
       return true;
     }
-    if (containerRef.current?.contains(node) && node.closest('button, a, input, select, textarea, [tabindex]')) {
+    if (
+      containerRef.current?.contains(node) &&
+      ((node as HTMLElement).isContentEditable ||
+        node.closest(
+          'button, a, input, select, textarea, [contenteditable="true"], [contenteditable=""], [tabindex]'
+        ))
+    ) {
       return true;
     }
     return false;
@@ -220,6 +228,13 @@ export function ReceptionSlideshowClient({
       window.removeEventListener('focusout', handleFocusOut);
     };
   }, [handleUserActivity, isInteractiveControl]);
+
+  useEffect(() => {
+    if (isPlaying && !wasPlayingRef.current) {
+      handleUserActivity();
+    }
+    wasPlayingRef.current = isPlaying;
+  }, [isPlaying, handleUserActivity]);
 
   // Slideshow navigation handlers
   const goToNext = useCallback(() => {
@@ -342,39 +357,57 @@ export function ReceptionSlideshowClient({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts if focus is inside an input or editable field
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+      if (e.ctrlKey || e.metaKey || e.altKey) {
         return;
       }
 
-      if (e.key === 'ArrowRight' || e.key === 'Space' || e.code === 'Space') {
-        if (e.key === ' ' || e.code === 'Space') {
-          e.preventDefault();
-          setIsPlaying((prev) => !prev);
-        } else {
-          e.preventDefault();
-          goToNext();
-        }
+      const target = e.target instanceof Element ? e.target : null;
+      const isEditableOrInput = Boolean(
+        target &&
+          ((target as HTMLElement).isContentEditable ||
+            target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]'))
+      );
+
+      // Don't trigger shortcuts if focus is inside an input or editable field
+      if (isEditableOrInput) {
+        return;
+      }
+
+      const isInteractiveTarget = Boolean(
+        target &&
+          (isInteractiveControl(target) ||
+            target.closest('button, a, [role="button"], [role="link"]'))
+      );
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goToNext();
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         goToPrev();
-      } else if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault();
-        toggleFullscreen();
-      } else if (e.key === 'q' || e.key === 'Q') {
-        e.preventDefault();
-        setShowQrCode((prev) => !prev);
       } else if (e.key === 'Escape' && showQrCode) {
         setShowQrCode(false);
+      } else if (areShortcutsEnabled && !isInteractiveTarget) {
+        if (e.key === ' ' || e.key === 'Space' || e.code === 'Space') {
+          e.preventDefault();
+          setIsPlaying((prev) => !prev);
+        } else if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          toggleFullscreen();
+        } else if (e.key === 'q' || e.key === 'Q') {
+          e.preventDefault();
+          setShowQrCode((prev) => !prev);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [goToNext, goToPrev, toggleFullscreen, showQrCode]);
+  }, [areShortcutsEnabled, goToNext, goToPrev, isInteractiveControl, showQrCode, toggleFullscreen]);
 
   const safeIndex = photos.length > 0 ? currentIndex % photos.length : 0;
   const activePhoto = photos.length > 0 ? (photos[safeIndex] || photos[0]) : null;
+  const shouldShowControls = areControlsVisible || !isPlaying;
 
   return (
     <div
@@ -383,12 +416,17 @@ export function ReceptionSlideshowClient({
       aria-label="Live Wedding Reception Slideshow"
       aria-roledescription="carousel"
       className={`fixed inset-0 z-50 bg-stone-950 text-white overflow-hidden flex flex-col justify-between select-none ${
-        areControlsVisible ? 'cursor-default' : 'cursor-none'
+        shouldShowControls ? 'cursor-default' : 'cursor-none'
       }`}
       data-testid="slideshow-container"
     >
       {/* Screen reader live update announcement */}
-      <div className="sr-only" aria-live="polite" aria-atomic="true">
+      <div
+        className="sr-only"
+        aria-live={isPlaying ? 'off' : 'polite'}
+        aria-atomic="true"
+        data-testid="slideshow-live-region"
+      >
         Photo {photos.length > 0 ? safeIndex + 1 : 0} of {photos.length}: {activePhoto?.title || 'Wedding Photo'}
       </div>
 
@@ -411,7 +449,7 @@ export function ReceptionSlideshowClient({
       <header
         ref={headerRef}
         className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
-          areControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          shouldShowControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         data-testid="slideshow-top-header"
       >
@@ -540,29 +578,18 @@ export function ReceptionSlideshowClient({
         ref={controlsRef}
         role="toolbar"
         aria-label="Slideshow Controls"
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full bg-stone-900/85 backdrop-blur-md border border-white/15 shadow-2xl text-white transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
-          areControlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        className={`group fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
+          shouldShowControls
+            ? 'bg-stone-900/85 backdrop-blur-md border-white/15 shadow-2xl'
+            : 'bg-transparent border-transparent shadow-none'
         }`}
         data-testid="slideshow-controls"
       >
-        {/* Previous Button */}
-        <button
-          type="button"
-          onClick={goToPrev}
-          className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
-          aria-label="Previous photo"
-          data-testid="slideshow-prev-btn"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-
-        {/* Play / Pause Button */}
+        {/* Play / Pause Button (persistently visible and operable per WCAG 2.2 SC 2.2.2) */}
         <button
           type="button"
           onClick={() => setIsPlaying((prev) => !prev)}
-          className="p-2.5 rounded-full bg-white text-stone-900 hover:bg-stone-200 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white shadow-md"
+          className="cursor-pointer p-2.5 rounded-full bg-white text-stone-900 hover:bg-stone-200 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-stone-900 focus:ring-white shadow-md"
           aria-label={isPlaying ? 'Pause slideshow' : 'Play slideshow'}
           data-testid="slideshow-play-pause-btn"
         >
@@ -577,92 +604,142 @@ export function ReceptionSlideshowClient({
           )}
         </button>
 
-        {/* Next Button */}
-        <button
-          type="button"
-          onClick={goToNext}
-          className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
-          aria-label="Next photo"
-          data-testid="slideshow-next-btn"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-
-        <div className="h-5 w-px bg-white/20 mx-1 hidden sm:block" aria-hidden="true" />
-
-        {/* Duration / Speed Switcher (5s, 8s, 10s) */}
+        {/* Secondary Toolbar Controls (fade after 3s of inactivity during auto-play) */}
         <div
-          className="flex items-center gap-1 bg-stone-800/80 rounded-full p-1 border border-white/10"
-          role="group"
-          aria-label="Cycle speed duration"
-        >
-          {([5, 8, 10] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setDuration(s)}
-              data-testid={`slideshow-duration-${s}s-btn`}
-              aria-pressed={duration === s}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
-                duration === s
-                  ? 'bg-white text-stone-900 shadow-sm'
-                  : 'text-stone-300 hover:text-white hover:bg-white/10'
-              }`}
-              aria-label={`Cycle photo every ${s} seconds`}
-            >
-              {s}s
-            </button>
-          ))}
-        </div>
-
-        <div className="h-5 w-px bg-white/20 mx-1 hidden sm:block" aria-hidden="true" />
-
-        {/* QR Code Overlay Toggle */}
-        <button
-          type="button"
-          onClick={() => setShowQrCode((prev) => !prev)}
-          className={`p-2 rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
-            showQrCode
-              ? 'bg-white/20 text-white'
-              : 'text-stone-300 hover:text-white hover:bg-white/10'
+          className={`flex items-center gap-2 sm:gap-3 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto ${
+            shouldShowControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
           }`}
-          aria-label={showQrCode ? 'Hide QR upload overlay' : 'Show QR upload overlay'}
-          aria-pressed={showQrCode}
-          data-testid="slideshow-qr-toggle-btn"
+          data-testid="slideshow-secondary-controls"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth={2} />
-            <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth={2} />
-            <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth={2} />
-            <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth={2} />
-          </svg>
-        </button>
-
-        {/* Fullscreen Toggle */}
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
-          aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          data-testid="slideshow-fullscreen-btn"
-        >
-          {isFullscreen ? (
+          {/* Previous Button */}
+          <button
+            type="button"
+            onClick={goToPrev}
+            className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+            aria-label="Previous photo"
+            data-testid="slideshow-prev-btn"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-          ) : (
+          </button>
+
+          {/* Next Button */}
+          <button
+            type="button"
+            onClick={goToNext}
+            className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+            aria-label="Next photo"
+            data-testid="slideshow-next-btn"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <div className="h-5 w-px bg-white/20 mx-1 hidden sm:block" aria-hidden="true" />
+
+          {/* Duration / Speed Switcher (5s, 8s, 10s) */}
+          <div
+            className="flex items-center gap-1 bg-stone-800/80 rounded-full p-1 border border-white/10"
+            role="group"
+            aria-label="Cycle speed duration"
+          >
+            {([5, 8, 10] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setDuration(s)}
+                data-testid={`slideshow-duration-${s}s-btn`}
+                aria-pressed={duration === s}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
+                  duration === s
+                    ? 'bg-white text-stone-900 shadow-sm'
+                    : 'text-stone-300 hover:text-white hover:bg-white/10'
+                }`}
+                aria-label={`Cycle photo every ${s} seconds`}
+              >
+                {s}s
+              </button>
+            ))}
+          </div>
+
+          <div className="h-5 w-px bg-white/20 mx-1 hidden sm:block" aria-hidden="true" />
+
+          {/* QR Code Overlay Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowQrCode((prev) => !prev)}
+            className={`p-2 rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
+              showQrCode
+                ? 'bg-white/20 text-white'
+                : 'text-stone-300 hover:text-white hover:bg-white/10'
+            }`}
+            aria-label={showQrCode ? 'Hide QR upload overlay' : 'Show QR upload overlay'}
+            aria-pressed={showQrCode}
+            data-testid="slideshow-qr-toggle-btn"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1" strokeWidth={2} />
+              <rect x="14" y="3" width="7" height="7" rx="1" strokeWidth={2} />
+              <rect x="14" y="14" width="7" height="7" rx="1" strokeWidth={2} />
+              <rect x="3" y="14" width="7" height="7" rx="1" strokeWidth={2} />
+            </svg>
+          </button>
+
+          {/* Single-Key Keyboard Shortcuts Toggle */}
+          <button
+            type="button"
+            onClick={() => setAreShortcutsEnabled((prev) => !prev)}
+            className={`p-2 rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
+              areShortcutsEnabled
+                ? 'bg-white/20 text-white'
+                : 'text-stone-300 hover:text-white hover:bg-white/10'
+            }`}
+            aria-label="Keyboard shortcuts (Space, F, Q)"
+            aria-pressed={areShortcutsEnabled}
+            title={
+              areShortcutsEnabled
+                ? 'Disable keyboard shortcuts (Space, F, Q)'
+                : 'Enable keyboard shortcuts (Space, F, Q)'
+            }
+            data-testid="slideshow-shortcuts-toggle-btn"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="5" width="20" height="14" rx="2" strokeWidth={2} />
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 13h6"
               />
             </svg>
-          )}
-        </button>
+          </button>
+
+          {/* Fullscreen Toggle */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="p-2 rounded-full hover:bg-white/15 text-stone-200 hover:text-white transition focus:outline-none focus:ring-2 focus:ring-white"
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            data-testid="slideshow-fullscreen-btn"
+          >
+            {isFullscreen ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                />
+              </svg>
+            )}
+          </button>
+        </div>
       </footer>
     </div>
   );

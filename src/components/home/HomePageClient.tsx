@@ -203,7 +203,7 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
             <h2 className="type-h2 text-primary">{feature.title || 'Travel & Things to Do'}</h2>
             {travelNodes.length > 0 ? (
               travelNodes.map((node: any, i: number) => (
-                <Interactive3DCard as="button" type="button" key={i} className="mt-4 focus-visible:ring-4 focus-visible:ring-primary outline-none" tabIndex={0} aria-label={node.title || 'Travel details'}>
+                <Interactive3DCard as="article" key={i} className="mt-4">
                   <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-[var(--shadow-lg)] border border-primary dark:border-primary h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
                     {node.title && <h3 className="type-h3 mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
                     {node.description && <p className="type-body [transform:translateZ(10px)]">{node.description}</p>}

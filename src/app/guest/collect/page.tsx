@@ -1,9 +1,66 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
+
+type AddressFieldKey =
+  | 'guestName'
+  | 'email'
+  | 'phone'
+  | 'addressLine1'
+  | 'addressLine2'
+  | 'city'
+  | 'state'
+  | 'zipCode'
+  | 'country'
+  | 'notes';
+
+const ADDRESS_FIELD_KEYS: ReadonlyArray<AddressFieldKey> = [
+  'guestName',
+  'email',
+  'phone',
+  'addressLine1',
+  'addressLine2',
+  'city',
+  'state',
+  'zipCode',
+  'country',
+  'notes',
+];
+
+function extractFieldErrors(details: unknown): Partial<Record<AddressFieldKey, string>> {
+  if (!details || typeof details !== 'object') return {};
+  const record = details as Record<string, unknown>;
+  const mapped: Partial<Record<AddressFieldKey, string>> = {};
+
+  const assignIfValid = (key: AddressFieldKey, rawEntry: unknown) => {
+    if (!rawEntry || mapped[key]) return;
+    if (typeof rawEntry === 'string' && rawEntry.trim()) {
+      mapped[key] = rawEntry;
+      return;
+    }
+    if (Array.isArray(rawEntry) && typeof rawEntry[0] === 'string' && rawEntry[0].trim()) {
+      mapped[key] = rawEntry[0];
+      return;
+    }
+    if (typeof rawEntry === 'object') {
+      const errs = (rawEntry as { _errors?: unknown })._errors;
+      if (Array.isArray(errs) && typeof errs[0] === 'string' && errs[0].trim()) {
+        mapped[key] = errs[0];
+      }
+    }
+  };
+
+  for (const field of ADDRESS_FIELD_KEYS) {
+    assignIfValid(field, record[field]);
+  }
+  assignIfValid('phone', record.mobile);
+  assignIfValid('phone', record.phoneNumber);
+
+  return mapped;
+}
 
 export default function GuestAddressCollectPage() {
   const [formData, setFormData] = useState({
@@ -23,19 +80,27 @@ export default function GuestAddressCollectPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<AddressFieldKey, string>>>({});
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (errorMessage) setErrorMessage(null);
+    setFieldErrors((prev) => {
+      if (!prev[name as AddressFieldKey]) return prev;
+      const next = { ...prev };
+      delete next[name as AddressFieldKey];
+      return next;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
+    setFieldErrors({});
 
     if (!formData.guestName.trim()) {
-      setErrorMessage('Please enter your full name.');
+      setFieldErrors({ guestName: 'Please enter your full name.' });
       return;
     }
 
@@ -65,6 +130,19 @@ export default function GuestAddressCollectPage() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
+        const mappedErrors = extractFieldErrors(data?.details);
+        const rootErrors = Array.isArray(data?.details?._errors)
+          ? data.details._errors.filter((m: unknown): m is string => typeof m === 'string' && Boolean(m.trim()))
+          : [];
+
+        if (Object.keys(mappedErrors).length > 0) {
+          setFieldErrors(mappedErrors);
+          if (rootErrors.length > 0) {
+            setErrorMessage(rootErrors[0]);
+          }
+          return;
+        }
+
         throw new Error(data.error || 'Failed to submit address. Please try again.');
       }
 
@@ -92,6 +170,7 @@ export default function GuestAddressCollectPage() {
     });
     setSubmitted(false);
     setErrorMessage(null);
+    setFieldErrors({});
   };
 
   if (submitted) {
@@ -160,7 +239,7 @@ export default function GuestAddressCollectPage() {
             />
           </div>
 
-          <FormGroup>
+          <FormGroup state={fieldErrors.guestName ? 'error' : 'default'}>
             <Label>Full Name <span className="text-red-500">*</span></Label>
             <Input
               type="text"
@@ -171,12 +250,15 @@ export default function GuestAddressCollectPage() {
               autoComplete="name"
               required
               maxLength={100}
-              aria-invalid={Boolean(errorMessage)}
-              aria-describedby={errorMessage ? 'address-collect-error' : undefined}
             />
+            {fieldErrors.guestName && (
+              <FormMessage id={errorMessage ? 'guestName-error' : 'address-collect-error'}>
+                {fieldErrors.guestName}
+              </FormMessage>
+            )}
           </FormGroup>
 
-          <FormGroup>
+          <FormGroup state={fieldErrors.email ? 'error' : 'default'}>
             <Label>Email Address (Optional)</Label>
             <Input
               type="email"
@@ -186,9 +268,12 @@ export default function GuestAddressCollectPage() {
               onChange={handleChange}
               autoComplete="email"
             />
+            {fieldErrors.email && (
+              <FormMessage>{fieldErrors.email}</FormMessage>
+            )}
           </FormGroup>
 
-          <FormGroup>
+          <FormGroup state={fieldErrors.phone ? 'error' : 'default'}>
             <Label>Phone Number (Optional)</Label>
             <Input
               type="tel"
@@ -199,9 +284,12 @@ export default function GuestAddressCollectPage() {
               autoComplete="tel"
               maxLength={30}
             />
+            {fieldErrors.phone && (
+              <FormMessage>{fieldErrors.phone}</FormMessage>
+            )}
           </FormGroup>
 
-          <FormGroup>
+          <FormGroup state={fieldErrors.addressLine1 ? 'error' : 'default'}>
             <Label>Street Address Line 1 (Optional)</Label>
             <Input
               type="text"
@@ -212,9 +300,12 @@ export default function GuestAddressCollectPage() {
               autoComplete="address-line1"
               maxLength={150}
             />
+            {fieldErrors.addressLine1 && (
+              <FormMessage>{fieldErrors.addressLine1}</FormMessage>
+            )}
           </FormGroup>
 
-          <FormGroup>
+          <FormGroup state={fieldErrors.addressLine2 ? 'error' : 'default'}>
             <Label>Address Line 2 (Optional)</Label>
             <Input
               type="text"
@@ -225,10 +316,13 @@ export default function GuestAddressCollectPage() {
               autoComplete="address-line2"
               maxLength={150}
             />
+            {fieldErrors.addressLine2 && (
+              <FormMessage>{fieldErrors.addressLine2}</FormMessage>
+            )}
           </FormGroup>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup>
+            <FormGroup state={fieldErrors.city ? 'error' : 'default'}>
               <Label>City (Optional)</Label>
               <Input
                 type="text"
@@ -239,9 +333,12 @@ export default function GuestAddressCollectPage() {
                 autoComplete="address-level2"
                 maxLength={100}
               />
+              {fieldErrors.city && (
+                <FormMessage>{fieldErrors.city}</FormMessage>
+              )}
             </FormGroup>
 
-            <FormGroup>
+            <FormGroup state={fieldErrors.state ? 'error' : 'default'}>
               <Label>State / Province (Optional)</Label>
               <Input
                 type="text"
@@ -252,11 +349,14 @@ export default function GuestAddressCollectPage() {
                 autoComplete="address-level1"
                 maxLength={100}
               />
+              {fieldErrors.state && (
+                <FormMessage>{fieldErrors.state}</FormMessage>
+              )}
             </FormGroup>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup>
+            <FormGroup state={fieldErrors.zipCode ? 'error' : 'default'}>
               <Label>ZIP / Postal Code (Optional)</Label>
               <Input
                 type="text"
@@ -267,9 +367,12 @@ export default function GuestAddressCollectPage() {
                 autoComplete="postal-code"
                 maxLength={20}
               />
+              {fieldErrors.zipCode && (
+                <FormMessage>{fieldErrors.zipCode}</FormMessage>
+              )}
             </FormGroup>
 
-            <FormGroup>
+            <FormGroup state={fieldErrors.country ? 'error' : 'default'}>
               <Label>Country (Optional)</Label>
               <Input
                 type="text"
@@ -280,10 +383,13 @@ export default function GuestAddressCollectPage() {
                 autoComplete="country-name"
                 maxLength={100}
               />
+              {fieldErrors.country && (
+                <FormMessage>{fieldErrors.country}</FormMessage>
+              )}
             </FormGroup>
           </div>
 
-          <FormGroup>
+          <FormGroup state={fieldErrors.notes ? 'error' : 'default'}>
             <Label>Household Notes / Additional Info (Optional)</Label>
             <Textarea
               name="notes"
@@ -293,6 +399,9 @@ export default function GuestAddressCollectPage() {
               onChange={handleChange}
               maxLength={1000}
             />
+            {fieldErrors.notes && (
+              <FormMessage>{fieldErrors.notes}</FormMessage>
+            )}
           </FormGroup>
 
           <Button

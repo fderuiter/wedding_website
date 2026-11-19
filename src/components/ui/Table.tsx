@@ -25,34 +25,49 @@ export const Table = React.forwardRef<HTMLTableElement, TableProps>(
         containerOnKeyDown(e);
       }
       if (e.defaultPrevented) return;
+      if (e.target !== e.currentTarget) return;
 
-      const container = e.currentTarget || (e.target as HTMLDivElement);
+      const container = e.currentTarget;
+      const hasHorizontalOverflow = container.scrollWidth > container.clientWidth;
+      const hasVerticalOverflow = container.scrollHeight > container.clientHeight;
       const scrollAmount = 40;
 
       switch (e.key) {
         case 'ArrowLeft':
-          container.scrollLeft -= scrollAmount;
-          e.preventDefault();
+          if (hasHorizontalOverflow) {
+            container.scrollLeft -= scrollAmount;
+            e.preventDefault();
+          }
           break;
         case 'ArrowRight':
-          container.scrollLeft += scrollAmount;
-          e.preventDefault();
+          if (hasHorizontalOverflow) {
+            container.scrollLeft += scrollAmount;
+            e.preventDefault();
+          }
           break;
         case 'ArrowUp':
-          container.scrollTop -= scrollAmount;
-          e.preventDefault();
+          if (hasVerticalOverflow) {
+            container.scrollTop -= scrollAmount;
+            e.preventDefault();
+          }
           break;
         case 'ArrowDown':
-          container.scrollTop += scrollAmount;
-          e.preventDefault();
+          if (hasVerticalOverflow) {
+            container.scrollTop += scrollAmount;
+            e.preventDefault();
+          }
           break;
         case 'Home':
-          container.scrollLeft = 0;
-          e.preventDefault();
+          if (hasHorizontalOverflow) {
+            container.scrollLeft = 0;
+            e.preventDefault();
+          }
           break;
         case 'End':
-          container.scrollLeft = container.scrollWidth;
-          e.preventDefault();
+          if (hasHorizontalOverflow) {
+            container.scrollLeft = container.scrollWidth;
+            e.preventDefault();
+          }
           break;
       }
     };

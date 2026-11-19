@@ -1,8 +1,8 @@
-import crypto from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import {
   generateAdminCookieValue,
   generateGuestCookieValue,
+  generateGuestInviteSessionCookieValue,
   seedAdminAndGuestAuthCookies,
 } from './helpers/auth';
 
@@ -127,17 +127,10 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     expect(lookupSetCookies.some(h => h.value.includes('guest_invite_session='))).toBe(false);
 
     // 6. Pre-deployment signed guest_invite_session cookie for sample code is blocked by downstream guest handlers
-    const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-    const samplePayload = Buffer.from(
-      JSON.stringify({
-        code: 'SMITH2026',
-        guestName: 'Mr. & Mrs. Robert Smith',
-        iat: Date.now(),
-        exp: Date.now() + 8 * 60 * 60 * 1000,
-      })
-    ).toString('base64url');
-    const sampleSig = crypto.createHmac('sha256', secret).update(samplePayload).digest('base64url');
-    const preSignedSampleCookie = `${samplePayload}.${sampleSig}`;
+    const preSignedSampleCookie = generateGuestInviteSessionCookieValue(
+      'SMITH2026',
+      'Mr. & Mrs. Robert Smith'
+    );
 
     const addrGetRes = await request.get('/api/guest/address', {
       headers: { Cookie: `guest_invite_session=${preSignedSampleCookie}` },

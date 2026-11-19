@@ -8,6 +8,7 @@ import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 // Mock next/server completely for clean isolated Jest execution
 jest.mock('next/server', () => {
@@ -114,6 +115,7 @@ function createMockNextRequest(
 describe('Edge-enforced Guest Passcode Gate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetRateLimitsForTesting();
   });
 
   describe('Guest Auth Utility (guest.server)', () => {
@@ -198,6 +200,94 @@ describe('Edge-enforced Guest Passcode Gate', () => {
           delete process.env.GUEST_SESSION_SECRET;
         }
       }
+    });
+
+    describe('production environment secret enforcement', () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalSecret = process.env.GUEST_SESSION_SECRET;
+      const originalPasscode = process.env.GUEST_PASSCODE;
+
+      beforeEach(() => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+        process.env.GUEST_PASSCODE = 'unique-prod-guest-passcode-2026';
+      });
+
+      afterEach(() => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+        if (originalSecret !== undefined) {
+          process.env.GUEST_SESSION_SECRET = originalSecret;
+        } else {
+          delete process.env.GUEST_SESSION_SECRET;
+        }
+        if (originalPasscode !== undefined) {
+          process.env.GUEST_PASSCODE = originalPasscode;
+        } else {
+          delete process.env.GUEST_PASSCODE;
+        }
+      });
+
+      it('throws in production when GUEST_SESSION_SECRET is unset or empty', async () => {
+        delete process.env.GUEST_SESSION_SECRET;
+        await expect(signGuestToken({ guest: true })).rejects.toThrow(
+          'GUEST_SESSION_SECRET must be configured with a distinct secret in production'
+        );
+
+        process.env.GUEST_SESSION_SECRET = '';
+        await expect(signGuestToken({ guest: true })).rejects.toThrow(
+          'GUEST_SESSION_SECRET must be configured with a distinct secret in production'
+        );
+      });
+
+      it('throws in production when GUEST_SESSION_SECRET is default-guest-session-secret', async () => {
+        process.env.GUEST_SESSION_SECRET = 'default-guest-session-secret';
+        await expect(signGuestToken({ guest: true })).rejects.toThrow(
+          'GUEST_SESSION_SECRET must be configured with a distinct secret in production'
+        );
+      });
+
+      it('throws in production when GUEST_SESSION_SECRET has fewer than 32 characters', async () => {
+        process.env.GUEST_SESSION_SECRET = 'short-secret-under-32-chars';
+        await expect(signGuestToken({ guest: true })).rejects.toThrow(
+          'GUEST_SESSION_SECRET must be at least 32 characters long in production'
+        );
+      });
+
+      it('throws in production when GUEST_SESSION_SECRET matches GUEST_PASSCODE', async () => {
+        const sharedValue = 'shared-passcode-and-secret-at-least-32-chars';
+        process.env.GUEST_PASSCODE = sharedValue;
+        process.env.GUEST_SESSION_SECRET = sharedValue;
+        await expect(signGuestToken({ guest: true })).rejects.toThrow(
+          'GUEST_SESSION_SECRET must not use the value of GUEST_PASSCODE'
+        );
+      });
+
+      it('rejects tokens forged with default-guest-session-secret when GUEST_SESSION_SECRET is unset in production', async () => {
+        delete process.env.GUEST_SESSION_SECRET;
+        const payload = { guest: true, iat: Date.now(), exp: Date.now() + 60_000 };
+        const data = base64urlEncode(JSON.stringify(payload));
+        const forgedSig = await hmacSha256('default-guest-session-secret', data);
+        const forgedToken = `${data}.${forgedSig}`;
+
+        const verified = await isGuestRequest({
+          cookies: { get: () => ({ value: forgedToken }) },
+          headers: new Headers(),
+        } as any);
+        expect(verified).toBe(false);
+      });
+
+      it('succeeds in production when GUEST_SESSION_SECRET is at least 32 characters and distinct', async () => {
+        process.env.GUEST_SESSION_SECRET = 'a-valid-production-guest-secret-with-32-plus-chars';
+        const token = await signGuestToken({
+          guest: true,
+          iat: Date.now(),
+          exp: Date.now() + 60_000,
+        });
+        const verified = await isGuestRequest({
+          cookies: { get: () => ({ value: token }) },
+          headers: new Headers(),
+        } as any);
+        expect(verified).toBe(true);
+      });
     });
   });
 
@@ -311,6 +401,83 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       } finally {
         prismaWithInvite.invitationCode = originalInvitationCode;
       }
+    });
+
+    describe('production GUEST_PASSCODE enforcement', () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalPasscode = process.env.GUEST_PASSCODE;
+      const originalSecret = process.env.GUEST_SESSION_SECRET;
+
+      beforeEach(() => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+        process.env.GUEST_SESSION_SECRET = 'a-valid-production-guest-secret-with-32-plus-chars';
+      });
+
+      afterEach(() => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+        if (originalPasscode !== undefined) {
+          process.env.GUEST_PASSCODE = originalPasscode;
+        } else {
+          delete process.env.GUEST_PASSCODE;
+        }
+        if (originalSecret !== undefined) {
+          process.env.GUEST_SESSION_SECRET = originalSecret;
+        } else {
+          delete process.env.GUEST_SESSION_SECRET;
+        }
+      });
+
+      it('rejects login requests in production when GUEST_PASSCODE is unset', async () => {
+        delete process.env.GUEST_PASSCODE;
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'wedding2026' }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(503);
+        const data = await res.json();
+        expect(data.success).toBe(false);
+        expect(res.headers.get('set-cookie')).toBeNull();
+      });
+
+      it('rejects login requests in production when GUEST_PASSCODE is empty or whitespace', async () => {
+        process.env.GUEST_PASSCODE = '   ';
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'wedding2026' }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(503);
+        const data = await res.json();
+        expect(data.success).toBe(false);
+        expect(res.headers.get('set-cookie')).toBeNull();
+      });
+
+      it('rejects login requests in production when GUEST_PASSCODE is wedding2026', async () => {
+        process.env.GUEST_PASSCODE = 'wedding2026';
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'wedding2026' }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(503);
+        const data = await res.json();
+        expect(data.success).toBe(false);
+        expect(res.headers.get('set-cookie')).toBeNull();
+      });
+
+      it('allows login in production when GUEST_PASSCODE is a unique non-default value', async () => {
+        process.env.GUEST_PASSCODE = 'unique-prod-passcode-2026';
+        const req = new NextRequest('http://localhost/api/guest/login', {
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'unique-prod-passcode-2026' }),
+        });
+        const res = await guestLoginPost(req);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+        expect(res.headers.get('set-cookie')).toContain(GUEST_COOKIE);
+      });
     });
   });
 
