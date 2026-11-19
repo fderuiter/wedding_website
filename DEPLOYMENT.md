@@ -80,6 +80,9 @@ The application requires the following environment variables. These match the ru
 - `S3_SECRET_ACCESS_KEY`: S3/R2 API secret access key. *Optional (required if other S3 variables are specified).*
 - `S3_ENDPOINT`: S3-compatible custom endpoint URL (required for Cloudflare R2). *Optional.*
 - `S3_PUBLIC_URL`: Public asset delivery URL or CDN prefix used to serve assets publicly. *Optional.*
+- `STRIPE_SECRET_KEY`: Server-side Stripe secret key (`sk_...` or `rk_...`) for online card checkout on registry funds. *Optional (required if `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is specified; placeholder keys are rejected).*
+- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Client-side Stripe publishable key (`pk_...`) for Stripe Elements card checkout on registry funds. *Optional (required if `STRIPE_SECRET_KEY` is specified; placeholder keys are rejected).*
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret (`whsec_...`) for verifying `/api/registry/webhook/stripe` deliveries. *Optional.*
 
 ---
 

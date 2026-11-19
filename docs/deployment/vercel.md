@@ -57,6 +57,9 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 | `S3_SECRET_ACCESS_KEY` | Yes* | S3 API secret access key. |
 | `S3_ENDPOINT` | No | Custom endpoint URL (for Cloudflare R2 / MinIO). |
 | `S3_PUBLIC_URL` | No | Public CDN URL for serving uploaded assets. |
+| `STRIPE_SECRET_KEY` | No | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
+| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
 
 *\* Note: Serverless functions cannot write to local disk. S3/R2 storage variables are strictly required for file upload features.*
 

@@ -81,10 +81,15 @@ export interface UseRegistryContributionMachineReturn {
   setSubmissionError: (error: string | null) => void;
 
   // Actions
+  validateContribution: () => boolean;
   handleCodeChange: (e: React.ChangeEvent<HTMLInputElement> | string) => void;
   handleVerifyCode: () => Promise<boolean>;
   handleClearCode: () => Promise<void>;
-  handleSubmit: (e?: React.FormEvent, paymentIntentId?: string) => Promise<void>;
+  handleSubmit: (
+    e?: React.FormEvent,
+    paymentIntentId?: string,
+    options?: { coverFeeOverride?: boolean }
+  ) => Promise<void>;
   handlePresetClick: (presetValue: number) => void;
 }
 
@@ -323,9 +328,66 @@ export function useRegistryContributionMachine({
     setSubmissionError(null);
   }, [clearSession]);
 
+  const validateContribution = useCallback((): boolean => {
+    setFieldErrors({});
+    setSubmissionError(null);
+
+    const rawAmount = item.isGroupGift ? amount : item.price;
+
+    const result = ContributionSchema.safeParse({
+      itemId: item.id,
+      name: contributorName,
+      email: email || undefined,
+      amount: rawAmount,
+      code: invitationCode || undefined,
+      message: message || undefined,
+      coverFee,
+    });
+
+    if (!result.success) {
+      const errors: ContributionFieldErrors = {};
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as keyof ContributionFieldErrors;
+        if (field && !errors[field]) {
+          errors[field] = issue.message;
+        }
+      }
+      setFieldErrors(errors);
+      setPhase('error');
+      return false;
+    }
+
+    if (item.isGroupGift) {
+      const remainingAmount = item.price - item.amountContributed;
+      if (result.data.amount > remainingAmount) {
+        const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
+        setFieldErrors({ amount: msg });
+        setPhase('error');
+        return false;
+      }
+    }
+
+    return true;
+  }, [
+    item.isGroupGift,
+    item.price,
+    item.amountContributed,
+    item.id,
+    amount,
+    contributorName,
+    email,
+    invitationCode,
+    message,
+    coverFee,
+  ]);
+
   // Action: Submit contribution
   const handleSubmit = useCallback(
-    async (e?: React.FormEvent, paymentIntentId?: string) => {
+    async (
+      e?: React.FormEvent,
+      paymentIntentId?: string,
+      options?: { coverFeeOverride?: boolean }
+    ) => {
       if (e) {
         e.preventDefault();
       }
@@ -339,6 +401,8 @@ export function useRegistryContributionMachine({
       setSubmissionError(null);
 
       const rawAmount = item.isGroupGift ? amount : item.price;
+      const effectiveCoverFee =
+        options?.coverFeeOverride !== undefined ? options.coverFeeOverride : coverFee;
 
       const result = ContributionSchema.safeParse({
         itemId: item.id,
@@ -347,7 +411,7 @@ export function useRegistryContributionMachine({
         amount: rawAmount,
         code: invitationCode || undefined,
         message: message || undefined,
-        coverFee,
+        coverFee: effectiveCoverFee,
         paymentIntentId,
       });
 
@@ -411,9 +475,7 @@ export function useRegistryContributionMachine({
         } else {
           await onContribute(item.id, validData.name, finalAmount);
         }
-        if (paymentIntentId) {
-          setPaymentTransactionId(paymentIntentId);
-        }
+        setPaymentTransactionId(paymentIntentId ?? null);
         setPhase('success');
       } catch (err: unknown) {
         setPhase('error');
@@ -486,6 +548,7 @@ export function useRegistryContributionMachine({
     setPhase,
     setSubmissionError,
 
+    validateContribution,
     handleCodeChange,
     handleVerifyCode,
     handleClearCode,

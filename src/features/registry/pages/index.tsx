@@ -52,6 +52,8 @@ function RegistryPageContent() {
     isModalOpen,
     setVisibleItemsCount,
     isAdmin,
+    cardCheckoutEnabled,
+    stripePublishableKey,
     filteredItems,
     visibleItems,
     categories,
@@ -291,6 +293,7 @@ function RegistryPageContent() {
                   item={item}
                   onClick={handleCardClick}
                   isAdmin={isAdmin}
+                  cardCheckoutEnabled={cardCheckoutEnabled}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                 />
@@ -353,6 +356,9 @@ function RegistryPageContent() {
               titleId={`registry-item-title-${selectedItem.id}`}
               onClose={handleCloseModal}
               onContribute={handleContribute}
+              cardCheckoutEnabled={cardCheckoutEnabled}
+              stripePublishableKey={stripePublishableKey}
+              isAdmin={isAdmin}
             />
           )}
         </Dialog>

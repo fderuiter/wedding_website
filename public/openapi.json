@@ -6179,6 +6179,17 @@
         }
       }
     },
+    "/api/registry/capabilities": {
+      "get": {
+        "summary": "GET /api/registry/capabilities",
+        "description": "Endpoint for /api/registry/capabilities",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/contribute": {
       "post": {
         "summary": "POST /api/registry/contribute",

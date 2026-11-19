@@ -62,7 +62,18 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   const { baseAmount, feeAmount, totalChargeAmount, totalChargeCents, netPayout } =
     calculateContributionAmounts(amount, Boolean(coverFee));
 
-  const stripe = getStripeInstance();
+  let stripe;
+  try {
+    stripe = getStripeInstance();
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: err?.message || 'Card checkout is not configured on this deployment.',
+      },
+      { status: 503 }
+    );
+  }
   const metadata = {
     itemId: targetItem.id,
     itemName: targetItem.name,
