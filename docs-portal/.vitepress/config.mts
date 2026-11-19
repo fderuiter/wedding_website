@@ -6,7 +6,20 @@ export default withMermaid(
     title: 'Wedding Platform Docs',
     description: 'Architectural specifications, deployment topologies, security models, and API reference',
     base: process.env.VITEPRESS_BASE || '/',
-    ignoreDeadLinks: true,
+    ignoreDeadLinks: false,
+    markdown: {
+      languageAlias: {
+        env: 'dotenv',
+        caddy: 'nginx'
+      },
+      config(md) {
+        const defaultCodeInline = md.renderer.rules.code_inline!;
+        md.renderer.rules.code_inline = (tokens, idx, options, env, self) => {
+          tokens[idx].attrSet('v-pre', '');
+          return defaultCodeInline(tokens, idx, options, env, self);
+        };
+      }
+    },
     themeConfig: {
       nav: [
         { text: 'Architecture', link: '/architecture/architecture' },
@@ -44,7 +57,8 @@ export default withMermaid(
           items: [
             { text: 'Local Environment Setup', link: '/development/developer-setup' },
             { text: 'Testing Strategy', link: '/development/testing' },
-            { text: 'Contribution Guidelines', link: '/development/contributing' }
+            { text: 'Contribution Guidelines', link: '/development/contributing' },
+            { text: 'Agent & Contributor Guidelines', link: '/development/agents' }
           ]
         },
         {
