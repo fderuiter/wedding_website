@@ -169,23 +169,36 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
     return { success: true };
   }
 
+  private resolveSecret(inputSecret?: string | null, storedSecret?: string | null): string {
+    if (typeof inputSecret === 'string' && inputSecret.trim().length > 0) {
+      return inputSecret.trim();
+    }
+    if (typeof storedSecret === 'string' && storedSecret.trim().length > 0) {
+      return storedSecret.trim();
+    }
+    return '';
+  }
+
   async testConnection(input: TestConnectionInput): Promise<DispatchResult> {
     if (input.type === 'email') {
       const provider = input.provider || this.config.emailProvider || 'smtp';
       if (provider === 'resend') {
-        const apiKey = input.resendApiKey || this.config.resendApiKey;
+        const apiKey = this.resolveSecret(input.resendApiKey, this.config.resendApiKey);
         if (!apiKey) return { success: false, error: 'Resend API Key required' };
       } else if (provider === 'sendgrid') {
-        const apiKey = input.sendgridApiKey || this.config.sendgridApiKey;
+        const apiKey = this.resolveSecret(input.sendgridApiKey, this.config.sendgridApiKey);
         if (!apiKey) return { success: false, error: 'SendGrid API Key required' };
       } else if (provider === 'smtp') {
-        const host = input.smtpHost || this.config.smtpHost;
+        const host = input.smtpHost?.trim() || this.config.smtpHost?.trim();
         if (!host) return { success: false, error: 'SMTP Host required' };
+        const user = input.smtpUser?.trim() || this.config.smtpUser?.trim();
+        const pass = this.resolveSecret(input.smtpPass, this.config.smtpPass);
+        if (user && !pass) return { success: false, error: 'SMTP Password required' };
       }
       return { success: true };
     } else if (input.type === 'sms') {
-      const accountSid = input.twilioAccountSid || this.config.twilioAccountSid;
-      const authToken = input.twilioAuthToken || this.config.twilioAuthToken;
+      const accountSid = input.twilioAccountSid?.trim() || this.config.twilioAccountSid?.trim();
+      const authToken = this.resolveSecret(input.twilioAuthToken, this.config.twilioAuthToken);
       if (!accountSid || !authToken) {
         return { success: false, error: 'Twilio Account SID and Auth Token required' };
       }
