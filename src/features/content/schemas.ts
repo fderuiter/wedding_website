@@ -192,14 +192,14 @@ export const RawUpdateAppConfigSchema = z.object({
 });
 
 export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) => {
-  const partner1Name = data.partner1Name ?? data.brideName ?? '';
-  const partner2Name = data.partner2Name ?? data.groomName ?? '';
+  const partner1Name = data.partner1Name || data.brideName || '';
+  const partner2Name = data.partner2Name || data.groomName || '';
   return {
     ...data,
     partner1Name,
     partner2Name,
-    brideName: data.brideName ?? partner1Name,
-    groomName: data.groomName ?? partner2Name,
+    brideName: partner1Name,
+    groomName: partner2Name,
     layoutContainerMaxWidth: !data.layoutContainerMaxWidth || data.layoutContainerMaxWidth === '' ? '64rem' : data.layoutContainerMaxWidth,
     layoutGridGap: !data.layoutGridGap || data.layoutGridGap === '' ? '1.5rem' : data.layoutGridGap,
     layoutCardPadding: !data.layoutCardPadding || data.layoutCardPadding === '' ? '2rem' : data.layoutCardPadding,

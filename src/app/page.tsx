@@ -14,12 +14,14 @@ import { withPageQuery } from '@/lib/query-wrapper';
  */
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getAppConfig();
-  const title = config.brideName && config.groomName
-    ? `${config.brideName} & ${config.groomName}'s Wedding`
+  const partner1 = config.partner1Name || config.brideName || '';
+  const partner2 = config.partner2Name || config.groomName || '';
+  const title = partner1 && partner2
+    ? `${partner1} & ${partner2}'s Wedding`
     : 'Wedding Website';
   const description = config.seoDescription || (
-    config.brideName && config.groomName
-      ? `Join ${config.brideName} and ${config.groomName} for their wedding celebration${config.venueName ? ` at ${config.venueName}` : ''}.`
+    partner1 && partner2
+      ? `Join ${partner1} and ${partner2} for their wedding celebration${config.venueName ? ` at ${config.venueName}` : ''}.`
       : 'Welcome to our wedding website.'
   );
   const baseUrl = config.baseUrl || 'http://localhost:3000';

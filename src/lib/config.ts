@@ -168,8 +168,6 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
 function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   const overrides: Partial<LocalAppConfig> = {};
 
-  if (process.env.SITE_PARTNER1_NAME) overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
-  if (process.env.SITE_PARTNER2_NAME) overrides.partner2Name = process.env.SITE_PARTNER2_NAME;
   if (process.env.SITE_BRIDE_NAME) {
     overrides.brideName = process.env.SITE_BRIDE_NAME;
     overrides.partner1Name = process.env.SITE_BRIDE_NAME;
@@ -177,6 +175,14 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_GROOM_NAME) {
     overrides.groomName = process.env.SITE_GROOM_NAME;
     overrides.partner2Name = process.env.SITE_GROOM_NAME;
+  }
+  if (process.env.SITE_PARTNER1_NAME) {
+    overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
+    overrides.brideName = process.env.SITE_PARTNER1_NAME;
+  }
+  if (process.env.SITE_PARTNER2_NAME) {
+    overrides.partner2Name = process.env.SITE_PARTNER2_NAME;
+    overrides.groomName = process.env.SITE_PARTNER2_NAME;
   }
   if (process.env.SITE_WEDDING_DATE !== undefined) {
     overrides.weddingDate = new Date(process.env.SITE_WEDDING_DATE);
@@ -488,8 +494,8 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
       ...mergedConfig,
       partner1Name,
       partner2Name,
-      brideName: mergedConfig.brideName ?? partner1Name,
-      groomName: mergedConfig.groomName ?? partner2Name,
+      brideName: partner1Name,
+      groomName: partner2Name,
       latitude: coordinateSchema.parse(mergedConfig.latitude),
       longitude: coordinateSchema.parse(mergedConfig.longitude),
     });

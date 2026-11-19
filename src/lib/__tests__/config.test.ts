@@ -461,6 +461,7 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
       ...baseConfig,
       id: 'global',
+      partner1Name: 'Cached Bride',
       brideName: 'Cached Bride',
     });
 
@@ -483,12 +484,12 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
 
     (prisma.appConfig.findUnique as jest.Mock).mockImplementation(async ({ where }: { where: { id: string } }) => {
       if (where.id === 'site-a') {
-        return { ...baseConfig, id: 'site-a', brideName: 'Bride A' };
+        return { ...baseConfig, id: 'site-a', partner1Name: 'Bride A', brideName: 'Bride A' };
       }
       if (where.id === 'site-b') {
-        return { ...baseConfig, id: 'site-b', brideName: 'Bride B' };
+        return { ...baseConfig, id: 'site-b', partner1Name: 'Bride B', brideName: 'Bride B' };
       }
-      return { ...baseConfig, id: 'global', brideName: 'Global Bride' };
+      return { ...baseConfig, id: 'global', partner1Name: 'Global Bride', brideName: 'Global Bride' };
     });
 
     const [resA, resB] = await Promise.all([
@@ -511,6 +512,7 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     (prisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
       ...baseConfig,
       id: 'global',
+      partner1Name: 'Initial Bride',
       brideName: 'Initial Bride',
     });
 
@@ -522,6 +524,7 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     (prisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
       ...baseConfig,
       id: 'global',
+      partner1Name: 'Updated Bride',
       brideName: 'Updated Bride',
     });
 
@@ -537,5 +540,27 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     const req2Config = await getAppConfig('global');
     expect(req2Config.brideName).toBe('Updated Bride');
     expect(prisma.appConfig.findUnique).toHaveBeenCalledTimes(2);
+  });
+
+  it('synchronizes legacy brideName and groomName aliases to partner1Name and partner2Name in getAppConfig', async () => {
+    const globalWithStore = globalThis as typeof globalThis & {
+      globalFallbackStore?: Map<string, unknown>;
+    };
+    globalWithStore.globalFallbackStore?.clear();
+
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...baseConfig,
+      id: 'global',
+      partner1Name: 'Taylor',
+      partner2Name: 'Morgan',
+      brideName: 'StaleBride',
+      groomName: 'StaleGroom',
+    });
+
+    const resolved = await getAppConfig('global');
+    expect(resolved.partner1Name).toBe('Taylor');
+    expect(resolved.partner2Name).toBe('Morgan');
+    expect(resolved.brideName).toBe('Taylor');
+    expect(resolved.groomName).toBe('Morgan');
   });
 });

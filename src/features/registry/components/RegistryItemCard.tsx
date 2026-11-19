@@ -761,7 +761,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 <span>Administrator Warning: Checkout Disabled</span>
               </div>
               <p className="text-xs leading-relaxed">
-                This fund has neither a peer-to-peer payment handle nor valid Stripe card credentials configured (`STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`). Add a payment handle to this fund or configure Stripe keys to accept guest contributions.
+                This fund has neither a peer-to-peer payment handle nor active Stripe card credentials configured. Add a payment handle to this fund or configure Stripe card processing to accept guest contributions.
               </p>
             </div>
           )}

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { formatDate } from '@/utils/intl';
+import { formatEntitySectionLabel } from '@/utils/adminLabels';
 import { apiClient } from '@/features/admin';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { Dialog } from '@/components/ui/Dialog';
@@ -111,7 +112,7 @@ function HistoryTimelineContent({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead>Entity Type</TableHead>
+                    <TableHead>Section</TableHead>
                     <TableHead>Author</TableHead>
                     <TableHead>Action</TableHead>
                     <TableHead>Restore</TableHead>
@@ -128,7 +129,7 @@ function HistoryTimelineContent({
                     return (
                       <TableRow key={v.id}>
                         <TableCell>{formatDate(v.createdAt, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</TableCell>
-                        <TableCell className="font-semibold">{v.entityType}</TableCell>
+                        <TableCell className="font-semibold">{formatEntitySectionLabel(v.entityType)}</TableCell>
                         <TableCell>{v.author || 'System'}</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-bold ${isDelete ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>

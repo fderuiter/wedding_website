@@ -131,11 +131,14 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const newId = data.id || `profile-${Math.random().toString(36).slice(2, 11)}`;
 
+  const resolvedPartner1 = data.partner1Name || data.brideName || 'Partner 1';
+  const resolvedPartner2 = data.partner2Name || data.groomName || 'Partner 2';
+
   const parseResult = UpdateAppConfigSchema.safeParse({
-    partner1Name: data.partner1Name ?? data.brideName ?? 'Partner 1',
-    partner2Name: data.partner2Name ?? data.groomName ?? 'Partner 2',
-    brideName: data.brideName ?? data.partner1Name ?? 'Partner 1',
-    groomName: data.groomName ?? data.partner2Name ?? 'Partner 2',
+    partner1Name: resolvedPartner1,
+    partner2Name: resolvedPartner2,
+    brideName: resolvedPartner1,
+    groomName: resolvedPartner2,
     weddingDate: data.weddingDate ?? new Date().toISOString(),
     baseUrl: data.baseUrl ?? '',
     venueName: data.venueName ?? 'TBD Venue',

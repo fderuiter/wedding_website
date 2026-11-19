@@ -112,10 +112,10 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
       buffer: Buffer.from(JSON.stringify(invalidBackup, null, 2)),
     });
 
-    // Verify diagnostic panel appears
+    // Verify diagnostic panel appears with plain section & field labels
     await expect(page.locator('text=Pre-flight Validation Failed')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('text=registryItem.0.price')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('text=appConfig.0.baseUrl')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('text=Registry Items (Entry 1) — Price')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('text=Site Settings (Entry 1) — Website URL')).toBeVisible({ timeout: 15000 });
 
     // Take screenshot of invalid pre-flight diagnostic report
     await page.screenshot({ path: '/tmp/maintenance-preflight-invalid.png', fullPage: true });

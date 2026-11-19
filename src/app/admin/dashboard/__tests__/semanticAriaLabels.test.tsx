@@ -156,7 +156,7 @@ describe('Semantic Dynamic Property ARIA Labels tests', () => {
     expect(screen.getByRole('button', { name: 'Delete unnamed item' })).toBeInTheDocument();
   });
 
-  it('renders content list edit/delete ARIA labels, key-value dynamic field deletion labels, and real-time typed updates', async () => {
+  it('renders content list edit/delete ARIA labels and accessible typed editor controls', async () => {
     render(
       <ToastProvider>
         <ContentDashboardPage />
@@ -171,29 +171,15 @@ describe('Semantic Dynamic Property ARIA Labels tests', () => {
     expect(screen.getByRole('button', { name: 'Edit unnamed item' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete unnamed item' })).toBeInTheDocument();
 
-    // Click 'Edit content: FAQ' to open the editing container containing dynamic data fields
+    // Click 'Edit content: FAQ' to open the typed editor
     fireEvent.click(screen.getByRole('button', { name: 'Edit content: FAQ' }));
 
-    // The fields 'question' and 'answer' are mapped in setDynamicData
-    // Let's verify their 'X' deletion buttons have the proper ARIA label with key name
-    expect(screen.getByRole('button', { name: 'Delete dynamic field: question' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Delete dynamic field: answer' })).toBeInTheDocument();
+    const typeSelect = screen.getByLabelText('Content Type');
+    expect(typeSelect).toHaveValue('FAQ');
 
-    // Let's find the input with value 'question' and change its value to 'who'
-    // To verify real-time update
-    const keyInputs = screen.getAllByPlaceholderText('Key');
-    expect(keyInputs[0]).toHaveValue('question');
-
-    fireEvent.change(keyInputs[0], { target: { value: 'who' } });
-
-    // The deletion button's label should immediately update to 'Delete dynamic field: who'
-    expect(screen.queryByRole('button', { name: 'Delete dynamic field: question' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Delete dynamic field: who' })).toBeInTheDocument();
-
-    // Now clear the input completely
-    fireEvent.change(keyInputs[0], { target: { value: '' } });
-
-    // It should fallback to 'Delete dynamic field'
-    expect(screen.getByRole('button', { name: 'Delete dynamic field' })).toBeInTheDocument();
+    const questionInput = screen.getByLabelText('Question');
+    expect(questionInput).toHaveValue('When?');
+    fireEvent.change(questionInput, { target: { value: 'What time should guests arrive?' } });
+    expect(questionInput).toHaveValue('What time should guests arrive?');
   });
 });
