@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 export const DEFAULT_DOC_FILES = [
   'public/openapi.json',
   'ARCHITECTURE.md',
+  'FEATURE_MODULES.md',
 ];
 
 export interface DocSyncOptions {

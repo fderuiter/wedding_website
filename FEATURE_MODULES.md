@@ -1,82 +1,53 @@
 # Feature & Module Configuration Architecture
 
 ## Overview
-This application features an explicit feature/module configuration model designed to allow adopters to enable or disable optional capabilities without modifying application source code or scattering conditional checks.
 
-Disabling a feature module handles:
-1. **Navigation Visibility**: Removes corresponding links from both the public Navbar and Admin Dashboard navigation bar.
-2. **Route Protection**: Accessing UI routes or API endpoints belonging to a disabled feature returns HTTP 404 (Not Found).
-3. **Admin Controls**: Hides or disables relevant administrative controls in the dashboard.
-4. **Backend/Scheduled Tasks**: Prevents background polling, client-side intervals, or external service calls.
-5. **Feature Dependencies**: Enforces dependency rules between features (e.g. `groupGifting` depends on `registry`).
-6. **Core Infrastructure Independence**: Core setup, authentication, database ORM, logging, audit trails, and general settings remain operational independently of presentation features.
+This document defines the runtime contract for presentation feature toggles in [src/lib/modules.ts](src/lib/modules.ts#L26-L162), dynamic administrative entity routing in [src/features/admin/registry.ts](src/features/admin/registry.ts#L21-L29), and domain feature module barrels under [src/features/](src/features).
+
+Presentation feature toggles govern optional guest-facing experiences through six distinct mechanisms—each with explicit runtime boundaries:
+
+1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L36-L39) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
+2. **Selective Route & Render Protection**: Only routes and components that explicitly call `isFeatureEnabled()` enforce toggle state (see [Route & Endpoint Enforcement Coverage](#route--endpoint-enforcement-coverage) below). Unchecked UI routes, unchecked API handlers, and dynamic admin entity routes remain reachable even when a toggle is `false`.
+3. **Persistence Model (`Virtual DTO` vs. `Prisma`)**: The `AppConfig` model in [prisma/schema.prisma](prisma/schema.prisma#L11-L78) has **no `modules` column**. `config.modules` is a virtual DTO field that resets to `DEFAULT_MODULE_CONFIG` on every database read, whereas `showCountdown` and `showAddToCalendar` are persisted boolean columns on `AppConfig`.
+4. **Feature Dependencies**: `groupGifting` depends on `registry`; [resolveModuleConfig](src/lib/modules.ts#L128-L150) normalizes `groupGifting` to `false` whenever `registry` is `false` without throwing validation errors.
+5. **Registry Checkout & Catalog Bounds**: Registry contributions operate in dual-mode checkout (Stripe PaymentIntents when configured, or direct-transfer / claim-only fallback) and enforce a `500`-item catalog query ceiling with progressive client-side pagination.
+6. **Core Domain Independence**: Core authentication, middleware session checks, database repositories, audit logging, and domain barrels under [src/features/](src/features) operate independently of presentation toggles.
 
 ---
 
 ## Enumerated Presentation Feature Toggles
 
-The following 10 optional presentation feature toggles are enumerated and supported in [src/lib/modules.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/modules.ts#L94-L105):
+The 10 presentation feature toggles defined in `FEATURE_METADATA` ([src/lib/modules.ts](src/lib/modules.ts#L26-L88)) and `DEFAULT_MODULE_CONFIG` ([src/lib/modules.ts](src/lib/modules.ts#L109-L120)) are synchronized automatically below:
 
-| Feature Identifier | Title | Category | Description | Affected UI Routes | Affected API Routes | Dependencies |
-| --- | --- | --- | --- | --- | --- | --- |
-| `registry` | Gift Registry | Core | Custom gift registry system for guests to browse and claim items. | `/registry`, `/registry/add-item`, `/registry/edit-item` | `/api/registry/*`, `/api/admin/[entity]` (entity: `registry-item`) | None |
-| `groupGifting` | Group Gifting | Core | Partial monetary contribution support on high-value registry items. | `/registry` (group gift UI) | `/api/registry/contribute` | Requires `registry` |
-| `guestPasscode` | Guest Passcode Access | Core | Gatekeeper forcing guest passcode login before viewing site content. | `/guest/login` | `/api/guest/login` | None |
-| `weather` | Weather Forecast | Information | Live weather forecast widget for the wedding date and venue location. | `/weather` | `/api/weather` | None |
-| `weddingParty` | Wedding Party Roster | Information | Biographies and photos for members of the wedding party. | `/wedding-party` | `/api/admin/[entity]` (entity: `wedding-party`) | None |
-| `attractions` | Local Attractions | Information | Guide for guests with local recommendations, maps, and categories. | `/things-to-do` | `/api/admin/[entity]` (entity: `attractions`) | None |
-| `gallery` | Photo Gallery & Media | Engagement | Photo gallery page and administrative media management. | `/photos` | `/api/media/*`, `/api/photos/*` | None |
-| `countdown` | Homepage Countdown Timer | Engagement | Live countdown timer widget on the homepage layout. | Homepage (`/`) | N/A | None |
-| `addToCalendar` | Add to Calendar Widget | Engagement | Calendar invitation button generating ICS / Google Calendar files. | Homepage (`/`) | N/A | None |
-| `interactive3D` | Interactive 3D Experiences | Experience | Interactive 3D canvas and Heart page rendered with React Three Fiber. | `/heart` | N/A | None |
+<!-- BEGIN AUTOGENERATED FEATURE_METADATA -->
+| Feature Identifier | Title | Category | Default | Persistence | Dependencies | UI Route & Render Coverage | API Route Coverage | Description |
+|---|---|---|---|---|---|---|---|---|
+| `registry` | Gift Registry | `core` | `true` | `Virtual DTO` | None | Nav hidden; `/registry`, `/registry/add-item`, `/registry/edit-item/[id]` skip server `isFeatureEnabled` | HTTP 404 on `/api/registry/{items,items/batch,capabilities,contribute,payment-intent}`; skipped on `items/[id]`, `scrape`, `scrape/batch`, `session`, `validate-code`, `webhook/stripe`, `/api/admin/[entity]` | Custom gift registry system for guests to view and contribute to items. |
+| `groupGifting` | Group Gifting | `core` | `true` | `Virtual DTO` | Requires `registry` | `/registry` (group gift contribution UI) | HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent` | Allows guests to make partial monetary contributions towards high-value registry items. |
+| `guestPasscode` | Guest Passcode Access Gate | `core` | `true` | `Virtual DTO` | None | Unchecked (`/guest/login`, `/guest`, `/guest/collect`, and `src/middleware.ts` skip `isFeatureEnabled`) | Unchecked (`POST /api/guest/login` skips `isFeatureEnabled`) | Protects the wedding website behind a guest passcode login requirement. |
+| `weather` | Weather Forecast | `information` | `true` | `Virtual DTO` | None | Nav hidden; `/weather` returns HTTP 404 | HTTP 404 on `GET /api/weather` | Provides live weather forecast integration for the wedding date & venue location. |
+| `weddingParty` | Wedding Party Roster | `information` | `true` | `Virtual DTO` | None | Nav hidden; `/wedding-party` returns HTTP 404 (`/admin/dashboard/wedding-party` skips `isFeatureEnabled`) | Unchecked (`/api/admin/[entity]` with `wedding-party` skips `isFeatureEnabled`) | Displays biographies and photos for members of the wedding party. |
+| `attractions` | Local Attractions & Things to Do | `information` | `true` | `Virtual DTO` | None | Nav hidden; `/things-to-do` returns HTTP 404 (`/admin/dashboard/attractions` skips `isFeatureEnabled`) | Unchecked (`/api/admin/[entity]` with `attractions` skips `isFeatureEnabled`) | Guide for out-of-town guests with recommendations, directions, and categories. |
+| `gallery` | Photo Gallery & Media | `engagement` | `true` | `Virtual DTO` | None | Nav + `/` link hidden; `/photos` & `/photos/slideshow` return HTTP 404 (`/admin/dashboard/media` skips `isFeatureEnabled`) | HTTP 404 on `/api/photos`, `/api/photos/upload`, `/api/guest/photos/upload`, `/api/media/*`, `/api/admin/photos/*` | Photo gallery displaying event photos and custom media uploads. |
+| `countdown` | Homepage Countdown Timer | `engagement` | `true` | `Virtual DTO` + `Prisma` (`showCountdown`) | None | Homepage (`/`) widget (`config.showCountdown && isFeatureEnabled`) | N/A | Live countdown timer to the wedding date on the homepage. |
+| `addToCalendar` | Add to Calendar Widget | `engagement` | `true` | `Virtual DTO` + `Prisma` (`showAddToCalendar`) | None | Homepage (`/`) widget (`config.showAddToCalendar && isFeatureEnabled`) | N/A (`GET /api/schedule/[id]/ics` skips `isFeatureEnabled`) | ICS/Google Calendar generator for ceremony and reception event details. |
+| `interactive3D` | Interactive 3D Experiences | `experience` | `true` | `Virtual DTO` | None | Homepage (`/`) section hidden; `/heart` returns HTTP 404 | N/A | Interactive 3D canvas and Heart page experience using React Three Fiber. |
 
-### Dynamic Administrative Entity Controller Routes
-Administrative CRUD operations for entities such as wedding party members (`wedding-party`), local attractions (`attractions`), registry items (`registry-item`), seating tables (`seating-table`), sub-events (`sub-event`), invitation codes (`invitation-code`), and content nodes (`content`) do not use static route endpoints.
-
-Instead, administrative CRUD operations route dynamically through [/api/admin/[entity]](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/%5Bentity%5D/route.ts#L7-L143) ([src/app/api/admin/[entity]/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/%5Bentity%5D/route.ts#L7-L143)).
-The entity controller maps entity parameters to service handlers using the feature registry defined in [src/features/admin/registry.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/admin/registry.ts#L21-L29).
+<!-- END AUTOGENERATED FEATURE_METADATA -->
 
 ---
 
-## Architectural Division: Presentation Toggles vs. Domain Modules
+## Persistence & Schema Validation Contract
 
-The application architecture establishes a strict separation between presentation toggles and core domain feature modules:
+### `AppConfig` Persistence Reality (`modules` vs. Persisted Columns)
 
-1. **Presentation Feature Toggles ([src/lib/modules.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/modules.ts#L94-L105))**:
-   - Represent user-configurable feature flags defined in `ModuleConfigSchema`.
-   - Stored in the database inside the `AppConfig` profile and configured via the Admin Dashboard.
-   - Control navigation visibility, client-side rendering, and HTTP 404 route protections for optional frontend experiences.
+- **No `modules` Database Column**: `model AppConfig` in [prisma/schema.prisma](prisma/schema.prisma#L11-L78) defines 66 columns—including `features` (the JSON array of homepage content cards managed via `/api/admin/features`), `showCountdown` ([prisma/schema.prisma](prisma/schema.prisma#L57)), and `showAddToCalendar` ([prisma/schema.prisma](prisma/schema.prisma#L58))—and **lacks a `modules` column**.
+- **Dropped on Save**: Although `RawUpdateAppConfigSchema` ([src/features/content/schemas.ts](src/features/content/schemas.ts#L168)) accepts `modules: ModuleConfigSchema.partial().optional()` in `PUT /api/admin/settings` requests, `toAppConfigDbPayload` ([src/features/content/schemas.ts](src/features/content/schemas.ts#L216-L281)) omits `modules` from the Prisma upsert payload while persisting `showCountdown` and `showAddToCalendar` ([src/features/content/schemas.ts](src/features/content/schemas.ts#L261-L262)).
+- **Reset to `DEFAULT_MODULE_CONFIG` on Read**: When `AppConfigSchema` ([src/features/content/schemas.ts](src/features/content/schemas.ts#L575-L580)) parses a database row whose `modules` property is `undefined`, `.transform((val) => resolveModuleConfig(val))` resolves every toggle back to `DEFAULT_MODULE_CONFIG` (all `true`). Consequently, toggling `config.modules` in **Site Settings** (`/admin/dashboard/settings`) does not persist in PostgreSQL across requests; only the dedicated `showCountdown` and `showAddToCalendar` booleans persist on `AppConfig` and combine with `isFeatureEnabled()` on the homepage ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L298-L303)).
 
-2. **Core Domain Feature Modules ([src/features/](https://github.com/fderuiter/wedding_website/tree/HEAD/src/features/))**:
-   - Represent underlying domain services, data repositories, business logic, and backend orchestration logic.
-   - Core domain modules execute system capabilities independently of presentation toggle state.
-   - Some domain modules power optional presentation toggles, while administrative and infrastructural domain modules (such as `admin`, `broadcast`, `content`, `logistics`, `seating`, `sub-events`, and `media`) remain active to maintain system administration and core workflows.
+### Zod Schema & Non-Throwing Dependency Resolution
 
----
-
-## Core Domain Feature Modules Architecture (`src/features/`)
-
-The application codebase organizes domain capabilities into 11 core feature modules under [src/features/](https://github.com/fderuiter/wedding_website/tree/HEAD/src/features/):
-
-| Domain Module | Directory Path | Purpose & Responsibilities | Key Components & Services |
-| --- | --- | --- | --- |
-| `admin` | `src/features/admin` | Central administrative service registry and API client orchestration for dynamic entity routing. | [src/features/admin/registry.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/admin/registry.ts#L21-L29), `apiClient.ts` |
-| `attractions` | `src/features/attractions` | Manages local recommendations, hotel blocks, categories, and map directions. | `AttractionAdminService`, `attractionsService` |
-| `broadcast` | `src/features/broadcast` | Multi-channel broadcast messaging studio for segment-filtered email and SMS announcements. | `sendBroadcast`, `BroadcastModal` |
-| `content` | `src/features/content` | Content node persistence, site settings, theme configuration, and pending photo reviews. | `ContentNodeAdminService`, `contentService`, `ContentRepository` |
-| `logistics` | `src/features/logistics` | Schedule logistics and venue event information management. | `logisticsService`, `LogisticsRepository` |
-| `media` | `src/features/media` | Photo gallery storage, image moderation, EXIF sanitization, asset uploads, and bulk ZIP exports. | `MediaRepository`, `mediaService` |
-| `registry` | `src/features/registry` | Gift registry items, group gifting, contribution tracking, invitation code import, and thank-you notes. | `RegistryItemAdminService`, `InvitationCodeAdminService`, `thankYouService` |
-| `seating` | `src/features/seating` | Seating table management, floorplan canvas layout, seat assignments, and vector PDF exports. | `SeatingTableAdminService`, `seatingService`, `pdf.service.ts` |
-| `sub-events` | `src/features/sub-events` | Sub-events management, guest access permissions, and per-event RSVP matrix tracking. | `SubEventAdminService`, `subEventService`, `SubEventRepository` |
-| `weather` | `src/features/weather` | Live weather forecasts (Open-Meteo) and seasonal climate matrix fallbacks. | `weatherProxy`, `Forecast` |
-| `wedding-party` | `src/features/wedding-party` | Wedding party roster members, biographies, side assignments, and display ordering. | `WeddingPartyAdminService`, `weddingPartyService` |
-
----
-
-## Schema Validation & Data Model
-
-Module configuration is schema-validated using Zod via `ModuleConfigSchema` ([src/lib/modules.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/lib/modules.ts#L94-L105)):
+Module flags are validated with `ModuleConfigSchema` ([src/lib/modules.ts](src/lib/modules.ts#L94-L105)) and normalized via `resolveModuleConfig` ([src/lib/modules.ts](src/lib/modules.ts#L128-L150)):
 
 ```ts
 import { z } from 'zod';
@@ -95,16 +66,124 @@ export const ModuleConfigSchema = z.object({
 });
 ```
 
-### Dependency Resolution Rule
-`groupGifting` explicitly depends on `registry`.
-- If `registry` is set to `false`, `groupGifting` is automatically resolved to `false`.
-- Attempting to submit `groupGifting: true` while `registry: false` is blocked by validation and automatically normalized during `resolveModuleConfig()`.
+- **Non-Throwing Normalization**: `resolveModuleConfig(rawModules)` parses JSON strings or objects using `ModuleConfigSchema.safeParse()`. Malformed JSON or invalid field types fall back cleanly to `DEFAULT_MODULE_CONFIG` without throwing exceptions.
+- **`groupGifting` Dependency**: `groupGifting` depends on `registry`. Passing `{ registry: false, groupGifting: true }` into `resolveModuleConfig()` is **not** rejected with a validation error; instead, `resolveModuleConfig()` mutates `config.groupGifting = false` in-place before returning the resolved `ModuleConfig`.
 
 ---
 
-## Admin Configuration Management
+## Route & Endpoint Enforcement Coverage
 
-Administrators can toggle feature modules dynamically in **Site Settings** (`/admin/dashboard/settings`).
-When features are toggled and saved:
-- Settings are stored in the active `AppConfig` profile in the PostgreSQL database.
-- Navigation links and route protections update immediately across the site.
+### UI Pages & Layouts
+
+- **Server-Guarded UI Pages (HTTP 404 via `notFound()`)**:
+  - `/weather` (`weather`)
+  - `/wedding-party` (`weddingParty`)
+  - `/things-to-do` (`attractions`)
+  - `/photos` and `/photos/slideshow` (`gallery`)
+  - `/heart` (`interactive3D`)
+- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L298-L328))**:
+  - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
+  - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
+  - Hides the homepage photo gallery link when `gallery` is disabled and hides the 3D experience callout when `interactive3D` is disabled.
+- **UI Pages Skipping Server-Side `isFeatureEnabled`**:
+  - **Registry UI**: `/registry`, `/registry/add-item`, and `/registry/edit-item/[id]` do not call `isFeatureEnabled('registry')` at the page route level (note the dynamic `[id]` segment on `/registry/edit-item/[id]`, implemented at [src/app/registry/edit-item/[id]/page.tsx](src/app/registry/edit-item/[id]/page.tsx)).
+  - **Guest Login & Collection UI**: `/guest/login`, `/guest`, and `/guest/collect` do not inspect `guestPasscode`.
+  - **Admin Dashboard Subpages**: `/admin/dashboard/*` routes (such as `/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) filter sidebar navigation links in [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L36-L39) but do not throw HTTP 404 on direct URL navigation.
+
+### Middleware & `guestPasscode` Gatekeeping
+
+- **Zero `guestPasscode` Checks in Middleware**: [src/middleware.ts](src/middleware.ts#L91-L105) performs **zero** checks against `config.modules.guestPasscode`. Every non-excluded route unconditionally requires a valid `guest_auth`, `guest_invite_session`, or `admin_auth` cookie, redirecting unauthenticated browsers to `/guest/login` and returning HTTP 401 on protected `/api/*` paths. `POST /api/guest/login` likewise skips `isFeatureEnabled('guestPasscode')`.
+
+### API Route Handlers (`/api/registry/*`, Weather, Gallery, & Schedule)
+
+- **Weather & Gallery APIs Enforcing `isFeatureEnabled` (HTTP 404)**:
+  - `GET /api/weather` checks `weather`.
+  - `GET /api/photos`, `POST /api/photos/upload`, `POST /api/guest/photos/upload`, `GET/POST /api/media`, `PUT/DELETE /api/media/[id]`, `GET/POST /api/media/export`, `GET /api/admin/photos/pending`, and `POST /api/admin/photos/[id]/moderate` check `gallery`.
+- **Registry APIs Enforcing `isFeatureEnabled('registry')` (HTTP 404 — 5 of 11 handlers)**:
+  - `GET /api/registry/items` and `POST /api/registry/items`
+  - `POST /api/registry/items/batch`
+  - `GET /api/registry/capabilities`
+  - `POST /api/registry/contribute`
+  - `POST /api/registry/payment-intent`
+- **Registry APIs Skipping `isFeatureEnabled('registry')` (6 of 11 handlers)**:
+  - `GET /api/registry/items/[id]`, `PUT /api/registry/items/[id]`, and `DELETE /api/registry/items/[id]`
+  - `POST /api/registry/scrape`
+  - `POST /api/registry/scrape/batch`
+  - `GET /api/registry/session` and `DELETE /api/registry/session`
+  - `GET /api/registry/validate-code`
+  - `POST /api/registry/webhook/stripe`
+- **Group Gifting Enforcement (HTTP 400 Bad Request, Not HTTP 404)**:
+  - When `registry` is enabled (`true`) and `groupGifting` is disabled (`false`), partial or group-gift contributions (`targetItem.isGroupGift || amount < targetItem.price`) throw `new ApiError(400, 'Group gifting is currently disabled.')` (**HTTP 400**) in both [src/features/registry/api/contribute.ts](src/features/registry/api/contribute.ts#L33-L37) and [src/features/registry/api/payment-intent.ts](src/features/registry/api/payment-intent.ts#L39-L43).
+- **Schedule ICS Export**:
+  - `GET /api/schedule/[id]/ics` skips `isFeatureEnabled('addToCalendar')`.
+
+---
+
+## Registry Dual-Mode Checkout & Catalog Bounds
+
+### Dual-Mode Checkout (`Stripe` vs. Direct-Transfer / Claim-Only)
+
+Capability negotiation is exposed via `GET /api/registry/capabilities` ([src/features/registry/api/capabilities.ts](src/features/registry/api/capabilities.ts#L8-L20)) backed by `isStripeCardCheckoutConfigured()` and `getStripePublishableKey()` in [src/lib/stripe.ts](src/lib/stripe.ts#L52-L64):
+
+- **Stripe Card Checkout Mode (`cardCheckoutEnabled: true`)**:
+  - Enabled only when both `STRIPE_SECRET_KEY` (`sk_*` or `rk_*`) and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (`pk_*`) are configured with non-placeholder keys.
+  - Clients create a PaymentIntent via `POST /api/registry/payment-intent` (which optionally adds a `2.5%` processing fee when `coverFee: true` per `CARD_PROCESSING_FEE_RATE = 0.025`, and returns **HTTP 503** if Stripe keys are absent), confirm card payment with Stripe Elements, record the contribution via `POST /api/registry/contribute` (`paymentIntentId`), and reconcile asynchronous settlement via `POST /api/registry/webhook/stripe` (`STRIPE_WEBHOOK_SECRET`).
+- **Direct-Transfer / Claim-Only Fallback (`cardCheckoutEnabled: false`)**:
+  - When Stripe keys are omitted or placeholder values, `GET /api/registry/capabilities` returns `{ cardCheckoutEnabled: false, stripePublishableKey: null }`.
+  - Guests claim physical gifts directly or submit manual peer-to-peer contributions on `CASH_FUND` / `EXPERIENCE_FUND` items configured with an external `paymentHandle` (Venmo, PayPal, or Zelle) via `POST /api/registry/contribute`. Attempting to contribute to a `CASH_FUND` or `EXPERIENCE_FUND` item without `paymentIntentId` when `paymentHandle` is empty returns **HTTP 400**.
+
+### 500-Item Catalog Ceiling & Progressive Pagination
+
+Registry pagination constants are centralized in [src/utils/registryPagination.ts](src/utils/registryPagination.ts#L6-L9):
+
+- **`REGISTRY_DEFAULT_PAGE_LIMIT = 20`**: Default server page size when `limit` is omitted on `GET /api/registry/items`.
+- **`REGISTRY_MAX_CATALOG_LIMIT = 500`**: Hard upper bound enforced in `RegistryRepository.findPaginated` ([src/features/registry/repository.ts](src/features/registry/repository.ts#L25-L41)). The storefront hook `useRegistry` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L105-L139)) fetches up to `500` items upfront (`GET /api/registry/items?page=1&limit=500`) to support instant client-side category, search, price, and availability filtering.
+- **Progressive Client Reveal (`12` + `8`)**: `useRegistry` initially renders `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` cards and reveals `REGISTRY_LOAD_MORE_INCREMENT = 8` additional items per batch ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L353-L377)).
+- **Deep-Link Fallback**: When a guest opens `/registry?item=<id>` for an item beyond the initial 500-item catalog slice, `useRegistry` fetches `GET /api/registry/items/[id]` directly so the modal still opens cleanly ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L121-L139)).
+
+---
+
+## Dynamic Administrative Entity Controller Routes
+
+Administrative CRUD operations for structured domain entities route dynamically through [src/app/api/admin/[entity]/route.ts](src/app/api/admin/[entity]/route.ts#L7-L143), `/api/admin/[entity]/[id]`, and `/api/admin/[entity]/batch`.
+
+- **Plural `ENTITY_KEY` Slugs**: Entity route parameters must match the exact `ENTITY_KEY` static properties registered in `getEntityService` ([src/features/admin/registry.ts](src/features/admin/registry.ts#L21-L29)). Unregistered singular slugs (such as `registry-item`, `seating-table`, `sub-event`, `invitation-code`, or `content`) resolve to `null` and return HTTP 404 (`'Entity not found'`).
+- **No `isFeatureEnabled` Guard**: [src/app/api/admin/[entity]/route.ts](src/app/api/admin/[entity]/route.ts#L7-L11) checks `getEntityService(entity)` and admin session authorization (`Admin-only`), skipping `isFeatureEnabled()` so administrators can manage underlying data regardless of presentation toggle state.
+
+<!-- BEGIN AUTOGENERATED ADMIN_ENTITIES -->
+| Entity Slug (`ENTITY_KEY`) | Admin Service Class | Feature Barrel | Prisma Model | Dynamic Endpoints |
+|---|---|---|---|---|
+| `content-nodes` | `ContentNodeAdminService` | `src/features/content/index.ts` | `ContentNode` | `/api/admin/content-nodes`, `/api/admin/content-nodes/[id]`, `/api/admin/content-nodes/batch` |
+| `wedding-party` | `WeddingPartyAdminService` | `src/features/wedding-party/index.ts` | `WeddingPartyMember` | `/api/admin/wedding-party`, `/api/admin/wedding-party/[id]`, `/api/admin/wedding-party/batch` |
+| `attractions` | `AttractionAdminService` | `src/features/attractions/index.ts` | `Attraction` | `/api/admin/attractions`, `/api/admin/attractions/[id]`, `/api/admin/attractions/batch` |
+| `registry-items` | `RegistryItemAdminService` | `src/features/registry/index.ts` | `RegistryItem` | `/api/admin/registry-items`, `/api/admin/registry-items/[id]`, `/api/admin/registry-items/batch` |
+| `invitation-codes` | `InvitationCodeAdminService` | `src/features/registry/index.ts` | `InvitationCode` | `/api/admin/invitation-codes`, `/api/admin/invitation-codes/[id]`, `/api/admin/invitation-codes/batch` |
+| `seating-tables` | `SeatingTableAdminService` | `src/features/seating/index.ts` | `SeatingTable` | `/api/admin/seating-tables`, `/api/admin/seating-tables/[id]`, `/api/admin/seating-tables/batch` |
+| `sub-events` | `SubEventAdminService` | `src/features/sub-events/index.ts` | `SubEvent` | `/api/admin/sub-events`, `/api/admin/sub-events/[id]`, `/api/admin/sub-events/batch` |
+
+<!-- END AUTOGENERATED ADMIN_ENTITIES -->
+
+---
+
+## Core Domain Feature Modules (`src/features/`)
+
+Domain business logic, repositories, schemas, and admin entity services live under [src/features/](src/features). Each domain module exposes an explicit public surface via its `index.ts` barrel file, synchronized automatically below from `src/features/*/index.ts`:
+
+<!-- BEGIN AUTOGENERATED FEATURE_BARRELS -->
+Total domain feature modules: **11** under `src/features/`.
+
+| Domain Module | Barrel Path | Runtime Exports | Type Exports |
+|---|---|---|---|
+| `admin` | `src/features/admin/index.ts` | `apiClient`, `getEntityService`, `handleMediaFields` | _None_ |
+| `attractions` | `src/features/attractions/index.ts` | `AttractionAdminService`, `AttractionSchema`, `attractionsRepository` | `AttractionDTO` |
+| `broadcast` | `src/features/broadcast/index.ts` | `AVAILABLE_TEMPLATE_PLACEHOLDERS`, `BroadcastService`, `BroadcastTargetFiltersSchema`, `MultiChannelMessagingProvider`, `PreviewBroadcastSchema`, `RetryBroadcastSchema`, `SendBroadcastSchema`, `SendTestBroadcastSchema`, `TestConnectionSchema`, `renderBroadcastTemplate`, `sanitizeEmailSubject` | `BroadcastChannel`, `BroadcastHistoryItem`, `BroadcastTargetFilters`, `BroadcastTemplateContext`, `DispatchResult`, `EmailMessagePayload`, `MessagingProvider`, `PreviewBroadcastInput`, `SendBroadcastInput`, `SendTestBroadcastInput`, `SmsMessagePayload`, `TestConnectionInput` |
+| `content` | `src/features/content/index.ts` | `AppConfigSchema`, `BatchPhotoModerationSchema`, `BorderTreatmentSchema`, `BrandDimensionsSchema`, `ContentNodeAdminService`, `ContentNodeSchema`, `ContentRepository`, `ContentService`, `FAQNodeSchema`, `GenericNodeSchema`, `LogisticsNodeSchema`, `PhotoDataSchema`, `PhotoModerationSchema`, `PhotoNodeSchema`, `PublicAppConfigSchema`, `RawUpdateAppConfigSchema`, `ScheduleDataSchema`, `ScheduleNodeSchema`, `SpacingScaleSchema`, `ThemeTokensSchema`, `TypographyScaleSchema`, `UpdateAppConfigSchema`, `contentRepository`, `contentService`, `cssTokenKeyRegex`, `deriveBrandMonogram`, `isValidCssTokenValue`, `toAppConfigDbPayload` | `AppConfigDTO`, `BorderTreatmentDTO`, `BrandDimensionsDTO`, `ContentNodeDTO`, `IContentRepository`, `PublicAppConfigDTO`, `SpacingScaleDTO`, `ThemeTokensDTO`, `TypographyScaleDTO` |
+| `logistics` | `src/features/logistics/index.ts` | `logisticsRepository`, `logisticsService` | _None_ |
+| `media` | `src/features/media/index.ts` | `MediaCreateSchema`, `MediaRepository`, `MediaSchema`, `MediaUpdateSchema`, `createMediaAssociationSchema`, `mediaRepository` | `MediaDTO`, `MediaPaginationOptions`, `PaginatedMediaResult` |
+| `registry` | `src/features/registry/index.ts` | `AddItemPage`, `BatchCreateRegistryItemsSchema`, `BatchDeleteInvitationCodesSchema`, `BatchImportInvitationCodesSchema`, `BatchScrapeUrlsSchema`, `BatchUpdateThankYouNotesSchema`, `BatchUrlScraper`, `ContributorSchema`, `CsvRegistryImport`, `DEFAULT_THANK_YOU_TEMPLATES`, `DryRunValidateBatchSchema`, `EditItemPage`, `GuestAddressUpdateSchema`, `GuestSessionContext`, `GuestSessionProvider`, `InvitationCodeAdminService`, `InvitationCodeSchema`, `ItemTypeEnum`, `MAX_REGISTRY_CSV_FILE_SIZE`, `PaymentIntentRequestSchema`, `PublicAddressCollectSchema`, `RegistryItemAdminService`, `RegistryItemBaseSchema`, `RegistryItemSchema`, `RegistryPage`, `RegistryPreviewTable`, `SessionRecoveryModal`, `THANK_YOU_TEMPLATES`, `ThankYouService`, `UpdateThankYouNoteSchema`, `generateRandomCode`, `generateRegistryCsvTemplate`, `getAttendanceStatus`, `getPaymentUrl`, `isAddressComplete`, `matchDietaryCategory`, `parseRegistryCsv`, `registryAddItemPOST`, `registryBatchAddPOST`, `registryBatchScrapePOST`, `registryCapabilitiesGET`, `registryContributePOST`, `registryGetItemsGET`, `registryItemByIdDELETE`, `registryItemByIdGET`, `registryItemByIdPUT`, `registryPaymentIntentPOST`, `registryScrapePOST`, `registryService`, `registryWebhookPOST`, `sanitizePaymentHandle`, `substituteThankYouTemplateTokens`, `thankYouService`, `translateSnapshotToActive`, `useGuestSession`, `useRegistry`, `useRegistryCapabilities`, `useRegistryContributionMachine`, `validateRegistryItemRow` | `AddressItem`, `AttendanceStatus`, `AttendanceStatusItem`, `BatchCreateRegistryItemsDTO`, `BatchDeleteInvitationCodesDTO`, `BatchImportInvitationCodesDTO`, `BatchScrapeUrlsDTO`, `BatchUrlScraperProps`, `ContributionFieldErrors`, `ContributionPhase`, `CreateRegistryItemInput`, `CsvRegistryImportProps`, `DryRunValidateBatchDTO`, `DryRunValidatedRow`, `DryRunValidationResponse`, `DryRunValidationSummary`, `GuestAddressUpdateDTO`, `GuestSessionContextType`, `GuestSessionState`, `GuestSessionStatus`, `InvitationCodeDTO`, `ItemType`, `PaginationMeta`, `ParsedRegistryItemRow`, `PaymentIntentRequestDTO`, `PreviewRegistryItem`, `ProgressMetrics`, `PublicAddressCollectDTO`, `RegistryCsvParseResult`, `RegistryItem`, `RegistryPreviewTableProps`, `SessionRecoveryModalProps`, `ThankYouNotesFilterOptions`, `ThankYouTemplate`, `ThankYouTemplateTokens`, `UseRegistryContributionMachineOptions`, `UseRegistryContributionMachineReturn` |
+| `seating` | `src/features/seating/index.ts` | `AssignSeatSchema`, `AutoAssignResultSchema`, `AutoAssignSchema`, `FloorplanCanvas`, `PrintableFloorplan`, `SeatingTableAdminService`, `SeatingTableSchema`, `TableModal`, `UnassignedGuestPanel`, `generateSeatingChartPdf`, `initialSeatingState`, `seatingReducer`, `syncTablesWithGuests`, `useSeatingChartState`, `useSeatingState` | `AutoAssignDTO`, `AutoAssignResultDTO`, `SeatingAction`, `SeatingState`, `SeatingTableDTO`, `UseSeatingStateOptions` |
+| `sub-events` | `src/features/sub-events/index.ts` | `BatchUpdateSubEventAccessSchema`, `GetAccessMatrixQuerySchema`, `MAX_RSVP_PLUS_ONE_COUNT`, `SubEventAdminService`, `SubEventRsvpBatchSubmissionSchema`, `SubEventRsvpSubmissionItemSchema`, `SubEventSchema`, `SubEventService`, `UpdateSubEventAccessSchema`, `subEventService` | `AccessMatrixQueryParams`, `BatchUpdateSubEventAccessDTO`, `GetAccessMatrixQueryDTO`, `ScheduleEventWithRsvp`, `SubEventDTO`, `SubEventRsvpSubmissionItem`, `UpdateSubEventAccessDTO` |
+| `weather` | `src/features/weather/index.ts` | `Forecast`, `getLocalizedClimateFallback`, `getWeatherForecast` | _None_ |
+| `wedding-party` | `src/features/wedding-party/index.ts` | `WeddingPartyAdminService`, `WeddingPartyMemberSchema`, `WeddingPartySideSchema`, `weddingPartyRepository` | `WeddingPartyMemberDTO`, `WeddingPartySide` |
+
+<!-- END AUTOGENERATED FEATURE_BARRELS -->
