@@ -69,6 +69,35 @@ npm run build-storybook
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Pre-Commit Hook Scope:** `npm run build-storybook` is intentionally kept out of [`.githooks/pre-commit`](.githooks/pre-commit) so local commits stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
+### Accessibility Quality Gate (`npm run test:a11y`)
+
+To run the complete WCAG accessibility quality gate locally (documented in [`.github/TESTING.md`](.github/TESTING.md)):
+
+```bash
+npm run test:a11y
+```
+
+To run against the production standalone Next.js build (matching CI behavior in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+
+```bash
+npm run build
+DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public" npm run db:seed
+CI=true npm run test:a11y
+```
+
+This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](scripts/a11y-report.mjs)), which:
+
+1. Clears stale `test-results/` data.
+2. Runs `npm test` (which invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) to initialize `test-results/jest-a11y-violations.json` and records any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js)).
+3. Runs `npx playwright test` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
+4. Always writes `test-results/a11y-summary.md` first, then exits non-zero if Jest failed, Playwright failed, or `totalViolations > 0`.
+
+To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (as done in CI after downloading artifacts):
+
+```bash
+node scripts/a11y-report.mjs
+```
+
 ### Targeted Verification Commands
 
 - **Static Guardrails Bundle:** `npm run check:static`
@@ -82,7 +111,7 @@ npm run build-storybook
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.
 - **Documentation Portal:** `npm run docs:build` — Stages architectural and testing docs via [`scripts/generate-portal.ts`](scripts/generate-portal.ts) and compiles the VitePress documentation portal.
-- **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` for the full suite with isolated `wedding_test` database setup and coverage thresholds).
+- **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
 - **End-to-End Browser Tests:** `npx playwright test`
 
