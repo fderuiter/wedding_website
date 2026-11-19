@@ -333,7 +333,7 @@ describe('AdminViewState Integration across Admin Subviews', () => {
 
       await waitFor(() => {
         expect(screen.getByText('System & Activity History')).toBeInTheDocument();
-        expect(screen.getByText('Attraction')).toBeInTheDocument();
+        expect(screen.getByText('Local Attractions')).toBeInTheDocument();
       });
       expect(mockAdminGet).toHaveBeenCalledTimes(2);
     });

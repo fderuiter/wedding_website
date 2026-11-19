@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -94,7 +94,7 @@ describe('Admin Content Management - FAQ Category & Keywords', () => {
     expect(keywordsInput).toHaveValue('date, time, venue');
   });
 
-  it('groups dynamic data fields in a fieldset/legend with unique sr-only labels per input and zero axe violations', async () => {
+  it('exposes accessible labeled inputs for FAQ fields with unique DOM IDs and zero axe violations', async () => {
     const { container } = render(
       <ToastProvider>
         <ContentDashboardPage />
@@ -102,16 +102,12 @@ describe('Admin Content Management - FAQ Category & Keywords', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /edit content: faq/i }));
-    fireEvent.click(screen.getByRole('button', { name: /\+ Add Field/i }));
 
-    const group = screen.getByRole('group', { name: /Dynamic Data Fields/i });
-    expect(group.tagName).toBe('FIELDSET');
-
-    // Every dynamic key and value input exposes a unique programmatic label
-    for (let i = 1; i <= 5; i++) {
-      expect(within(group).getByLabelText(new RegExp(`^Dynamic field ${i} key$`, 'i'))).toBeInTheDocument();
-      expect(within(group).getByLabelText(new RegExp(`^Dynamic field ${i} value`, 'i'))).toBeInTheDocument();
-    }
+    expect(screen.getByLabelText(/content type/i)).toHaveValue('FAQ');
+    expect(screen.getByLabelText(/^question$/i)).toHaveValue('When is the wedding?');
+    expect(screen.getByLabelText(/^answer$/i)).toHaveValue('June 20, 2026');
+    expect(screen.getByLabelText(/faq category/i)).toHaveValue('Venue');
+    expect(screen.getByLabelText(/faq keywords/i)).toHaveValue('date, time, venue');
 
     const ids = Array.from(container.querySelectorAll('[id]')).map((el) => el.id);
     expect(new Set(ids).size).toBe(ids.length);

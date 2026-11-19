@@ -140,10 +140,10 @@ export function ThemeConfigurationPanel({
       setLocalErrors((prev) => ({
         ...prev,
         [fieldName]: type === 'length'
-          ? 'Invalid CSS length unit format. Use values like 64rem, 20px, 1.5rem, or 100%.'
+          ? 'Enter a valid size measurement using px, rem, em, %, or ch (for example, 64rem, 20px, 1.5rem, or 100%).'
           : type === 'numberOrRatio'
-            ? 'Invalid numeric format. Use values like 400, 1.5, or 0.1.'
-            : 'Invalid border style. Use solid, dashed, dotted, double, or none.',
+            ? 'Enter a plain number or decimal (for example, 400, 1.5, or 0.1).'
+            : 'Choose solid, dashed, dotted, double, or none.',
       }));
       return false;
     }
@@ -267,12 +267,14 @@ export function ThemeConfigurationPanel({
               type="text"
               value={fontSizeBase}
               onChange={(e) => handleFieldChange('fontSizeBase', e.target.value, 'length')}
-              placeholder="e.g. 1rem, 16px"
+              placeholder="e.g. 16px or 1rem"
             />
-            {(localErrors.fontSizeBase || externalErrors.fontSizeBase) && (
+            {localErrors.fontSizeBase || externalErrors.fontSizeBase ? (
               <FormMessage role="alert">
                 {localErrors.fontSizeBase || externalErrors.fontSizeBase}
               </FormMessage>
+            ) : (
+              <FormMessage>Default body text size in pixels or rem (for example, 16px or 1rem).</FormMessage>
             )}
           </FormGroup>
 
@@ -284,12 +286,14 @@ export function ThemeConfigurationPanel({
               type="text"
               value={fontSizeLg}
               onChange={(e) => handleFieldChange('fontSizeLg', e.target.value, 'length')}
-              placeholder="e.g. 1.125rem, 18px"
+              placeholder="e.g. 18px or 1.125rem"
             />
-            {(localErrors.fontSizeLg || externalErrors.fontSizeLg) && (
+            {localErrors.fontSizeLg || externalErrors.fontSizeLg ? (
               <FormMessage role="alert">
                 {localErrors.fontSizeLg || externalErrors.fontSizeLg}
               </FormMessage>
+            ) : (
+              <FormMessage>Larger lead text size in pixels or rem (for example, 18px or 1.125rem).</FormMessage>
             )}
           </FormGroup>
 
@@ -303,10 +307,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('fontWeightNormal', e.target.value, 'numberOrRatio')}
               placeholder="e.g. 400"
             />
-            {(localErrors.fontWeightNormal || externalErrors.fontWeightNormal) && (
+            {localErrors.fontWeightNormal || externalErrors.fontWeightNormal ? (
               <FormMessage role="alert">
                 {localErrors.fontWeightNormal || externalErrors.fontWeightNormal}
               </FormMessage>
+            ) : (
+              <FormMessage>Text thickness from 100 (thin) to 900 (bold); 400 is regular.</FormMessage>
             )}
           </FormGroup>
         </div>
@@ -336,7 +342,7 @@ export function ThemeConfigurationPanel({
               </FormMessage>
             ) : (
               <FormMessage id="layoutContainerMaxWidth-help">
-                Standard CSS unit (e.g. 64rem, 1200px). Blank falls back to default.
+                Maximum page width in pixels or rem (for example, 64rem or 1200px). Leave blank to use the preset default.
               </FormMessage>
             )}
           </FormGroup>
@@ -393,12 +399,14 @@ export function ThemeConfigurationPanel({
               type="text"
               value={spacingMd}
               onChange={(e) => handleFieldChange('spacingMd', e.target.value, 'length')}
-              placeholder="e.g. 1rem, 16px"
+              placeholder="e.g. 16px or 1rem"
             />
-            {(localErrors.spacingMd || externalErrors.spacingMd) && (
+            {localErrors.spacingMd || externalErrors.spacingMd ? (
               <FormMessage role="alert">
                 {localErrors.spacingMd || externalErrors.spacingMd}
               </FormMessage>
+            ) : (
+              <FormMessage>Standard spacing between blocks in pixels or rem (for example, 16px or 1rem).</FormMessage>
             )}
           </FormGroup>
         </div>
@@ -443,10 +451,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('borderWidthThin', e.target.value, 'length')}
               placeholder="e.g. 1px"
             />
-            {(localErrors.borderWidthThin || externalErrors.borderWidthThin) && (
+            {localErrors.borderWidthThin || externalErrors.borderWidthThin ? (
               <FormMessage role="alert">
                 {localErrors.borderWidthThin || externalErrors.borderWidthThin}
               </FormMessage>
+            ) : (
+              <FormMessage>Outline thickness in pixels (for example, 1px or 2px).</FormMessage>
             )}
           </FormGroup>
 
@@ -458,12 +468,14 @@ export function ThemeConfigurationPanel({
               type="text"
               value={borderStyleDefault}
               onChange={(e) => handleFieldChange('borderStyleDefault', e.target.value, 'borderStyle')}
-              placeholder="e.g. solid, dashed"
+              placeholder="e.g. solid or dashed"
             />
-            {(localErrors.borderStyleDefault || externalErrors.borderStyleDefault) && (
+            {localErrors.borderStyleDefault || externalErrors.borderStyleDefault ? (
               <FormMessage role="alert">
                 {localErrors.borderStyleDefault || externalErrors.borderStyleDefault}
               </FormMessage>
+            ) : (
+              <FormMessage>Choose solid, dashed, dotted, double, or none.</FormMessage>
             )}
           </FormGroup>
         </div>
@@ -486,10 +498,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandLogoWidth', e.target.value, 'length')}
               placeholder="e.g. 120px"
             />
-            {(localErrors.brandLogoWidth || externalErrors.brandLogoWidth) && (
+            {localErrors.brandLogoWidth || externalErrors.brandLogoWidth ? (
               <FormMessage role="alert">
                 {localErrors.brandLogoWidth || externalErrors.brandLogoWidth}
               </FormMessage>
+            ) : (
+              <FormMessage>Logo width in pixels or rem (for example, 120px).</FormMessage>
             )}
           </FormGroup>
 
@@ -503,10 +517,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandLogoHeight', e.target.value, 'length')}
               placeholder="e.g. 40px"
             />
-            {(localErrors.brandLogoHeight || externalErrors.brandLogoHeight) && (
+            {localErrors.brandLogoHeight || externalErrors.brandLogoHeight ? (
               <FormMessage role="alert">
                 {localErrors.brandLogoHeight || externalErrors.brandLogoHeight}
               </FormMessage>
+            ) : (
+              <FormMessage>Logo height in pixels or rem (for example, 40px).</FormMessage>
             )}
           </FormGroup>
 
@@ -520,10 +536,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandHeroHeight', e.target.value, 'length')}
               placeholder="e.g. 400px"
             />
-            {(localErrors.brandHeroHeight || externalErrors.brandHeroHeight) && (
+            {localErrors.brandHeroHeight || externalErrors.brandHeroHeight ? (
               <FormMessage role="alert">
                 {localErrors.brandHeroHeight || externalErrors.brandHeroHeight}
               </FormMessage>
+            ) : (
+              <FormMessage>Banner height in pixels or rem (for example, 400px).</FormMessage>
             )}
           </FormGroup>
 
@@ -537,10 +555,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandWatermarkWidth', e.target.value, 'length')}
               placeholder="e.g. 200px"
             />
-            {(localErrors.brandWatermarkWidth || externalErrors.brandWatermarkWidth) && (
+            {localErrors.brandWatermarkWidth || externalErrors.brandWatermarkWidth ? (
               <FormMessage role="alert">
                 {localErrors.brandWatermarkWidth || externalErrors.brandWatermarkWidth}
               </FormMessage>
+            ) : (
+              <FormMessage>Watermark width in pixels or rem (for example, 200px).</FormMessage>
             )}
           </FormGroup>
 
@@ -554,10 +574,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandWatermarkOpacity', e.target.value, 'numberOrRatio')}
               placeholder="e.g. 0.1"
             />
-            {(localErrors.brandWatermarkOpacity || externalErrors.brandWatermarkOpacity) && (
+            {localErrors.brandWatermarkOpacity || externalErrors.brandWatermarkOpacity ? (
               <FormMessage role="alert">
                 {localErrors.brandWatermarkOpacity || externalErrors.brandWatermarkOpacity}
               </FormMessage>
+            ) : (
+              <FormMessage>Transparency from 0 (hidden) to 1 (solid), such as 0.1.</FormMessage>
             )}
           </FormGroup>
 
@@ -571,10 +593,12 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandBadgeSize', e.target.value, 'length')}
               placeholder="e.g. 48px"
             />
-            {(localErrors.brandBadgeSize || externalErrors.brandBadgeSize) && (
+            {localErrors.brandBadgeSize || externalErrors.brandBadgeSize ? (
               <FormMessage role="alert">
                 {localErrors.brandBadgeSize || externalErrors.brandBadgeSize}
               </FormMessage>
+            ) : (
+              <FormMessage>Badge size in pixels or rem (for example, 48px).</FormMessage>
             )}
           </FormGroup>
         </div>

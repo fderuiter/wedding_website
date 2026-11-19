@@ -658,14 +658,23 @@ describe('AdminSettingsPage ARIA Bindings and Accessibility', () => {
     expect(screen.getByLabelText('Badge Graphic Image')).toHaveAttribute('type', 'text');
     expect(screen.getByLabelText('Upload Badge Graphic File')).toHaveAttribute('type', 'file');
 
-    // Custom CSS Theme Tokens (JSON) propagates error state to FormGroup & Textarea
-    const jsonTextarea = screen.getByLabelText(/Custom CSS Theme Tokens \(JSON\)/i);
-    expect(jsonTextarea).toHaveAttribute('aria-invalid', 'false');
-    fireEvent.change(jsonTextarea, { target: { value: '{broken-json' } });
-    expect(jsonTextarea).toHaveAttribute('aria-invalid', 'true');
-    const jsonErrorId = jsonTextarea.getAttribute('aria-describedby') || '';
-    expect(jsonErrorId).toBeTruthy();
-    expect(document.getElementById(jsonErrorId)).toHaveTextContent(/Invalid JSON format/i);
+    // Custom Theme Overrides guided rows expose explicit labels and propagate validation errors
+    fireEvent.click(screen.getByRole('button', { name: /\+ Add Theme Override/i }));
+    const overrideNameInput = screen.getByLabelText('Override Name');
+    const overrideValueInput = screen.getByLabelText('Override Value');
+    expect(overrideNameInput).toHaveAttribute('aria-invalid', 'false');
+
+    fireEvent.change(overrideNameInput, { target: { value: 'invalid_token_without_dashes' } });
+    fireEvent.change(overrideValueInput, { target: { value: '0.5rem' } });
+    expect(overrideNameInput).toHaveAttribute('aria-invalid', 'true');
+    const overrideErrorId = overrideNameInput.getAttribute('aria-describedby') || '';
+    expect(overrideErrorId).toBeTruthy();
+    expect(document.getElementById(overrideErrorId)).toHaveTextContent(/must start with --/i);
+    expect(screen.getByRole('button', { name: /Remove theme override/i })).toBeInTheDocument();
+
+    // SEO Keywords helper text omits legacy brideName and groomName variables
+    expect(screen.getByText(/Insert placeholders like \{\{partner1Name\}\}/i)).toBeInTheDocument();
+    expect(screen.queryByText(/brideName, groomName/i)).not.toBeInTheDocument();
 
     // Zero duplicate IDs in DOM
     const ids = Array.from(container.querySelectorAll('[id]')).map((el) => el.id);

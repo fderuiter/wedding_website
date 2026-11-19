@@ -123,7 +123,7 @@ export default function AdminDashboardPage() {
               {unconfiguredFunds.length === 1 ? 'fund has' : 'funds have'} checkout disabled
             </p>
             <p className="text-xs leading-relaxed">
-              Card processing (`STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) is not configured, and the following{' '}
+              Online card processing is not configured (Stripe publishable and secret keys are missing), and the following{' '}
               {unconfiguredFunds.length === 1 ? 'fund does' : 'funds do'} not have a direct transfer handle:{' '}
               <span className="font-semibold">{unconfiguredFunds.map((f) => f.name).join(', ')}</span>. Edit{' '}
               {unconfiguredFunds.length === 1 ? 'this item' : 'these items'} to add a payment handle or configure Stripe credentials.

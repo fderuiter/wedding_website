@@ -9,6 +9,7 @@ import {
   reviveDates,
   PathDiagnostic,
 } from '@/utils/backupValidation';
+import { formatBackupDiagnosticPath } from '@/utils/adminLabels';
 
 export type PreflightState = 'idle' | 'reading_file' | 'validating_schema' | 'valid' | 'invalid';
 
@@ -197,10 +198,12 @@ export function useAdminMaintenance() {
 
       if (!result.success) {
         const pathDiagnostics = formatZodIssues(result.error);
-        const issueStr = pathDiagnostics.map((d) => `${d.path}: ${d.message}`).join(', ');
+        const issueStr = pathDiagnostics
+          .map((d) => `${formatBackupDiagnosticPath(d.path)}: ${d.message}`)
+          .join(', ');
         setImportStage('error');
-        setImportError(`Schema Validation Failed: ${issueStr}`);
-        throw new Error(`Schema Validation Failed: ${issueStr}`);
+        setImportError(`Backup Verification Failed: ${issueStr}`);
+        throw new Error(`Backup Verification Failed: ${issueStr}`);
       }
 
       // Step 3: restoring_database

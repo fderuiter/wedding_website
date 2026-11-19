@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/Button';
 import { useAdminMaintenance, ImportStage } from '@/hooks/admin/useAdminMaintenance';
+import { formatBackupDiagnosticPath } from '@/utils/adminLabels';
 import { useToast } from '@/components/ui/ToastProvider';
 
 export default function MaintenanceHubPage() {
@@ -103,9 +104,9 @@ export default function MaintenanceHubPage() {
 
   const STAGES: { key: ImportStage; label: string }[] = [
     { key: 'reading_file', label: 'File Reading' },
-    { key: 'validating_schema', label: 'Schema Validation' },
-    { key: 'restoring_database', label: 'Database Restoration' },
-    { key: 'refetching_state', label: 'Query Cache Refresh' },
+    { key: 'validating_schema', label: 'Backup Verification' },
+    { key: 'restoring_database', label: 'Data Restoration' },
+    { key: 'refetching_state', label: 'Dashboard Refresh' },
     { key: 'complete', label: 'Complete' },
   ];
 
@@ -205,7 +206,7 @@ export default function MaintenanceHubPage() {
                   <span>
                     {preflightState === 'reading_file'
                       ? 'Reading backup file...'
-                      : 'Validating backup schema against DatabaseBackupSchema...'}
+                      : 'Checking backup file contents and formatting...'}
                   </span>
                 </div>
               )}
@@ -266,25 +267,25 @@ export default function MaintenanceHubPage() {
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">AppConfig:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Site Settings:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
                           {preflightSummary.counts.appConfig}
                         </span>
                       </div>
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">Media:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Photos & Media:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
                           {preflightSummary.counts.media}
                         </span>
                       </div>
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">RegistryItems:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Registry Items:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
                           {preflightSummary.counts.registryItem}
                         </span>
                       </div>
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">Contributors:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Gift Contributions:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
                           {preflightSummary.counts.contributor}
                         </span>
@@ -296,13 +297,13 @@ export default function MaintenanceHubPage() {
                         </span>
                       </div>
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">Attractions:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Local Attractions:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
                           {preflightSummary.counts.attraction}
                         </span>
                       </div>
                       <div className="p-2 bg-white dark:bg-gray-800 rounded-lg border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex justify-between items-center">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">Content Nodes:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Website Content:</span>
                         <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">
                           {preflightSummary.counts.contentNode}
                         </span>
@@ -331,21 +332,21 @@ export default function MaintenanceHubPage() {
                   </div>
 
                   <p className="text-xs text-red-800 dark:text-red-200">
-                    The selected backup file contains schema mismatch errors or invalid formatting. Pre-flight inspection prevented database restoration to protect against data corruption.
+                    The selected backup file has missing or invalid details. Pre-flight inspection stopped restoration to protect your existing wedding data.
                   </p>
 
                   <div className="border border-red-200 dark:border-red-800 rounded-lg overflow-hidden bg-white dark:bg-gray-900">
                     <div className="bg-red-100/80 dark:bg-red-900/60 px-3 py-2 text-xs font-bold text-red-900 dark:text-red-200 grid grid-cols-12 gap-2">
-                      <span className="col-span-4 sm:col-span-3">Schema Path</span>
-                      <span className="col-span-8 sm:col-span-9">Error Diagnostics</span>
+                      <span className="col-span-5 sm:col-span-4">Section & Field</span>
+                      <span className="col-span-7 sm:col-span-8">Issue Details</span>
                     </div>
                     <div className="max-h-60 overflow-y-auto divide-y divide-red-100 dark:divide-red-900/40">
                       {diagnostics.map((diag, i) => (
                         <div key={i} className="p-3 text-xs grid grid-cols-12 gap-2 hover:bg-red-50/50 dark:hover:bg-red-950/30">
-                          <span className="col-span-4 sm:col-span-3 font-mono text-[11px] font-bold text-red-700 dark:text-red-300 break-all">
-                            {diag.path}
+                          <span className="col-span-5 sm:col-span-4 font-semibold text-red-700 dark:text-red-300 break-words">
+                            {formatBackupDiagnosticPath(diag.path)}
                           </span>
-                          <span className="col-span-8 sm:col-span-9 text-gray-800 dark:text-gray-200">
+                          <span className="col-span-7 sm:col-span-8 text-gray-800 dark:text-gray-200">
                             {diag.message}
                           </span>
                         </div>
@@ -398,10 +399,10 @@ export default function MaintenanceHubPage() {
                     Current Phase:{' '}
                     <strong className="text-primary">
                       {importStage === 'reading_file' && '1. Reading backup file contents...'}
-                      {importStage === 'validating_schema' && '2. Executing schema validation checks...'}
-                      {importStage === 'restoring_database' && '3. Restoring database tables within transaction scope...'}
-                      {importStage === 'refetching_state' && '4. Refreshing React Query caches...'}
-                      {importStage === 'complete' && '5. Database restoration successfully finished!'}
+                      {importStage === 'validating_schema' && '2. Verifying backup contents...'}
+                      {importStage === 'restoring_database' && '3. Restoring your wedding data...'}
+                      {importStage === 'refetching_state' && '4. Refreshing dashboard data...'}
+                      {importStage === 'complete' && '5. Backup restoration completed!'}
                       {importStage === 'error' && 'Restoration failed due to an error.'}
                     </strong>
                   </div>

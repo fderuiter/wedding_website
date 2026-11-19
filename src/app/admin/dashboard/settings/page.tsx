@@ -17,6 +17,7 @@ import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { cssTokenKeyRegex, isValidCssTokenValue } from '@/features/content';
 
 interface SearchableTimezoneSelectProps {
   value: string;
@@ -184,16 +185,51 @@ function SearchableTimezoneSelect({ value, onChange }: SearchableTimezoneSelectP
   );
 }
 
-function formatThemeTokens(cfg: any): string {
-  if (!cfg?.themeTokens) return '{}';
+interface ThemeOverrideRow {
+  id: string;
+  key: string;
+  value: string;
+}
+
+function isPrintTokenKey(key: string): boolean {
+  return key.startsWith('--print-');
+}
+
+function extractThemeOverrideRows(cfg: any): ThemeOverrideRow[] {
+  if (!cfg?.themeTokens) return [];
   try {
     const tokensObj = typeof cfg.themeTokens === 'string'
       ? JSON.parse(cfg.themeTokens)
       : cfg.themeTokens;
-    return JSON.stringify(tokensObj, null, 2);
+    if (!tokensObj || typeof tokensObj !== 'object' || Array.isArray(tokensObj)) {
+      return [];
+    }
+    return Object.entries(tokensObj)
+      .filter(([key]) => !isPrintTokenKey(key))
+      .map(([key, val], idx) => ({
+        id: `override-${idx}-${key}`,
+        key,
+        value: String(val ?? ''),
+      }));
   } catch {
-    return '{}';
+    return [];
   }
+}
+
+function validateThemeOverrideRow(row: ThemeOverrideRow): string {
+  const trimmedKey = row.key.trim();
+  const trimmedValue = row.value.trim();
+  if (!trimmedKey && !trimmedValue) return '';
+  if (!trimmedKey) {
+    return 'Enter an override name starting with -- (for example, --btn-radius).';
+  }
+  if (!cssTokenKeyRegex.test(trimmedKey)) {
+    return 'Override names must start with -- and use only letters, numbers, hyphens, or underscores (for example, --btn-radius).';
+  }
+  if (!isValidCssTokenValue(row.value)) {
+    return 'Enter a clean style value without semicolons or brackets (for example, 0.5rem or #ffffff).';
+  }
+  return '';
 }
 
 export default function AdminSettingsPage() {
@@ -217,7 +253,7 @@ export default function AdminSettingsPage() {
   const { testConnection, testingConnection } = useAdminBroadcast();
 
   const [configOverride, setConfigOverride] = useState<{ base: any; value: any } | null>(null);
-  const [tokensTextOverride, setTokensTextOverride] = useState<{ base: any; text: string } | null>(null);
+  const [overrideRowsState, setOverrideRowsState] = useState<{ base: any; rows: ThemeOverrideRow[] } | null>(null);
   const [themeTokensError, setThemeTokensError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
@@ -226,9 +262,9 @@ export default function AdminSettingsPage() {
   const localConfig = configOverride && configOverride.base === initialConfig
     ? configOverride.value
     : (initialConfig ?? null);
-  const themeTokensText = tokensTextOverride && tokensTextOverride.base === initialConfig
-    ? tokensTextOverride.text
-    : formatThemeTokens(initialConfig);
+  const themeOverrideRows = overrideRowsState && overrideRowsState.base === initialConfig
+    ? overrideRowsState.rows
+    : extractThemeOverrideRows(initialConfig);
 
   const setLocalConfig = useCallback((updater: any) => {
     setConfigOverride((prev) => {
@@ -238,9 +274,45 @@ export default function AdminSettingsPage() {
     });
   }, [initialConfig]);
 
-  const setThemeTokensText = useCallback((text: string) => {
-    setTokensTextOverride({ base: initialConfig, text });
-  }, [initialConfig]);
+  const syncThemeOverrideRows = useCallback((nextRows: ThemeOverrideRow[]) => {
+    setOverrideRowsState({ base: initialConfig, rows: nextRows });
+
+    const firstRowError = nextRows.map(validateThemeOverrideRow).find(Boolean) || '';
+    const seenKeys = new Set<string>();
+    let duplicateError = '';
+    for (const row of nextRows) {
+      const k = row.key.trim();
+      if (!k) continue;
+      if (seenKeys.has(k)) {
+        duplicateError = `Duplicate override name "${k}". Each override name should appear once.`;
+        break;
+      }
+      seenKeys.add(k);
+    }
+
+    const combinedError = firstRowError || duplicateError;
+    setThemeTokensError(combinedError);
+
+    if (!combinedError) {
+      setLocalConfig((prev: any) => {
+        const existingTokens = prev?.themeTokens && typeof prev.themeTokens === 'object' ? prev.themeTokens : {};
+        const preservedPrintTokens: Record<string, string> = {};
+        for (const [k, v] of Object.entries(existingTokens)) {
+          if (isPrintTokenKey(k) && typeof v === 'string') {
+            preservedPrintTokens[k] = v;
+          }
+        }
+        const customTokens: Record<string, string> = { ...preservedPrintTokens };
+        for (const row of nextRows) {
+          const trimmedKey = row.key.trim();
+          if (trimmedKey) {
+            customTokens[trimmedKey] = row.value;
+          }
+        }
+        return { ...prev, themeTokens: customTokens };
+      });
+    }
+  }, [initialConfig, setLocalConfig]);
 
   const handleTestConnection = async (type: 'email' | 'sms') => {
     try {
@@ -272,25 +344,34 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const handleTokensChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const text = e.target.value;
-    setThemeTokensText(text);
-    try {
-      const parsed = JSON.parse(text);
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        setThemeTokensError('');
-        setLocalConfig((prev: any) => ({ ...prev, themeTokens: parsed }));
-      } else {
-        setThemeTokensError('Theme tokens must be a JSON object mapping CSS variables to values.');
-      }
-    } catch {
-      setThemeTokensError('Invalid JSON format.');
-    }
+  const handleAddThemeOverride = () => {
+    const newRow: ThemeOverrideRow = {
+      id: `override-${Date.now()}-${themeOverrideRows.length}`,
+      key: '',
+      value: '',
+    };
+    syncThemeOverrideRows([...themeOverrideRows, newRow]);
+  };
+
+  const handleUpdateThemeOverride = (rowId: string, field: 'key' | 'value', val: string) => {
+    const nextRows = themeOverrideRows.map((row) =>
+      row.id === rowId ? { ...row, [field]: val } : row
+    );
+    syncThemeOverrideRows(nextRows);
+  };
+
+  const handleRemoveThemeOverride = (rowId: string) => {
+    const nextRows = themeOverrideRows.filter((row) => row.id !== rowId);
+    syncThemeOverrideRows(nextRows);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!localConfig) return;
+    if (themeTokensError) {
+      addToast(themeTokensError, 'error');
+      return;
+    }
     try {
       const saved: any = await saveSettings(localConfig);
       if (saved && typeof saved === 'object') {
@@ -355,7 +436,15 @@ export default function AdminSettingsPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setLocalConfig((prev: any) => ({ ...prev, [name]: value }));
+    setLocalConfig((prev: any) => {
+      const next = { ...prev, [name]: value };
+      if (name === 'partner1Name') {
+        next.brideName = value;
+      } else if (name === 'partner2Name') {
+        next.groomName = value;
+      }
+      return next;
+    });
   };
 
   const isMultisite = Boolean(localConfig?.multisiteEnabled);
@@ -415,11 +504,16 @@ export default function AdminSettingsPage() {
                       className="w-auto"
                     >
                       {Array.isArray(profiles) ? (
-                        profiles.map((p: any) => (
-                          <option key={p.id} value={p.id}>
-                            {p.id === 'global' ? 'Production (Default)' : `${p.brideName} & ${p.groomName} (subdomain: ${p.subdomain})`}
-                          </option>
-                        ))
+                        profiles.map((p: any) => {
+                          const isCurrent = p.id === selectedProfileId;
+                          const p1 = (isCurrent ? (localConfig?.partner1Name || localConfig?.brideName) : (p.partner1Name || p.brideName)) || p.partner1Name || p.brideName || 'Partner 1';
+                          const p2 = (isCurrent ? (localConfig?.partner2Name || localConfig?.groomName) : (p.partner2Name || p.groomName)) || p.partner2Name || p.groomName || 'Partner 2';
+                          return (
+                            <option key={p.id} value={p.id}>
+                              {p.id === 'global' ? 'Production (Default)' : `${p1} & ${p2} (subdomain: ${p.subdomain})`}
+                            </option>
+                          );
+                        })
                       ) : (
                         <option value="global">Production (Default)</option>
                       )}
@@ -438,11 +532,11 @@ export default function AdminSettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormGroup>
                     <Label>Partner 1 Name</Label>
-                    <Input required type="text" name="partner1Name" value={localConfig.partner1Name || localConfig.brideName || ''} onChange={handleChange} />
+                    <Input required type="text" name="partner1Name" value={localConfig.partner1Name ?? localConfig.brideName ?? ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>Partner 2 Name</Label>
-                    <Input required type="text" name="partner2Name" value={localConfig.partner2Name || localConfig.groomName || ''} onChange={handleChange} />
+                    <Input required type="text" name="partner2Name" value={localConfig.partner2Name ?? localConfig.groomName ?? ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>Wedding Date</Label>
@@ -587,9 +681,6 @@ export default function AdminSettingsPage() {
                         ...(prev?.themeTokens || {}),
                         ...(updated.themeTokens || {}),
                       };
-                      try {
-                        setThemeTokensText(JSON.stringify(mergedTokens, null, 2));
-                      } catch {}
 
                       return {
                         ...prev,
@@ -599,21 +690,86 @@ export default function AdminSettingsPage() {
                     });
                   }}
                 />
-                <FormGroup state={themeTokensError ? 'error' : 'default'}>
-                  <Label>Custom CSS Theme Tokens (JSON)</Label>
-                  <Textarea
-                    value={themeTokensText}
-                    onChange={handleTokensChange}
-                    rows={5}
-                    placeholder='{\n  "--btn-radius": "0.5rem",\n  "--card-bg": "#ffffff"\n}'
-                    className="font-mono text-xs"
-                  />
-                  {themeTokensError ? (
-                    <FormMessage role="alert">{themeTokensError}</FormMessage>
+                <div className="space-y-3 pt-4 border-t border-gray-200 dark:border-zinc-700" role="group" aria-labelledby="custom-theme-overrides-heading">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 id="custom-theme-overrides-heading" className="text-md font-semibold text-gray-900 dark:text-zinc-100">
+                        Custom Theme Overrides
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Fine-tune individual theme style values by adding named overrides (for example, --btn-radius set to 0.5rem).
+                      </p>
+                    </div>
+                    <Button type="button" variant="secondary" size="sm" onClick={handleAddThemeOverride}>
+                      + Add Theme Override
+                    </Button>
+                  </div>
+
+                  {themeOverrideRows.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                      No custom theme overrides added. Using your selected preset and controls above.
+                    </p>
                   ) : (
-                    <FormMessage>Provide custom CSS token overrides in JSON format. Keys must start with --.</FormMessage>
+                    <div className="space-y-3">
+                      {themeOverrideRows.map((row, idx) => {
+                        const rowError = validateThemeOverrideRow(row);
+                        const keyInputId = `theme-override-key-${idx}`;
+                        const valueInputId = `theme-override-value-${idx}`;
+                        const rowErrorId = `theme-override-error-${idx}`;
+                        return (
+                          <div key={row.id} className="rounded-md border border-gray-200 dark:border-zinc-700 p-3 space-y-2 bg-gray-50/50 dark:bg-zinc-900/40">
+                            <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                              <FormGroup state={rowError ? 'error' : 'default'}>
+                                <Label htmlFor={keyInputId}>Override Name</Label>
+                                <Input
+                                  id={keyInputId}
+                                  type="text"
+                                  value={row.key}
+                                  onChange={(e) => handleUpdateThemeOverride(row.id, 'key', e.target.value)}
+                                  placeholder="e.g. --btn-radius"
+                                  aria-invalid={Boolean(rowError)}
+                                  aria-describedby={rowError ? rowErrorId : undefined}
+                                />
+                              </FormGroup>
+                              <FormGroup state={rowError ? 'error' : 'default'}>
+                                <Label htmlFor={valueInputId}>Override Value</Label>
+                                <Input
+                                  id={valueInputId}
+                                  type="text"
+                                  value={row.value}
+                                  onChange={(e) => handleUpdateThemeOverride(row.id, 'value', e.target.value)}
+                                  placeholder="e.g. 0.5rem or #ffffff"
+                                  aria-invalid={Boolean(rowError)}
+                                  aria-describedby={rowError ? rowErrorId : undefined}
+                                />
+                              </FormGroup>
+                              <Button
+                                type="button"
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handleRemoveThemeOverride(row.id)}
+                                aria-label={`Remove theme override ${row.key || idx + 1}`}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            {rowError && (
+                              <p id={rowErrorId} className="text-xs text-red-600 dark:text-red-400">
+                                {rowError}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                </FormGroup>
+
+                  {themeTokensError && (
+                    <p role="alert" className="text-xs font-medium text-red-600 dark:text-red-400">
+                      {themeTokensError}
+                    </p>
+                  )}
+                </div>
               </section>
 
               <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
@@ -1135,7 +1291,7 @@ export default function AdminSettingsPage() {
                 <FormGroup>
                   <Label>SEO Keywords</Label>
                   <Textarea name="seoKeywords" value={localConfig.seoKeywords || ''} onChange={handleChange} rows={3} placeholder="{{partner1Name}} and {{partner2Name}}'s wedding..." />
-                  <FormMessage>Comma-separated list. Use templates like {'{{partner1Name}}'}. Variables: partner1Name, partner2Name, brideName, groomName, venueName, venueCity, venueState.</FormMessage>
+                  <FormMessage>Comma-separated keywords. Insert placeholders like {'{{partner1Name}}'}, {'{{partner2Name}}'}, {'{{venueName}}'}, {'{{venueCity}}'}, or {'{{venueState}}'}.</FormMessage>
                 </FormGroup>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <FormGroup>

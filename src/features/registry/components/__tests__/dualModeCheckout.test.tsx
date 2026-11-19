@@ -316,8 +316,11 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       </Overlay>
     );
 
-    expect(screen.getByTestId('admin-fund-config-warning')).toBeInTheDocument();
+    const cardWarning = screen.getByTestId('admin-fund-config-warning');
+    expect(cardWarning).toBeInTheDocument();
     expect(screen.getByText(/Administrator Warning: Checkout Disabled/i)).toBeInTheDocument();
+    expect(cardWarning.textContent).not.toContain('`');
+    expect(cardWarning.textContent).not.toContain('STRIPE_SECRET_KEY');
   });
 
   it('Requirement 6: warns administrators in RegistryItemForm when creating/editing a fund without a handle while card checkout is disabled', () => {
@@ -330,8 +333,11 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       />
     );
 
-    expect(screen.getByTestId('unconfigured-fund-form-warning')).toBeInTheDocument();
+    const formWarning = screen.getByTestId('unconfigured-fund-form-warning');
+    expect(formWarning).toBeInTheDocument();
     expect(screen.getByText(/Guest Checkout Will Be Disabled/i)).toBeInTheDocument();
+    expect(formWarning.textContent).not.toContain('`');
+    expect(formWarning.textContent).not.toContain('STRIPE_SECRET_KEY');
   });
 
   it('Constraint 1: never synthesizes pi_mock_secret_* or calls confirmPayment when payment-intent fails in non-test runtime', async () => {

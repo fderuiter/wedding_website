@@ -108,8 +108,13 @@ describe('MaintenanceHubPage Pre-flight Validation & Progress Tracking', () => {
     expect(screen.getByText(/Pre-flight Inspection Passed/i)).toBeInTheDocument();
     expect(screen.getByText('backup-2026.json')).toBeInTheDocument();
     expect(screen.getByText('2.0 KB')).toBeInTheDocument();
-    expect(screen.getByText('12')).toBeInTheDocument(); // RegistryItems count
-    expect(screen.getByText('3')).toBeInTheDocument(); // Contributors count
+    expect(screen.getByText('Site Settings:')).toBeInTheDocument();
+    expect(screen.getByText('Registry Items:')).toBeInTheDocument();
+    expect(screen.getByText('Website Content:')).toBeInTheDocument();
+    expect(screen.queryByText('AppConfig:')).not.toBeInTheDocument();
+    expect(screen.queryByText('RegistryItems:')).not.toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   test('displays Inline Diagnostic Error Report Panel when schema validation fails', () => {
@@ -135,10 +140,12 @@ describe('MaintenanceHubPage Pre-flight Validation & Progress Tracking', () => {
     render(<MaintenanceHubPage />);
 
     expect(screen.getByText(/Pre-flight Validation Failed/i)).toBeInTheDocument();
-    expect(screen.getByText('registryItem.0.price')).toBeInTheDocument();
+    expect(screen.getByText('Registry Items (Entry 1) — Price')).toBeInTheDocument();
     expect(screen.getByText('Number must be greater than 0')).toBeInTheDocument();
-    expect(screen.getByText('appConfig.0.baseUrl')).toBeInTheDocument();
+    expect(screen.getByText('Site Settings (Entry 1) — Website URL')).toBeInTheDocument();
     expect(screen.getByText('Invalid url')).toBeInTheDocument();
+    expect(screen.queryByText('registryItem.0.price')).not.toBeInTheDocument();
+    expect(screen.queryByText('appConfig.0.baseUrl')).not.toBeInTheDocument();
   });
 
   test('displays multi-stage progress tracking panel during restoration execution', () => {
@@ -170,7 +177,7 @@ describe('MaintenanceHubPage Pre-flight Validation & Progress Tracking', () => {
 
     expect(screen.getByText(/Restoration Stage Progress/i)).toBeInTheDocument();
     expect(screen.getByText(/70%/i)).toBeInTheDocument();
-    expect(screen.getByText(/3. Restoring database tables within transaction scope.../i)).toBeInTheDocument();
+    expect(screen.getByText(/3. Restoring your wedding data.../i)).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '70');
   });
 

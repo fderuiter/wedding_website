@@ -61,11 +61,11 @@ describe('ThemeConfigurationPanel Component', () => {
 
     const containerInput = screen.getByLabelText(/Container Max Width/i);
 
-    // Invalid CSS length unit
+    // Invalid length measurement
     fireEvent.change(containerInput, { target: { value: 'invalid-unit' } });
     expect(containerInput).toHaveAttribute('aria-invalid', 'true');
     expect(
-      screen.getByText(/Invalid CSS length unit format. Use values like 64rem, 20px, 1.5rem, or 100%./i)
+      screen.getByText(/Enter a valid size measurement using px, rem, em, %, or ch/i)
     ).toBeInTheDocument();
 
     // Valid CSS length unit
@@ -110,7 +110,7 @@ describe('ThemeConfigurationPanel Component', () => {
     const borderRadiusInput = screen.getByLabelText(/Border Radius/i);
 
     expect(containerInput).toHaveAttribute('aria-describedby', 'layoutContainerMaxWidth-help');
-    expect(document.getElementById('layoutContainerMaxWidth-help')).toHaveTextContent(/64rem, 1200px/i);
+    expect(document.getElementById('layoutContainerMaxWidth-help')).toHaveTextContent(/64rem or 1200px/i);
 
     expect(gridGapInput).toHaveAttribute('aria-describedby', 'layoutGridGap-help');
     expect(document.getElementById('layoutGridGap-help')).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('ThemeConfigurationPanel Component', () => {
     expect(borderRadiusInput).toHaveAttribute('aria-invalid', 'true');
     expect(borderRadiusInput).toHaveAttribute('aria-describedby', 'layoutBorderRadius-error');
     expect(document.getElementById('layoutBorderRadius-error')).toHaveTextContent(
-      /Invalid CSS length unit format/i
+      /Enter a valid size measurement/i
     );
   });
 

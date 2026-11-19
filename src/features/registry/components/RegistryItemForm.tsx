@@ -439,7 +439,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
                 <span>Guest Checkout Will Be Disabled</span>
               </div>
               <p className="text-xs leading-relaxed">
-                Card processing (`STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) is not configured on this deployment, and no direct transfer handle is entered above. Provide a payment handle (Venmo, PayPal, Cash App, Zelle, or custom) or configure Stripe keys so guests can contribute to this fund.
+                Online card processing is not configured on this site, and no direct transfer handle is entered above. Provide a payment handle (Venmo, PayPal, Cash App, Zelle, or custom) or configure Stripe card credentials so guests can contribute to this fund.
               </p>
             </div>
           )}
