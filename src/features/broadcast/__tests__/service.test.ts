@@ -164,6 +164,67 @@ describe('BroadcastService', () => {
         expect(elapsed).toBeLessThan(10);
       });
     });
+
+    describe('public address-collection isolation', () => {
+      const mixedGuestList = [
+        { id: 'invited-1', guestName: 'Invited Alice', partyTags: ['VIP'] },
+        { id: 'invited-2', guestName: 'Invited Bob', partyTags: [] },
+        { id: 'public-1', guestName: 'Public Respondent', partyTags: ['address-collection'] },
+        { id: 'public-2', guestName: 'Tagged Public Respondent', partyTags: ['VIP', 'address-collection'] },
+      ];
+
+      beforeEach(() => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(mixedGuestList);
+      });
+
+      it('excludes address-collection records by default when filters are omitted or empty', async () => {
+        const resNoFilters = await BroadcastService.resolveTargetGuests();
+        expect(resNoFilters.map((g) => g.id)).toEqual(['invited-1', 'invited-2']);
+
+        const resEmptyFilters = await BroadcastService.resolveTargetGuests({});
+        expect(resEmptyFilters.map((g) => g.id)).toEqual(['invited-1', 'invited-2']);
+      });
+
+      it('excludes address-collection records when filtering by other partyTags or searchQuery', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+          mixedGuestList[0],
+          mixedGuestList[3],
+        ]);
+        const resVip = await BroadcastService.resolveTargetGuests({ partyTags: ['VIP'] });
+        expect(resVip.map((g) => g.id)).toEqual(['invited-1']);
+
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+          mixedGuestList[2],
+          mixedGuestList[3],
+        ]);
+        const resSearch = await BroadcastService.resolveTargetGuests({ searchQuery: 'Respondent' });
+        expect(resSearch).toEqual([]);
+      });
+
+      it('includes address-collection records when targetFilters.partyTags includes address-collection', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+          mixedGuestList[2],
+          mixedGuestList[3],
+        ]);
+
+        const res = await BroadcastService.resolveTargetGuests({
+          partyTags: ['address-collection'],
+        });
+        expect(res.map((g) => g.id)).toEqual(['public-1', 'public-2']);
+      });
+
+      it('includes address-collection records when targetFilters.selectedIds explicitly names them', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+          mixedGuestList[0],
+          mixedGuestList[2],
+        ]);
+
+        const res = await BroadcastService.resolveTargetGuests({
+          selectedIds: ['invited-1', 'public-1'],
+        });
+        expect(res.map((g) => g.id)).toEqual(['invited-1', 'public-1']);
+      });
+    });
   });
 
   describe('renderPreview', () => {
@@ -207,6 +268,41 @@ describe('BroadcastService', () => {
       expect(preview.body).toContain('Pending Guest using PEN1');
       expect(preview.destination).toBe('pen@example.com');
     });
+
+    it('escapes dynamic placeholders in EMAIL previews, strips CR/LF/<> in subjects, and leaves SMS previews unescaped', async () => {
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+        id: 'canary-1',
+        guestName: '<b data-canary="guest-html-marker">O\'Connor</b>\r\nInjected',
+        code: 'CANARY1',
+        householdName: '<i data-canary="household-html-marker">O\'Connor & Family</i>',
+        email: 'oconnor@example.com',
+        extraFields: { phone: '+15550001111' },
+      });
+
+      const emailPreview = await BroadcastService.renderPreview({
+        channel: 'EMAIL',
+        subject: 'Event update for {{guestName}} ({{householdName}})',
+        body: '<p>Dear {{guestName}} ({{householdName}}), here is your event update.</p>',
+        sampleGuestId: 'canary-1',
+      });
+
+      expect(emailPreview.body).toBe(
+        '<p>Dear &lt;b data-canary=&quot;guest-html-marker&quot;&gt;O&#39;Connor&lt;/b&gt;\r\nInjected (&lt;i data-canary=&quot;household-html-marker&quot;&gt;O&#39;Connor &amp; Family&lt;/i&gt;), here is your event update.</p>'
+      );
+      expect(emailPreview.body).not.toContain('<b data-canary=');
+      expect(emailPreview.body).not.toContain('<i data-canary=');
+      expect(emailPreview.subject).toBe(
+        'Event update for b data-canary="guest-html-marker"O\'Connor/bInjected (i data-canary="household-html-marker"O\'Connor & Family/i)'
+      );
+      expect(emailPreview.subject).not.toMatch(/[\r\n<>]/);
+
+      const smsPreview = await BroadcastService.renderPreview({
+        channel: 'SMS',
+        body: 'Hi {{householdName}}!',
+        sampleGuestId: 'canary-1',
+      });
+      expect(smsPreview.body).toBe('Hi <i data-canary="household-html-marker">O\'Connor & Family</i>!');
+    });
   });
 
   describe('sendBroadcast', () => {
@@ -243,6 +339,70 @@ describe('BroadcastService', () => {
       expect(prisma.broadcastRecipient.create).toHaveBeenCalled();
       expect(result.status).toBe('SENT');
       expect(result.sentCount).toBe(1);
+    });
+
+    it('escapes HTML placeholders and sanitizes subjects during EMAIL dispatch while keeping SMS plain text', async () => {
+      const mockGuests = [
+        {
+          id: 'g-html',
+          guestName: '<b data-canary="guest-html-marker">O\'Connor</b>',
+          code: 'OC2026',
+          email: 'oconnor@example.com',
+          householdName: "O'Connor & Family",
+          extraFields: { phone: '+15551112222' },
+        },
+      ];
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(mockGuests);
+      (prisma.broadcastMessage.create as jest.Mock).mockResolvedValue({
+        id: 'bm-escape',
+        status: 'SENDING',
+      });
+      (prisma.broadcastRecipient.create as jest.Mock).mockResolvedValue({
+        id: 'br-escape',
+        broadcastId: 'bm-escape',
+        destination: 'oconnor@example.com',
+        status: 'PENDING',
+      });
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'bm-escape',
+        status: 'SENT',
+        sentCount: 1,
+        failedCount: 0,
+      });
+
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+      const sendSmsSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendSms')
+        .mockResolvedValue({ success: true });
+
+      await BroadcastService.sendBroadcast({
+        channel: 'EMAIL',
+        subject: 'Update for {{guestName}} ({{householdName}})\r\nBcc: bad@example.invalid',
+        body: '<p>Hello {{guestName}} of {{householdName}}</p>',
+        targetFilters: { selectedIds: ['g-html'] },
+      });
+
+      expect(sendEmailSpy).toHaveBeenCalledWith({
+        to: 'oconnor@example.com',
+        subject: 'Update for b data-canary="guest-html-marker"O\'Connor/b (O\'Connor & Family)Bcc: bad@example.invalid',
+        body: '<p>Hello &lt;b data-canary=&quot;guest-html-marker&quot;&gt;O&#39;Connor&lt;/b&gt; of O&#39;Connor &amp; Family</p>',
+      });
+
+      await BroadcastService.sendBroadcast({
+        channel: 'SMS',
+        body: 'Hello {{householdName}}!',
+        targetFilters: { selectedIds: ['g-html'] },
+      });
+
+      expect(sendSmsSpy).toHaveBeenCalledWith({
+        to: '+15551112222',
+        body: "Hello O'Connor & Family!",
+      });
+
+      sendEmailSpy.mockRestore();
+      sendSmsSpy.mockRestore();
     });
 
     describe('transactional bulk recipient insertion and chunking', () => {
@@ -682,6 +842,37 @@ describe('BroadcastService', () => {
 
       spy.mockRestore();
     });
+
+    it('escapes HTML placeholders in EMAIL test broadcasts and strips CR/LF/<> from test subjects', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        contactEmail: 'host@example.com',
+        weddingDate: new Date('2026-10-25'),
+        venueName: '<script>alert("xss")</script> & O\'Connor Hall',
+        emailProvider: 'smtp',
+      });
+
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValueOnce({ success: true });
+
+      const res = await BroadcastService.sendTestBroadcast({
+        channel: 'EMAIL',
+        subject: 'Venue: {{venueName}}\r\nInjected',
+        body: '<p>Welcome to {{venueName}}</p>',
+      });
+
+      expect(res.body).toBe(
+        '<p>Welcome to &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; O&#39;Connor Hall</p>'
+      );
+      expect(res.subject).toBe('[TEST] Venue: scriptalert("xss")/script & O\'Connor HallInjected');
+      expect(sendEmailSpy).toHaveBeenCalledWith({
+        to: 'host@example.com',
+        subject: '[TEST] Venue: scriptalert("xss")/script & O\'Connor HallInjected',
+        body: '<p>Welcome to &lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; O&#39;Connor Hall</p>',
+      });
+
+      sendEmailSpy.mockRestore();
+    });
   });
 
   describe('retryFailedRecipients', () => {
@@ -1041,6 +1232,62 @@ describe('BroadcastService', () => {
       });
 
       sendSmsSpy.mockRestore();
+    });
+
+    it('escapes HTML placeholders and strips CR/LF/<> from subjects when retrying EMAIL recipients', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const recipients = [
+        {
+          id: 'r-email-escape',
+          guestName: '<b data-canary="guest-html-marker">CanaryGuest</b>',
+          destination: 'canary@example.com',
+          status: 'FAILED',
+          invitationCode: {
+            code: 'C1',
+            householdName: '<i data-canary="household-html-marker">O\'Connor & Family</i>',
+          },
+        },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-retry-escape',
+        channel: 'EMAIL',
+        subject: 'Retry for {{guestName}}\r\nHeader: injected',
+        body: '<p>Dear {{guestName}} ({{householdName}})</p>',
+        recipients,
+      });
+
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-retry-escape',
+        status: 'SENT',
+        sentCount: 1,
+        failedCount: 0,
+      });
+
+      await BroadcastService.retryFailedRecipients('b-retry-escape');
+
+      expect(sendEmailSpy).toHaveBeenCalledWith({
+        to: 'canary@example.com',
+        subject: 'Retry for b data-canary="guest-html-marker"CanaryGuest/bHeader: injected',
+        body: '<p>Dear &lt;b data-canary=&quot;guest-html-marker&quot;&gt;CanaryGuest&lt;/b&gt; (&lt;i data-canary=&quot;household-html-marker&quot;&gt;O&#39;Connor &amp; Family&lt;/i&gt;)</p>',
+      });
+
+      sendEmailSpy.mockRestore();
     });
   });
 });

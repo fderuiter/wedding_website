@@ -19,6 +19,7 @@ import {
   normalizePartialInvitationFields,
   normalizePartyTags,
   validateInvitationGuestFields,
+  validateInvitationGuestFieldsWithColumns,
 } from '@/utils/invitationValidation';
 
 export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
@@ -507,9 +508,20 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
     for (let i = 0; i < records.length; i++) {
       const normalized = normalizeBatchInvitationRecord(records[i]);
-      const errors = validateInvitationGuestFields(normalized, { mode: 'row' });
+      const { errors, fieldErrors } = validateInvitationGuestFieldsWithColumns(normalized, {
+        mode: 'row',
+      });
       const warnings: string[] = [];
       const { code } = normalized;
+
+      const pushCodeError = (msg: string) => {
+        errors.push(msg);
+        if (!fieldErrors.code) {
+          fieldErrors.code = [msg];
+        } else {
+          fieldErrors.code.push(msg);
+        }
+      };
 
       let isDuplicate = false;
       let existingGuestName: string | null = null;
@@ -523,7 +535,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           isDuplicate = true;
           existingGuestName = existingInDb.guestName;
           if (collisionStrategy === 'reject') {
-            errors.push(
+            pushCodeError(
               `Code "${code}" already exists in database (belongs to "${existingGuestName}").`
             );
             actionOutcome = 'reject';
@@ -540,7 +552,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           }
         } else if (isBatchDuplicate) {
           isDuplicate = true;
-          errors.push(`Duplicate invitation code "${code}" within batch.`);
+          pushCodeError(`Duplicate invitation code "${code}" within batch.`);
           actionOutcome = 'invalid';
         } else {
           actionOutcome = 'create';
@@ -572,6 +584,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         ...normalized,
         isValid,
         errors,
+        fieldErrors: errors.length > 0 ? fieldErrors : undefined,
         warnings,
         isDuplicate,
         existingGuestName,

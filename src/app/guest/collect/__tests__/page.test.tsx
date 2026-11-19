@@ -1,6 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestAddressCollectPage from '../page';
+
+expect.extend(toHaveNoViolations);
 
 // Mock global fetch
 const globalFetch = jest.fn();
@@ -92,32 +95,68 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     expect(screen.getByText(/Thank you for providing your mailing details/i)).toBeInTheDocument();
   });
 
-  test('handles API error response gracefully', async () => {
+  test('marks only email invalid when API returns field-level email error details', async () => {
     globalFetch.mockResolvedValueOnce({
       ok: false,
       json: async () => ({
         success: false,
         error: 'Invalid email address.',
+        details: {
+          _errors: [],
+          email: { _errors: ['Invalid email address.'] },
+        },
       }),
     });
 
-    render(<GuestAddressCollectPage />);
+    const { container } = render(<GuestAddressCollectPage />);
 
     const nameInput = screen.getByLabelText(/Full Name/i);
+    const emailInput = screen.getByLabelText(/Email Address/i);
     fireEvent.change(nameInput, { target: { value: 'Bob Guest' } });
-    fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'invalid-email' } });
+    fireEvent.change(emailInput, { target: { value: 'invalid-email' } });
 
     const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
     fireEvent.submit(submitBtn.closest('form')!);
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Invalid email address.');
-    expect(alert).toHaveAttribute('id', 'address-collect-error');
     expect(alert).toHaveAttribute('aria-live', 'assertive');
     expect(alert).toHaveAttribute('aria-atomic', 'true');
+    expect(container.querySelector('#address-collect-error')).not.toBeInTheDocument();
 
-    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
-    expect(nameInput).toHaveAttribute('aria-describedby', 'address-collect-error');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'true');
+    expect(emailInput).toHaveAttribute('aria-describedby', alert.id);
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+  });
+
+  test('renders general API error alert without marking guestName invalid', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({
+        success: false,
+        error: 'Service temporarily unavailable. Please try again.',
+      }),
+    });
+
+    render(<GuestAddressCollectPage />);
+
+    const nameInput = screen.getByLabelText(/Full Name/i);
+    const emailInput = screen.getByLabelText(/Email Address/i);
+    fireEvent.change(nameInput, { target: { value: 'Bob Guest' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Submit Address/i });
+    fireEvent.submit(submitBtn.closest('form')!);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Service temporarily unavailable. Please try again.');
+    expect(alert).toHaveAttribute('id', 'address-collect-error');
+    expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+    expect(nameInput).not.toHaveAttribute('aria-describedby');
+    expect(emailInput).toHaveAttribute('aria-invalid', 'false');
   });
 
   test('clears error alert and resets input aria attributes when editing after an error', async () => {

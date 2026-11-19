@@ -1,5 +1,24 @@
 import { BroadcastTemplateContext } from './types';
 
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+function escapeHtmlEntities(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => HTML_ESCAPE_MAP[char] ?? char);
+}
+
+/**
+ * Strips CR, LF, and angle brackets from rendered email subjects so plain-text subjects stay safe.
+ */
+export function sanitizeEmailSubject(subject: string): string {
+  return subject.replace(/[\r\n<>]/g, '');
+}
+
 /**
  * Replaces dynamic placeholders in a message template string.
  * Supports:
@@ -13,17 +32,22 @@ import { BroadcastTemplateContext } from './types';
  */
 export function renderBroadcastTemplate(
   template: string,
-  context: BroadcastTemplateContext
+  context: BroadcastTemplateContext,
+  options?: { escapeHtml?: boolean }
 ): string {
   if (!template) return '';
+
+  const shouldEscape = Boolean(options?.escapeHtml);
 
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
     const trimmedKey = key.trim();
     if (trimmedKey === 'code' || trimmedKey === 'invitationCode') {
-      return context.invitationCode || '';
+      const codeVal = context.invitationCode ? String(context.invitationCode) : '';
+      return shouldEscape ? escapeHtmlEntities(codeVal) : codeVal;
     }
     if (trimmedKey in context && context[trimmedKey] !== undefined && context[trimmedKey] !== null) {
-      return String(context[trimmedKey]);
+      const resolved = String(context[trimmedKey]);
+      return shouldEscape ? escapeHtmlEntities(resolved) : resolved;
     }
     return match;
   });

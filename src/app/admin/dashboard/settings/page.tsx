@@ -395,30 +395,36 @@ export default function AdminSettingsPage() {
             {isMultisite && (
               <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gray-100 dark:border-zinc-700">
                 <div className="space-y-1">
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-zinc-100">Branding & Staging Profiles</h3>
+                  <h2 className="text-lg font-medium text-gray-900 dark:text-zinc-100">Branding & Staging Profiles</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     Manage parallel configuration profiles or test changes on staging subdomains.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                  <select
-                    value={selectedProfileId}
-                    onChange={(e) => {
-                      setSelectedProfileId(e.target.value);
-                      setLocalConfig(null);
-                    }}
-                    className="rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  >
-                    {Array.isArray(profiles) ? (
-                      profiles.map((p: any) => (
-                        <option key={p.id} value={p.id}>
-                          {p.id === 'global' ? 'Production (Default)' : `${p.brideName} & ${p.groomName} (subdomain: ${p.subdomain})`}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="global">Production (Default)</option>
-                    )}
-                  </select>
+                  <FormGroup className="space-y-0">
+                    <Label htmlFor="brandingProfileSelect" className="sr-only">
+                      Active Branding Profile
+                    </Label>
+                    <Select
+                      id="brandingProfileSelect"
+                      value={selectedProfileId}
+                      onChange={(e) => {
+                        setSelectedProfileId(e.target.value);
+                        setLocalConfig(null);
+                      }}
+                      className="w-auto"
+                    >
+                      {Array.isArray(profiles) ? (
+                        profiles.map((p: any) => (
+                          <option key={p.id} value={p.id}>
+                            {p.id === 'global' ? 'Production (Default)' : `${p.brideName} & ${p.groomName} (subdomain: ${p.subdomain})`}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="global">Production (Default)</option>
+                      )}
+                    </Select>
+                  </FormGroup>
                   <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
                     New Profile
                   </Button>
@@ -593,7 +599,7 @@ export default function AdminSettingsPage() {
                     });
                   }}
                 />
-                <FormGroup>
+                <FormGroup state={themeTokensError ? 'error' : 'default'}>
                   <Label>Custom CSS Theme Tokens (JSON)</Label>
                   <Textarea
                     value={themeTokensText}
@@ -929,9 +935,9 @@ export default function AdminSettingsPage() {
                     <FormMessage>Accessibility text for screen readers when displaying custom brand logo image.</FormMessage>
                   </FormGroup>
                 </div>
-                <FormGroup>
-                  <Label>Brand Logo Image (Header Navigation)</Label>
-                  <div className="flex flex-col space-y-2">
+                <div className="space-y-2">
+                  <FormGroup>
+                    <Label>Brand Logo Image (Header Navigation)</Label>
                     <Input
                       type="text"
                       name="brandLogoUrl"
@@ -939,6 +945,9 @@ export default function AdminSettingsPage() {
                       onChange={handleChange}
                       placeholder="https://... or /images/logo.png"
                     />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Upload Brand Logo File</Label>
                     <div className="flex items-center gap-4">
                       <Input
                         type="file"
@@ -957,8 +966,8 @@ export default function AdminSettingsPage() {
                         </div>
                       )}
                     </div>
-                  </div>
-                </FormGroup>
+                  </FormGroup>
+                </div>
 
                 {/* Hero Visual */}
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
@@ -975,9 +984,9 @@ export default function AdminSettingsPage() {
                       <FormMessage>Accessibility description for hero visual background media.</FormMessage>
                     </FormGroup>
                   </div>
-                  <FormGroup>
-                    <Label>Hero Visual Background Image</Label>
-                    <div className="flex flex-col space-y-2">
+                  <div className="space-y-2">
+                    <FormGroup>
+                      <Label>Hero Visual Background Image</Label>
                       <Input
                         type="text"
                         name="heroImageUrl"
@@ -985,6 +994,9 @@ export default function AdminSettingsPage() {
                         onChange={handleChange}
                         placeholder="https://... or /images/hero.jpg"
                       />
+                    </FormGroup>
+                    <FormGroup>
+                      <Label>Upload Hero Background File</Label>
                       <div className="flex items-center gap-4">
                         <Input
                           type="file"
@@ -1003,8 +1015,8 @@ export default function AdminSettingsPage() {
                           </div>
                         )}
                       </div>
-                    </div>
-                  </FormGroup>
+                    </FormGroup>
+                  </div>
                 </div>
 
                 {/* Brand Watermark */}
@@ -1022,9 +1034,9 @@ export default function AdminSettingsPage() {
                       <FormMessage>Accessibility description for brand watermark visual.</FormMessage>
                     </FormGroup>
                   </div>
-                  <FormGroup>
-                    <Label>Brand Watermark Graphic</Label>
-                    <div className="flex flex-col space-y-2">
+                  <div className="space-y-2">
+                    <FormGroup>
+                      <Label>Brand Watermark Graphic</Label>
                       <Input
                         type="text"
                         name="brandWatermarkUrl"
@@ -1032,6 +1044,9 @@ export default function AdminSettingsPage() {
                         onChange={handleChange}
                         placeholder="https://... or /images/watermark.png"
                       />
+                    </FormGroup>
+                    <FormGroup>
+                      <Label>Upload Brand Watermark File</Label>
                       <div className="flex items-center gap-4">
                         <Input
                           type="file"
@@ -1050,8 +1065,8 @@ export default function AdminSettingsPage() {
                           </div>
                         )}
                       </div>
-                    </div>
-                  </FormGroup>
+                    </FormGroup>
+                  </div>
                 </div>
 
                 {/* Badge Graphic */}
@@ -1069,9 +1084,9 @@ export default function AdminSettingsPage() {
                       <FormMessage>Accessibility description for badge graphic visual.</FormMessage>
                     </FormGroup>
                   </div>
-                  <FormGroup>
-                    <Label>Badge Graphic Image</Label>
-                    <div className="flex flex-col space-y-2">
+                  <div className="space-y-2">
+                    <FormGroup>
+                      <Label>Badge Graphic Image</Label>
                       <Input
                         type="text"
                         name="badgeGraphicUrl"
@@ -1079,6 +1094,9 @@ export default function AdminSettingsPage() {
                         onChange={handleChange}
                         placeholder="https://... or /images/badge.png"
                       />
+                    </FormGroup>
+                    <FormGroup>
+                      <Label>Upload Badge Graphic File</Label>
                       <div className="flex items-center gap-4">
                         <Input
                           type="file"
@@ -1097,8 +1115,8 @@ export default function AdminSettingsPage() {
                           </div>
                         )}
                       </div>
-                    </div>
-                  </FormGroup>
+                    </FormGroup>
+                  </div>
                 </div>
               </section>
 

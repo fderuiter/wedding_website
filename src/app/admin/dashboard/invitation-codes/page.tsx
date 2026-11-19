@@ -6,6 +6,8 @@ import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
+import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
@@ -971,38 +973,42 @@ export default function InvitationCodesDashboardPage() {
           {/* Interactive Tag Filter Pills Bar */}
           {allUniqueTags.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Party Tags:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTagFilter(null);
+              <span
+                id="party-tags-filter-label"
+                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+              >
+                Party Tags:
+              </span>
+              <ToggleButtonGroup
+                mode="group"
+                aria-labelledby="party-tags-filter-label"
+                value={selectedTagFilter ?? '__all__'}
+                onChange={(val) => {
+                  setSelectedTagFilter(val === '__all__' || selectedTagFilter === val ? null : val);
                   setSelectedIds([]);
                 }}
-                className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
-                  selectedTagFilter === null
-                    ? 'bg-primary text-white font-bold'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200'
-                }`}
-              >
-                All Tags
-              </button>
-              {allUniqueTags.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => {
-                    setSelectedTagFilter(selectedTagFilter === tag ? null : tag);
-                    setSelectedIds([]);
-                  }}
-                  className={`px-2.5 py-1 text-xs rounded-full transition-colors font-medium ${
-                    selectedTagFilter === tag
-                      ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-300'
-                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 hover:bg-blue-100'
-                  }`}
-                >
-                  #{tag}
-                </button>
-              ))}
+                className="bg-transparent dark:bg-transparent p-0 border-0 rounded-none gap-2"
+                options={[
+                  {
+                    value: '__all__',
+                    label: 'All Tags',
+                    className: 'px-2.5 py-1 text-xs rounded-full',
+                    activeClassName:
+                      'bg-primary text-white font-bold border border-primary ring-2 ring-offset-1 ring-primary/40',
+                    inactiveClassName:
+                      'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-transparent hover:bg-gray-200',
+                  },
+                  ...allUniqueTags.map((tag) => ({
+                    value: tag,
+                    label: `#${tag}`,
+                    className: 'px-2.5 py-1 text-xs rounded-full font-medium',
+                    activeClassName:
+                      'bg-blue-600 text-white font-bold border border-blue-800 ring-2 ring-blue-300',
+                    inactiveClassName:
+                      'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 hover:bg-blue-100',
+                  })),
+                ]}
+              />
             </div>
           )}
 
@@ -1010,374 +1016,281 @@ export default function InvitationCodesDashboardPage() {
             {/* Redemption Status Tab Group */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
-              <div
-                role="tablist"
+              <SegmentedTabs
+                idPrefix="redemption-status"
+                panelId="invitation-codes-results-panel"
                 aria-label="Filter invitation codes by status"
-                className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={statusFilter === 'all'}
-                  onClick={() => {
-                    setStatusFilter('all');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    statusFilter === 'all'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  All ({counts.all})
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={statusFilter === 'redeemed'}
-                  onClick={() => {
-                    setStatusFilter('redeemed');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    statusFilter === 'redeemed'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Redeemed ({counts.redeemed})
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={statusFilter === 'unused'}
-                  onClick={() => {
-                    setStatusFilter('unused');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    statusFilter === 'unused'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Unused ({counts.unused})
-                </button>
-              </div>
+                size="sm"
+                value={statusFilter}
+                onChange={(val) => {
+                  setStatusFilter(val);
+                  setSelectedIds([]);
+                }}
+                tabs={[
+                  { value: 'all', label: `All (${counts.all})` },
+                  { value: 'redeemed', label: `Redeemed (${counts.redeemed})` },
+                  { value: 'unused', label: `Unused (${counts.unused})` },
+                ]}
+              />
             </div>
 
             {/* Address Completion Filter */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Address:</span>
-              <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAddressFilter('all');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    addressFilter === 'all'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  All Addresses
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAddressFilter('complete');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    addressFilter === 'complete'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Address Complete ({counts.addressComplete})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAddressFilter('missing');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    addressFilter === 'missing'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Address Missing ({counts.addressMissing})
-                </button>
-              </div>
+              <span
+                id="address-filter-label"
+                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+              >
+                Address:
+              </span>
+              <ToggleButtonGroup
+                mode="group"
+                aria-labelledby="address-filter-label"
+                value={addressFilter}
+                onChange={(val) => {
+                  setAddressFilter(val);
+                  setSelectedIds([]);
+                }}
+                options={[
+                  { value: 'all', label: 'All Addresses' },
+                  { value: 'complete', label: `Address Complete (${counts.addressComplete})` },
+                  { value: 'missing', label: `Address Missing (${counts.addressMissing})` },
+                ]}
+              />
             </div>
 
             {/* RSVP Attendance Status Tab Group */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendance:</span>
-              <div className="flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAttendanceFilter('all');
-                    setSelectedIds([]);
-                  }}
-                  aria-label={`All attendance (${attendanceCounts.all})`}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    attendanceFilter === 'all'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  All ({attendanceCounts.all})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAttendanceFilter('attending');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    attendanceFilter === 'attending'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Attending ({attendanceCounts.attending})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAttendanceFilter('declined');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    attendanceFilter === 'declined'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Declined ({attendanceCounts.declined})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAttendanceFilter('pending');
-                    setSelectedIds([]);
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    attendanceFilter === 'pending'
-                      ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Pending ({attendanceCounts.pending})
-                </button>
-              </div>
+              <span
+                id="attendance-filter-label"
+                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+              >
+                Attendance:
+              </span>
+              <ToggleButtonGroup
+                mode="group"
+                aria-labelledby="attendance-filter-label"
+                value={attendanceFilter}
+                onChange={(val) => {
+                  setAttendanceFilter(val);
+                  setSelectedIds([]);
+                }}
+                options={[
+                  {
+                    value: 'all',
+                    label: `All (${attendanceCounts.all})`,
+                    'aria-label': `All attendance (${attendanceCounts.all})`,
+                  },
+                  { value: 'attending', label: `Attending (${attendanceCounts.attending})` },
+                  { value: 'declined', label: `Declined (${attendanceCounts.declined})` },
+                  { value: 'pending', label: `Pending (${attendanceCounts.pending})` },
+                ]}
+              />
             </div>
           </div>
         </div>
 
-        {filteredCodes.length > 0 && (
-          <div className="flex items-center gap-3 mb-4 bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-            <input
-              ref={selectAllRef}
-              type="checkbox"
-              id="select-all-filtered"
-              checked={allFilteredSelected}
-              onChange={handleToggleSelectAll}
-              aria-label="Select all filtered invitation codes"
-              className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
-            />
-            <label htmlFor="select-all-filtered" className="text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer">
-              Select All Filtered ({filteredCodes.length})
-            </label>
-          </div>
-        )}
+        <SegmentedTabPanel
+          id="invitation-codes-results-panel"
+          tabId={`redemption-status-tab-${statusFilter}`}
+        >
+          {filteredCodes.length > 0 && (
+            <div className="flex items-center gap-3 mb-4 bg-gray-50 dark:bg-gray-800/60 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                id="select-all-filtered"
+                checked={allFilteredSelected}
+                onChange={handleToggleSelectAll}
+                aria-label="Select all filtered invitation codes"
+                className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+              />
+              <label htmlFor="select-all-filtered" className="text-sm font-semibold text-gray-700 dark:text-gray-200 cursor-pointer">
+                Select All Filtered ({filteredCodes.length})
+              </label>
+            </div>
+          )}
 
-        <div className="grid gap-4 pb-10" ref={containerRef}>
-          {filteredCodes.map((item) => {
-            const hasAddress = isAddressComplete(item);
-            return (
-              <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="flex items-center gap-4 space-y-1">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select invitation code for ${item.guestName}`}
-                    checked={selectedIdsSet.has(item.id)}
-                    onChange={() => handleToggleSelectRow(item.id)}
-                    className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
-                  />
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
-                      {item.isSample && (
-                        <span
-                          className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
-                          data-testid="sample-guest-badge"
-                        >
-                          Sample
-                        </span>
-                      )}
-                      {item.householdName && (
-                        <span
-                          className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
-                          data-testid="household-badge"
-                        >
-                          🏠 {item.householdName}
-                        </span>
-                      )}
-                      {item.partyGroup && (
-                        <span
-                          className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
-                          data-testid="party-group-badge"
-                        >
-                          👥 {item.partyGroup}
-                        </span>
-                      )}
-                    </div>
-                    {(item.plusOneFirstName || item.plusOneLastName) && (
-                      <div className="text-sm text-gray-600 dark:text-gray-300">
-                        Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
-                      </div>
-                    )}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-                        Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="text-xs py-0.5 px-2 h-auto"
-                        onClick={() => setQrPreviewGuest(item)}
-                        aria-label={`View QR code for ${item.guestName}`}
-                      >
-                        View QR
-                      </Button>
-                    </div>
-
-                    {/* Party Tags Display */}
-                    {item.partyTags && item.partyTags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {item.partyTags.map((tag) => (
+          <div className="grid gap-4 pb-10" ref={containerRef}>
+            {filteredCodes.map((item) => {
+              const hasAddress = isAddressComplete(item);
+              return (
+                <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="flex items-center gap-4 space-y-1">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select invitation code for ${item.guestName}`}
+                      checked={selectedIdsSet.has(item.id)}
+                      onChange={() => handleToggleSelectRow(item.id)}
+                      className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
+                        {item.isSample && (
                           <span
-                            key={tag}
-                            className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
-                            data-testid="party-tag-pill"
+                            className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
+                            data-testid="sample-guest-badge"
                           >
-                            #{tag}
+                            Sample
                           </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Mailing Address Display */}
-                    <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
-                      <span className="font-bold">Mailing Address: </span>
-                      {hasAddress ? (
-                        <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
-                          {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
-                        </span>
-                      ) : item.addressLine1 ? (
-                        <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
-                          Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
-                      )}
-                    </div>
-
-                    <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
-                      <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
-                      <span>
-                        RSVP:{' '}
-                        <span
-                          className={
-                            getAttendanceStatus(item) === 'attending'
-                              ? 'text-green-600 font-semibold'
-                              : getAttendanceStatus(item) === 'declined'
-                                ? 'text-red-600 font-semibold'
-                                : 'text-amber-600 font-semibold'
-                          }
-                        >
-                          {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
-                        </span>
-                      </span>
-                    </div>
-                    {item.dietaryNotes && item.dietaryNotes.trim() && (
-                      <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
-                        <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
-                      </div>
-                    )}
-
-                    {/* Private Sub-Event Access Matrix Toggles */}
-                    <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
-                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
-                        Private Sub-Event Permissions:
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {subEvents.length === 0 ? (
-                          <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
-                        ) : (
-                          subEvents.map((evt) => {
-                            const isAllowed = (accessMatrix[item.id] || []).includes(evt.id);
-                            return (
-                              <label
-                                key={evt.id}
-                                className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                  isAllowed
-                                    ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
-                                    : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isAllowed}
-                                  aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
-                                  onChange={(e) => handleToggleSubEventAccess(item.id, evt.id, e.target.checked)}
-                                  className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
-                                />
-                                <span>
-                                  {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
-                                </span>
-                              </label>
-                            );
-                          })
                         )}
+                        {item.householdName && (
+                          <span
+                            className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
+                            data-testid="household-badge"
+                          >
+                            🏠 {item.householdName}
+                          </span>
+                        )}
+                        {item.partyGroup && (
+                          <span
+                            className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
+                            data-testid="party-group-badge"
+                          >
+                            👥 {item.partyGroup}
+                          </span>
+                        )}
+                      </div>
+                      {(item.plusOneFirstName || item.plusOneLastName) && (
+                        <div className="text-sm text-gray-600 dark:text-gray-300">
+                          Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
+                          Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="text-xs py-0.5 px-2 h-auto"
+                          onClick={() => setQrPreviewGuest(item)}
+                          aria-label={`View QR code for ${item.guestName}`}
+                        >
+                          View QR
+                        </Button>
+                      </div>
+
+                      {/* Party Tags Display */}
+                      {item.partyTags && item.partyTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {item.partyTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+                              data-testid="party-tag-pill"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Mailing Address Display */}
+                      <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
+                        <span className="font-bold">Mailing Address: </span>
+                        {hasAddress ? (
+                          <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
+                            {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                          </span>
+                        ) : item.addressLine1 ? (
+                          <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
+                            Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
+                        <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+                        <span>
+                          RSVP:{' '}
+                          <span
+                            className={
+                              getAttendanceStatus(item) === 'attending'
+                                ? 'text-green-600 font-semibold'
+                                : getAttendanceStatus(item) === 'declined'
+                                  ? 'text-red-600 font-semibold'
+                                  : 'text-amber-600 font-semibold'
+                            }
+                          >
+                            {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
+                          </span>
+                        </span>
+                      </div>
+                      {item.dietaryNotes && item.dietaryNotes.trim() && (
+                        <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
+                          <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+                        </div>
+                      )}
+
+                      {/* Private Sub-Event Access Matrix Toggles */}
+                      <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
+                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+                          Private Sub-Event Permissions:
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {subEvents.length === 0 ? (
+                            <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+                          ) : (
+                            subEvents.map((evt) => {
+                              const isAllowed = (accessMatrix[item.id] || []).includes(evt.id);
+                              return (
+                                <label
+                                  key={evt.id}
+                                  className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
+                                    isAllowed
+                                      ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
+                                      : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isAllowed}
+                                    aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
+                                    onChange={(e) => handleToggleSubEventAccess(item.id, evt.id, e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                                  />
+                                  <span>
+                                    {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
+                                  </span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`Edit guest ${item.guestName}`}
-                    onClick={() => setEditingGuest(item)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    aria-label={`Delete code for ${item.guestName}`}
-                    onClick={(e) => handleDelete(item.id, e)}
-                  >
-                    Delete
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Edit guest ${item.guestName}`}
+                      onClick={() => setEditingGuest(item)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      aria-label={`Delete code for ${item.guestName}`}
+                      onClick={(e) => handleDelete(item.id, e)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-          {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
-          {codes.length > 0 && filteredCodes.length === 0 && (
-            <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
-          )}
-        </div>
+              );
+            })}
+            {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
+            {codes.length > 0 && filteredCodes.length === 0 && (
+              <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
+            )}
+          </div>
+        </SegmentedTabPanel>
 
         {selectedIds.length > 0 && (
           <div

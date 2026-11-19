@@ -288,6 +288,7 @@ export interface DryRunValidatedRow
   extraFields?: Record<string, unknown> | null;
   isValid: boolean;
   errors: string[];
+  fieldErrors?: Record<string, string[]>;
   warnings: string[];
   isDuplicate: boolean;
   existingGuestName?: string | null;
@@ -318,9 +319,30 @@ export const GuestAddressUpdateSchema = z.object({
 export type GuestAddressUpdateDTO = z.infer<typeof GuestAddressUpdateSchema>;
 
 const phonePattern = /^\+?[\d\s().\/-]{7,30}$/;
+const disallowedPublicTextPattern = /[<>]|\p{Cc}/u;
+
+const publicGuestNameField = z
+  .string({ message: 'Guest name is required.' })
+  .refine((val) => !disallowedPublicTextPattern.test(val), {
+    message: 'Guest name cannot contain HTML brackets or control characters.',
+  })
+  .trim()
+  .min(1, `Guest name is required and must be under ${GUEST_NAME_MAX_LENGTH} characters.`)
+  .max(GUEST_NAME_MAX_LENGTH, `Guest name is required and must be under ${GUEST_NAME_MAX_LENGTH} characters.`);
+
+const publicHouseholdNameField = z
+  .string()
+  .refine((val) => !disallowedPublicTextPattern.test(val), {
+    message: 'Household name cannot contain HTML brackets or control characters.',
+  })
+  .trim()
+  .max(HOUSEHOLD_NAME_MAX_LENGTH, `Household name must be under ${HOUSEHOLD_NAME_MAX_LENGTH} characters.`)
+  .optional()
+  .or(z.literal(''))
+  .nullable();
 
 export const PublicAddressCollectSchema = z.object({
-  guestName: requiredGuestNameField,
+  guestName: publicGuestNameField,
   email: optionalNullableEmailField,
   phone: z
     .string()
@@ -344,7 +366,7 @@ export const PublicAddressCollectSchema = z.object({
   mobile: z.string().optional().nullable(),
   phoneNumber: z.string().optional().nullable(),
   ...optionalAddressFields,
-  householdName: optionalNullableTrimmedField(HOUSEHOLD_NAME_MAX_LENGTH, 'Household name'),
+  householdName: publicHouseholdNameField,
   notes: z.string().trim().max(1000, 'Notes must be under 1000 characters.').optional().or(z.literal('')).nullable(),
   website: z.string().optional().nullable(),
   honeypot: z.string().optional().nullable(),
