@@ -673,7 +673,7 @@ describe('InteractiveTimeline Component', () => {
       expect(plusOneInput.value).toBe('3');
 
       // Selecting Declined resets plus-one count to 0 and disables the input
-      fireEvent.click(within(card).getByRole('button', { name: /^declined$/i }));
+      fireEvent.click(within(card).getByRole('radio', { name: /^declined$/i }));
       expect(plusOneInput).toBeDisabled();
       expect(plusOneInput.value).toBe('0');
     });
