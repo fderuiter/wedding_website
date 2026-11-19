@@ -3,99 +3,696 @@ import path from 'path';
 import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 
-export function getKeysFromSource(fileContent: string): string[] {
-  const sourceFile = ts.createSourceFile('env.ts', fileContent, ts.ScriptTarget.Latest, true);
-  const keys: string[] = [];
+export const INTERNAL_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
+  'NEXT_RUNTIME',
+  'npm_lifecycle_event',
+  'JEST_WORKER_ID',
+]);
 
-  function getPropertyNameText(node: ts.PropertyName | ts.Expression): string | null {
-    if (ts.isIdentifier(node)) {
-      return node.text;
+export type EnvClassification = 'required' | 'production-required' | 'conditional' | 'optional';
+
+export interface EnvFieldSpec {
+  key: string;
+  classification: EnvClassification;
+  defaultValue: string | null;
+}
+
+export interface RuntimeContractRow {
+  key: string;
+  subheading: string;
+  classification: EnvClassification;
+  hasDefaultColumn: boolean;
+  defaultValue: string | null;
+}
+
+function unwrapExpression(node: ts.Expression): ts.Expression {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isNonNullExpression(current) ||
+    ts.isSatisfiesExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function getPropertyNameText(node: ts.PropertyName | ts.Expression): string | null {
+  if (ts.isIdentifier(node)) {
+    return node.text;
+  }
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return node.text;
+  }
+  if (ts.isComputedPropertyName(node)) {
+    return getPropertyNameText(node.expression);
+  }
+  return null;
+}
+
+function isProcessEnvExpression(node: ts.Expression, sourceFile: ts.SourceFile): boolean {
+  const expr = unwrapExpression(node);
+  if (ts.isPropertyAccessExpression(expr)) {
+    const target = unwrapExpression(expr.expression);
+    return ts.isIdentifier(target) && target.text === 'process' && expr.name.text === 'env';
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    const target = unwrapExpression(expr.expression);
+    return (
+      ts.isIdentifier(target) &&
+      target.text === 'process' &&
+      ts.isStringLiteralLike(expr.argumentExpression) &&
+      expr.argumentExpression.text === 'env'
+    );
+  }
+  return expr.getText(sourceFile) === 'process.env';
+}
+
+function findZodObjectCall(node: ts.Node | undefined): ts.CallExpression | null {
+  if (!node) return null;
+  if (ts.isCallExpression(node)) {
+    const expr = node.expression;
+    if (ts.isPropertyAccessExpression(expr)) {
+      if (expr.expression.getText() === 'z' && expr.name.text === 'object') {
+        return node;
+      }
     }
-    if (ts.isStringLiteral(node)) {
-      return node.text;
+  }
+  let result: ts.CallExpression | null = null;
+  node.forEachChild((child) => {
+    const found = findZodObjectCall(child);
+    if (found) {
+      result = found;
     }
-    if (ts.isNoSubstitutionTemplateLiteral(node)) {
-      return node.text;
+  });
+  return result;
+}
+
+function findEnvSchemaObjectLiteral(sourceFile: ts.SourceFile): ts.ObjectLiteralExpression | null {
+  let foundObject: ts.ObjectLiteralExpression | null = null;
+
+  function visitNamed(node: ts.Node) {
+    if (foundObject) return;
+    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === 'envSchema') {
+      const callExpr = findZodObjectCall(node.initializer);
+      if (callExpr && callExpr.arguments.length > 0 && ts.isObjectLiteralExpression(callExpr.arguments[0])) {
+        foundObject = callExpr.arguments[0];
+        return;
+      }
     }
-    if (ts.isComputedPropertyName(node)) {
-      return getPropertyNameText(node.expression);
-    }
-    return null;
+    ts.forEachChild(node, visitNamed);
   }
 
-  function findZodObjectCall(node: ts.Node | undefined): ts.CallExpression | null {
-    if (!node) return null;
+  visitNamed(sourceFile);
+  if (foundObject) {
+    return foundObject;
+  }
+
+  function visitAny(node: ts.Node) {
+    if (foundObject) return;
     if (ts.isCallExpression(node)) {
       const expr = node.expression;
-      if (ts.isPropertyAccessExpression(expr)) {
-        if (expr.expression.getText() === 'z' && expr.name.text === 'object') {
-          return node;
+      if (
+        ts.isPropertyAccessExpression(expr) &&
+        expr.expression.getText(sourceFile) === 'z' &&
+        expr.name.text === 'object' &&
+        node.arguments.length > 0 &&
+        ts.isObjectLiteralExpression(node.arguments[0])
+      ) {
+        foundObject = node.arguments[0];
+        return;
+      }
+    }
+    ts.forEachChild(node, visitAny);
+  }
+
+  visitAny(sourceFile);
+  return foundObject;
+}
+
+export function getKeysFromSource(fileContent: string): string[] {
+  const sourceFile = ts.createSourceFile('env.ts', fileContent, ts.ScriptTarget.Latest, true);
+  const objectLiteral = findEnvSchemaObjectLiteral(sourceFile);
+  if (!objectLiteral) {
+    return [];
+  }
+
+  const keys: string[] = [];
+  for (const property of objectLiteral.properties) {
+    if (ts.isPropertyAssignment(property)) {
+      const nameText = getPropertyNameText(property.name);
+      if (nameText) {
+        keys.push(nameText);
+      }
+    } else if (ts.isShorthandPropertyAssignment(property)) {
+      keys.push(property.name.text);
+    }
+  }
+
+  return keys;
+}
+
+export function scanProcessEnvFromSource(fileContent: string, fileName: string = 'source.ts'): string[] {
+  const scriptKind = fileName.endsWith('.tsx')
+    ? ts.ScriptKind.TSX
+    : fileName.endsWith('.jsx')
+      ? ts.ScriptKind.JSX
+      : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(fileName, fileContent, ts.ScriptTarget.Latest, true, scriptKind);
+  const keys = new Set<string>();
+
+  function visit(node: ts.Node) {
+    // 1. process.env.KEY
+    if (ts.isPropertyAccessExpression(node) && isProcessEnvExpression(node.expression, sourceFile)) {
+      keys.add(node.name.text);
+    }
+
+    // 2. process.env['KEY'] / process.env[`KEY`]
+    if (
+      ts.isElementAccessExpression(node) &&
+      isProcessEnvExpression(node.expression, sourceFile) &&
+      ts.isStringLiteralLike(node.argumentExpression)
+    ) {
+      keys.add(node.argumentExpression.text);
+    }
+
+    // 3. const { KEY1, KEY2: alias } = process.env
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      isProcessEnvExpression(node.initializer, sourceFile) &&
+      ts.isObjectBindingPattern(node.name)
+    ) {
+      for (const element of node.name.elements) {
+        if (element.propertyName) {
+          const propText = getPropertyNameText(element.propertyName);
+          if (propText) {
+            keys.add(propText);
+          }
+        } else if (ts.isIdentifier(element.name)) {
+          keys.add(element.name.text);
         }
       }
     }
-    let result: ts.CallExpression | null = null;
-    node.forEachChild(child => {
-      const found = findZodObjectCall(child);
-      if (found) {
-        result = found;
-      }
-    });
-    return result;
-  }
 
-  function visit(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && node.name.getText() === 'envSchema') {
-      const callExpr = findZodObjectCall(node.initializer);
-      if (callExpr && callExpr.arguments.length > 0) {
-        const firstArg = callExpr.arguments[0];
-        if (ts.isObjectLiteralExpression(firstArg)) {
-          for (const property of firstArg.properties) {
-            if (ts.isPropertyAssignment(property)) {
-              const nameText = getPropertyNameText(property.name);
-              if (nameText) {
-                keys.push(nameText);
-              }
-            } else if (ts.isShorthandPropertyAssignment(property)) {
-              keys.push(property.name.text);
+    // 4. Child-process env object spreading process.env: { ...process.env, STATIC_EXPORT: 'true' }
+    if (ts.isObjectLiteralExpression(node)) {
+      const spreadsProcessEnv = node.properties.some(
+        (prop) => ts.isSpreadAssignment(prop) && isProcessEnvExpression(prop.expression, sourceFile)
+      );
+      if (spreadsProcessEnv) {
+        for (const prop of node.properties) {
+          if (ts.isPropertyAssignment(prop)) {
+            const nameText = getPropertyNameText(prop.name);
+            if (nameText) {
+              keys.add(nameText);
             }
+          } else if (ts.isShorthandPropertyAssignment(prop)) {
+            keys.add(prop.name.text);
           }
         }
       }
     }
+
     ts.forEachChild(node, visit);
   }
 
   visit(sourceFile);
+  return Array.from(keys);
+}
 
-  // If we didn't find keys through variable declaration 'envSchema', search for *any* z.object CallExpression in the file.
-  if (keys.length === 0) {
-    function visitAnyZodObject(node: ts.Node) {
-      if (ts.isCallExpression(node)) {
-        const expr = node.expression;
-        if (ts.isPropertyAccessExpression(expr) && expr.expression.getText() === 'z' && expr.name.text === 'object') {
-          if (node.arguments.length > 0) {
-            const firstArg = node.arguments[0];
-            if (ts.isObjectLiteralExpression(firstArg)) {
-              for (const property of firstArg.properties) {
-                if (ts.isPropertyAssignment(property)) {
-                  const nameText = getPropertyNameText(property.name);
-                  if (nameText) {
-                    keys.push(nameText);
-                  }
-                } else if (ts.isShorthandPropertyAssignment(property)) {
-                  keys.push(property.name.text);
-                }
-              }
-            }
+function extractInterpolatedVars(text: string): string[] {
+  const sanitized = text.replace(/\$\$/g, '');
+  const vars = new Set<string>();
+  const bracedRegex = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?[-?+][^}]*)?\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = bracedRegex.exec(sanitized)) !== null) {
+    vars.add(match[1]);
+  }
+  return Array.from(vars);
+}
+
+export function parseDockerfileEnvKeys(dockerfileContent: string): string[] {
+  const keys = new Set<string>();
+  const logicalLines: string[] = [];
+  let buffer = '';
+
+  for (const rawLine of dockerfileContent.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!buffer && (!trimmed || trimmed.startsWith('#'))) {
+      continue;
+    }
+    if (trimmed.startsWith('#')) {
+      continue;
+    }
+    if (trimmed.endsWith('\\')) {
+      buffer += `${trimmed.slice(0, -1).trimEnd()} `;
+    } else {
+      buffer += trimmed;
+      if (buffer.length > 0) {
+        logicalLines.push(buffer);
+      }
+      buffer = '';
+    }
+  }
+  if (buffer.trim().length > 0) {
+    logicalLines.push(buffer.trim());
+  }
+
+  for (const line of logicalLines) {
+    const envMatch = line.match(/^ENV\s+(.+)$/i);
+    if (!envMatch) {
+      continue;
+    }
+    const rest = envMatch[1].trim();
+    for (const interpKey of extractInterpolatedVars(rest)) {
+      keys.add(interpKey);
+    }
+
+    // Legacy `ENV KEY VALUE` form (no `=` in first whitespace-delimited token)
+    const firstSpaceIdx = rest.search(/\s/);
+    const firstToken = firstSpaceIdx === -1 ? rest : rest.slice(0, firstSpaceIdx);
+    if (!firstToken.includes('=')) {
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(firstToken)) {
+        keys.add(firstToken);
+      }
+      continue;
+    }
+
+    // Modern `ENV KEY1=VAL1 KEY2="VAL 2"` form (scan outside quotes)
+    let i = 0;
+    while (i < rest.length) {
+      while (i < rest.length && /\s/.test(rest[i])) {
+        i++;
+      }
+      if (i >= rest.length) break;
+
+      const keyMatch = rest.slice(i).match(/^([A-Za-z_][A-Za-z0-9_]*)=/);
+      if (!keyMatch) {
+        while (i < rest.length && !/\s/.test(rest[i])) {
+          i++;
+        }
+        continue;
+      }
+
+      keys.add(keyMatch[1]);
+      i += keyMatch[0].length;
+
+      let quote: '"' | '\'' | null = null;
+      while (i < rest.length) {
+        const ch = rest[i];
+        if (ch === '\\') {
+          i += 2;
+          continue;
+        }
+        if (quote) {
+          if (ch === quote) {
+            quote = null;
+          }
+          i++;
+        } else if (ch === '"' || ch === '\'') {
+          quote = ch;
+          i++;
+        } else if (/\s/.test(ch)) {
+          break;
+        } else {
+          i++;
+        }
+      }
+    }
+  }
+
+  return Array.from(keys);
+}
+
+function stripYamlComment(line: string): string {
+  let quote: '"' | '\'' | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '\\' && quote === '"') {
+      i++;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      }
+    } else if (ch === '"' || ch === '\'') {
+      quote = ch;
+    } else if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
+export function parseComposeEnvKeys(composeContent: string): string[] {
+  const keys = new Set<string>();
+  let inEnvironmentBlock = false;
+  let envBlockIndent = -1;
+
+  for (const rawLine of composeContent.split(/\r?\n/)) {
+    if (/^\s*#/.test(rawLine) || !rawLine.trim()) {
+      continue;
+    }
+    const cleanLine = stripYamlComment(rawLine);
+
+    for (const interpKey of extractInterpolatedVars(cleanLine)) {
+      keys.add(interpKey);
+    }
+
+    const indent = (cleanLine.match(/^(\s*)/)?.[1] ?? '').length;
+    if (inEnvironmentBlock && indent <= envBlockIndent) {
+      inEnvironmentBlock = false;
+      envBlockIndent = -1;
+    }
+
+    if (/^\s*environment:\s*$/.test(cleanLine)) {
+      inEnvironmentBlock = true;
+      envBlockIndent = indent;
+      continue;
+    }
+
+    if (inEnvironmentBlock) {
+      // Bare host pass-through entry `- VAR_NAME` (without `=` or `:`)
+      const bareItemMatch = cleanLine.match(/^\s*-\s*([A-Za-z_][A-Za-z0-9_]*)\s*$/);
+      if (bareItemMatch) {
+        keys.add(bareItemMatch[1]);
+      }
+    }
+  }
+
+  return Array.from(keys);
+}
+
+function walkRuntimeSourceFiles(dirPath: string): string[] {
+  if (!fs.existsSync(dirPath)) {
+    return [];
+  }
+  const results: string[] = [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === '__tests__' || entry.name === 'testing' || entry.name === 'mocks') {
+      continue;
+    }
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...walkRuntimeSourceFiles(fullPath));
+    } else if (
+      entry.isFile() &&
+      /\.(ts|tsx|mts|mjs|js|jsx)$/.test(entry.name) &&
+      !/\.(test|spec|stories)\./.test(entry.name)
+    ) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
+
+export function collectOperatorEnvKeys(cwd: string = process.cwd()): {
+  keys: string[];
+  sources: Map<string, string[]>;
+} {
+  const sourceMap = new Map<string, Set<string>>();
+
+  function recordKey(key: string, relFile: string) {
+    if (INTERNAL_ENV_ALLOWLIST.has(key)) {
+      return;
+    }
+    let set = sourceMap.get(key);
+    if (!set) {
+      set = new Set<string>();
+      sourceMap.set(key, set);
+    }
+    set.add(relFile);
+  }
+
+  const envFilePath = path.join(cwd, 'src/env.ts');
+  if (fs.existsSync(envFilePath)) {
+    const envContent = fs.readFileSync(envFilePath, 'utf-8');
+    for (const key of getKeysFromSource(envContent)) {
+      recordKey(key, 'src/env.ts');
+    }
+  }
+
+  const astTargetFiles = [
+    ...walkRuntimeSourceFiles(path.join(cwd, 'src')),
+    path.join(cwd, 'next.config.ts'),
+    path.join(cwd, 'scripts/build-export.mjs'),
+    path.join(cwd, 'docs-portal/.vitepress/config.mts'),
+  ];
+
+  for (const absPath of astTargetFiles) {
+    if (!fs.existsSync(absPath)) {
+      continue;
+    }
+    const relPath = path.relative(cwd, absPath).replace(/\\/g, '/');
+    const content = fs.readFileSync(absPath, 'utf-8');
+    for (const key of scanProcessEnvFromSource(content, relPath)) {
+      recordKey(key, relPath);
+    }
+  }
+
+  const dockerfilePath = path.join(cwd, 'Dockerfile');
+  if (fs.existsSync(dockerfilePath)) {
+    const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf-8');
+    for (const key of parseDockerfileEnvKeys(dockerfileContent)) {
+      recordKey(key, 'Dockerfile');
+    }
+  }
+
+  const composePath = path.join(cwd, 'docker-compose.yml');
+  if (fs.existsSync(composePath)) {
+    const composeContent = fs.readFileSync(composePath, 'utf-8');
+    for (const key of parseComposeEnvKeys(composeContent)) {
+      recordKey(key, 'docker-compose.yml');
+    }
+  }
+
+  const keys = Array.from(sourceMap.keys()).sort();
+  const sources = new Map<string, string[]>();
+  for (const key of keys) {
+    sources.set(key, Array.from(sourceMap.get(key) ?? []).sort());
+  }
+
+  return { keys, sources };
+}
+
+function extractLiteralDefault(node: ts.Expression, sourceFile: ts.SourceFile): string | null {
+  const expr = unwrapExpression(node);
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+    return expr.text;
+  }
+  if (ts.isNumericLiteral(expr)) {
+    return expr.text;
+  }
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) {
+    return 'true';
+  }
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) {
+    return 'false';
+  }
+  return expr.getText(sourceFile);
+}
+
+function analyzeZodPropertyChain(
+  initializer: ts.Expression,
+  sourceFile: ts.SourceFile
+): { hasOptional: boolean; defaultValue: string | null } {
+  let hasOptional = false;
+  let defaultValue: string | null = null;
+
+  function walkChain(node: ts.Node) {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const methodName = node.expression.name.text;
+      if (methodName === 'optional' || methodName === 'nullish') {
+        hasOptional = true;
+      } else if (methodName === 'default' && node.arguments.length > 0 && defaultValue === null) {
+        defaultValue = extractLiteralDefault(node.arguments[0], sourceFile);
+      }
+      walkChain(node.expression.expression);
+    } else {
+      node.forEachChild(walkChain);
+    }
+  }
+
+  walkChain(initializer);
+  return { hasOptional, defaultValue };
+}
+
+const CLASSIFICATION_RANK: Record<EnvClassification, number> = {
+  optional: 0,
+  conditional: 1,
+  'production-required': 2,
+  required: 3,
+};
+
+function upgradeClassification(current: EnvClassification, candidate: EnvClassification): EnvClassification {
+  return CLASSIFICATION_RANK[candidate] > CLASSIFICATION_RANK[current] ? candidate : current;
+}
+
+export function extractEnvSchemaSpecs(fileContent: string): Map<string, EnvFieldSpec> {
+  const sourceFile = ts.createSourceFile('env.ts', fileContent, ts.ScriptTarget.Latest, true);
+  const specs = new Map<string, EnvFieldSpec>();
+  const objectLiteral = findEnvSchemaObjectLiteral(sourceFile);
+
+  if (!objectLiteral) {
+    return specs;
+  }
+
+  for (const prop of objectLiteral.properties) {
+    if (ts.isPropertyAssignment(prop)) {
+      const key = getPropertyNameText(prop.name);
+      if (!key) continue;
+      const { hasOptional, defaultValue } = analyzeZodPropertyChain(prop.initializer, sourceFile);
+      const classification: EnvClassification =
+        defaultValue !== null || hasOptional ? 'optional' : 'required';
+      specs.set(key, { key, classification, defaultValue });
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      const key = prop.name.text;
+      specs.set(key, { key, classification: 'required', defaultValue: null });
+    }
+  }
+
+  // Collect constant string-array variable declarations (e.g. `const keys = ['S3_BUCKET', ...] as const`)
+  const arrayBindings = new Map<string, string[]>();
+  function collectArrays(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const init = unwrapExpression(node.initializer);
+      if (ts.isArrayLiteralExpression(init)) {
+        const items: string[] = [];
+        for (const el of init.elements) {
+          if (ts.isStringLiteralLike(el)) {
+            items.push(el.text);
+          }
+        }
+        if (items.length > 0) {
+          arrayBindings.set(node.name.text, items);
+        }
+      }
+    }
+    ts.forEachChild(node, collectArrays);
+  }
+  collectArrays(sourceFile);
+
+  // Map loop variables derived from known string arrays (e.g. `const missingKeys = keys.filter(...)`, `missingKeys.forEach(key => ...)`)
+  const derivedArrayBindings = new Map<string, string[]>(arrayBindings);
+  function collectDerivedArrays(node: ts.Node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const text = node.initializer.getText(sourceFile);
+      for (const [arrName, values] of arrayBindings.entries()) {
+        if (new RegExp(`\\b${arrName}\\.filter\\b`).test(text)) {
+          derivedArrayBindings.set(node.name.text, values);
+        }
+      }
+    }
+    ts.forEachChild(node, collectDerivedArrays);
+  }
+  collectDerivedArrays(sourceFile);
+
+  function resolveIssueTargetKeys(
+    issueObj: ts.ObjectLiteralExpression,
+    loopVarBindings: Map<string, string[]>
+  ): string[] {
+    for (const prop of issueObj.properties) {
+      if (ts.isPropertyAssignment(prop) && getPropertyNameText(prop.name) === 'path') {
+        if (ts.isArrayLiteralExpression(prop.initializer) && prop.initializer.elements.length > 0) {
+          const first = prop.initializer.elements[0];
+          if (ts.isStringLiteralLike(first)) {
+            return [first.text];
+          }
+          if (ts.isIdentifier(first)) {
+            return loopVarBindings.get(first.text) ?? [];
           }
         }
       }
-      ts.forEachChild(node, visitAnyZodObject);
     }
-    visitAnyZodObject(sourceFile);
+    return [];
   }
 
-  return keys;
+  function extractIssueMessage(issueObj: ts.ObjectLiteralExpression): string {
+    for (const prop of issueObj.properties) {
+      if (ts.isPropertyAssignment(prop) && getPropertyNameText(prop.name) === 'message') {
+        return prop.initializer.getText(sourceFile);
+      }
+    }
+    return '';
+  }
+
+  function visitRefinements(
+    node: ts.Node,
+    inProductionGuard: boolean,
+    enclosingIfCondition: string,
+    loopVarBindings: Map<string, string[]>
+  ) {
+    let nextProdGuard = inProductionGuard;
+    let nextIfCond = enclosingIfCondition;
+    let nextLoopVars = loopVarBindings;
+
+    if (ts.isIfStatement(node)) {
+      const condText = node.expression.getText(sourceFile);
+      if (/\bNODE_ENV\s*===\s*['"]production['"]/.test(condText)) {
+        nextProdGuard = true;
+      }
+      nextIfCond = condText;
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'forEach' &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.arguments.length > 0
+    ) {
+      const sourceArr = derivedArrayBindings.get(node.expression.expression.text);
+      const callback = node.arguments[0];
+      if (
+        sourceArr &&
+        (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+        callback.parameters.length > 0 &&
+        ts.isIdentifier(callback.parameters[0].name)
+      ) {
+        nextLoopVars = new Map(loopVarBindings);
+        nextLoopVars.set(callback.parameters[0].name.text, sourceArr);
+      }
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'addIssue' &&
+      node.arguments.length > 0 &&
+      ts.isObjectLiteralExpression(node.arguments[0])
+    ) {
+      const issueObj = node.arguments[0];
+      const targetKeys = resolveIssueTargetKeys(issueObj, nextLoopVars);
+      const messageText = extractIssueMessage(issueObj);
+
+      for (const targetKey of targetKeys) {
+        const existing = specs.get(targetKey);
+        if (!existing) continue;
+
+        if (nextProdGuard) {
+          existing.classification = upgradeClassification(existing.classification, 'production-required');
+        } else if (
+          /\bis required when\b/i.test(messageText) ||
+          /\bincomplete\b/i.test(messageText) ||
+          (/\bpresent\w*\.length\s*>\s*0/.test(nextIfCond) && /\bpresent\w*\.length\s*</.test(nextIfCond))
+        ) {
+          existing.classification = upgradeClassification(existing.classification, 'conditional');
+        }
+      }
+    }
+
+    ts.forEachChild(node, (child) =>
+      visitRefinements(child, nextProdGuard, nextIfCond, nextLoopVars)
+    );
+  }
+
+  visitRefinements(sourceFile, false, '', new Map());
+  return specs;
 }
 
 interface MarkdownSection {
@@ -142,6 +739,170 @@ function splitMarkdownSections(docContent: string): MarkdownSection[] {
   return sections;
 }
 
+function splitMarkdownTableRow(line: string): string[] {
+  let trimmed = line.trim();
+  if (trimmed.startsWith('|')) {
+    trimmed = trimmed.slice(1);
+  }
+  if (trimmed.endsWith('|') && !trimmed.endsWith('\\|')) {
+    trimmed = trimmed.slice(0, -1);
+  }
+
+  const cells: string[] = [];
+  let current = '';
+  let inCode = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch === '\\' && i + 1 < trimmed.length) {
+      current += trimmed[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === '`') {
+      inCode = !inCode;
+      current += ch;
+      continue;
+    }
+    if (ch === '|' && !inCode) {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function isTableSeparatorRow(cells: string[]): boolean {
+  return cells.length > 0 && cells.every((cell) => /^:?-{2,}:?$/.test(cell));
+}
+
+function classifyFromRequirementCell(cellText: string, fallbackSubheading: string): EnvClassification {
+  const normalized = cellText.replace(/`/g, '').trim();
+  if (/^required\s+in\s+production\b/i.test(normalized) || /^production[- ]required\b/i.test(normalized)) {
+    return 'production-required';
+  }
+  if (/^required\s+(?:if|when)\b/i.test(normalized) || /^conditional\b/i.test(normalized)) {
+    return 'conditional';
+  }
+  if (/^(?:required|mandatory|yes)\b/i.test(normalized)) {
+    return 'required';
+  }
+  if (/^(?:optional|no)\b/i.test(normalized)) {
+    return 'optional';
+  }
+  return classifyFromSubheading(fallbackSubheading);
+}
+
+function classifyFromSubheading(subheading: string): EnvClassification {
+  if (/\bproduction[- ]required\b/i.test(subheading)) {
+    return 'production-required';
+  }
+  if (/\bmandatory\b/i.test(subheading) || (/\brequired\b/i.test(subheading) && !/\boptional\b/i.test(subheading))) {
+    return 'required';
+  }
+  return 'optional';
+}
+
+function parseDefaultCell(cellText: string): string | null {
+  const trimmed = cellText.trim();
+  if (
+    !trimmed ||
+    /^(?:\*none\*|_none_|none|—|-|n\/a)$/i.test(trimmed)
+  ) {
+    return null;
+  }
+  const codeMatch = trimmed.match(/^`([^`]*)`$/);
+  if (codeMatch) {
+    return codeMatch[1];
+  }
+  const firstInlineCode = trimmed.match(/`([^`]*)`/);
+  if (firstInlineCode) {
+    return firstInlineCode[1];
+  }
+  return trimmed;
+}
+
+export function parseRuntimeContractTables(docContent: string): RuntimeContractRow[] {
+  const sections = splitMarkdownSections(docContent);
+  const envSection = sections.find((section) => /\benvironment\s+variable/i.test(section.heading));
+  if (!envSection) {
+    return [];
+  }
+
+  const rows: RuntimeContractRow[] = [];
+  let currentSubheading = envSection.heading;
+  let tableHeaders: string[] | null = null;
+  let awaitingSeparator = false;
+
+  for (const rawLine of envSection.nonCodeLines) {
+    const trimmed = rawLine.trim();
+    if (/^###\s+/.test(trimmed)) {
+      currentSubheading = trimmed;
+      tableHeaders = null;
+      awaitingSeparator = false;
+      continue;
+    }
+
+    if (!trimmed.startsWith('|')) {
+      tableHeaders = null;
+      awaitingSeparator = false;
+      continue;
+    }
+
+    const cells = splitMarkdownTableRow(trimmed);
+    if (!tableHeaders) {
+      tableHeaders = cells;
+      awaitingSeparator = true;
+      continue;
+    }
+
+    if (awaitingSeparator) {
+      if (isTableSeparatorRow(cells)) {
+        awaitingSeparator = false;
+        continue;
+      }
+      tableHeaders = null;
+      awaitingSeparator = false;
+      continue;
+    }
+
+    const firstCellMatch = (cells[0] ?? '').match(/^`([A-Za-z_][A-Za-z0-9_]*)`$/);
+    if (!firstCellMatch) {
+      continue;
+    }
+    const key = firstCellMatch[1];
+
+    const reqColIdx = tableHeaders.findIndex((h) =>
+      /^(?:requirement|required|status)$/i.test(h.trim())
+    );
+    const defaultColIdx = tableHeaders.findIndex((h) => /\bdefault\b/i.test(h.trim()));
+
+    const classification =
+      reqColIdx !== -1 && cells[reqColIdx] !== undefined
+        ? classifyFromRequirementCell(cells[reqColIdx], currentSubheading)
+        : classifyFromSubheading(currentSubheading);
+
+    const hasDefaultColumn = defaultColIdx !== -1;
+    const defaultValue =
+      hasDefaultColumn && cells[defaultColIdx] !== undefined
+        ? parseDefaultCell(cells[defaultColIdx])
+        : null;
+
+    rows.push({
+      key,
+      subheading: currentSubheading,
+      classification,
+      hasDefaultColumn,
+      defaultValue,
+    });
+  }
+
+  return rows;
+}
+
 function countStructuredKeyEntries(lines: string[], key: string): number {
   const escaped = escapeRegex(key);
   const entryRegex = new RegExp(`^\\s*(?:[-*]\\s+\`${escaped}\`|\\|\\s*\`${escaped}\`\\s*\\|)`);
@@ -152,6 +913,22 @@ function countStructuredKeyEntries(lines: string[], key: string): number {
     }
   }
   return count;
+}
+
+function extractStructuredKeys(lines: string[]): string[] {
+  const found: string[] = [];
+  for (const line of lines) {
+    const bulletMatch = line.match(/^\s*[-*]\s+`([A-Za-z_][A-Za-z0-9_]*)`/);
+    if (bulletMatch) {
+      found.push(bulletMatch[1]);
+      continue;
+    }
+    const tableMatch = line.match(/^\s*\|\s*`([A-Za-z_][A-Za-z0-9_]*)`\s*\|/);
+    if (tableMatch) {
+      found.push(tableMatch[1]);
+    }
+  }
+  return found;
 }
 
 export function validateEnvDocContent(docName: string, docContent: string, keys: string[]): string[] {
@@ -195,6 +972,8 @@ export function validateEnvDocContent(docName: string, docContent: string, keys:
     errors.push(`Duplicate environment variable reference sections in ${docName}: ${headings}`);
   }
 
+  const allowedProviderRunbookKeys = new Set<string>([...keys, 'PORT']);
+
   for (const section of envSections) {
     for (const key of keys) {
       const count = countStructuredKeyEntries(section.nonCodeLines, key);
@@ -203,6 +982,83 @@ export function validateEnvDocContent(docName: string, docContent: string, keys:
       } else if (count > 1) {
         errors.push(`Duplicate variable ${key} in section "${section.heading}" of ${docName}`);
       }
+    }
+
+    if (docName.startsWith('docs/deployment/')) {
+      for (const documentedKey of extractStructuredKeys(section.nonCodeLines)) {
+        if (!allowedProviderRunbookKeys.has(documentedKey)) {
+          errors.push(
+            `Out-of-scope variable ${documentedKey} in section "${section.heading}" of ${docName} (provider runbooks are scoped to src/env.ts keys and PORT)`
+          );
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+export function validateRuntimeContract(
+  docContent: string,
+  operatorKeys: string[],
+  envSpecs: Map<string, EnvFieldSpec>,
+  keySources?: Map<string, string[]>
+): string[] {
+  const docName = 'docs/runtime-contract.md';
+  const baseErrors = validateEnvDocContent(docName, docContent, operatorKeys);
+  const errors: string[] = baseErrors.map((err) => {
+    const missingMatch = err.match(/^Missing variable ([A-Za-z_][A-Za-z0-9_]*) in /);
+    if (missingMatch && keySources) {
+      const refs = keySources.get(missingMatch[1]);
+      if (refs && refs.length > 0) {
+        return `${err} (referenced in ${refs.join(', ')})`;
+      }
+    }
+    return err;
+  });
+
+  const rows = parseRuntimeContractTables(docContent);
+  const rowsByKey = new Map<string, RuntimeContractRow>();
+  for (const row of rows) {
+    if (!rowsByKey.has(row.key)) {
+      rowsByKey.set(row.key, row);
+    }
+  }
+
+  const operatorSet = new Set(operatorKeys);
+  for (const row of rows) {
+    if (!operatorSet.has(row.key)) {
+      errors.push(
+        `Stale or unrecognized variable ${row.key} in section "${row.subheading}" of ${docName} is not referenced in application, build, portal, or container files`
+      );
+    }
+  }
+
+  for (const [key, spec] of envSpecs.entries()) {
+    const row = rowsByKey.get(key);
+    if (!row) {
+      if (!errors.some((e) => e.includes(`Missing variable ${key} `))) {
+        errors.push(`Missing table entry for ${key} in ${docName}`);
+      }
+      continue;
+    }
+
+    if (row.classification !== spec.classification) {
+      errors.push(
+        `Classification mismatch for ${key} in ${docName} (${row.subheading}): expected "${spec.classification}" per src/env.ts, got "${row.classification}"`
+      );
+    }
+
+    if (spec.defaultValue !== null) {
+      if (!row.hasDefaultColumn || row.defaultValue !== spec.defaultValue) {
+        errors.push(
+          `Default value mismatch for ${key} in ${docName} (${row.subheading}): expected "${spec.defaultValue}" per src/env.ts, got "${row.defaultValue ?? 'none'}"`
+        );
+      }
+    } else if (row.hasDefaultColumn && row.defaultValue !== null) {
+      errors.push(
+        `Default value mismatch for ${key} in ${docName} (${row.subheading}): expected no default (*None*) per src/env.ts, got "${row.defaultValue}"`
+      );
     }
   }
 
@@ -218,12 +1074,15 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
   }
 
   const envFile = fs.readFileSync(envFilePath, 'utf-8');
-  const keys = getKeysFromSource(envFile);
+  const envSchemaKeys = getKeysFromSource(envFile);
 
-  if (keys.length === 0) {
+  if (envSchemaKeys.length === 0) {
     console.error('❌ No environment variables found in src/env.ts schema');
     process.exit(1);
   }
+
+  const envSpecs = extractEnvSchemaSpecs(envFile);
+  const { keys: operatorKeys, sources } = collectOperatorEnvKeys(cwd);
 
   const docsToVerify = [
     { name: 'DEPLOYMENT.md', path: path.join(cwd, 'DEPLOYMENT.md') },
@@ -244,7 +1103,11 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
       continue;
     }
     const docContent = fs.readFileSync(doc.path, 'utf-8');
-    const docErrors = validateEnvDocContent(doc.name, docContent, keys);
+    const docErrors =
+      doc.name === 'docs/runtime-contract.md'
+        ? validateRuntimeContract(docContent, operatorKeys, envSpecs, sources)
+        : validateEnvDocContent(doc.name, docContent, envSchemaKeys);
+
     for (const err of docErrors) {
       console.error(`❌ ${err}`);
       failed = true;
@@ -252,17 +1115,19 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
   }
 
   if (failed) {
-    console.error('\nDocumentation is out of sync with the environment schema in src/env.ts.');
-    console.error('Please ensure each deployment guide has a single complete environment variables section.');
+    console.error('\nDocumentation is out of sync with active environment variables and src/env.ts.');
+    console.error('Please reconcile docs/runtime-contract.md and deployment guides with the codebase.');
     process.exit(1);
   } else {
-    console.log('✅ Environment variable documentation is up to date.');
+    console.log(
+      `✅ Environment variable documentation is up to date (${operatorKeys.length} operator-facing variables verified).`
+    );
   }
 }
 
-const isMain = typeof process.argv[1] === 'string' &&
-               path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+const isMain =
+  typeof process.argv[1] === 'string' &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (isMain) {
   verifyEnvDocs();
 }
-
