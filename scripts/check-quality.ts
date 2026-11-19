@@ -54,6 +54,11 @@ export const steps: Step[] = [
     remediation: 'Documentation drift detected or generation failed.\nRun "npx tsx scripts/generate-openapi.ts" and "npx tsx scripts/generate-docs.ts" to regenerate documentation, then commit changes to "public/openapi.json", "ARCHITECTURE.md", and "FEATURE_MODULES.md".',
   },
   {
+    name: 'Verify Setup & Contributor Guides Contract',
+    command: 'npm run check:setup-guides',
+    remediation: 'Setup, contributor, or testing guide contract drift detected.\nRun "npm run check:setup-guides" locally and reconcile ".env.example", "README.md", "docs/developer-setup.md", ".github/CONTRIBUTING.md", ".github/TESTING.md", and "AGENTS.md" with live repository configurations.',
+  },
+  {
     name: 'Build Static Documentation Portal',
     command: 'npm run docs:build',
     remediation: 'VitePress documentation portal compilation failed.\nRun "npm run docs:build" (or "npm run docs:dev") locally to inspect VitePress build errors, check for markdown/vue syntax issues, or broken documentation links.',

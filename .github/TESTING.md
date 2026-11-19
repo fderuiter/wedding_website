@@ -37,11 +37,13 @@ npm run test:cov
 
 Before Jest executes, npm automatically triggers the `pretest` hook defined in [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
 
-1. **Dependency Alignment:** Verifies `package-lock.json` hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci --legacy-peer-deps`).
-2. **PostgreSQL Container Orchestration:** When running unit/integration tests, `scripts/pretest.mjs` checks if Docker is available. If running, it starts the local PostgreSQL database container via `docker compose up -d db` and polls `docker compose exec db pg_isready -U wedding` until the database is ready to accept connections.
-3. **Graceful Fallback:** If Docker is not installed or the Docker daemon is not active, `scripts/pretest.mjs` logs a notice and skips container auto-start, falling back gracefully to existing PostgreSQL database connections.
-4. **Strict Test Environment Isolation:** The pretest script clears parent shell database environment variables (`DATABASE_URL`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test configurations from `.env.test`. It targets an isolated test database (`wedding_test`, e.g. `postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) ensuring test executions never modify or delete records in local development or production databases.
-5. **Schema Synchronization & Prisma Generation:** The hook pushes the current schema to the isolated test database using `npx prisma db push --accept-data-loss` and immediately executes `npm run prisma:generate` so the generated Prisma Client stays aligned with active data models before any tests run.
+1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci --legacy-peer-deps`).
+2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
+3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
+4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose up -d db` and polls `docker compose exec db pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.
+5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
+6. **Schema Synchronization & Prisma Generation:** Pushes the current schema to `wedding_test` via `npx prisma db push --accept-data-loss` and runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
+7. **Documentation Portal Staging:** Runs `npx tsx scripts/generate-portal.ts` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links, synchronize OpenAPI/architecture docs, and stage `docs-portal/development/` before Jest executes portal verification suites.
 
 ## Test Structure & Architecture
 
@@ -88,7 +90,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```
   Executes browser-based end-to-end tests against a running Next.js application instance backed by an isolated test database.
   - **E2E Cookie Signing & Secret Alignment:** Playwright specs authenticate using shared helpers in [e2e/helpers/auth.ts](../e2e/helpers/auth.ts), which sign `guest_auth` cookies with `GUEST_SESSION_SECRET` and `admin_auth` cookies with `ADMIN_PASSWORD` across both `http://127.0.0.1:3000` and `http://localhost:3000`.
-  - **Default Local & Container Secrets:** [playwright.config.ts](../playwright.config.ts), [docker-compose.yml](../docker-compose.yml), [.env.test](../.env.test), and [e2e/helpers/auth.ts](../e2e/helpers/auth.ts) align on the default 32+-character `GUEST_SESSION_SECRET` (`playwright-e2e-session-secret-32-chars-min`), distinct from `GUEST_PASSCODE` (`playwright-e2e-guest-passcode`). This allows both local runs (`npx playwright test`) and Docker Compose smoke runs (`TEST_CONTAINER=true npx playwright test`) to work without manual secret configuration.
+  - **Default Local & Container Secrets:** [playwright.config.ts](../playwright.config.ts), [docker-compose.yml](../docker-compose.yml), [.env.test](../.env.test), and [e2e/helpers/auth.ts](../e2e/helpers/auth.ts) all align on the default 32+-character `GUEST_SESSION_SECRET` (`playwright-e2e-session-secret-32-chars-min`). For `GUEST_PASSCODE`, `playwright.config.ts`, `docker-compose.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` work without manual secret configuration), whereas `.env.test` (loaded by `scripts/pretest.mjs` for Jest runs) sets `GUEST_PASSCODE` to `build-fallback-guest-passcode`.
   - **Custom Secret Overrides:** When overriding `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD` locally or in CI, provide identical values to both the application server (or container) and the Playwright runner, ensuring `GUEST_SESSION_SECRET` is at least 32 characters long and never matches `GUEST_PASSCODE`.
 
 - **Accessibility (A11y) Audits:**
@@ -99,27 +101,33 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Standalone Server Smoke Test:**
   ```bash
+  npm run build
   npm run test:standalone
   ```
-  Tests that standalone Next.js production builds boot correctly and respond to health probes.
+  Runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) to verify that standalone Next.js production builds (`.next/standalone/server.js`) boot cleanly and pass health/readiness probes.
+  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js` is missing) and executes `docker compose down -v` during cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
 
 - **OCI Container Smoke Test:**
   ```bash
   npm run test:container
   ```
-  Builds the production Docker container and tests database migration, bootstrapping, and service readiness against a clean PostgreSQL container.
+  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) to build the production Docker container and verify clean-database Prisma migrations, bootstrapping, and service readiness.
+  > **Warning:** Like `npm run test:standalone`, `npm run test:container` executes `docker compose down -v` at startup and cleanup, **wiping local Docker Compose PostgreSQL volumes (`db_data`)**.
 
 - **Static Repository & Document Checks:**
   ```bash
   npm run check:static
   ```
-  Executes static verification gates across the project:
-  - `npm run check:links`: Verifies that internal Markdown document links resolve correctly without broken references.
-  - `npm run check:identifiers`: Scans for accidentally committed personal identifiers.
-  - `npm run check:action-pins`: Ensures GitHub Actions workflow actions are pinned to full commit SHAs.
+  Executes all nine static verification gates configured in `package.json`:
+  - `npm run check:env-docs`: Validates environment variable documentation alignment across `.env.example` and deployment guides.
+  - `npm run check:runbooks`: Validates deployment runbooks against workflows, Docker Compose, and Prisma 7 contracts.
+  - `npm run check:identifiers`: Scans for accidentally committed personal/template identifiers.
+  - `npm run check:action-pins`: Ensures GitHub Actions workflow actions are pinned to full 40-character commit SHAs.
+  - `npm run check:links`: Verifies that internal Markdown document links resolve cleanly without broken references.
   - `npm run check:prisma`: Validates Prisma schema formatting and relations.
-  - `npm run check:env-docs`: Validates environment variable documentation alignment.
-  - `npm run lint:migrations`: Verifies migration compatibility.
+  - `npm run lint:migrations`: Verifies database migration compatibility.
+  - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`) and architecture (`ARCHITECTURE.md`) documentation match current schemas.
+  - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `scripts/check-quality.ts`, and `tsconfig.json`.
 
 - **Storybook Static Showcase Build:**
   ```bash

@@ -29,7 +29,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
 
 TypeScript verification is split across four project files so production builds never absorb test or runner globals while every TypeScript file in the repository is strictly checked:
 
-1. [`tsconfig.json`](tsconfig.json) — Production Next.js config (`compilerOptions.types: ["node"]`). Excludes unit/integration tests, `src/mocks`, `e2e`, and `scripts` so `npm run build` (`next build`) validates only production runtime code.
+1. [`tsconfig.json`](tsconfig.json) — Production Next.js config (`compilerOptions.types: ["node"]`). Excludes `node_modules`, `jest.setup.js`, `scripts`, `e2e`, `src/mocks`, `**/__tests__/**/*`, `**/*.test.ts`, and `**/*.test.tsx` so `npm run build` (`next build`) validates only production runtime code.
 2. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]` and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
 3. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `types: ["node"]` and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
 4. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `types: ["node"]` and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
@@ -58,7 +58,8 @@ npx tsc --noEmit -p tsconfig.scripts.json
   - `guest_auth` tokens are verified by [`src/core/auth/guest.server.ts`](src/core/auth/guest.server.ts) using `GUEST_SESSION_SECRET` (never `GUEST_PASSCODE`). Both production runtime validation in [`src/env.ts`](src/env.ts) and `e2e/helpers/auth.ts` require `GUEST_SESSION_SECRET` to be distinct from `GUEST_PASSCODE` and at least 32 characters long in production mode.
   - `admin_auth` tokens are signed and verified with `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`) per [`src/core/auth/auth.server.ts`](src/core/auth/auth.server.ts).
 - **Aligned Local & Container Defaults**:
-  - [`playwright.config.ts`](playwright.config.ts), [`docker-compose.yml`](docker-compose.yml), [`.env.test`](.env.test), and [`e2e/helpers/auth.ts`](e2e/helpers/auth.ts) default `GUEST_SESSION_SECRET` to `playwright-e2e-session-secret-32-chars-min` so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` authenticate out of the box.
+  - [`playwright.config.ts`](playwright.config.ts), [`docker-compose.yml`](docker-compose.yml), [`.env.test`](.env.test), and [`e2e/helpers/auth.ts`](e2e/helpers/auth.ts) all default `GUEST_SESSION_SECRET` to `playwright-e2e-session-secret-32-chars-min`.
+  - For `GUEST_PASSCODE`, `playwright.config.ts`, `docker-compose.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` authenticate out of the box), whereas `.env.test` (loaded by [`scripts/pretest.mjs`](scripts/pretest.mjs) during Jest runs) sets `GUEST_PASSCODE="build-fallback-guest-passcode"`.
   - When overriding `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD` in shell or CI environments, pass identical values to both the Next.js server/container and the Playwright test process.
 - **Loopback Origin Seeding & Pathname Assertions**:
   - Seed E2E cookies across both `http://127.0.0.1:3000` and `http://localhost:3000` via `seedGuestAuthCookies` or `seedAdminAndGuestAuthCookies`.
@@ -77,13 +78,22 @@ npm run quality
 # Alias: npm run check:all
 ```
 
-`npm run quality` executes:
-1. Static repository & documentation checks (`check:env-docs`, `check:identifiers`, `check:action-pins`, `check:links`, `check:prisma`, `lint:migrations`, `check:doc-sync`)
-2. TypeScript type checking across all four project configs (`npm run typecheck`)
-3. ESLint & Knip dead-code analysis (`npm run lint`, `npm run lint:unused`)
-4. Static VitePress documentation portal build (`npm run docs:build`)
-5. Static Storybook showcase build (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
-6. Jest unit & integration test suite (`npm test`)
+`npm run quality` executes the following steps in exact sequential order (`scripts/check-quality.ts`):
+1. Verify Environment Documentation (`npx tsx scripts/verify-env-docs.ts` / `check:env-docs`)
+2. Verify Deployment Runbooks (`npx tsx scripts/verify-deployment-runbooks.ts` / `check:runbooks`)
+3. Check Personal/Template Identifier Isolation (`npx tsx scripts/check-personal-identifiers.ts` / `check:identifiers`)
+4. Check Third-Party Action Pin Commit SHAs (`npm run check:action-pins`)
+5. Check Documentation Relative Links (`npx tsx scripts/check-doc-links.ts` / `check:links`)
+6. Validate Prisma Schema (`npx tsx scripts/check-prisma-schema.ts` / `check:prisma`)
+7. TypeScript Typecheck across all four project configs (`npm run typecheck`)
+8. ESLint Code Linting (`npm run lint`)
+9. Knip Unused Export Analysis (`npm run lint:unused`)
+10. Verify Migration Compatibility (`npm run lint:migrations`)
+11. Verify Documentation Synchronization (`npm run check:doc-sync`)
+12. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
+13. Build Static Documentation Portal (`npm run docs:build`)
+14. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
+15. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
 
 ### Storybook Static Showcase Verification
 
@@ -129,18 +139,21 @@ node scripts/a11y-report.mjs
 ### Targeted Verification Commands
 
 - **Static Guardrails Bundle:** `npm run check:static`
+  - `npm run check:env-docs` — Ensure environment variables align with [`.env.example`](.env.example) and deployment docs ([`scripts/verify-env-docs.ts`](scripts/verify-env-docs.ts)).
+  - `npm run check:runbooks` — Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts ([`scripts/verify-deployment-runbooks.ts`](scripts/verify-deployment-runbooks.ts)).
+  - `npm run check:identifiers` — Guard against prohibited personal/template identifiers in runtime code ([`scripts/check-personal-identifiers.ts`](scripts/check-personal-identifiers.ts)).
   - `npm run check:action-pins` — Verify every external GitHub Action in `.github/workflows/*.yml` is pinned to a full 40-character commit SHA ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
   - `npm run check:links` — Verify all relative Markdown links resolve to existing repository files ([`scripts/check-doc-links.ts`](scripts/check-doc-links.ts)).
-  - `npm run check:identifiers` — Guard against prohibited personal/template identifiers in runtime code ([`scripts/check-personal-identifiers.ts`](scripts/check-personal-identifiers.ts)).
-  - `npm run check:env-docs` — Ensure environment variables align with [`.env.example`](.env.example).
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
   - `npm run check:doc-sync` — Verify [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`public/openapi.json`](public/openapi.json) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
+  - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.
 - **Documentation Portal:** `npm run docs:build` — Stages architectural and testing docs via [`scripts/generate-portal.ts`](scripts/generate-portal.ts) and compiles the VitePress documentation portal.
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
+- **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs)). **Warning:** Both smoke test scripts run `docker compose down -v`, which deletes local Docker Compose PostgreSQL volumes (`db_data`).
 - **End-to-End Browser Tests:** `npx playwright test`
 
 ## 6. Repository Conventions & Guardrails
