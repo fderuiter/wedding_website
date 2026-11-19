@@ -64,7 +64,7 @@ describe('RegistryCard', () => {
 
     expect(screen.getByText('Claimed!')).toBeInTheDocument();
     // Check for opacity class indicating it's claimed
-    expect(screen.getByText('Test Item').closest('div[class*="opacity-60"]')).toBeInTheDocument();
+    expect(screen.getByText('Test Item').closest('article[class*="opacity-60"]')).toBeInTheDocument();
   });
 
   it('renders group gift details when applicable', () => {
@@ -78,9 +78,10 @@ describe('RegistryCard', () => {
     const progressBar = screen.getByRole('progressbar');
     expect(progressBar).toBeInTheDocument();
     expect(progressBar).toHaveAttribute('aria-valuenow', '50');
+    expect(progressBar).toHaveAttribute('aria-valuetext', expect.stringContaining('50%'));
 
     const card = screen.getByTestId('registry-card');
-    expect(card).toHaveAttribute('aria-label', expect.stringContaining('50% funded'));
+    expect(card).not.toHaveAttribute('aria-label');
   });
 
   it('handles zero price and zero contribution edge cases safely', () => {
@@ -90,8 +91,9 @@ describe('RegistryCard', () => {
     expect(screen.getByText('0%')).toBeInTheDocument();
     const progressBar = screen.getByRole('progressbar');
     expect(progressBar).toHaveAttribute('aria-valuenow', '0');
+    expect(progressBar).toHaveAttribute('aria-valuetext', expect.stringContaining('0%'));
     const card = screen.getByTestId('registry-card');
-    expect(card).toHaveAttribute('aria-label', expect.stringContaining('0% funded'));
+    expect(card).not.toHaveAttribute('aria-label');
   });
 
   it('caps percentage display at 100% when contributions exceed total price', () => {
@@ -101,8 +103,9 @@ describe('RegistryCard', () => {
     expect(screen.getByText('100%')).toBeInTheDocument();
     const progressBar = screen.getByRole('progressbar');
     expect(progressBar).toHaveAttribute('aria-valuenow', '100');
+    expect(progressBar).toHaveAttribute('aria-valuetext', expect.stringContaining('100%'));
     const card = screen.getByTestId('registry-card');
-    expect(card).toHaveAttribute('aria-label', expect.stringContaining('100% funded'));
+    expect(card).not.toHaveAttribute('aria-label');
   });
 
   it('renders fully funded status for purchased group gift', () => {
@@ -111,7 +114,7 @@ describe('RegistryCard', () => {
 
     expect(screen.getByText('Fully Funded!')).toBeInTheDocument();
     // Check for opacity class indicating it's claimed/funded
-    expect(screen.getByText('Test Item').closest('div[class*="opacity-60"]')).toBeInTheDocument();
+    expect(screen.getByText('Test Item').closest('article[class*="opacity-60"]')).toBeInTheDocument();
   });
 
   it('renders admin buttons when isAdmin is true', () => {
@@ -178,17 +181,30 @@ describe('RegistryCard', () => {
     expect(mockOnClick).not.toHaveBeenCalled();
   });
 
-  it('is rendered as a div with role="region" and tabIndex="-1" when clickable, includes a contribute button, and passes axe audit', async () => {
+  it('is rendered as an article without role="region" or aria-label when clickable, keeps Share and Contribute buttons keyboard-operable, and passes axe audit', async () => {
     const mockOnClick = jest.fn();
     const { container } = render(<RegistryCard item={mockItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    expect(card.tagName).toBe('DIV');
+    expect(card.tagName).toBe('ARTICLE');
     expect(card).toHaveAttribute('tabIndex', '-1');
-    expect(card).toHaveAttribute('role', 'region');
+    expect(card).not.toHaveAttribute('role');
+    expect(card).not.toHaveAttribute('aria-label');
+    expect(card).not.toHaveAttribute('aria-describedby');
 
+    for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) {
+      expect(fireEvent.keyDown(card, { key })).toBe(true);
+    }
+
+    const shareButton = screen.getByRole('button', { name: `Share ${mockItem.name}` });
     const contributeButton = screen.getByRole('button', { name: `Contribute to ${mockItem.name}` });
+    expect(shareButton).toBeInTheDocument();
     expect(contributeButton).toBeInTheDocument();
+
+    // Pressing Enter or Space on nested Share button must not trigger outer card onClick
+    fireEvent.keyDown(shareButton, { key: 'Enter' });
+    fireEvent.keyDown(shareButton, { key: ' ' });
+    expect(mockOnClick).not.toHaveBeenCalled();
 
     fireEvent.click(contributeButton);
     expect(mockOnClick).toHaveBeenCalledTimes(1);
@@ -198,29 +214,35 @@ describe('RegistryCard', () => {
     expect(results).toHaveNoViolations();
   });
 
-  it('renders as a div without tabIndex when item is purchased to avoid focus traps', () => {
+  it('renders as an article without tabIndex, role, or aria-label when item is purchased to avoid focus traps', async () => {
     const mockOnClick = jest.fn();
     const purchasedItem = { ...mockItem, purchased: true };
-    render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
+    const { container } = render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
-    // It should be rendered as a div without tabIndex so non-clickable cards stay out of keyboard tab order
-    expect(card.tagName).toBe('DIV');
+    expect(card.tagName).toBe('ARTICLE');
     expect(card).not.toHaveAttribute('tabIndex');
-    expect(card).not.toHaveAttribute('role', 'button');
+    expect(card).not.toHaveAttribute('role');
+    expect(card).not.toHaveAttribute('aria-label');
     expect(screen.queryByRole('button', { name: /contribute/i })).not.toBeInTheDocument();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
-  it('renders as a div without tabIndex when admin to avoid focus traps', () => {
+  it('renders as an article without tabIndex, role, or aria-label when admin to avoid focus traps', async () => {
     const mockOnClick = jest.fn();
-    render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
+    const { container } = render(<RegistryCard item={mockItem} onClick={mockOnClick} isAdmin={true} />);
     const card = screen.getByTestId('registry-card');
 
-    // Admin cards have separate buttons, so card container itself does not have tabIndex
-    expect(card.tagName).toBe('DIV');
+    expect(card.tagName).toBe('ARTICLE');
     expect(card).not.toHaveAttribute('tabIndex');
-    expect(card).not.toHaveAttribute('role', 'button');
+    expect(card).not.toHaveAttribute('role');
+    expect(card).not.toHaveAttribute('aria-label');
     expect(screen.queryByRole('button', { name: /contribute/i })).not.toBeInTheDocument();
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('includes fallback 1 in scale-factor minHeight calculation for RegistryCard and RegistryCardSkeleton', () => {
