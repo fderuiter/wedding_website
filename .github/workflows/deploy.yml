@@ -4,7 +4,11 @@ permissions:
   contents: read
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -73,13 +77,123 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci-gate:
+    name: Verify CI Status & Resolve Release SHA
+    if: |
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      ) ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_call'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      target_sha: ${{ steps.resolve-sha.outputs.target_sha }}
+    steps:
+      - name: Resolve Target Commit SHA
+        id: resolve-sha
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            TARGET_SHA="$WORKFLOW_RUN_HEAD_SHA"
+          else
+            TARGET_SHA="$CURRENT_SHA"
+          fi
+
+          if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Resolved target SHA '${TARGET_SHA}' is not a valid 40-character commit SHA."
+            exit 1
+          fi
+
+          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Resolved release target commit SHA: ${TARGET_SHA} (event: ${EVENT_NAME})"
+
+      - name: Verify Successful CI Run for Commit
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TARGET_SHA: ${{ steps.resolve-sha.outputs.target_sha }}
+        with:
+          script: |
+            const targetSha = process.env.TARGET_SHA;
+            const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                head_sha: targetSha,
+                status: 'completed',
+                per_page: 100,
+              }
+            );
+
+            const successfulRun = runs.find(
+              (run) =>
+                run.conclusion === 'success' &&
+                run.head_sha === targetSha &&
+                (!run.head_repository || run.head_repository.full_name === fullRepo)
+            );
+
+            if (!successfulRun) {
+              core.setFailed(
+                `No completed successful CI workflow run found for commit ${targetSha} in ${fullRepo}. Release aborted.`
+              );
+              return;
+            }
+
+            core.info(
+              `Verified successful CI run #${successfulRun.run_number} (ID: ${successfulRun.id}) for commit ${targetSha}.`
+            );
+
+      - name: Write CI Gate Summary
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET_SHA: ${{ steps.resolve-sha.outputs.target_sha }}
+        run: |
+          echo "### 🟢 Pre-Release CI Verification Gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Trigger Event:** \`${EVENT_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Target Commit SHA:** \`${TARGET_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **CI Status:** \`VERIFIED\`" >> "$GITHUB_STEP_SUMMARY"
+
   schema-compatibility:
     name: Verify Schema Compatibility
+    needs: [ci-gate]
+    if: |
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      ) ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
     outputs:
       compatibility_status: ${{ steps.lint.outputs.compatibility_status }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Align Workspace to Verified Commit SHA
+        if: github.event_name == 'workflow_run'
+        env:
+          TARGET_SHA: ${{ needs.ci-gate.outputs.target_sha }}
+        run: |
+          if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
+            echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
+            exit 1
+          fi
+          git checkout --detach "$TARGET_SHA"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -107,7 +221,18 @@ jobs:
 
   publish-artifact:
     name: Publish Release Artifact
-    if: github.event_name == 'push' || inputs.image_digest == ''
+    needs: [ci-gate]
+    if: |
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      ) ||
+      (
+        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+        inputs.image_digest == ''
+      )
     permissions:
       contents: read
       packages: write
@@ -115,22 +240,38 @@ jobs:
       id-token: write
       attestations: write
     uses: ./.github/workflows/publish-artifact.yml
+    with:
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
+      tag_name: ${{ needs.ci-gate.outputs.target_sha }}
     secrets: inherit
 
   # ============================================================================
-  # STAGING ENVIRONMENT PIPELINE (Automated on push to main)
+  # STAGING ENVIRONMENT PIPELINE (Automated after CI succeeds on main push)
   # ============================================================================
   staging-database-migration:
     name: Staging Database Migration
-    needs: [publish-artifact, schema-compatibility]
+    needs: [ci-gate, publish-artifact, schema-compatibility]
     if: |
       !cancelled() &&
-      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
       (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: 'staging'
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
     secrets: inherit
 
   staging-deploy-provider:
@@ -139,26 +280,50 @@ jobs:
       contents: read
       packages: read
       attestations: read
-    needs: [publish-artifact, staging-database-migration]
+    needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
       !cancelled() &&
-      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
       (needs.staging-database-migration.result == 'success') &&
       (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'staging'
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag }}
+      image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
 
   staging-verify-deployment:
     name: Staging Post-Deployment Health Verification
-    needs: [publish-artifact, staging-deploy-provider]
+    needs: [ci-gate, publish-artifact, staging-deploy-provider]
     if: |
       !cancelled() &&
-      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
       (needs.staging-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
     environment: staging
@@ -280,16 +445,29 @@ jobs:
   # ============================================================================
   production-database-migration:
     name: Production Database Migration
-    needs: [publish-artifact, schema-compatibility, staging-verify-deployment]
+    needs: [ci-gate, publish-artifact, schema-compatibility, staging-verify-deployment]
     if: |
-      always() &&
-      (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
+      !cancelled() &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
       (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: 'production'
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
     secrets: inherit
 
   production-deploy-provider:
@@ -298,10 +476,22 @@ jobs:
       contents: read
       packages: read
       attestations: read
-    needs: [publish-artifact, staging-verify-deployment, production-database-migration]
+    needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
-      always() &&
-      (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
+      !cancelled() &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
       (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
       (needs.production-database-migration.result == 'success') &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
@@ -309,15 +499,28 @@ jobs:
     with:
       environment: 'production'
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag }}
+      image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
 
   production-verify-deployment:
     name: Production Post-Deployment Health Verification
-    needs: [publish-artifact, production-deploy-provider]
+    needs: [ci-gate, publish-artifact, production-deploy-provider]
     if: |
       !cancelled() &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
       (needs.production-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
     environment: production
