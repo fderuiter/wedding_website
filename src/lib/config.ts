@@ -1,6 +1,6 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
-import { AppConfigSchema, PublicAppConfigDTO, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../features/content/schemas';
+import { AppConfigSchema, PublicAppConfigSchema, PublicAppConfigDTO, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
@@ -228,53 +228,107 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   return overrides;
 }
 
+const PUBLIC_APP_CONFIG_KEYS = Object.keys(PublicAppConfigSchema.shape) as Array<keyof PublicAppConfigDTO>;
+
+function hasConfiguredSecret(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+export interface AdminAppConfig extends PublicAppConfig {
+  emailProvider: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpFrom: string;
+  smtpSecure: boolean;
+  resendFrom: string;
+  sendgridFrom: string;
+  smsProvider: string;
+  twilioAccountSid: string;
+  twilioFromNumber: string;
+  broadcastBatchSize: number;
+  broadcastBatchDelayMs: number;
+  hasSmtpPass: boolean;
+  hasResendApiKey: boolean;
+  hasSendgridApiKey: boolean;
+  hasTwilioAuthToken: boolean;
+}
+
 /**
- * Produce a public-safe view of the application configuration by stripping
- * sensitive setup properties and credentials from the returned configuration payload.
+ * Produce a public-safe view of the application configuration by parsing
+ * through the strict `PublicAppConfigSchema` allowlist plus `multisiteEnabled`.
  *
  * @param config - The full `AppConfig` object or raw config payload
- * @returns The sanitized configuration payload
+ * @returns The allowlisted public configuration payload
  */
 export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(config: T): PublicAppConfig {
   if (!config || typeof config !== 'object') {
     return config as PublicAppConfig;
   }
 
-  const sanitized = {
-    ...config,
+  const picked: Record<string, unknown> = {};
+  for (const key of PUBLIC_APP_CONFIG_KEYS) {
+    if (key in config && key !== 'multisiteEnabled') {
+      picked[key] = (config as Record<string, unknown>)[key];
+    }
+  }
+  picked.multisiteEnabled = isMultisiteEnabled();
+
+  const parsed = PublicAppConfigSchema.safeParse(picked);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  const partialSanitized: Record<string, unknown> = {
     multisiteEnabled: isMultisiteEnabled(),
   };
-
-  const sensitivePatterns = [
-    'password',
-    'secret',
-    'credential',
-    'token',
-    'apikey',
-    'apisecret',
-    'privatekey',
-    'smtppassword',
-    'dbpassword',
-    'adminpassword',
-    'clientsecret',
-    'authsecret',
-    'jwtsecret',
-    'accesskey',
-    'secretkey',
-    'databaseurl',
-    'guestpasscode',
-  ];
-
-  for (const key of Object.keys(sanitized)) {
-    const lowerKey = key.toLowerCase();
-    if (lowerKey === 'seokeywords') continue;
-
-    if (sensitivePatterns.some((pattern) => lowerKey.includes(pattern))) {
-      delete (sanitized as any)[key];
+  for (const key of PUBLIC_APP_CONFIG_KEYS) {
+    if (key === 'multisiteEnabled' || !(key in picked)) continue;
+    const fieldSchema = PublicAppConfigSchema.shape[key];
+    const fieldResult = fieldSchema.safeParse(picked[key]);
+    if (fieldResult.success) {
+      partialSanitized[key] = fieldResult.data;
+    } else if (picked[key] !== undefined) {
+      partialSanitized[key] = picked[key];
     }
   }
 
-  return sanitized as PublicAppConfig;
+  return partialSanitized as PublicAppConfig;
+}
+
+/**
+ * Produce a masked admin view of the application configuration that omits raw
+ * messaging secrets while preserving non-secret delivery settings and boolean
+ * secret presence flags.
+ */
+export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(config: T): AdminAppConfig {
+  if (!config || typeof config !== 'object') {
+    return config as AdminAppConfig;
+  }
+
+  const publicConfig = toPublicAppConfig(config);
+  const raw = config as Record<string, any>;
+
+  return {
+    ...publicConfig,
+    emailProvider: typeof raw.emailProvider === 'string' && raw.emailProvider ? raw.emailProvider : 'smtp',
+    smtpHost: raw.smtpHost ?? '',
+    smtpPort: typeof raw.smtpPort === 'number' ? raw.smtpPort : 587,
+    smtpUser: raw.smtpUser ?? '',
+    smtpFrom: raw.smtpFrom ?? '',
+    smtpSecure: Boolean(raw.smtpSecure),
+    resendFrom: raw.resendFrom ?? '',
+    sendgridFrom: raw.sendgridFrom ?? '',
+    smsProvider: typeof raw.smsProvider === 'string' && raw.smsProvider ? raw.smsProvider : 'none',
+    twilioAccountSid: raw.twilioAccountSid ?? '',
+    twilioFromNumber: raw.twilioFromNumber ?? '',
+    broadcastBatchSize: typeof raw.broadcastBatchSize === 'number' ? raw.broadcastBatchSize : 50,
+    broadcastBatchDelayMs: typeof raw.broadcastBatchDelayMs === 'number' ? raw.broadcastBatchDelayMs : 500,
+    hasSmtpPass: hasConfiguredSecret(raw.smtpPass),
+    hasResendApiKey: hasConfiguredSecret(raw.resendApiKey),
+    hasSendgridApiKey: hasConfiguredSecret(raw.sendgridApiKey),
+    hasTwilioAuthToken: hasConfiguredSecret(raw.twilioAuthToken),
+  };
 }
 
 async function getSubdomainFromHeaders(): Promise<string | null> {

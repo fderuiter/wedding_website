@@ -31,6 +31,16 @@ on:
           - google-cloud-run
           - docker-host
           - generic-webhook
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment override for rollback secret resolution'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Run provider adapter in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       environment:
@@ -51,6 +61,16 @@ on:
         required: false
         default: 'google-cloud-run'
         type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment override for rollback secret resolution'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Run provider adapter in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
     secrets:
       GCP_SA_KEY:
         required: false
@@ -60,6 +80,8 @@ on:
         required: false
       DATABASE_URL:
         required: false
+      SERVICE_URL:
+        required: false
     outputs:
       service_url:
         description: 'Target deployment service URL'
@@ -67,6 +89,12 @@ on:
       is_dry_run:
         description: 'Flag indicating if deployment ran in dry-run mode'
         value: ${{ jobs.deploy.outputs.is_dry_run }}
+      previous_image_tag:
+        description: 'Previously serving image tag or last successful release SHA captured before rollout'
+        value: ${{ jobs.deploy.outputs.previous_image_tag }}
+      previous_image_digest:
+        description: 'Previously serving immutable OCI image digest captured before rollout'
+        value: ${{ jobs.deploy.outputs.previous_image_digest }}
       image_digest:
         description: 'Verified immutable OCI image digest deployed'
         value: ${{ jobs.deploy.outputs.image_digest }}
@@ -89,15 +117,19 @@ jobs:
       contents: read
       packages: read
       attestations: read
-    environment: ${{ inputs.environment || 'production' }}
+    environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}
     outputs:
       service_url: ${{ steps.resolve-url.outputs.service_url }}
       is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
+      previous_image_tag: ${{ steps.capture-previous.outputs.previous_image_tag }}
+      previous_image_digest: ${{ steps.capture-previous.outputs.previous_image_digest }}
       image_digest: ${{ steps.resolve.outputs.image_digest }}
       image_uri: ${{ steps.resolve.outputs.image_uri }}
       attestation_status: ${{ steps.provenance.outputs.attestation_status }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
 
       - name: Resolve Artifact Image URI
         id: resolve
@@ -107,15 +139,39 @@ jobs:
           RAW_DIGEST: ${{ inputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
+          ROLLBACK_ENV: ${{ inputs.rollback_environment }}
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
             echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
             exit 1
           fi
 
+          if [ -n "${ROLLBACK_ENV:-}" ] && [[ ! "$ROLLBACK_ENV" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+            echo "::error::Invalid rollback environment '${ROLLBACK_ENV}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+            exit 1
+          fi
+
+          if [ -n "${PROVIDER:-}" ] && [[ ! "$PROVIDER" =~ ^(google-cloud-run|docker-host|generic-webhook)$ ]]; then
+            echo "::error::Invalid provider '${PROVIDER}'. Must be one of: google-cloud-run, docker-host, generic-webhook."
+            exit 1
+          fi
+
           if [ -z "$RAW_DIGEST" ] && [ -z "$RAW_TAG" ]; then
             echo "::error::Missing artifact identifier. Provide an immutable 'image_digest' (sha256:...) or a release/commit 'image_tag'."
             exit 1
+          fi
+
+          REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+
+          if [ "${DRY_RUN:-false}" = "true" ] && [ -z "$RAW_DIGEST" ] && [[ "${RAW_TAG,,}" == "latest" ]]; then
+            RESOLVED_DIGEST="sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            IMAGE_URI="ghcr.io/${REPO_LOWER}@${RESOLVED_DIGEST}"
+            echo "::warning::Explicit dry-run mode enabled with placeholder tag 'latest': emitting synthetic digest ${RESOLVED_DIGEST} for dry-run validation only."
+            echo "image_digest=${RESOLVED_DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           if [ -n "$RAW_TAG" ]; then
@@ -129,8 +185,6 @@ jobs:
               exit 1
             fi
           fi
-
-          REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
 
           if [ -n "$RAW_DIGEST" ]; then
             if [[ ! "$RAW_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -167,6 +221,7 @@ jobs:
 
       - name: Verify Artifact Provenance Attestation
         id: provenance
+        if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
@@ -185,22 +240,162 @@ jobs:
           echo "Verified OIDC build provenance attestation for ${IMAGE_DIGEST}."
 
       - name: Deploy to Google Cloud Run Adapter
-        if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
+        if: (!inputs.dry_run) && (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Capture Active Image Tag Before Rollout
+        id: capture-previous
+        env:
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          INCOMING_TAG: ${{ inputs.image_tag || '' }}
+          INCOMING_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          CURRENT_SHA: ${{ github.sha }}
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          PREVIOUS_IMAGE_TAG=""
+          PREVIOUS_IMAGE_DIGEST=""
+          TAG_SOURCE="none"
+
+          is_valid_previous_tag() {
+            local candidate="$1"
+            if [ -z "$candidate" ]; then
+              return 1
+            fi
+            if [ "$candidate" = "latest" ] || [ "$candidate" = "$CURRENT_SHA" ] || [ "$candidate" = "$INCOMING_TAG" ]; then
+              return 1
+            fi
+            if [[ ! "$candidate" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+              return 1
+            fi
+            return 0
+          }
+
+          is_valid_previous_digest() {
+            local candidate="$1"
+            if [ -z "$candidate" ]; then
+              return 1
+            fi
+            if [ -n "${INCOMING_DIGEST:-}" ] && [ "$candidate" = "$INCOMING_DIGEST" ]; then
+              return 1
+            fi
+            if [[ ! "$candidate" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              return 1
+            fi
+            return 0
+          }
+
+          extract_tag_from_image() {
+            local raw_image="$1"
+            local without_digest="${raw_image%%@*}"
+            local name_and_tag="${without_digest##*/}"
+            if [[ "$name_and_tag" == *:* ]]; then
+              printf '%s' "${name_and_tag#*:}"
+            fi
+          }
+
+          extract_digest_from_image() {
+            local raw_image="$1"
+            if [[ "$raw_image" == *@sha256:* ]]; then
+              printf '%s' "${raw_image##*@}"
+            fi
+          }
+
+          if [ "$DRY_RUN" != "true" ] && { [ "$PROVIDER" = "google-cloud-run" ] || [ -z "$PROVIDER" ]; } && [ -n "$GCP_SA_KEY" ] && command -v gcloud >/dev/null 2>&1; then
+            PROJECT_ARGS=()
+            RESOLVED_PROJECT_ID="$GCP_PROJECT_ID"
+            if [ -z "$RESOLVED_PROJECT_ID" ]; then
+              RESOLVED_PROJECT_ID=$(printf '%s' "$GCP_SA_KEY" | jq -r '.project_id // empty' 2>/dev/null || true)
+            fi
+            if [ -n "$RESOLVED_PROJECT_ID" ]; then
+              PROJECT_ARGS=(--project="$RESOLVED_PROJECT_ID")
+            fi
+
+            SERVICE_JSON=$(gcloud run services describe wedding-website --region=us-central1 "${PROJECT_ARGS[@]}" --format=json 2>/dev/null || true)
+            if [ -n "$SERVICE_JSON" ]; then
+              SERVING_IMAGE=""
+              ACTIVE_REVISION=$(printf '%s' "$SERVICE_JSON" | jq -r '([.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName) // .status.latestReadyRevisionName // empty' 2>/dev/null || true)
+              if [ -n "$ACTIVE_REVISION" ]; then
+                SERVING_IMAGE=$(gcloud run revisions describe "$ACTIVE_REVISION" --region=us-central1 "${PROJECT_ARGS[@]}" --format='value(spec.containers[0].image)' 2>/dev/null || true)
+              fi
+              if [ -z "$SERVING_IMAGE" ]; then
+                SERVING_IMAGE=$(printf '%s' "$SERVICE_JSON" | jq -r '.spec.template.spec.containers[0].image // empty' 2>/dev/null || true)
+              fi
+              CANDIDATE_DIGEST=$(extract_digest_from_image "$SERVING_IMAGE")
+              if is_valid_previous_digest "$CANDIDATE_DIGEST"; then
+                PREVIOUS_IMAGE_DIGEST="$CANDIDATE_DIGEST"
+              fi
+              CANDIDATE_TAG=$(extract_tag_from_image "$SERVING_IMAGE")
+              if is_valid_previous_tag "$CANDIDATE_TAG"; then
+                PREVIOUS_IMAGE_TAG="$CANDIDATE_TAG"
+                TAG_SOURCE="cloud-run"
+              fi
+            fi
+          fi
+
+          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+            API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+            RUNS_JSON=$(curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?status=success&per_page=10" 2>/dev/null || true)
+            if [ -n "$RUNS_JSON" ]; then
+              RUN_SHA=$(printf '%s' "$RUNS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '[.workflow_runs[]? | .head_sha | select(. != null and . != "" and . != "latest" and . != $sha and . != $tag and test("^[a-fA-F0-9]{40}$"))] | .[0] // empty' 2>/dev/null || true)
+              if is_valid_previous_tag "$RUN_SHA"; then
+                PREVIOUS_IMAGE_TAG="$RUN_SHA"
+                TAG_SOURCE="workflow-runs"
+              fi
+            fi
+          fi
+
+          if [ -z "$PREVIOUS_IMAGE_TAG" ]; then
+            GIT_PREV_SHA=$(git rev-parse --verify HEAD^1 2>/dev/null || true)
+            if is_valid_previous_tag "$GIT_PREV_SHA"; then
+              PREVIOUS_IMAGE_TAG="$GIT_PREV_SHA"
+              TAG_SOURCE="git-parent-sha"
+            fi
+          fi
+
+          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+            API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+            COMMITS_JSON=$(curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/commits?sha=${CURRENT_SHA}&per_page=2" 2>/dev/null || true)
+            if [ -n "$COMMITS_JSON" ]; then
+              API_PREV_SHA=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '[.[].sha | select(. != null and . != "" and . != $sha and . != $tag and test("^[a-fA-F0-9]{40}$"))] | .[0] // empty' 2>/dev/null || true)
+              if is_valid_previous_tag "$API_PREV_SHA"; then
+                PREVIOUS_IMAGE_TAG="$API_PREV_SHA"
+                TAG_SOURCE="github-commits-api"
+              fi
+            fi
+          fi
+
+          echo "previous_image_tag=${PREVIOUS_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "previous_image_digest=${PREVIOUS_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag_source=${TAG_SOURCE}" >> "$GITHUB_OUTPUT"
+          if [ -n "$PREVIOUS_IMAGE_TAG" ] || [ -n "$PREVIOUS_IMAGE_DIGEST" ]; then
+            echo "Captured pre-rollout previous image: tag=${PREVIOUS_IMAGE_TAG:-none} digest=${PREVIOUS_IMAGE_DIGEST:-none} (source: ${TAG_SOURCE})"
+          else
+            echo "::notice::No prior immutable image tag or parent release SHA found before rollout."
+          fi
+
       - name: Execute Cloud Run Deployment
         id: cloudrun
-        if: (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
+        if: (!inputs.dry_run) && (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: wedding-website
           image: ${{ steps.resolve.outputs.image_uri }}
           region: us-central1
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Deploy via Generic Webhook Adapter
-        if: inputs.provider == 'generic-webhook' && secrets.DEPLOY_WEBHOOK_URL != ''
+        if: (!inputs.dry_run) && (inputs.provider == 'generic-webhook' || inputs.provider == 'docker-host') && secrets.DEPLOY_WEBHOOK_URL != ''
         env:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
@@ -208,18 +403,40 @@ jobs:
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
         run: |
           echo "Triggering deployment webhook for image ${IMAGE_URI}..."
-          PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg digest "$IMAGE_DIGEST" --arg env "$TARGET_ENV" '{image: $image, digest: $digest, environment: $env}')
-          curl -X POST "$DEPLOY_WEBHOOK_URL" \
+          if [ -n "${IMAGE_DIGEST:-}" ]; then
+            PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg digest "$IMAGE_DIGEST" --arg env "$TARGET_ENV" '{image: $image, digest: $digest, environment: $env}')
+          else
+            PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg env "$TARGET_ENV" '{image: $image, environment: $env}')
+          fi
+          curl --silent --show-error --location --fail-with-body \
+            --connect-timeout 10 --max-time 30 \
+            -X POST "$DEPLOY_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
 
       - name: Dry-run Provider Adapter Validation
-        if: secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == ''
+        if: inputs.dry_run || (secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == '')
         env:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
         run: |
-          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL). Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
+          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL) or explicit dry-run requested. Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
+
+      - name: Verify Selected Provider Credentials
+        if: (!inputs.dry_run) && !(secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == '')
+        env:
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          if { [ "$PROVIDER" = "google-cloud-run" ] || [ -z "$PROVIDER" ]; } && [ -z "$GCP_SA_KEY" ]; then
+            echo "::error::Missing GCP_SA_KEY secret for provider '${PROVIDER}'."
+            exit 1
+          fi
+          if { [ "$PROVIDER" = "generic-webhook" ] || [ "$PROVIDER" = "docker-host" ]; } && [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+            echo "::error::Missing DEPLOY_WEBHOOK_URL secret for provider '${PROVIDER}'."
+            exit 1
+          fi
 
       - name: Resolve Service URL Output
         id: resolve-url
@@ -228,11 +445,12 @@ jobs:
           CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           DEFAULT_SERVICE_URL: ${{ secrets.SERVICE_URL || 'http://127.0.0.1:3000' }}
         run: |
           URL="$CLOUDRUN_URL"
           IS_DRY_RUN="false"
-          if [ -z "$GCP_SA_KEY" ] && [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+          if [ "$INPUT_DRY_RUN" = "true" ] || { [ -z "$GCP_SA_KEY" ] && [ -z "$DEPLOY_WEBHOOK_URL" ]; }; then
             IS_DRY_RUN="true"
           fi
           if [ -z "$URL" ]; then
@@ -248,8 +466,10 @@ jobs:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
-          ATTESTATION_STATUS: ${{ steps.provenance.outputs.attestation_status }}
+          ATTESTATION_STATUS: ${{ steps.provenance.outputs.attestation_status || 'dry-run-skipped' }}
           SERVICE_URL: ${{ steps.resolve-url.outputs.service_url }}
+          PREVIOUS_TAG: ${{ steps.capture-previous.outputs.previous_image_tag }}
+          PREVIOUS_DIGEST: ${{ steps.capture-previous.outputs.previous_image_digest }}
         run: |
           echo "### 🚀 Provider Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
@@ -257,4 +477,8 @@ jobs:
           echo "- **Verified Digest:** \`${IMAGE_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Pinned Artifact URI:** \`${IMAGE_URI}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Provenance Attestation:** \`${ATTESTATION_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Previous Image Tag:** \`${PREVIOUS_TAG:-none}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${PREVIOUS_DIGEST:-}" ]; then
+            echo "- **Previous Image Digest:** \`${PREVIOUS_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "- **Service URL:** \`${SERVICE_URL}\`" >> "$GITHUB_STEP_SUMMARY"

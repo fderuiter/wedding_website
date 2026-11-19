@@ -7,6 +7,7 @@ import { RegistryItemBaseSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
 import { FormGroup, Label, Input, FormMessage, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useFormPersist } from '@/hooks/useFormPersist';
+import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 
 /**
  * Props for the RegistryItemForm component.
@@ -22,6 +23,8 @@ interface RegistryItemFormProps {
   isSubmitting?: boolean;
   /** Optional custom label for the submit button. */
   submitLabel?: string;
+  /** Optional runtime flag indicating whether Stripe card processing is configured. */
+  cardCheckoutEnabled?: boolean;
 }
 
 const defaultValues: Partial<RegistryItem> = {
@@ -59,6 +62,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   onSubmit,
   isSubmitting = false,
   submitLabel,
+  cardCheckoutEnabled,
 }) => {
   const storageKey =
     mode === 'edit' && initialValues?.id
@@ -104,6 +108,16 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   const imageUrlInputRef = useRef<HTMLInputElement>(null);
 
   const isFund = values.itemType === 'CASH_FUND' || values.itemType === 'EXPERIENCE_FUND';
+  const { cardCheckoutEnabled: detectedCardCheckoutEnabled, isCapabilitiesLoading } =
+    useRegistryCapabilities({
+      enabled: cardCheckoutEnabled === undefined && isFund,
+    });
+  const effectiveCardCheckoutEnabled =
+    cardCheckoutEnabled !== undefined
+      ? cardCheckoutEnabled
+      : isCapabilitiesLoading
+        ? undefined
+        : detectedCardCheckoutEnabled;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -413,6 +427,22 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
               placeholder="e.g. @couple-username or paypal.me/handle"
             />
           </FormGroup>
+
+          {effectiveCardCheckoutEnabled === false && !(values.paymentHandle && values.paymentHandle.trim()) && (
+            <div
+              role="alert"
+              data-testid="unconfigured-fund-form-warning"
+              className="col-span-1 md:col-span-2 p-3.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-sm"
+            >
+              <div className="font-semibold flex items-center gap-1.5 mb-1">
+                <Icon name="AlertTriangle" className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>Guest Checkout Will Be Disabled</span>
+              </div>
+              <p className="text-xs leading-relaxed">
+                Card processing (`STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) is not configured on this deployment, and no direct transfer handle is entered above. Provide a payment handle (Venmo, PayPal, Cash App, Zelle, or custom) or configure Stripe keys so guests can contribute to this fund.
+              </p>
+            </div>
+          )}
         </>
       )}
 

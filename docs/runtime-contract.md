@@ -71,6 +71,16 @@ When storing uploaded media assets externally, all core S3 credential variables 
 
 *Note: Supplying partial S3 credentials will cause startup environment validation to fail.*
 
+### Optional Stripe Card Checkout Variables
+When enabling online credit card and digital wallet processing for cash and experience funds, `STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` must be supplied together as a pair (or both omitted for direct-transfer-only registries):
+| Variable | Requirement | Description |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | Required if using Stripe card checkout | Server-side Stripe API secret key (`sk_...` or `rk_...`). Placeholder mock keys are rejected in non-test environments. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Required if using Stripe card checkout | Client-side Stripe publishable key (`pk_...`) used by Stripe Elements. Placeholder mock keys are rejected in non-test environments. |
+| `STRIPE_WEBHOOK_SECRET` | Optional (recommended if using Stripe webhooks) | Endpoint signing secret (`whsec_...`) used to verify incoming `/api/registry/webhook/stripe` events. |
+
+*Note: Supplying only one of `STRIPE_SECRET_KEY` or `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` will cause startup environment validation to fail fast.*
+
 ---
 
 ## 5. Statelessness & Filesystem Expectations

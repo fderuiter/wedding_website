@@ -34,11 +34,11 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
     previousFocusRef.current = document.activeElement as HTMLElement;
 
     const focusableSelectors = [
-      'button:not(:disabled)', 
-      'a[href]:not(:disabled)', 
-      'input:not(:disabled)', 
-      'select:not(:disabled)', 
-      'textarea:not(:disabled)', 
+      'button:not(:disabled):not([tabindex="-1"]):not([aria-disabled="true"])',
+      'a[href]:not(:disabled):not([tabindex="-1"]):not([aria-disabled="true"])',
+      'input:not(:disabled):not([tabindex="-1"]):not([aria-disabled="true"])',
+      'select:not(:disabled):not([tabindex="-1"]):not([aria-disabled="true"])',
+      'textarea:not(:disabled):not([tabindex="-1"]):not([aria-disabled="true"])',
       '[tabindex]:not([tabindex="-1"]):not(:disabled):not([aria-disabled="true"])'
     ];
 

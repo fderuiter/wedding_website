@@ -1,53 +1,10 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateAdminCookieValue() {
-  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
-  const payload = {
-    isAdmin: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { seedAdminAndGuestAuthCookies } from './helpers/auth';
 
 test('capture bulk selection toolbar and batch delete modal screenshots', async ({ context, page }) => {
   test.setTimeout(90000);
 
-  const origins = ['http://127.0.0.1:3000', 'http://localhost:3000'];
-  const cookies = origins.flatMap((url) => [
-    {
-      name: 'admin_auth',
-      value: generateAdminCookieValue(),
-      url,
-    },
-    {
-      name: 'guest_auth',
-      value: generateGuestCookieValue(),
-      url,
-    },
-  ]);
-  await context.addCookies(cookies);
+  await seedAdminAndGuestAuthCookies(context);
 
   // Go to invitation codes dashboard
   let attempt = 0;
@@ -69,7 +26,7 @@ test('capture bulk selection toolbar and batch delete modal screenshots', async 
       ) {
         console.log(`[capture-bulk-selection] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
         await page.close().catch(() => {});
-        await context.addCookies(cookies).catch(() => {});
+        await seedAdminAndGuestAuthCookies(context).catch(() => {});
         page = await context.newPage();
       } else {
         throw err;

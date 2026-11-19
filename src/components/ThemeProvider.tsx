@@ -51,6 +51,7 @@ export type ThemeLighting = {
 
 type ThemeContextType = {
   contactEmail: string;
+  contactPhone: string;
   themePrimary: string;
   themeSecondary: string;
   themeAccent: string;
@@ -82,6 +83,7 @@ type ThemeContextType = {
 
 const ThemeContext = createContext<ThemeContextType>({
   contactEmail: '',
+  contactPhone: '',
   themePrimary: '#B91C1C',
   themeSecondary: '#B45309',
   themeAccent: '#D4AF37',
@@ -167,6 +169,8 @@ type ThemeProviderProps = {
   children: React.ReactNode;
   config?: {
     contactEmail?: string | null;
+    contactPhone?: string | null;
+    twilioFromNumber?: string | null;
     colorPrimary?: string | null;
     colorSecondary?: string | null;
     themePreset?: ThemePreset | string | null;
@@ -201,6 +205,7 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const [config, setConfig] = useState(() => ({
     contactEmail: propConfig?.contactEmail || '',
+    contactPhone: propConfig?.contactPhone || propConfig?.twilioFromNumber || '',
     colorPrimary: sanitizeColor(propConfig?.colorPrimary, '#B91C1C'),
     colorSecondary: sanitizeColor(propConfig?.colorSecondary, '#B45309'),
     themePreset: sanitizePreset(propConfig?.themePreset, DEFAULT_THEME_PRESET),
@@ -345,6 +350,7 @@ export function ThemeProvider({
     if (propConfig) {
       setConfig({
         contactEmail: propConfig.contactEmail || '',
+        contactPhone: propConfig.contactPhone || propConfig.twilioFromNumber || '',
         colorPrimary: sanitizeColor(propConfig.colorPrimary, '#B91C1C'),
         colorSecondary: sanitizeColor(propConfig.colorSecondary, '#B45309'),
         themePreset: sanitizePreset(propConfig.themePreset, DEFAULT_THEME_PRESET),
@@ -521,6 +527,7 @@ export function ThemeProvider({
 
   const contextValue: ThemeContextType = {
     contactEmail: config.contactEmail || '',
+    contactPhone: config.contactPhone || '',
     ...theme,
     fontHeading,
     fontBody,

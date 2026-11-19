@@ -45,21 +45,21 @@ export interface SendTestBroadcastInput {
 
 export interface TestConnectionInput {
   type: 'email' | 'sms';
-  provider?: string;
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpUser?: string;
-  smtpPass?: string;
-  smtpFrom?: string;
-  smtpSecure?: boolean;
-  resendApiKey?: string;
-  resendFrom?: string;
-  sendgridApiKey?: string;
-  sendgridFrom?: string;
-  twilioAccountSid?: string;
-  twilioAuthToken?: string;
-  twilioFromNumber?: string;
-  testRecipient?: string;
+  provider?: string | null;
+  smtpHost?: string | null;
+  smtpPort?: number | null;
+  smtpUser?: string | null;
+  smtpPass?: string | null;
+  smtpFrom?: string | null;
+  smtpSecure?: boolean | null;
+  resendApiKey?: string | null;
+  resendFrom?: string | null;
+  sendgridApiKey?: string | null;
+  sendgridFrom?: string | null;
+  twilioAccountSid?: string | null;
+  twilioAuthToken?: string | null;
+  twilioFromNumber?: string | null;
+  testRecipient?: string | null;
 }
 
 export interface DispatchResult {
