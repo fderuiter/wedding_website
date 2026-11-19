@@ -33,8 +33,8 @@ The following 10 optional presentation feature toggles are enumerated and suppor
 ### Dynamic Administrative Entity Controller Routes
 Administrative CRUD operations for entities such as wedding party members (`wedding-party`), local attractions (`attractions`), registry items (`registry-item`), seating tables (`seating-table`), sub-events (`sub-event`), invitation codes (`invitation-code`), and content nodes (`content`) do not use static route endpoints.
 
-Instead, administrative CRUD operations route dynamically through [/api/admin/[entity]](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/%5Bentity%5D/route.ts#L7-L56) ([src/app/api/admin/[entity]/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/%5Bentity%5D/route.ts#L7-L56)).
-The entity controller maps entity parameters to service handlers using the feature registry defined in [src/features/admin/registry.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/admin/registry.ts#L9-L17).
+Instead, administrative CRUD operations route dynamically through [/api/admin/[entity]](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/%5Bentity%5D/route.ts#L7-L143) ([src/app/api/admin/[entity]/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/%5Bentity%5D/route.ts#L7-L143)).
+The entity controller maps entity parameters to service handlers using the feature registry defined in [src/features/admin/registry.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/admin/registry.ts#L21-L29).
 
 ---
 
@@ -60,7 +60,7 @@ The application codebase organizes domain capabilities into 11 core feature modu
 
 | Domain Module | Directory Path | Purpose & Responsibilities | Key Components & Services |
 | --- | --- | --- | --- |
-| `admin` | `src/features/admin` | Central administrative service registry and API client orchestration for dynamic entity routing. | [src/features/admin/registry.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/admin/registry.ts#L9-L17), `apiClient.ts` |
+| `admin` | `src/features/admin` | Central administrative service registry and API client orchestration for dynamic entity routing. | [src/features/admin/registry.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/admin/registry.ts#L21-L29), `apiClient.ts` |
 | `attractions` | `src/features/attractions` | Manages local recommendations, hotel blocks, categories, and map directions. | `AttractionAdminService`, `attractionsService` |
 | `broadcast` | `src/features/broadcast` | Multi-channel broadcast messaging studio for segment-filtered email and SMS announcements. | `sendBroadcast`, `BroadcastModal` |
 | `content` | `src/features/content` | Content node persistence, site settings, theme configuration, and pending photo reviews. | `ContentNodeAdminService`, `contentService`, `ContentRepository` |
