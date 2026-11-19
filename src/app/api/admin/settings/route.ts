@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAppConfig, toPublicAppConfig, isMultisiteEnabled } from '@/lib/config';
+import { getAppConfig, toPublicAppConfig, toAdminAppConfig, isMultisiteEnabled } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 import { formatZodError } from '@/utils/validation';
+
+function resolveSecretField(
+  incoming: string | null | undefined,
+  existingValue: string | null | undefined
+): string {
+  if (typeof incoming === 'string' && incoming.trim().length > 0) {
+    return incoming;
+  }
+  return existingValue ?? '';
+}
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
   const url = new URL(req.url);
@@ -16,17 +26,17 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   if (list === 'true') {
     if (!isMultisiteEnabled()) {
       const globalConfig = await getAppConfig('global');
-      return NextResponse.json([toPublicAppConfig(globalConfig)]);
+      return NextResponse.json([toAdminAppConfig(globalConfig)]);
     }
     const allConfigs = await prisma.appConfig.findMany({
       orderBy: { createdAt: 'desc' }
     });
-    return NextResponse.json(allConfigs.map(c => toPublicAppConfig(AppConfigSchema.parse(c))));
+    return NextResponse.json(allConfigs.map(c => toAdminAppConfig(AppConfigSchema.parse(c))));
   }
 
   const target = isMultisiteEnabled() ? (id || subdomain || undefined) : 'global';
   const config = await getAppConfig(target);
-  return NextResponse.json(toPublicAppConfig(config));
+  return NextResponse.json(toAdminAppConfig(config));
 });
 
 export const PUT = withApiMiddleware(async (req: NextRequest) => {
@@ -62,16 +72,26 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
+  const dbPayload = {
+    ...toAppConfigDbPayload(validData),
+    smtpPass: resolveSecretField(validData.smtpPass, existing.smtpPass),
+    resendApiKey: resolveSecretField(validData.resendApiKey, existing.resendApiKey),
+    sendgridApiKey: resolveSecretField(validData.sendgridApiKey, existing.sendgridApiKey),
+    twilioAuthToken: resolveSecretField(validData.twilioAuthToken, existing.twilioAuthToken),
+  };
+
   const updatedConfig = await prisma.appConfig.update({
     where: { id: targetId },
-    data: toAppConfigDbPayload(validData),
+    data: dbPayload,
   });
+
+  const parsedUpdatedConfig = AppConfigSchema.parse(updatedConfig);
 
   await prisma.snapshotVersion.create({
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: updatedConfig as any,
+      data: toPublicAppConfig(parsedUpdatedConfig) as any,
       author: 'Admin',
     }
   });
@@ -90,7 +110,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
 
   revalidatePath('/', 'layout');
 
-  return NextResponse.json(toPublicAppConfig(AppConfigSchema.parse(updatedConfig)));
+  return NextResponse.json(toAdminAppConfig(parsedUpdatedConfig));
 });
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
@@ -166,16 +186,18 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
   });
 
+  const parsedCreatedConfig = AppConfigSchema.parse(createdConfig);
+
   await prisma.snapshotVersion.create({
     data: {
       entityType: 'AppConfig',
       entityId: newId,
-      data: createdConfig as any,
+      data: toPublicAppConfig(parsedCreatedConfig) as any,
       author: 'Admin',
     }
   });
 
   revalidatePath('/', 'layout');
 
-  return NextResponse.json(toPublicAppConfig(AppConfigSchema.parse(createdConfig)));
+  return NextResponse.json(toAdminAppConfig(parsedCreatedConfig));
 });

@@ -1,43 +1,23 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { seedGuestAuthCookies } from './helpers/auth';
 
 test.describe('Skip Link Accessibility', () => {
   test('skip link appears with high contrast styles and focus outline on tab', async ({ context, page }) => {
-    const guestCookieValue = generateGuestCookieValue();
-    await context.addCookies([
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://127.0.0.1:3000',
-      }
-    ]);
+    await seedGuestAuthCookies(context);
 
     try {
       await page.goto('/', { waitUntil: 'load' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
+        await seedGuestAuthCookies(context).catch(() => {});
         page = await context.newPage();
         await page.goto('/', { waitUntil: 'load', timeout: 30000 });
       } else {
         throw err;
       }
     }
+    expect(new URL(page.url()).pathname).toBe('/');
     await page.waitForSelector('a.skip-link');
     await page.focus('body');
     await page.keyboard.press('Tab');

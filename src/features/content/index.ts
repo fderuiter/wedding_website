@@ -2,6 +2,7 @@ export { ContentService, contentService } from './service';
 export { ContentRepository, contentRepository } from './repository';
 export {
   AppConfigSchema,
+  PublicAppConfigSchema,
   RawUpdateAppConfigSchema,
   UpdateAppConfigSchema,
   deriveBrandMonogram,
@@ -28,6 +29,7 @@ export { ContentNodeAdminService } from './admin.service';
 export type {
   ContentNodeDTO,
   AppConfigDTO,
+  PublicAppConfigDTO,
   ThemeTokensDTO,
   TypographyScaleDTO,
   SpacingScaleDTO,

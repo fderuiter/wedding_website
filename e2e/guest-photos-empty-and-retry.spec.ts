@@ -1,51 +1,27 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { seedGuestAuthCookies } from './helpers/auth';
 
 test.describe('Guest Photos Empty State', () => {
   test('displays guest photos empty state container when no guest photos exist', async ({ context, page }) => {
-    const guestCookieValue = generateGuestCookieValue();
     const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
     await context.route(/cdn\.jsdelivr\.net/, (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
     await context.route(/googleusercontent\.com/, (route) => route.fulfill({ status: 200, contentType: 'image/jpeg', body: validJpeg }));
-    await context.addCookies([
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://127.0.0.1:3000',
-      },
-      {
-        name: 'guest_auth',
-        value: guestCookieValue,
-        url: 'http://localhost:3000',
-      },
-    ]);
+    await seedGuestAuthCookies(context);
 
     try {
       await page.goto('/photos', { waitUntil: 'networkidle' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
+        await seedGuestAuthCookies(context).catch(() => {});
         page = await context.newPage();
         await page.goto('/photos', { waitUntil: 'networkidle', timeout: 30000 });
       } else {
         throw err;
       }
     }
+
+    expect(new URL(page.url()).pathname).toBe('/photos');
 
     // Wait for client-side hydration
     await page.locator('[data-hydrated="true"]').waitFor({ timeout: 15000 });

@@ -1,3 +1,4 @@
+import type { QueryKey } from '@tanstack/react-query';
 import { apiClient } from '@/features/admin';
 import { useEntityOrchestration } from '../useEntityOrchestration';
 
@@ -6,10 +7,10 @@ export interface AdminHookOptions {
 }
 
 export interface UseAdminEntityOrchestrationOptions {
-  queryKey: (string | number)[];
+  queryKey: QueryKey;
   endpoint: string;
   fetchEndpoint?: string;
-  invalidateQueryKeys?: (string | number)[][];
+  invalidateQueryKeys?: readonly QueryKey[];
   entityName: string;
   options?: AdminHookOptions;
   enabled?: boolean;

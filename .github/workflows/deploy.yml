@@ -22,15 +22,24 @@ on:
           - all
           - staging
           - production
-      previous_tag:
-        description: 'Previous validated container image tag to restore on failure'
+      image_digest:
+        description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
         required: false
-        default: 'latest'
+        type: string
+      previous_tag:
+        description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
+        required: false
+        default: ''
         type: string
       provider:
         description: 'Hosting Provider Adapter'
         required: false
         default: 'google-cloud-run'
+        type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets'
+        required: false
+        default: ''
         type: string
   workflow_call:
     inputs:
@@ -39,15 +48,24 @@ on:
         required: false
         default: 'all'
         type: string
-      previous_tag:
-        description: 'Previous validated container image tag to restore on failure'
+      image_digest:
+        description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
         required: false
-        default: 'latest'
+        type: string
+      previous_tag:
+        description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
+        required: false
+        default: ''
         type: string
       provider:
         description: 'Hosting Provider Adapter'
         required: false
         default: 'google-cloud-run'
+        type: string
+      rollback_environment:
+        description: 'Optional unguarded GitHub Environment holding rollback secrets'
+        required: false
+        default: ''
         type: string
     outputs:
       schema_compatibility_status:
@@ -211,8 +229,10 @@ jobs:
         github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_repository.full_name == github.repository
       ) ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'workflow_call'
+      (
+        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+        inputs.image_digest == ''
+      )
     permissions:
       contents: read
       packages: write
@@ -232,16 +252,22 @@ jobs:
     name: Staging Database Migration
     needs: [ci-gate, publish-artifact, schema-compatibility]
     if: |
+      !cancelled() &&
       (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      ) ||
-      (
-        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-        (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
-      )
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
+      (needs.schema-compatibility.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: 'staging'
@@ -250,21 +276,32 @@ jobs:
 
   staging-deploy-provider:
     name: Staging Provider Deployment
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
+      !cancelled() &&
       (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      ) ||
-      (
-        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-        (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
-      )
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
+      (needs.staging-database-migration.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'staging'
+      image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
@@ -273,16 +310,21 @@ jobs:
     name: Staging Post-Deployment Health Verification
     needs: [ci-gate, publish-artifact, staging-deploy-provider]
     if: |
+      !cancelled() &&
       (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      ) ||
-      (
-        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-        (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
-      )
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
+      (needs.staging-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
     environment: staging
     outputs:
@@ -382,12 +424,19 @@ jobs:
 
   staging-rollback:
     name: Staging Automated Rollback
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [publish-artifact, staging-deploy-provider, staging-verify-deployment]
     if: failure() && needs.staging-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'staging'
-      previous_tag: ${{ inputs.previous_tag || 'latest' }}
+      rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
+      previous_digest: ${{ inputs.previous_tag == '' && needs.staging-deploy-provider.outputs.previous_image_digest || '' }}
+      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.staging-deploy-provider.outputs.previous_image_tag }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
       reason: 'Automated staging post-deployment health check failure on /api/health'
     secrets: inherit
 
@@ -413,7 +462,7 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
-      (needs.publish-artifact.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/db-migrate.yml
     with:
@@ -423,6 +472,10 @@ jobs:
 
   production-deploy-provider:
     name: Production Provider Deployment
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
       !cancelled() &&
@@ -439,30 +492,36 @@ jobs:
         )
       ) &&
       (needs.ci-gate.result == 'success') &&
-      (needs.publish-artifact.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
       (needs.production-database-migration.result == 'success') &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'production'
+      image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
 
   production-verify-deployment:
     name: Production Post-Deployment Health Verification
-    needs: [publish-artifact, production-deploy-provider]
+    needs: [ci-gate, publish-artifact, production-deploy-provider]
     if: |
+      !cancelled() &&
       (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      ) ||
-      (
-        (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-        (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
-      )
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        ) ||
+        (
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
+          (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
+        )
+      ) &&
+      (needs.ci-gate.result == 'success') &&
+      (needs.production-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
     environment: production
     outputs:
@@ -563,11 +622,18 @@ jobs:
 
   production-rollback:
     name: Production Automated Rollback
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [publish-artifact, production-deploy-provider, production-verify-deployment]
     if: failure() && needs.production-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'production'
-      previous_tag: ${{ inputs.previous_tag || 'latest' }}
+      rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
+      previous_digest: ${{ inputs.previous_tag == '' && needs.production-deploy-provider.outputs.previous_image_digest || '' }}
+      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.production-deploy-provider.outputs.previous_image_tag }}
+      provider: ${{ inputs.provider || 'google-cloud-run' }}
       reason: 'Automated post-deployment health check failure on /api/health in production'
     secrets: inherit

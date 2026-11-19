@@ -4,6 +4,7 @@ import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
+import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
 import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
 
 export default function GuestAddressPage() {
@@ -78,7 +79,12 @@ export default function GuestAddressPage() {
 
           <form onSubmit={handleValidateCode} className="space-y-4">
             <FormGroup>
-              <Label htmlFor="guest-invitation-code">Invitation Code</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="guest-invitation-code" className="mb-0">
+                  Invitation Code
+                </Label>
+                <GuestHelpTrigger defaultCategory="passcode" label="Need Help?" />
+              </div>
               <Input
                 id="guest-invitation-code"
                 type="text"
@@ -113,12 +119,15 @@ export default function GuestAddressPage() {
               below to submit your RSVPs, and optionally share your postal mailing address.
             </p>
           </div>
-          {code && (
-            <div className="inline-flex items-center gap-2 self-start sm:self-center rounded-xl bg-gray-100 dark:bg-zinc-700/80 px-3.5 py-2 text-xs font-semibold text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-600">
-              <span>Invite Code:</span>
-              <span className="font-mono tracking-wider">{code}</span>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-center">
+            {code && (
+              <div className="inline-flex items-center gap-2 rounded-xl bg-gray-100 dark:bg-zinc-700/80 px-3.5 py-2 text-xs font-semibold text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-600">
+                <span>Invite Code:</span>
+                <span className="font-mono tracking-wider">{code}</span>
+              </div>
+            )}
+            <GuestHelpTrigger defaultCategory="dietary" label="Need Help?" />
+          </div>
         </header>
 
         {/* Primary Section: Personalized Event Schedule & RSVPs */}

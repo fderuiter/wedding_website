@@ -142,4 +142,43 @@ describe('SettingsPage View State', () => {
     expect(screen.getByTestId('admin-preview-layout')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: 'Site Settings' })).toBeInTheDocument();
   });
+
+  it('displays Configured status without raw secrets for configured messaging credentials', () => {
+    (useAdminSettings as jest.Mock).mockReturnValue({
+      config: {
+        id: 'global',
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        weddingDate: '2026-10-10',
+        emailProvider: 'smtp',
+        smsProvider: 'twilio',
+        smtpHost: 'smtp.example.com',
+        smtpUser: 'mailer@example.com',
+        twilioAccountSid: 'AC123456',
+        hasSmtpPass: true,
+        hasTwilioAuthToken: true,
+      },
+      loading: false,
+      saving: false,
+      error: null,
+      saveSettings: mockSaveSettings,
+      profiles: [],
+      loadingList: false,
+      createProfile: mockCreateProfile,
+      creating: false,
+      fetchAll: mockFetchAll,
+    });
+
+    render(<SettingsPage />);
+
+    const smtpPassInput = screen.getByLabelText(/SMTP Password/i) as HTMLInputElement;
+    expect(smtpPassInput.value).toBe('');
+    expect(smtpPassInput).toHaveAttribute('placeholder', 'Leave blank to keep saved password');
+
+    const twilioTokenInput = screen.getByLabelText(/Auth Token/i) as HTMLInputElement;
+    expect(twilioTokenInput.value).toBe('');
+    expect(twilioTokenInput).toHaveAttribute('placeholder', 'Leave blank to keep saved auth token');
+
+    expect(screen.getAllByText('Configured')).toHaveLength(2);
+  });
 });

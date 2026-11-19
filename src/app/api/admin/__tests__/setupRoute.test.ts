@@ -4,6 +4,8 @@ import { NextRequest } from 'next/server';
 import { GET, POST } from '../setup/route';
 import { signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
+import { isSiteInitialized } from '@/lib/config';
+import { AppConfigSchema } from '@/features/content';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -231,6 +233,191 @@ describe('Setup API Route (/api/admin/setup)', () => {
           timezone: 'America/Los_Angeles',
         }),
       });
+    });
+
+    test('persists trimmed partner1Name and partner2Name and marks isSiteInitialized true', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      let savedRecord: Record<string, unknown> | null = null;
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => {
+        savedRecord = {
+          ...uninitializedConfig,
+          ...create,
+          features: '[]',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        return savedRecord;
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: '  Alex  ',
+          partner2Name: '  Sam  ',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: '  https://alexandsam.com  ',
+          venueName: 'The Glasshouse',
+          venueCity: 'Seattle',
+          venueState: 'WA',
+          timezone: 'America/Los_Angeles',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.partner1Name).toBe('Alex');
+      expect(json.partner2Name).toBe('Sam');
+      expect(json.brideName).toBe('Alex');
+      expect(json.groomName).toBe('Sam');
+      expect(json.baseUrl).toBe('https://alexandsam.com');
+
+      expect(savedRecord).not.toBeNull();
+      const parsedConfig = AppConfigSchema.parse(savedRecord);
+      expect(isSiteInitialized(parsedConfig)).toBe(true);
+
+      (globalThis as unknown as { globalFallbackStore?: Map<unknown, unknown> }).globalFallbackStore?.clear();
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(savedRecord);
+      const statusRes = await GET();
+      const statusJson = await statusRes.json();
+      expect(statusJson.initialized).toBe(true);
+      expect(statusJson.requiresSetup).toBe(false);
+    });
+
+    test('synchronizes legacy brideName and groomName from partner names even when empty legacy strings are sent', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      let savedRecord: Record<string, unknown> | null = null;
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => {
+        savedRecord = {
+          ...uninitializedConfig,
+          ...create,
+          features: '[]',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        return savedRecord;
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: 'Jordan',
+          partner2Name: 'Taylor',
+          brideName: '',
+          groomName: '   ',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://jordantaylor.com',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.partner1Name).toBe('Jordan');
+      expect(json.partner2Name).toBe('Taylor');
+      expect(json.brideName).toBe('Jordan');
+      expect(json.groomName).toBe('Taylor');
+      expect(isSiteInitialized(AppConfigSchema.parse(savedRecord))).toBe(true);
+    });
+
+    test('falls back to trimmed legacy brideName and groomName when partner fields are blank or omitted', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      let savedRecord: Record<string, unknown> | null = null;
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => {
+        savedRecord = {
+          ...uninitializedConfig,
+          ...create,
+          features: '[]',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        return savedRecord;
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: '   ',
+          brideName: '  Alice  ',
+          groomName: '  Bob  ',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://aliceandbob.com',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.partner1Name).toBe('Alice');
+      expect(json.partner2Name).toBe('Bob');
+      expect(json.brideName).toBe('Alice');
+      expect(json.groomName).toBe('Bob');
+      expect(isSiteInitialized(AppConfigSchema.parse(savedRecord))).toBe(true);
+    });
+
+    test.each([
+      {
+        label: 'blank partner1Name',
+        payload: { partner1Name: '   ', partner2Name: 'Sam', baseUrl: 'https://ourwedding.com' },
+      },
+      {
+        label: 'blank partner2Name without baseUrl',
+        payload: { partner1Name: 'Alex', partner2Name: '' },
+      },
+      {
+        label: 'reserved placeholder partner names',
+        payload: { partner1Name: 'Partner 1', partner2Name: 'Partner 2', baseUrl: 'https://ourwedding.com' },
+      },
+      {
+        label: 'blank baseUrl',
+        payload: { partner1Name: 'Alex', partner2Name: 'Sam', baseUrl: '   ' },
+      },
+      {
+        label: 'reserved wedding.example baseUrl',
+        payload: { partner1Name: 'Alex', partner2Name: 'Sam', baseUrl: 'https://wedding.example' },
+      },
+      {
+        label: 'reserved example.com baseUrl',
+        payload: { partner1Name: 'Alex', partner2Name: 'Sam', baseUrl: 'https://example.com' },
+      },
+      {
+        label: 'reserved placeholder contactEmail',
+        payload: {
+          partner1Name: 'Alex',
+          partner2Name: 'Sam',
+          baseUrl: 'https://ourwedding.com',
+          contactEmail: 'hosts@wedding.example',
+        },
+      },
+      {
+        label: 'malformed contactEmail',
+        payload: {
+          partner1Name: 'Alex',
+          partner2Name: 'Sam',
+          baseUrl: 'https://ourwedding.com',
+          contactEmail: 'not-an-email',
+        },
+      },
+    ])('rejects invalid setup payload ($label) with 400 before upserting AppConfig', async ({ payload }) => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          ...payload,
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
     });
 
     test('uninitialized setup saves themePreset and layout tokens during configuration', async () => {

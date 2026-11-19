@@ -1,21 +1,26 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
+import { POST as guestLoginPost } from '@/app/api/guest/login/route';
+import { POST as guestLookupPost } from '@/app/api/guest/lookup/route';
 import { POST as rsvpPost } from '@/app/api/rsvp/route';
 import { GET as addressGet, PUT as addressPut } from '@/app/api/guest/address/route';
 import { GET as scheduleGet } from '@/app/api/schedule/route';
+import { GUEST_COOKIE } from '@/core/auth/guest.server';
 import {
   signGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteSession';
 import { env } from '@/env';
 import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 import { prisma } from '@/lib/prisma';
 import { subEventService } from '@/features/sub-events';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     invitationCode: {
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
     },
@@ -35,6 +40,7 @@ describe('Guest Session Security Integration', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetRateLimitsForTesting();
   });
 
   async function createForgedPasscodeToken(payload: { code: string; guestName: string; exp?: number }): Promise<string> {
@@ -90,6 +96,120 @@ describe('Guest Session Security Integration', () => {
       expect(json.data.guestName).toBe('Valid Guest');
       expect(json.data.code).toBe('VALIDGUEST');
       expect(json.data.addressLine1).toBe('123 Harbor View');
+    });
+
+    test('shared passcode login followed by guest lookup does not mint guest_invite_session or authorize /api/guest/address', async () => {
+      const originalPasscode = process.env.GUEST_PASSCODE;
+      process.env.GUEST_PASSCODE = 'test-guest-passcode';
+
+      const cookieJar = new Map<string, string>();
+      const recordCookies = (res: Response) => {
+        const setCookie = res.headers.get('set-cookie');
+        if (!setCookie) return;
+        for (const segment of setCookie.split(/,(?=\s*[A-Za-z0-9_-]+=)/)) {
+          const firstPair = segment.split(';')[0]?.trim();
+          if (!firstPair) continue;
+          const eqIdx = firstPair.indexOf('=');
+          if (eqIdx > 0) {
+            cookieJar.set(firstPair.slice(0, eqIdx), firstPair.slice(eqIdx + 1));
+          }
+        }
+      };
+
+      const request = async (
+        path: '/api/guest/login' | '/api/guest/lookup' | '/api/guest/address' | '/api/rsvp' | '/api/schedule',
+        init: { method: string; headers?: Record<string, string>; body?: string }
+      ) => {
+        const cookieHeader = Array.from(cookieJar.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join('; ');
+        const headers: Record<string, string> = { ...(init.headers ?? {}) };
+        if (cookieHeader) {
+          headers.cookie = cookieHeader;
+        }
+        const req = new NextRequest(`http://localhost:3000${path}`, {
+          method: init.method,
+          headers,
+          body: init.body,
+        });
+
+        let res: Response;
+        if (path === '/api/guest/login') {
+          res = await guestLoginPost(req);
+        } else if (path === '/api/guest/lookup') {
+          res = await guestLookupPost(req);
+        } else if (path === '/api/guest/address') {
+          res = init.method === 'PUT' ? await addressPut(req) : await addressGet(req);
+        } else if (path === '/api/rsvp') {
+          res = await rsvpPost(req, {});
+        } else {
+          res = await scheduleGet(req);
+        }
+        recordCookies(res);
+        return res;
+      };
+
+      try {
+        const loginRes = await request('/api/guest/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: 'test-guest-passcode' }),
+        });
+        expect(loginRes.status).toBe(200);
+        expect(cookieJar.has(GUEST_COOKIE)).toBe(true);
+        expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
+
+        // Single-token surname query ("Vance") does not match plus-one surname or mint session
+        (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValueOnce(null);
+        const lookupRes = await request('/api/guest/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Vance' }),
+        });
+        expect(lookupRes.status).toBe(404);
+        expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
+
+        const addrRead = await request('/api/guest/address', { method: 'GET' });
+        expect(addrRead.status).toBe(401);
+        expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
+
+        // Even when a full guest name matches in /api/guest/lookup, no guest_invite_session is minted
+        (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValueOnce({
+          id: 'inv-vance',
+          code: 'VANCE2026',
+          guestName: 'Eleanor Vance',
+          addressLine1: '742 Evergreen Terrace',
+        });
+        const matchedLookupRes = await request('/api/guest/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Eleanor Vance' }),
+        });
+        expect(matchedLookupRes.status).toBe(200);
+        expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
+
+        const addrReadAfterMatch = await request('/api/guest/address', { method: 'GET' });
+        expect(addrReadAfterMatch.status).toBe(401);
+
+        const rsvpAttempt = await request('/api/rsvp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subEventId: 'se-100', status: 'declined' }),
+        });
+        expect(rsvpAttempt.status).toBe(401);
+
+        mockSubEventService.getScheduleForGuest.mockResolvedValueOnce([]);
+        const scheduleRes = await request('/api/schedule', { method: 'GET' });
+        const scheduleJson = await scheduleRes.json();
+        expect(scheduleJson.isGuest).toBe(false);
+        expect(mockSubEventService.getScheduleForGuest).toHaveBeenCalledWith(undefined);
+      } finally {
+        if (originalPasscode === undefined) {
+          delete process.env.GUEST_PASSCODE;
+        } else {
+          process.env.GUEST_PASSCODE = originalPasscode;
+        }
+      }
     });
 
     test('rejects forged token signed with shared GUEST_PASSCODE with 401 response', async () => {

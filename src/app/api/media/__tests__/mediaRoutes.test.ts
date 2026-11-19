@@ -33,32 +33,30 @@ describe('Media API Routes Integration Tests', () => {
   });
 
   describe('GET /api/media', () => {
-    test('is publicly accessible (allows anonymous access)', async () => {
+    test('requires admin authorization', async () => {
       mockIsAdminRequest.mockResolvedValue(false); // Not admin
-      mockMediaRepository.getAllMedia.mockResolvedValue({
-        data: [],
-        total: 0,
-        page: 1,
-        limit: 20,
-        totalPages: 0,
-      });
 
       const req = new NextRequest('http://localhost/api/media');
       const res = await GET(req);
-      
-      expect(res.status).toBe(200);
+
+      expect(res.status).toBe(401);
       const body = await res.json();
-      expect(body).toEqual({
-        success: true,
-        data: {
-          data: [],
-          total: 0,
-          page: 1,
-          limit: 20,
-          totalPages: 0,
-        },
-      });
-      expect(mockMediaRepository.getAllMedia).toHaveBeenCalledWith({ page: undefined, limit: undefined });
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Unauthorized');
+      expect(mockMediaRepository.getAllMedia).not.toHaveBeenCalled();
+    });
+
+    test('requires admin authorization on trailing slash path /api/media/', async () => {
+      mockIsAdminRequest.mockResolvedValue(false);
+
+      const req = new NextRequest('http://localhost/api/media/');
+      const res = await GET(req);
+
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBe('Unauthorized');
+      expect(mockMediaRepository.getAllMedia).not.toHaveBeenCalled();
     });
 
     test('returns empty lists successfully with metadata envelope', async () => {
