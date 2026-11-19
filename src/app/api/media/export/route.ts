@@ -28,6 +28,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { safeFetch } from '@/utils/safeFetch';
+import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
 export interface ExportMediaItem {
@@ -270,12 +271,6 @@ async function handleExport(req: NextRequest) {
       .filter((task): task is { item: ExportMediaItem; filename: string } => task !== null);
 
     const publicRoot = path.resolve(process.cwd(), 'public');
-    let canonicalPublicRoot = publicRoot;
-    try {
-      canonicalPublicRoot = await fs.promises.realpath(publicRoot);
-    } catch {
-      // Keep publicRoot if public directory cannot be resolved via realpath
-    }
 
     for (let i = 0; i < mediaTasks.length; i += CONCURRENCY_LIMIT) {
       const batch = mediaTasks.slice(i, i + CONCURRENCY_LIMIT);
@@ -318,53 +313,36 @@ async function handleExport(req: NextRequest) {
               }
             }
 
-            const rawUrl = item.url.split('?')[0].split('#')[0];
-            let decodedUrl = rawUrl;
             try {
-              let prev = '';
-              let count = 0;
-              while (decodedUrl !== prev && count < 3) {
-                prev = decodedUrl;
-                decodedUrl = decodeURIComponent(decodedUrl);
-                count++;
+              const target = await resolveContainedExistingPath(item.url, {
+                baseDir: publicRoot,
+                containmentRoot: publicRoot,
+              });
+
+              if (!target.exists) {
+                return [
+                  {
+                    type: 'buffer' as const,
+                    buffer: Buffer.from(`Local asset file not found at ${target.cleanKey}`),
+                    name: `missing_${filename}.txt`,
+                  },
+                ];
               }
-            } catch {
-              // Ignore URIError on malformed sequences, proceed with current string
-            }
 
-            if (decodedUrl.includes('\0')) {
-              return [
-                {
-                  type: 'buffer' as const,
-                  buffer: Buffer.from('Path traversal attempt detected'),
-                  name: `error_${filename}.txt`,
-                },
-              ];
-            }
+              const stat = await fs.promises.stat(target.realPath);
+              if (!stat.isFile()) {
+                return [
+                  {
+                    type: 'buffer' as const,
+                    buffer: Buffer.from(`Local asset file not found at ${target.cleanKey}`),
+                    name: `missing_${filename}.txt`,
+                  },
+                ];
+              }
 
-            const cleanKey = decodedUrl.replace(/^(\/|\\)+/, '').replace(/\\/g, '/');
-            const resolvedPath = path.resolve(publicRoot, cleanKey);
-            const rel = path.relative(publicRoot, resolvedPath);
-            const isLexicallyInside =
-              rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-
-            if (!isLexicallyInside) {
-              return [
-                {
-                  type: 'buffer' as const,
-                  buffer: Buffer.from('Path traversal attempt detected'),
-                  name: `error_${filename}.txt`,
-                },
-              ];
-            }
-
-            try {
-              const realFilePath = await fs.promises.realpath(resolvedPath);
-              const realRel = path.relative(canonicalPublicRoot, realFilePath);
-              const isRealInside =
-                realRel !== '' && !realRel.startsWith('..') && !path.isAbsolute(realRel);
-
-              if (!isRealInside) {
+              return [{ type: 'file' as const, filePath: target.realPath, name: filename }];
+            } catch (fsErr: unknown) {
+              if (fsErr instanceof PathContainmentError) {
                 return [
                   {
                     type: 'buffer' as const,
@@ -373,20 +351,6 @@ async function handleExport(req: NextRequest) {
                   },
                 ];
               }
-
-              const stat = await fs.promises.stat(realFilePath);
-              if (!stat.isFile()) {
-                return [
-                  {
-                    type: 'buffer' as const,
-                    buffer: Buffer.from(`Local asset file not found at ${cleanKey}`),
-                    name: `missing_${filename}.txt`,
-                  },
-                ];
-              }
-
-              return [{ type: 'file' as const, filePath: realFilePath, name: filename }];
-            } catch (fsErr: unknown) {
               const code =
                 fsErr && typeof fsErr === 'object' && 'code' in fsErr
                   ? (fsErr as { code?: string }).code
@@ -395,7 +359,7 @@ async function handleExport(req: NextRequest) {
                 return [
                   {
                     type: 'buffer' as const,
-                    buffer: Buffer.from(`Local asset file not found at ${cleanKey}`),
+                    buffer: Buffer.from(`Local asset file not found at ${item.url}`),
                     name: `missing_${filename}.txt`,
                   },
                 ];

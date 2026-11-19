@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { AppConfigSchema, RawUpdateAppConfigSchema } from '@/features/content';
+import { AppConfigSchema, PhotoDataSchema, RawUpdateAppConfigSchema } from '@/features/content';
+import { isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party';
 import { AttractionSchema } from '@/features/attractions';
 import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry';
@@ -90,13 +91,13 @@ const BackupAppConfigSchema = z.object({
   faviconUrl: RawUpdateAppConfigSchema.shape.faviconUrl.optional(),
   ogImageUrl: RawUpdateAppConfigSchema.shape.ogImageUrl.optional(),
   brandMonogram: z.string().nullable().optional(),
-  brandLogoUrl: z.string().nullable().optional(),
+  brandLogoUrl: RawUpdateAppConfigSchema.shape.brandLogoUrl,
   brandLogoAlt: z.string().nullable().optional(),
-  heroImageUrl: z.string().nullable().optional(),
+  heroImageUrl: RawUpdateAppConfigSchema.shape.heroImageUrl,
   heroImageAlt: z.string().nullable().optional(),
-  brandWatermarkUrl: z.string().nullable().optional(),
+  brandWatermarkUrl: RawUpdateAppConfigSchema.shape.brandWatermarkUrl,
   brandWatermarkAlt: z.string().nullable().optional(),
-  badgeGraphicUrl: z.string().nullable().optional(),
+  badgeGraphicUrl: RawUpdateAppConfigSchema.shape.badgeGraphicUrl,
   badgeGraphicAlt: z.string().nullable().optional(),
   seoKeywords: AppConfigSchema.shape.seoKeywords.optional(),
   colorPrimary: RawUpdateAppConfigSchema.shape.colorPrimary.optional(),
@@ -108,7 +109,7 @@ const BackupAppConfigSchema = z.object({
 // Media database-aligned schema
 const BackupMediaSchema = z.object({
   id: z.string().min(1).max(255),
-  url: z.string(),
+  url: z.string().refine(isSafeMediaOrPhotoUrl, { message: 'Invalid media URL format' }),
   altText: z.string().nullable().optional(),
   isDecorative: z.boolean().optional(),
   createdAt: z.date(),
@@ -217,6 +218,39 @@ const BackupContentNodeSchema = z.object({
   type: z.string().min(1).max(255),
   tags: z.array(z.string().max(255)),
   data: z.any(),
+}).superRefine((node, ctx) => {
+  if (node.type === 'Photo') {
+    if (!node.data || typeof node.data !== 'object' || Array.isArray(node.data)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['data'],
+        message: 'Photo node data must be an object',
+      });
+      return;
+    }
+    const parsed = PhotoDataSchema.safeParse(node.data);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['data', ...issue.path],
+          message: issue.message,
+        });
+      }
+    }
+  } else if (
+    node.data &&
+    typeof node.data === 'object' &&
+    !Array.isArray(node.data) &&
+    typeof node.data.url === 'string' &&
+    !isSafeMediaOrPhotoUrl(node.data.url)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['data', 'url'],
+      message: 'Invalid URL format',
+    });
+  }
 });
 
 const BackupSeatingTableSchema = z.object({

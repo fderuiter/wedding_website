@@ -637,6 +637,40 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(body.error).toBe('Transaction Failed');
     });
 
+    test('returns 400 when importing a Photo ContentNode with parent or percent-encoded traversal URL', async () => {
+      for (const badUrl of ['/../canary-outside-public.txt', '/%2e%2e/canary-outside-public.txt']) {
+        const backupWithBadPhoto = {
+          appConfig: [
+            {
+              id: 'global',
+              brideName: 'Alice',
+              createdAt: '2026-06-20T00:00:00.000Z',
+              updatedAt: '2026-06-20T00:00:00.000Z',
+            },
+          ],
+          contentNode: [
+            {
+              id: 'photo-bad',
+              type: 'Photo',
+              tags: ['gallery'],
+              data: { url: badUrl, status: 'PENDING', isVisible: false },
+              createdAt: '2026-06-20T00:00:00.000Z',
+              updatedAt: '2026-06-20T00:00:00.000Z',
+            },
+          ],
+          registryItem: [],
+        };
+
+        const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+          method: 'POST',
+          body: JSON.stringify(backupWithBadPhoto),
+        });
+        const res = await POST(req);
+        expect(res.status).toBe(400);
+      }
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
     test('handles errors during bulk import audit snapshot creation', async () => {
       const validBackup = {
         appConfig: [

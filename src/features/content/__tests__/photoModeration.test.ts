@@ -177,6 +177,40 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       expect(result.deleted).toBe(true);
       expect(result.status).toBe('REJECTED');
     });
+
+    it('deletes the database row without unlinking out-of-root files when rejecting a legacy out-of-root Photo node', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const canaryName = `__moderation_canary_${process.pid}.txt`;
+      const canaryPath = path.resolve(process.cwd(), canaryName);
+      await fs.writeFile(canaryPath, 'HARMLESS_CANARY_OUTSIDE_PUBLIC\n', 'utf8');
+
+      try {
+        const legacyOutOfRootNode = {
+          id: 'photo-legacy-traversal',
+          type: 'Photo' as const,
+          tags: ['gallery'],
+          data: {
+            url: `/../${canaryName}`,
+            status: 'PENDING',
+            isVisible: false,
+          },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        mockRepo.getNodeById!.mockResolvedValueOnce(legacyOutOfRootNode);
+        mockRepo.deleteNode!.mockResolvedValueOnce(undefined);
+
+        const result = await service.moderatePhoto('photo-legacy-traversal', 'reject', 'AdminUser');
+
+        expect(mockRepo.deleteNode).toHaveBeenCalledWith('photo-legacy-traversal', 'AdminUser');
+        expect(result.deleted).toBe(true);
+        expect(await fs.readFile(canaryPath, 'utf8')).toBe('HARMLESS_CANARY_OUTSIDE_PUBLIC\n');
+      } finally {
+        await fs.rm(canaryPath, { force: true });
+      }
+    });
   });
 
   describe('moderatePhotosBatch', () => {

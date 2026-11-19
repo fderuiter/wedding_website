@@ -924,4 +924,106 @@ describe('Content Node Schema Validation', () => {
       });
     });
   });
+
+  describe('Local URL Path Traversal Guards', () => {
+    const baseConfigPayload = {
+      venueName: 'Venue',
+      venueAddress: '123 St',
+      venueCity: 'City',
+      venueState: 'ST',
+      venueZip: '12345',
+      latitude: 0,
+      longitude: 0,
+      storyText: 'Story',
+      venueDescription: 'Desc',
+      travelAdvice: 'Advice',
+      heroTitle: 'Hero',
+      heroSubtitle: 'Sub',
+      seoTitle: 'SEO',
+      seoDescription: 'Desc',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/images/placeholder.png',
+      seoKeywords: '',
+      baseUrl: 'https://example.com',
+      weddingDate: '2026-12-31',
+    };
+
+    it('rejects parent traversal, encoded traversal, double slashes, backslashes, and null bytes in RawUpdateAppConfigSchema URL fields', () => {
+      const unsafeLocalUrls = [
+        '/../canary-outside-public.svg',
+        '/%2e%2e/canary-outside-public.svg',
+        '/%252e%252e/canary-outside-public.svg',
+        '//evil.example.com/og.svg',
+        '/uploads//cover.jpg',
+        '/uploads\\cover.jpg',
+        '/uploads/%5ccover.jpg',
+        '/uploads/cover.jpg\0.png',
+        '/uploads/cover.jpg%00.png',
+      ];
+
+      const urlFields = [
+        'faviconUrl',
+        'ogImageUrl',
+        'brandLogoUrl',
+        'heroImageUrl',
+        'brandWatermarkUrl',
+        'badgeGraphicUrl',
+      ] as const;
+
+      for (const field of urlFields) {
+        for (const badUrl of unsafeLocalUrls) {
+          const res = RawUpdateAppConfigSchema.safeParse({
+            ...baseConfigPayload,
+            [field]: badUrl,
+          });
+          expect(res.success).toBe(false);
+        }
+      }
+
+      const validRes = RawUpdateAppConfigSchema.safeParse({
+        ...baseConfigPayload,
+        ogImageUrl: '/uploads/cover.jpg',
+        faviconUrl: '/assets/favicon.png',
+      });
+      expect(validRes.success).toBe(true);
+    });
+
+    it('rejects Photo nodes with traversal or percent-encoded traversal URLs in ContentNodeSchema and ContentNodeAdminService', async () => {
+      const adminService = new ContentNodeAdminService();
+
+      for (const badUrl of [
+        '/../canary-outside-public.txt',
+        '/%2e%2e/canary-outside-public.txt',
+        '//evil.example.com/photo.jpg',
+        '/uploads\\photo.jpg',
+        '/uploads/photo.jpg\0',
+      ]) {
+        const nodePayload = {
+          id: 'photo-bad',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: badUrl, status: 'PENDING', isVisible: false },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        expect(ContentNodeSchema.safeParse(nodePayload).success).toBe(false);
+
+        await expect(
+          adminService['validate']({
+            type: 'Photo',
+            tags: ['gallery'],
+            data: { url: badUrl, status: 'PENDING', isVisible: false },
+          })
+        ).rejects.toThrow(/Validation Error/);
+      }
+
+      await expect(
+        adminService['validate']({
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: '/uploads/photos/valid.jpg', status: 'PENDING', isVisible: false },
+        })
+      ).resolves.not.toThrow();
+    });
+  });
 });

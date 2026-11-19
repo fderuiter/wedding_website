@@ -158,6 +158,85 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       backup.appConfig[0].ogImageUrl = 'https://example.com/og.jpg';
       expect(() => DatabaseBackupSchema.parse(backup)).not.toThrow();
     });
+
+    test('rejects local AppConfig URLs containing parent traversal, double slashes, backslashes, or null bytes', () => {
+      const badUrls = [
+        '/../canary-outside-public.svg',
+        '/%2e%2e/canary-outside-public.svg',
+        '//evil.example.com/og.svg',
+        '/images//og.svg',
+        '/images\\og.svg',
+        '/images/%5cog.svg',
+        '/images/og.svg\0.png',
+        '/images/og.svg%00.png',
+      ];
+
+      for (const badUrl of badUrls) {
+        const backupOg = getValidBackup();
+        backupOg.appConfig[0].ogImageUrl = badUrl;
+        expect(() => DatabaseBackupSchema.parse(backupOg)).toThrow();
+
+        const backupFavicon = getValidBackup();
+        backupFavicon.appConfig[0].faviconUrl = badUrl;
+        expect(() => DatabaseBackupSchema.parse(backupFavicon)).toThrow();
+      }
+    });
+  });
+
+  describe('Media and ContentNode Path Guard Validations', () => {
+    test('rejects media items with traversal, encoded traversal, backslashes, double slashes, or null bytes', () => {
+      const badUrls = [
+        '/../canary-outside-public.txt',
+        '/%2e%2e/canary-outside-public.txt',
+        '//evil.example.com/p.jpg',
+        '/uploads\\p.jpg',
+        '/uploads/p.jpg\0',
+      ];
+
+      for (const badUrl of badUrls) {
+        const backup: Record<string, unknown> = getValidBackup();
+        backup.media = [
+          {
+            id: 'media-bad',
+            url: badUrl,
+            altText: 'Bad',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+        expect(() => DatabaseBackupSchema.parse(backup)).toThrow();
+      }
+    });
+
+    test('rejects Photo ContentNodes with traversal or percent-encoded traversal URLs while accepting valid Photo nodes', () => {
+      const validBackup: Record<string, unknown> = getValidBackup();
+      validBackup.contentNode = [
+        {
+          id: 'photo-valid',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: { url: '/uploads/photos/guest.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      expect(() => DatabaseBackupSchema.parse(validBackup)).not.toThrow();
+
+      for (const badUrl of ['/../canary-outside-public.txt', '/%2e%2e/canary-outside-public.txt', '/uploads\\evil.jpg', '/uploads/evil.jpg\0']) {
+        const invalidBackup: Record<string, unknown> = getValidBackup();
+        invalidBackup.contentNode = [
+          {
+            id: 'photo-bad',
+            type: 'Photo',
+            tags: ['gallery'],
+            data: { url: badUrl, status: 'PENDING', isVisible: false },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+        expect(() => DatabaseBackupSchema.parse(invalidBackup)).toThrow();
+      }
+    });
   });
 
   describe('Wedding Party Member Validations', () => {

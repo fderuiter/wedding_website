@@ -14,6 +14,7 @@ jest.mock('fs/promises', () => ({
   unlink: jest.fn().mockResolvedValue(undefined),
   stat: jest.fn(),
   mkdir: jest.fn().mockResolvedValue(undefined),
+  realpath: jest.fn((p: string) => Promise.resolve(p)),
 }));
 
 describe('Hybrid Storage Provider', () => {
@@ -72,9 +73,9 @@ describe('Hybrid Storage Provider', () => {
         arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       } as unknown as File;
 
-      const result = await provider.upload(file, { folder: 'photos', metadata: { author: 'Alice' } });
+      const result = await provider.upload(file, { folder: 'uploads/photos', metadata: { author: 'Alice' } });
 
-      expect(result.key).toMatch(/^photos\/[a-f0-9]{16}\.png$/);
+      expect(result.key).toMatch(/^uploads\/photos\/[a-f0-9]{16}\.png$/);
       expect(result.url).toBe(`/${result.key}`);
       expect(result.size).toBe(3);
       expect(result.mimeType).toBe('image/png');
@@ -82,8 +83,31 @@ describe('Hybrid Storage Provider', () => {
 
       expect(writeFile).toHaveBeenCalledTimes(1);
       const [filePath, buffer] = (writeFile as jest.Mock).mock.calls[0];
-      expect(filePath).toContain(path.join(process.cwd(), 'public', 'photos'));
+      expect(filePath).toContain(path.join(process.cwd(), 'public', 'uploads', 'photos'));
       expect(buffer).toEqual(Buffer.from([1, 2, 3]));
+    });
+
+    it('rejects upload, delete, and getMetadata for keys outside public/uploads', async () => {
+      const provider = getStorageProvider();
+      const input: StorageUploadInputObject = {
+        buffer: Buffer.from([1, 2, 3]),
+        filename: 'evil.png',
+        mimeType: 'image/png',
+      };
+
+      await expect(provider.upload(input, { folder: 'photos' })).rejects.toThrow();
+      await expect(provider.upload(input, { key: '../canary.txt' })).rejects.toThrow();
+      await expect(provider.upload(input, { key: 'images/placeholder.png' })).rejects.toThrow();
+      expect(writeFile).not.toHaveBeenCalled();
+
+      await expect(provider.delete('/../canary.txt')).rejects.toThrow();
+      await expect(provider.delete('/%2e%2e/canary.txt')).rejects.toThrow();
+      await expect(provider.delete('/images/placeholder.png')).rejects.toThrow();
+      expect(unlink).not.toHaveBeenCalled();
+
+      await expect(provider.getMetadata('/../canary.txt')).rejects.toThrow();
+      await expect(provider.getMetadata('/images/placeholder.png')).rejects.toThrow();
+      expect(stat).not.toHaveBeenCalled();
     });
 
     it('uploads a Buffer input with custom key', async () => {

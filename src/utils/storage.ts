@@ -2,6 +2,11 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } fr
 import path from 'path';
 import crypto from 'crypto';
 import { getNormalizedExtension } from './validation';
+import {
+  PathContainmentError,
+  resolveContainedExistingPath,
+  resolveContainedWritePath,
+} from './pathContainment';
 
 export interface StorageObject {
   key: string;
@@ -60,21 +65,31 @@ export interface StorageProvider {
   validateConfig(): Promise<StorageValidationResult>;
 }
 
-class LocalStorageProvider implements StorageProvider {
+/**
+ * @internal Exported for direct containment testing with isolated publicDir directories.
+ */
+export class LocalStorageProvider implements StorageProvider {
   private publicDir: string;
 
   constructor(publicDir?: string) {
     this.publicDir = publicDir || path.join(process.cwd(), 'public');
   }
 
+  private getUploadsRoot(): string {
+    return path.join(this.publicDir, 'uploads');
+  }
+
   private extractKey(keyOrUrl: string): string {
+    if (typeof keyOrUrl !== 'string' || keyOrUrl.includes('\0') || keyOrUrl.includes('\\')) {
+      throw new PathContainmentError('Key or URL contains disallowed characters');
+    }
     if (keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')) {
-      try {
-        const parsed = new URL(keyOrUrl);
-        return parsed.pathname.replace(/^\/+/, '');
-      } catch {
-        // Fallback if URL parsing fails
+      const schemeEnd = keyOrUrl.indexOf('://');
+      const slashIdx = keyOrUrl.indexOf('/', schemeEnd + 3);
+      if (slashIdx !== -1) {
+        return keyOrUrl.slice(slashIdx).split('?')[0].split('#')[0].replace(/^\/+/, '');
       }
+      return '';
     }
     return keyOrUrl.replace(/^\/+/, '');
   }
@@ -98,18 +113,27 @@ class LocalStorageProvider implements StorageProvider {
 
     let key: string;
     if (options?.key) {
+      if (options.key.includes('\0') || options.key.includes('\\')) {
+        throw new PathContainmentError('Storage key contains disallowed characters');
+      }
       key = options.key.replace(/^\/+/, '');
     } else {
       const folder = options?.folder ?? 'uploads';
+      if (folder.includes('\0') || folder.includes('\\')) {
+        throw new PathContainmentError('Storage folder contains disallowed characters');
+      }
+      const cleanFolder = folder.replace(/^\/+|\/+$/g, '');
       const hash = crypto.randomBytes(8).toString('hex');
       const ext = getNormalizedExtension(mimeType, filename);
       const fileWithExt = `${hash}${ext}`;
-      key = folder ? `${folder}/${fileWithExt}` : fileWithExt;
+      key = cleanFolder ? `${cleanFolder}/${fileWithExt}` : fileWithExt;
     }
 
+    const filePath = await resolveContainedWritePath(key, {
+      baseDir: this.publicDir,
+      containmentRoot: this.getUploadsRoot(),
+    });
     const fs = await import('fs/promises');
-    const filePath = path.join(this.publicDir, ...key.split('/'));
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, buffer);
 
     const url = this.getPublicUrl(key);
@@ -125,11 +149,35 @@ class LocalStorageProvider implements StorageProvider {
   }
 
   async delete(keyOrUrl: string): Promise<void> {
-    const fs = await import('fs/promises');
     const key = this.extractKey(keyOrUrl);
-    const filePath = path.join(this.publicDir, ...key.split('/'));
+    const resolved = await resolveContainedExistingPath(key, {
+      baseDir: this.publicDir,
+      containmentRoot: this.getUploadsRoot(),
+    });
+    if (!resolved.exists) {
+      return;
+    }
+
+    const fs = await import('fs/promises');
+    if (typeof fs.lstat === 'function') {
+      try {
+        const st = await fs.lstat(resolved.realPath);
+        if (st.isSymbolicLink() || !st.isFile()) {
+          throw new PathContainmentError('Refusing to delete non-regular file');
+        }
+      } catch (err: unknown) {
+        if (err instanceof PathContainmentError) {
+          throw err;
+        }
+        if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'ENOENT') {
+          return;
+        }
+        throw err;
+      }
+    }
+
     try {
-      await fs.unlink(filePath);
+      await fs.unlink(resolved.realPath);
     } catch (err: unknown) {
       if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code !== 'ENOENT') {
         throw err;
@@ -146,12 +194,22 @@ class LocalStorageProvider implements StorageProvider {
   }
 
   async getMetadata(keyOrUrl: string): Promise<StorageObject | null> {
-    const fs = await import('fs/promises');
     const key = this.extractKey(keyOrUrl);
-    const filePath = path.join(this.publicDir, ...key.split('/'));
+    const resolved = await resolveContainedExistingPath(key, {
+      baseDir: this.publicDir,
+      containmentRoot: this.getUploadsRoot(),
+    });
+    if (!resolved.exists) {
+      return null;
+    }
+
+    const fs = await import('fs/promises');
     try {
-      const stats = await fs.stat(filePath);
-      const ext = path.extname(filePath).toLowerCase();
+      const stats = await fs.stat(resolved.realPath);
+      if (typeof stats.isFile === 'function' && !stats.isFile()) {
+        return null;
+      }
+      const ext = path.extname(resolved.realPath).toLowerCase();
       let mimeType = 'application/octet-stream';
       if (ext === '.png') mimeType = 'image/png';
       else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
@@ -172,7 +230,7 @@ class LocalStorageProvider implements StorageProvider {
   async validateConfig(): Promise<StorageValidationResult> {
     const fs = await import('fs/promises');
     try {
-      await fs.mkdir(path.join(this.publicDir, 'uploads'), { recursive: true });
+      await fs.mkdir(this.getUploadsRoot(), { recursive: true });
       return { valid: true };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

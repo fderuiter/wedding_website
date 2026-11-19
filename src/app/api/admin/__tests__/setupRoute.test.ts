@@ -136,6 +136,25 @@ describe('Setup API Route (/api/admin/setup)', () => {
       expect(json.error).toBe('Invalid admin password.');
     });
 
+    test('returns 400 when ogImageUrl contains parent traversal sequence', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          brideName: 'Alice',
+          groomName: 'Bob',
+          baseUrl: 'https://ourwedding.com',
+          ogImageUrl: '/../canary-outside-public.svg',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
+    });
+
     test('uninitialized setup succeeds and returns session cookie with correct password', async () => {
       (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
 
