@@ -524,6 +524,48 @@ describe('PhotoGalleryClient', () => {
       expect(nextBtn).toHaveFocus();
     });
 
+    it('recovers focus inside the lightbox after clicking the photo preview and marks background gallery siblings inert', async () => {
+      render(<PhotoGalleryClient initialPhotos={[]} />);
+      await uploadHelper('photo-1', '/uploads/photo1.jpg', 'First Photo');
+      await uploadHelper('photo-2', '/uploads/photo2.jpg', 'Second Photo');
+
+      const tabsBar = screen.getByTestId('photo-gallery-tabs');
+      const exportToolbar = screen.getByTestId('gallery-export-toolbar');
+
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByRole('dialog', { name: 'Photo Preview' })).toBeInTheDocument();
+
+      // Background siblings of the open lightbox are marked inert
+      expect(tabsBar).toHaveAttribute('inert');
+      expect(exportToolbar).toHaveAttribute('inert');
+
+      const previewImg = screen.getByTestId('lightbox-image');
+      const closeBtn = screen.getByTestId('lightbox-close-btn');
+      const nextBtn = screen.getByTestId('lightbox-next-btn');
+
+      // Simulate user clicking the non-interactive photo preview so button loses focus
+      fireEvent.click(previewImg);
+      closeBtn.blur();
+      expect(document.activeElement).toBe(document.body);
+
+      // Pressing Tab moves focus to a control inside the lightbox
+      fireEvent.keyDown(window, { key: 'Tab' });
+      expect(closeBtn).toHaveFocus();
+
+      // Simulate focus on modal panel itself (tabIndex=-1) -> Shift+Tab focuses last lightbox control
+      const modalPanel = previewImg.parentElement as HTMLElement;
+      modalPanel.focus();
+      expect(modalPanel).toHaveFocus();
+      fireEvent.keyDown(window, { key: 'Tab', shiftKey: true });
+      expect(nextBtn).toHaveFocus();
+
+      // Closing removes inert cleanly from background siblings
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(tabsBar).not.toHaveAttribute('inert');
+      expect(exportToolbar).not.toHaveAttribute('inert');
+    });
+
     it('navigates via chevron clicks and wraps continuously around edges', async () => {
       render(<PhotoGalleryClient initialPhotos={[]} />);
       await uploadHelper('p1', '/uploads/photo1.jpg', 'Photo One');

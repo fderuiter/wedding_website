@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
@@ -1321,6 +1322,76 @@ describe('RegistryItemCard Component', () => {
 
       useStripeSpy.mockRestore();
       useElementsSpy.mockRestore();
+    });
+  });
+
+  describe('Modal view-transition focus containment', () => {
+    it('keeps document.activeElement inside the open modal across Verify, Clear, invalid Verify, and contribution confirmation transitions', async () => {
+      (apiClient.get as jest.Mock)
+        .mockRejectedValueOnce(new Error('Invalid invitation code.'))
+        .mockResolvedValueOnce({ valid: true, guestName: 'Jane Smith', code: 'GOOD12' });
+      (apiClient.delete as jest.Mock).mockResolvedValue({ success: true });
+
+      const modalRef = createRef<HTMLDivElement>();
+      render(
+        <Overlay
+          ref={modalRef}
+          isOpen={true}
+          onClose={mockOnClose}
+          isModal={true}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Registry Contribution"
+        >
+          <RegistryItemCard item={mockGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      // 1. Failed Verify -> focus lands on Invitation Code input inside modal
+      const codeInput = screen.getByLabelText(/Invitation Code/i);
+      fireEvent.change(codeInput, { target: { value: 'BAD123' } });
+      const verifyBtn = screen.getByRole('button', { name: 'Verify' });
+      verifyBtn.focus();
+      fireEvent.click(verifyBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Invalid invitation code.')).toBeInTheDocument();
+        expect(codeInput).toHaveFocus();
+      });
+      expect(modalRef.current?.contains(document.activeElement)).toBe(true);
+
+      // 2. Successful Verify -> Verify button unmounts and focus moves to Clear button
+      fireEvent.change(codeInput, { target: { value: 'GOOD12' } });
+      const retryVerifyBtn = screen.getByRole('button', { name: 'Verify' });
+      retryVerifyBtn.focus();
+      fireEvent.click(retryVerifyBtn);
+
+      const clearBtn = await screen.findByRole('button', { name: 'Clear' });
+      await waitFor(() => {
+        expect(clearBtn).toHaveFocus();
+      });
+      expect(modalRef.current?.contains(document.activeElement)).toBe(true);
+
+      // 3. Clear -> Clear button unmounts and focus returns to re-enabled Invitation Code input
+      fireEvent.click(clearBtn);
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Invitation Code/i)).not.toBeDisabled();
+        expect(screen.getByLabelText(/Invitation Code/i)).toHaveFocus();
+      });
+      expect(modalRef.current?.contains(document.activeElement)).toBe(true);
+
+      // 4. Submit Contribution -> form unmounts and focus moves to Done button in confirmation view
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jane Smith' } });
+      fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '50' } });
+      const submitBtn = screen.getByRole('button', { name: 'Submit Contribution' });
+      submitBtn.focus();
+      fireEvent.click(submitBtn);
+
+      const doneBtn = await screen.findByRole('button', { name: 'Done' });
+      await waitFor(() => {
+        expect(doneBtn).toHaveFocus();
+      });
+      expect(modalRef.current?.contains(document.activeElement)).toBe(true);
     });
   });
 });

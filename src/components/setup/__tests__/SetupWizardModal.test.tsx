@@ -246,6 +246,98 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     expect(document.activeElement).toBe(weddingPartyBtn);
   });
 
+  test('moves focus inside WeddingPartyManagerModal and AttractionsManagerModal across add, cancel, save, edit, and delete transitions', async () => {
+    await navigateToStep2Content();
+
+    // 1. WeddingPartyManagerModal transitions
+    fireEvent.click(screen.getByRole('button', { name: /Manage Wedding Party/i }));
+    const wpDialog = screen.getByRole('dialog');
+
+    const addMemberBtn = screen.getByRole('button', { name: 'Add New Member' });
+    addMemberBtn.focus();
+    fireEvent.click(addMemberBtn);
+
+    const memberNameInput = screen.getByLabelText(/^Name$/i);
+    await waitFor(() => {
+      expect(memberNameInput).toHaveFocus();
+    });
+    expect(wpDialog.contains(document.activeElement)).toBe(true);
+
+    // Cancel returns focus to "Add New Member"
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add New Member' })).toHaveFocus();
+    });
+
+    // Add and Save returns focus inside modal ("Add New Member")
+    fireEvent.click(screen.getByRole('button', { name: 'Add New Member' }));
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: 'Alex Morgan' } });
+    fireEvent.change(screen.getByLabelText(/^Role$/i), { target: { value: 'Maid of Honor' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Member' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add New Member' })).toHaveFocus();
+    });
+
+    // Edit existing member focuses Name field; Cancel returns focus to that member's Edit button
+    const editMemberBtn = screen.getByRole('button', { name: /Edit wedding party member: Alex Morgan/i });
+    fireEvent.click(editMemberBtn);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Name$/i)).toHaveFocus();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Edit wedding party member: Alex Morgan/i })).toHaveFocus();
+    });
+
+    // Delete member opens stacked ToastProvider alertdialog; confirming returns focus inside modal
+    fireEvent.click(screen.getByRole('button', { name: /Delete wedding party member: Alex Morgan/i }));
+    const confirmMemberDelete = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmMemberDelete);
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Add New Member' })).toHaveFocus();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // 2. AttractionsManagerModal transitions
+    fireEvent.click(screen.getByRole('button', { name: /Manage Attractions/i }));
+    const attrDialog = screen.getByRole('dialog');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add New Attraction' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Name$/i)).toHaveFocus();
+    });
+    expect(attrDialog.contains(document.activeElement)).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/^Name$/i), { target: { value: 'Art Institute' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Attraction' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add New Attraction' })).toHaveFocus();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit attraction: Art Institute/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Name$/i)).toHaveFocus();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Edit attraction: Art Institute/i })).toHaveFocus();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Delete attraction: Art Institute/i }));
+    const confirmAttrDelete = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmAttrDelete);
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Add New Attraction' })).toHaveFocus();
+    });
+  });
+
   test('persists draft step and inputs to sessionStorage and restores on remount', async () => {
     window.sessionStorage.clear();
 

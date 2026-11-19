@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { AttractionDTO } from '@/features/attractions';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 import { Dialog } from '@/components/ui/Dialog';
@@ -35,7 +35,50 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
   const [currentAttraction, setCurrentAttraction] = useState<Partial<AttractionDTO>>({});
   const [saving, setSaving] = useState(false);
 
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const doneButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const editingIdRef = useRef<string | null>(null);
+  const prevIsEditingRef = useRef(isEditing);
+  const pendingDeleteFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      prevIsEditingRef.current = isEditing;
+      return;
+    }
+
+    if (!prevIsEditingRef.current && isEditing) {
+      const firstField = formRef.current?.querySelector<HTMLElement>(
+        'input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)'
+      );
+      firstField?.focus();
+    } else if (prevIsEditingRef.current && !isEditing) {
+      const targetCard = editingIdRef.current
+        ? cardRefs.current.get(editingIdRef.current)
+        : undefined;
+      const editBtn = targetCard?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+      if (editBtn && editBtn.isConnected) {
+        editBtn.focus();
+      } else {
+        (addButtonRef.current ?? doneButtonRef.current)?.focus();
+      }
+      editingIdRef.current = null;
+    }
+
+    prevIsEditingRef.current = isEditing;
+  }, [isOpen, isEditing]);
+
+  useEffect(() => {
+    if (isOpen && !isEditing && pendingDeleteFocusRef.current) {
+      pendingDeleteFocusRef.current = false;
+      (addButtonRef.current ?? doneButtonRef.current)?.focus();
+    }
+  }, [isOpen, isEditing, attractions.length]);
+
   const handleStartAdd = () => {
+    editingIdRef.current = null;
     setCurrentAttraction({
       name: '',
       description: '',
@@ -56,6 +99,7 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
   };
 
   const handleStartEdit = (attraction: AttractionDTO) => {
+    editingIdRef.current = attraction.id;
     setCurrentAttraction(attraction);
     setIsEditing(true);
   };
@@ -84,8 +128,14 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
 
     if (!isConfirmed) return;
     try {
+      pendingDeleteFocusRef.current = true;
       await remove(id);
+      if (!isEditing) {
+        pendingDeleteFocusRef.current = false;
+        (addButtonRef.current ?? doneButtonRef.current)?.focus();
+      }
     } catch {
+      pendingDeleteFocusRef.current = false;
       // Error handled globally
     }
   };
@@ -104,7 +154,7 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
             <span className="text-sm text-gray-600 dark:text-gray-400">
               {attractions.length} {attractions.length === 1 ? 'attraction' : 'attractions'} configured
             </span>
-            <Button onClick={handleStartAdd} variant="primary" size="sm">
+            <Button ref={addButtonRef} onClick={handleStartAdd} variant="primary" size="sm">
               Add New Attraction
             </Button>
           </div>
@@ -112,6 +162,7 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
 
         {isEditing && (
           <AttractionEditorForm
+            ref={formRef}
             values={currentAttraction}
             onChange={(updated) => setCurrentAttraction((prev) => ({ ...prev, ...updated }))}
             onSubmit={handleSave}
@@ -147,6 +198,13 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
               attractions.map((attraction) => (
                 <AttractionCard
                   key={attraction.id}
+                  ref={(node) => {
+                    if (node) {
+                      cardRefs.current.set(attraction.id, node);
+                    } else {
+                      cardRefs.current.delete(attraction.id);
+                    }
+                  }}
                   attraction={attraction}
                   onEdit={handleStartEdit}
                   onDelete={(id) => handleDelete(id)}
@@ -157,7 +215,7 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
         )}
 
         <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-zinc-800">
-          <Button variant="secondary" onClick={onClose}>
+          <Button ref={doneButtonRef} variant="secondary" onClick={onClose}>
             Done
           </Button>
         </div>

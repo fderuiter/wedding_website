@@ -157,6 +157,50 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
     expect(document.activeElement).toBe(gotItBtn);
   });
 
+  it('marks background sign-in form inert while help drawer is open and recovers focus if Contact Host link unmounts or focus falls to body', async () => {
+    const { container, rerender } = render(
+      <ThemeProvider config={{ contactEmail: 'hosts@ourwedding.com' }}>
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    expect(form).not.toHaveAttribute('inert');
+
+    fireEvent.click(screen.getByRole('button', { name: /need help finding your code\?/i }));
+    const drawer = screen.getByRole('dialog');
+    expect(form).toHaveAttribute('inert');
+
+    // Focus Contact Host link, then clear contactEmail so the link unmounts -> focus stays inside drawer
+    const contactLink = screen.getByRole('link', { name: /contact host/i });
+    contactLink.focus();
+    expect(contactLink).toHaveFocus();
+
+    rerender(
+      <ThemeProvider config={{ contactEmail: '' }}>
+        <GuestLoginPage />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: /contact host/i })).not.toBeInTheDocument();
+      expect(drawer.contains(document.activeElement)).toBe(true);
+    });
+
+    // Blur to document.body and press Tab -> focus recovers into drawer
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(screen.getByRole('button', { name: /close help drawer/i })).toHaveFocus();
+
+    // Closing drawer removes inert from background sign-in form
+    fireEvent.click(screen.getByRole('button', { name: /close help drawer/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(form).not.toHaveAttribute('inert');
+    });
+  });
+
   it('closes help drawer when clicking backdrop and restores focus', async () => {
     render(<GuestLoginPage />);
 

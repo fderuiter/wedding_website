@@ -1074,6 +1074,10 @@ export function CsvImportWizardModal({
 
   const stateRef = useRef(state);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const step1UploadLabelRef = useRef<HTMLLabelElement>(null);
+  const step2FirstSelectRef = useRef<HTMLSelectElement>(null);
+  const step3FilterSelectRef = useRef<HTMLSelectElement>(null);
+  const step4CloseButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     existingDbSetRef.current = existingDbSet;
@@ -1121,6 +1125,25 @@ export function CsvImportWizardModal({
     isSubmitting,
     importSummary,
   } = state;
+
+  const prevFocusIsOpenRef = useRef(isOpen);
+  const prevFocusStepRef = useRef(step);
+
+  useEffect(() => {
+    if (isOpen && prevFocusIsOpenRef.current && prevFocusStepRef.current !== step) {
+      if (step === 1) {
+        step1UploadLabelRef.current?.focus();
+      } else if (step === 2) {
+        step2FirstSelectRef.current?.focus();
+      } else if (step === 3) {
+        step3FilterSelectRef.current?.focus();
+      } else if (step === 4) {
+        step4CloseButtonRef.current?.focus();
+      }
+    }
+    prevFocusIsOpenRef.current = isOpen;
+    prevFocusStepRef.current = step;
+  }, [isOpen, step]);
 
   // Sync draft state to sessionStorage
   useEffect(() => {
@@ -1709,7 +1732,7 @@ export function CsvImportWizardModal({
           </span>
         </div>
       }
-      className="max-w-4xl"
+      className="max-w-4xl max-h-[90vh] overflow-y-auto"
     >
       <div className="space-y-6">
         {/* Step Indicator */}
@@ -1769,6 +1792,7 @@ export function CsvImportWizardModal({
                 className="hidden"
               />
               <label
+                ref={step1UploadLabelRef}
                 htmlFor="csv-file-input"
                 role="button"
                 tabIndex={0}
@@ -1816,6 +1840,7 @@ export function CsvImportWizardModal({
               <FormGroup>
                 <Label htmlFor="map-guest-name">Guest Name Column (Required)</Label>
                 <select
+                  ref={step2FirstSelectRef}
                   id="map-guest-name"
                   value={guestNameCol}
                   onChange={(e) => setGuestNameCol(e.target.value)}
@@ -2238,6 +2263,7 @@ export function CsvImportWizardModal({
                     Filter Status:
                   </label>
                   <select
+                    ref={step3FilterSelectRef}
                     id="status-filter-select"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -2377,7 +2403,9 @@ export function CsvImportWizardModal({
             </div>
 
             <div className="pt-2">
-              <Button onClick={handleResetModal}>Close Wizard</Button>
+              <Button ref={step4CloseButtonRef} onClick={handleResetModal}>
+                Close Wizard
+              </Button>
             </div>
           </div>
         )}

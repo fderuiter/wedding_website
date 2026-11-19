@@ -220,7 +220,8 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
           </div>
         </Dialog>
       ))}
-      <div 
+      <div
+        data-toast-region="true"
         className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"
       >
         <div

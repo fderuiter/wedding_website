@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useCallback } from 'react';
-import { useOverlay } from '@/hooks/useOverlay';
+import { useOverlay, type UseOverlayOptions } from '@/hooks/useOverlay';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseDurationSec } from '@/lib/theme/presets';
 import { cn } from '@/utils/cn';
 
-export interface OverlayProps {
+export interface OverlayProps extends UseOverlayOptions {
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -18,6 +18,7 @@ export interface OverlayProps {
   layoutClassName?: string;
   role?: string;
   'aria-modal'?: boolean | 'true' | 'false';
+  'aria-label'?: string;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
 }
@@ -34,13 +35,22 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
       animationType = 'scale',
       layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
       role,
+      isModal,
+      initialFocusRef,
+      restoreFocus,
       'aria-modal': ariaModal,
+      'aria-label': ariaLabel,
       'aria-labelledby': ariaLabelledby,
       'aria-describedby': ariaDescribedby,
     },
     ref
   ) => {
-    const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose);
+    const resolvedIsModal = isModal ?? (ariaModal === true || ariaModal === 'true');
+    const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose, {
+      isModal: resolvedIsModal,
+      initialFocusRef,
+      restoreFocus,
+    });
     const { themePreset } = useTheme();
     const presetTokens = getPresetTokens(themePreset);
     const durationNormal = parseDurationSec(presetTokens['--motion-duration-normal'], 0.2);
@@ -96,11 +106,13 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
             aria-hidden={!isOpen ? true : undefined}
             role={role}
             aria-modal={ariaModal}
+            aria-label={ariaLabel}
             aria-labelledby={ariaLabelledby}
             aria-describedby={ariaDescribedby}
           >
             <motion.div
               ref={setOverlayRef}
+              tabIndex={resolvedIsModal ? -1 : undefined}
               className={cn(className)}
               style={style}
               onClick={(e) => e.stopPropagation()}

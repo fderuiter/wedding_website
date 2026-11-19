@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
@@ -52,6 +52,24 @@ function GuestLoginForm() {
   } = useGuestLoginMachine();
 
   const mailtoUrl = getSafeMailtoUrl(contactEmail);
+  const helpDrawerRef = useRef<HTMLDivElement | null>(null);
+  const closeHelpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const gotItButtonRef = useRef<HTMLButtonElement | null>(null);
+  const prevMailtoUrlRef = useRef<string | null>(mailtoUrl);
+
+  useEffect(() => {
+    if (showHelp && prevMailtoUrlRef.current && !mailtoUrl) {
+      const drawer = helpDrawerRef.current;
+      const activeEl =
+        typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      if (!activeEl || !drawer || !drawer.contains(activeEl) || activeEl === drawer) {
+        (gotItButtonRef.current ?? closeHelpButtonRef.current)?.focus();
+      }
+    }
+    prevMailtoUrlRef.current = mailtoUrl;
+  }, [showHelp, mailtoUrl]);
 
   return (
     <>
@@ -138,8 +156,11 @@ function GuestLoginForm() {
       </form>
 
       <Overlay
+        ref={helpDrawerRef}
         isOpen={showHelp}
         onClose={() => setShowHelp(false)}
+        isModal={true}
+        initialFocusRef={closeHelpButtonRef}
         id="guest-help-drawer"
         role="dialog"
         aria-modal="true"
@@ -155,6 +176,7 @@ function GuestLoginForm() {
             </h2>
           </div>
           <button
+            ref={closeHelpButtonRef}
             type="button"
             onClick={() => setShowHelp(false)}
             className="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white p-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -203,6 +225,7 @@ function GuestLoginForm() {
 
         <div className="pt-1 flex justify-end">
           <button
+            ref={gotItButtonRef}
             type="button"
             onClick={() => setShowHelp(false)}
             className="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

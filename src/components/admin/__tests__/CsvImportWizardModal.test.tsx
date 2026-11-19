@@ -1205,4 +1205,109 @@ describe('CsvImportWizardModal Component', () => {
     expect(screen.getByDisplayValue('Jane Doe')).toBeInTheDocument();
     expect(screen.getByDisplayValue('JANE100')).toBeInTheDocument();
   });
+
+  test('moves focus to each step primary interactive target across Step 1 -> 2 -> 3 -> 4 and Back transitions', async () => {
+    window.sessionStorage.clear();
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: {
+              total: 1,
+              validCount: 1,
+              invalidCount: 0,
+              duplicateCount: 0,
+              updatedCount: 0,
+              skippedCount: 0,
+              createdCount: 1,
+            },
+            rows: [
+              {
+                rowIndex: 1,
+                guestName: 'Alice Smith',
+                code: 'ALICE100',
+                isValid: true,
+                errors: [],
+                warnings: [],
+              },
+            ],
+          }),
+        });
+      }
+      if (url === '/api/admin/invitation-codes/batch') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, count: 1, imported: 1, skipped: 0, updated: 0 }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ ok: true, success: true }),
+      });
+    });
+
+    renderModal(true);
+    const dialog = screen.getByRole('dialog');
+
+    // Initial open on Step 1 focuses the visible CSV upload button label (skipping hidden file input)
+    const uploadButtonLabel = screen.getByRole('button', { name: /Click to select CSV file/i });
+    expect(uploadButtonLabel).toHaveFocus();
+
+    // Step 1 -> Step 2 focuses #map-guest-name select
+    const csvContent = 'Guest Name,Invitation Code\nAlice Smith,ALICE100';
+    const file = new File([csvContent], 'guests.csv', { type: 'text/csv' });
+    (file as any)._content = csvContent;
+    const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Guest Name Column \(Required\)/i)).toHaveFocus();
+    });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    // Step 2 -> Back -> Step 1 focuses CSV upload button label
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Click to select CSV file/i })).toHaveFocus();
+    });
+
+    // Re-upload to Step 2 -> Step 3 focuses #status-filter-select
+    const inputAgain = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(inputAgain, { target: { files: [file] } });
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Guest Name Column \(Required\)/i)).toHaveFocus();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Review/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Filter Status:/i)).toHaveFocus();
+    });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    // Step 3 -> Back -> Step 2 focuses #map-guest-name
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Guest Name Column \(Required\)/i)).toHaveFocus();
+    });
+
+    // Step 2 -> Step 3 -> Commit -> Step 4 focuses Close Wizard button
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Review/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Filter Status:/i)).toHaveFocus();
+    });
+
+    const commitBtn = await screen.findByRole('button', { name: /Commit Import/i });
+    await waitFor(() => {
+      expect(commitBtn).not.toBeDisabled();
+    });
+    fireEvent.click(commitBtn);
+
+    const closeWizardBtn = await screen.findByRole('button', { name: 'Close Wizard' });
+    await waitFor(() => {
+      expect(closeWizardBtn).toHaveFocus();
+    });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
 });

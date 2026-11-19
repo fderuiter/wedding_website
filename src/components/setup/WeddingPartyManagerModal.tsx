@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { Dialog } from '@/components/ui/Dialog';
@@ -35,12 +35,56 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
   const [currentMember, setCurrentMember] = useState<Partial<WeddingPartyMemberDTO>>({});
   const [saving, setSaving] = useState(false);
 
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const doneButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const editingIdRef = useRef<string | null>(null);
+  const prevIsEditingRef = useRef(isEditing);
+  const pendingDeleteFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      prevIsEditingRef.current = isEditing;
+      return;
+    }
+
+    if (!prevIsEditingRef.current && isEditing) {
+      const firstField = formRef.current?.querySelector<HTMLElement>(
+        'input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)'
+      );
+      firstField?.focus();
+    } else if (prevIsEditingRef.current && !isEditing) {
+      const targetCard = editingIdRef.current
+        ? cardRefs.current.get(editingIdRef.current)
+        : undefined;
+      const editBtn = targetCard?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+      if (editBtn && editBtn.isConnected) {
+        editBtn.focus();
+      } else {
+        (addButtonRef.current ?? doneButtonRef.current)?.focus();
+      }
+      editingIdRef.current = null;
+    }
+
+    prevIsEditingRef.current = isEditing;
+  }, [isOpen, isEditing]);
+
+  useEffect(() => {
+    if (isOpen && !isEditing && pendingDeleteFocusRef.current) {
+      pendingDeleteFocusRef.current = false;
+      (addButtonRef.current ?? doneButtonRef.current)?.focus();
+    }
+  }, [isOpen, isEditing, members.length]);
+
   const handleStartAdd = () => {
+    editingIdRef.current = null;
     setCurrentMember({ name: '', role: '', bio: '', side: undefined, photoUrl: '', link: '', order: 0 });
     setIsEditing(true);
   };
 
   const handleStartEdit = (member: WeddingPartyMemberDTO) => {
+    editingIdRef.current = member.id;
     setCurrentMember(member);
     setIsEditing(true);
   };
@@ -69,8 +113,14 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
 
     if (!isConfirmed) return;
     try {
+      pendingDeleteFocusRef.current = true;
       await remove(id);
+      if (!isEditing) {
+        pendingDeleteFocusRef.current = false;
+        (addButtonRef.current ?? doneButtonRef.current)?.focus();
+      }
     } catch {
+      pendingDeleteFocusRef.current = false;
       // Error handled globally
     }
   };
@@ -89,7 +139,7 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
             <span className="text-sm text-gray-600 dark:text-gray-400">
               {members.length} {members.length === 1 ? 'member' : 'members'} configured
             </span>
-            <Button onClick={handleStartAdd} variant="primary" size="sm">
+            <Button ref={addButtonRef} onClick={handleStartAdd} variant="primary" size="sm">
               Add New Member
             </Button>
           </div>
@@ -97,6 +147,7 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
 
         {isEditing && (
           <WeddingPartyEditorForm
+            ref={formRef}
             values={currentMember}
             onChange={(updated) => setCurrentMember((prev) => ({ ...prev, ...updated }))}
             onSubmit={handleSave}
@@ -131,6 +182,13 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
               members.map((member) => (
                 <WeddingPartyCard
                   key={member.id}
+                  ref={(node) => {
+                    if (node) {
+                      cardRefs.current.set(member.id, node);
+                    } else {
+                      cardRefs.current.delete(member.id);
+                    }
+                  }}
                   member={member}
                   onEdit={handleStartEdit}
                   onDelete={(id) => handleDelete(id)}
@@ -141,7 +199,7 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
         )}
 
         <div className="flex justify-end pt-4 border-t border-gray-200 dark:border-zinc-800">
-          <Button variant="secondary" onClick={onClose}>
+          <Button ref={doneButtonRef} variant="secondary" onClick={onClose}>
             Done
           </Button>
         </div>

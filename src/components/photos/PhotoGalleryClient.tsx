@@ -5,6 +5,7 @@ import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
 import { Button } from '@/components/ui/Button';
+import { Overlay } from '@/components/ui/Overlay';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 
 export type PhotoCategory = 'curated' | 'guest';
@@ -55,7 +56,6 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
   const prevSelectedPhotoIndexRef = useRef<number | null>(null);
   const gallerySectionRef = useRef<HTMLElement | null>(null);
   const galleryGridRef = useRef<HTMLDivElement | null>(null);
-  const lightboxModalRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const tabCuratedRef = useRef<HTMLButtonElement | null>(null);
@@ -272,35 +272,10 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
     if (selectedPhotoIndex === null) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedPhotoIndex(null);
-      } else if (e.key === 'ArrowLeft') {
+      if (e.key === 'ArrowLeft') {
         handlePrev();
       } else if (e.key === 'ArrowRight') {
         handleNext();
-      } else if (e.key === 'Tab') {
-        const modal = lightboxModalRef.current;
-        if (!modal) return;
-        const focusable = Array.from(
-          modal.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), [tabindex]:not([tabindex="-1"]):not(:disabled)'
-          )
-        );
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
       }
     };
 
@@ -646,83 +621,83 @@ export function PhotoGalleryClient({ initialPhotos, defaultTab }: PhotoGalleryCl
 
       {/* Lightbox Modal */}
       {currentPhoto && selectedPhotoIndex !== null && (
-        <div
-          ref={lightboxModalRef}
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
-          onClick={() => setSelectedPhotoIndex(null)}
+        <Overlay
+          isOpen={true}
+          onClose={() => setSelectedPhotoIndex(null)}
+          isModal={true}
+          initialFocusRef={closeBtnRef}
+          restoreFocus={false}
           role="dialog"
           aria-modal="true"
           aria-label="Photo Preview"
+          animationType="fade"
+          layoutClassName="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
+          className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center focus:outline-none"
         >
+          {/* Position Counter Indicator */}
           <div
-            className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center"
-            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-black/50 text-white text-sm font-medium tracking-wide"
+            data-testid="lightbox-counter"
+            aria-live="polite"
+            aria-label={`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}`}
           >
-            {/* Position Counter Indicator */}
-            <div
-              className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-black/50 text-white text-sm font-medium tracking-wide"
-              data-testid="lightbox-counter"
-              aria-live="polite"
-              aria-label={`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}`}
-            >
-              {selectedPhotoIndex + 1} / {visiblePhotos.length}
-            </div>
-
-            {/* Close Button */}
-            <button
-              ref={closeBtnRef}
-              type="button"
-              onClick={() => setSelectedPhotoIndex(null)}
-              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
-              aria-label="Close photo preview"
-              data-testid="lightbox-close-btn"
-            >
-              <Icon name="X" className="w-6 h-6" />
-            </button>
-
-            {/* Previous Navigation Button */}
-            <button
-              type="button"
-              onClick={handlePrev}
-              disabled={!hasMultiplePhotos}
-              className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
-              aria-label="Previous photo"
-              data-testid="lightbox-prev-btn"
-            >
-              <Icon name="ChevronLeft" className="w-6 h-6" />
-            </button>
-
-            {/* Next Navigation Button */}
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={!hasMultiplePhotos}
-              className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
-              aria-label="Next photo"
-              data-testid="lightbox-next-btn"
-            >
-              <Icon name="ChevronRight" className="w-6 h-6" />
-            </button>
-
-            <MediaImage
-              src={currentPhoto.url}
-              alt={currentPhoto.title || 'Photo preview'}
-              width={1200}
-              height={800}
-              className="max-h-[85vh] max-w-full object-contain rounded-lg"
-              data-testid="lightbox-image"
-            />
-
-            {currentPhoto.title && (
-              <div
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center text-white/90 text-sm font-medium bg-black/50 px-3 py-1 rounded-full truncate max-w-md pointer-events-none"
-                data-testid="lightbox-caption"
-              >
-                {currentPhoto.title}
-              </div>
-            )}
+            {selectedPhotoIndex + 1} / {visiblePhotos.length}
           </div>
-        </div>
+
+          {/* Close Button */}
+          <button
+            ref={closeBtnRef}
+            type="button"
+            onClick={() => setSelectedPhotoIndex(null)}
+            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+            aria-label="Close photo preview"
+            data-testid="lightbox-close-btn"
+          >
+            <Icon name="X" className="w-6 h-6" />
+          </button>
+
+          {/* Previous Navigation Button */}
+          <button
+            type="button"
+            onClick={handlePrev}
+            disabled={!hasMultiplePhotos}
+            className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+            aria-label="Previous photo"
+            data-testid="lightbox-prev-btn"
+          >
+            <Icon name="ChevronLeft" className="w-6 h-6" />
+          </button>
+
+          {/* Next Navigation Button */}
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={!hasMultiplePhotos}
+            className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+            aria-label="Next photo"
+            data-testid="lightbox-next-btn"
+          >
+            <Icon name="ChevronRight" className="w-6 h-6" />
+          </button>
+
+          <MediaImage
+            src={currentPhoto.url}
+            alt={currentPhoto.title || 'Photo preview'}
+            width={1200}
+            height={800}
+            className="max-h-[85vh] max-w-full object-contain rounded-lg"
+            data-testid="lightbox-image"
+          />
+
+          {currentPhoto.title && (
+            <div
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center text-white/90 text-sm font-medium bg-black/50 px-3 py-1 rounded-full truncate max-w-md pointer-events-none"
+              data-testid="lightbox-caption"
+            >
+              {currentPhoto.title}
+            </div>
+          )}
+        </Overlay>
       )}
     </div>
   );

@@ -122,6 +122,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const stripeControllerRef = useRef<StripeControllerHandle | null>(null);
   const directRadioRef = useRef<HTMLButtonElement | null>(null);
   const cardRadioRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const invitationCodeInputRef = useRef<HTMLInputElement | null>(null);
+  const clearCodeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const doneButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const {
     isValidatingCode,
@@ -161,6 +165,31 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   } = useRegistryContributionMachine({ item, onContribute });
 
   const { handleShare, copied } = useShareItem(item);
+
+  const prevIsCodeLockedRef = useRef(isCodeLocked);
+  const prevIsValidatingCodeRef = useRef(isValidatingCode);
+  const prevIsSuccessRef = useRef(isSuccess);
+
+  useEffect(() => {
+    if (!prevIsSuccessRef.current && isSuccess) {
+      doneButtonRef.current?.focus();
+    } else if (!prevIsCodeLockedRef.current && isCodeLocked) {
+      clearCodeButtonRef.current?.focus();
+    } else if (prevIsCodeLockedRef.current && !isCodeLocked) {
+      invitationCodeInputRef.current?.focus();
+    } else if (
+      prevIsValidatingCodeRef.current &&
+      !isValidatingCode &&
+      !isCodeLocked &&
+      Boolean(codeError)
+    ) {
+      (invitationCodeInputRef.current ?? closeButtonRef.current)?.focus();
+    }
+
+    prevIsCodeLockedRef.current = isCodeLocked;
+    prevIsValidatingCodeRef.current = isValidatingCode;
+    prevIsSuccessRef.current = isSuccess;
+  }, [isCodeLocked, isValidatingCode, codeError, isSuccess]);
 
   const remainingAmount = item.price - item.amountContributed;
   const isFullyFunded = remainingAmount <= 0;
@@ -442,6 +471,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       onClick={(e) => e.stopPropagation()}
     >
       <Button
+        ref={closeButtonRef}
         variant="ghost"
         size="sm"
         className="absolute top-3 right-3"
@@ -744,7 +774,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
             </>
           )}
-          <Button variant="primary" onClick={onClose} className="w-full">
+          <Button ref={doneButtonRef} variant="primary" onClick={onClose} className="w-full">
             Done
           </Button>
         </div>
@@ -789,6 +819,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             <Label>Invitation Code (Optional)</Label>
             <div className="flex gap-2">
               <Input
+                ref={invitationCodeInputRef}
                 type="text"
                 placeholder="ABCDEF12"
                 value={invitationCode}
@@ -807,6 +838,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
               {isCodeLocked && (
                 <Button
+                  ref={clearCodeButtonRef}
                   type="button"
                   variant="ghost"
                   className="text-red-500 hover:text-red-700"

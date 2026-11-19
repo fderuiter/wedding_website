@@ -11,8 +11,11 @@ export interface DialogProps {
   description?: React.ReactNode;
   children: React.ReactNode;
   role?: 'dialog' | 'alertdialog';
+  'aria-label'?: string;
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
+  restoreFocus?: boolean;
   className?: string;
   contentClassName?: string;
   style?: React.CSSProperties;
@@ -27,8 +30,11 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       description,
       children,
       role = 'dialog',
+      'aria-label': ariaLabel,
       'aria-labelledby': ariaLabelledby,
       'aria-describedby': ariaDescribedby,
+      initialFocusRef,
+      restoreFocus,
       className,
       contentClassName,
       style,
@@ -45,6 +51,9 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         ref={ref}
         isOpen={isOpen}
         onClose={onClose}
+        isModal={true}
+        initialFocusRef={initialFocusRef}
+        restoreFocus={restoreFocus}
         className={cn(
           'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
           className
@@ -60,6 +69,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
         <div
           role={role}
           aria-modal="true"
+          aria-label={ariaLabel}
           aria-labelledby={finalLabelId}
           aria-describedby={finalDescId}
           className="w-full h-full"
