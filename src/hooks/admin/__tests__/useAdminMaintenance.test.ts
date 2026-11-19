@@ -96,9 +96,118 @@ describe('useAdminMaintenance Hook Unit Tests', () => {
         attraction: 0,
         contentNode: 0,
         seatingTable: 0,
+        invitationCode: 0,
+        subEvent: 0,
+        subEventAccess: 0,
+        subEventRsvp: 0,
+        broadcastMessage: 0,
+        broadcastRecipient: 0,
+        snapshotVersion: 0,
       },
       totalRecords: 4,
     });
+  });
+
+  test('computes accurate non-zero pre-flight counts for guests, seating, sub-events, RSVPs, broadcasts, and snapshots', async () => {
+    const { result } = renderHook(() => useAdminMaintenance());
+    const v2Backup = {
+      ...getValidBackupData(),
+      version: '2.0',
+      schemaVersion: '2.0',
+      seatingTable: [{ id: 'st-1', name: 'Head Table', capacity: 8 }],
+      invitationCode: [
+        {
+          id: 'inv-1',
+          code: 'FAM2026',
+          guestName: 'Jordan Lee',
+          tableId: 'st-1',
+          seatNumber: 1,
+          createdAt: '2026-10-16T12:00:00.000Z',
+          updatedAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+      subEvent: [
+        {
+          id: 'se-1',
+          title: 'Welcome Dinner',
+          startTime: '2026-10-17T18:00:00.000Z',
+          createdAt: '2026-10-16T12:00:00.000Z',
+          updatedAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+      subEventAccess: [
+        {
+          id: 'sea-1',
+          subEventId: 'se-1',
+          invitationCodeId: 'inv-1',
+          createdAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+      subEventRsvp: [
+        {
+          id: 'rsvp-1',
+          subEventId: 'se-1',
+          invitationCodeId: 'inv-1',
+          status: 'attending',
+          plusOneCount: 1,
+          createdAt: '2026-10-16T12:00:00.000Z',
+          updatedAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+      broadcastMessage: [
+        {
+          id: 'bm-1',
+          channel: 'EMAIL',
+          subject: 'Schedule Update',
+          body: 'See you Friday!',
+          createdAt: '2026-10-16T12:00:00.000Z',
+          updatedAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+      broadcastRecipient: [
+        {
+          id: 'br-1',
+          broadcastId: 'bm-1',
+          invitationCodeId: 'inv-1',
+          guestName: 'Jordan Lee',
+          destination: 'jordan@example.com',
+          createdAt: '2026-10-16T12:00:00.000Z',
+          updatedAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+      snapshotVersion: [
+        {
+          id: 'sv-1',
+          entityType: 'AppConfig',
+          entityId: 'global',
+          data: { id: 'global' },
+          createdAt: '2026-10-16T12:00:00.000Z',
+        },
+      ],
+    };
+
+    const file = new File([JSON.stringify(v2Backup)], 'v2-backup.json', {
+      type: 'application/json',
+    });
+
+    let isValid = false;
+    await act(async () => {
+      isValid = await result.current.validateFile(file);
+    });
+
+    expect(isValid).toBe(true);
+    expect(result.current.preflightSummary?.schemaVersion).toBe('2.0');
+    expect(result.current.preflightSummary?.counts).toMatchObject({
+      seatingTable: 1,
+      invitationCode: 1,
+      subEvent: 1,
+      subEventAccess: 1,
+      subEventRsvp: 1,
+      broadcastMessage: 1,
+      broadcastRecipient: 1,
+      snapshotVersion: 1,
+    });
+    expect(result.current.preflightSummary?.totalRecords).toBe(12);
   });
 
   test('captures syntax errors for malformed JSON files', async () => {
@@ -137,19 +246,33 @@ describe('useAdminMaintenance Hook Unit Tests', () => {
     );
   });
 
-  test('importData executes multi-stage restoration and invalidates query cache', async () => {
+  test('importData executes multi-stage restoration and posts only schema-validated output', async () => {
     (apiClient.post as jest.Mock).mockResolvedValue({ success: true });
 
     const { result } = renderHook(() => useAdminMaintenance());
-    const validData = getValidBackupData();
-    const file = new File([JSON.stringify(validData)], 'backup.json', { type: 'application/json' });
+    const legacyPayload = {
+      ...getValidBackupData(),
+      appConfig: [
+        {
+          ...getValidBackupData().appConfig[0],
+          multisiteEnabled: true,
+          typographyScale: { display: '3rem' },
+          modules: { rsvp: true },
+        },
+      ],
+    };
+    const file = new File([JSON.stringify(legacyPayload)], 'backup.json', { type: 'application/json' });
 
     await act(async () => {
       await result.current.importData(file);
     });
 
     expect(result.current.importStage).toBe('complete');
-    expect(apiClient.post).toHaveBeenCalledWith('/api/admin/maintenance/import', expect.any(Object));
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+    const postedPayload = (apiClient.post as jest.Mock).mock.calls[0][1];
+    expect(postedPayload.appConfig[0].multisiteEnabled).toBeUndefined();
+    expect(postedPayload.appConfig[0].typographyScale).toBeUndefined();
+    expect(postedPayload.appConfig[0].modules).toBeUndefined();
     expect(mockInvalidateQueries).toHaveBeenCalled();
   });
 });

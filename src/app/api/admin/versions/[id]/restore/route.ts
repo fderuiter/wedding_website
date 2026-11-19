@@ -1,128 +1,348 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { coordinateSchema } from '@/utils/validation';
+import { coordinateSchema, isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { PhotoDataSchema } from '@/features/content';
 import { MediaSchema } from '@/features/media';
 import { translateSnapshotToActive } from '@/features/registry';
+import { APP_CONFIG_SECRET_KEYS } from '@/lib/config';
+
+const FALLBACK_SECRET_KEYS = [
+  'smtpPass',
+  'resendApiKey',
+  'sendgridApiKey',
+  'twilioAuthToken',
+] as const;
+
+const SECRET_KEYS = APP_CONFIG_SECRET_KEYS ?? FALLBACK_SECRET_KEYS;
+
+const APP_CONFIG_DELIVERY_KEYS = [
+  'emailProvider',
+  'smtpHost',
+  'smtpPort',
+  'smtpUser',
+  'smtpFrom',
+  'smtpSecure',
+  'resendFrom',
+  'sendgridFrom',
+  'smsProvider',
+  'twilioAccountSid',
+  'twilioFromNumber',
+  'broadcastBatchSize',
+  'broadcastBatchDelayMs',
+] as const;
+
+const APP_CONFIG_OPTIONAL_BRAND_AND_LAYOUT_KEYS = [
+  'contactEmail',
+  'brandMonogram',
+  'brandLogoUrl',
+  'brandLogoAlt',
+  'heroImageUrl',
+  'heroImageAlt',
+  'brandWatermarkUrl',
+  'brandWatermarkAlt',
+  'badgeGraphicUrl',
+  'badgeGraphicAlt',
+  'layoutContainerMaxWidth',
+  'layoutGridGap',
+  'layoutCardPadding',
+  'layoutBorderRadius',
+] as const;
+
+const BATCH_SUMMARY_IDS = new Set([
+  'batch_import',
+  'batch_update_tags',
+  'batch_delete',
+]);
+
+function toOptionalDate(value: unknown): Date | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
+function isFeatureToggleDelta(snapshotData: Record<string, unknown>): boolean {
+  return (
+    'current' in snapshotData &&
+    Array.isArray(snapshotData.current) &&
+    !('partner1Name' in snapshotData) &&
+    !('brideName' in snapshotData) &&
+    !('venueName' in snapshotData)
+  );
+}
 
 export const POST = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   const version = await prisma.snapshotVersion.findUnique({
-    where: { id }
+    where: { id },
   });
 
   if (!version) {
     throw new ApiError(404, 'Version not found');
   }
 
-  const snapshotData: any = version.data;
+  if (!version.data || typeof version.data !== 'object' || Array.isArray(version.data)) {
+    throw new ApiError(400, 'Invalid snapshot data');
+  }
+
+  const rawSnapshotData = version.data as Record<string, any>;
+  const snapshotData: Record<string, any> =
+    rawSnapshotData.deleted && rawSnapshotData.previous && typeof rawSnapshotData.previous === 'object'
+      ? (rawSnapshotData.previous as Record<string, any>)
+      : rawSnapshotData;
 
   if (version.entityType === 'AppConfig') {
-    const data = {
-      partner1Name: snapshotData.partner1Name ?? snapshotData.brideName ?? '',
-      partner2Name: snapshotData.partner2Name ?? snapshotData.groomName ?? '',
-      brideName: snapshotData.brideName ?? snapshotData.partner1Name ?? '',
-      groomName: snapshotData.groomName ?? snapshotData.partner2Name ?? '',
-      weddingDate: snapshotData.weddingDate ? new Date(snapshotData.weddingDate) : new Date(),
-      baseUrl: snapshotData.baseUrl ?? '',
-      venueName: snapshotData.venueName ?? '',
-      venueAddress: snapshotData.venueAddress ?? '',
-      venueCity: snapshotData.venueCity ?? '',
-      venueState: snapshotData.venueState ?? '',
-      venueZip: snapshotData.venueZip ?? '',
-      latitude: coordinateSchema.parse(snapshotData.latitude || 0),
-      longitude: coordinateSchema.parse(snapshotData.longitude || 0),
-      storyText: snapshotData.storyText ?? '',
-      venueDescription: snapshotData.venueDescription ?? '',
-      travelAdvice: snapshotData.travelAdvice ?? '',
-      heroTitle: snapshotData.heroTitle ?? '',
-      heroSubtitle: snapshotData.heroSubtitle ?? '',
-      seoTitle: snapshotData.seoTitle ?? '',
-      seoDescription: snapshotData.seoDescription ?? '',
-      faviconUrl: snapshotData.faviconUrl ?? '/assets/favicon.png',
-      ogImageUrl: snapshotData.ogImageUrl ?? '/images/placeholder.png',
-      seoKeywords: snapshotData.seoKeywords ?? '',
-      features: snapshotData.features ?? [],
-      colorPrimary: snapshotData.colorPrimary ?? '#B91C1C',
-      colorSecondary: snapshotData.colorSecondary ?? '#B45309',
-      themePreset: snapshotData.themePreset ?? 'classic',
-      themeTokens: snapshotData.themeTokens ?? {},
-      timezone: snapshotData.timezone ?? 'UTC',
-      showCountdown: snapshotData.showCountdown !== false,
-      showAddToCalendar: snapshotData.showAddToCalendar !== false,
-      subdomain: snapshotData.subdomain ?? null,
-    };
-    await prisma.appConfig.upsert({
-      where: { id: version.entityId },
-      update: data,
-      create: { id: version.entityId, ...data }
-    });
+    if (isFeatureToggleDelta(snapshotData)) {
+      await prisma.appConfig.upsert({
+        where: { id: version.entityId },
+        update: { features: snapshotData.current as Prisma.InputJsonValue },
+        create: {
+          id: version.entityId,
+          features: snapshotData.current as Prisma.InputJsonValue,
+        },
+      });
+    } else {
+      const optionalFields: Record<string, unknown> = {};
+      for (const key of APP_CONFIG_OPTIONAL_BRAND_AND_LAYOUT_KEYS) {
+        if (snapshotData[key] !== undefined) {
+          optionalFields[key] = snapshotData[key];
+        }
+      }
+      for (const key of APP_CONFIG_DELIVERY_KEYS) {
+        if (snapshotData[key] !== undefined) {
+          optionalFields[key] = snapshotData[key];
+        }
+      }
+      for (const secretKey of SECRET_KEYS) {
+        const val = snapshotData[secretKey];
+        if (typeof val === 'string' && val.trim().length > 0) {
+          optionalFields[secretKey] = val;
+        }
+      }
+
+      const data: Record<string, any> = {
+        partner1Name: snapshotData.partner1Name ?? snapshotData.brideName ?? '',
+        partner2Name: snapshotData.partner2Name ?? snapshotData.groomName ?? '',
+        brideName: snapshotData.brideName ?? snapshotData.partner1Name ?? '',
+        groomName: snapshotData.groomName ?? snapshotData.partner2Name ?? '',
+        weddingDate: snapshotData.weddingDate ? new Date(snapshotData.weddingDate) : new Date(),
+        baseUrl: snapshotData.baseUrl ?? '',
+        venueName: snapshotData.venueName ?? '',
+        venueAddress: snapshotData.venueAddress ?? '',
+        venueCity: snapshotData.venueCity ?? '',
+        venueState: snapshotData.venueState ?? '',
+        venueZip: snapshotData.venueZip ?? '',
+        latitude: coordinateSchema.parse(snapshotData.latitude || 0),
+        longitude: coordinateSchema.parse(snapshotData.longitude || 0),
+        storyText: snapshotData.storyText ?? '',
+        venueDescription: snapshotData.venueDescription ?? '',
+        travelAdvice: snapshotData.travelAdvice ?? '',
+        heroTitle: snapshotData.heroTitle ?? '',
+        heroSubtitle: snapshotData.heroSubtitle ?? '',
+        seoTitle: snapshotData.seoTitle ?? '',
+        seoDescription: snapshotData.seoDescription ?? '',
+        faviconUrl: snapshotData.faviconUrl ?? '/assets/favicon.png',
+        ogImageUrl: snapshotData.ogImageUrl ?? '/images/placeholder.png',
+        seoKeywords: snapshotData.seoKeywords ?? '',
+        features: snapshotData.features ?? [],
+        colorPrimary: snapshotData.colorPrimary ?? '#B91C1C',
+        colorSecondary: snapshotData.colorSecondary ?? '#B45309',
+        themePreset: snapshotData.themePreset ?? 'classic',
+        themeTokens: snapshotData.themeTokens === null ? Prisma.DbNull : (snapshotData.themeTokens ?? {}),
+        timezone: snapshotData.timezone ?? 'UTC',
+        showCountdown: snapshotData.showCountdown !== false,
+        showAddToCalendar: snapshotData.showAddToCalendar !== false,
+        subdomain: snapshotData.subdomain ?? null,
+        ...optionalFields,
+      };
+      await prisma.appConfig.upsert({
+        where: { id: version.entityId },
+        update: data,
+        create: { id: version.entityId, ...data },
+      });
+    }
   } else if (version.entityType === 'ContentNode') {
+    const nodeData = snapshotData.data || {};
+    if (snapshotData.type === 'Photo') {
+      const parsedPhoto = PhotoDataSchema.safeParse(nodeData);
+      if (!parsedPhoto.success) {
+        throw new ApiError(400, 'Invalid Photo content node snapshot data');
+      }
+    } else if (
+      nodeData &&
+      typeof nodeData === 'object' &&
+      !Array.isArray(nodeData) &&
+      typeof nodeData.url === 'string' &&
+      !isSafeMediaOrPhotoUrl(nodeData.url)
+    ) {
+      throw new ApiError(400, 'Invalid URL in content node snapshot');
+    }
+
     const data = {
       type: snapshotData.type,
       tags: snapshotData.tags || [],
-      data: snapshotData.data || {},
+      data: nodeData,
     };
     await prisma.contentNode.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data }
+      create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'WeddingPartyMember') {
+    let resolvedPhotoId = snapshotData.photoId;
+    if (
+      typeof resolvedPhotoId === 'string' &&
+      resolvedPhotoId.length > 0 &&
+      typeof prisma.media?.findUnique === 'function'
+    ) {
+      const existingPhoto = await prisma.media.findUnique({ where: { id: resolvedPhotoId } });
+      if (existingPhoto === null) {
+        resolvedPhotoId = null;
+      }
+    }
+
     const data = {
       name: snapshotData.name,
       role: snapshotData.role,
       bio: snapshotData.bio,
-      photoId: snapshotData.photoId,
+      photoId: resolvedPhotoId,
       link: snapshotData.link,
       order: snapshotData.order || 0,
+      ...(snapshotData.side !== undefined ? { side: snapshotData.side } : {}),
+      ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
     };
     await prisma.weddingPartyMember.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data }
+      create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'Attraction') {
+    let resolvedImageId = snapshotData.imageId;
+    if (
+      typeof resolvedImageId === 'string' &&
+      resolvedImageId.length > 0 &&
+      typeof prisma.media?.findUnique === 'function'
+    ) {
+      const existingImage = await prisma.media.findUnique({ where: { id: resolvedImageId } });
+      if (existingImage === null) {
+        resolvedImageId = null;
+      }
+    }
+
     const data = {
       name: snapshotData.name,
       description: snapshotData.description,
-      imageId: snapshotData.imageId,
+      imageId: resolvedImageId,
       category: snapshotData.category,
       website: snapshotData.website,
       directions: snapshotData.directions,
       latitude: coordinateSchema.parse(snapshotData.latitude || 0),
       longitude: coordinateSchema.parse(snapshotData.longitude || 0),
       isVisible: snapshotData.isVisible !== false,
+      ...(snapshotData.promoCode !== undefined ? { promoCode: snapshotData.promoCode } : {}),
+      ...(snapshotData.bookingUrl !== undefined ? { bookingUrl: snapshotData.bookingUrl } : {}),
+      ...(snapshotData.roomRate !== undefined ? { roomRate: snapshotData.roomRate } : {}),
+      ...(snapshotData.cutoffDate !== undefined
+        ? {
+          cutoffDate:
+              snapshotData.cutoffDate instanceof Date
+                ? snapshotData.cutoffDate.toISOString()
+                : snapshotData.cutoffDate === null
+                  ? null
+                  : String(snapshotData.cutoffDate),
+        }
+        : {}),
+      ...(snapshotData.shuttleInfo !== undefined ? { shuttleInfo: snapshotData.shuttleInfo } : {}),
+      ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
     };
     await prisma.attraction.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data }
+      create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'RegistryItem') {
-    const data = translateSnapshotToActive(snapshotData);
-    if (!data) {
+    const translated = translateSnapshotToActive(snapshotData);
+    if (!translated) {
       throw new ApiError(400, 'Invalid snapshot data');
     }
+    const data = {
+      ...translated,
+      ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
+    };
     await prisma.registryItem.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data }
+      create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'Contributor') {
+    let resolvedInvitationCodeId = snapshotData.invitationCodeId;
+    if (
+      typeof resolvedInvitationCodeId === 'string' &&
+      resolvedInvitationCodeId.length > 0 &&
+      typeof prisma.invitationCode?.findUnique === 'function'
+    ) {
+      const existingInvite = await prisma.invitationCode.findUnique({
+        where: { id: resolvedInvitationCodeId },
+      });
+      if (existingInvite === null) {
+        resolvedInvitationCodeId = null;
+      }
+    }
+
+    let resolvedRegistryItemId = snapshotData.registryItemId;
+    if (
+      typeof resolvedRegistryItemId === 'string' &&
+      resolvedRegistryItemId.length > 0 &&
+      typeof prisma.registryItem?.findUnique === 'function'
+    ) {
+      const existingItem = await prisma.registryItem.findUnique({
+        where: { id: resolvedRegistryItemId },
+      });
+      if (existingItem === null) {
+        resolvedRegistryItemId = null;
+      }
+    }
+
     const data = {
       name: snapshotData.name,
       email: snapshotData.email,
       isPlusOne: snapshotData.isPlusOne || false,
       amount: snapshotData.amount || 0,
       date: snapshotData.date ? new Date(snapshotData.date) : new Date(),
-      registryItemId: snapshotData.registryItemId,
+      registryItemId: resolvedRegistryItemId,
+      ...(snapshotData.coverFee !== undefined ? { coverFee: Boolean(snapshotData.coverFee) } : {}),
+      ...(snapshotData.feeAmount !== undefined ? { feeAmount: Number(snapshotData.feeAmount) } : {}),
+      ...(snapshotData.message !== undefined ? { message: snapshotData.message } : {}),
+      ...(snapshotData.thankYouStatus !== undefined
+        ? { thankYouStatus: snapshotData.thankYouStatus }
+        : {}),
+      ...(snapshotData.thankYouSentAt !== undefined
+        ? { thankYouSentAt: toOptionalDate(snapshotData.thankYouSentAt) }
+        : {}),
+      ...(snapshotData.thankYouNote !== undefined ? { thankYouNote: snapshotData.thankYouNote } : {}),
+      ...(snapshotData.stripePaymentIntentId !== undefined
+        ? { stripePaymentIntentId: snapshotData.stripePaymentIntentId }
+        : {}),
+      ...(snapshotData.stripeChargeId !== undefined
+        ? { stripeChargeId: snapshotData.stripeChargeId }
+        : {}),
+      ...(snapshotData.transactionTimestamp !== undefined
+        ? { transactionTimestamp: toOptionalDate(snapshotData.transactionTimestamp) }
+        : {}),
+      ...(resolvedInvitationCodeId !== undefined
+        ? { invitationCodeId: resolvedInvitationCodeId }
+        : {}),
     };
     await prisma.contributor.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data }
+      create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'Media') {
     const parsedData = MediaSchema.parse({
@@ -137,25 +357,255 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       url: parsedData.url,
       altText: parsedData.altText,
       isDecorative: parsedData.isDecorative,
+      ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
       createdAt: parsedData.createdAt,
       updatedAt: parsedData.updatedAt,
     };
     await prisma.media.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data }
+      create: { id: version.entityId, ...data },
+    });
+  } else if (version.entityType === 'InvitationCode') {
+    if (BATCH_SUMMARY_IDS.has(version.entityId)) {
+      throw new ApiError(400, 'Batch operation snapshots cannot be restored as a single record');
+    }
+
+    let resolvedTableId: string | null | undefined = snapshotData.tableId;
+    if (
+      typeof resolvedTableId === 'string' &&
+      resolvedTableId.length > 0 &&
+      typeof prisma.seatingTable?.findUnique === 'function'
+    ) {
+      const existingTable = await prisma.seatingTable.findUnique({ where: { id: resolvedTableId } });
+      if (existingTable === null) {
+        resolvedTableId = null;
+      }
+    }
+
+    if (
+      (snapshotData.action === 'assignSeat' || snapshotData.action === 'autoAssign') &&
+      typeof snapshotData.code !== 'string'
+    ) {
+      await prisma.invitationCode.update({
+        where: { id: version.entityId },
+        data: {
+          tableId: resolvedTableId ?? null,
+          seatNumber: resolvedTableId ? (snapshotData.seatNumber ?? null) : null,
+        },
+      });
+    } else {
+      if (typeof snapshotData.code !== 'string' || !snapshotData.code.trim()) {
+        throw new ApiError(400, 'Invalid InvitationCode snapshot data');
+      }
+
+      const data: Prisma.InvitationCodeUncheckedCreateInput = {
+        id: version.entityId,
+        code: snapshotData.code,
+        guestName: snapshotData.guestName ?? '',
+        email: snapshotData.email ?? null,
+        addressLine1: snapshotData.addressLine1 ?? null,
+        addressLine2: snapshotData.addressLine2 ?? null,
+        city: snapshotData.city ?? null,
+        state: snapshotData.state ?? null,
+        zipCode: snapshotData.zipCode ?? null,
+        country: snapshotData.country ?? null,
+        dietaryNotes: snapshotData.dietaryNotes ?? null,
+        plusOneAllocations:
+          typeof snapshotData.plusOneAllocations === 'number' ? snapshotData.plusOneAllocations : 0,
+        plusOneFirstName: snapshotData.plusOneFirstName ?? null,
+        plusOneLastName: snapshotData.plusOneLastName ?? null,
+        householdName: snapshotData.householdName ?? null,
+        partyGroup: snapshotData.partyGroup ?? null,
+        partyTags: Array.isArray(snapshotData.partyTags) ? snapshotData.partyTags : [],
+        extraFields:
+          snapshotData.extraFields === null || snapshotData.extraFields === undefined
+            ? Prisma.DbNull
+            : (snapshotData.extraFields as Prisma.InputJsonValue),
+        used: Boolean(snapshotData.used),
+        usedAt: toOptionalDate(snapshotData.usedAt),
+        tableId: resolvedTableId ?? null,
+        seatNumber: resolvedTableId ? (snapshotData.seatNumber ?? null) : null,
+        ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
+      };
+
+      const { id: _ignoredId, ...updateData } = data;
+      await prisma.invitationCode.upsert({
+        where: { id: version.entityId },
+        update: updateData,
+        create: data,
+      });
+    }
+  } else if (version.entityType === 'SeatingTable') {
+    if (typeof snapshotData.name !== 'string' || !snapshotData.name.trim()) {
+      throw new ApiError(400, 'Invalid SeatingTable snapshot data');
+    }
+
+    const data = {
+      name: snapshotData.name,
+      shape: snapshotData.shape ?? 'round',
+      capacity: typeof snapshotData.capacity === 'number' ? snapshotData.capacity : 8,
+      x: typeof snapshotData.x === 'number' ? snapshotData.x : 100,
+      y: typeof snapshotData.y === 'number' ? snapshotData.y : 100,
+      width: typeof snapshotData.width === 'number' ? snapshotData.width : 120,
+      height: typeof snapshotData.height === 'number' ? snapshotData.height : 120,
+      rotation: typeof snapshotData.rotation === 'number' ? snapshotData.rotation : 0,
+      ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
+    };
+
+    await prisma.seatingTable.upsert({
+      where: { id: version.entityId },
+      update: data,
+      create: { id: version.entityId, ...data },
+    });
+  } else if (version.entityType === 'SubEvent') {
+    if (typeof snapshotData.title !== 'string' || !snapshotData.title.trim()) {
+      throw new ApiError(400, 'Invalid SubEvent snapshot data');
+    }
+
+    const data = {
+      title: snapshotData.title,
+      description: snapshotData.description ?? '',
+      startTime: toOptionalDate(snapshotData.startTime),
+      endTime: toOptionalDate(snapshotData.endTime),
+      locationName: snapshotData.locationName ?? '',
+      location: snapshotData.location ?? '',
+      category: snapshotData.category ?? '',
+      isPrivate: Boolean(snapshotData.isPrivate),
+    };
+
+    await prisma.subEvent.upsert({
+      where: { id: version.entityId },
+      update: data,
+      create: { id: version.entityId, ...data },
+    });
+  } else if (version.entityType === 'SubEventAccess') {
+    if (
+      typeof snapshotData.subEventId !== 'string' ||
+      typeof snapshotData.invitationCodeId !== 'string'
+    ) {
+      throw new ApiError(400, 'Invalid SubEventAccess snapshot data');
+    }
+
+    const data = {
+      subEventId: snapshotData.subEventId,
+      invitationCodeId: snapshotData.invitationCodeId,
+    };
+
+    await prisma.subEventAccess.upsert({
+      where: { id: version.entityId },
+      update: data,
+      create: { id: version.entityId, ...data },
+    });
+  } else if (version.entityType === 'SubEventRsvp') {
+    if (
+      typeof snapshotData.subEventId !== 'string' ||
+      typeof snapshotData.invitationCodeId !== 'string'
+    ) {
+      throw new ApiError(400, 'Invalid SubEventRsvp snapshot data');
+    }
+
+    const data = {
+      subEventId: snapshotData.subEventId,
+      invitationCodeId: snapshotData.invitationCodeId,
+      status: snapshotData.status ?? 'PENDING',
+      plusOneCount: typeof snapshotData.plusOneCount === 'number' ? snapshotData.plusOneCount : 0,
+      dietaryNotes: snapshotData.dietaryNotes ?? null,
+    };
+
+    await prisma.subEventRsvp.upsert({
+      where: { id: version.entityId },
+      update: data,
+      create: { id: version.entityId, ...data },
+    });
+  } else if (version.entityType === 'BroadcastMessage') {
+    if (typeof snapshotData.body !== 'string') {
+      throw new ApiError(400, 'Invalid BroadcastMessage snapshot data');
+    }
+
+    const data: Prisma.BroadcastMessageUncheckedCreateInput = {
+      id: version.entityId,
+      channel: snapshotData.channel ?? 'EMAIL',
+      subject: snapshotData.subject ?? null,
+      body: snapshotData.body,
+      targetFilters:
+        snapshotData.targetFilters === null || snapshotData.targetFilters === undefined
+          ? Prisma.DbNull
+          : (snapshotData.targetFilters as Prisma.InputJsonValue),
+      status: snapshotData.status ?? 'PENDING',
+      totalRecipients:
+        typeof snapshotData.totalRecipients === 'number' ? snapshotData.totalRecipients : 0,
+      sentCount: typeof snapshotData.sentCount === 'number' ? snapshotData.sentCount : 0,
+      failedCount: typeof snapshotData.failedCount === 'number' ? snapshotData.failedCount : 0,
+      scheduledFor: toOptionalDate(snapshotData.scheduledFor),
+      sentAt: toOptionalDate(snapshotData.sentAt),
+    };
+
+    const { id: _ignoredId, ...updateData } = data;
+    await prisma.broadcastMessage.upsert({
+      where: { id: version.entityId },
+      update: updateData,
+      create: data,
+    });
+  } else if (version.entityType === 'BroadcastRecipient') {
+    if (
+      typeof snapshotData.broadcastId !== 'string' ||
+      typeof snapshotData.destination !== 'string'
+    ) {
+      throw new ApiError(400, 'Invalid BroadcastRecipient snapshot data');
+    }
+
+    let resolvedInvitationCodeId: string | null | undefined = snapshotData.invitationCodeId;
+    if (
+      typeof resolvedInvitationCodeId === 'string' &&
+      resolvedInvitationCodeId.length > 0 &&
+      typeof prisma.invitationCode?.findUnique === 'function'
+    ) {
+      const existingInvite = await prisma.invitationCode.findUnique({
+        where: { id: resolvedInvitationCodeId },
+      });
+      if (existingInvite === null) {
+        resolvedInvitationCodeId = null;
+      }
+    }
+
+    const data = {
+      broadcastId: snapshotData.broadcastId,
+      invitationCodeId: resolvedInvitationCodeId ?? null,
+      guestName: snapshotData.guestName ?? '',
+      destination: snapshotData.destination,
+      status: snapshotData.status ?? 'PENDING',
+      error: snapshotData.error ?? null,
+      sentAt: toOptionalDate(snapshotData.sentAt),
+    };
+
+    await prisma.broadcastRecipient.upsert({
+      where: { id: version.entityId },
+      update: data,
+      create: { id: version.entityId, ...data },
     });
   } else {
     throw new ApiError(400, 'Unsupported entity type');
+  }
+
+  let rollbackSnapshotPayload: Record<string, any> = rawSnapshotData;
+  if (
+    version.entityType === 'AppConfig' &&
+    SECRET_KEYS.some((secretKey) => secretKey in rawSnapshotData)
+  ) {
+    rollbackSnapshotPayload = { ...rawSnapshotData };
+    for (const secretKey of SECRET_KEYS) {
+      delete rollbackSnapshotPayload[secretKey];
+    }
   }
 
   await prisma.snapshotVersion.create({
     data: {
       entityType: version.entityType,
       entityId: version.entityId,
-      data: snapshotData,
+      data: rollbackSnapshotPayload,
       author: 'Admin (Rollback)',
-    }
+    },
   });
 
   return NextResponse.json({ success: true, restoredTo: id });

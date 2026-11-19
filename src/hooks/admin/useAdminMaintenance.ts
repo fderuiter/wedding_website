@@ -37,6 +37,13 @@ export interface PreflightSummary {
     attraction: number;
     contentNode: number;
     seatingTable: number;
+    invitationCode: number;
+    subEvent: number;
+    subEventAccess: number;
+    subEventRsvp: number;
+    broadcastMessage: number;
+    broadcastRecipient: number;
+    snapshotVersion: number;
   };
   totalRecords: number;
 }
@@ -131,6 +138,13 @@ export function useAdminMaintenance() {
         attraction: data.attraction?.length || 0,
         contentNode: data.contentNode?.length || 0,
         seatingTable: data.seatingTable?.length || 0,
+        invitationCode: data.invitationCode?.length || 0,
+        subEvent: data.subEvent?.length || 0,
+        subEventAccess: data.subEventAccess?.length || 0,
+        subEventRsvp: data.subEventRsvp?.length || 0,
+        broadcastMessage: data.broadcastMessage?.length || 0,
+        broadcastRecipient: data.broadcastRecipient?.length || 0,
+        snapshotVersion: data.snapshotVersion?.length || 0,
       };
 
       const totalRecords = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -206,9 +220,9 @@ export function useAdminMaintenance() {
         throw new Error(`Backup Verification Failed: ${issueStr}`);
       }
 
-      // Step 3: restoring_database
+      // Step 3: restoring_database (persist only validated, schema-stripped output)
       setImportStage('restoring_database');
-      await apiClient.post('/api/admin/maintenance/import', rawJson);
+      await apiClient.post('/api/admin/maintenance/import', result.data);
 
       // Step 4: refetching_state
       setImportStage('refetching_state');

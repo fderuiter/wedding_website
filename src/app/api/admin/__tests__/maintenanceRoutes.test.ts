@@ -106,10 +106,17 @@ jest.mock('@/lib/prisma', () => ({
     appConfig: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     contentNode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     media: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    seatingTable: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    invitationCode: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     weddingPartyMember: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     attraction: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     registryItem: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     contributor: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    subEvent: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    subEventAccess: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    subEventRsvp: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    broadcastMessage: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
+    broadcastRecipient: { findMany: jest.fn(), deleteMany: jest.fn(), createMany: jest.fn() },
     snapshotVersion: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
   },
 }));
@@ -143,23 +150,37 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(res.status).toBe(401);
     });
 
-    test('returns 200 with JSON file attachment containing 8 models', async () => {
+    test('returns 200 with JSON file attachment containing all 15 models in schemaVersion 2.0', async () => {
       const mockAppConfig = [{ id: 'global', brideName: 'Alice' }];
-      const mockContentNode = [{ id: 'cn1', body: 'Story' }];
+      const mockContentNode = [{ id: 'cn1', type: 'FAQ', tags: ['FAQ'], data: { q: 'When?' } }];
       const mockMedia = [{ id: 'm1', url: 'https://example.com/photo.jpg', isDecorative: false }];
+      const mockSeatingTable = [{ id: 'st1', name: 'Table 1', capacity: 8 }];
+      const mockInvitationCode = [{ id: 'ic1', code: 'INV001', guestName: 'Sam', tableId: 'st1' }];
       const mockWeddingParty = [{ id: 'wp1', name: 'Bob' }];
       const mockAttraction = [{ id: 'att1', name: 'Beach' }];
       const mockRegistry = [{ id: 'ri1', name: 'Kitchenware' }];
-      const mockContributor = [{ id: 'c1', name: 'John' }];
-      const mockSnapshot = [{ id: 'sv1', entityId: 'global' }];
+      const mockContributor = [{ id: 'c1', name: 'John', invitationCodeId: 'ic1' }];
+      const mockSubEvent = [{ id: 'se1', title: 'Ceremony' }];
+      const mockSubEventAccess = [{ id: 'sea1', subEventId: 'se1', invitationCodeId: 'ic1' }];
+      const mockSubEventRsvp = [{ id: 'rsvp1', subEventId: 'se1', invitationCodeId: 'ic1', status: 'attending' }];
+      const mockBroadcastMessage = [{ id: 'bm1', channel: 'EMAIL', body: 'Hello guests' }];
+      const mockBroadcastRecipient = [{ id: 'br1', broadcastId: 'bm1', guestName: 'Sam', destination: 'sam@example.com' }];
+      const mockSnapshot = [{ id: 'sv1', entityType: 'Media', entityId: 'm1', data: {} }];
 
       mockPrisma.appConfig.findMany.mockResolvedValue(mockAppConfig as any);
       mockPrisma.contentNode.findMany.mockResolvedValue(mockContentNode as any);
       mockPrisma.media.findMany.mockResolvedValue(mockMedia as any);
+      mockPrisma.seatingTable.findMany.mockResolvedValue(mockSeatingTable as any);
+      mockPrisma.invitationCode.findMany.mockResolvedValue(mockInvitationCode as any);
       mockPrisma.weddingPartyMember.findMany.mockResolvedValue(mockWeddingParty as any);
       mockPrisma.attraction.findMany.mockResolvedValue(mockAttraction as any);
       mockPrisma.registryItem.findMany.mockResolvedValue(mockRegistry as any);
       mockPrisma.contributor.findMany.mockResolvedValue(mockContributor as any);
+      mockPrisma.subEvent.findMany.mockResolvedValue(mockSubEvent as any);
+      mockPrisma.subEventAccess.findMany.mockResolvedValue(mockSubEventAccess as any);
+      mockPrisma.subEventRsvp.findMany.mockResolvedValue(mockSubEventRsvp as any);
+      mockPrisma.broadcastMessage.findMany.mockResolvedValue(mockBroadcastMessage as any);
+      mockPrisma.broadcastRecipient.findMany.mockResolvedValue(mockBroadcastRecipient as any);
       mockPrisma.snapshotVersion.findMany.mockResolvedValue(mockSnapshot as any);
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/export');
@@ -171,16 +192,23 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const data = await res.json();
       expect(data).toEqual({
-        version: '1.0',
-        schemaVersion: '1.0',
+        version: '2.0',
+        schemaVersion: '2.0',
         exportedAt: expect.any(String),
-        appConfig: mockAppConfig.map((c) => ({ ...c, multisiteEnabled: false })),
+        appConfig: mockAppConfig,
         contentNode: mockContentNode,
         media: mockMedia,
+        seatingTable: mockSeatingTable,
+        invitationCode: mockInvitationCode,
         weddingPartyMember: mockWeddingParty,
         attraction: mockAttraction,
         registryItem: mockRegistry,
         contributor: mockContributor,
+        subEvent: mockSubEvent,
+        subEventAccess: mockSubEventAccess,
+        subEventRsvp: mockSubEventRsvp,
+        broadcastMessage: mockBroadcastMessage,
+        broadcastRecipient: mockBroadcastRecipient,
         snapshotVersion: mockSnapshot,
       });
     });
@@ -192,12 +220,19 @@ describe('Maintenance API Routes Integration Tests', () => {
       mockPrisma.appConfig.findMany.mockResolvedValue([]);
       mockPrisma.contentNode.findMany.mockResolvedValue([]);
       mockPrisma.media.findMany.mockResolvedValue([]);
+      mockPrisma.seatingTable.findMany.mockResolvedValue([]);
+      mockPrisma.invitationCode.findMany.mockResolvedValue([]);
       mockPrisma.weddingPartyMember.findMany.mockResolvedValue([]);
       mockPrisma.attraction.findMany.mockResolvedValue([]);
       mockPrisma.registryItem.findMany
         .mockResolvedValueOnce(chunk1 as any)
         .mockResolvedValueOnce(chunk2 as any);
       mockPrisma.contributor.findMany.mockResolvedValue([]);
+      mockPrisma.subEvent.findMany.mockResolvedValue([]);
+      mockPrisma.subEventAccess.findMany.mockResolvedValue([]);
+      mockPrisma.subEventRsvp.findMany.mockResolvedValue([]);
+      mockPrisma.broadcastMessage.findMany.mockResolvedValue([]);
+      mockPrisma.broadcastRecipient.findMany.mockResolvedValue([]);
       mockPrisma.snapshotVersion.findMany.mockResolvedValue([]);
 
       const req = new NextRequest('http://localhost/api/admin/maintenance/export');
@@ -221,28 +256,48 @@ describe('Maintenance API Routes Integration Tests', () => {
       });
     });
 
-    test('sanitizes appConfig records before stream output', async () => {
+    test('redacts raw provider secrets and strips virtual DTO keys while retaining non-secret delivery settings', async () => {
       mockPrisma.appConfig.findMany.mockResolvedValue([
         {
           id: 'global',
           brideName: 'Alice',
           adminPassword: 'SuperSecretPassword',
           databaseUrl: 'postgres://secret:password@localhost/db',
+          multisiteEnabled: true,
+          typographyScale: { heading: '2rem' },
+          modules: { rsvp: true },
+          emailProvider: 'smtp',
           smtpHost: 'smtp.example.invalid',
+          smtpPort: 587,
           smtpUser: 'mailer@example.invalid',
+          smtpFrom: 'noreply@example.invalid',
+          smtpSecure: true,
           smtpPass: 'smtp-secret-pass',
           resendApiKey: 're_secret',
+          resendFrom: 'updates@example.invalid',
           sendgridApiKey: 'SG.secret',
-          twilioAccountSid: 'AC_SECRET_SID',
+          sendgridFrom: 'hello@example.invalid',
+          smsProvider: 'twilio',
+          twilioAccountSid: 'AC_PUBLIC_SID',
+          twilioFromNumber: '+15551234567',
           twilioAuthToken: 'twilio-secret-token',
+          broadcastBatchSize: 40,
+          broadcastBatchDelayMs: 750,
         },
       ] as any);
       mockPrisma.contentNode.findMany.mockResolvedValue([]);
       mockPrisma.media.findMany.mockResolvedValue([]);
+      mockPrisma.seatingTable.findMany.mockResolvedValue([]);
+      mockPrisma.invitationCode.findMany.mockResolvedValue([]);
       mockPrisma.weddingPartyMember.findMany.mockResolvedValue([]);
       mockPrisma.attraction.findMany.mockResolvedValue([]);
       mockPrisma.registryItem.findMany.mockResolvedValue([]);
       mockPrisma.contributor.findMany.mockResolvedValue([]);
+      mockPrisma.subEvent.findMany.mockResolvedValue([]);
+      mockPrisma.subEventAccess.findMany.mockResolvedValue([]);
+      mockPrisma.subEventRsvp.findMany.mockResolvedValue([]);
+      mockPrisma.broadcastMessage.findMany.mockResolvedValue([]);
+      mockPrisma.broadcastRecipient.findMany.mockResolvedValue([]);
       mockPrisma.snapshotVersion.findMany.mockResolvedValue([
         {
           id: 'sv-config',
@@ -251,8 +306,11 @@ describe('Maintenance API Routes Integration Tests', () => {
           data: {
             id: 'global',
             brideName: 'Alice',
+            multisiteEnabled: true,
+            smtpHost: 'smtp.historical.invalid',
             smtpPass: 'historical-smtp-secret',
             twilioAccountSid: 'AC_HISTORICAL_SID',
+            twilioAuthToken: 'historical-twilio-secret',
           },
         },
       ] as any);
@@ -262,18 +320,28 @@ describe('Maintenance API Routes Integration Tests', () => {
 
       const data = await res.json();
       expect(data.appConfig[0].brideName).toBe('Alice');
+      expect(data.appConfig[0].emailProvider).toBe('smtp');
+      expect(data.appConfig[0].smtpHost).toBe('smtp.example.invalid');
+      expect(data.appConfig[0].smtpUser).toBe('mailer@example.invalid');
+      expect(data.appConfig[0].twilioAccountSid).toBe('AC_PUBLIC_SID');
+      expect(data.appConfig[0].twilioFromNumber).toBe('+15551234567');
+      expect(data.appConfig[0].broadcastBatchSize).toBe(40);
+      expect(data.appConfig[0].broadcastBatchDelayMs).toBe(750);
+      expect(data.appConfig[0].multisiteEnabled).toBeUndefined();
+      expect(data.appConfig[0].typographyScale).toBeUndefined();
+      expect(data.appConfig[0].modules).toBeUndefined();
       expect(data.appConfig[0].adminPassword).toBeUndefined();
       expect(data.appConfig[0].databaseUrl).toBeUndefined();
-      expect(data.appConfig[0].smtpHost).toBeUndefined();
-      expect(data.appConfig[0].smtpUser).toBeUndefined();
       expect(data.appConfig[0].smtpPass).toBeUndefined();
       expect(data.appConfig[0].resendApiKey).toBeUndefined();
       expect(data.appConfig[0].sendgridApiKey).toBeUndefined();
-      expect(data.appConfig[0].twilioAccountSid).toBeUndefined();
       expect(data.appConfig[0].twilioAuthToken).toBeUndefined();
       expect(data.snapshotVersion[0].data.brideName).toBe('Alice');
+      expect(data.snapshotVersion[0].data.smtpHost).toBe('smtp.historical.invalid');
+      expect(data.snapshotVersion[0].data.twilioAccountSid).toBe('AC_HISTORICAL_SID');
+      expect(data.snapshotVersion[0].data.multisiteEnabled).toBeUndefined();
       expect(data.snapshotVersion[0].data.smtpPass).toBeUndefined();
-      expect(data.snapshotVersion[0].data.twilioAccountSid).toBeUndefined();
+      expect(data.snapshotVersion[0].data.twilioAuthToken).toBeUndefined();
     });
   });
 
@@ -730,7 +798,7 @@ describe('Maintenance API Routes Integration Tests', () => {
       consoleErrorSpy.mockRestore();
     });
 
-    test('supports optional fields and exercises all reviveDates branches', async () => {
+    test('strips unknown fields via DatabaseBackupSchema and exercises all reviveDates branches', async () => {
       const backupWithAllTypes = {
         appConfig: [
           {
@@ -738,11 +806,27 @@ describe('Maintenance API Routes Integration Tests', () => {
             brideName: 'Alice',
             createdAt: '2026-06-20T00:00:00.000Z',
             updatedAt: '2026-06-20T00:00:00.000Z',
+            multisiteEnabled: true,
             nullField: null,
             undefinedField: undefined,
             numberField: 42,
             booleanField: true,
             arrayField: ['2026-06-20T00:00:00.000Z', { nestedDate: '2026-06-20T00:00:00.000Z' }],
+          },
+        ],
+        contentNode: [
+          {
+            id: 'cn-dates',
+            type: 'Timeline',
+            tags: ['schedule'],
+            data: {
+              nullField: null,
+              numberField: 42,
+              booleanField: true,
+              items: ['2026-06-20T00:00:00.000Z', { nestedDate: '2026-06-20T00:00:00.000Z' }],
+            },
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
           },
         ],
         registryItem: [
@@ -791,14 +875,148 @@ describe('Maintenance API Routes Integration Tests', () => {
             brideName: 'Alice',
             createdAt: new Date('2026-06-20T00:00:00.000Z'),
             updatedAt: new Date('2026-06-20T00:00:00.000Z'),
-            nullField: null,
-            undefinedField: undefined,
-            numberField: 42,
-            booleanField: true,
-            arrayField: [new Date('2026-06-20T00:00:00.000Z'), { nestedDate: new Date('2026-06-20T00:00:00.000Z') }],
           },
         ],
       });
+    });
+
+    test('imports legacy 1.0 backup by stripping virtual fields, preserving live provider secrets, and clearing orphaned invitationCodeId links', async () => {
+      const legacyBackup = {
+        version: '1.0',
+        schemaVersion: '1.0',
+        appConfig: [
+          {
+            id: 'global',
+            partner1Name: 'Alex',
+            partner2Name: 'Taylor',
+            multisiteEnabled: false,
+            typographyScale: { display: '3rem' },
+            spacingScale: { section: '4rem' },
+            borderTreatment: { radius: '1rem' },
+            brandDimensions: { logoWidth: '120px' },
+            modules: { registry: true },
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        registryItem: [
+          {
+            id: 'ri1',
+            name: 'Honeymoon Fund',
+            description: 'Flights and hotel',
+            category: 'Travel',
+            price: 500,
+            imageId: 'm1',
+            quantity: 1,
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+        contributor: [
+          {
+            id: 'c-orphan',
+            name: 'Guest Contributor',
+            amount: 100,
+            registryItemId: 'ri1',
+            invitationCodeId: 'missing-invitation-id',
+            thankYouStatus: 'Sent',
+            thankYouNote: 'Thank you so much!',
+            createdAt: '2026-06-20T00:00:00.000Z',
+            updatedAt: '2026-06-20T00:00:00.000Z',
+          },
+        ],
+      };
+
+      const callOrder: string[] = [];
+      const makeTrackedModel = (name: string) => ({
+        deleteMany: jest.fn(async () => {
+          callOrder.push(`delete:${name}`);
+        }),
+        createMany: jest.fn(async () => {
+          callOrder.push(`create:${name}`);
+        }),
+      });
+
+      const mockTx = {
+        broadcastRecipient: makeTrackedModel('broadcastRecipient'),
+        broadcastMessage: makeTrackedModel('broadcastMessage'),
+        subEventRsvp: makeTrackedModel('subEventRsvp'),
+        subEventAccess: makeTrackedModel('subEventAccess'),
+        subEvent: makeTrackedModel('subEvent'),
+        contributor: makeTrackedModel('contributor'),
+        registryItem: makeTrackedModel('registryItem'),
+        invitationCode: makeTrackedModel('invitationCode'),
+        seatingTable: makeTrackedModel('seatingTable'),
+        attraction: makeTrackedModel('attraction'),
+        weddingPartyMember: makeTrackedModel('weddingPartyMember'),
+        media: makeTrackedModel('media'),
+        contentNode: makeTrackedModel('contentNode'),
+        appConfig: {
+          ...makeTrackedModel('appConfig'),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'global',
+              smtpPass: 'existing-smtp-pass',
+              resendApiKey: 'existing-resend-key',
+              sendgridApiKey: '',
+              twilioAuthToken: 'existing-twilio-token',
+            },
+          ]),
+        },
+      };
+
+      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
+        return callback(mockTx);
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/maintenance/import', {
+        method: 'POST',
+        body: JSON.stringify(legacyBackup),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(200);
+      expect(mockTx.appConfig.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            id: 'global',
+            partner1Name: 'Alex',
+            partner2Name: 'Taylor',
+            smtpPass: 'existing-smtp-pass',
+            resendApiKey: 'existing-resend-key',
+            twilioAuthToken: 'existing-twilio-token',
+            createdAt: new Date('2026-06-20T00:00:00.000Z'),
+            updatedAt: new Date('2026-06-20T00:00:00.000Z'),
+          },
+        ],
+      });
+      expect(mockTx.contributor.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            id: 'c-orphan',
+            registryItemId: 'ri1',
+            invitationCodeId: null,
+            thankYouStatus: 'Sent',
+            thankYouNote: 'Thank you so much!',
+          }),
+        ],
+      });
+      expect(callOrder.slice(0, 14)).toEqual([
+        'delete:broadcastRecipient',
+        'delete:broadcastMessage',
+        'delete:subEventRsvp',
+        'delete:subEventAccess',
+        'delete:subEvent',
+        'delete:contributor',
+        'delete:registryItem',
+        'delete:invitationCode',
+        'delete:seatingTable',
+        'delete:attraction',
+        'delete:weddingPartyMember',
+        'delete:media',
+        'delete:contentNode',
+        'delete:appConfig',
+      ]);
     });
 
     test('supports empty appConfig and registryItem arrays', async () => {

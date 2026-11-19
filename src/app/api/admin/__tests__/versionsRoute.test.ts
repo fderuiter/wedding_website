@@ -30,11 +30,39 @@ jest.mock('@/lib/prisma', () => ({
     },
     registryItem: {
       upsert: jest.fn(),
+      findUnique: jest.fn(),
     },
     contributor: {
       upsert: jest.fn(),
     },
     media: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    invitationCode: {
+      upsert: jest.fn(),
+      update: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    seatingTable: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    subEvent: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    subEventAccess: {
+      upsert: jest.fn(),
+    },
+    subEventRsvp: {
+      upsert: jest.fn(),
+    },
+    broadcastMessage: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    broadcastRecipient: {
       upsert: jest.fn(),
     },
   },
@@ -714,5 +742,261 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     const json = await res.json();
     expect(json.success).toBe(false);
     expect(json.error).toBe('Unsupported entity type');
+  });
+
+  it('preserves brand media, layout tokens, and non-secret delivery settings without overwriting omitted secrets on AppConfig rollback', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const fullAppConfigSnapshot = {
+      partner1Name: 'Alex',
+      partner2Name: 'Taylor',
+      contactEmail: 'couple@example.com',
+      brandMonogram: 'A&T',
+      brandLogoUrl: '/images/logo.svg',
+      brandLogoAlt: 'Couple Logo',
+      heroImageUrl: '/images/hero.jpg',
+      heroImageAlt: 'Sunset portrait',
+      brandWatermarkUrl: '/images/watermark.svg',
+      brandWatermarkAlt: 'Watermark',
+      badgeGraphicUrl: '/images/badge.svg',
+      badgeGraphicAlt: 'Crest',
+      layoutContainerMaxWidth: '72rem',
+      layoutGridGap: '2rem',
+      layoutCardPadding: '2.5rem',
+      layoutBorderRadius: '0.75rem',
+      emailProvider: 'smtp',
+      smtpHost: 'smtp.example.com',
+      smtpPort: 587,
+      smtpUser: 'mailer',
+      smtpPass: '',
+      twilioAccountSid: 'AC_RESTORED',
+      twilioAuthToken: '',
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue({
+      id: 'v-app-full',
+      entityType: 'AppConfig',
+      entityId: 'global',
+      data: fullAppConfigSnapshot,
+    });
+    (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue({});
+
+    const req = new NextRequest('http://localhost/api/admin/versions/v-app-full/restore', { method: 'POST' });
+    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-app-full' }) });
+
+    expect(res.status).toBe(200);
+    const upsertArg = (mockPrisma.appConfig.upsert as jest.Mock).mock.calls[0][0];
+    expect(upsertArg.update).toMatchObject({
+      contactEmail: 'couple@example.com',
+      brandMonogram: 'A&T',
+      brandLogoUrl: '/images/logo.svg',
+      brandLogoAlt: 'Couple Logo',
+      heroImageUrl: '/images/hero.jpg',
+      heroImageAlt: 'Sunset portrait',
+      brandWatermarkUrl: '/images/watermark.svg',
+      brandWatermarkAlt: 'Watermark',
+      badgeGraphicUrl: '/images/badge.svg',
+      badgeGraphicAlt: 'Crest',
+      layoutContainerMaxWidth: '72rem',
+      layoutGridGap: '2rem',
+      layoutCardPadding: '2.5rem',
+      layoutBorderRadius: '0.75rem',
+      emailProvider: 'smtp',
+      smtpHost: 'smtp.example.com',
+      twilioAccountSid: 'AC_RESTORED',
+    });
+    expect(upsertArg.update.smtpPass).toBeUndefined();
+    expect(upsertArg.update.twilioAuthToken).toBeUndefined();
+  });
+
+  it('preserves hotel block details on Attraction and thank-you metadata on Contributor rollback', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.media.findUnique as jest.Mock).mockResolvedValue({ id: 'img-hotel' });
+    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({ id: 'inv-guest-1' });
+    (mockPrisma.registryItem.findUnique as jest.Mock).mockResolvedValue({ id: 'reg-1' });
+    (mockPrisma.attraction.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.contributor.upsert as jest.Mock).mockResolvedValue({});
+
+    const hotelSnapshot = {
+      name: 'Harbor Hotel',
+      description: 'Room block venue',
+      imageId: 'img-hotel',
+      category: 'Hotel',
+      website: 'https://harbor.example.com',
+      directions: 'Downtown waterfront',
+      latitude: 41.88,
+      longitude: -87.62,
+      isVisible: true,
+      promoCode: 'WED2026',
+      bookingUrl: 'https://harbor.example.com/book',
+      roomRate: '$189/night',
+      cutoffDate: '2026-08-01',
+      shuttleInfo: 'Shuttle departs at 4:15 PM',
+      isSample: false,
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'v-hotel',
+      entityType: 'Attraction',
+      entityId: 'attr-hotel',
+      data: hotelSnapshot,
+    });
+
+    const attrRes = await restoreVersion(
+      new NextRequest('http://localhost/api/admin/versions/v-hotel/restore', { method: 'POST' }),
+      { params: Promise.resolve({ id: 'v-hotel' }) },
+    );
+    expect(attrRes.status).toBe(200);
+    expect(mockPrisma.attraction.upsert).toHaveBeenCalledWith({
+      where: { id: 'attr-hotel' },
+      update: hotelSnapshot,
+      create: { id: 'attr-hotel', ...hotelSnapshot },
+    });
+
+    const contributorSnapshot = {
+      name: 'Jordan Lee',
+      email: 'jordan@example.com',
+      isPlusOne: false,
+      amount: 150,
+      coverFee: true,
+      feeAmount: 4.5,
+      message: 'Congratulations!',
+      date: '2026-06-15T12:00:00.000Z',
+      thankYouStatus: 'Sent',
+      thankYouSentAt: '2026-06-20T15:00:00.000Z',
+      thankYouNote: 'Thank you for your generous gift!',
+      stripePaymentIntentId: 'pi_test_123',
+      stripeChargeId: 'ch_test_123',
+      transactionTimestamp: '2026-06-15T12:00:05.000Z',
+      registryItemId: 'reg-1',
+      invitationCodeId: 'inv-guest-1',
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'v-contrib-full',
+      entityType: 'Contributor',
+      entityId: 'contrib-full',
+      data: contributorSnapshot,
+    });
+
+    const contribRes = await restoreVersion(
+      new NextRequest('http://localhost/api/admin/versions/v-contrib-full/restore', { method: 'POST' }),
+      { params: Promise.resolve({ id: 'v-contrib-full' }) },
+    );
+    expect(contribRes.status).toBe(200);
+    expect(mockPrisma.contributor.upsert).toHaveBeenCalledWith({
+      where: { id: 'contrib-full' },
+      update: expect.objectContaining({
+        coverFee: true,
+        feeAmount: 4.5,
+        message: 'Congratulations!',
+        thankYouStatus: 'Sent',
+        thankYouSentAt: new Date('2026-06-20T15:00:00.000Z'),
+        thankYouNote: 'Thank you for your generous gift!',
+        stripePaymentIntentId: 'pi_test_123',
+        stripeChargeId: 'ch_test_123',
+        transactionTimestamp: new Date('2026-06-15T12:00:05.000Z'),
+        invitationCodeId: 'inv-guest-1',
+      }),
+      create: expect.objectContaining({
+        id: 'contrib-full',
+        invitationCodeId: 'inv-guest-1',
+      }),
+    });
+  });
+
+  it('restores InvitationCode, SeatingTable, SubEvent, SubEventAccess, SubEventRsvp, BroadcastMessage, and BroadcastRecipient versions', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (mockPrisma.seatingTable.findUnique as jest.Mock).mockResolvedValue({ id: 'table-1' });
+    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({ id: 'inv-1' });
+    (mockPrisma.invitationCode.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.seatingTable.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.subEvent.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.subEventAccess.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.subEventRsvp.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.broadcastMessage.upsert as jest.Mock).mockResolvedValue({});
+    (mockPrisma.broadcastRecipient.upsert as jest.Mock).mockResolvedValue({});
+
+    const cases = [
+      {
+        id: 'v-table',
+        entityType: 'SeatingTable',
+        entityId: 'table-1',
+        data: { name: 'Head Table', shape: 'rectangle', capacity: 10, x: 50, y: 60 },
+      },
+      {
+        id: 'v-invite',
+        entityType: 'InvitationCode',
+        entityId: 'inv-1',
+        data: {
+          code: 'GUEST01',
+          guestName: 'Sam Rivera',
+          email: 'sam@example.com',
+          dietaryNotes: 'Vegetarian',
+          plusOneAllocations: 1,
+          partyTags: ['vip'],
+          tableId: 'table-1',
+          seatNumber: 3,
+        },
+      },
+      {
+        id: 'v-subevent',
+        entityType: 'SubEvent',
+        entityId: 'se-1',
+        data: {
+          title: 'Welcome Reception',
+          description: 'Drinks on the terrace',
+          startTime: '2026-09-18T18:00:00.000Z',
+          locationName: 'Rooftop',
+          isPrivate: true,
+        },
+      },
+      {
+        id: 'v-access',
+        entityType: 'SubEventAccess',
+        entityId: 'sea-1',
+        data: { subEventId: 'se-1', invitationCodeId: 'inv-1' },
+      },
+      {
+        id: 'v-rsvp',
+        entityType: 'SubEventRsvp',
+        entityId: 'rsvp-1',
+        data: { subEventId: 'se-1', invitationCodeId: 'inv-1', status: 'attending', plusOneCount: 1 },
+      },
+      {
+        id: 'v-bcast',
+        entityType: 'BroadcastMessage',
+        entityId: 'bm-1',
+        data: { channel: 'EMAIL', subject: 'Reminder', body: 'Doors open at 6 PM', status: 'SENT' },
+      },
+      {
+        id: 'v-recip',
+        entityType: 'BroadcastRecipient',
+        entityId: 'br-1',
+        data: {
+          broadcastId: 'bm-1',
+          invitationCodeId: 'inv-1',
+          guestName: 'Sam Rivera',
+          destination: 'sam@example.com',
+          status: 'SENT',
+        },
+      },
+    ];
+
+    for (const versionCase of cases) {
+      (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce(versionCase);
+      const res = await restoreVersion(
+        new NextRequest(`http://localhost/api/admin/versions/${versionCase.id}/restore`, { method: 'POST' }),
+        { params: Promise.resolve({ id: versionCase.id }) },
+      );
+      expect(res.status).toBe(200);
+    }
+
+    expect(mockPrisma.seatingTable.upsert).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.invitationCode.upsert).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.subEvent.upsert).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.subEventAccess.upsert).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.broadcastMessage.upsert).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.broadcastRecipient.upsert).toHaveBeenCalledTimes(1);
   });
 });

@@ -44,6 +44,9 @@ export function checkDocDrift(
     const lines = output.split('\n');
     for (const rawLine of lines) {
       if (!rawLine.trim()) continue;
+      // In porcelain v1 ('XY path'), Y === ' ' means the working tree matches the staged index
+      // after doc generation ran, so the staged file is already in sync for commit.
+      if (rawLine.length >= 2 && rawLine[1] === ' ') continue;
       // git status --porcelain formats: 'XY <filename>' or 'XY <old> -> <new>'
       // Strip porcelain 1-2 character status indicators followed by whitespace
       const pathPart = rawLine.replace(/^[ ?MADRCU!]{1,2}\s+/, '').trim();

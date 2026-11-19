@@ -203,4 +203,57 @@ describe('MaintenanceHubPage Pre-flight Validation & Progress Tracking', () => {
     const submitBtn = screen.getByRole('button', { name: /Import Data/i });
     expect(submitBtn).toBeDisabled();
   });
+
+  test('renders accurate non-zero pre-flight counts across all 15 backup domains', () => {
+    (useAdminMaintenance as jest.Mock).mockReturnValue({
+      preflightState: 'valid',
+      preflightSummary: {
+        fileName: 'full-v2-backup.json',
+        fileSize: 8192,
+        exportedAt: '10/16/2026, 12:00:00 PM',
+        version: '2.0',
+        schemaVersion: '2.0',
+        counts: {
+          appConfig: 1,
+          media: 11,
+          registryItem: 14,
+          contributor: 17,
+          weddingPartyMember: 6,
+          attraction: 5,
+          contentNode: 9,
+          seatingTable: 8,
+          invitationCode: 45,
+          subEvent: 3,
+          subEventAccess: 30,
+          subEventRsvp: 28,
+          broadcastMessage: 4,
+          broadcastRecipient: 42,
+          snapshotVersion: 19,
+        },
+        totalRecords: 242,
+      },
+      diagnostics: [],
+      validateFile: mockValidateFile,
+      resetPreflight: mockResetPreflight,
+
+      importStage: 'idle',
+      importing: false,
+      importError: null,
+      importData: mockImportData,
+      resetImport: mockResetImport,
+
+      exportData: mockExportData,
+    });
+
+    render(<MaintenanceHubPage />);
+
+    expect(screen.getByText('Seating Tables:').nextSibling).toHaveTextContent('8');
+    expect(screen.getByText('Guests:').nextSibling).toHaveTextContent('45');
+    expect(screen.getByText('Sub-Events:').nextSibling).toHaveTextContent('3');
+    expect(screen.getByText('Event Access:').nextSibling).toHaveTextContent('30');
+    expect(screen.getByText('RSVPs:').nextSibling).toHaveTextContent('28');
+    expect(screen.getByText('Broadcasts:').nextSibling).toHaveTextContent('4');
+    expect(screen.getByText('Broadcast Recipients:').nextSibling).toHaveTextContent('42');
+    expect(screen.getByText('Snapshots:').nextSibling).toHaveTextContent('19');
+  });
 });

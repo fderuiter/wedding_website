@@ -86,6 +86,16 @@ describe('verify-doc-sync', () => {
       const drifted = checkDocDrift(DEFAULT_DOC_FILES, tempDir);
       expect(drifted).toEqual([]);
     });
+
+    it('allows staged documentation updates when working tree matches staged index and flags stale staged files', () => {
+      fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "updated": true}');
+      execSync('git add public/openapi.json', { cwd: tempDir, stdio: 'ignore' });
+      expect(checkDocDrift(DEFAULT_DOC_FILES, tempDir)).toEqual([]);
+
+      // Subsequent generator write that differs from staged index ('MM') is flagged
+      fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "updated": false}');
+      expect(checkDocDrift(DEFAULT_DOC_FILES, tempDir)).toEqual(['public/openapi.json']);
+    });
   });
 
   describe('verifyDocSync', () => {
