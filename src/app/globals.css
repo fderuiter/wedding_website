@@ -61,6 +61,13 @@
   --radius-card: 1rem;
 }
 
+@theme inline {
+  --color-primary-text: var(--color-primary-text);
+  --text-color-primary: var(--color-primary-text);
+  --color-secondary-text: var(--color-secondary-text);
+  --text-color-secondary: var(--color-secondary-text);
+}
+
 :root {
   --color-background: #FFFFFF;
   --color-foreground: #111827;
@@ -69,6 +76,9 @@
   --color-text-on-secondary: #171717;
   --color-primary-text: #B91C1C;
   --color-secondary-text: #B45309;
+  --color-error-text: #DC2626;
+  --color-focus-ring: #B91C1C;
+  --color-surface-border: #6B7280;
   --color-muted-text: #4B5563;
   --color-text-muted: #4B5563;
   --color-warning-bg: rgba(245, 158, 11, 0.1);
@@ -145,8 +155,11 @@
   --color-border: #4B5563;
   --color-text-on-primary: #FFFFFF;
   --color-text-on-secondary: #171717;
-  --color-primary-text: #FCA5A5;
-  --color-secondary-text: #FDE68A;
+  --color-primary-text: #e86666;
+  --color-secondary-text: #e96b0c;
+  --color-error-text: #f15d5d;
+  --color-focus-ring: #dd2121;
+  --color-surface-border: #9CA3AF;
   --color-muted-text: #9CA3AF;
   --color-text-muted: #9CA3AF;
   --color-warning-bg: rgba(245, 158, 11, 0.15);
@@ -327,7 +340,8 @@ a.skip-link:focus {
   }
   
   .btn-secondary {
-    @apply inline-flex justify-center items-center px-4 py-2 border-2 border-primary text-primary font-bold rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex justify-center items-center px-4 py-2 border-2 border-primary-text text-primary font-bold rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary-text disabled:opacity-50 disabled:cursor-not-allowed;
+    border-color: var(--color-primary-text);
     transition: background-color var(--motion-duration-normal, 0.2s) var(--motion-ease-default, ease-in-out);
   }
 
