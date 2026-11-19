@@ -535,4 +535,62 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
     });
   });
+
+  describe('HTML bracket & control character rejection', () => {
+    test('returns 400 Bad Request when guestName or householdName contains HTML brackets or control characters', async () => {
+      const htmlPayload = {
+        guestName: '<b data-canary="guest-html-marker">CanaryGuest</b>',
+        householdName: '<i data-canary="household-html-marker">CanaryHousehold</i>',
+        email: 'canary-recipient@example.invalid',
+      };
+
+      const req1 = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify(htmlPayload),
+      });
+      const res1 = await POST(req1);
+      expect(res1.status).toBe(400);
+
+      const req2 = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({
+          guestName: 'Valid Guest',
+          householdName: 'Household\nInjected',
+        }),
+      });
+      const res2 = await POST(req2);
+      expect(res2.status).toBe(400);
+
+      expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
+    });
+
+    test('accepts apostrophes, hyphens, periods, and international letters', async () => {
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
+        id: 'intl-guest-id',
+        ...data,
+      }));
+
+      const req = new NextRequest('http://localhost/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({
+          guestName: "Élodie O'Connor-St. Clair",
+          householdName: "O'Connor & Müller-Søren.",
+          email: 'elodie@example.com',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(mockPrisma.invitationCode.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            guestName: "Élodie O'Connor-St. Clair",
+            householdName: "O'Connor & Müller-Søren.",
+            partyTags: ['address-collection'],
+          }),
+        })
+      );
+    });
+  });
 });
