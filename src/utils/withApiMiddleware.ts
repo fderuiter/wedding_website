@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { rateLimit } from './rateLimit';
+import { rateLimit, type RateLimitBucket } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
@@ -13,6 +13,18 @@ export interface ApiMiddlewareOptions {
   limit?: number;
   windowMs?: number;
   keyPrefix?: string;
+  bucket?: RateLimitBucket;
+}
+
+function isAuthLockoutRoute(pathname: string, method: string): boolean {
+  const upperMethod = method.toUpperCase();
+  return (
+    pathname === '/api/admin/login' ||
+    pathname === '/api/guest/login' ||
+    pathname === '/api/guest/lookup' ||
+    (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
+    pathname === '/api/registry/validate-code'
+  );
 }
 
 export function withApiMiddleware(
@@ -41,17 +53,21 @@ export function withApiMiddleware(
         pathname = url?.pathname || '/';
         method = req.method || 'GET';
       }
-      const isHealthPath = pathname === '/api/health';
-      const isLoginPath = pathname === '/api/admin/login' || pathname === '/api/guest/login' || pathname === '/api/guest/lookup';
+      const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+      const isHealthPath = normalizedPathname === '/api/health';
+      const isLoginPath = isAuthLockoutRoute(normalizedPathname, method);
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Stricter limits for login, general limits for everything else; health probe endpoint (/api/health) is exempt
+      // Stricter limits for login/credential checks, general limits for everything else; health probe endpoint (/api/health) is exempt
       if (!isHealthPath) {
         const limit = options?.limit ?? (isLoginPath ? 5 : 100);
         const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
-        const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function') ? await rateLimit(req, limit, windowMs, options?.keyPrefix) : null;
+        const bucket: RateLimitBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
+        const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function')
+          ? await rateLimit(req, limit, windowMs, options?.keyPrefix, bucket)
+          : null;
         
         if (rateLimitResponse) {
           // If rate limit exceeded, standardise its error response

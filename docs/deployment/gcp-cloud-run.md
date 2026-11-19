@@ -53,6 +53,7 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). |
 | `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable multi-tenant/multi-profile site routing (`false`). |
 | `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
+| `TRUST_PROXY` | No | Cloud Run Env Var | Trust `X-Forwarded-For` / `X-Real-IP` from Cloud Run ingress (`true` or hop count; default `false`). |
 | `GUEST_PASSCODE` | Yes | Secret Manager | Unique guest passcode required in production (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | Secret Manager | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | Cloud Run Env Var | Retained history limit (e.g. `50`). |

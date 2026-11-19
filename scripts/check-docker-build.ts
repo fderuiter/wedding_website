@@ -12,6 +12,11 @@ function main() {
   const dockerfilePath = path.join(ROOT_DIR, 'Dockerfile');
   if (!fs.existsSync(dockerfilePath)) {
     errors.push('Dockerfile is missing from repository root.');
+  } else {
+    const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf8');
+    if (!/COPY\s+--from=builder\b[^\n]*prisma\.config\.ts/.test(dockerfileContent)) {
+      errors.push('Dockerfile runner stage must copy prisma.config.ts from builder for Prisma 7 migrations.');
+    }
   }
 
   // Check docker-entrypoint.sh

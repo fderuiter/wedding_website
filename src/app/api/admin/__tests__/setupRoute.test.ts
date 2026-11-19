@@ -6,6 +6,7 @@ import { signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
 import { isSiteInitialized } from '@/lib/config';
 import { AppConfigSchema } from '@/features/content';
+import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -95,6 +96,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetRateLimitsForTesting();
     // Valid scrypt hash for password 'secret'
     process.env.ADMIN_PASSWORD = 'scrypt:8R6mvU36W2Cqp3C8vq+r1g==:XlhFCFplIJUauzo9FzPUPVgA5458RRwbTpQtFCRWjoLN4AI6VCH76jOksMQdQX/5f45ALowp67Xxo58mFrcb3g==';
   });
@@ -693,6 +695,26 @@ describe('Setup API Route (/api/admin/setup)', () => {
           contactEmail: 'hosts@ourwedding.com',
         }),
       });
+    });
+
+    test('returns 429 on the 6th unauthenticated POST attempt within 15 minutes', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+
+      for (let i = 1; i <= 5; i++) {
+        const req = new NextRequest('http://localhost/api/admin/setup', {
+          method: 'POST',
+          body: JSON.stringify({ password: `wrong-setup-${i}` }),
+        });
+        const res = await POST(req);
+        expect(res.status).toBe(401);
+      }
+
+      const req6 = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({ password: 'wrong-setup-6' }),
+      });
+      const res6 = await POST(req6);
+      expect(res6.status).toBe(429);
     });
   });
 });
