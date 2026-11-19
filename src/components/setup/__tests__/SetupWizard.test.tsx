@@ -1,9 +1,12 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import SetupWizard from '../SetupWizard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { checkAdminClient } from '@/core/auth/auth.client';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('@/hooks/admin/useAdminWeddingParty', () => ({
   useAdminWeddingParty: () => ({
@@ -1090,5 +1093,39 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(partner1Input).toHaveAttribute('aria-invalid', 'true');
     expect(contactEmailInput).not.toHaveAttribute('aria-invalid', 'true');
     expect(siteUrlInput).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  test('exposes Starter Archetype Presets on Step 3 as an accessible radiogroup with arrow navigation and zero axe violations', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 3,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+        sampleArchetype: 'classic',
+      })
+    );
+
+    const { container } = renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+
+    const presetGroup = screen.getByRole('radiogroup', { name: 'Starter Archetype Preset' });
+    expect(presetGroup).toBeInTheDocument();
+
+    const radios = screen.getAllByRole('radio');
+    expect(radios.length).toBeGreaterThanOrEqual(3);
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true');
+    expect(radios[0].querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+    expect(radios[1]).toHaveAttribute('aria-checked', 'false');
+
+    radios[0].focus();
+    fireEvent.keyDown(radios[0], { key: 'ArrowRight' });
+    expect(radios[1]).toHaveFocus();
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

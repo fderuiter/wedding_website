@@ -7,6 +7,7 @@ import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 import { MAX_RSVP_PLUS_ONE_COUNT } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
+import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 
 interface CategoryColorStyle {
   bg?: string;
@@ -684,7 +685,7 @@ export default function InteractiveTimeline({
                         >
                           <div className="font-bold text-sm mb-2 flex justify-between items-center">
                             <div className="flex items-center gap-2">
-                              <span>Your RSVP for {event.title}</span>
+                              <span id={`rsvp-heading-${event.id}`}>Your RSVP for {event.title}</span>
                               {itemState.isDirty && (
                                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
                                   Unsaved changes
@@ -698,30 +699,27 @@ export default function InteractiveTimeline({
                             )}
                           </div>
 
-                          <div className="flex flex-wrap gap-2 mb-3">
-                            {(['attending', 'declined', 'pending'] as const).map((st) => {
-                              const isSelected = itemState.current.status === st;
-                              return (
-                                <button
-                                  key={st}
-                                  type="button"
-                                  disabled={isControlDisabled}
-                                  onClick={() => rsvpManager.updateRsvp(event.id, { status: st })}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
-                                    isSelected
-                                      ? st === 'attending'
-                                        ? 'bg-emerald-700 text-white shadow-sm'
-                                        : st === 'declined'
-                                          ? 'bg-rose-700 text-white shadow-sm'
-                                          : 'bg-amber-700 text-white shadow-sm'
-                                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 disabled:opacity-50'
-                                  }`}
-                                >
-                                  {st}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <ToggleButtonGroup
+                            mode="radiogroup"
+                            aria-labelledby={`rsvp-heading-${event.id}`}
+                            value={itemState.current.status}
+                            onChange={(st) => rsvpManager.updateRsvp(event.id, { status: st })}
+                            className="flex flex-wrap gap-2 mb-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
+                            options={(['attending', 'declined', 'pending'] as const).map((st) => ({
+                              value: st,
+                              label: st,
+                              disabled: isControlDisabled,
+                              className: 'px-3 py-1.5 rounded-lg text-xs font-semibold capitalize',
+                              activeClassName:
+                                st === 'attending'
+                                  ? 'bg-emerald-700 text-white border border-emerald-900 ring-2 ring-offset-1 ring-emerald-700 dark:ring-emerald-400 shadow-sm'
+                                  : st === 'declined'
+                                    ? 'bg-rose-700 text-white border border-rose-900 ring-2 ring-offset-1 ring-rose-700 dark:ring-rose-400 shadow-sm'
+                                    : 'bg-amber-700 text-white border border-amber-900 ring-2 ring-offset-1 ring-amber-700 dark:ring-amber-400 shadow-sm',
+                              inactiveClassName:
+                                'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100',
+                            }))}
+                          />
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                             <div>
