@@ -1,35 +1,5 @@
 import { test, expect } from '@playwright/test';
-import crypto from 'crypto';
-
-function generateAdminCookieValue() {
-  const secret = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
-  const payload = {
-    isAdmin: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
+import { seedAdminAndGuestAuthCookies } from './helpers/auth';
 
 test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
   test('displays pre-flight summary card for valid backup and diagnostic error panel for invalid backup', async ({
@@ -38,41 +8,15 @@ test.describe('Maintenance Hub Pre-flight Validation Visual Tests', () => {
   }) => {
     test.setTimeout(60000);
 
-    // Set admin and guest cookies using URL property matching repository pattern
-    await context.addCookies([
-      {
-        name: 'admin_auth',
-        value: generateAdminCookieValue(),
-        url: 'http://127.0.0.1:3000',
-      },
-      {
-        name: 'guest_auth',
-        value: generateGuestCookieValue(),
-        url: 'http://127.0.0.1:3000',
-      },
-      {
-        name: 'admin_auth',
-        value: generateAdminCookieValue(),
-        url: 'http://localhost:3000',
-      },
-      {
-        name: 'guest_auth',
-        value: generateGuestCookieValue(),
-        url: 'http://localhost:3000',
-      },
-    ]);
+    // Set admin and guest cookies across both loopback origins
+    await seedAdminAndGuestAuthCookies(context);
 
     try {
       await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
-        await context.addCookies([
-          { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://127.0.0.1:3000' },
-          { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://127.0.0.1:3000' },
-          { name: 'admin_auth', value: generateAdminCookieValue(), url: 'http://localhost:3000' },
-          { name: 'guest_auth', value: generateGuestCookieValue(), url: 'http://localhost:3000' },
-        ]).catch(() => {});
+        await seedAdminAndGuestAuthCookies(context).catch(() => {});
         page = await context.newPage();
         await page.goto('/admin/dashboard/maintenance', { waitUntil: 'domcontentloaded', timeout: 30000 });
       } else {

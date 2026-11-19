@@ -49,7 +49,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost,app,db,wedding_website-app-1,0.0.0.0}
       GUEST_PASSCODE: ${GUEST_PASSCODE:-wedding2026}
-      GUEST_SESSION_SECRET: ${GUEST_SESSION_SECRET:-test-container-guest-session-secret-32chars}
+      GUEST_SESSION_SECRET: ${GUEST_SESSION_SECRET:-playwright-e2e-session-secret-32-chars-min}
       RUN_MIGRATIONS: "false"
       E2E_TEST: ${E2E_TEST:-true}
     depends_on:
