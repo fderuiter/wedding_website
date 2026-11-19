@@ -1,9 +1,10 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { Overlay } from '@/components/ui/Overlay';
 import RegistryItemCard from '../RegistryItemCard';
 import type { RegistryItem } from '@/features/registry';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 const mockConfirmPayment = jest.fn();
 
@@ -28,12 +29,12 @@ jest.mock('@stripe/react-stripe-js', () => {
   };
 });
 
-const mockCashFundItem: RegistryItem = {
+const mockCashFundItem: RegistryItem = createMockRegistryItem({
   id: 'fund-paris',
   name: 'Paris Honeymoon Dining',
   description: 'Romantic dinners along the Seine',
   price: 500,
-  image: '/images/honeymoon.jpg',
+  image: createMockMedia({ url: '/images/honeymoon.jpg', altText: 'Paris Honeymoon Dining' }),
   vendorUrl: null,
   quantity: 1,
   category: 'Cash Fund',
@@ -42,14 +43,14 @@ const mockCashFundItem: RegistryItem = {
   purchased: false,
   amountContributed: 100,
   contributors: [],
-};
+});
 
-const mockPhysicalItem: RegistryItem = {
+const mockPhysicalItem: RegistryItem = createMockRegistryItem({
   id: 'phys-toaster',
   name: 'Artisan 4-Slice Toaster',
   description: 'Stainless steel toaster',
   price: 80,
-  image: '/images/toaster.jpg',
+  image: createMockMedia({ url: '/images/toaster.jpg', altText: 'Artisan 4-Slice Toaster' }),
   vendorUrl: 'https://store.example.com/toaster',
   quantity: 1,
   category: 'Kitchen',
@@ -58,7 +59,7 @@ const mockPhysicalItem: RegistryItem = {
   purchased: false,
   amountContributed: 0,
   contributors: [],
-};
+});
 
 const mockOnClose = jest.fn();
 const mockOnContribute = jest.fn().mockResolvedValue(undefined);

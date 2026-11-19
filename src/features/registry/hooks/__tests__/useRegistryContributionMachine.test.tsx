@@ -4,6 +4,7 @@ import { useRegistryContributionMachine } from '../useRegistryContributionMachin
 import { RegistryItem } from '../../types';
 import { apiClient } from '@/lib/apiClient';
 import { GuestSessionContext, GuestSessionContextType } from '../../context/GuestSessionContext';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
@@ -14,7 +15,7 @@ jest.mock('@/lib/apiClient', () => ({
   },
 }));
 
-const mockSingleItem: RegistryItem = {
+const mockSingleItem: RegistryItem = createMockRegistryItem({
   id: 'item-machine-1',
   name: 'Machine Test Item',
   description: 'Item for testing contribution machine hook',
@@ -25,9 +26,9 @@ const mockSingleItem: RegistryItem = {
   purchased: false,
   amountContributed: 0,
   contributors: [],
-};
+});
 
-const mockGroupItem: RegistryItem = {
+const mockGroupItem: RegistryItem = createMockRegistryItem({
   id: 'item-machine-group-1',
   name: 'Group Fund Item',
   description: 'Group item for testing contribution machine hook',
@@ -38,7 +39,7 @@ const mockGroupItem: RegistryItem = {
   purchased: false,
   amountContributed: 50,
   contributors: [],
-};
+});
 
 describe('useRegistryContributionMachine Hook', () => {
   const mockOnContribute = jest.fn();

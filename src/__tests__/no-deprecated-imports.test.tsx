@@ -7,6 +7,7 @@ if (typeof global.structuredClone === 'undefined') {
 
 import noDeprecatedImportsRule from '../../eslint-rules/no-deprecated-imports.mjs';
 import { RuleTester } from 'eslint';
+import type { Rule } from 'eslint';
 import path from 'path';
 import fs from 'fs';
 
@@ -96,7 +97,7 @@ describe('no-deprecated-imports ESLint Rule AST verification', () => {
     }
   });
 
-  ruleTester.run('no-deprecated-imports', noDeprecatedImportsRule, {
+  ruleTester.run('no-deprecated-imports', noDeprecatedImportsRule as unknown as Rule.RuleModule, {
     valid: [
       {
         code: "import Button from '@/components/ui/Button';",

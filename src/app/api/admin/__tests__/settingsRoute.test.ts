@@ -382,6 +382,19 @@ describe('PUT /api/admin/settings', () => {
     expect(json.error).toMatch(/Invalid coordinate format/);
   });
 
+  it('returns 400 when ogImageUrl or faviconUrl contains parent traversal or backslashes', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    for (const badUrl of ['/../canary-outside-public.svg', '/%2e%2e/canary-outside-public.svg', '/images\\og.svg', '/images/og.svg\0']) {
+      const req = makeAuthReq({
+        ...validConfigData,
+        ogImageUrl: badUrl,
+      });
+      const res = await PUT(req);
+      expect(res.status).toBe(400);
+    }
+    expect(mockPrisma.appConfig.update).not.toHaveBeenCalled();
+  });
+
 
   it('does not call revalidatePath when update fails with invalid coordinates', async () => {
     mockIsAdminRequest.mockResolvedValue(true);

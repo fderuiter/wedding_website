@@ -136,8 +136,7 @@ describe('SeatingTableAdminService Auto-Assign Bulk Integration', () => {
     const originalTransaction = service.repo.transaction.bind(service.repo);
     service.repo.transaction = async (callback: any) => {
       return originalTransaction(async (txRepo: any) => {
-        const originalExecuteRaw = txRepo.client.$executeRaw.bind(txRepo.client);
-        txRepo.client.$executeRaw = jest.fn().mockImplementation(async (...args: any[]) => {
+        txRepo.client.$executeRaw = jest.fn().mockImplementation(async () => {
           throw new Error('Simulated raw SQL failure');
         });
         return callback(txRepo);

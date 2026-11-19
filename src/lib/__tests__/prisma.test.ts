@@ -5,7 +5,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 const loadPrisma = async (): Promise<PrismaClient> => {
-  let prisma: PrismaClient;
+  let prisma!: PrismaClient;
   await jest.isolateModulesAsync(async () => {
     const mod = await import('../prisma');
     prisma = mod.prisma;
@@ -22,12 +22,12 @@ describe('prisma singleton behavior', () => {
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
     delete globalForPrisma.prisma;
   });
 
   test('reuses the prisma client in development', async () => {
-    process.env.NODE_ENV = 'development';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
 
     const prisma1 = await loadPrisma();
     const prisma2 = await loadPrisma();
@@ -38,7 +38,7 @@ describe('prisma singleton behavior', () => {
   });
 
   test('creates a new prisma client per import in production', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
 
     const prisma1 = await loadPrisma();
     const prisma2 = await loadPrisma();

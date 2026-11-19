@@ -1,10 +1,28 @@
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import type { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult, GetNodesByTypeOptions } from './types';
-import { ContentNodeSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
+import { ContentNodeSchema, PhotoNodeSchema, PhotoDataSchema, AppConfigSchema, ContentNodeDTO, AppConfigDTO } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { isMultisiteEnabled } from '@/lib/config';
+
+const StoredLegacyPhotoNodeSchema = PhotoNodeSchema.extend({
+  data: PhotoDataSchema.extend({
+    url: z.string().optional(),
+  }),
+});
+
+function parseStoredContentNode(node: unknown): ContentNodeDTO {
+  const parsed = ContentNodeSchema.safeParse(node);
+  if (parsed.success) {
+    return parsed.data;
+  }
+  if (node && typeof node === 'object' && (node as { type?: unknown }).type === 'Photo') {
+    return StoredLegacyPhotoNodeSchema.parse(node);
+  }
+  throw parsed.error;
+}
 
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
@@ -61,7 +79,7 @@ export class ContentRepository implements IContentRepository {
       }),
     ]);
 
-    const photos = nodes.map((n: any) => ContentNodeSchema.parse(n));
+    const photos = nodes.map((n: any) => parseStoredContentNode(n));
     const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
 
     return {
@@ -125,7 +143,7 @@ export class ContentRepository implements IContentRepository {
     }
 
     const nodes = await this.client.contentNode.findMany(queryArgs);
-    return nodes.map((n: any) => ContentNodeSchema.parse(n));
+    return nodes.map((n: any) => parseStoredContentNode(n));
   }
 
   async createNode(data: { type: string; tags?: string[]; data: any }, author: string = 'System'): Promise<ContentNodeDTO> {
@@ -147,7 +165,7 @@ export class ContentRepository implements IContentRepository {
       where: { id }
     });
     if (!node) return null;
-    return ContentNodeSchema.parse(node);
+    return parseStoredContentNode(node);
   }
 
   async updateNode(id: string, data: { tags?: string[]; data?: any }, author: string = 'System'): Promise<ContentNodeDTO> {

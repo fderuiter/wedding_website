@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { use3DInteraction } from '../use3DInteraction';

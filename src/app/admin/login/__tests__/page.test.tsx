@@ -29,7 +29,7 @@ describe('Admin Login Page', () => {
     (useRouter as jest.Mock).mockReturnValue({ push });
 
     const fetchMock = jest
-      .fn<typeof fetch>()
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValue({
         ok: true,
         json: async () => ({ isAdmin: true }),
@@ -53,7 +53,7 @@ describe('Admin Login Page', () => {
     (useRouter as jest.Mock).mockReturnValue({ push });
 
     const fetchMock = jest
-      .fn<typeof fetch>()
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValue({
         ok: false,
         json: async () => ({ error: 'Invalid password' }),
@@ -76,7 +76,7 @@ describe('Admin Login Page', () => {
     (useRouter as jest.Mock).mockReturnValue({ push });
 
     const fetchMock = jest
-      .fn<typeof fetch>()
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockRejectedValue(new Error('network'));
     globalWithFetch.fetch = fetchMock;
 
@@ -100,7 +100,9 @@ describe('Admin Login Page', () => {
       resolveFetch = resolve;
     });
 
-    const fetchMock = jest.fn<typeof fetch>().mockReturnValue(fetchPromise);
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockReturnValue(fetchPromise);
     globalWithFetch.fetch = fetchMock;
 
     render(<LoginPage />);
@@ -148,7 +150,7 @@ describe('Admin Login Page', () => {
     (useRouter as jest.Mock).mockReturnValue({ push });
 
     const fetchMock = jest
-      .fn<typeof fetch>()
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValue({
         ok: false,
         json: async () => ({ error: 'Invalid password' }),

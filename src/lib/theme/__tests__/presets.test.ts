@@ -373,7 +373,7 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(resolved.colorPrimary).toBe('#654321');
       expect(resolved.fontHeading).toBe('Playfair Display, Georgia, serif');
       // --color-secondary had no fallback in var(), so it falls back to classic preset colorSecondary
-      expect(resolved.colorSecondary).toBe(THEME_PRESETS['classic'].serverExportTokens.colorSecondary);
+      expect(resolved.colorSecondary).toBe(THEME_PRESETS['classic'].serverExportTokens?.colorSecondary);
     });
 
     it('handles deeply nested or pathological var() strings safely without polynomial performance issues', () => {

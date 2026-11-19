@@ -5,22 +5,24 @@ import RegistryCard from '../RegistryCard';
 import RegistryCardSkeleton from '../RegistryCardSkeleton';
 import { RegistryItem } from '@/features/registry';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 // Mock data for a registry item
-const mockItem: RegistryItem = {
+const mockItem: RegistryItem = createMockRegistryItem({
   id: '1',
   name: 'Test Item',
   description: 'A description for the test item.',
   category: 'Test Category',
   price: 99.99,
-  image: '/images/placeholder.png',
+  image: createMockMedia({ url: '/images/placeholder.png', altText: 'Test Item' }),
   vendorUrl: null,
   quantity: 1,
   isGroupGift: false,
   purchased: false,
   amountContributed: 0,
   contributors: [],
-};
+});
 
 describe('RegistryCard', () => {
   it('renders item details correctly', () => {
@@ -137,7 +139,7 @@ describe('RegistryCard', () => {
 
   // Test for image error handling
   it('displays placeholder image if item image fails to load', () => {
-    render(<RegistryCard item={{ ...mockItem, image: '/invalid-path.jpg' }} onClick={() => {}} />);
+    render(<RegistryCard item={{ ...mockItem, image: createMockMedia({ url: '/invalid-path.jpg', altText: 'Test Item' }) }} onClick={() => {}} />);
     const img = screen.getByRole('img');
     // Simulate the error event
     fireEvent.error(img);

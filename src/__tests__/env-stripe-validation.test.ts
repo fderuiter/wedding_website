@@ -33,7 +33,7 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
 
     return spawnSync(process.execPath, ['--input-type=module', '-e', 'import("./src/env.ts")'], {
       cwd: rootDir,
-      env: cleanEnv,
+      env: cleanEnv as unknown as NodeJS.ProcessEnv,
       encoding: 'utf-8',
     });
   }

@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { generateSecureUUID } from './uuid';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
+type OptionalReqRouteHandler = (req?: NextRequest) => Promise<NextResponse | Response> | NextResponse | Response;
 
 export interface ApiMiddlewareOptions {
   limit?: number;
@@ -14,8 +15,19 @@ export interface ApiMiddlewareOptions {
   keyPrefix?: string;
 }
 
-export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddlewareOptions) {
-  return async (req: NextRequest, context: any) => {
+export function withApiMiddleware(
+  handler: OptionalReqRouteHandler,
+  options?: ApiMiddlewareOptions
+): (req?: NextRequest, context?: any) => Promise<NextResponse>;
+export function withApiMiddleware(
+  handler: RouteHandler,
+  options?: ApiMiddlewareOptions
+): (req: NextRequest, context?: any) => Promise<NextResponse>;
+export function withApiMiddleware(
+  handler: RouteHandler | OptionalReqRouteHandler,
+  options?: ApiMiddlewareOptions
+) {
+  return async (req?: NextRequest, context?: any): Promise<NextResponse> => {
     try {
       let pathname = '/';
       let method = 'GET';
@@ -53,14 +65,14 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
 
       // 2. Admin Verification
       if (isAdminPath) {
-        const isAdmin = await isAdminRequest(req);
+        const isAdmin = req ? await isAdminRequest(req) : false;
         if (!isAdmin) {
           throw new ApiError(401, 'Unauthorized');
         }
       }
 
       // 3. Execute Handler
-      const response = await handler(req, context);
+      const response = await handler(req as NextRequest, context);
       
       // Pass-through attachments (e.g. backup files)
       const contentType = response.headers?.get?.('content-type') || 'application/json';
@@ -68,7 +80,7 @@ export function withApiMiddleware(handler: RouteHandler, options?: ApiMiddleware
       
       // We assume it's JSON unless it's explicitly something else, to handle test mocks
       if ((contentType && !contentType.includes('application/json')) || isAttachment) {
-        return response;
+        return response as NextResponse;
       }
 
       const data = await response.json().catch(() => ({}));

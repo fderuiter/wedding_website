@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { PrintableFloorplan } from '../PrintableFloorplan';
 import { SeatingTableDTO } from '../../schemas';
@@ -9,10 +8,14 @@ describe('PrintableFloorplan component', () => {
     {
       id: 'table-1',
       name: 'Head Table',
-      shape: 'rectangle',
+      shape: 'rectangular',
       capacity: 8,
       x: 100,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         {
           id: 'guest-1',
@@ -30,6 +33,10 @@ describe('PrintableFloorplan component', () => {
       capacity: 10,
       x: 300,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [],
     },
   ];

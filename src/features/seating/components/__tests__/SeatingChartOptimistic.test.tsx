@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SeatingChartAdminPage from '@/app/admin/dashboard/seating-chart/page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -16,6 +15,7 @@ const initialTables: SeatingTableDTO[] = [
     width: 120,
     height: 120,
     rotation: 0,
+    isSample: false,
     invitationCodes: [
       {
         id: 'guest-1',
@@ -36,6 +36,7 @@ const initialTables: SeatingTableDTO[] = [
     width: 120,
     height: 120,
     rotation: 0,
+    isSample: false,
     invitationCodes: [],
   },
 ];
@@ -116,6 +117,7 @@ describe('Optimistic Seating Chart State Updates', () => {
           width: body.width || 120,
           height: body.height || 120,
           rotation: body.rotation || 0,
+          isSample: false,
           invitationCodes: [],
         };
         return Promise.resolve({
@@ -326,7 +328,7 @@ describe('Optimistic Seating Chart State Updates', () => {
 
   it('reverts local state to pre-mutation snapshot when seat assignment request fails', async () => {
     // Override fetch mock for seat assignment to fail
-    fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+    fetchMock.mockImplementation((url: string | URL | Request) => {
       const urlStr = url.toString();
       if (urlStr.endsWith('/api/admin/seating-tables')) {
         return Promise.resolve({

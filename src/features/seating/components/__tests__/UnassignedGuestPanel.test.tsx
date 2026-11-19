@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
@@ -6,25 +5,26 @@ import { UnassignedGuestPanel } from '../UnassignedGuestPanel';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+import { createMockInvitationCode } from '@/testing/factories/registryFactory';
 
 expect.extend(toHaveNoViolations);
 
 describe('UnassignedGuestPanel quick-assign modal component', () => {
   const mockUnassignedGuests: InvitationCodeDTO[] = [
-    {
+    createMockInvitationCode({
       id: 'guest-1',
       code: 'GUEST1',
       guestName: 'Jane Doe',
       used: false,
-      plusOnesAllowed: 1,
-    } as InvitationCodeDTO,
-    {
+      plusOneAllocations: 1,
+    }),
+    createMockInvitationCode({
       id: 'guest-2',
       code: 'GUEST2',
       guestName: 'John Smith',
       used: false,
-      plusOnesAllowed: 0,
-    } as InvitationCodeDTO,
+      plusOneAllocations: 0,
+    }),
   ];
 
   const mockTables: SeatingTableDTO[] = [
@@ -35,6 +35,10 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       capacity: 8,
       x: 0,
       y: 0,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [],
     },
     {
@@ -44,6 +48,10 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       capacity: 8,
       x: 100,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [],
     },
   ];

@@ -1,6 +1,6 @@
 # Agent & Contributor Guidelines (`AGENTS.md`)
 
-This guide defines the local bootstrap, architecture boundaries, end-to-end authentication conventions, verification commands, and continuous integration guardrails for coding agents and contributors working in this repository.
+This guide defines the local bootstrap, architecture boundaries, TypeScript configuration split, end-to-end authentication conventions, verification commands, and continuous integration guardrails for coding agents and contributors working in this repository.
 
 ## 1. Environment Bootstrap
 
@@ -17,13 +17,41 @@ This guide defines the local bootstrap, architecture boundaries, end-to-end auth
 
 ## 2. Architecture & Module Boundaries
 
-- **App Router (`src/app/`)**: Next.js pages, layouts, metadata builders, and HTTP route handlers.
+- **App Router (`src/app/`)**: Next.js pages, layouts, metadata builders, and HTTP route handlers (`src/app/api/**/route.ts`).
 - **Core Infrastructure (`src/core/`)**: Authentication (`src/core/auth/`), session helpers, and framework-level services.
-- **Feature Modules (`src/features/<domain>/`)**: Domain logic, schemas, services, and repositories. Cross-domain imports must strictly go through each feature's public `index.ts` barrel (`@/features/<domain>`) rather than deep internal paths (`@/features/<domain>/*`), enforced by ESLint (`no-restricted-imports`).
-- **Shared Components & Utilities (`src/components/`, `src/lib/`, `src/utils/`, `src/hooks/`)**: Domain-agnostic UI primitives and stateless helpers. Keep runtime code portable and free of personal domains or tenant identifiers (`npm run check:identifiers`).
+- **Feature Modules (`src/features/<domain>/`)**: Domain logic, schemas, services, and repositories (`broadcast`, `content`, `logistics`, `media`, `registry`, `seating`, `sub-events`, `weather`). Cross-domain imports must strictly go through each feature's public `index.ts` barrel (`@/features/<domain>`) rather than deep internal paths (`@/features/<domain>/*`), enforced by ESLint (`no-restricted-imports` in [`eslint.config.mjs`](eslint.config.mjs)).
+- **Shared Components & Utilities (`src/components/`, `src/lib/`, `src/utils/`, `src/hooks/`)**: Domain-agnostic UI primitives, stateless helpers, and API route middleware ([`src/utils/withApiMiddleware.ts`](src/utils/withApiMiddleware.ts)). Keep runtime code portable and free of personal domains or tenant identifiers (`npm run check:identifiers`).
+- **Test Fixtures & Mocks (`src/testing/factories/`, `src/mocks/`)**: Typed Zod-aligned test fixture builders ([`src/testing/factories/mediaFactory.ts`](src/testing/factories/mediaFactory.ts) and [`src/testing/factories/registryFactory.ts`](src/testing/factories/registryFactory.ts)) and MSW handlers/server used in Jest tests and Storybook.
 - **End-to-End Suite (`e2e/`)**: Playwright browser, crawler, metadata, and accessibility specs (`e2e/*.spec.ts`) plus shared E2E helpers (`e2e/helpers/`).
+- **Repository Scripts (`scripts/`)**: CLI verification, OpenAPI/architecture sync, VitePress portal staging, and database seeding scripts.
 
-## 3. E2E Authentication & Secret Alignment
+## 3. TypeScript Configuration Split
+
+TypeScript verification is split across four project files so production builds never absorb test or runner globals while every TypeScript file in the repository is strictly checked:
+
+1. [`tsconfig.json`](tsconfig.json) — Production Next.js config (`compilerOptions.types: ["node"]`). Excludes unit/integration tests, `src/mocks`, `e2e`, and `scripts` so `npm run build` (`next build`) validates only production runtime code.
+2. [`tsconfig.test.json`](tsconfig.test.json) — Extends `tsconfig.json` with `types: ["node", "jest", "@testing-library/jest-dom", "jest-axe"]` and includes `src/**/__tests__/**/*`, `src/**/*.test.{ts,tsx}`, `scripts/**/*.test.ts`, `src/mocks/**/*.ts`, and `src/testing/**/*.ts`.
+3. [`tsconfig.e2e.json`](tsconfig.e2e.json) — Extends `tsconfig.json` with `types: ["node"]` and checks [`playwright.config.ts`](playwright.config.ts) and `e2e/**/*.ts`.
+4. [`tsconfig.scripts.json`](tsconfig.scripts.json) — Extends `tsconfig.json` with `types: ["node"]` and checks `scripts/**/*.ts` (excluding `scripts/**/*.test.ts`, without `.ts` import extensions as `allowImportingTsExtensions` is not enabled).
+
+Run all four TypeScript projects locally with:
+
+```bash
+npm run typecheck
+# or
+npm run type-check
+```
+
+To check a single project during targeted edits:
+
+```bash
+npx tsc --noEmit -p tsconfig.json
+npx tsc --noEmit -p tsconfig.test.json
+npx tsc --noEmit -p tsconfig.e2e.json
+npx tsc --noEmit -p tsconfig.scripts.json
+```
+
+## 4. E2E Authentication & Secret Alignment
 
 - **Centralized Cookie Signing**: All Playwright specs must import cookie generators and context seeders from [`e2e/helpers/auth.ts`](e2e/helpers/auth.ts). Do not duplicate HMAC token-signing functions inside individual `e2e/*.spec.ts` files.
 - **Distinct Signing Secrets**:
@@ -36,7 +64,7 @@ This guide defines the local bootstrap, architecture boundaries, end-to-end auth
   - Seed E2E cookies across both `http://127.0.0.1:3000` and `http://localhost:3000` via `seedGuestAuthCookies` or `seedAdminAndGuestAuthCookies`.
   - Guest and accessibility specs should assert `new URL(page.url()).pathname` after `page.goto(...)` so unexpected redirects to `/guest/login` or `/admin/login` fail immediately.
 
-## 4. Local Verification & Pre-Push Quality Gates
+## 5. Local Verification & Pre-Push Quality Gates
 
 Before opening a pull request or pushing changes, ensure your branch passes the same checks enforced by [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
@@ -51,7 +79,7 @@ npm run quality
 
 `npm run quality` executes:
 1. Static repository & documentation checks (`check:env-docs`, `check:identifiers`, `check:action-pins`, `check:links`, `check:prisma`, `lint:migrations`, `check:doc-sync`)
-2. TypeScript type checking (`npm run typecheck`)
+2. TypeScript type checking across all four project configs (`npm run typecheck`)
 3. ESLint & Knip dead-code analysis (`npm run lint`, `npm run lint:unused`)
 4. Static VitePress documentation portal build (`npm run docs:build`)
 5. Static Storybook showcase build (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
@@ -115,8 +143,11 @@ node scripts/a11y-report.mjs
 - **Production Next.js Build:** `npm run build`
 - **End-to-End Browser Tests:** `npx playwright test`
 
-## 5. Repository Conventions & Guardrails
+## 6. Repository Conventions & Guardrails
 
+- **Strict Compiler Rules:** Preserve `strict`, `noUnusedLocals`, and `noUnusedParameters` in [`tsconfig.json`](tsconfig.json). Fix types at the source instead of disabling rules or adding `@ts-ignore` / `@ts-expect-error` directives.
+- **API Route Middleware:** Wrap Next.js route handlers with `withApiMiddleware` ([`src/utils/withApiMiddleware.ts`](src/utils/withApiMiddleware.ts)). Zero-argument handlers (e.g. `withApiMiddleware(async () => ...)`) and optional `context` in direct unit test calls (`await GET(req)`) are supported.
+- **Typed Test Fixtures & Knip:** Build test data with `createMockMedia` ([`src/testing/factories/mediaFactory.ts`](src/testing/factories/mediaFactory.ts)) and `createMockRegistryItem`, `createMockContributor`, `createMockCreateRegistryItemInput`, or `createMockInvitationCode` ([`src/testing/factories/registryFactory.ts`](src/testing/factories/registryFactory.ts)) whenever schemas in [`src/features/media/schemas.ts`](src/features/media/schemas.ts) or [`src/features/registry/schemas.ts`](src/features/registry/schemas.ts) evolve. Register any new test-only helper entrypoints in [`knip.json`](knip.json) so `npm run lint:unused` reports zero unused files or exports.
 - **Feature Module Boundaries:** Import cross-feature code strictly through public barrel files (`@/features/<feature>`) rather than deep internal paths (`@/features/<feature>/*`).
 - **Action Pinning:** Always pin third-party GitHub Actions to 40-character commit SHAs with a trailing version comment (e.g., `# v7.0.1`).
 - **Further Reading:** See [Developer Setup Guide](docs/developer-setup.md), [Testing Strategy](.github/TESTING.md), and [Contribution Guidelines](.github/CONTRIBUTING.md).

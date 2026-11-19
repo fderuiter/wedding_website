@@ -5,7 +5,6 @@ import { NextRequest } from 'next/server';
 jest.mock('next/server', () => {
   class MockNextResponse {
     static json = jest.fn((body, init) => {
-      const responseCookies = new Map();
       const headers = new Headers();
       if (init?.headers) {
         Object.entries(init.headers).forEach(([k, v]) => headers.set(k, v as string));
@@ -104,7 +103,11 @@ import { GET } from '../route';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+const mockPrisma = prisma as unknown as {
+  invitationCode: {
+    findMany: jest.Mock;
+  };
+};
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 
 describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/export)', () => {

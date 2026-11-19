@@ -3,6 +3,7 @@ export { thankYouService, ThankYouService } from './thank-you.service';
 export type { ProgressMetrics, PaginationMeta, ThankYouNotesFilterOptions } from './thank-you.service';
 export type {
   RegistryItem,
+  CreateRegistryItemInput,
   ThankYouTemplate,
   ThankYouTemplateTokens,
 } from './types';

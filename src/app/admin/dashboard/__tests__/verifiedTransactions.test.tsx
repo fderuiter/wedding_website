@@ -7,6 +7,8 @@ import AdminDashboardPage from '../page';
 import ThankYouNotesPage from '../thank-you-notes/page';
 import type { RegistryItem } from '@/features/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockContributor, createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -44,20 +46,20 @@ describe('Couple Dashboard Verified Transaction References', () => {
   };
 
   it('Criterion 5: couple dashboard displays verified transaction references for completed card gifts', async () => {
-    const mockItemWithStripe: RegistryItem = {
+    const mockItemWithStripe: RegistryItem = createMockRegistryItem({
       id: 'item-100',
       name: 'Honeymoon Excursion',
       description: 'Snorkeling trip',
       category: 'Experiences',
       price: 500,
-      image: '/img.jpg',
+      image: createMockMedia({ url: '/img.jpg', altText: 'Honeymoon Excursion' }),
       vendorUrl: null,
       quantity: 1,
       isGroupGift: true,
       purchased: false,
       amountContributed: 200,
       contributors: [
-        {
+        createMockContributor({
           name: 'Sarah Connor',
           amount: 100,
           date: '2026-11-16T12:00:00.000Z',
@@ -65,15 +67,15 @@ describe('Couple Dashboard Verified Transaction References', () => {
           stripeChargeId: 'ch_test_charge_12345',
           stripePaymentIntentId: 'pi_test_intent_12345',
           transactionTimestamp: '2026-11-16T12:00:00.000Z',
-        },
-        {
+        }),
+        createMockContributor({
           name: 'Manual Giver',
           amount: 100,
           date: '2026-11-16T12:30:00.000Z',
           message: 'Paid cash',
-        },
+        }),
       ],
-    };
+    });
 
     mockFetch.mockResolvedValue({
       ok: true,

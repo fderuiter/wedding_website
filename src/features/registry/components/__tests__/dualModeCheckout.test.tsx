@@ -5,6 +5,7 @@ import { Overlay } from '@/components/ui/Overlay';
 import RegistryItemCard from '../RegistryItemCard';
 import RegistryItemForm from '../RegistryItemForm';
 import type { RegistryItem } from '@/features/registry';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 import { apiClient } from '@/lib/apiClient';
 import { getStripePromise } from '@/lib/stripe';
 
@@ -58,7 +59,7 @@ jest.mock('@/lib/stripe', () => {
 });
 
 describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
-  const hybridFundItem: RegistryItem = {
+  const hybridFundItem: RegistryItem = createMockRegistryItem({
     id: 'fund-hybrid-1',
     name: 'Amalfi Coast Honeymoon Fund',
     description: 'Help us celebrate along the Italian coast.',
@@ -71,9 +72,9 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
     paymentHandleType: 'Venmo',
     paymentHandle: '@couple-honeymoon',
     contributors: [],
-  };
+  });
 
-  const unconfiguredFundItem: RegistryItem = {
+  const unconfiguredFundItem: RegistryItem = createMockRegistryItem({
     id: 'fund-unconfigured-1',
     name: 'Future Home Down Payment',
     description: 'Saving for our first home together.',
@@ -86,7 +87,7 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
     paymentHandleType: undefined,
     paymentHandle: undefined,
     contributors: [],
-  };
+  });
 
   const mockOnClose = jest.fn();
   const mockOnContribute = jest.fn().mockResolvedValue(undefined);

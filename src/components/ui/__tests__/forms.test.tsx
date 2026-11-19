@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FormGroup, Label, Input, Checkbox, Textarea, Select, FormMessage } from '../forms';
 

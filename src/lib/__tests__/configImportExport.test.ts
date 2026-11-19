@@ -9,7 +9,6 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 jest.mock('next/server', () => {
   class MockNextResponse {
     static json = jest.fn((body, init) => {
-      const responseCookies = new Map();
       const headers = new Headers();
       if (init?.headers) {
         Object.entries(init.headers).forEach(([k, v]) => headers.set(k, v as string));

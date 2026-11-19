@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { CsvImportWizardModal } from '../CsvImportWizardModal';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -47,7 +46,7 @@ describe('CsvImportWizardModal Component', () => {
   });
 
   test('renders Download Sample CSV Template button in Step 1 and triggers Blob creation and URL cleanup when clicked', () => {
-    const mockCreateObjectURL = jest.fn(() => 'blob:http://localhost/mock-url');
+    const mockCreateObjectURL = jest.fn((_obj: Blob | MediaSource) => 'blob:http://localhost/mock-url');
     const mockRevokeObjectURL = jest.fn();
 
     const originalCreateObjectURL = window.URL.createObjectURL;
@@ -67,7 +66,7 @@ describe('CsvImportWizardModal Component', () => {
       fireEvent.click(downloadBtn);
 
       expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
-      const createdBlob = mockCreateObjectURL.mock.calls[0][0];
+      const createdBlob = mockCreateObjectURL.mock.calls[0]?.[0] as Blob;
       expect(createdBlob).toBeInstanceOf(Blob);
       expect(createdBlob.type).toContain('text/csv');
 

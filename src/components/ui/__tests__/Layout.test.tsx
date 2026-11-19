@@ -15,7 +15,7 @@ describe('Layout Components', () => {
   });
 
   test('does not contain hardcoded rose classes', () => {
-    const { container } = render(
+    render(
       <Container data-testid="container">
         <Card data-testid="card">
           <Heading data-testid="heading">Title</Heading>
@@ -24,7 +24,6 @@ describe('Layout Components', () => {
     );
 
     const containerEl = screen.getByTestId('container');
-    const cardEl = screen.getByTestId('card');
     const headingEl = screen.getByTestId('heading');
 
     expect(containerEl.className).not.toContain('bg-rose-50');
@@ -96,7 +95,10 @@ describe('Layout Components', () => {
   });
 
   test('Heading accepts HeadingProps and renders as h1 by default when as prop is omitted', () => {
-    const props: HeadingProps = { 'data-testid': 'default-heading', children: 'Default Title' };
+    const props: HeadingProps & { 'data-testid'?: string } = {
+      'data-testid': 'default-heading',
+      children: 'Default Title',
+    };
     render(<Heading {...props} />);
     const heading = screen.getByTestId('default-heading');
     expect(heading.tagName).toBe('H1');

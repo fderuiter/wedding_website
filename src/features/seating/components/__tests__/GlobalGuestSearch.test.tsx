@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SeatingChartAdminPage from '@/app/admin/dashboard/seating-chart/page';
 import { FloorplanCanvas } from '../FloorplanCanvas';
@@ -17,6 +16,8 @@ const mockTables: SeatingTableDTO[] = [
     y: 50,
     width: 120,
     height: 120,
+    rotation: 0,
+    isSample: false,
     invitationCodes: [
       {
         id: 'guest-1',
@@ -43,6 +44,8 @@ const mockTables: SeatingTableDTO[] = [
     y: 50,
     width: 120,
     height: 120,
+    rotation: 0,
+    isSample: false,
     invitationCodes: [],
   },
 ];

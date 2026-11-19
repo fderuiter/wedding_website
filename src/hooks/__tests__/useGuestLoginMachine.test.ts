@@ -147,7 +147,7 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
   });
 
   it('performs unified sign-in with AbortSignal and navigates on success', async () => {
-    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ success: true }),
@@ -181,7 +181,7 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
     mockGetParam.mockReturnValue('/registry');
     const onNavigate = jest.fn();
 
-    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ success: true }),
@@ -204,7 +204,7 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
   });
 
   it('handles login failure and records plain-language error message', async () => {
-    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
       ok: false,
       status: 401,
       json: async () => ({ error: 'Incorrect passcode or invitation code.' }),
@@ -228,7 +228,7 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
 
   it('replaces raw technical Unauthorized or 500 error strings with plain user-facing copy', async () => {
     const fetchMock = jest
-      .fn<typeof fetch>()
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
       .mockResolvedValueOnce({
         ok: false,
         status: 401,
@@ -266,7 +266,7 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
   });
 
   it('handles network connection failures gracefully', async () => {
-    const fetchMock = jest.fn<typeof fetch>().mockRejectedValue(new Error('Network down'));
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockRejectedValue(new Error('Network down'));
     globalWithFetch.fetch = fetchMock;
 
     const { result } = renderHook(() => useGuestLoginMachine());
@@ -285,7 +285,7 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
 
   it('aborts in-flight login request on unmount', async () => {
     let capturedSignal: AbortSignal | null = null;
-    const fetchMock = jest.fn<typeof fetch>().mockImplementation((_url, init) => {
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockImplementation((_url, init) => {
       capturedSignal = init?.signal as AbortSignal;
       return new Promise(() => {});
     });

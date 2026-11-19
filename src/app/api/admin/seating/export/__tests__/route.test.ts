@@ -136,7 +136,14 @@ import { GET } from '../route';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
 
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
+const mockPrisma = prisma as unknown as {
+  seatingTable: {
+    findMany: jest.Mock;
+  };
+  invitationCode: {
+    findMany: jest.Mock;
+  };
+};
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 
 describe('Seating Export API Route (GET /api/admin/seating/export)', () => {

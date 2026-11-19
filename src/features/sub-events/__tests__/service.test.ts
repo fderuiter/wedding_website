@@ -378,7 +378,7 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('INVALID', [
-          { subEventId: 'se-1', status: 'attending' },
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
         ])
       ).rejects.toThrow(ApiError);
     });
@@ -393,7 +393,7 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('SMITH2026', [
-          { subEventId: 'se-1', status: 'attending' },
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
         ])
       ).rejects.toMatchObject({
         statusCode: 401,
@@ -435,8 +435,8 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('MYCODE', [
-          { subEventId: 'se-1', status: 'attending' },
-          { subEventId: 'se-nonexistent', status: 'attending' },
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+          { subEventId: 'se-nonexistent', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
         ])
       ).rejects.toThrow(new ApiError(404, 'Sub-event with ID se-nonexistent not found.'));
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
@@ -459,7 +459,7 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('MYCODE', [
-          { subEventId: 'se-private', status: 'attending' },
+          { subEventId: 'se-private', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
         ])
       ).rejects.toThrow(new ApiError(403, 'Forbidden: You do not have access to private event "Secret Dinner".'));
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
@@ -570,8 +570,8 @@ describe('SubEventService', () => {
         });
 
       const submissions = [
-        { subEventId: 'se-1', status: 'attending' as const },
-        { subEventId: 'se-2', status: 'declined' as const, dietaryNotes: 'None' },
+        { subEventId: 'se-1', status: 'attending' as const, plusOneCount: 0, dietaryNotes: '' },
+        { subEventId: 'se-2', status: 'declined' as const, plusOneCount: 0, dietaryNotes: 'None' },
       ];
 
       const results = await service.submitSubEventRsvps('MYCODE', submissions);
@@ -614,7 +614,7 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('MYCODE', [
-          { subEventId: 'se-1', status: 'attending' },
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
         ])
       ).rejects.toThrow('Database write error');
 
@@ -638,7 +638,7 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('MYCODE', [
-          { subEventId: 'cn-fallback-1', status: 'attending' },
+          { subEventId: 'cn-fallback-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
         ])
       ).rejects.toMatchObject({
         statusCode: 400,
@@ -664,7 +664,7 @@ describe('SubEventService', () => {
 
       await expect(
         service.submitSubEventRsvps('SOLOCODE', [
-          { subEventId: 'se-1', status: 'attending', plusOneCount: 1 },
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 1, dietaryNotes: '' },
         ])
       ).rejects.toMatchObject({
         statusCode: 400,
@@ -697,14 +697,14 @@ describe('SubEventService', () => {
       });
 
       const okResult = await service.submitSubEventRsvps('PARTY2', [
-        { subEventId: 'se-1', status: 'attending', plusOneCount: 2 },
+        { subEventId: 'se-1', status: 'attending', plusOneCount: 2, dietaryNotes: '' },
       ]);
       expect(okResult).toHaveLength(1);
       expect(okResult[0].plusOneCount).toBe(2);
 
       await expect(
         service.submitSubEventRsvps('PARTY2', [
-          { subEventId: 'se-1', status: 'attending', plusOneCount: 3 },
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 3, dietaryNotes: '' },
         ])
       ).rejects.toMatchObject({
         statusCode: 400,

@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe } from 'jest-axe';

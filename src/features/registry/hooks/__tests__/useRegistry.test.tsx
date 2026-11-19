@@ -7,6 +7,7 @@ import { RegistryItem, PaginatedRegistryItems } from '../../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 // Mock next/navigation
 const mockPush = jest.fn();
@@ -45,9 +46,9 @@ const wrapper = (client: QueryClient) => {
 };
 
 const mockItems: RegistryItem[] = [
-  { id: '1', name: 'Coffee Maker', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], imageUrl: '', description: 'Brews fresh espresso and filter coffee' },
-  { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', imageUrl: '', description: 'High-speed blender for smoothies' },
-  { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: true, amountContributed: 150, contributors: [], imageUrl: '', description: '' },
+  createMockRegistryItem({ id: '1', name: 'Coffee Maker', category: 'Category A', price: 100, purchased: false, isGroupGift: false, amountContributed: 0, contributors: [], description: 'Brews fresh espresso and filter coffee' }),
+  createMockRegistryItem({ id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: true, isGroupGift: false, amountContributed: 0, contributors: [], purchaserName: 'John Doe', description: 'High-speed blender for smoothies' }),
+  createMockRegistryItem({ id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: true, amountContributed: 150, contributors: [], description: '' }),
 ];
 
 describe('useRegistry', () => {
@@ -451,9 +452,9 @@ describe('useRegistry', () => {
 
     it('should sort items by most wanted prioritizing isMostWanted flag and displayOrder', async () => {
       const customItems: RegistryItem[] = [
-        { id: '1', name: 'Coffee Maker', category: 'Category A', price: 100, purchased: false, isGroupGift: false, isMostWanted: false, displayOrder: 1, amountContributed: 200, contributors: [], imageUrl: '', description: '' },
-        { id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: false, isGroupGift: false, isMostWanted: true, displayOrder: 2, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
-        { id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: false, isMostWanted: true, displayOrder: 1, amountContributed: 0, contributors: [], imageUrl: '', description: '' },
+        createMockRegistryItem({ id: '1', name: 'Coffee Maker', category: 'Category A', price: 100, purchased: false, isGroupGift: false, isMostWanted: false, displayOrder: 1, amountContributed: 200, contributors: [], description: '' }),
+        createMockRegistryItem({ id: '2', name: 'Item 2', category: 'Category B', price: 200, purchased: false, isGroupGift: false, isMostWanted: true, displayOrder: 2, amountContributed: 0, contributors: [], description: '' }),
+        createMockRegistryItem({ id: '3', name: 'Item 3', category: 'Category A', price: 300, purchased: false, isGroupGift: false, isMostWanted: true, displayOrder: 1, amountContributed: 0, contributors: [], description: '' }),
       ];
       server.use(
         http.get('/api/registry/items', () => {

@@ -3,9 +3,9 @@ import { IContentRepository } from './types';
 import { ContentNode } from '@prisma/client';
 
 class MockContentRepository implements IContentRepository {
-  async getFeatures() { return []; }
-  async updateFeatures(_features: any[], _author?: string) { return {} as any; }
-  async getNodesByType(_type: string) { return []; }
+  async getFeatures(): Promise<any[]> { return []; }
+  async updateFeatures(_features: any[], _author?: string): Promise<any> { return {} as any; }
+  async getNodesByType(_type: string): Promise<any[]> { return []; }
 }
 
 describe('ContentService', () => {

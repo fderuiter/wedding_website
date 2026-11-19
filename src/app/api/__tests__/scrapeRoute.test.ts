@@ -2,6 +2,7 @@
 
 import { POST } from '../registry/scrape/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import type { NextRequest } from 'next/server';
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
@@ -30,7 +31,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: 'https://example.com/product' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(401);
     const json = await res.json();
     expect(json.error).toBe('Unauthorized');
@@ -59,7 +60,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: 'https://example.com/product' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.data).toEqual({
@@ -80,7 +81,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: '' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain('URL is required');
@@ -99,7 +100,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: 'https://example.com/broken' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(422);
     const json = await res.json();
     expect(json.error).toContain('URL_NOT_FOUND');
@@ -117,7 +118,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: 'https://example.com/error' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(422);
     const json = await res.json();
     expect(json.error).toContain('NETWORK_TIMEOUT');
@@ -133,7 +134,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: 'http://127.0.0.1/sensitive-data' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain('Blocked: URL resolves to a private or restricted IP address');
@@ -155,7 +156,7 @@ describe('POST /api/registry/scrape', () => {
       body: JSON.stringify({ url: 'https://example.com/start' }),
     });
 
-    const res = await POST(req);
+    const res = await POST(req as unknown as NextRequest);
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toContain('Blocked: Too many redirects (maximum of 5 hops allowed)');
