@@ -89,7 +89,7 @@ describe('SubEventService', () => {
       const events = await service.getScheduleForGuest('VIPGUEST');
 
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
-        where: { code: 'VIPGUEST' },
+        where: { code: 'VIPGUEST', isSample: false },
         select: { id: true },
       });
 
@@ -120,6 +120,34 @@ describe('SubEventService', () => {
       expect(events[0].title).toBe('Welcome Drinks');
       expect(events[0].isReadOnly).toBe(true);
     });
+
+    it('treats sample invitation code as unauthenticated and returns only public sub-events', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'sample-inv-1',
+        code: 'SMITH2026',
+        isSample: true,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Main Ceremony',
+          isPrivate: false,
+          startTime: new Date('2026-06-20T15:00:00Z'),
+        },
+      ]);
+
+      const events = await service.getScheduleForGuest('SMITH2026');
+
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'SMITH2026', isSample: false },
+        select: { id: true },
+      });
+      expect(mockPrisma.subEvent.findMany).toHaveBeenCalledWith({
+        where: { isPrivate: false },
+        orderBy: { startTime: 'asc' },
+      });
+      expect(events).toHaveLength(1);
+    });
   });
 
   describe('getPlusOneAllowanceForGuest', () => {
@@ -137,7 +165,20 @@ describe('SubEventService', () => {
 
       expect(await service.getPlusOneAllowanceForGuest('VIPGUEST')).toBe(2);
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
-        where: { code: 'VIPGUEST' },
+        where: { code: 'VIPGUEST', isSample: false },
+        select: { plusOneAllocations: true },
+      });
+    });
+
+    it('returns null for sample invitation code', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        plusOneAllocations: 2,
+        isSample: true,
+      });
+
+      expect(await service.getPlusOneAllowanceForGuest('JOHNSON2026')).toBeNull();
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'JOHNSON2026', isSample: false },
         select: { plusOneAllocations: true },
       });
     });
@@ -224,6 +265,29 @@ describe('SubEventService', () => {
       await expect(service.getSubEventByIdForGuest('se-private', 'NOTINVITED')).rejects.toThrow(ApiError);
       await expect(service.getSubEventByIdForGuest('se-private', 'NOTINVITED')).rejects.toMatchObject({
         statusCode: 403,
+      });
+    });
+
+    it('throws 403 error when sample invitation code requests private sub-event', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'sample-inv-1',
+        code: 'SMITH2026',
+        isSample: true,
+      });
+      mockPrisma.subEvent.findUnique.mockResolvedValue({
+        id: 'se-private',
+        title: 'Rehearsal Dinner',
+        isPrivate: true,
+        accesses: [{ invitationCodeId: 'sample-inv-1' }],
+        rsvps: [],
+      });
+
+      await expect(service.getSubEventByIdForGuest('se-private', 'SMITH2026')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'SMITH2026', isSample: false },
+        select: { id: true },
       });
     });
 
@@ -317,6 +381,28 @@ describe('SubEventService', () => {
           { subEventId: 'se-1', status: 'attending' },
         ])
       ).rejects.toThrow(ApiError);
+    });
+
+    it('throws 401 error if invitation code is a sample record', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'sample-inv-1',
+        guestName: 'Mr. & Mrs. Robert Smith',
+        plusOneAllocations: 0,
+        isSample: true,
+      });
+
+      await expect(
+        service.submitSubEventRsvps('SMITH2026', [
+          { subEventId: 'se-1', status: 'attending' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 401,
+        message: 'Invalid invitation session.',
+      });
+      expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
+        where: { code: 'SMITH2026', isSample: false },
+        select: { id: true, guestName: true, plusOneAllocations: true },
+      });
     });
 
     it('returns an empty array immediately if submission list is empty', async () => {

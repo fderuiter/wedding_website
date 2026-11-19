@@ -53,22 +53,23 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     return response;
   }
 
-  let invite: { code: string; guestName: string } | null = null;
+  let invite: { code: string; guestName: string; isSample?: boolean } | null = null;
   if (trimmedCode.length > 0) {
     if (typeof prisma.invitationCode?.findFirst === 'function') {
       invite = await prisma.invitationCode.findFirst({
         where: {
           code: { equals: trimmedCode, mode: 'insensitive' },
+          isSample: false,
         },
       });
     } else if (typeof prisma.invitationCode?.findUnique === 'function') {
       invite = await prisma.invitationCode.findUnique({
-        where: { code: trimmedCode.toUpperCase() },
+        where: { code: trimmedCode.toUpperCase(), isSample: false },
       });
     }
   }
 
-  if (invite) {
+  if (invite && !invite.isSample) {
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
     const inviteToken = await signGuestInviteSessionToken({

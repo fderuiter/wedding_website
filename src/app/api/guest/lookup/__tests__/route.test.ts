@@ -132,8 +132,39 @@ describe('POST /api/guest/lookup', () => {
       expect(json.error).toContain('No invitation found matching');
 
       expect(mockFindFirst).toHaveBeenCalledWith({
-        where: { guestName: { equals: 'Jane', mode: 'insensitive' } },
+        where: {
+          isSample: false,
+          guestName: { equals: 'Jane', mode: 'insensitive' },
+        },
       });
+    });
+
+    it('ignores sample guest records (isSample: true) and issues no guest_invite_session cookie', async () => {
+      mockFindFirst.mockResolvedValue(null);
+
+      const guestToken = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
+      const req = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `${GUEST_COOKIE}=${guestToken}`,
+        },
+        body: JSON.stringify({ query: 'Mr. & Mrs. Robert Smith' }),
+      });
+      const res = await lookupRoute(req);
+      expect(res.status).toBe(404);
+
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('No invitation found matching');
+      expect(mockFindFirst).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          isSample: false,
+        }),
+      });
+
+      const setCookieHeaders = res.headers.get('set-cookie') || '';
+      expect(setCookieHeaders).not.toContain(`${GUEST_INVITE_COOKIE}=`);
     });
   });
 
@@ -298,7 +329,10 @@ describe('POST /api/guest/lookup', () => {
       expect(res.status).toBe(404);
 
       expect(mockFindFirst).toHaveBeenCalledWith({
-        where: { guestName: { equals: 'Samantha', mode: 'insensitive' } },
+        where: {
+          isSample: false,
+          guestName: { equals: 'Samantha', mode: 'insensitive' },
+        },
       });
 
       const setCookieHeaders = res.headers.get('set-cookie') || '';
@@ -317,7 +351,10 @@ describe('POST /api/guest/lookup', () => {
       expect(res.status).toBe(404);
 
       expect(mockFindFirst).toHaveBeenCalledWith({
-        where: { guestName: { equals: 'Williams', mode: 'insensitive' } },
+        where: {
+          isSample: false,
+          guestName: { equals: 'Williams', mode: 'insensitive' },
+        },
       });
     });
 
@@ -352,6 +389,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: [
             { guestName: { equals: 'Samantha Williams', mode: 'insensitive' } },
             {
@@ -389,6 +427,7 @@ describe('POST /api/guest/lookup', () => {
 
       expect(mockFindFirst).toHaveBeenCalledWith({
         where: {
+          isSample: false,
           OR: expect.arrayContaining([
             {
               AND: [

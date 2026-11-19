@@ -14,10 +14,10 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const record = await prisma.invitationCode.findUnique({
-    where: { code: session.code.toUpperCase() },
+    where: { code: session.code.toUpperCase(), isSample: false },
   });
 
-  if (!record) {
+  if (!record || record.isSample) {
     return NextResponse.json(
       { success: false, error: 'Invitation code not found.' },
       { status: 404 }
@@ -59,10 +59,10 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const existing = await prisma.invitationCode.findUnique({
-    where: { code: session.code.toUpperCase() },
+    where: { code: session.code.toUpperCase(), isSample: false },
   });
 
-  if (!existing) {
+  if (!existing || existing.isSample) {
     return NextResponse.json(
       { success: false, error: 'Invitation code not found.' },
       { status: 404 }

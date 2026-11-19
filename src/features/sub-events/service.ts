@@ -42,11 +42,11 @@ export class SubEventService {
     }
 
     const invite = await this.client.invitationCode.findUnique({
-      where: { code: code.trim().toUpperCase() },
+      where: { code: code.trim().toUpperCase(), isSample: false },
       select: { plusOneAllocations: true },
     });
 
-    if (!invite) {
+    if (!invite || invite.isSample) {
       return null;
     }
 
@@ -68,10 +68,10 @@ export class SubEventService {
     let invitationCodeId: string | null = null;
     if (code && typeof code === 'string' && code.trim()) {
       const invite = await this.client.invitationCode.findUnique({
-        where: { code: code.trim().toUpperCase() },
+        where: { code: code.trim().toUpperCase(), isSample: false },
         select: { id: true },
       });
-      if (invite) {
+      if (invite && !invite.isSample) {
         invitationCodeId = invite.id;
       }
     }
@@ -176,10 +176,10 @@ export class SubEventService {
 
     if (code && typeof code === 'string' && code.trim()) {
       const invite = await this.client.invitationCode.findUnique({
-        where: { code: code.trim().toUpperCase() },
+        where: { code: code.trim().toUpperCase(), isSample: false },
         select: { id: true },
       });
-      if (invite) {
+      if (invite && !invite.isSample) {
         invitationCodeId = invite.id;
       }
     }
@@ -299,11 +299,11 @@ export class SubEventService {
     }
 
     const invite = await this.client.invitationCode.findUnique({
-      where: { code: code.trim().toUpperCase() },
+      where: { code: code.trim().toUpperCase(), isSample: false },
       select: { id: true, guestName: true, plusOneAllocations: true },
     });
 
-    if (!invite) {
+    if (!invite || invite.isSample) {
       throw new ApiError(401, 'Invalid invitation session.');
     }
 

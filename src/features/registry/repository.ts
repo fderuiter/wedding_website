@@ -359,10 +359,10 @@ class RegistryRepository implements IRegistryRepository {
 
       if (contribution.code && contribution.code.trim()) {
         const inviteRecord = await txClient.invitationCode.findUnique({
-          where: { code: contribution.code.trim().toUpperCase() }
+          where: { code: contribution.code.trim().toUpperCase(), isSample: false }
         });
 
-        if (!inviteRecord) {
+        if (!inviteRecord || inviteRecord.isSample) {
           throw new Error('Invalid invitation code.');
         }
 
