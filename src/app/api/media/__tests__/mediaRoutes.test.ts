@@ -5,6 +5,7 @@ import { PUT, DELETE } from '../[id]/route';
 import { NextRequest } from 'next/server';
 import { mediaRepository } from '@/features/media';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
 
 jest.mock('@/features/media', () => {
   const actual = jest.requireActual('@/features/media');
@@ -86,8 +87,8 @@ describe('Media API Routes Integration Tests', () => {
 
     test('returns list of media records successfully with metadata envelope', async () => {
       const mockMediaList = [
-        { id: 'm1', url: 'https://example.com/img1.jpg', altText: 'Image 1', isDecorative: false, createdAt: new Date(), updatedAt: new Date() },
-        { id: 'm2', url: 'https://example.com/img2.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }
+        createMockMedia({ id: 'm1', url: 'https://example.com/img1.jpg', altText: 'Image 1', isDecorative: false, createdAt: new Date(), updatedAt: new Date() }),
+        createMockMedia({ id: 'm2', url: 'https://example.com/img2.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }),
       ];
       mockMediaRepository.getAllMedia.mockResolvedValue({
         data: mockMediaList,
@@ -163,7 +164,7 @@ describe('Media API Routes Integration Tests', () => {
 
     test('creates media metadata successfully with valid payload', async () => {
       const payload = { url: 'https://example.com/photo.jpg', altText: 'Beautiful memory', isDecorative: false };
-      const createdRecord = { id: 'new-id', ...payload, createdAt: new Date(), updatedAt: new Date() };
+      const createdRecord = createMockMedia({ id: 'new-id', ...payload, createdAt: new Date(), updatedAt: new Date() });
       mockMediaRepository.createMedia.mockResolvedValue(createdRecord);
 
       const req = new NextRequest('http://localhost/api/media', {
@@ -194,7 +195,7 @@ describe('Media API Routes Integration Tests', () => {
 
     test('updates media with valid partial fields successfully', async () => {
       const payload = { altText: 'Updated memory desc', isDecorative: true };
-      const updatedRecord = { id: 'm1', url: 'https://example.com/photo.jpg', ...payload, createdAt: new Date(), updatedAt: new Date() };
+      const updatedRecord = createMockMedia({ id: 'm1', url: 'https://example.com/photo.jpg', ...payload, createdAt: new Date(), updatedAt: new Date() });
       mockMediaRepository.updateMedia.mockResolvedValue(updatedRecord);
 
       const req = new NextRequest('http://localhost/api/media/m1', {

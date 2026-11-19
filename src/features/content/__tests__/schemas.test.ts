@@ -575,7 +575,6 @@ describe('Content Node Schema Validation', () => {
       if (result.success) {
         expect(result.data.layoutContainerMaxWidth).toBe('64rem');
         expect(result.data.layoutGridGap).toBe('1.5rem');
-        expect(result.data.layoutCardPadding).toBe('2.2rem' ? result.data.layoutCardPadding : '2rem');
         expect(result.data.layoutCardPadding).toBe('2rem');
         expect(result.data.layoutBorderRadius).toBe('1rem');
       }

@@ -50,7 +50,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(validItem),
       });
-      const res = await addItem(req);
+      const res = await addItem(req as unknown as NextRequest);
       expect(res.status).toBe(401);
       const json = await res.json();
       expect(json.error).toBe('Unauthorized');
@@ -64,7 +64,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(validItem),
       });
-      const res = await addItem(req);
+      const res = await addItem(req as unknown as NextRequest);
       expect(res.status).toBe(201);
       expect(mockCreateItem).toHaveBeenCalledWith(expect.objectContaining(validItem));
       const json = await res.json();
@@ -77,7 +77,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify({ price: -1 }),
       });
-      const res = await addItem(req);
+      const res = await addItem(req as unknown as NextRequest);
       expect(res.status).toBe(400);
       const json = await res.json();
       expect(json.error).toBeDefined();
@@ -90,7 +90,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(validItem),
       });
-      const res = await addItem(req);
+      const res = await addItem(req as unknown as NextRequest);
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toBe('DB down');
@@ -110,7 +110,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(validContribution),
       });
-      const res = await contribute(req);
+      const res = await contribute(req as unknown as NextRequest);
       expect(res.status).toBe(200);
       expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, expect.objectContaining({
         name: validContribution.name,
@@ -128,7 +128,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(contributionWithMessage),
       });
-      const res = await contribute(req);
+      const res = await contribute(req as unknown as NextRequest);
       expect(res.status).toBe(200);
       expect(mockContributeToItem).toHaveBeenCalledWith(validContribution.itemId, expect.objectContaining({
         name: validContribution.name,
@@ -143,7 +143,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify({ ...validContribution, message: longMessage }),
       });
-      const res = await contribute(req);
+      const res = await contribute(req as unknown as NextRequest);
       expect(res.status).toBe(400);
       const json = await res.json();
       expect(json.error).toBe('Personal note must be under 1000 characters.');
@@ -154,7 +154,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify({ name: '', amount: -5 }),
       });
-      const res = await contribute(req);
+      const res = await contribute(req as unknown as NextRequest);
       expect(res.status).toBe(400);
       const json = await res.json();
       expect(json.error).toBeDefined();
@@ -166,7 +166,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(validContribution),
       });
-      const res = await contribute(req);
+      const res = await contribute(req as unknown as NextRequest);
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json.error).toBe('Item not found');
@@ -178,7 +178,7 @@ describe('Registry API routes', () => {
         method: 'POST',
         body: JSON.stringify(validContribution),
       });
-      const res = await contribute(req);
+      const res = await contribute(req as unknown as NextRequest);
       expect(res.status).toBe(500);
       const json = await res.json();
       expect(json).toEqual({ success: false, error: 'DB error' });

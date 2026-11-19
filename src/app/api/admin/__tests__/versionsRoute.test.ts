@@ -5,7 +5,6 @@ import { POST as restoreVersion } from '../versions/[id]/restore/route';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { toPublicAppConfig } from '@/lib/config';
 
 // Mock dependency modules
 jest.mock('@/lib/prisma', () => ({
@@ -50,7 +49,6 @@ jest.mock('@/core/auth/auth.server', () => ({
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
-const mockToPublicAppConfig = toPublicAppConfig as jest.MockedFunction<typeof toPublicAppConfig>;
 
 describe('GET /api/admin/versions', () => {
   beforeEach(() => {

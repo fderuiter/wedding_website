@@ -4,7 +4,7 @@ import { GET } from '../route';
 
 jest.mock('next/og', () => {
   return {
-    ImageResponse: jest.fn().mockImplementation((element, options) => {
+    ImageResponse: jest.fn().mockImplementation((_element, options) => {
       const headers = new Headers(options?.headers || {});
       if (!headers.has('content-type')) {
         headers.set('content-type', 'image/png');
@@ -78,7 +78,7 @@ describe('/api/og route', () => {
     const res = await GET(req);
 
     expect(res.status).toBe(200);
-    const mockCalls = (ImageResponse as jest.Mock).mock.calls;
+    const mockCalls = (ImageResponse as unknown as jest.Mock).mock.calls;
     const lastCall = mockCalls[mockCalls.length - 1];
     const options = lastCall[1];
 
@@ -99,7 +99,7 @@ describe('/api/og route', () => {
       const res = await GETFallback(req);
 
       expect(res.status).toBe(200);
-      const mockCalls = (ImageResponse as jest.Mock).mock.calls;
+      const mockCalls = (ImageResponse as unknown as jest.Mock).mock.calls;
       const lastCall = mockCalls[mockCalls.length - 1];
       const options = lastCall[1];
 

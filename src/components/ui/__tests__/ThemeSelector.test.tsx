@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
 import { ThemeSelector } from '../ThemeSelector';
 import { ThemeProvider } from '@/components/ThemeProvider';

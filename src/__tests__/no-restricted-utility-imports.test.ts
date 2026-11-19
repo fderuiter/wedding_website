@@ -7,6 +7,7 @@ if (typeof global.structuredClone === 'undefined') {
 
 import noRestrictedUtilityImportsRule from '../../eslint-rules/no-restricted-utility-imports.mjs';
 import { RuleTester } from 'eslint';
+import type { Rule } from 'eslint';
 
 const ruleTester = new RuleTester({
   languageOptions: {
@@ -16,7 +17,7 @@ const ruleTester = new RuleTester({
 });
 
 describe('no-restricted-utility-imports ESLint Rule AST verification', () => {
-  ruleTester.run('no-restricted-utility-imports', noRestrictedUtilityImportsRule, {
+  ruleTester.run('no-restricted-utility-imports', noRestrictedUtilityImportsRule as unknown as Rule.RuleModule, {
     valid: [
       {
         code: "import React from 'react';",

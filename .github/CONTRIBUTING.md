@@ -44,7 +44,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:env-docs` - Ensure environment variables match `.env.example` documentation.
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json` and `ARCHITECTURE.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
-     - `npm run typecheck` - Check TypeScript types across the project.
+     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (production app, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.
      - `npx playwright test` - Run Playwright E2E and smoke tests.

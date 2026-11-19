@@ -6,6 +6,8 @@ import { ToastProvider, useToast } from '@/components/ui/ToastProvider';
 import AdminDashboardPage from '../page';
 import type { RegistryItem } from '@/features/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 // Mock next/navigation's useRouter
 const mockReplace = jest.fn();
@@ -22,20 +24,20 @@ jest.mock('@/core/auth/auth.client');
 (mockCheckAdminClient as jest.Mock).mockResolvedValue(true);
 
 // Sample registry item for fetch mock
-const mockItem: RegistryItem = {
+const mockItem: RegistryItem = createMockRegistryItem({
   id: '1',
   name: 'Sample Item',
   description: 'desc',
   category: 'Home',
   price: 100,
-  image: '/img.jpg',
+  image: createMockMedia({ url: '/img.jpg', altText: 'Sample Item' }),
   vendorUrl: null,
   quantity: 1,
   isGroupGift: false,
   purchased: false,
   amountContributed: 0,
   contributors: [],
-};
+});
 
 // Mock fetch
 const mockFetch = jest.fn();

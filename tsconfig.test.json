@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "types": [
+      "node",
+      "jest",
+      "@testing-library/jest-dom",
+      "jest-axe"
+    ]
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/mocks/**/*.ts",
+    "src/testing/**/*.ts",
+    "src/**/__tests__/**/*.ts",
+    "src/**/__tests__/**/*.tsx",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "scripts/**/*.test.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "e2e"
+  ]
+}

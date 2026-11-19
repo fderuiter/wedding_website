@@ -72,7 +72,7 @@ jest.mock('next/server', () => {
   const MockNextRequest = jest.fn((input, init) => {
     const requestCookies = new Map();
     if (init?.headers?.cookie) {
-      init.headers.cookie.split(';').forEach(c => {
+      init.headers.cookie.split(';').forEach((c: string) => {
         const [key, value] = c.trim().split('=');
         requestCookies.set(key, { name: key, value });
       });
@@ -81,7 +81,7 @@ jest.mock('next/server', () => {
       ...init,
       url: input,
       headers: {
-        get: (key) => {
+        get: (key: string) => {
           if (key === 'cookie' && init?.headers) return init.headers.cookie;
           return null;
         }
@@ -367,7 +367,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback) => {
+      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
         return callback(mockTx);
       });
 
@@ -643,7 +643,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback) => {
+      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
         return callback(mockTx);
       });
 
@@ -707,7 +707,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback) => {
+      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
         return callback(mockTx);
       });
 
@@ -754,7 +754,7 @@ describe('Maintenance API Routes Integration Tests', () => {
         appConfig: { deleteMany: jest.fn(), createMany: jest.fn() },
       };
 
-      mockPrisma.$transaction.mockImplementation(async (callback) => {
+      mockPrisma.$transaction.mockImplementation(async (callback: (tx: typeof mockTx) => unknown) => {
         return callback(mockTx);
       });
 

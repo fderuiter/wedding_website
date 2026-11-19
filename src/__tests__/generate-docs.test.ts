@@ -68,7 +68,7 @@ describe('Documentation Generator - getZodType Helper', () => {
 
   describe('Pipelines and transformations', () => {
     it('resolves pipeline transformations to their output schema', () => {
-      const pipeSchema = z.string().pipe(z.number());
+      const pipeSchema = z.string().transform(Number).pipe(z.number());
       expect(getZodType(pipeSchema)).toBe('number');
     });
 
@@ -101,7 +101,7 @@ describe('Documentation Generator - getZodType Helper', () => {
       expect(getZodType(shape.features)).toBe('object[]');
 
       // Verify none of the fields return modifier names
-      for (const [key, value] of Object.entries(shape)) {
+      for (const value of Object.values(shape)) {
         const type = getZodType(value);
         expect(type).not.toBe('default');
         expect(type).not.toBe('optional');

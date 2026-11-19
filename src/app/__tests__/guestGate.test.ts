@@ -71,7 +71,7 @@ jest.mock('next/server', () => {
       headers,
       json: async () => body,
       cookies: {
-        set: (name: string, value: string, opts: any) => {
+        set: (name: string, value: string, _opts: any) => {
           cookiesMap.set(name, value);
           headers.append('set-cookie', `${name}=${value}`);
         },
@@ -103,6 +103,13 @@ jest.mock('@/lib/routes', () => ({
 import { isAdminRequest } from '@/core/auth/auth.server';
 
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+
+function createMockNextRequest(
+  url: string,
+  init?: RequestInit & { cookies?: Record<string, string> }
+): NextRequest {
+  return new NextRequest(url, init as unknown as ConstructorParameters<typeof NextRequest>[1]);
+}
 
 describe('Edge-enforced Guest Passcode Gate', () => {
   beforeEach(() => {
@@ -291,7 +298,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
 
     it('allows access to /api/guest/lookup for authenticated guest session', async () => {
       const token = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
-      const req = new NextRequest('http://localhost/api/guest/lookup', {
+      const req = createMockNextRequest('http://localhost/api/guest/lookup', {
         method: 'POST',
         cookies: {
           [GUEST_COOKIE]: token,
@@ -327,7 +334,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
 
     it('allows access for authenticated guest session', async () => {
       const token = await signGuestToken({ guest: true, exp: Date.now() + 1000 * 60 * 60 });
-      const req = new NextRequest('http://localhost/', {
+      const req = createMockNextRequest('http://localhost/', {
         cookies: {
           [GUEST_COOKIE]: token,
         },
@@ -345,7 +352,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
         iat: Date.now(),
         exp: Date.now() + 1000 * 60 * 60,
       });
-      const req = new NextRequest('http://localhost/', {
+      const req = createMockNextRequest('http://localhost/', {
         cookies: {
           [GUEST_INVITE_COOKIE]: inviteToken,
         },
@@ -362,7 +369,7 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       const forgedSignature = await hmacSha256(env.GUEST_PASSCODE, data);
       const forgedToken = `${data}.${forgedSignature}`;
 
-      const req = new NextRequest('http://localhost/', {
+      const req = createMockNextRequest('http://localhost/', {
         cookies: {
           [GUEST_COOKIE]: forgedToken,
         },

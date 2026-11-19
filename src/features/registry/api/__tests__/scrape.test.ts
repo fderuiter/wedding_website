@@ -1,10 +1,13 @@
 /** @jest-environment node */
 
 import dns from 'dns';
-import { POST } from '@/app/api/registry/scrape/route';
+import type { NextRequest } from 'next/server';
+import { POST as rawPOST } from '@/app/api/registry/scrape/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
+
+const POST = (request: Request) => rawPOST(request as unknown as NextRequest);
 
 // Mock DNS for SSRF check
 jest.mock('dns', () => {

@@ -118,11 +118,11 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
     const originalEnv = process.env.NODE_ENV;
 
     beforeEach(() => {
-      process.env.NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     });
 
     afterEach(() => {
-      process.env.NODE_ENV = originalEnv;
+      (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
     });
 
     test('masks uncaught exceptions in production and attaches referenceId in payload and logs', async () => {

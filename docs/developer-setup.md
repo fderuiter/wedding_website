@@ -125,11 +125,20 @@ If you start with an unseeded database, navigating to `http://localhost:3000` wi
 
 ## 6. Quality Gates & Testing
 
-Before committing code or submitting pull requests, run local quality checks to ensure test coverage and style compliance:
+Before committing code or submitting pull requests, run local quality checks to ensure type safety, test coverage, and style compliance:
 
-- **ESLint & Code Formatting:**
+- **TypeScript Type Checking (Production, Tests/Mocks, E2E & Scripts):**
+  ```bash
+  npm run typecheck
+  # or
+  npm run type-check
+  ```
+  Validates `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` with strict compiler flags (`strict`, `noUnusedLocals`, `noUnusedParameters`).
+
+- **ESLint, Unused Exports & Static Checks:**
   ```bash
   npm run lint
+  npm run lint:unused
   ```
 
 - **Unit & Integration Test Suite:**

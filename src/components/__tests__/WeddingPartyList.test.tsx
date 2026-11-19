@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe } from 'jest-axe';
@@ -22,9 +21,11 @@ describe('WeddingPartyList', () => {
         url: 'https://example.com/john.jpg',
         altText: 'John smiling',
         isDecorative: false,
+        isSample: false,
       },
       link: 'https://example.com/john',
       order: 1,
+      isSample: false,
       createdAt: new Date('2025-01-01T00:00:00.000Z'),
       updatedAt: new Date('2025-01-01T00:00:00.000Z'),
     },
@@ -41,6 +42,7 @@ describe('WeddingPartyList', () => {
       photo: undefined,
       link: '',
       order: 2,
+      isSample: false,
       createdAt: new Date('2025-01-01T00:00:00.000Z'),
       updatedAt: new Date('2025-01-01T00:00:00.000Z'),
     },
@@ -57,6 +59,7 @@ describe('WeddingPartyList', () => {
       photo: undefined,
       link: '',
       order: 3,
+      isSample: false,
       createdAt: new Date('2025-01-01T00:00:00.000Z'),
       updatedAt: new Date('2025-01-01T00:00:00.000Z'),
     },
@@ -73,6 +76,7 @@ describe('WeddingPartyList', () => {
       photo: undefined,
       link: '',
       order: 4,
+      isSample: false,
       createdAt: new Date('2025-01-01T00:00:00.000Z'),
       updatedAt: new Date('2025-01-01T00:00:00.000Z'),
     },
@@ -164,6 +168,7 @@ describe('WeddingPartyList', () => {
         photo: undefined,
         link: '',
         order: 1,
+        isSample: false,
         createdAt: new Date('2025-01-01T00:00:00.000Z'),
         updatedAt: new Date('2025-01-01T00:00:00.000Z'),
       },

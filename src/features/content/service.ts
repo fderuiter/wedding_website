@@ -1,4 +1,5 @@
 import { IContentRepository, PendingPhotosOptions, PaginatedPendingPhotosResult, GetNodesByTypeOptions } from './types';
+import { ContentNodeDTO } from './schemas';
 import { contentRepository } from './repository';
 
 export class ContentService {
@@ -49,7 +50,7 @@ export class ContentService {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async getPendingPhotos(options: PendingPhotosOptions = {}): Promise<PaginatedPendingPhotosResult> {
+  async getPendingPhotos(options: PendingPhotosOptions = {}): Promise<ContentNodeDTO[] & PaginatedPendingPhotosResult> {
     if (typeof this.repo.getPendingPhotos === 'function') {
       const res = await this.repo.getPendingPhotos(options);
       return Object.assign([...res.photos], {
@@ -58,7 +59,7 @@ export class ContentService {
         page: res.page,
         limit: res.limit,
         totalPages: res.totalPages,
-      }) as any;
+      });
     }
 
     let page = Math.floor(Number(options?.page));

@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FloorplanCanvas } from '../FloorplanCanvas';
@@ -10,12 +9,14 @@ describe('FloorplanCanvas component', () => {
     {
       id: 'table-1',
       name: 'Head Table',
-      shape: 'rectangle',
+      shape: 'rectangular',
       capacity: 2,
       x: 100,
       y: 100,
       width: 120,
       height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         {
           id: 'guest-1',
@@ -33,6 +34,10 @@ describe('FloorplanCanvas component', () => {
       capacity: 1,
       x: 300,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         {
           id: 'guest-2',
@@ -104,6 +109,10 @@ describe('FloorplanCanvas component', () => {
       capacity: 2,
       x: 100,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
         { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
@@ -124,6 +133,10 @@ describe('FloorplanCanvas component', () => {
       capacity: 2,
       x: 100,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
         { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
@@ -155,6 +168,10 @@ describe('FloorplanCanvas component', () => {
       capacity: 2,
       x: 100,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
         { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
@@ -191,6 +208,10 @@ describe('FloorplanCanvas component', () => {
       capacity: 2,
       x: 100,
       y: 100,
+      width: 120,
+      height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         { id: 'guest-a', guestName: 'Guest A', tableId: 'table-full', seatNumber: 1 } as InvitationCodeDTO,
         { id: 'guest-b', guestName: 'Guest B', tableId: 'table-full', seatNumber: 2 } as InvitationCodeDTO,
@@ -359,12 +380,14 @@ describe('FloorplanCanvas component', () => {
       const edgeTable: SeatingTableDTO = {
         id: 'table-edge',
         name: 'Edge Table',
-        shape: 'rectangle',
+        shape: 'rectangular',
         capacity: 2,
         x: 5,
         y: 5,
         width: 120,
         height: 120,
+        rotation: 0,
+        isSample: false,
       };
 
       const onUpdateTablePosition = jest.fn();

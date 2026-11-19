@@ -4,11 +4,13 @@ import { processImageWorkerBuffer } from '../imageProcessorWorker';
 
 // Helper to create a File object with polyfilled arrayBuffer() for environments where it is missing (like Jest's JSDOM/Node environment).
 function createTestFile(buffer: Uint8Array, name: string, type: string): File {
-  const file = new File([buffer], name, { type });
+  const arrayBuffer = buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength
+  ) as ArrayBuffer;
+  const file = new File([arrayBuffer], name, { type });
   if (typeof file.arrayBuffer !== 'function') {
-    file.arrayBuffer = async () => {
-      return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    };
+    file.arrayBuffer = async () => arrayBuffer;
   }
   return file;
 }

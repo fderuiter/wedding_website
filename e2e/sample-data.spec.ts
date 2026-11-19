@@ -16,21 +16,6 @@ function generateAdminCookieValue() {
   return `${data}.${signature}`;
 }
 
-function generateGuestCookieValue() {
-  const secret = process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min';
-  const payload = {
-    guest: true,
-    iat: Date.now(),
-    exp: Date.now() + 8 * 60 * 60 * 1000,
-  };
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('base64url');
-  return `${data}.${signature}`;
-}
-
 test.describe('Sample Data Generator & Admin Workflow', () => {
   test.beforeEach(async ({ request }) => {
     // Purge any existing sample data before tests

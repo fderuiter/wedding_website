@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe } from 'jest-axe';
@@ -20,9 +19,11 @@ describe('WeddingPartyCard', () => {
       url: 'https://example.com/john.jpg',
       altText: 'John smiling',
       isDecorative: false,
+      isSample: false,
     },
     link: 'https://example.com/john-personal-site',
     order: 1,
+    isSample: false,
     createdAt: new Date('2025-01-01T00:00:00.000Z'),
     updatedAt: new Date('2025-01-01T00:00:00.000Z'),
   };
@@ -39,6 +40,7 @@ describe('WeddingPartyCard', () => {
     photo: undefined,
     link: '',
     order: 2,
+    isSample: false,
     createdAt: new Date('2025-01-01T00:00:00.000Z'),
     updatedAt: new Date('2025-01-01T00:00:00.000Z'),
   };

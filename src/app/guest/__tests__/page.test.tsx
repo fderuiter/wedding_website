@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import GuestAddressPage from '../page';
@@ -138,14 +137,16 @@ describe('GuestAddressPage (/guest)', () => {
   });
 
   it('cancels pending validation when user submits a new code before the previous one completes', async () => {
-    let slowSignal: AbortSignal | null = null;
-    let fastSignal: AbortSignal | null = null;
+    const signals: { slow: AbortSignal | null; fast: AbortSignal | null } = {
+      slow: null,
+      fast: null,
+    };
 
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       const signal = (init?.signal || input?.signal) as AbortSignal;
 
-      if (url.includes('/api/guest/address') && !fastSignal) {
+      if (url.includes('/api/guest/address') && !signals.fast) {
         // Initial session check: unauthenticated
         return {
           ok: false,
@@ -154,11 +155,11 @@ describe('GuestAddressPage (/guest)', () => {
         };
       }
       if (url.includes('validate-code?code=SLOWCODE')) {
-        slowSignal = signal;
+        signals.slow = signal;
         return new Promise(() => {});
       }
       if (url.includes('validate-code?code=FASTCODE')) {
-        fastSignal = signal;
+        signals.fast = signal;
         return {
           ok: true,
           status: 200,
@@ -169,7 +170,7 @@ describe('GuestAddressPage (/guest)', () => {
           }),
         };
       }
-      if (url.includes('/api/guest/address') && fastSignal) {
+      if (url.includes('/api/guest/address') && signals.fast) {
         return {
           ok: true,
           status: 200,
@@ -197,21 +198,21 @@ describe('GuestAddressPage (/guest)', () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(slowSignal).not.toBeNull();
+      expect(signals.slow).not.toBeNull();
     });
-    expect(slowSignal?.aborted).toBe(false);
+    expect(signals.slow?.aborted).toBe(false);
 
     // User submits FASTCODE before SLOWCODE completes
     fireEvent.change(input, { target: { value: 'FASTCODE' } });
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(fastSignal).not.toBeNull();
+      expect(signals.fast).not.toBeNull();
     });
 
     // SLOWCODE request was aborted!
-    expect(slowSignal?.aborted).toBe(true);
-    expect(fastSignal?.aborted).toBe(false);
+    expect(signals.slow?.aborted).toBe(true);
+    expect(signals.fast?.aborted).toBe(false);
 
     await waitFor(() => {
       expect(mockAddToast).toHaveBeenCalledWith('Welcome Jane Fairfax!', 'success');

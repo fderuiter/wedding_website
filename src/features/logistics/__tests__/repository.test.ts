@@ -4,11 +4,9 @@ import type { ContentNodeDTO } from '@/features/content';
 
 describe('LogisticsRepository Chronological Sorting', () => {
   let repo: LogisticsRepository;
-  let service: LogisticsService;
 
   beforeEach(() => {
     repo = new LogisticsRepository();
-    service = new LogisticsService(repo);
   });
 
   it('sorts schedule nodes in ascending chronological order by startTime', () => {

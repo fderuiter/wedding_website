@@ -1,6 +1,7 @@
 /** @jest-environment node */
 
 import { createRegistryRepository } from '../repository';
+import { createMockCreateRegistryItemInput } from '@/testing/factories/registryFactory';
 
 describe('RegistryRepository createBatchItems transaction atomicity', () => {
   it('rolls back all insertions if an item in the batch fails', async () => {
@@ -44,8 +45,8 @@ describe('RegistryRepository createBatchItems transaction atomicity', () => {
 
     await expect(
       repository.createBatchItems([
-        { name: 'Item 1', price: 50, category: 'Kitchen' },
-        { name: 'Item 2', price: 100, category: 'Kitchen' },
+        createMockCreateRegistryItemInput({ name: 'Item 1', price: 50, category: 'Kitchen' }),
+        createMockCreateRegistryItemInput({ name: 'Item 2', price: 100, category: 'Kitchen' }),
       ])
     ).rejects.toThrow('Simulated database write failure');
 
@@ -82,8 +83,8 @@ describe('RegistryRepository createBatchItems transaction atomicity', () => {
     const repository = createRegistryRepository(mockPrisma);
 
     const created = await repository.createBatchItems([
-      { name: 'Item 1', price: 50, category: 'Kitchen' },
-      { name: 'Item 2', price: 75, category: 'Kitchen' },
+      createMockCreateRegistryItemInput({ name: 'Item 1', price: 50, category: 'Kitchen' }),
+      createMockCreateRegistryItemInput({ name: 'Item 2', price: 75, category: 'Kitchen' }),
     ]);
 
     expect(created).toHaveLength(2);

@@ -36,6 +36,7 @@ describe('useSeatingState & seatingReducer', () => {
     width: 120,
     height: 120,
     rotation: 0,
+    isSample: false,
     invitationCodes: [],
   };
 
@@ -49,6 +50,7 @@ describe('useSeatingState & seatingReducer', () => {
     width: 120,
     height: 120,
     rotation: 0,
+    isSample: false,
     invitationCodes: [],
   };
 

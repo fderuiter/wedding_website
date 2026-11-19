@@ -168,7 +168,6 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     jest.spyOn(realPrisma, '$transaction').mockImplementation(async (fn: any) => {
       return originalExecuteInTransaction(async (tx: any) => {
         // Intercept $executeRaw on the transaction client to simulate failure
-        const originalExecuteRaw = tx.$executeRaw.bind(tx);
         tx.$executeRaw = jest.fn().mockRejectedValue(new Error('Simulated executeRaw DB failure'));
         return fn(tx);
       });

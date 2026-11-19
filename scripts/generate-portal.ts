@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { checkDocLinks } from './check-doc-links.ts';
+import { checkDocLinks } from './check-doc-links';
 import {
   generateConfigTable,
   generateRoutesDiagram,
   updateArchitectureMd,
   generateOpenApiSpec,
-} from './generate-docs.ts';
+} from './generate-docs';
 
 const scriptDir = typeof __dirname !== 'undefined'
   ? __dirname
@@ -169,7 +169,7 @@ function rewriteMarkdownLinks(content: string, srcRelPath: string): string {
     }
 
     const [cleanTarget, hash] = trimmedTarget.split('#');
-    const [pathPart, query] = (cleanTarget || '').split('?');
+    const [pathPart] = (cleanTarget || '').split('?');
 
     if (!pathPart) {
       return fullMatch;

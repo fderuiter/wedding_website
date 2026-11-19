@@ -102,11 +102,11 @@ describe('guestInviteSession', () => {
     const originalSecret = process.env.GUEST_SESSION_SECRET;
 
     beforeEach(() => {
-      process.env.NODE_ENV = 'production';
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     });
 
     afterEach(() => {
-      process.env.NODE_ENV = originalNodeEnv;
+      (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
       if (originalSecret !== undefined) {
         process.env.GUEST_SESSION_SECRET = originalSecret;
       } else {

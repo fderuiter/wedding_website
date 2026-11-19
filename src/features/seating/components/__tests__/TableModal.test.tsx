@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { TableModal } from '../TableModal';
@@ -15,6 +14,7 @@ describe('TableModal component', () => {
     width: 120,
     height: 120,
     rotation: 0,
+    isSample: false,
   };
 
   const defaultProps = {

@@ -26,7 +26,7 @@ describe('Production Boot Guest Session Secret Validation', () => {
       ['--input-type=module', '-e', 'import("./src/env.ts")'],
       {
         cwd: rootDir,
-        env: cleanEnv,
+        env: cleanEnv as unknown as NodeJS.ProcessEnv,
         encoding: 'utf-8',
       }
     );

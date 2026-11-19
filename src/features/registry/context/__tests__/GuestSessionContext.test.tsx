@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { GuestSessionProvider, useGuestSession } from '../GuestSessionContext';
 import { ToastProvider } from '@/components/ui/ToastProvider';

@@ -8,7 +8,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { ApiError } from '@/utils/ApiError';
 
-export const GET = withApiMiddleware(async (req: NextRequest) => {
+export const GET = withApiMiddleware(async (req?: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('registry', config.modules)) {
     throw new ApiError(404, "Feature 'registry' is disabled");

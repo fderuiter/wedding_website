@@ -259,7 +259,7 @@ describe('Hybrid Storage Provider', () => {
 
     it('returns null when HeadObjectCommand throws error', async () => {
       const provider = getStorageProvider();
-      const mockSend = jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(new Error('NotFound'));
+      const mockSend = jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(new Error('NotFound') as never);
 
       const meta = await provider.getMetadata('uploads/missing.jpg');
       expect(meta).toBeNull();

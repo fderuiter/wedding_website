@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { FaqAccordion, FAQItemInput } from '../FaqAccordion';
 
@@ -8,10 +7,13 @@ describe('FaqAccordion Component', () => {
       id: 'faq-1',
       type: 'FAQ',
       tags: ['homepage'],
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
       data: {
         question: 'What is the dress code?',
         answer: 'Black tie optional. Please wear formal attire.',
         category: 'Dress Code',
+        categoryTags: undefined,
         keywords: ['attire', 'clothing', 'suits', 'dresses'],
       },
     },
@@ -19,10 +21,13 @@ describe('FaqAccordion Component', () => {
       id: 'faq-2',
       type: 'FAQ',
       tags: ['homepage'],
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
       data: {
         question: 'Is transportation provided to the venue?',
         answer: 'Yes, shuttles will run every 15 minutes from the partner hotels.',
         category: 'Travel',
+        categoryTags: undefined,
         keywords: ['shuttle', 'bus', 'parking'],
       },
     },
@@ -30,9 +35,13 @@ describe('FaqAccordion Component', () => {
       id: 'faq-3',
       type: 'FAQ',
       tags: ['homepage'],
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
       data: {
         question: 'Can I bring a plus one?',
         answer: 'Please check your invitation for plus one details.',
+        categoryTags: undefined,
+        keywords: undefined,
         // Uncategorized legacy item - should default to General
       },
     },

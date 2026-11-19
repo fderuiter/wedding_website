@@ -16,6 +16,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       width: 120,
       height: 120,
       rotation: 0,
+      isSample: false,
       invitationCodes: [
         {
           id: 'guest-1',
@@ -42,6 +43,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       width: 160,
       height: 100,
       rotation: 0,
+      isSample: false,
       invitationCodes: [],
     },
   ];
@@ -92,6 +94,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       width: 100,
       height: 100,
       rotation: 0,
+      isSample: false,
       invitationCodes: [
         { id: 'g1', guestName: 'Guest 1', code: 'C1', seatNumber: 1 } as InvitationCodeDTO,
         { id: 'g2', guestName: 'Guest 2', code: 'C2', seatNumber: 2 } as InvitationCodeDTO,
@@ -115,6 +118,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       width: 200,
       height: 100,
       rotation: 0,
+      isSample: false,
       invitationCodes: [
         { id: 'g10', guestName: 'Explicit Seat 10', code: 'C10', seatNumber: 10 } as InvitationCodeDTO,
         { id: 'g3', guestName: 'Explicit Seat 3', code: 'C3', seatNumber: 3 } as InvitationCodeDTO,
@@ -145,6 +149,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       width: 500,
       height: 500,
       rotation: 0,
+      isSample: false,
       invitationCodes: largeGuests,
     };
 

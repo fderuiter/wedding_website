@@ -4,13 +4,13 @@ import { POST } from '../batch-scrape';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
+import type { NextRequest } from 'next/server';
 
 // Mock DNS for SSRF check
 jest.mock('dns', () => {
-  const originalDns = jest.requireActual('dns');
   return {
     promises: {
-      lookup: jest.fn().mockImplementation(async (hostname, options) => {
+      lookup: jest.fn().mockImplementation(async (hostname, _options) => {
         if (hostname === '127.0.0.1' || hostname === 'localhost') {
           return { address: '127.0.0.1', family: 4 };
         }
@@ -41,7 +41,7 @@ describe('POST /api/registry/scrape/batch', () => {
       body: JSON.stringify({ urls: ['https://example.com/product1'] }),
     });
 
-    const response = await POST(request);
+    const response = await POST(request as unknown as NextRequest);
     expect(response.status).toBe(401);
   });
 
@@ -52,7 +52,7 @@ describe('POST /api/registry/scrape/batch', () => {
       body: JSON.stringify({ urls }),
     });
 
-    const response = await POST(request);
+    const response = await POST(request as unknown as NextRequest);
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toContain('Maximum of 20 URLs allowed');
@@ -64,7 +64,7 @@ describe('POST /api/registry/scrape/batch', () => {
       body: JSON.stringify({ urls: [] }),
     });
 
-    const response = await POST(request);
+    const response = await POST(request as unknown as NextRequest);
     expect(response.status).toBe(400);
   });
 
@@ -94,7 +94,7 @@ describe('POST /api/registry/scrape/batch', () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await POST(request as unknown as NextRequest);
     expect(response.status).toBe(200);
     const body = await response.json();
 
@@ -135,7 +135,7 @@ describe('POST /api/registry/scrape/batch', () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await POST(request as unknown as NextRequest);
     expect(response.status).toBe(200);
     const body = await response.json();
 
@@ -165,7 +165,7 @@ describe('POST /api/registry/scrape/batch', () => {
       }),
     });
 
-    const response = await POST(request);
+    const response = await POST(request as unknown as NextRequest);
     expect(response.status).toBe(200);
     const body = await response.json();
 

@@ -377,7 +377,7 @@ describe('AdminSettingsPage - handleUpload', () => {
     });
 
     expect(capturedFormData).toBeInstanceOf(FormData);
-    expect((capturedFormData as FormData).get('file')).toBe(file);
+    expect((capturedFormData as unknown as FormData).get('file')).toBe(file);
   });
 });
 

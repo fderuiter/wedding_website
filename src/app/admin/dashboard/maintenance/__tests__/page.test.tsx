@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import MaintenanceHubPage from '../page';
 import { useAdminMaintenance } from '@/hooks/admin/useAdminMaintenance';
