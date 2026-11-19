@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { axe } from 'jest-axe';
 import SubEventsMatrixPage from '../page';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -207,6 +208,68 @@ describe('SubEventsMatrixPage', () => {
         body: expect.stringContaining('"title":"After Party"'),
       }));
       expect(mockAddToast).toHaveBeenCalledWith('Sub-event created successfully!', 'success');
+    });
+  });
+
+  test('exposes accessible names and programmatic label bindings for all create sub-event modal controls', async () => {
+    const { baseElement } = render(
+      <main>
+        <SubEventsMatrixPage />
+      </main>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ Create New Sub-Event/i }));
+
+    expect(screen.getByRole('dialog', { name: /Create New Sub-Event/i })).toBeInTheDocument();
+
+    const titleInput = screen.getByLabelText('Title *');
+    const locationInput = screen.getByLabelText('Location Name');
+    const categoryInput = screen.getByLabelText('Category');
+    const descriptionTextarea = screen.getByLabelText('Description');
+    const privateCheckbox = screen.getByLabelText(
+      'Private Sub-Event (requires explicit access assignment)'
+    );
+
+    expect(titleInput).toBeRequired();
+    expect(titleInput.id).toBeTruthy();
+    expect(locationInput.id).toBeTruthy();
+    expect(categoryInput.id).toBeTruthy();
+    expect(descriptionTextarea.id).toBeTruthy();
+    expect(descriptionTextarea).toHaveAttribute('rows', '2');
+    expect(descriptionTextarea).toHaveStyle({ minHeight: 'auto' });
+    expect(privateCheckbox).toHaveAttribute('type', 'checkbox');
+    expect(privateCheckbox).toBeChecked();
+
+    fireEvent.change(titleInput, { target: { value: 'Welcome Drinks' } });
+    fireEvent.change(locationInput, { target: { value: 'Rooftop Terrace' } });
+    fireEvent.change(categoryInput, { target: { value: 'Social' } });
+    fireEvent.change(descriptionTextarea, { target: { value: 'Casual evening mingling' } });
+
+    const results = await axe(baseElement);
+    expect(results).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: /Create Sub-Event/i }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/sub-events',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            title: 'Welcome Drinks',
+            description: 'Casual evening mingling',
+            locationName: 'Rooftop Terrace',
+            category: 'Social',
+            startTime: null,
+            endTime: null,
+            isPrivate: true,
+          }),
+        })
+      );
     });
   });
 

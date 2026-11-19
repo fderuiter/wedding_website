@@ -21,6 +21,33 @@ const sampleEvents: EditableSubEvent[] = [
 ];
 
 describe('SubEventEditorModal & SubEventDeleteConfirmModal', () => {
+  it('passes automated jest-axe accessibility checks and exposes labeled controls in create mode', async () => {
+    const { baseElement } = render(
+      <ToastProvider>
+        <SubEventEditorModal
+          isOpen={true}
+          onClose={jest.fn()}
+          editingEvent={null}
+          onSave={jest.fn().mockResolvedValue({})}
+        />
+      </ToastProvider>
+    );
+
+    expect(screen.getByRole('dialog', { name: 'Create New Sub-Event' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Title *')).toBeRequired();
+    expect(screen.getByLabelText('Location Name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Category')).toBeInTheDocument();
+    const descriptionField = screen.getByLabelText('Description');
+    expect(descriptionField).toHaveAttribute('rows', '2');
+    expect(descriptionField).toHaveStyle({ minHeight: 'auto' });
+    expect(
+      screen.getByLabelText('Private Sub-Event (requires explicit access assignment)')
+    ).toBeChecked();
+
+    const results = await axe(baseElement);
+    expect(results).toHaveNoViolations();
+  });
+
   it('passes automated jest-axe accessibility checks in edit mode with existing events list', async () => {
     const { baseElement } = render(
       <ToastProvider>

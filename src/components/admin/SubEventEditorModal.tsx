@@ -192,6 +192,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         <Label>Description</Label>
         <Textarea
           rows={2}
+          style={{ minHeight: 'auto' }}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="e.g. Invitation-only dinner for wedding party"
