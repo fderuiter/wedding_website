@@ -121,13 +121,19 @@ A variety of verification scripts in [package.json](../package.json) support com
   - `npm run check:env-docs`: Validates environment variable documentation alignment.
   - `npm run lint:migrations`: Verifies migration compatibility.
 
+- **Storybook Static Showcase Build:**
+  ```bash
+  npm run build-storybook
+  ```
+  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml). Use `npm run storybook` for interactive component development.
+
 - **Complete Quality Gate:**
   ```bash
   npm run quality
   # or
   npm run check:all
   ```
-  Runs the full suite of static verifications, linter passes, and build checks prior to pushing.
+  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal and Storybook static builds (`npm run docs:build`, `npm run build-storybook`), and unit/integration tests — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
 
 ## Writing New Tests
 

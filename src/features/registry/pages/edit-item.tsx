@@ -7,6 +7,7 @@ import { RegistryItem } from '../types';
 import RegistryItemForm from '../components/RegistryItemForm';
 import { useAdminRegistry, useAdminRegistryItem } from '@/hooks/admin/useAdminRegistry';
 import { AdminEditorContainer } from '@/components/admin/AdminEditorContainer';
+import { AdminViewState } from '@/components/admin/AdminViewState';
 import { useToast } from '@/components/ui/ToastProvider';
 
 /**
@@ -24,6 +25,7 @@ export default function EditRegistryItemPage() {
     data: itemData,
     isLoading: itemLoading,
     error: itemError,
+    refetch,
   } = useAdminRegistryItem(itemId);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -49,28 +51,37 @@ export default function EditRegistryItemPage() {
     }
   };
 
-  if (!itemId) {
-    return <p className="text-red-500">Error: Item ID is missing.</p>;
-  }
-  if (itemLoading) {
-    return <p>Loading item data...</p>;
-  }
-  if (submitError || itemError) {
-    return <p className="text-red-500">Error: {submitError || itemError?.message}</p>;
-  }
-  if (!itemData) {
-    return <p className="text-red-500">Error: Item not found.</p>;
-  }
+  const loadError = !itemId
+    ? 'Item ID is missing.'
+    : itemError || (!itemLoading && !itemData ? 'Item not found.' : null);
 
   return (
-    <AdminEditorContainer title="Edit Registry Item">
-      <RegistryItemForm
-        mode="edit"
-        initialValues={itemData}
-        onSubmit={handleEdit}
-        isSubmitting={isSubmitting}
-        submitLabel="Save Changes"
-      />
-    </AdminEditorContainer>
+    <AdminViewState
+      isLoading={Boolean(itemId) && itemLoading}
+      error={loadError}
+      onRetry={itemId ? refetch : undefined}
+      errorTitle="Unable to Load Registry Item"
+      loadingMessage="Loading item data..."
+    >
+      {itemData && (
+        <AdminEditorContainer title="Edit Registry Item">
+          {submitError && (
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+            >
+              Error: {submitError}
+            </div>
+          )}
+          <RegistryItemForm
+            mode="edit"
+            initialValues={itemData}
+            onSubmit={handleEdit}
+            isSubmitting={isSubmitting}
+            submitLabel="Save Changes"
+          />
+        </AdminEditorContainer>
+      )}
+    </AdminViewState>
   );
 }
