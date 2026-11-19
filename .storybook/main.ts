@@ -9,7 +9,11 @@ const config: StorybookConfig = {
   ],
   framework: {
     name: '@storybook/react-webpack5',
-    options: {},
+    options: {
+      builder: {
+        fsCache: true,
+      },
+    },
   },
   staticDirs: ['../public'],
   webpackFinal: async (webpackConfig) => {

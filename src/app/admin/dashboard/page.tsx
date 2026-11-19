@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
+import { OnboardingChecklist } from '@/components/admin/OnboardingChecklist';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { formatCurrency, formatDate } from '@/utils/intl';
 
@@ -87,6 +88,8 @@ export default function AdminDashboardPage() {
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-extrabold text-primary tracking-tight drop-shadow-lg">Admin Dashboard</h1>
         </div>
+
+        <OnboardingChecklist refreshTrigger={Array.isArray(items) ? items.length : 0} />
         
         {/* Responsive Table for Desktop, Cards for Mobile */}
         <div className="hidden md:block">

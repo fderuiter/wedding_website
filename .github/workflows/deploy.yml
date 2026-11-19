@@ -18,6 +18,10 @@ on:
           - all
           - staging
           - production
+      image_digest:
+        description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
+        required: false
+        type: string
       previous_tag:
         description: 'Previous validated container image tag to restore on failure'
         required: false
@@ -34,6 +38,10 @@ on:
         description: 'Target Deployment Environment (all, staging, production)'
         required: false
         default: 'all'
+        type: string
+      image_digest:
+        description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
+        required: false
         type: string
       previous_tag:
         description: 'Previous validated container image tag to restore on failure'
@@ -89,6 +97,7 @@ jobs:
 
   publish-artifact:
     name: Publish Release Artifact
+    if: github.event_name == 'push' || inputs.image_digest == ''
     permissions:
       contents: read
       packages: write
@@ -104,7 +113,11 @@ jobs:
   staging-database-migration:
     name: Staging Database Migration
     needs: [publish-artifact, schema-compatibility]
-    if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+    if: |
+      !cancelled() &&
+      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+      (needs.schema-compatibility.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: 'staging'
@@ -112,19 +125,31 @@ jobs:
 
   staging-deploy-provider:
     name: Staging Provider Deployment
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [publish-artifact, staging-database-migration]
-    if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+    if: |
+      !cancelled() &&
+      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+      (needs.staging-database-migration.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'staging'
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+      image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
+      image_tag: ${{ needs.publish-artifact.outputs.image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
 
   staging-verify-deployment:
     name: Staging Post-Deployment Health Verification
     needs: [publish-artifact, staging-deploy-provider]
-    if: inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push'
+    if: |
+      !cancelled() &&
+      (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '' || github.event_name == 'push') &&
+      (needs.staging-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
     environment: staging
     outputs:
@@ -243,7 +268,7 @@ jobs:
       always() &&
       (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
       (needs.schema-compatibility.result == 'success') &&
-      (needs.publish-artifact.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/db-migrate.yml
     with:
@@ -252,23 +277,31 @@ jobs:
 
   production-deploy-provider:
     name: Production Provider Deployment
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
     needs: [publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
       always() &&
       (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '' || github.event_name == 'push') &&
-      (needs.publish-artifact.result == 'success') &&
+      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
       (needs.production-database-migration.result == 'success') &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'production'
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag || github.sha }}
+      image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
+      image_tag: ${{ needs.publish-artifact.outputs.image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
     secrets: inherit
 
   production-verify-deployment:
     name: Production Post-Deployment Health Verification
     needs: [publish-artifact, production-deploy-provider]
+    if: |
+      !cancelled() &&
+      (needs.production-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
     environment: production
     outputs:
