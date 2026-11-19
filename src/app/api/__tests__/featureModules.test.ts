@@ -1,6 +1,8 @@
 import { GET as weatherGET } from '@/app/api/weather/route';
 import { GET as mediaGET } from '@/app/api/media/route';
+import { DELETE as mediaItemDELETE } from '@/app/api/media/[id]/route';
 import { registryGetItemsGET as registryGET, registryContributePOST as contributePOST } from '@/features/registry';
+import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
 import { NextRequest } from 'next/server';
 
@@ -35,8 +37,28 @@ describe('API Route Behavior for Disabled Feature Modules', () => {
         modules: { gallery: false },
       } as any);
 
-      const req = new NextRequest('http://localhost:3000/api/media');
+      const adminToken = await signAdminToken({ isAdmin: true, iat: Date.now() });
+      const req = new NextRequest('http://localhost:3000/api/media', {
+        headers: { cookie: `${ADMIN_COOKIE}=${adminToken}` },
+      });
       const res = await mediaGET(req);
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json.error).toContain("Feature 'gallery' is disabled");
+    });
+
+    it('returns 404 on child /api/media/[id] routes when gallery feature module is disabled', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        id: 'global',
+        modules: { gallery: false },
+      } as any);
+
+      const adminToken = await signAdminToken({ isAdmin: true, iat: Date.now() });
+      const req = new NextRequest('http://localhost:3000/api/media/m1', {
+        method: 'DELETE',
+        headers: { cookie: `${ADMIN_COOKIE}=${adminToken}` },
+      });
+      const res = await mediaItemDELETE(req, { params: Promise.resolve({ id: 'm1' }) });
       expect(res.status).toBe(404);
       const json = await res.json();
       expect(json.error).toContain("Feature 'gallery' is disabled");
