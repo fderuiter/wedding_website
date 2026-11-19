@@ -183,4 +183,22 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
     const heading = screen.getByText('Mailing Address Form');
     expect(heading).toHaveClass('text-heading');
   });
+
+  test('renders inline Need Help? trigger that opens contextual help dialog and restores focus on Escape', async () => {
+    render(<GuestAddressCollectPage />);
+
+    const helpTrigger = screen.getByRole('button', { name: /Need Help\?/i });
+    helpTrigger.focus();
+    fireEvent.click(helpTrigger);
+
+    const dialog = screen.getByRole('dialog', { name: /Guest Help & Support/i });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByText(/Physical envelopes & paper mailers/i)).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.activeElement).toBe(helpTrigger);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
 });

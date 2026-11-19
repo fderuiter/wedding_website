@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import Navbar from '../Navbar';
 import React from 'react';
 
@@ -225,6 +225,32 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     // Both desktop and mobile navigation links matching active section have aria-current="page"
     accommodationsMobileLinks.forEach((link) => {
       expect(link).toHaveAttribute('aria-current', 'page');
+    });
+  });
+
+  it('renders persistent Help button in navigation bar, opens contextual dietary help on schedule view, and restores focus on Escape', async () => {
+    render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={{ ...mockConfig, contactEmail: 'hosts@example.com' }}
+      />
+    );
+
+    const helpButton = screen.getByRole('button', { name: /^Help$/i });
+    helpButton.focus();
+    fireEvent.click(helpButton);
+
+    const dialog = screen.getByRole('dialog', { name: /Guest Help & Support/i });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByText(/Event RSVPs & Severe Allergy Notes/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /hosts@example\.com/i })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.activeElement).toBe(helpButton);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
 });

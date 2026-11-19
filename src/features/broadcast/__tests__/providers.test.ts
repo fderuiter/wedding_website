@@ -54,4 +54,44 @@ describe('MultiChannelMessagingProvider', () => {
     expect(res.success).toBe(false);
     expect(res.error).toContain('Twilio Account SID');
   });
+
+  it('keeps stored secrets in testConnection when password inputs are blank or whitespace', async () => {
+    const resendProvider = new MultiChannelMessagingProvider({
+      emailProvider: 'resend',
+      resendApiKey: 're_stored_key',
+    });
+    expect(await resendProvider.testConnection({ type: 'email', provider: 'resend', resendApiKey: '' })).toEqual({
+      success: true,
+    });
+    expect(await resendProvider.testConnection({ type: 'email', provider: 'resend', resendApiKey: '   ' })).toEqual({
+      success: true,
+    });
+
+    const sendgridProvider = new MultiChannelMessagingProvider({
+      emailProvider: 'sendgrid',
+      sendgridApiKey: 'SG.stored_key',
+    });
+    expect(await sendgridProvider.testConnection({ type: 'email', provider: 'sendgrid', sendgridApiKey: '' })).toEqual({
+      success: true,
+    });
+
+    const smtpProvider = new MultiChannelMessagingProvider({
+      emailProvider: 'smtp',
+      smtpHost: 'smtp.example.com',
+      smtpUser: 'mailer@example.com',
+      smtpPass: 'stored-smtp-pass',
+    });
+    expect(await smtpProvider.testConnection({ type: 'email', provider: 'smtp', smtpPass: '' })).toEqual({
+      success: true,
+    });
+
+    const twilioProvider = new MultiChannelMessagingProvider({
+      smsProvider: 'twilio',
+      twilioAccountSid: 'AC12345',
+      twilioAuthToken: 'stored-twilio-token',
+    });
+    expect(await twilioProvider.testConnection({ type: 'sms', twilioAuthToken: '' })).toEqual({
+      success: true,
+    });
+  });
 });

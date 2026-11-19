@@ -470,4 +470,29 @@ describe('GuestAddressPage (/guest)', () => {
     expect(await screen.findByText('Mailing Address')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Pemberley')).toBeInTheDocument();
   });
+
+  it('opens passcode recovery help modal from inline Need Help? trigger near Invitation Code input', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ success: false, error: 'Unauthorized' }),
+    });
+
+    render(<GuestAddressPage />);
+
+    const helpTrigger = await screen.findByRole('button', { name: /Need Help\?/i });
+    helpTrigger.focus();
+    fireEvent.click(helpTrigger);
+
+    const dialog = screen.getByRole('dialog', { name: /Guest Help & Support/i });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByText(/Physical envelopes & paper mailers/i)).toBeInTheDocument();
+    expect(screen.getByText(/Digital announcements & emails/i)).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.activeElement).toBe(helpTrigger);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
 });

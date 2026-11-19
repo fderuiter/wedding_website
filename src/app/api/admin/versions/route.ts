@@ -15,7 +15,7 @@ function maskEmail(email: string): string {
 }
 
 function sanitizeSnapshotData(data: any, entityType?: string): any {
-  if (!data || typeof data !== 'object') {
+  if (!data || typeof data !== 'object' || data instanceof Date) {
     return data;
   }
 
