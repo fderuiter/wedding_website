@@ -136,7 +136,6 @@ async function run() {
       if (['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
         const decl = decls[0];
         const handlerNode: any = decl;
-        const handlerFile = decl.getSourceFile();
 
         let jsDocNodes = handlerNode.getJsDocs ? handlerNode.getJsDocs() : [];
         if (jsDocNodes.length === 0 && handlerNode.getParent) {

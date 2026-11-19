@@ -7,7 +7,7 @@ const scriptDir = typeof __dirname !== 'undefined'
   : path.dirname(fileURLToPath(import.meta.url));
 
 // 1. Generate Configuration Markdown from Schema
-import { AppConfigSchema } from '../src/features/content/schemas.ts';
+import { AppConfigSchema } from '../src/features/content/schemas';
 
 export function getZodType(schema: any): string {
   if (!schema) return 'unknown';

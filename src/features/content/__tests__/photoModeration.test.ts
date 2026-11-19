@@ -2,7 +2,9 @@ import { ContentService } from '../service';
 import { IContentRepository } from '../types';
 
 describe('Photo Moderation Service & Visibility Rules', () => {
-  let mockRepo: jest.Mocked<IContentRepository>;
+  let mockRepo: jest.Mocked<Omit<Required<IContentRepository>, 'getPendingPhotos'>> & {
+    getPendingPhotos?: jest.Mock;
+  };
   let service: ContentService;
 
   beforeEach(() => {

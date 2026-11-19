@@ -25,7 +25,10 @@ jest.mock('@/lib/config', () => ({
 describe('generateMetadata', () => {
   it('generates expected metadata based on config', async () => {
     const metadata = await generateMetadata();
-    const title = typeof metadata.title === 'object' && metadata.title !== null ? metadata.title.default : metadata.title;
+    const title =
+      typeof metadata.title === 'object' && metadata.title !== null && 'default' in metadata.title
+        ? metadata.title.default
+        : metadata.title;
     expect(title).toBe("TestBride & TestGroom's Wedding");
     expect(metadata.description).toBe(
       'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.'
@@ -58,7 +61,7 @@ describe('generateMetadata', () => {
       description: 'Join TestBride and TestGroom for their wedding celebration at Test Venue in TestCity, TS.',
       images: ['https://testsite.com/api/og'],
     });
-    expect(metadata.metadataBase?.href).toBe('https://testsite.com/');
+    expect((metadata.metadataBase as URL | null | undefined)?.href).toBe('https://testsite.com/');
   });
 
   it('resolves canonical URL using host and proto headers when available', async () => {
@@ -75,7 +78,7 @@ describe('generateMetadata', () => {
 
       const metadata = await generateMetadata();
       expect(metadata.openGraph?.url).toBe('https://canonical.example.com');
-      expect(metadata.metadataBase?.href).toBe('https://canonical.example.com/');
+      expect((metadata.metadataBase as URL | null | undefined)?.href).toBe('https://canonical.example.com/');
     } finally {
       process.env.ALLOWED_HOSTS = originalAllowedHosts;
     }

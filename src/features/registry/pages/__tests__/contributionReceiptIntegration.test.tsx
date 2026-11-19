@@ -8,6 +8,8 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import { checkAdminClient } from '@/core/auth/auth.client';
 import RegistryPage from '../index';
 import { RegistryItem, PaginatedRegistryItems } from '../../types';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({
@@ -75,7 +77,7 @@ const createTestQueryClient = () =>
     },
   });
 
-const cashFundItem: RegistryItem = {
+const cashFundItem: RegistryItem = createMockRegistryItem({
   id: 'fund-honeymoon',
   name: 'Tokyo Honeymoon Fund',
   description: 'Bullet train and ryokan stay',
@@ -89,17 +91,15 @@ const cashFundItem: RegistryItem = {
   purchased: false,
   amountContributed: 150,
   contributors: [],
-  image: {
+  image: createMockMedia({
     id: 'img-fund',
     url: '/images/tokyo.jpg',
     altText: 'Tokyo Honeymoon Fund',
     isDecorative: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-};
+  }),
+});
 
-const physicalGiftItem: RegistryItem = {
+const physicalGiftItem: RegistryItem = createMockRegistryItem({
   id: 'phys-kettle',
   name: 'Pour-Over Electric Kettle',
   description: 'Precision gooseneck kettle',
@@ -114,15 +114,13 @@ const physicalGiftItem: RegistryItem = {
   amountContributed: 0,
   contributors: [],
   vendorUrl: 'https://store.example.com/kettle',
-  image: {
+  image: createMockMedia({
     id: 'img-kettle',
     url: '/images/kettle.jpg',
     altText: 'Pour-Over Electric Kettle',
     isDecorative: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-};
+  }),
+});
 
 function renderWithProviders(queryClient: QueryClient) {
   return render(

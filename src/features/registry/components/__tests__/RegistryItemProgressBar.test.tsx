@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import RegistryItemProgressBar from '../RegistryItemProgressBar';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -6,7 +5,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 jest.mock('@/hooks/useReducedMotion');
 jest.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, transition, className, initial, animate }: any) => (
+    div: ({ children, transition, className }: any) => (
       <div
         className={className}
         data-testid="motion-bar"

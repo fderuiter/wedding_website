@@ -6,7 +6,6 @@ import {
   clearContrastCache,
 } from '../stylesheet';
 import { render } from '@testing-library/react';
-import React from 'react';
 import { ThemeProvider } from '@/components/ThemeProvider';
 
 describe('Isomorphic Theme Stylesheet Generation', () => {

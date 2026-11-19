@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FloorplanCanvas } from '../FloorplanCanvas';
@@ -17,6 +16,8 @@ describe('Guest Indexing and Memoization Hooks', () => {
       y: 100,
       width: 120,
       height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         {
           id: 'g-1',
@@ -43,6 +44,8 @@ describe('Guest Indexing and Memoization Hooks', () => {
       y: 100,
       width: 160,
       height: 120,
+      rotation: 0,
+      isSample: false,
       invitationCodes: [
         {
           id: 'g-3',

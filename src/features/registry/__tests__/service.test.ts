@@ -1,6 +1,7 @@
 import type { RegistryItem } from '../types';
 import { registryService } from '../service';
 import { registryRepository } from '../repository';
+import { createMockCreateRegistryItemInput } from '@/testing/factories/registryFactory';
 
 jest.mock('../repository', () => ({
   registryRepository: {
@@ -64,14 +65,13 @@ describe('registryService', () => {
 
   describe('createItem', () => {
     it('creates a new registry item', async () => {
-      const input = {
+      const input = createMockCreateRegistryItemInput({
         name: 'Item',
         price: 100,
         vendorUrl: '',
         description: '',
         imageUrl: '',
-        amountContributed: 0,
-      } as unknown as Omit<RegistryItem, 'id' | 'contributors'>;
+      });
       const created = { id: '1', ...input, contributors: [] } as unknown as RegistryItem;
       mockRepository.createItem.mockResolvedValue(created);
 
@@ -84,7 +84,7 @@ describe('registryService', () => {
       mockRepository.createItem.mockRejectedValue(error);
 
       await expect(
-        registryService.createItem({} as unknown as Omit<RegistryItem, 'id' | 'contributors'>)
+        registryService.createItem(createMockCreateRegistryItemInput())
       ).rejects.toThrow(error);
     });
   });
@@ -95,7 +95,7 @@ describe('registryService', () => {
       mockRepository.updateItem.mockResolvedValue(updated);
 
       await expect(
-        registryService.updateItem('1', { name: 'New' } as Partial<RegistryItem>)
+        registryService.updateItem('1', { name: 'New' })
       ).resolves.toEqual(updated);
       expect(mockRepository.updateItem).toHaveBeenCalledWith('1', { name: 'New' });
     });

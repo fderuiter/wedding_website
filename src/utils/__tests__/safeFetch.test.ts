@@ -57,10 +57,6 @@ describe('safeFetch', () => {
     const fetchOptions = mockFetch.mock.calls[0][1];
     expect(fetchOptions.dispatcher).toBeInstanceOf(Agent);
 
-    // Verify dispatcher's connect.lookup pins to the pre-resolved IP without additional DNS queries
-    const agentConnect = (fetchOptions.dispatcher as any)[Object.getOwnPropertySymbols(fetchOptions.dispatcher).find(s => s.description === 'options') || '']?.connect
-      || (fetchOptions.dispatcher as any).connect;
-
     // Test the createPinnedDispatcher helper directly to verify connection pinning
     const dispatcher = createPinnedDispatcher('93.184.216.34', 4);
     expect(dispatcher).toBeInstanceOf(Agent);

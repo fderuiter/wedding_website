@@ -370,7 +370,7 @@ describe('POST /api/admin/upload', () => {
     });
 
     it('routes uploads to S3 storage and returns a public URL when configured', async () => {
-      const mockSend = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as any);
+      const mockSend = jest.spyOn(S3Client.prototype, 'send').mockImplementation(async () => ({}));
 
       const req = makeRequest({});
       const res = await POST(req);

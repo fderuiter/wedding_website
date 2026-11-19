@@ -387,7 +387,7 @@ describe('Configuration System Layers & Precedence', () => {
   });
 
   it('fails clearly with descriptive error if invalid config is parsed in production', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
     process.env.SITE_LATITUDE = 'invalid-latitude';
 
     (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
@@ -527,8 +527,11 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
 
     // Request 2: Next page request (simulating fresh HTTP request lifecycle)
     // Clear request scope or fallback store to simulate next request
-    if (typeof globalThis.globalFallbackStore !== 'undefined') {
-      globalThis.globalFallbackStore.clear();
+    const globalWithStore = globalThis as typeof globalThis & {
+      globalFallbackStore?: Map<string, unknown>;
+    };
+    if (typeof globalWithStore.globalFallbackStore !== 'undefined') {
+      globalWithStore.globalFallbackStore.clear();
     }
 
     const req2Config = await getAppConfig('global');

@@ -1,5 +1,10 @@
+import crypto from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { generateAdminCookieValue, seedAdminAndGuestAuthCookies } from './helpers/auth';
+import {
+  generateAdminCookieValue,
+  generateGuestCookieValue,
+  seedAdminAndGuestAuthCookies,
+} from './helpers/auth';
 
 test.describe('Sample Data Generator & Admin Workflow', () => {
   test.beforeEach(async ({ request }) => {

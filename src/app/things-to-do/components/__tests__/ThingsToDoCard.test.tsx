@@ -14,6 +14,7 @@ const mockAttraction: AttractionDTO = {
   latitude: 0.0,
   longitude: -92.4679,
   isVisible: true,
+  isSample: false,
   createdAt: new Date(),
   updatedAt: new Date()
 };

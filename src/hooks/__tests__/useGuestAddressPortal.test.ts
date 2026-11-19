@@ -290,20 +290,22 @@ describe('useGuestAddressPortal hook', () => {
   });
 
   it('cancels in-flight validation when new validation is triggered via AbortController', async () => {
-    let mountSignal: AbortSignal | null = null;
-    let manualSignal: AbortSignal | null = null;
+    const signals: { mount: AbortSignal | null; manual: AbortSignal | null } = {
+      mount: null,
+      manual: null,
+    };
 
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       const signal = (init?.signal || input?.signal) as AbortSignal;
 
       if (url.includes('validate-code?code=SLOWMOUNT')) {
-        mountSignal = signal;
+        signals.mount = signal;
         // Never resolve slowly to test cancellation
         return new Promise(() => {});
       }
       if (url.includes('validate-code?code=FASTMANUAL')) {
-        manualSignal = signal;
+        signals.manual = signal;
         return {
           ok: true,
           status: 200,
@@ -335,10 +337,10 @@ describe('useGuestAddressPortal hook', () => {
     const { result } = renderHook(() => useGuestAddressPortal());
 
     await waitFor(() => {
-      expect(mountSignal).not.toBeNull();
+      expect(signals.mount).not.toBeNull();
     });
 
-    expect(mountSignal?.aborted).toBe(false);
+    expect(signals.mount?.aborted).toBe(false);
 
     // Manually trigger validateCode with FASTMANUAL
     act(() => {
@@ -350,8 +352,8 @@ describe('useGuestAddressPortal hook', () => {
     });
 
     // Mount signal should have been aborted cleanly!
-    expect(mountSignal?.aborted).toBe(true);
-    expect(manualSignal?.aborted).toBe(false);
+    expect(signals.mount?.aborted).toBe(true);
+    expect(signals.manual?.aborted).toBe(false);
 
     await waitFor(() => {
       expect(result.current.state.guestName).toBe('Fast Guest');
@@ -360,24 +362,24 @@ describe('useGuestAddressPortal hook', () => {
   });
 
   it('aborts in-flight validation when unmounted', async () => {
-    let capturedSignal: AbortSignal | null = null;
+    const signalRef: { current: AbortSignal | null } = { current: null };
 
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
-      capturedSignal = (init?.signal || input?.signal) as AbortSignal;
+      signalRef.current = (init?.signal || input?.signal) as AbortSignal;
       return new Promise(() => {});
     });
 
     const { unmount } = renderHook(() => useGuestAddressPortal());
 
     await waitFor(() => {
-      expect(capturedSignal).not.toBeNull();
+      expect(signalRef.current).not.toBeNull();
     });
 
-    expect(capturedSignal?.aborted).toBe(false);
+    expect(signalRef.current?.aborted).toBe(false);
 
     unmount();
 
-    expect(capturedSignal?.aborted).toBe(true);
+    expect(signalRef.current?.aborted).toBe(true);
   });
 
   it('preserves address inputs and authenticated status on network timeout / 5xx error during save', async () => {

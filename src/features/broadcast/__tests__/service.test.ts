@@ -278,7 +278,7 @@ describe('BroadcastService', () => {
         });
 
         const start = Date.now();
-        const result = await BroadcastService.sendBroadcast({
+        await BroadcastService.sendBroadcast({
           channel: 'EMAIL',
           subject: 'Big announcement',
           body: 'Hello everyone!',

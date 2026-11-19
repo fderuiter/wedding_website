@@ -521,6 +521,10 @@ function isNameToken(tok: CodeToken | undefined): boolean {
   return tok !== undefined && (tok.type === 'word' || tok.type === 'ident');
 }
 
+function isSymbol(tok: CodeToken | undefined, expectedValue: string): boolean {
+  return tok !== undefined && tok.type === 'symbol' && tok.value === expectedValue;
+}
+
 function findMatchingKeywordIndex(
   tokens: CodeToken[],
   startIndex: number,
@@ -561,15 +565,11 @@ function stripPlpgsqlHeaders(tokens: CodeToken[]): CodeToken[] {
   while (idx < tokens.length) {
     // Optional <<label>>
     if (
-      tokens[idx]?.type === 'symbol' &&
-      tokens[idx].value === '<' &&
-      tokens[idx + 1]?.type === 'symbol' &&
-      tokens[idx + 1].value === '<' &&
+      isSymbol(tokens[idx], '<') &&
+      isSymbol(tokens[idx + 1], '<') &&
       isNameToken(tokens[idx + 2]) &&
-      tokens[idx + 3]?.type === 'symbol' &&
-      tokens[idx + 3].value === '>' &&
-      tokens[idx + 4]?.type === 'symbol' &&
-      tokens[idx + 4].value === '>'
+      isSymbol(tokens[idx + 3], '>') &&
+      isSymbol(tokens[idx + 4], '>')
     ) {
       idx += 5;
       continue;
@@ -848,16 +848,12 @@ function parseAlterTableClausesIndex(tokens: CodeToken[]): number {
   idx++;
 
   // Handle schema-qualified table names (e.g. public."User" or "public"."User")
-  while (
-    tokens[idx]?.type === 'symbol' &&
-    tokens[idx].value === '.' &&
-    isNameToken(tokens[idx + 1])
-  ) {
+  while (isSymbol(tokens[idx], '.') && isNameToken(tokens[idx + 1])) {
     idx += 2;
   }
 
   // Optional inheritance `*`
-  if (tokens[idx]?.type === 'symbol' && tokens[idx].value === '*') {
+  if (isSymbol(tokens[idx], '*')) {
     idx++;
   }
 

@@ -142,7 +142,7 @@ describe('Scheduled Broadcast Dispatch Suite', () => {
         failedCount: 0,
       });
 
-      const message = await BroadcastService.sendBroadcast({
+      await BroadcastService.sendBroadcast({
         channel: 'EMAIL',
         subject: 'Immediate Announcement',
         body: 'Hello {{guestName}}',

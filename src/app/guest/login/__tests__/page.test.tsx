@@ -250,15 +250,17 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
   });
 
   it('shows plain-language error alert and stays on /guest/login when code is unrecognized', async () => {
-    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: async () => ({
-        success: false,
-        error: 'Incorrect passcode or invitation code. Need help? Open the help drawer below for assistance.',
-        helpPrompt: 'Need help finding your code? Open the help drawer below for instructions on how to reach the hosts.',
-      }),
-    } as unknown as Response);
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          success: false,
+          error: 'Incorrect passcode or invitation code. Need help? Open the help drawer below for assistance.',
+          helpPrompt: 'Need help finding your code? Open the help drawer below for instructions on how to reach the hosts.',
+        }),
+      } as unknown as Response);
     globalWithFetch.fetch = fetchMock;
 
     const { container } = render(<GuestLoginPage />);
@@ -280,11 +282,13 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
 
   it('redirects to callbackUrl on successful sign-in with shared passcode or personal invitation code', async () => {
     mockGetParam.mockReturnValue('/rsvp');
-    const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, sessionType: 'invitation', guestName: 'Jordan Lee' }),
-    } as unknown as Response);
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, sessionType: 'invitation', guestName: 'Jordan Lee' }),
+      } as unknown as Response);
     globalWithFetch.fetch = fetchMock;
 
     render(<GuestLoginPage />);

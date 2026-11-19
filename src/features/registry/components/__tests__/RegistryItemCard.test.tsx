@@ -6,6 +6,8 @@ import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as
 import { RegistryItem, GuestSessionProvider } from '@/features/registry';
 import { apiClient } from '@/lib/apiClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockContributor, createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 jest.mock('@/lib/apiClient', () => {
   const actual = jest.requireActual('@/lib/apiClient');
@@ -21,12 +23,12 @@ jest.mock('@/lib/apiClient', () => {
 });
 
 // Mock item data
-const mockSingleItem: RegistryItem = {
+const mockSingleItem: RegistryItem = createMockRegistryItem({
   id: 'item-1',
   name: 'Single Item',
   description: 'A nice single item.',
   price: 100,
-  image: { id: 'm1', url: '/images/valid.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() },
+  image: createMockMedia({ id: 'm1', url: '/images/valid.jpg', altText: null, isDecorative: true }),
   vendorUrl: 'https://example.com',
   quantity: 1,
   category: 'Home',
@@ -34,7 +36,7 @@ const mockSingleItem: RegistryItem = {
   purchased: false,
   amountContributed: 0,
   contributors: [],
-};
+});
 
 const mockGroupItem: RegistryItem = {
   ...mockSingleItem,
@@ -59,8 +61,8 @@ const mockFundedGroupItem: RegistryItem = {
   purchased: true, // Mark as purchased when fully funded
   amountContributed: 100,
   contributors: [
-    { name: 'Contributor 1', amount: 50, date: '2023-11-01' }, 
-    { name: 'Contributor 2', amount: 50, date: '2023-11-02' }
+    createMockContributor({ name: 'Contributor 1', amount: 50, date: '2023-11-01' }),
+    createMockContributor({ name: 'Contributor 2', amount: 50, date: '2023-11-02' }),
   ],
 };
 
@@ -428,7 +430,7 @@ describe('RegistryItemCard Component', () => {
   });
 
   it('displays placeholder image if item image fails to load', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={{...mockSingleItem, image: { id: 'm2', url: '/invalid-path.jpg', altText: null, isDecorative: true, createdAt: new Date(), updatedAt: new Date() }}} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={{ ...mockSingleItem, image: createMockMedia({ id: 'm2', url: '/invalid-path.jpg', altText: null, isDecorative: true }) }} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
     const img = screen.getByRole('presentation');
     // Simulate the error event
     fireEvent.error(img);

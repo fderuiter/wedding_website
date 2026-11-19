@@ -36,15 +36,17 @@ jest.mock('framer-motion', () => {
     __esModule: true,
     motion: new Proxy({}, {
       get: (_target, tag) => {
-        return React.forwardRef(({ children, ...props }, ref) => {
-          const filteredProps = Object.keys(props).reduce((acc, key) => {
-            if (!framerMotionProps.includes(key)) {
-              acc[key] = props[key];
-            }
-            return acc;
-          }, {} as Record<string, unknown>);
-          return React.createElement(tag as string, { ref, ...filteredProps }, children);
-        });
+        return React.forwardRef(
+          ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }, ref: React.Ref<unknown>) => {
+            const filteredProps = Object.keys(props).reduce((acc, key) => {
+              if (!framerMotionProps.includes(key)) {
+                acc[key] = props[key];
+              }
+              return acc;
+            }, {} as Record<string, unknown>);
+            return React.createElement(tag as string, { ref, ...filteredProps }, children);
+          }
+        );
       },
     }),
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,

@@ -1,4 +1,3 @@
-import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { THEME_PRESETS, THEME_PRESET_KEYS, getPresetTokens } from '../presets';

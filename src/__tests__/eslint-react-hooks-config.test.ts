@@ -7,7 +7,7 @@ if (typeof global.structuredClone === 'undefined') {
 
 import fs from 'fs';
 import path from 'path';
-import { Linter } from 'eslint';
+import { Linter, type Rule } from 'eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 const REACT_19_HOOK_RULES = [
@@ -38,7 +38,7 @@ describe('eslint-plugin-react-hooks configuration and rule enforcement', () => {
   });
 
   it('preserves authentic implementations for all five React 19 react-hooks rules', () => {
-    const rulesRecord = reactHooks.rules as Record<string, Linter.RuleModule>;
+    const rulesRecord = reactHooks.rules as Record<string, Rule.RuleModule>;
 
     for (const ruleName of REACT_19_HOOK_RULES) {
       const rule = rulesRecord[ruleName];

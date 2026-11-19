@@ -1,6 +1,7 @@
 import { registryRepository } from '../repository';
 import { prisma } from '@/lib/prisma';
 import { RegistryItem } from '../types';
+import { createMockCreateRegistryItemInput } from '@/testing/factories/registryFactory';
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -229,14 +230,14 @@ describe('RegistryRepository', () => {
 
   describe('createItem', () => {
     it('should create a cash fund item with payment metadata', async () => {
-      const fundData = {
-        itemType: 'CASH_FUND' as const,
+      const fundData = createMockCreateRegistryItemInput({
+        itemType: 'CASH_FUND',
         name: 'Honeymoon Fund',
         price: 1000,
         category: 'Cash Fund',
         paymentHandleType: 'Venmo',
         paymentHandle: '@honeymoon',
-      };
+      });
       (prisma.media.create as jest.Mock).mockResolvedValue({ id: 'media3' });
       (prisma.registryItem.create as jest.Mock).mockResolvedValue({
         ...fundData,

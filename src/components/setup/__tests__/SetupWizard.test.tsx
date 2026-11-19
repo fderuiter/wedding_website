@@ -190,7 +190,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
   test('backend save error in Step 2 shifts focus to site URL input', async () => {
     let callCount = 0;
-    global.fetch = jest.fn((url: string | URL | Request) => {
+    global.fetch = jest.fn((_url: string | URL | Request) => {
       callCount++;
       if (callCount === 1) {
         // First call: login succeeds
@@ -241,7 +241,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
   test('submits theme preset and layout tokens during Step 2 setup save', async () => {
     let savedPayload: any = null;
     let callCount = 0;
-    global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+    global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
       callCount++;
       if (callCount === 1) {
         return Promise.resolve({
@@ -698,7 +698,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
   test('allows completing Step 2 with empty or whitespace venue fields using TBD fallback', async () => {
     let savedPayload: Record<string, unknown> | null = null;
     let callCount = 0;
-    global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+    global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
       callCount++;
       if (callCount === 1) {
         return Promise.resolve({
@@ -754,11 +754,12 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     });
 
     expect(savedPayload).toBeTruthy();
-    expect(savedPayload.venueName).toBe('TBD');
-    expect(savedPayload.venueCity).toBe('TBD');
-    expect(savedPayload.venueState).toBe('TBD');
-    expect(savedPayload.venueAddress).toBe('TBD');
-    expect(savedPayload.venueZip).toBe('TBD');
+    const payload = savedPayload as unknown as Record<string, unknown>;
+    expect(payload.venueName).toBe('TBD');
+    expect(payload.venueCity).toBe('TBD');
+    expect(payload.venueState).toBe('TBD');
+    expect(payload.venueAddress).toBe('TBD');
+    expect(payload.venueZip).toBe('TBD');
   });
 
   test('navigates backwards from Step 3 to Step 2 and preserves form values', async () => {

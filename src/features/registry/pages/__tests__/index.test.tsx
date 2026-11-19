@@ -4,6 +4,8 @@ import '@testing-library/jest-dom';
 import RegistryPage from '../index';
 import { useRegistry } from '../../hooks/useRegistry';
 import { RegistryItem } from '../../types';
+import { createMockMedia } from '@/testing/factories/mediaFactory';
+import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 
 // Mock useRegistry hook
 jest.mock('../../hooks/useRegistry', () => ({
@@ -11,7 +13,7 @@ jest.mock('../../hooks/useRegistry', () => ({
 }));
 
 describe('RegistryPage Dialog integration', () => {
-  const mockItem: RegistryItem = {
+  const mockItem: RegistryItem = createMockRegistryItem({
     id: 'item-101',
     name: 'KitchenAid Stand Mixer',
     description: 'Professional 5-quart stand mixer in artisan red.',
@@ -21,15 +23,13 @@ describe('RegistryPage Dialog integration', () => {
     purchased: false,
     amountContributed: 0,
     contributors: [],
-    image: {
+    image: createMockMedia({
       id: 'img-1',
       url: '/images/stand-mixer.jpg',
       altText: 'KitchenAid Stand Mixer',
       isDecorative: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  };
+    }),
+  });
 
   const mockHandleCloseModal = jest.fn();
   const mockHandleContribute = jest.fn();
@@ -218,25 +218,25 @@ describe('RegistryPage Dialog integration', () => {
       };
     }) as unknown as typeof IntersectionObserver;
 
-    const thirtyItems: RegistryItem[] = Array.from({ length: 30 }, (_, idx) => ({
-      id: `item-${idx + 1}`,
-      name: `Gift Item ${idx + 1}`,
-      description: `Description ${idx + 1}`,
-      price: (idx + 1) * 10,
-      category: 'Home',
-      isGroupGift: false,
-      purchased: false,
-      amountContributed: 0,
-      contributors: [],
-      image: {
-        id: `img-${idx + 1}`,
-        url: '/images/stand-mixer.jpg',
-        altText: `Gift Item ${idx + 1}`,
-        isDecorative: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    }));
+    const thirtyItems: RegistryItem[] = Array.from({ length: 30 }, (_, idx) =>
+      createMockRegistryItem({
+        id: `item-${idx + 1}`,
+        name: `Gift Item ${idx + 1}`,
+        description: `Description ${idx + 1}`,
+        price: (idx + 1) * 10,
+        category: 'Home',
+        isGroupGift: false,
+        purchased: false,
+        amountContributed: 0,
+        contributors: [],
+        image: createMockMedia({
+          id: `img-${idx + 1}`,
+          url: '/images/stand-mixer.jpg',
+          altText: `Gift Item ${idx + 1}`,
+          isDecorative: false,
+        }),
+      })
+    );
 
     function StatefulRegistryHarness() {
       const [visibleCount, setVisibleCount] = React.useState(12);
