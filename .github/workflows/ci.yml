@@ -38,6 +38,9 @@ jobs:
       - name: Verify Environment Variables Documentation
         run: npm run check:env-docs
 
+      - name: Verify Deployment Runbooks
+        run: npm run check:runbooks
+
       - name: Check Personal/Template Identifier Isolation
         run: npm run check:identifiers
 

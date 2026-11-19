@@ -26,10 +26,13 @@ describe('check-quality', () => {
   });
 
   it('orders Build Static Storybook Showcase immediately after docs:build and before npm test', () => {
+    const runbooksIdx = steps.findIndex((s) => s.command === 'npx tsx scripts/verify-deployment-runbooks.ts');
     const docsIdx = steps.findIndex((s) => s.command === 'npm run docs:build');
     const storybookIdx = steps.findIndex((s) => s.command === 'npm run build-storybook');
     const testIdx = steps.findIndex((s) => s.command === 'npm test');
 
+    expect(runbooksIdx).toBeGreaterThanOrEqual(0);
+    expect(runbooksIdx).toBeLessThan(docsIdx);
     expect(docsIdx).toBeGreaterThanOrEqual(0);
     expect(storybookIdx).toBe(docsIdx + 1);
     expect(testIdx).toBe(storybookIdx + 1);

@@ -39,6 +39,7 @@ export function cleanupStorybookStaticDir(cwd: string = process.cwd()): void {
 
 export const steps: Step[] = [
   { name: 'Verify Environment Documentation', command: 'npx tsx scripts/verify-env-docs.ts' },
+  { name: 'Verify Deployment Runbooks', command: 'npx tsx scripts/verify-deployment-runbooks.ts' },
   { name: 'Check Personal/Template Identifier Isolation', command: 'npx tsx scripts/check-personal-identifiers.ts' },
   { name: 'Check Third-Party Action Pin Commit SHAs', command: 'npm run check:action-pins' },
   { name: 'Check Documentation Relative Links', command: 'npx tsx scripts/check-doc-links.ts' },

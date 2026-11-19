@@ -8,7 +8,8 @@ For the authoritative specification of container, database, environment variable
 
 - **Current Deployment Architecture**: The primary deployment architecture is provider-neutral, utilizing standard containerized builds (`Dockerfile`) running on Node.js / Docker hosts such as Google Cloud Run or AWS.
 - **Disconnected Vercel Connection**: The historical direct Vercel connection is disconnected. Core application code, environment validation, database access, and routing logic do not depend on Vercel-specific runtime environment variables or proprietary APIs.
-- **Optional Vercel Support**: Vercel remains fully supported as an optional deployment target. Couples or developers who wish to deploy on Vercel can import the repository directly into Vercel or use `vercel deploy`, ensuring environment variables (`DATABASE_URL`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`) are provided in Vercel's project settings.
+- **Optional Vercel Support**: Vercel remains fully supported as an optional deployment target. Couples or developers who wish to deploy on Vercel can import the repository directly into Vercel or use `vercel deploy`, ensuring required production environment variables (`DATABASE_URL`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`) are provided in Vercel's project settings.
+- **Static Showcase & Documentation Targets**: For database-free static HTML previews, `npm run build:export` (`scripts/build-export.mjs` with `STATIC_EXPORT=true`) builds a static showcase using `STATIC_MOCK_CONFIG`. Component showcases and architectural documentation portals are built via `npm run build-storybook` (`storybook-build` in `ci.yml` and `storybook.yml`) and `npm run docs:build` (`deploy-docs` in `ci.yml` publishing to GitHub Pages).
 
 ---
 
@@ -42,13 +43,13 @@ To distinguish officially verified deployment targets from community-maintained 
 ## Deployment Recipes Summary
 
 ### 1. [Generic Docker / VPS Deployment](./docs/deployment/docker-vps.md)
-The canonical portable baseline using the multi-platform `Dockerfile` and `docker-compose.yml`. Includes automated `docker-entrypoint.sh` migration execution, Nginx/Caddy reverse proxy configurations with Let's Encrypt TLS, container health probes via `/api/health`, and zero-downtime container updates.
+The canonical portable baseline using the multi-platform `Dockerfile` and `docker-compose.yml`. Orchestrates `db`, a dedicated one-shot `migration` service (`npx prisma migrate deploy` before `app` starts with `RUN_MIGRATIONS="false"`, plus optional `RUN_MIGRATIONS=true` in `docker-entrypoint.sh` for standalone containers), `E2E_TEST=false` production onboarding configuration, built-in Compose healthchecks via `/api/health`, Nginx/Caddy reverse proxy configurations with Let's Encrypt TLS, and networked port-mapped rollbacks.
 
 ### 2. [Google Cloud Run Deployment](./docs/deployment/gcp-cloud-run.md)
-Managed serverless container target using Google Artifact Registry, GCP Secret Manager, and Cloud SQL PostgreSQL. Automated via `.github/workflows/deploy.yml` with pre-deployment schema migrations, S3/R2 asset storage, and instant revision traffic splitting for rollbacks.
+Managed serverless container target deploying attested `ghcr.io` immutable container digests to Cloud Run service `wedding-website` with GCP Secret Manager and Cloud SQL PostgreSQL. Automated via `.github/workflows/deploy.yml` with pre-deployment schema migrations, S3/R2 asset storage, and instant revision traffic splitting for rollbacks.
 
 ### 3. [Vercel Deployment](./docs/deployment/vercel.md)
-Optional serverless Node.js deployment target using serverless PostgreSQL connection pooling (Neon, Supabase, RDS Proxy). Supports Vercel automatic custom domain TLS, pre-deploy build migrations (`npx prisma migrate deploy && next build`), and instant deployment rollbacks.
+Optional serverless Node.js deployment target using serverless PostgreSQL connection pooling (Neon, Supabase, RDS Proxy). Supports Vercel automatic custom domain TLS, pre-deploy build migrations (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy && next build`), and instant deployment rollbacks.
 
 ### 4. [Railway & Render PaaS Deployment](./docs/deployment/railway-render.md)
 Low-friction PaaS deployment path with managed PostgreSQL add-ons, pre-deploy release commands, persistent volume mounts or S3 asset storage, and automatic domain SSL provisioning.
@@ -60,8 +61,8 @@ Low-friction PaaS deployment path with managed PostgreSQL add-ons, pre-deploy re
 The application requires the following environment variables. These match the runtime validation schema in `src/env.ts` and the `.env.example` template:
 
 - `NODE_ENV`: Defines the environment the application is running in (`development`, `test`, `production`).
-- `DATABASE_URL`: Connection string to your production PostgreSQL database. *Required.*
-- `POSTGRES_URL_NON_POOLING`: Connection string for the shadow database used by Prisma for migrations, without a connection pooler. *Optional.*
+- `DATABASE_URL`: Primary connection string to your PostgreSQL database (`datasource.url` in `prisma.config.ts`, used by both the Next.js runtime and `npx prisma migrate deploy`). *Required.*
+- `POSTGRES_URL_NON_POOLING`: Connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` for local `prisma migrate dev` shadow database creation without a connection pooler; can also store a direct PostgreSQL URL passed via an explicit `DATABASE_URL` override when bypassing PgBouncer during `npx prisma migrate deploy`. *Optional.*
 - `ADMIN_PASSWORD`: Cryptographic hash of the administrative password. *Required.*
   - **Format**: Must be an scrypt hash in the format `scrypt:[saltBase64]:[keyBase64]`.
   - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
@@ -93,11 +94,11 @@ The automated release architecture decouples continuous delivery across isolated
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ 1. Continuous Integration (ci.yml)                         │
-│    • Install deps, lint, typecheck                        │
-│    • Unit & integration tests                             │
-│    • Production build & Playwright E2E                    │
-│    • Container build & container smoke test (No Secrets)  │
+│ 1. Continuous Integration (ci.yml & storybook.yml)        │
+│    • Static gates, lint, typecheck, VitePress docs:build  │
+│    • Unit & integration tests, Storybook (storybook-build)│
+│    • Production build, container tar & Playwright E2E     │
+│    • GitHub Pages portal deployment (deploy-docs on main) │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
@@ -111,24 +112,24 @@ The automated release architecture decouples continuous delivery across isolated
                               ▼
 ┌───────────────────────────────────────────────────────────┐
 │ 3. Automated Staging Delivery (environment: staging)      │
+│    • Static SQL DDL inventory (schema-compatibility)      │
 │    • Staging Database Migration (db-migrate.yml)          │
 │    • Staging Provider Deployment (deploy-provider.yml)    │
 │    • Staging Health Verification (/api/health probe)      │
-│    • Automated test environment validation                │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
-│ 4. Mandatory Production Review Gate (GitHub Environment)  │
-│    • Pre-flight schema status & SQL DDL summary generated │
-│    • Step summary audit in $GITHUB_STEP_SUMMARY           │
+│ 4. Mandatory Production Review Gate (environment: prod)   │
+│    • Reviewers inspect file-only DDL summary & staging    │
+│    • Pauses db-migrate.yml before accessing prod secrets  │
 │    • Mandatory human reviewer approval required           │
 └─────────────────────────────┬─────────────────────────────┘
                               │
                               ▼
 ┌───────────────────────────────────────────────────────────┐
 │ 5. Production Delivery Pipeline (environment: production) │
-│    • Production Database Migration (db-migrate.yml)       │
+│    • Post-approval live prisma migrate status & deploy    │
 │    • Production Provider Deployment (deploy-provider.yml) │
 │    • Production Health Verification (/api/health probe)   │
 └─────────────────────────────┬─────────────────────────────┘
@@ -173,13 +174,11 @@ To protect production database integrity and application availability, the deplo
      - Specify designated maintainers, release managers, or team leads authorized to approve production releases.
      - Select **Prevent self-review** if team policy mandates dual-control sign-off.
   4. **Deployment Branches**: Restrict deployment to `main` branch or release tags (`v*`).
-  5. **Environment Secrets**:
-     - `DATABASE_URL`: Connection string for the isolated production PostgreSQL instance (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
-     - `SERVICE_URL`: Base URL of the live production web service (e.g., `https://wedding.example.com`).
-     - `ADMIN_PASSWORD`: Production scrypt hash for administrative login.
-     - `GUEST_PASSCODE`: Production guest access passcode.
-     - `GUEST_SESSION_SECRET`: Production secret for HMAC session token signing.
+  5. **Environment Secrets** (workflow-consumed credentials only):
+     - `DATABASE_URL`: Direct (non-pooled) connection string for the isolated production PostgreSQL instance used by `db-migrate.yml` (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
+     - `SERVICE_URL`: Base URL of the live production web service for `/api/health` probes (e.g., `https://wedding.example.com`).
      - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL`).
+     - *Note*: Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are not read by GitHub Actions workflows and must be configured in your target hosting platform's secret store (such as GCP Secret Manager, Vercel Environment Variables, or VPS `.env`).
 
 #### 3. Unguarded Production Rollback Environment (`production-rollback`)
 - **Purpose**: Enables unattended container restoration when `/api/health` fails after a reviewer-approved production rollout, resolving environment-scoped provider credentials without pausing behind `production`'s human reviewer gate.
@@ -200,15 +199,14 @@ To protect production database integrity and application availability, the deplo
    - When a pull request is merged into `main`, `.github/workflows/ci.yml` (`CI`) executes static checks, unit tests, container smoke tests, and Playwright E2E tests first. Once `CI` completes with `success` on the `main` push, GitHub Actions triggers `.github/workflows/deploy.yml` via `workflow_run` for `github.event.workflow_run.head_sha` (manual `workflow_dispatch` and reusable `workflow_call` runs verify a completed successful `CI` run for `github.sha` via a preflight gate).
    - The workflow verifies N-1 schema backwards compatibility, invokes `.github/workflows/publish-artifact.yml` once via `workflow_call` to build and scan the immutable container artifact, signs OIDC build provenance attestations (`actions/attest-build-provenance`), and exports `image_digest` (`sha256:<64-hex>`).
    - `staging-deploy-provider` receives the attested `image_digest`, verifies OIDC provenance via `gh attestation verify` against the `oci://ghcr.io/<owner>/<repo>@sha256:<hex>` URI prior to rollout, captures the currently serving staging image (`previous_image_digest` and `previous_image_tag`) before deploying the digest-pinned container to `staging`, and validates `/api/health`.
-2. **Pre-Flight Schema Status & DDL Review**:
-   - The pipeline generates a detailed **Pre-Flight Schema Migration Status & SQL DDL Summary** in `$GITHUB_STEP_SUMMARY`.
-   - The summary details target environment status, pending migration filenames, altered tables/columns, and complete SQL statements alongside the verified container digest and attestation status.
-3. **Maintainer Review & Sign-Off**:
-   - Maintainers navigate to the active workflow run in GitHub Actions.
-   - Maintainers review the pre-flight schema summary, verify staging health check results, and click **Review deployments**.
-   - Upon selecting the `production` environment and clicking **Approve and deploy**, GitHub Actions unblocks production deployment.
-4. **Production Deployment & Automated Rollback Guard**:
-   - Production database migrations execute via `.github/workflows/db-migrate.yml` with advisory locking and preflight verification.
+2. **Pre-Flight Schema Compatibility & Static DDL Inventory (Pre-Approval)**:
+   - Prior to the `production` gate, `schema-compatibility` in `.github/workflows/deploy.yml` runs `npm run lint:migrations` and invokes `npx tsx scripts/preflight-migration-summary.ts` **without** `DATABASE_URL`, emitting a static file-based SQL DDL inventory from `prisma/migrations/` to `$GITHUB_STEP_SUMMARY`.
+   - Simultaneously, `staging-database-migration` (`db-migrate.yml` against `staging` `DATABASE_URL`) and `staging-verify-deployment` validate live migration execution and `/api/health` in staging.
+3. **Maintainer Review & Sign-Off (`production` Gate)**:
+   - `production-database-migration` invokes `.github/workflows/db-migrate.yml` with `environment: production` declared on the `migrate` job, so GitHub Actions pauses the job **before** exposing production `DATABASE_URL` or querying the live production database.
+   - Maintainers inspect the file-based SQL DDL summary from `schema-compatibility`, the attested `image_digest`, and the live staging migration/health results, then click **Review deployments** > `production` > **Approve and deploy**.
+4. **Post-Approval Live Production DDL Check, Deployment & Automated Rollback Guard**:
+   - Once approved, `.github/workflows/db-migrate.yml` unlocks `production` secrets, verifies `npm run lint:migrations`, queries live production `DATABASE_URL` via `npx prisma migrate status` (`scripts/preflight-migration-summary.ts`) to audit pending/failed migrations and emit the live DDL summary, and runs `npx prisma migrate deploy` with lock and statement timeouts.
    - `production-deploy-provider` promotes the exact `image_digest` attested in `publish-artifact.yml` (or an explicit `image_digest` supplied on manual production-only dispatches), re-verifies OIDC build provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml`, captures the currently serving container image (`previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA) before rollout, and deploys the immutable `@sha256:` URI via `.github/workflows/deploy-provider.yml`.
    - Post-deployment health probes verify `/api/health` with exponential backoff.
    - **Rollback Guarantee**: If the staging or production health probe fails, `.github/workflows/deploy.yml` passes the captured `previous_image_digest`, `previous_image_tag`, `provider`, and unguarded `rollback_environment` to `.github/workflows/rollback.yml` instead of mutable `latest`. `rollback.yml` rejects `latest` and the failing `github.sha`, verifies `npm run lint:migrations`, delegates redeployment (including OIDC provenance verification) to `.github/workflows/deploy-provider.yml` **without requiring a second human approval step**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `status == "ok"`, `database == "connected"`) before reporting `SUCCESS`.
@@ -217,16 +215,18 @@ To protect production database integrity and application availability, the deplo
 
 ## 📄 Workflows Overview
 
-### 1. Continuous Integration (`ci.yml`)
-- **Triggers**: Pull requests, pushes to `main`.
-- **Secrets required**: *None* (runs entirely on isolated local containers).
-- **Actions**:
-  - Type checking (`npm run typecheck`) and linting (`npm run lint`).
-  - Documentation and OpenAPI drift verification.
-  - Unit and integration tests (`npm test`).
-  - Production build (`npm run build`).
-  - Playwright E2E and A11y tests.
-  - Local container build and container Playwright smoke test using `docker compose up --build -d app`.
+### 1. Continuous Integration (`ci.yml`) & Storybook Showcase (`storybook.yml`)
+- **Triggers**:
+  - `ci.yml`: Pull requests, pushes to `main`, and published releases (`release: [published]`).
+  - `storybook.yml` (`Storybook Static Showcase`): Pushes to `main` and manual `workflow_dispatch`.
+- **Secrets required**: *None* (runs entirely on isolated local containers and GitHub OIDC Pages tokens).
+- **Jobs & Actions**:
+  - `verify` (`ci.yml`): Environment & runbook documentation checks (`check:env-docs`, `check:runbooks`), identifier isolation, action SHA pinning, relative link validation, Prisma schema validation, TypeScript type checking (`npm run typecheck`), ESLint (`npm run lint`), Knip (`npm run lint:unused`), migration compatibility (`npm run lint:migrations`), OpenAPI/architecture sync, and VitePress portal compilation (`npm run docs:build`).
+  - `unit-test` (`ci.yml`): Jest unit and integration tests (`npm test`) against `postgres:15-alpine`, uploading coverage and `jest-a11y-violations` artifacts.
+  - `build` (`ci.yml`): Production Next.js standalone build (`npm run build`), standalone execution and portability checks (`npm run test:standalone`, `npm run check:standalone`), production dependency audit (`npm run check:audit`), OCI container & clean database smoke test (`npm run test:container`), and exporting `wedding-website:latest` via `docker save` (`wedding-website-container` tar artifact) alongside `next-build-artifact` (database-free static HTML exports are also supported locally/in custom pipelines via `npm run build:export`).
+  - `storybook-build` (`ci.yml`) & `build` (`storybook.yml`): Compiles the static Storybook component showcase (`npm run build-storybook`) with Webpack/Storybook caching.
+  - `e2e-test` (`ci.yml`): Runs Playwright E2E and WCAG accessibility suites (`npx playwright test` + `scripts/a11y-report.mjs`) against `next-build-artifact`, then loads `wedding-website-image.tar` (`docker load`), starts `db`, `migration`, and `app` via `docker compose up -d app`, seeds the container database, and runs container Playwright smoke tests (`TEST_CONTAINER=true npx playwright test`).
+  - `deploy-docs` (`ci.yml`): On pushes to `main` or published releases, builds `docs-portal/.vitepress/dist` via `npm run docs:build` and publishes the static documentation portal to the `github-pages` environment via `actions/deploy-pages`.
 
 ### 2. Artifact Publication (`publish-artifact.yml`)
 - **Triggers**: Reusable `workflow_call` from `deploy.yml` (after `CI` succeeds on `main`), pushes to `v*` tags, and manual `workflow_dispatch`.
@@ -243,13 +243,13 @@ To protect production database integrity and application availability, the deplo
   - `image_digest`: Attested OCI image digest (`sha256:<64-hex>`) propagated to staging and production deployment jobs.
 
 ### 3. Database Migration (`db-migrate.yml`)
-- **Triggers**: Release pipeline, manual `workflow_dispatch` with target environment (`production`, `staging`, `development`).
-- **Secrets required**: `DATABASE_URL`.
+- **Triggers**: Release pipeline (`workflow_call`), manual `workflow_dispatch` with target environment (`production`, `staging`, `development`).
+- **Secrets required**: `DATABASE_URL` (direct/unpooled connection string).
 - **Actions**:
-  - Declares `environment: ${{ inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules and reviewer sign-off for `production`.
-  - Validates `DATABASE_URL` format and connectivity.
-  - Executes pre-flight migration status audit (`prisma migrate status`) and emits SQL DDL summaries to `$GITHUB_STEP_SUMMARY`.
-  - Executes `prisma migrate deploy` explicitly against target database with connection lock and statement timeouts.
+  - Declares `environment: ${{ inputs.environment || 'production' }}` on the `migrate` job, enforcing GitHub Environment Protection Rules and pausing for human reviewer sign-off **before** exposing `production` secrets.
+  - After environment unlock, runs `npm run lint:migrations` and validates `DATABASE_URL` format.
+  - Queries the live target `DATABASE_URL` via `npx prisma migrate status` (`scripts/preflight-migration-summary.ts`) to emit pending migration SQL DDL summaries and detect failed migrations in `$GITHUB_STEP_SUMMARY`.
+  - Executes `npx prisma migrate deploy` against `DATABASE_URL` with `PGOPTIONS="-c lock_timeout=5000ms -c statement_timeout=30000ms"`.
   - Emits diagnostic error signaling and resolution guidance if migration fails.
 
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
@@ -316,11 +316,11 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
 - **ORM / Client**: Prisma ORM with `@prisma/adapter-pg` driver adapter and `pg` pool.
 
 ### Connection String Expectations
-- **`DATABASE_URL`** (Required): The primary connection string used by the Next.js runtime application to connect to PostgreSQL.
+- **`DATABASE_URL`** (Required — `datasource.url` in `prisma.config.ts`): The primary connection string read by both the Next.js runtime application and `npx prisma migrate deploy`.
   - **Standard URI Format**: `postgresql://[user]:[password]@[host]:[port]/[database]?sslmode=[mode]`
   - **Example (Local PostgreSQL)**: `postgresql://wedding:wedding123@localhost:5432/wedding`
   - **Example (Cloud Host with SSL)**: `postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/wedding?sslmode=require`
-- **`POSTGRES_URL_NON_POOLING`** (Optional / Migration Shadow DB): The direct, unpooled connection string used for shadow database creation or direct schema migrations when a connection pooler is placed in front of `DATABASE_URL`.
+- **`POSTGRES_URL_NON_POOLING`** (Optional — `datasource.shadowDatabaseUrl` in `prisma.config.ts`): Direct, unpooled connection string used by Prisma for shadow database creation during local `prisma migrate dev`. It is **not** read automatically by `prisma migrate deploy`, though operators can store a direct PostgreSQL URL in `POSTGRES_URL_NON_POOLING` and pass it via an explicit `DATABASE_URL` override when running `prisma migrate deploy`.
   - **Example**: `postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding_shadow?sslmode=require`
 
 ### SSL/TLS Configuration Behavior
@@ -336,7 +336,7 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
   - Uses connection pooling managed by `pg.Pool` with `@prisma/adapter-pg` to minimize connection overhead during serverless / containerized scaling.
 - **Prisma Migrations (`npx prisma migrate deploy` / `dev`)**:
   - **Requirement**: Schema migration commands require **advisory locks** and session-level state that transaction-mode connection poolers (like PgBouncer in transaction mode) do not support.
-  - Always point migration runners or `POSTGRES_URL_NON_POOLING` directly to a direct/unpooled PostgreSQL endpoint or session-mode pooler port.
+  - Because `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`, `npx prisma migrate deploy` always reads `DATABASE_URL` and rejects identical `url` and `shadowDatabaseUrl` values (`P3025`). When runtime `DATABASE_URL` points to PgBouncer, pass an explicit `DATABASE_URL` override while unsetting `POSTGRES_URL_NON_POOLING` for the migration subprocess (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`, or a direct `DATABASE_URL` secret in `db-migrate.yml`).
 
 ### Prisma Migration Lifecycle
 1. **Local Development**:
@@ -445,8 +445,8 @@ If a deployment or database migration fails during release execution, follow thi
      ```
    - If a forward schema fix is required, author a compensating migration rather than rolling back:
      ```bash
-     # Generate a compensating migration diff:
-     npx prisma migrate diff --from-schema-datamodel prisma/schema.prisma --to-schema-datasource prisma/schema.prisma --script > fix.sql
+     # Generate a compensating migration diff under Prisma 7 (reads DATABASE_URL via prisma.config.ts):
+     npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script > fix.sql
      ```
 4. **Re-triggering Release**:
    - After addressing the root cause and verifying local checks with `npm run lint:migrations` and `npm run test`, trigger the release pipeline again.
@@ -461,39 +461,16 @@ Containers and orchestrators query `/api/health` (returning HTTP 200 OK and data
 
 ## 🔑 Setup and Secrets
 
-Configure the following secrets in GitHub Repository Settings (`Settings > Secrets and variables > Actions`):
+Configure the following workflow-consumed secrets in GitHub Settings (**Settings > Environments** for `staging`, `production`, and `production-rollback`, or **Settings > Secrets and variables > Actions** for repository-wide registry credentials):
 
 | Secret | Description | Required By |
 |---|---|---|
-| `DATABASE_URL` | Production/staging PostgreSQL connection string | `db-migrate.yml` |
+| `DATABASE_URL` | Direct (non-pooled) production/staging PostgreSQL connection string | `db-migrate.yml` |
 | `SERVICE_URL` | Public base URL of the target web service for `/api/health` probes | `deploy-provider.yml`, `rollback.yml` |
-| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (optional for Cloud Run) | `deploy-provider.yml`, `rollback.yml` |
-| `GCP_PROJECT_ID` | Google Cloud Project ID (optional override for Cloud Run) | `deploy-provider.yml`, `rollback.yml` |
-| `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (optional for custom hosts) | `deploy-provider.yml`, `rollback.yml` |
+| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (required when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
+| `GCP_PROJECT_ID` | Google Cloud Project ID (optional override when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
+| `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (required when `provider: generic-webhook` or `docker-host`) | `deploy-provider.yml`, `rollback.yml` |
 | `DOCKERHUB_USERNAME` | Docker Hub username (optional secondary registry) | `publish-artifact.yml` |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |
 
----
-
-## ⚙️ Environment Variables
-
-The application requires the following environment variables in deployment environments (matching runtime validation in `src/env.ts` and `.env.example`):
-
-- `NODE_ENV`: Application mode (`development`, `test`, `production`).
-- `DATABASE_URL`: Connection string to production PostgreSQL database. *Required.*
-- `POSTGRES_URL_NON_POOLING`: Connection string for shadow database without connection pooler. *Optional.*
-- `ADMIN_PASSWORD`: Scrypt hash of admin password (`scrypt:[saltBase64]:[keyBase64]`). *Required.*
-- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcards. *Required.*
-- `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain routing (default: `false`).
-- `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh` (default: `false`). *Optional.*
-- `TRUST_PROXY`: Set to `true` (or a positive integer hop count) to trust `X-Forwarded-For` / `X-Real-IP` behind a reverse proxy (default: `false`). *Optional.*
-- `GUEST_PASSCODE`: Global passcode required for guest access (unique, non-default; default: `wedding2026` in dev/test only). *Required in production.*
-- `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (min 32 characters, distinct from `GUEST_PASSCODE`; default: `default-guest-session-secret` in dev/test only). *Required in production.*
-- `HISTORY_VERSION_LIMIT`: System limit for history retention (default: `50`).
-- `CRON_SECRET`: Authorization secret for cron worker endpoints. *Optional.*
-- `S3_BUCKET`: Asset storage bucket name. *Optional.*
-- `S3_REGION`: Bucket region. *Optional.*
-- `S3_ACCESS_KEY_ID`: Bucket access key. *Optional.*
-- `S3_SECRET_ACCESS_KEY`: Bucket secret key. *Optional.*
-- `S3_ENDPOINT`: Custom S3/R2 endpoint. *Optional.*
-- `S3_PUBLIC_URL`: CDN or public asset prefix. *Optional.*
+Optional GitHub Actions **Variables** (`Settings > Secrets and variables > Actions > Variables`): `PRODUCTION_ROLLBACK_ENVIRONMENT` (e.g., `production-rollback`) and `STAGING_ROLLBACK_ENVIRONMENT` for unguarded automated rollback secret resolution in `deploy.yml`. Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are configured directly in the target hosting provider rather than GitHub Actions.

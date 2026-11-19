@@ -29,8 +29,8 @@ This document defines the authoritative, provider-neutral runtime contract for t
 - **Engine**: PostgreSQL version **15.0 or higher** (tested with PostgreSQL 15-alpine and Neon serverless Postgres).
 - **Driver / ORM**: Prisma ORM with `@prisma/adapter-pg` or direct TCP connections (`pg` driver).
 - **Connection Strings**:
-  - `DATABASE_URL`: Primary connection string used for runtime operations. Supports connection poolers (e.g., PgBouncer, Neon Connection Pooling, Supabase Pooler) or direct TCP connections.
-  - `POSTGRES_URL_NON_POOLING` *(Optional)*: Direct, non-pooled connection URL used specifically during schema migration runs (`prisma migrate deploy`) when transaction/session connection pooling prevents migration locks or DDL operations.
+  - `DATABASE_URL`: Primary connection string bound to `datasource.url` in `prisma.config.ts`. Used for both Next.js runtime operations (supporting PgBouncer, Neon Connection Pooling, Supabase Pooler, or direct TCP) and `npx prisma migrate deploy`. When `DATABASE_URL` routes through a transaction-mode connection pooler such as PgBouncer, `npx prisma migrate deploy` requires an explicit `DATABASE_URL` override pointing to a direct, non-pooled PostgreSQL endpoint so Prisma can acquire advisory locks.
+  - `POSTGRES_URL_NON_POOLING` *(Optional)*: Direct, non-pooled connection URL bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` for local shadow database creation (`prisma migrate dev`). Operators on pooled serverless databases can also store their direct PostgreSQL URL in `POSTGRES_URL_NON_POOLING` and pass it via an explicit `DATABASE_URL` override (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`) during release migrations.
 - **Provider Neutrality**: No database-vendor specific features or proprietary extensions are required. Standard relational PostgreSQL features (tables, foreign keys, indexes, JSONB) are used.
 
 ---
@@ -42,20 +42,20 @@ All runtime configuration is supplied via environment variables. The runtime val
 ### Mandatory Runtime Variables
 | Variable | Description | Validation / Format Requirements |
 |---|---|---|
-| `DATABASE_URL` | Primary PostgreSQL connection URL | Must be a valid `postgresql://` or `postgres://` connection string. |
+| `DATABASE_URL` | Primary PostgreSQL connection URL (`datasource.url` in `prisma.config.ts`) | Must be a valid `postgresql://` or `postgres://` connection string. |
 | `ADMIN_PASSWORD` | Scrypt hash for admin authentication | Must match format `scrypt:[saltBase64]:[keyBase64]` (generated via `scripts/generate-password-hash.mjs`). Plaintext passwords are rejected. |
 | `ALLOWED_HOSTS` | Whitelisted host domains for request header validation | Comma-separated list of valid domain names or wildcard patterns (e.g. `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
+| `GUEST_PASSCODE` | Global passcode required for guest website access | Required in `production` (must not use the `wedding2026` dev/test fallback). |
+| `GUEST_SESSION_SECRET` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256) | Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not use the `default-guest-session-secret` dev/test fallback. |
 
 ### Optional Infrastructure & Feature Variables
 | Variable | Default Value | Description |
 |---|---|---|
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in container environments. |
-| `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled database connection string for Prisma migrations. |
+| `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
 | `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile site routing. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations during container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or positive integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
-| `GUEST_PASSCODE` | Required in production (unique, non-default); dev default: `wedding2026` | Passcode required for guest website access. |
-| `GUEST_SESSION_SECRET` | Required in production (min 32 chars, distinct); dev default: `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item. |
 | `CRON_SECRET` | *None* | Authorization secret for triggering scheduled background endpoints. |
 
