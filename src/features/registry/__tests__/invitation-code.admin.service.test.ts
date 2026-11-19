@@ -459,6 +459,28 @@ describe('InvitationCodeAdminService', () => {
       expect(result.rows[0].actionOutcome).toBe('update');
       expect(result.rows[0].warnings[0]).toContain('already exists in database for guest "John Doe". Will be updated.');
     });
+
+    it('maps validation and duplicate code errors to specific columns in fieldErrors', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: '1', code: 'TAKEN1', guestName: 'Existing Guest' },
+      ]);
+
+      const records = [
+        { guestName: 'Alice Smith', code: 'TAKEN1', email: 'bad-email' },
+        { guestName: 'Bob Dup 1', code: 'BATCHDUP' },
+        { guestName: 'Bob Dup 2', code: 'BATCHDUP' },
+      ];
+
+      const result = await service.dryRunValidateBatch(records, 'reject');
+
+      expect(result.rows[0].fieldErrors).toEqual({
+        email: ['Invalid email format.'],
+        code: ['Code "TAKEN1" already exists in database (belongs to "Existing Guest").'],
+      });
+      expect(result.rows[1].fieldErrors).toEqual({
+        code: ['Duplicate invitation code "BATCHDUP" within batch.'],
+      });
+    });
   });
 
   describe('batchDelete', () => {

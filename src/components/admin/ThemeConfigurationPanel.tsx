@@ -269,8 +269,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('fontSizeBase', e.target.value, 'length')}
               placeholder="e.g. 1rem, 16px"
             />
-            {localErrors.fontSizeBase && (
-              <FormMessage role="alert">{localErrors.fontSizeBase}</FormMessage>
+            {(localErrors.fontSizeBase || externalErrors.fontSizeBase) && (
+              <FormMessage role="alert">
+                {localErrors.fontSizeBase || externalErrors.fontSizeBase}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -284,8 +286,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('fontSizeLg', e.target.value, 'length')}
               placeholder="e.g. 1.125rem, 18px"
             />
-            {localErrors.fontSizeLg && (
-              <FormMessage role="alert">{localErrors.fontSizeLg}</FormMessage>
+            {(localErrors.fontSizeLg || externalErrors.fontSizeLg) && (
+              <FormMessage role="alert">
+                {localErrors.fontSizeLg || externalErrors.fontSizeLg}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -299,8 +303,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('fontWeightNormal', e.target.value, 'numberOrRatio')}
               placeholder="e.g. 400"
             />
-            {localErrors.fontWeightNormal && (
-              <FormMessage role="alert">{localErrors.fontWeightNormal}</FormMessage>
+            {(localErrors.fontWeightNormal || externalErrors.fontWeightNormal) && (
+              <FormMessage role="alert">
+                {localErrors.fontWeightNormal || externalErrors.fontWeightNormal}
+              </FormMessage>
             )}
           </FormGroup>
         </div>
@@ -329,9 +335,9 @@ export function ThemeConfigurationPanel({
                 {localErrors.layoutContainerMaxWidth || externalErrors.layoutContainerMaxWidth}
               </FormMessage>
             ) : (
-              <p id="layoutContainerMaxWidth-help" className="text-xs text-gray-500 dark:text-gray-400">
+              <FormMessage id="layoutContainerMaxWidth-help">
                 Standard CSS unit (e.g. 64rem, 1200px). Blank falls back to default.
-              </p>
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -351,9 +357,9 @@ export function ThemeConfigurationPanel({
                 {localErrors.layoutGridGap || externalErrors.layoutGridGap}
               </FormMessage>
             ) : (
-              <p id="layoutGridGap-help" className="text-xs text-gray-500 dark:text-gray-400">
+              <FormMessage id="layoutGridGap-help">
                 Spacing between layout grid items (e.g. 1.5rem, 24px).
-              </p>
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -373,9 +379,9 @@ export function ThemeConfigurationPanel({
                 {localErrors.layoutCardPadding || externalErrors.layoutCardPadding}
               </FormMessage>
             ) : (
-              <p id="layoutCardPadding-help" className="text-xs text-gray-500 dark:text-gray-400">
+              <FormMessage id="layoutCardPadding-help">
                 Inner padding for card containers (e.g. 2rem, 32px).
-              </p>
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -389,8 +395,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('spacingMd', e.target.value, 'length')}
               placeholder="e.g. 1rem, 16px"
             />
-            {localErrors.spacingMd && (
-              <FormMessage role="alert">{localErrors.spacingMd}</FormMessage>
+            {(localErrors.spacingMd || externalErrors.spacingMd) && (
+              <FormMessage role="alert">
+                {localErrors.spacingMd || externalErrors.spacingMd}
+              </FormMessage>
             )}
           </FormGroup>
         </div>
@@ -419,9 +427,9 @@ export function ThemeConfigurationPanel({
                 {localErrors.layoutBorderRadius || externalErrors.layoutBorderRadius}
               </FormMessage>
             ) : (
-              <p id="layoutBorderRadius-help" className="text-xs text-gray-500 dark:text-gray-400">
+              <FormMessage id="layoutBorderRadius-help">
                 Corner rounding scale for cards and containers (e.g. 1rem, 16px, 0px).
-              </p>
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -435,8 +443,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('borderWidthThin', e.target.value, 'length')}
               placeholder="e.g. 1px"
             />
-            {localErrors.borderWidthThin && (
-              <FormMessage role="alert">{localErrors.borderWidthThin}</FormMessage>
+            {(localErrors.borderWidthThin || externalErrors.borderWidthThin) && (
+              <FormMessage role="alert">
+                {localErrors.borderWidthThin || externalErrors.borderWidthThin}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -450,8 +460,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('borderStyleDefault', e.target.value, 'borderStyle')}
               placeholder="e.g. solid, dashed"
             />
-            {localErrors.borderStyleDefault && (
-              <FormMessage role="alert">{localErrors.borderStyleDefault}</FormMessage>
+            {(localErrors.borderStyleDefault || externalErrors.borderStyleDefault) && (
+              <FormMessage role="alert">
+                {localErrors.borderStyleDefault || externalErrors.borderStyleDefault}
+              </FormMessage>
             )}
           </FormGroup>
         </div>
@@ -474,8 +486,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandLogoWidth', e.target.value, 'length')}
               placeholder="e.g. 120px"
             />
-            {localErrors.brandLogoWidth && (
-              <FormMessage role="alert">{localErrors.brandLogoWidth}</FormMessage>
+            {(localErrors.brandLogoWidth || externalErrors.brandLogoWidth) && (
+              <FormMessage role="alert">
+                {localErrors.brandLogoWidth || externalErrors.brandLogoWidth}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -489,8 +503,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandLogoHeight', e.target.value, 'length')}
               placeholder="e.g. 40px"
             />
-            {localErrors.brandLogoHeight && (
-              <FormMessage role="alert">{localErrors.brandLogoHeight}</FormMessage>
+            {(localErrors.brandLogoHeight || externalErrors.brandLogoHeight) && (
+              <FormMessage role="alert">
+                {localErrors.brandLogoHeight || externalErrors.brandLogoHeight}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -504,8 +520,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandHeroHeight', e.target.value, 'length')}
               placeholder="e.g. 400px"
             />
-            {localErrors.brandHeroHeight && (
-              <FormMessage role="alert">{localErrors.brandHeroHeight}</FormMessage>
+            {(localErrors.brandHeroHeight || externalErrors.brandHeroHeight) && (
+              <FormMessage role="alert">
+                {localErrors.brandHeroHeight || externalErrors.brandHeroHeight}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -519,8 +537,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandWatermarkWidth', e.target.value, 'length')}
               placeholder="e.g. 200px"
             />
-            {localErrors.brandWatermarkWidth && (
-              <FormMessage role="alert">{localErrors.brandWatermarkWidth}</FormMessage>
+            {(localErrors.brandWatermarkWidth || externalErrors.brandWatermarkWidth) && (
+              <FormMessage role="alert">
+                {localErrors.brandWatermarkWidth || externalErrors.brandWatermarkWidth}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -534,8 +554,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandWatermarkOpacity', e.target.value, 'numberOrRatio')}
               placeholder="e.g. 0.1"
             />
-            {localErrors.brandWatermarkOpacity && (
-              <FormMessage role="alert">{localErrors.brandWatermarkOpacity}</FormMessage>
+            {(localErrors.brandWatermarkOpacity || externalErrors.brandWatermarkOpacity) && (
+              <FormMessage role="alert">
+                {localErrors.brandWatermarkOpacity || externalErrors.brandWatermarkOpacity}
+              </FormMessage>
             )}
           </FormGroup>
 
@@ -549,8 +571,10 @@ export function ThemeConfigurationPanel({
               onChange={(e) => handleFieldChange('brandBadgeSize', e.target.value, 'length')}
               placeholder="e.g. 48px"
             />
-            {localErrors.brandBadgeSize && (
-              <FormMessage role="alert">{localErrors.brandBadgeSize}</FormMessage>
+            {(localErrors.brandBadgeSize || externalErrors.brandBadgeSize) && (
+              <FormMessage role="alert">
+                {localErrors.brandBadgeSize || externalErrors.brandBadgeSize}
+              </FormMessage>
             )}
           </FormGroup>
         </div>

@@ -228,20 +228,31 @@ function formatModeMessage(
   return plainMessage;
 }
 
-export function validateInvitationGuestFields(
+export function validateInvitationGuestFieldsWithColumns(
   data: unknown,
   options?: InvitationValidationOptions
-): string[] {
+): { errors: string[]; fieldErrors: Record<string, string[]> } {
   const mode: InvitationValidationMode = options?.mode ?? 'row';
   const rowNumber = options?.rowNumber ?? 1;
   const record = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
   const errors: string[] = [];
+  const fieldErrors: Record<string, string[]> = {};
+
+  const pushError = (field: string, message: string) => {
+    errors.push(message);
+    if (!fieldErrors[field]) {
+      fieldErrors[field] = [message];
+    } else {
+      fieldErrors[field].push(message);
+    }
+  };
 
   const isPartial = Boolean(options?.partial);
 
   if (!isPartial || record.guestName !== undefined) {
     if (!record.guestName || typeof record.guestName !== 'string' || record.guestName.trim() === '') {
-      errors.push(
+      pushError(
+        'guestName',
         formatModeMessage(mode, rowNumber, 'Guest name is required.', 'has an empty guest name.')
       );
     }
@@ -253,13 +264,14 @@ export function validateInvitationGuestFields(
     (isPartial || record.code !== null) &&
     (typeof record.code !== 'string' || record.code.trim() === '')
   ) {
-    errors.push('Validation Error: Code cannot be empty.');
+    pushError('code', 'Validation Error: Code cannot be empty.');
   }
 
   if (typeof record.email === 'string') {
     const trimmedEmail = record.email.trim();
     if (trimmedEmail !== '' && !EMAIL_REGEX.test(trimmedEmail)) {
-      errors.push(
+      pushError(
+        'email',
         formatModeMessage(mode, rowNumber, 'Invalid email format.', 'has an invalid email format.')
       );
     }
@@ -271,7 +283,8 @@ export function validateInvitationGuestFields(
       !Number.isInteger(record.plusOneAllocations) ||
       record.plusOneAllocations < 0
     ) {
-      errors.push(
+      pushError(
+        'plusOneAllocations',
         formatModeMessage(
           mode,
           rowNumber,
@@ -299,15 +312,22 @@ export function validateInvitationGuestFields(
 
     if (isInvalid) {
       const baseMsg = `${rule.label} must be under ${rule.max} characters.`;
-      errors.push(formatModeMessage(mode, rowNumber, baseMsg, rule.batchCustomMessage));
+      pushError(rule.key, formatModeMessage(mode, rowNumber, baseMsg, rule.batchCustomMessage));
     }
   }
 
   if (mode === 'service' && record.partyTags !== undefined && record.partyTags !== null) {
     if (!Array.isArray(record.partyTags)) {
-      errors.push('Validation Error: Party tags must be an array of strings.');
+      pushError('partyTags', 'Validation Error: Party tags must be an array of strings.');
     }
   }
 
-  return errors;
+  return { errors, fieldErrors };
+}
+
+export function validateInvitationGuestFields(
+  data: unknown,
+  options?: InvitationValidationOptions
+): string[] {
+  return validateInvitationGuestFieldsWithColumns(data, options).errors;
 }
