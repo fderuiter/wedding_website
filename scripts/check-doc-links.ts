@@ -281,29 +281,58 @@ export function scanLinksAndCodeInLine(
   return { links, codeSpans };
 }
 
-export function stripInlineMarkdown(raw: string): string {
-  let s = raw;
-  // Unwrap inline code spans while preserving inner text
-  let out = '';
-  let idx = 0;
-  while (idx < s.length) {
-    if (s[idx] === '`') {
-      const { tickLen, closeEnd } = findInlineCodeEnd(s, idx);
-      if (closeEnd !== null) {
-        out += s.slice(idx + tickLen, closeEnd - tickLen);
-        idx = closeEnd;
+export function stripHtmlTags(input: string): string {
+  let result = '';
+  let depth = 0;
+  let quote: '"' | "'" | null = null;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (depth > 0) {
+      if (quote !== null) {
+        if (ch === quote) {
+          quote = null;
+        }
         continue;
       }
-      out += s.slice(idx, idx + tickLen);
-      idx += tickLen;
+      if (ch === '"' || ch === "'") {
+        const closeQuote = input.indexOf(ch, i + 1);
+        if (closeQuote !== -1 && input.indexOf('>', closeQuote + 1) !== -1) {
+          quote = ch;
+        }
+        continue;
+      }
+      if (ch === '<') {
+        depth++;
+        continue;
+      }
+      if (ch === '>') {
+        depth--;
+        continue;
+      }
       continue;
     }
-    out += s[idx];
-    idx++;
-  }
-  s = out;
 
-  // Unwrap links/images iteratively (handles nested brackets)
+    if (ch === '<') {
+      depth = 1;
+      continue;
+    }
+
+    if (ch === '>') {
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+export function stripInlineMarkdown(raw: string): string {
+  let s = raw;
+
+  // Unwrap links/images iteratively first (preserves inline code spans inside link labels)
   let prev = '';
   while (s !== prev) {
     prev = s;
@@ -325,11 +354,43 @@ export function stripInlineMarkdown(raw: string): string {
     s = rebuilt;
   }
 
-  s = s.replace(/<[^>]+>/g, '');
+  // Isolate inline code spans with collision-free sentinels so inner text is preserved literally
+  let tokenPrefix = '\uE000CODE';
+  while (s.includes(tokenPrefix)) {
+    tokenPrefix += '_';
+  }
+  const codeContents: string[] = [];
+  let tokenized = '';
+  let idx = 0;
+  while (idx < s.length) {
+    if (s[idx] === '`') {
+      const { tickLen, closeEnd } = findInlineCodeEnd(s, idx);
+      if (closeEnd !== null) {
+        const tokenIndex = codeContents.length;
+        codeContents.push(s.slice(idx + tickLen, closeEnd - tickLen));
+        tokenized += `${tokenPrefix}${tokenIndex}\uE001`;
+        idx = closeEnd;
+        continue;
+      }
+      tokenized += s.slice(idx, idx + tickLen);
+      idx += tickLen;
+      continue;
+    }
+    tokenized += s[idx];
+    idx++;
+  }
+  s = tokenized;
+
   s = s.replace(/(\*\*|__)(.*?)\1/g, '$2');
   s = s.replace(/(\*|_)(?=\S)(.+?)(?<=\S)\1/g, '$2');
   s = s.replace(/~~(.*?)~~/g, '$1');
   s = s.replace(/\\([\\`*_{}[\]()#+\-.!|])/g, '$1');
+  s = stripHtmlTags(s);
+
+  for (let c = 0; c < codeContents.length; c++) {
+    s = s.split(`${tokenPrefix}${c}\uE001`).join(codeContents[c]);
+  }
+
   return s.trim();
 }
 

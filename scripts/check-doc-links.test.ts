@@ -15,6 +15,7 @@ import {
   resolveVitePressHeadingSlug,
   safeDecodeURIComponent,
   scanLinksAndCodeInLine,
+  stripHtmlTags,
   stripInlineMarkdown,
   vitepressSlugify,
 } from './check-doc-links';
@@ -106,6 +107,19 @@ describe('check-doc-links', () => {
     expect(stripInlineMarkdown('1. **`AGENTS.md`** & [Guide](./g.md)')).toBe(
       '1. AGENTS.md & Guide'
     );
+    expect(stripHtmlTags('Press <kbd>Esc</kbd> to close')).toBe(
+      'Press Esc to close'
+    );
+    expect(stripInlineMarkdown('Heading <script')).toBe('Heading');
+    expect(stripInlineMarkdown('Heading <<x>script>')).toBe('Heading');
+    expect(stripInlineMarkdown('Heading <scr<script>ipt>alert(1)</script>')).toBe(
+      'Heading alert(1)'
+    );
+    expect(stripInlineMarkdown('Heading <a title=">"><script')).toBe('Heading');
+    expect(stripInlineMarkdown('Heading **<**script>')).toBe('Heading');
+    expect(
+      vitepressSlugify(stripInlineMarkdown('Generic `Array<string>` Helper'))
+    ).toBe('generic-array-string-helper');
 
     const errors: LinkError[] = [];
     checkLinksInFile(mdPath, errors, tempDir);
