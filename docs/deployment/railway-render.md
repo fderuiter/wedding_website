@@ -36,8 +36,8 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | Variable | Required | Description |
 |---|---|---|
 | `NODE_ENV` | Yes | Set to `production`. |
-| `DATABASE_URL` | Yes | Connection string for Railway or Render PostgreSQL. |
-| `POSTGRES_URL_NON_POOLING` | No | Direct connection URL for migrations if using a pooler. |
+| `DATABASE_URL` | Yes | Connection string for Railway or Render PostgreSQL (`datasource.url` in `prisma.config.ts`, used by runtime and `prisma migrate deploy`). |
+| `POSTGRES_URL_NON_POOLING` | No | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); can also store a direct PostgreSQL URL for an explicit `DATABASE_URL` override when `DATABASE_URL` uses PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.up.railway.app,wedding.onrender.com,wedding.mydomain.com`). |
 | `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
@@ -76,6 +76,8 @@ In Render **Web Service Settings > Release Command**:
 ```bash
 npx prisma migrate deploy
 ```
+
+*Note: `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. If `DATABASE_URL` points to an external PgBouncer transaction pooler, override `DATABASE_URL` explicitly and unset `POSTGRES_URL_NON_POOLING` for the migration subprocess (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`) so Prisma acquires migration advisory locks without triggering `P3025`.*
 
 ---
 

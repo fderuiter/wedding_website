@@ -21,15 +21,15 @@ Serverless environments require connection pooling to prevent exhausting Postgre
 *   **AWS Aurora Serverless v2 / RDS Proxy**: Configure RDS Proxy for connection pooling.
 
 ### Connection Configuration
-Provide both pooled and direct connection strings in Vercel Environment Variables:
+In `prisma.config.ts`, `datasource.url` is bound to `DATABASE_URL` and `datasource.shadowDatabaseUrl` is bound to `POSTGRES_URL_NON_POOLING` (used by local `prisma migrate dev`). Because `npx prisma migrate deploy` always reads `DATABASE_URL`, store both pooled and direct connection strings in Vercel Environment Variables so the build command can explicitly override `DATABASE_URL` during schema migrations:
 
-1.  `DATABASE_URL` (Pooled Connection for Serverless Lambdas):
+1.  `DATABASE_URL` (Pooled Connection for Serverless Runtime):
     ```env
     DATABASE_URL="postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/wedding_db?sslmode=require&pgbouncer=true"
     ```
-2.  `POSTGRES_URL_NON_POOLING` (Direct Connection for Schema Migrations):
+2.  `POSTGRES_URL_NON_POOLING` (Direct Connection for Shadow DB & Explicit `DATABASE_URL` Migration Override):
     ```env
-    POSTGRES_URL_NON_POOLING="postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/wedding_db?sslmode=require"
+    POSTGRES_URL_NON_POOLING="postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding_db?sslmode=require"
     ```
 
 ---
@@ -41,8 +41,8 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 | Variable | Required | Description |
 |---|---|---|
 | `NODE_ENV` | Yes | Automatically set by Vercel to `production`. |
-| `DATABASE_URL` | Yes | Connection string to pooled PostgreSQL database. |
-| `POSTGRES_URL_NON_POOLING` | Yes | Direct connection string for Prisma migrations. |
+| `DATABASE_URL` | Yes | Connection string to pooled PostgreSQL database (`datasource.url` in `prisma.config.ts`). |
+| `POSTGRES_URL_NON_POOLING` | No* | Optional shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts`); recommended when `DATABASE_URL` uses PgBouncer so the build command can override `DATABASE_URL` for `prisma migrate deploy`. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.mydomain.com,*.vercel.app`). |
 | `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
@@ -52,17 +52,18 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 | `GUEST_SESSION_SECRET` | Yes | Dedicated secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
 | `CRON_SECRET` | No | Authorization key for background cron triggers. |
-| `S3_BUCKET` | Yes* | Bucket name for cloud asset storage. |
-| `S3_REGION` | Yes* | Bucket region (`us-east-1` or `auto` for Cloudflare R2). |
-| `S3_ACCESS_KEY_ID` | Yes* | S3 API access key ID. |
-| `S3_SECRET_ACCESS_KEY` | Yes* | S3 API secret access key. |
+| `S3_BUCKET` | Yes** | Bucket name for cloud asset storage. |
+| `S3_REGION` | Yes** | Bucket region (`us-east-1` or `auto` for Cloudflare R2). |
+| `S3_ACCESS_KEY_ID` | Yes** | S3 API access key ID. |
+| `S3_SECRET_ACCESS_KEY` | Yes** | S3 API secret access key. |
 | `S3_ENDPOINT` | No | Custom endpoint URL (for Cloudflare R2 / MinIO). |
 | `S3_PUBLIC_URL` | No | Public CDN URL for serving uploaded assets. |
 | `STRIPE_SECRET_KEY` | No | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
 | `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
 
-*\* Note: Serverless functions cannot write to local disk. S3/R2 storage variables are strictly required for file upload features.*
+*\* Note: Required in practice on Vercel whenever `DATABASE_URL` uses a transaction-mode pooler (`pgbouncer=true`) so the build step can pass an explicit direct `DATABASE_URL` override to `prisma migrate deploy`.*  
+*\*\* Note: Serverless functions cannot write to local disk. S3/R2 storage variables are strictly required for file upload features.*
 
 ---
 
@@ -71,11 +72,11 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 Because Vercel serverless functions do not execute container entrypoint scripts, migrations are run during the Vercel deployment build step or via a pre-deployment GitHub Actions step.
 
 ### Build Command Migration Setup
-In Vercel **Project Settings > Build & Development Settings**, configure the custom **Build Command**:
+In `prisma.config.ts`, `prisma migrate deploy` reads `DATABASE_URL` (`datasource.url`), while `POSTGRES_URL_NON_POOLING` is bound to `datasource.shadowDatabaseUrl` (and Prisma 7 raises `P3025` if both resolve to the same database URL). To bypass transaction-mode PgBouncer advisory lock limitations during schema updates, pass an explicit `DATABASE_URL` override and unset `POSTGRES_URL_NON_POOLING` for the migration subprocess in Vercel **Project Settings > Build & Development Settings > Build Command**:
 ```bash
-npx prisma migrate deploy && next build
+DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy && next build
 ```
-When `POSTGRES_URL_NON_POOLING` is present in the environment, Prisma uses the direct connection for migrations to bypass PgBouncer limitations during schema updates.
+Supplying `DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING` routes `prisma migrate deploy` directly to the unpooled PostgreSQL endpoint (while falling back to `prisma.config.ts`'s placeholder shadow URL) and leaves the pooled `DATABASE_URL` intact for `next build` and serverless runtime invocations.
 
 ---
 
