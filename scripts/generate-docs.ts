@@ -217,16 +217,19 @@ function getAdminDtoExposureMetadata(): {
   return { adminOnlyKeys, maskedSecrets };
 }
 
-export function generateConfigTable(): string {
-  const shape = AppConfigSchema.shape;
+export function escapeMarkdownTableCell(value: string): string {
+  return value.replace(/[\\|]/g, '\\$&');
+}
+
+export function generateConfigTable(schemaShape: Record<string, unknown> = AppConfigSchema.shape): string {
   const prismaColumns = getPrismaAppConfigColumns();
   const publicKeys = new Set(Object.keys(PublicAppConfigSchema.shape));
   const { adminOnlyKeys, maskedSecrets } = getAdminDtoExposureMetadata();
 
   let markdown = '| Field | Type | Storage | DTO Exposure | Description |\n|---|---|---|---|---|\n';
 
-  for (const [key, value] of Object.entries(shape)) {
-    const type = getZodType(value).replace(/\|/g, '\\|');
+  for (const [key, value] of Object.entries(schemaShape)) {
+    const type = escapeMarkdownTableCell(getZodType(value));
     const storage = prismaColumns.has(key) ? '`Prisma`' : '`Virtual DTO`';
 
     let dtoExposure: string;
@@ -244,7 +247,7 @@ export function generateConfigTable(): string {
     if (!description) {
       throw new Error(`AppConfigSchema field "${key}" is missing .describe() metadata`);
     }
-    const sanitizedDesc = description.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+    const sanitizedDesc = escapeMarkdownTableCell(description).replace(/\r?\n/g, ' ').trim();
 
     markdown += `| \`${key}\` | \`${type}\` | ${storage} | ${dtoExposure} | ${sanitizedDesc} |\n`;
   }

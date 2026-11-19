@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   getZodType,
   getZodDescription,
+  escapeMarkdownTableCell,
   generateConfigTable,
   generateApiRoutesSection,
   generateEnvSpecs,
@@ -197,6 +198,21 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
 
     it('generates non-empty environment specifications', () => {
       expect(generateEnvSpecs()).toContain('**Node.js**: v22.x');
+    });
+
+    it('escapes both backslashes and pipe characters in Markdown table cells', () => {
+      expect(escapeMarkdownTableCell("'classic' | 'modern'")).toBe("'classic' \\| 'modern'");
+      expect(escapeMarkdownTableCell('C:\\app\\config')).toBe('C:\\\\app\\\\config');
+      expect(escapeMarkdownTableCell('foo \\| bar')).toBe('foo \\\\\\| bar');
+
+      const customTable = generateConfigTable({
+        customField: z
+          .enum(['a\\b', 'c|d'])
+          .describe('Supports C:\\path\\file | fallback \\| literal\nand multiline notes'),
+      });
+      expect(customTable).toContain(
+        "| `customField` | `'a\\\\b' \\| 'c\\|d'` | `Virtual DTO` | `Server-only` | Supports C:\\\\path\\\\file \\| fallback \\\\\\| literal and multiline notes |"
+      );
     });
   });
 });
