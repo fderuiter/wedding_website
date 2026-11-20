@@ -2,17 +2,13 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
 import { renderBroadcastTemplate, sanitizeEmailSubject } from './template';
-import { getAttendanceStatus } from '@/features/registry';
+import {
+  filterTargetGuestsInMemory,
+  getGuestPhone,
+  hasBroadcastChannelContact,
+} from './audience';
 
 const RECIPIENT_CHUNK_SIZE = 250;
-const ADDRESS_COLLECTION_TAG = 'address-collection';
-
-function hasAddressCollectionTag(tags: unknown): boolean {
-  return (
-    Array.isArray(tags) &&
-    tags.some((tag) => typeof tag === 'string' && tag.trim().toLowerCase() === ADDRESS_COLLECTION_TAG)
-  );
-}
 import { MultiChannelMessagingProvider } from './providers';
 import {
   SendBroadcastInput,
@@ -33,7 +29,7 @@ export class BroadcastService {
     if (!filters) {
       const allRecords = await prisma.invitationCode.findMany();
       return Array.isArray(allRecords)
-        ? allRecords.filter((item) => !hasAddressCollectionTag((item as any).partyTags))
+        ? filterTargetGuestsInMemory(allRecords)
         : allRecords;
     }
 
@@ -53,6 +49,16 @@ export class BroadcastService {
         };
       }
 
+      if (filters.status === 'redeemed') {
+        where.used = true;
+      } else if (filters.status === 'unused') {
+        where.used = false;
+      }
+
+      if (filters.partyGroup && filters.partyGroup !== 'all') {
+        where.partyGroup = filters.partyGroup;
+      }
+
       if (filters.subEventId) {
         if (filters.subEventRsvpStatus && filters.subEventRsvpStatus !== 'all') {
           where.subEventRsvps = {
@@ -69,46 +75,15 @@ export class BroadcastService {
           };
         }
       }
-
-      if (filters.searchQuery && filters.searchQuery.trim()) {
-        const q = filters.searchQuery.trim();
-        where.OR = [
-          { guestName: { contains: q, mode: 'insensitive' } },
-          { code: { contains: q, mode: 'insensitive' } },
-          { email: { contains: q, mode: 'insensitive' } },
-          { householdName: { contains: q, mode: 'insensitive' } },
-        ];
-      }
     }
 
-    let records = await prisma.invitationCode.findMany({ where });
+    const records = await prisma.invitationCode.findMany({ where });
 
-    const explicitlyIncludesAddressCollection = Boolean(
-      filters.partyTags &&
-      filters.partyTags.some(
-        (tag) => typeof tag === 'string' && tag.trim().toLowerCase() === ADDRESS_COLLECTION_TAG
-      )
-    );
-
-    if (!explicitlyIncludesAddressCollection && Array.isArray(records)) {
-      const selectedIdSet =
-        filters.selectedIds && filters.selectedIds.length > 0
-          ? new Set(filters.selectedIds)
-          : null;
-
-      records = records.filter((item) => {
-        if (!hasAddressCollectionTag((item as any).partyTags)) {
-          return true;
-        }
-        return selectedIdSet !== null && selectedIdSet.has(item.id);
-      });
+    if (!Array.isArray(records)) {
+      return records;
     }
 
-    if (filters.attendanceStatus && filters.attendanceStatus !== 'all') {
-      records = records.filter((item) => getAttendanceStatus(item as any) === filters.attendanceStatus);
-    }
-
-    return records;
+    return filterTargetGuestsInMemory(records, filters, { applyDbPredicates: false });
   }
 
   /**
@@ -117,6 +92,7 @@ export class BroadcastService {
   static async renderPreview(input: PreviewBroadcastInput) {
     const config = await getAppConfig('global');
     let sampleGuest: any = null;
+    let matchedGuests: any[] | null = null;
 
     if (input.sampleGuestId) {
       sampleGuest = await prisma.invitationCode.findUnique({
@@ -124,10 +100,13 @@ export class BroadcastService {
       });
     }
 
-    if (!sampleGuest && input.targetFilters) {
+    if (input.targetFilters) {
       const matched = await this.resolveTargetGuests(input.targetFilters);
-      if (matched.length > 0) {
-        sampleGuest = matched[0];
+      if (Array.isArray(matched)) {
+        matchedGuests = matched;
+        if (!sampleGuest && matched.length > 0) {
+          sampleGuest = matched[0];
+        }
       }
     }
 
@@ -149,14 +128,24 @@ export class BroadcastService {
     };
 
     const isEmail = input.channel === 'EMAIL';
-    const renderedBody = renderBroadcastTemplate(input.body, context, { escapeHtml: isEmail });
+    const renderedBody = renderBroadcastTemplate(input.body, context);
     const rawSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : undefined;
     const renderedSubject =
       rawSubject !== undefined && isEmail ? sanitizeEmailSubject(rawSubject) : rawSubject;
 
     const destination = input.channel === 'EMAIL'
       ? (sampleGuest.email || 'jane@example.com')
-      : (sampleGuest.extraFields?.phone || sampleGuest.extraFields?.mobile || '+15551234567');
+      : (getGuestPhone(sampleGuest) || '+15551234567');
+
+    const audienceCounts =
+      matchedGuests !== null
+        ? {
+          matchedCount: matchedGuests.length,
+          missingContactCount: matchedGuests.filter(
+            (g) => !hasBroadcastChannelContact(g, input.channel)
+          ).length,
+        }
+        : {};
 
     return {
       channel: input.channel,
@@ -164,6 +153,7 @@ export class BroadcastService {
       body: renderedBody,
       sampleGuestName: sampleGuest.guestName,
       destination,
+      ...audienceCounts,
     };
   }
 
@@ -348,18 +338,9 @@ export class BroadcastService {
     }[] = [];
 
     for (const guest of guests) {
-      let extra = guest.extraFields;
-      if (typeof extra === 'string') {
-        try {
-          extra = JSON.parse(extra);
-        } catch {
-          extra = {};
-        }
-      }
-
       const destination = channel === 'EMAIL'
         ? (guest.email || '')
-        : ((extra as any)?.phone || (extra as any)?.mobile || '');
+        : getGuestPhone(guest);
 
       const isValid = Boolean(destination);
       const recipientId = generateSecureUUID();
