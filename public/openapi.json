@@ -1081,6 +1081,30 @@
                                 }
                               ]
                             },
+                            "confirmationEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "alertEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
                             "registryItemId": {
                               "nullable": true,
                               "type": "string"
@@ -6179,6 +6203,16 @@
                           "maxLength": 255
                         },
                         "transactionTimestamp": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "confirmationEmailSentAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "alertEmailSentAt": {
                           "nullable": true,
                           "type": "string",
                           "format": "date-time"

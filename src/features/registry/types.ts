@@ -101,5 +101,9 @@ export interface IRegistryRepository {
     stripeChargeId?: string | null;
     transactionTimestamp?: Date | string | null;
   }): Promise<RegistryItemDTO>;
+  claimContributorEmailSend?(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<boolean>;
 }
 

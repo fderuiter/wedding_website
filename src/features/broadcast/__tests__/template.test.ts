@@ -2,6 +2,7 @@ import {
   AVAILABLE_TEMPLATE_PLACEHOLDERS,
   BROADCAST_STARTER_TEMPLATES,
   buildGuestRsvpUrl,
+  escapeHtmlEntities,
   renderBroadcastTemplate,
   sanitizeEmailSubject,
 } from '../template';
@@ -84,6 +85,14 @@ describe('sanitizeEmailSubject', () => {
   });
 });
 
+describe('escapeHtmlEntities', () => {
+  it('escapes HTML entities in untrusted text', () => {
+    expect(escapeHtmlEntities('<script>alert("O\'Connor & Co")</script>')).toBe(
+      '&lt;script&gt;alert(&quot;O&#39;Connor &amp; Co&quot;)&lt;/script&gt;'
+    );
+  });
+});
+
 describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
   it('builds encoded personalized RSVP URLs and strips trailing slashes', () => {
     expect(buildGuestRsvpUrl('https://wedding.example.com/', 'ALICE 2026+1')).toBe(
@@ -138,4 +147,3 @@ describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
     }
   });
 });
-
