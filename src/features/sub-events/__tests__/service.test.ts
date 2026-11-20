@@ -1,5 +1,7 @@
 import { SubEventService } from '../service';
 import { ApiError } from '@/utils/ApiError';
+import { getAttendanceStatus, matchDietaryCategory } from '@/features/registry';
+import { summarizeBroadcastAudience } from '@/features/broadcast';
 
 describe('SubEventService', () => {
   let service: SubEventService;
@@ -11,6 +13,7 @@ describe('SubEventService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
+        update: jest.fn(),
       },
       subEvent: {
         findMany: jest.fn(),
@@ -25,6 +28,7 @@ describe('SubEventService', () => {
       },
       subEventRsvp: {
         upsert: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn((callback) => callback(mockPrisma)),
     };
@@ -573,11 +577,17 @@ describe('SubEventService', () => {
           status: 'attending',
           plusOneCount: 1,
           dietaryNotes: 'Gluten-Free',
+          mealSelections: [],
+          customAnswers: {},
+          plusOneNames: [],
         },
         update: {
           status: 'attending',
           plusOneCount: 1,
           dietaryNotes: 'Gluten-Free',
+          mealSelections: [],
+          customAnswers: {},
+          plusOneNames: [],
         },
       });
     });
@@ -851,11 +861,17 @@ describe('SubEventService', () => {
           status: 'declined',
           plusOneCount: 0,
           dietaryNotes: 'Cannot make it',
+          mealSelections: [],
+          customAnswers: {},
+          plusOneNames: [],
         },
         update: {
           status: 'declined',
           plusOneCount: 0,
           dietaryNotes: 'Cannot make it',
+          mealSelections: [],
+          customAnswers: {},
+          plusOneNames: [],
         },
       });
     });
@@ -1196,6 +1212,326 @@ describe('SubEventService', () => {
         message: 'bad()Seating is finalized — text Alex!',
       });
       expect(mockPrisma.subEvent.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('JSONB mealOptions, customQuestions, plusOneNames, and InvitationCode atomic sync', () => {
+    it('returns mealOptions, customQuestions, and saved plusOneNames for authenticated guests', async () => {
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({ id: 'inv-jsonb' })
+        .mockResolvedValueOnce({
+          plusOneFirstName: 'Jordan',
+          plusOneLastName: 'Taylor',
+          extraFields: { plusOneNames: ['Jordan Taylor', 'Casey Morgan'] },
+        });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-reception',
+          title: 'Evening Reception',
+          isPrivate: false,
+          startTime: new Date('2026-06-20T18:00:00Z'),
+          mealOptions: [
+            { id: 'm-1', label: 'Herb Salmon', dietaryTags: ['gluten-free'] },
+          ],
+          customQuestions: [
+            { id: 'q-1', prompt: 'Shuttle needed?', type: 'choice', required: true, options: ['Yes', 'No'] },
+          ],
+          rsvps: [
+            {
+              status: 'attending',
+              plusOneCount: 1,
+              dietaryNotes: '',
+              mealSelections: ['m-1', 'm-1'],
+              customAnswers: { 'q-1': 'Yes' },
+              plusOneNames: ['Jordan Taylor'],
+            },
+          ],
+        },
+      ]);
+
+      const schedule = await service.getScheduleForGuest('GUESTJSONB');
+      const savedNames = await service.getSavedPlusOneNamesForGuest('GUESTJSONB');
+
+      expect(schedule[0].mealOptions).toEqual([
+        { id: 'm-1', label: 'Herb Salmon', description: '', dietaryTags: ['gluten-free'] },
+      ]);
+      expect(schedule[0].customQuestions).toEqual([
+        { id: 'q-1', prompt: 'Shuttle needed?', type: 'choice', required: true, options: ['Yes', 'No'] },
+      ]);
+      expect(schedule[0].userRsvp).toEqual({
+        status: 'attending',
+        plusOneCount: 1,
+        dietaryNotes: '',
+        mealSelections: ['m-1', 'm-1'],
+        customAnswers: { 'q-1': 'Yes' },
+        plusOneNames: ['Jordan Taylor'],
+      });
+      expect(savedNames).toEqual(['Jordan Taylor', 'Casey Morgan']);
+    });
+
+    it('rejects inactive meal option IDs, missing party meal selections, and unanswered required custom questions', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-val',
+        guestName: 'Alex Guest',
+        plusOneAllocations: 1,
+      });
+
+      const receptionEvent = {
+        id: 'se-rec',
+        title: 'Evening Reception',
+        isPrivate: false,
+        accesses: [],
+        mealOptions: [
+          { id: 'meal-beef', label: 'Braised Beef', dietaryTags: ['gluten-free'] },
+          { id: 'meal-veg', label: 'Wild Mushroom Risotto', dietaryTags: ['vegetarian'] },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: 'Shuttle bus?',
+            type: 'choice',
+            required: true,
+            options: ['Yes', 'No'],
+          },
+        ],
+      };
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([receptionEvent]);
+
+      await expect(
+        service.submitSubEventRsvps('GUESTVAL', [
+          {
+            subEventId: 'se-rec',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+            mealSelections: ['stale-meal-id'],
+            customAnswers: { 'q-shuttle': 'Yes' },
+          },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Invalid meal option "stale-meal-id" for event "Evening Reception".',
+      });
+
+      await expect(
+        service.submitSubEventRsvps('GUESTVAL', [
+          {
+            subEventId: 'se-rec',
+            status: 'attending',
+            plusOneCount: 1,
+            dietaryNotes: '',
+            mealSelections: ['meal-beef'],
+            customAnswers: { 'q-shuttle': 'Yes' },
+          },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Please select a meal option for all 2 attending guests for "Evening Reception".',
+      });
+
+      await expect(
+        service.submitSubEventRsvps('GUESTVAL', [
+          {
+            subEventId: 'se-rec',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+            mealSelections: ['meal-beef'],
+            customAnswers: {},
+          },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Please answer required question "Shuttle bus?" for "Evening Reception".',
+      });
+
+      await expect(
+        service.submitSubEventRsvps('GUESTVAL', [
+          {
+            subEventId: 'se-rec',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+            mealSelections: ['meal-beef'],
+            customAnswers: { 'q-shuttle': 'Maybe' },
+          },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        message: 'Invalid choice "Maybe" for question "Shuttle bus?" in "Evening Reception".',
+      });
+    });
+
+    it('clears mealSelections, customAnswers, plusOneNames, and plusOneCount when status changes to declined while preserving seated alert state', async () => {
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({
+          id: 'inv-clear',
+          guestName: 'Sam Guest',
+          plusOneAllocations: 2,
+        })
+        .mockResolvedValueOnce({
+          used: true,
+          usedAt: new Date('2026-05-01T12:00:00Z'),
+          plusOneFirstName: 'Pat',
+          plusOneLastName: 'Partner',
+          dietaryNotes: 'No dairy',
+          extraFields: { phone: '+15550001111', attendanceStatus: 'attending' },
+        });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-rec',
+          title: 'Evening Reception',
+          isPrivate: false,
+          accesses: [],
+          mealOptions: [{ id: 'm-1', label: 'Risotto', dietaryTags: ['vegan'] }],
+          customQuestions: [{ id: 'q-1', prompt: 'Shuttle?', type: 'text', required: true, options: [] }],
+        },
+      ]);
+
+      mockPrisma.subEventRsvp.upsert.mockImplementation(({ create }: any) => Promise.resolve(create));
+
+      await service.submitSubEventRsvps('CLEARCODE', [
+        {
+          subEventId: 'se-rec',
+          status: 'declined',
+          plusOneCount: 2,
+          dietaryNotes: '',
+          mealSelections: ['m-1', 'm-1'],
+          customAnswers: { 'q-1': 'Yes' },
+          plusOneNames: ['Pat Partner', 'Chris Friend'],
+        },
+      ]);
+
+      expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: 'declined',
+            plusOneCount: 0,
+            mealSelections: [],
+            customAnswers: {},
+            plusOneNames: [],
+          }),
+        })
+      );
+
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'inv-clear' },
+        data: expect.objectContaining({
+          used: true,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          extraFields: expect.objectContaining({
+            phone: '+15550001111',
+            attendanceStatus: 'declined',
+            plusOneCount: 0,
+            plusOneNames: [],
+            dietaryTags: [],
+            mealSummary: '',
+            customAnswersSummary: '',
+          }),
+        }),
+      });
+      const updatePayload = mockPrisma.invitationCode.update.mock.calls[0][0].data;
+      expect(updatePayload).not.toHaveProperty('tableId');
+      expect(updatePayload).not.toHaveProperty('seatNumber');
+    });
+
+    it('atomically syncs InvitationCode so getAttendanceStatus, dietary filters, and broadcast audience reflect RSVPs immediately', async () => {
+      const submissionTime = new Date('2026-06-01T15:30:00.000Z');
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({
+          id: 'inv-sync',
+          guestName: 'Jane Doe',
+          plusOneAllocations: 1,
+        })
+        .mockResolvedValueOnce({
+          used: false,
+          usedAt: null,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: null,
+          extraFields: { phone: '+15559998888' },
+        });
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-rec',
+          title: 'Evening Reception',
+          isPrivate: false,
+          accesses: [],
+          mealOptions: [
+            { id: 'm-salmon', label: 'Herb Salmon', dietaryTags: ['gluten-free', 'dairy-free'] },
+            { id: 'm-gnocchi', label: 'Truffle Gnocchi', dietaryTags: ['vegan'] },
+          ],
+          customQuestions: [
+            {
+              id: 'q-shuttle',
+              prompt: 'Hotel shuttle?',
+              type: 'choice',
+              required: true,
+              options: ['Yes, round-trip', 'No'],
+            },
+          ],
+        },
+      ]);
+
+      let syncedInviteRecord: any = null;
+      mockPrisma.invitationCode.update.mockImplementation(({ data }: any) => {
+        syncedInviteRecord = {
+          id: 'inv-sync',
+          guestName: 'Jane Doe',
+          email: 'jane@example.com',
+          partyTags: ['Friends'],
+          ...data,
+        };
+        return Promise.resolve(syncedInviteRecord);
+      });
+      mockPrisma.subEventRsvp.upsert.mockImplementation(({ create }: any) => Promise.resolve(create));
+
+      await service.submitSubEventRsvps(
+        'JANE2026',
+        [
+          {
+            subEventId: 'se-rec',
+            status: 'attending',
+            plusOneCount: 1,
+            dietaryNotes: 'No shellfish',
+            mealSelections: ['m-salmon', 'm-gnocchi'],
+            customAnswers: { 'q-shuttle': 'Yes, round-trip' },
+            plusOneNames: ['John Doe'],
+          },
+        ],
+        submissionTime
+      );
+
+      expect(syncedInviteRecord).not.toBeNull();
+      expect(syncedInviteRecord.used).toBe(true);
+      expect(syncedInviteRecord.usedAt).toEqual(submissionTime);
+      expect(syncedInviteRecord.plusOneFirstName).toBe('John');
+      expect(syncedInviteRecord.plusOneLastName).toBe('Doe');
+      expect(syncedInviteRecord.dietaryNotes).toBe('No shellfish');
+      expect(syncedInviteRecord.extraFields.phone).toBe('+15559998888');
+      expect(syncedInviteRecord.extraFields.mealSummary).toBe(
+        'Jane Doe: Herb Salmon (gluten-free, dairy-free); John Doe: Truffle Gnocchi (vegan)'
+      );
+      expect(syncedInviteRecord.extraFields.customAnswersSummary).toBe(
+        'Hotel shuttle?: Yes, round-trip'
+      );
+
+      expect(getAttendanceStatus(syncedInviteRecord)).toBe('attending');
+      expect(matchDietaryCategory(syncedInviteRecord.dietaryNotes, 'vegan', syncedInviteRecord.extraFields)).toBe(true);
+      expect(matchDietaryCategory(syncedInviteRecord.dietaryNotes, 'gluten-free', syncedInviteRecord.extraFields)).toBe(true);
+
+      const audienceSummary = summarizeBroadcastAudience(
+        [syncedInviteRecord],
+        { attendanceStatus: 'attending', dietaryCategory: 'vegan' },
+        'EMAIL'
+      );
+      expect(audienceSummary.matchedCount).toBe(1);
+      expect(audienceSummary.reachableCount).toBe(1);
     });
   });
 });

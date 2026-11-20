@@ -12,6 +12,11 @@ import { createAuditSnapshot } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
 import { generateRandomCode } from './utils/invitation';
 import {
+  normalizeMealSelections,
+  normalizeCustomAnswers,
+  normalizePlusOneNames,
+} from '@/utils/rsvpPrompts';
+import {
   BatchInvitationCodeRecord,
   InvitationCollisionStrategy,
   NormalizedInvitationCodeRecord,
@@ -942,23 +947,79 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           ...secRsvps.map((r) => r.plusOneCount ?? 0)
         );
 
+        const orderedCandidates = [...(primaryRsvp ? [primaryRsvp] : []), ...secRsvps];
+        const prioritizedRsvps = [
+          ...orderedCandidates.filter((r) => r.status === 'attending'),
+          ...orderedCandidates.filter((r) => r.status !== 'attending' && r.status !== 'declined'),
+        ];
+
+        const resolvedStatus = primaryRsvp
+          ? primaryRsvp.status !== 'pending'
+            ? primaryRsvp.status
+            : secRsvps.find((r) => r.status !== 'pending')?.status ?? primaryRsvp.status
+          : (secRsvps.find((r) => r.status !== 'pending') ?? secRsvps[0]).status;
+
+        const resolvedPlusOneCount = resolvedStatus === 'declined' ? 0 : maxRsvpPlusOnes;
+
+        let resolvedMeals: string[] = [];
+        const resolvedAnswers: Record<string, string> = {};
+        let resolvedPlusOneNames: string[] = [];
+
+        if (resolvedStatus !== 'declined') {
+          for (const candidate of prioritizedRsvps) {
+            const candidateMeals = normalizeMealSelections(candidate.mealSelections);
+            if (resolvedMeals.length === 0 && candidateMeals.some(Boolean)) {
+              resolvedMeals = candidateMeals;
+            }
+            const candidateAnswers = normalizeCustomAnswers(candidate.customAnswers);
+            for (const [qId, ans] of Object.entries(candidateAnswers)) {
+              if (!resolvedAnswers[qId]) {
+                resolvedAnswers[qId] = ans;
+              }
+            }
+            const candidateNames = normalizePlusOneNames(candidate.plusOneNames);
+            if (resolvedPlusOneNames.length === 0 && candidateNames.some(Boolean)) {
+              resolvedPlusOneNames = candidateNames.slice(0, resolvedPlusOneCount);
+            }
+          }
+        }
+
+        const hasJsonbRsvpFields = orderedCandidates.some(
+          (r) =>
+            r.mealSelections !== undefined ||
+            r.customAnswers !== undefined ||
+            r.plusOneNames !== undefined
+        );
+
         if (primaryRsvp) {
-          const resolvedStatus =
-            primaryRsvp.status !== 'pending'
-              ? primaryRsvp.status
-              : secRsvps.find((r) => r.status !== 'pending')?.status ?? primaryRsvp.status;
+          const prevMeals = normalizeMealSelections(primaryRsvp.mealSelections);
+          const prevAnswers = normalizeCustomAnswers(primaryRsvp.customAnswers);
+          const prevNames = normalizePlusOneNames(primaryRsvp.plusOneNames);
+          const jsonbChanged =
+            hasJsonbRsvpFields &&
+            (JSON.stringify(resolvedMeals) !== JSON.stringify(prevMeals) ||
+              JSON.stringify(resolvedAnswers) !== JSON.stringify(prevAnswers) ||
+              JSON.stringify(resolvedPlusOneNames) !== JSON.stringify(prevNames));
 
           if (
             resolvedStatus !== primaryRsvp.status ||
-            maxRsvpPlusOnes !== primaryRsvp.plusOneCount ||
-            combinedRsvpDietary !== (primaryRsvp.dietaryNotes ?? '')
+            resolvedPlusOneCount !== primaryRsvp.plusOneCount ||
+            combinedRsvpDietary !== (primaryRsvp.dietaryNotes ?? '') ||
+            jsonbChanged
           ) {
             await tx.subEventRsvp.update({
               where: { id: primaryRsvp.id },
               data: {
                 status: resolvedStatus,
-                plusOneCount: maxRsvpPlusOnes,
+                plusOneCount: resolvedPlusOneCount,
                 dietaryNotes: combinedRsvpDietary,
+                ...(hasJsonbRsvpFields
+                  ? {
+                    mealSelections: resolvedMeals,
+                    customAnswers: resolvedAnswers,
+                    plusOneNames: resolvedPlusOneNames,
+                  }
+                  : {}),
               },
             });
             transferredRsvpCount++;
@@ -972,8 +1033,15 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             where: { id: chosenSec.id },
             data: {
               invitationCodeId: cleanPrimaryId,
-              plusOneCount: maxRsvpPlusOnes,
+              plusOneCount: resolvedPlusOneCount,
               dietaryNotes: combinedRsvpDietary,
+              ...(hasJsonbRsvpFields
+                ? {
+                  mealSelections: resolvedMeals,
+                  customAnswers: resolvedAnswers,
+                  plusOneNames: resolvedPlusOneNames,
+                }
+                : {}),
             },
           });
           transferredRsvpCount++;

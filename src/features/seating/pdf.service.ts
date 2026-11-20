@@ -193,7 +193,7 @@ export async function generateSeatingChartPdf(
 
               const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
               const isSeated = !!guest;
-              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes) : [];
+              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes, guest.extraFields) : [];
 
               if (isSeated) {
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke(
@@ -261,7 +261,7 @@ export async function generateSeatingChartPdf(
 
               const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
               const isSeated = !!guest;
-              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes) : [];
+              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes, guest.extraFields) : [];
 
               if (isSeated) {
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke(
@@ -368,9 +368,11 @@ export async function generateSeatingChartPdf(
               doc.text(seatDisplay, margin + 6, currentY + 5, { width: colSeatW });
               doc.text(guest.guestName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
               doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
-              const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
-              const dietaryPrefix = dietaryBadges.length > 0 ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}] ` : '';
-              const dietaryText = guest.dietaryNotes ? `${dietaryPrefix}${guest.dietaryNotes}` : '—';
+              const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+              const dietaryPrefix = dietaryBadges.length > 0 ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}]` : '';
+              const dietaryText = guest.dietaryNotes
+                ? `${dietaryPrefix ? `${dietaryPrefix} ` : ''}${guest.dietaryNotes}`
+                : dietaryPrefix || '—';
               doc.font('Helvetica').text(dietaryText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
 
               currentY += 18;
@@ -405,9 +407,11 @@ export async function generateSeatingChartPdf(
             doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
             doc.text(guest.guestName, margin + 6, currentY + 5, { width: colNameW + colSeatW });
             doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
-            const unassignedBadges = getDietaryBadges(guest.dietaryNotes);
-            const unassignedPrefix = unassignedBadges.length > 0 ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}] ` : '';
-            const unassignedDietText = guest.dietaryNotes ? `${unassignedPrefix}${guest.dietaryNotes}` : '—';
+            const unassignedBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+            const unassignedPrefix = unassignedBadges.length > 0 ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]` : '';
+            const unassignedDietText = guest.dietaryNotes
+              ? `${unassignedPrefix ? `${unassignedPrefix} ` : ''}${guest.dietaryNotes}`
+              : unassignedPrefix || '—';
             doc.font('Helvetica').text(unassignedDietText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
 
             currentY += 18;

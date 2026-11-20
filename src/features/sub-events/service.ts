@@ -7,7 +7,17 @@ import {
   type RsvpCutoffEvaluation,
 } from '@/utils/rsvpDeadline';
 import { isPrivateContentNode } from '@/features/content';
-import { SubEventRsvpSubmissionItem, BatchUpdateSubEventAccessDTO } from './schemas';
+import {
+  SubEventRsvpSubmissionItem,
+  BatchUpdateSubEventAccessDTO,
+  MealOptionDTO,
+  CustomRsvpQuestionDTO,
+  normalizeMealOptions,
+  normalizeCustomQuestions,
+  normalizeMealSelections,
+  normalizeCustomAnswers,
+  normalizePlusOneNames,
+} from './schemas';
 
 export interface ScheduleEventWithRsvp {
   id: string;
@@ -21,11 +31,46 @@ export interface ScheduleEventWithRsvp {
   isPrivate: boolean;
   isReadOnly?: boolean;
   attireRules?: string | null;
+  mealOptions?: MealOptionDTO[];
+  customQuestions?: CustomRsvpQuestionDTO[];
   userRsvp?: {
     status: 'attending' | 'declined' | 'pending';
     plusOneCount: number;
     dietaryNotes: string;
+    mealSelections?: string[];
+    customAnswers?: Record<string, string>;
+    plusOneNames?: string[];
   } | null;
+}
+
+function parseExtraFieldsObject(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
+function splitFullName(fullName: string): { firstName: string | null; lastName: string | null } {
+  const trimmed = fullName.trim();
+  if (!trimmed) {
+    return { firstName: null, lastName: null };
+  }
+  const parts = trimmed.split(/\s+/);
+  const firstName = parts[0] || null;
+  const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+  return { firstName, lastName };
 }
 
 export interface AccessMatrixQueryParams {
@@ -93,6 +138,41 @@ export class SubEventService {
     }
 
     return Math.max(0, invite.plusOneAllocations ?? 0);
+  }
+
+  /**
+   * Retrieves saved plus-one names from an authenticated guest's InvitationCode record.
+   */
+  async getSavedPlusOneNamesForGuest(code?: string | null): Promise<string[]> {
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return [];
+    }
+
+    const invite = await this.client.invitationCode.findUnique({
+      where: { code: code.trim().toUpperCase(), isSample: false },
+      select: {
+        plusOneFirstName: true,
+        plusOneLastName: true,
+        extraFields: true,
+      },
+    });
+
+    if (!invite || invite.isSample) {
+      return [];
+    }
+
+    const extra = parseExtraFieldsObject(invite.extraFields);
+    const extraNames = normalizePlusOneNames(extra.plusOneNames).filter(Boolean);
+    if (extraNames.length > 0) {
+      return extraNames;
+    }
+
+    const combined = [invite.plusOneFirstName, invite.plusOneLastName]
+      .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+      .map((part) => part.trim())
+      .join(' ');
+
+    return combined ? [combined] : [];
   }
 
   /**
@@ -197,11 +277,22 @@ export class SubEventService {
       isPrivate: subEvent.isPrivate,
       isReadOnly: false,
       attireRules: (subEvent as any).attireRules || (subEvent as any).attire || null,
+      mealOptions: normalizeMealOptions(subEvent.mealOptions),
+      customQuestions: normalizeCustomQuestions(subEvent.customQuestions),
       userRsvp: rsvp
         ? {
           status: rsvp.status as 'attending' | 'declined' | 'pending',
           plusOneCount: rsvp.plusOneCount ?? 0,
           dietaryNotes: rsvp.dietaryNotes || '',
+          ...(rsvp.mealSelections !== undefined
+            ? { mealSelections: normalizeMealSelections(rsvp.mealSelections) }
+            : {}),
+          ...(rsvp.customAnswers !== undefined
+            ? { customAnswers: normalizeCustomAnswers(rsvp.customAnswers) }
+            : {}),
+          ...(rsvp.plusOneNames !== undefined
+            ? { plusOneNames: normalizePlusOneNames(rsvp.plusOneNames) }
+            : {}),
         }
         : null,
     };
@@ -316,11 +407,22 @@ export class SubEventService {
         isPrivate: evt.isPrivate,
         isReadOnly: false,
         attireRules: (evt as any).attireRules || (evt as any).attire || null,
+        mealOptions: normalizeMealOptions(evt.mealOptions),
+        customQuestions: normalizeCustomQuestions(evt.customQuestions),
         userRsvp: rsvp
           ? {
             status: rsvp.status as 'attending' | 'declined' | 'pending',
             plusOneCount: rsvp.plusOneCount ?? 0,
             dietaryNotes: rsvp.dietaryNotes || '',
+            ...(rsvp.mealSelections !== undefined
+              ? { mealSelections: normalizeMealSelections(rsvp.mealSelections) }
+              : {}),
+            ...(rsvp.customAnswers !== undefined
+              ? { customAnswers: normalizeCustomAnswers(rsvp.customAnswers) }
+              : {}),
+            ...(rsvp.plusOneNames !== undefined
+              ? { plusOneNames: normalizePlusOneNames(rsvp.plusOneNames) }
+              : {}),
           }
           : null,
       };
@@ -396,7 +498,20 @@ export class SubEventService {
       }
     }
 
-    // Validate event existence, read-only status, private permissions, and plus-one limits
+    interface NormalizedRsvpWrite {
+      subEventId: string;
+      status: 'attending' | 'declined' | 'pending';
+      plusOneCount: number;
+      dietaryNotes: string;
+      mealSelections: string[];
+      customAnswers: Record<string, string>;
+      plusOneNames: string[];
+      hadExplicitPlusOneNames: boolean;
+    }
+
+    const normalizedSubmissions: NormalizedRsvpWrite[] = [];
+
+    // Validate event existence, read-only status, private permissions, plus-one limits, meal options, and custom questions
     for (const sub of submissions) {
       if (fallbackNodeIds.has(sub.subEventId)) {
         throw new ApiError(400, 'RSVPs cannot be submitted for read-only schedule items.');
@@ -423,35 +538,407 @@ export class SubEventService {
           `Plus-one count (${requestedPlusOnes}) exceeds your allocated limit of ${maxPlusOnes}.`
         );
       }
+
+      const activeMeals = normalizeMealOptions(subEvent.mealOptions);
+      const activeQuestions = normalizeCustomQuestions(subEvent.customQuestions);
+
+      if (sub.status === 'declined') {
+        normalizedSubmissions.push({
+          subEventId: sub.subEventId,
+          status: 'declined',
+          plusOneCount: 0,
+          dietaryNotes: sub.dietaryNotes || '',
+          mealSelections: [],
+          customAnswers: {},
+          plusOneNames: [],
+          hadExplicitPlusOneNames: true,
+        });
+        continue;
+      }
+
+      const normalizedPlusOneNames =
+        requestedPlusOnes === 0
+          ? []
+          : normalizePlusOneNames(sub.plusOneNames).slice(0, requestedPlusOnes);
+
+      const rawMeals = normalizeMealSelections(sub.mealSelections);
+      let normalizedMeals: string[] = [];
+
+      if (activeMeals.length === 0) {
+        if (rawMeals.some(Boolean)) {
+          throw new ApiError(
+            400,
+            `Event "${subEvent.title}" does not accept meal selections.`
+          );
+        }
+      } else {
+        const validMealIds = new Set(activeMeals.map((opt) => opt.id));
+        for (const selectedId of rawMeals) {
+          if (selectedId && !validMealIds.has(selectedId)) {
+            throw new ApiError(
+              400,
+              `Invalid meal option "${selectedId}" for event "${subEvent.title}".`
+            );
+          }
+        }
+
+        const expectedPartySize = 1 + requestedPlusOnes;
+        if (sub.status === 'attending') {
+          const partyMeals = rawMeals.slice(0, expectedPartySize);
+          if (partyMeals.length < expectedPartySize || partyMeals.some((id) => !id)) {
+            throw new ApiError(
+              400,
+              `Please select a meal option for all ${expectedPartySize} attending guest${expectedPartySize === 1 ? '' : 's'} for "${subEvent.title}".`
+            );
+          }
+          normalizedMeals = partyMeals;
+        } else {
+          normalizedMeals = rawMeals.slice(0, expectedPartySize);
+        }
+      }
+
+      const rawAnswers =
+        sub.customAnswers && typeof sub.customAnswers === 'object' ? sub.customAnswers : {};
+      const questionMap = new Map(activeQuestions.map((q) => [q.id, q]));
+      const cleanedAnswers: Record<string, string> = {};
+
+      for (const [qId, rawVal] of Object.entries(rawAnswers)) {
+        const question = questionMap.get(qId);
+        if (!question) {
+          throw new ApiError(
+            400,
+            `Invalid custom question "${qId}" for event "${subEvent.title}".`
+          );
+        }
+        const trimmedVal = typeof rawVal === 'string' ? rawVal.trim() : '';
+        if (trimmedVal) {
+          if (question.type === 'choice' && !question.options.includes(trimmedVal)) {
+            throw new ApiError(
+              400,
+              `Invalid choice "${trimmedVal}" for question "${question.prompt}" in "${subEvent.title}".`
+            );
+          }
+          cleanedAnswers[qId] = trimmedVal;
+        }
+      }
+
+      if (sub.status === 'attending') {
+        for (const question of activeQuestions) {
+          if (question.required && !cleanedAnswers[question.id]) {
+            throw new ApiError(
+              400,
+              `Please answer required question "${question.prompt}" for "${subEvent.title}".`
+            );
+          }
+        }
+      }
+
+      normalizedSubmissions.push({
+        subEventId: sub.subEventId,
+        status: sub.status,
+        plusOneCount: requestedPlusOnes,
+        dietaryNotes: sub.dietaryNotes || '',
+        mealSelections: normalizedMeals,
+        customAnswers: cleanedAnswers,
+        plusOneNames: normalizedPlusOneNames,
+        hadExplicitPlusOneNames: sub.plusOneNames !== undefined,
+      });
     }
 
-    // Execute all upsert operations within a single Prisma transaction
+    // Execute all upsert operations and InvitationCode sync within a single Prisma transaction
     const results = await this.client.$transaction(async (tx: any) => {
-      return Promise.all(
-        submissions.map((sub) => {
-          const normalizedPlusOneCount = sub.status === 'declined' ? 0 : (sub.plusOneCount ?? 0);
-          return tx.subEventRsvp.upsert({
+      const upserted = await Promise.all(
+        normalizedSubmissions.map((item) =>
+          tx.subEventRsvp.upsert({
             where: {
               subEventId_invitationCodeId: {
-                subEventId: sub.subEventId,
+                subEventId: item.subEventId,
                 invitationCodeId: invite.id,
               },
             },
             create: {
-              subEventId: sub.subEventId,
+              subEventId: item.subEventId,
               invitationCodeId: invite.id,
-              status: sub.status,
-              plusOneCount: normalizedPlusOneCount,
-              dietaryNotes: sub.dietaryNotes || '',
+              status: item.status,
+              plusOneCount: item.plusOneCount,
+              dietaryNotes: item.dietaryNotes,
+              mealSelections: item.mealSelections,
+              customAnswers: item.customAnswers,
+              plusOneNames: item.plusOneNames,
             },
             update: {
-              status: sub.status,
-              plusOneCount: normalizedPlusOneCount,
-              dietaryNotes: sub.dietaryNotes || '',
+              status: item.status,
+              plusOneCount: item.plusOneCount,
+              dietaryNotes: item.dietaryNotes,
+              mealSelections: item.mealSelections,
+              customAnswers: item.customAnswers,
+              plusOneNames: item.plusOneNames,
             },
-          });
-        })
+          })
+        )
       );
+
+      if (typeof tx.invitationCode?.update === 'function') {
+        const existingInvite =
+          typeof tx.invitationCode?.findUnique === 'function'
+            ? await tx.invitationCode.findUnique({
+              where: { id: invite.id },
+              select: {
+                used: true,
+                usedAt: true,
+                plusOneFirstName: true,
+                plusOneLastName: true,
+                dietaryNotes: true,
+                extraFields: true,
+              },
+            })
+            : null;
+
+        const dbRsvps =
+          typeof tx.subEventRsvp?.findMany === 'function'
+            ? await tx.subEventRsvp.findMany({
+              where: { invitationCodeId: invite.id },
+              include: { subEvent: true },
+              orderBy: { createdAt: 'asc' },
+            })
+            : [];
+
+        const mergedByEvent = new Map<string, any>();
+        if (Array.isArray(dbRsvps)) {
+          for (const row of dbRsvps) {
+            if (row && row.subEventId) {
+              mergedByEvent.set(row.subEventId, row);
+            }
+          }
+        }
+        for (const item of normalizedSubmissions) {
+          const prevRow = mergedByEvent.get(item.subEventId);
+          mergedByEvent.set(item.subEventId, {
+            ...(prevRow || {}),
+            subEventId: item.subEventId,
+            status: item.status,
+            plusOneCount: item.plusOneCount,
+            dietaryNotes: item.dietaryNotes,
+            mealSelections: item.mealSelections,
+            customAnswers: item.customAnswers,
+            plusOneNames: item.plusOneNames,
+            subEvent: prevRow?.subEvent ?? subEventMap.get(item.subEventId),
+          });
+        }
+
+        const effectiveRsvps = Array.from(mergedByEvent.values());
+        const hasAttending = effectiveRsvps.some((r) => r.status === 'attending');
+        const hasDeclined = effectiveRsvps.some((r) => r.status === 'declined');
+        const attendanceStatus: 'attending' | 'declined' | 'pending' = hasAttending
+          ? 'attending'
+          : hasDeclined
+            ? 'declined'
+            : 'pending';
+        const hasResponded = hasAttending || hasDeclined;
+
+        const nextUsed = hasResponded ? true : Boolean(existingInvite?.used);
+        const nextUsedAt = hasResponded
+          ? (existingInvite?.usedAt ?? now)
+          : (existingInvite?.usedAt ?? null);
+
+        const maxAttendingPlusOnes = effectiveRsvps.reduce(
+          (max, r) => (r.status === 'attending' ? Math.max(max, r.plusOneCount ?? 0) : max),
+          0
+        );
+
+        const collectedPlusOneNames: string[] = [];
+        for (const r of effectiveRsvps) {
+          if (r.status !== 'attending' || (r.plusOneCount ?? 0) <= 0) continue;
+          const names = normalizePlusOneNames(r.plusOneNames).slice(0, r.plusOneCount);
+          for (const name of names) {
+            if (name && !collectedPlusOneNames.includes(name)) {
+              collectedPlusOneNames.push(name);
+            }
+          }
+        }
+
+        let nextFirstName: string | null = existingInvite?.plusOneFirstName ?? null;
+        let nextLastName: string | null = existingInvite?.plusOneLastName ?? null;
+        let syncedPlusOneNames: string[] = collectedPlusOneNames;
+
+        if (maxAttendingPlusOnes === 0) {
+          nextFirstName = null;
+          nextLastName = null;
+          syncedPlusOneNames = [];
+        } else if (collectedPlusOneNames.length > 0) {
+          const split = splitFullName(collectedPlusOneNames[0]);
+          nextFirstName = split.firstName;
+          nextLastName = split.lastName;
+        } else if (normalizedSubmissions.some((s) => s.hadExplicitPlusOneNames)) {
+          nextFirstName = null;
+          nextLastName = null;
+          syncedPlusOneNames = [];
+        } else {
+          const fallbackExistingName = [nextFirstName, nextLastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          if (fallbackExistingName) {
+            syncedPlusOneNames = [fallbackExistingName];
+          }
+        }
+
+        const activeNotesList: string[] = [];
+        const seenNotesLower = new Set<string>();
+        const noteCandidates = effectiveRsvps.filter((r) => r.status !== 'declined');
+        const notesSource = noteCandidates.length > 0 ? noteCandidates : effectiveRsvps;
+        for (const r of notesSource) {
+          const note = typeof r.dietaryNotes === 'string' ? r.dietaryNotes.trim() : '';
+          if (note && !seenNotesLower.has(note.toLowerCase())) {
+            seenNotesLower.add(note.toLowerCase());
+            activeNotesList.push(note);
+          }
+        }
+        const nextDietaryNotes = activeNotesList.length > 0 ? activeNotesList.join('; ') : null;
+
+        const dietaryTagSet = new Set<string>();
+        const structuredMeals: Array<{
+          subEventId: string;
+          subEventTitle: string;
+          selections: Array<{
+            attendee: string;
+            optionId: string;
+            label: string;
+            dietaryTags: string[];
+          }>;
+        }> = [];
+        const structuredAnswers: Array<{
+          subEventId: string;
+          subEventTitle: string;
+          answers: Array<{
+            questionId: string;
+            prompt: string;
+            answer: string;
+          }>;
+        }> = [];
+
+        for (const r of effectiveRsvps) {
+          if (r.status !== 'attending') continue;
+          const evtObj = r.subEvent ?? subEventMap.get(r.subEventId);
+          const evtTitle = evtObj?.title || 'Event';
+          const evtMealOpts = normalizeMealOptions(evtObj?.mealOptions);
+          const evtQuestions = normalizeCustomQuestions(evtObj?.customQuestions);
+          const rMeals = normalizeMealSelections(r.mealSelections);
+          const rNames = normalizePlusOneNames(r.plusOneNames);
+          const rAnswers = normalizeCustomAnswers(r.customAnswers);
+
+          if (evtMealOpts.length > 0 && rMeals.some(Boolean)) {
+            const optMap = new Map(evtMealOpts.map((o) => [o.id, o]));
+            const resolvedSelections: Array<{
+              attendee: string;
+              optionId: string;
+              label: string;
+              dietaryTags: string[];
+            }> = [];
+
+            rMeals.forEach((optId, idx) => {
+              if (!optId) return;
+              const opt = optMap.get(optId);
+              const label = opt?.label || optId;
+              const tags = opt?.dietaryTags ?? [];
+              tags.forEach((tag) => dietaryTagSet.add(tag));
+              const attendee =
+                idx === 0
+                  ? invite.guestName || 'Primary Guest'
+                  : rNames[idx - 1] || syncedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
+              resolvedSelections.push({
+                attendee,
+                optionId: optId,
+                label,
+                dietaryTags: tags,
+              });
+            });
+
+            if (resolvedSelections.length > 0) {
+              structuredMeals.push({
+                subEventId: r.subEventId,
+                subEventTitle: evtTitle,
+                selections: resolvedSelections,
+              });
+            }
+          }
+
+          if (evtQuestions.length > 0 && Object.keys(rAnswers).length > 0) {
+            const qMap = new Map(evtQuestions.map((q) => [q.id, q]));
+            const resolvedAnswers: Array<{
+              questionId: string;
+              prompt: string;
+              answer: string;
+            }> = [];
+
+            for (const [qId, ans] of Object.entries(rAnswers)) {
+              if (!ans) continue;
+              const q = qMap.get(qId);
+              resolvedAnswers.push({
+                questionId: qId,
+                prompt: q?.prompt || qId,
+                answer: ans,
+              });
+            }
+
+            if (resolvedAnswers.length > 0) {
+              structuredAnswers.push({
+                subEventId: r.subEventId,
+                subEventTitle: evtTitle,
+                answers: resolvedAnswers,
+              });
+            }
+          }
+        }
+
+        const mealSummary = structuredMeals
+          .map((entry) => {
+            const inner = entry.selections
+              .map((sel) =>
+                sel.dietaryTags.length > 0
+                  ? `${sel.attendee}: ${sel.label} (${sel.dietaryTags.join(', ')})`
+                  : `${sel.attendee}: ${sel.label}`
+              )
+              .join('; ');
+            return structuredMeals.length > 1 ? `${entry.subEventTitle} — ${inner}` : inner;
+          })
+          .join(' | ');
+
+        const customAnswersSummary = structuredAnswers
+          .map((entry) => {
+            const inner = entry.answers
+              .map((ans) => `${ans.prompt}: ${ans.answer}`)
+              .join('; ');
+            return structuredAnswers.length > 1 ? `${entry.subEventTitle} — ${inner}` : inner;
+          })
+          .join(' | ');
+
+        const existingExtra = parseExtraFieldsObject(existingInvite?.extraFields);
+
+        await tx.invitationCode.update({
+          where: { id: invite.id },
+          data: {
+            used: nextUsed,
+            usedAt: nextUsedAt,
+            plusOneFirstName: nextFirstName,
+            plusOneLastName: nextLastName,
+            dietaryNotes: nextDietaryNotes,
+            extraFields: {
+              ...existingExtra,
+              attendanceStatus,
+              plusOneCount: maxAttendingPlusOnes,
+              plusOneNames: syncedPlusOneNames,
+              dietaryTags: Array.from(dietaryTagSet),
+              mealSelections: structuredMeals,
+              mealSummary,
+              customAnswers: structuredAnswers,
+              customAnswersSummary,
+            },
+          },
+        });
+      }
+
+      return upserted;
     });
 
     return results;
@@ -728,6 +1215,10 @@ export class SubEventService {
         location: e.location || '',
         category: e.category || '',
         isPrivate: e.isPrivate,
+        ...(e.mealOptions !== undefined ? { mealOptions: normalizeMealOptions(e.mealOptions) } : {}),
+        ...(e.customQuestions !== undefined
+          ? { customQuestions: normalizeCustomQuestions(e.customQuestions) }
+          : {}),
         allowedInvitationCodeIds: e.accesses ? e.accesses.map((a: any) => a.invitationCodeId) : [],
       })),
       invitationCodes: (invitationCodes || []).map((c: any) => ({

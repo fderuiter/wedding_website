@@ -5,7 +5,15 @@ import type { ContentNodeDTO } from '@/features/content';
 import AddToCalendar from '@/components/AddToCalendar';
 import EmptyState from '@/components/EmptyState';
 import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
-import { MAX_RSVP_PLUS_ONE_COUNT } from '@/features/sub-events';
+import {
+  MAX_RSVP_PLUS_ONE_COUNT,
+  normalizeMealOptions,
+  normalizeCustomQuestions,
+} from '@/utils/rsvpPrompts';
+import type {
+  MealOptionDTO,
+  CustomRsvpQuestionDTO,
+} from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { useGuestHelp } from '@/components/guest/GuestHelpModal';
@@ -34,10 +42,15 @@ interface ScheduleEventItem {
   description?: string;
   isPrivate?: boolean;
   isReadOnly?: boolean;
+  mealOptions?: MealOptionDTO[];
+  customQuestions?: CustomRsvpQuestionDTO[];
   userRsvp?: {
     status: 'attending' | 'declined' | 'pending';
     plusOneCount: number;
     dietaryNotes: string;
+    mealSelections?: string[];
+    customAnswers?: Record<string, string>;
+    plusOneNames?: string[];
   } | null;
   createdAt?: Date;
 }
@@ -180,6 +193,8 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         description: data?.description || data?.receptionDetails || '',
         isPrivate: Boolean(data?.isPrivate),
         isReadOnly: Boolean(data?.isReadOnly),
+        mealOptions: normalizeMealOptions(data?.mealOptions),
+        customQuestions: normalizeCustomQuestions(data?.customQuestions),
         userRsvp: data?.userRsvp !== undefined ? data.userRsvp : undefined,
         createdAt: node.createdAt,
       };
@@ -208,6 +223,7 @@ export default function InteractiveTimeline({
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
   const [apiMaxPlusOnes, setApiMaxPlusOnes] = useState<number | null | undefined>(undefined);
+  const [apiSavedPlusOneNames, setApiSavedPlusOneNames] = useState<string[] | null>(null);
   const [apiRsvpOpen, setApiRsvpOpen] = useState<boolean | undefined>(undefined);
   const [apiDeadlineDate, setApiDeadlineDate] = useState<string | null | undefined>(undefined);
   const [apiFormattedDeadline, setApiFormattedDeadline] = useState<string | null | undefined>(
@@ -287,6 +303,8 @@ export default function InteractiveTimeline({
         id: node.id,
         title: data?.title || '',
         isReadOnly: Boolean(data?.isReadOnly),
+        mealOptions: normalizeMealOptions(data?.mealOptions),
+        customQuestions: normalizeCustomQuestions(data?.customQuestions),
         userRsvp: data?.userRsvp || null,
       };
     });
@@ -303,6 +321,7 @@ export default function InteractiveTimeline({
   const rsvpManager = useScheduleRsvpManager({
     initialEvents,
     maxPlusOnes: effectiveMaxPlusOnes,
+    defaultPlusOneNames: apiSavedPlusOneNames,
     onRsvpClosed: handleRsvpClosedMidSession,
   });
   const { initializeEvents } = rsvpManager;
@@ -336,6 +355,20 @@ export default function InteractiveTimeline({
           setIsGuest(true);
           setGuestName(json.guestName || null);
         }
+        const rawSavedNames = Array.isArray(json.savedPlusOneNames)
+          ? json.savedPlusOneNames
+          : Array.isArray(json.plusOneNames)
+            ? json.plusOneNames
+            : null;
+        if (Array.isArray(rawSavedNames)) {
+          setApiSavedPlusOneNames(
+            rawSavedNames.filter(
+              (n: unknown): n is string => typeof n === 'string' && n.trim().length > 0
+            )
+          );
+        } else if (json.savedPlusOneNames === null || json.plusOneNames === null) {
+          setApiSavedPlusOneNames(null);
+        }
         if (typeof json.rsvpOpen === 'boolean') {
           setApiRsvpOpen(json.rsvpOpen);
           setHasResolvedRsvpStatus(true);
@@ -365,6 +398,8 @@ export default function InteractiveTimeline({
             description: item.description || '',
             isPrivate: Boolean(item.isPrivate),
             isReadOnly: Boolean(item.isReadOnly),
+            mealOptions: normalizeMealOptions(item.mealOptions),
+            customQuestions: normalizeCustomQuestions(item.customQuestions),
             userRsvp: item.userRsvp !== undefined ? item.userRsvp : null,
           }));
           setSubEventsFromApi(mapped);
@@ -803,6 +838,8 @@ export default function InteractiveTimeline({
                     {/* Interactive RSVP Form or Read-Only Saved Summary for Authenticated Guests */}
                     {!event.isReadOnly && (isGuest || event.userRsvp !== undefined) && (() => {
                       const itemState = rsvpManager.getRsvpState(event.id);
+                      const eventMealOptions = event.mealOptions ?? [];
+                      const eventCustomQuestions = event.customQuestions ?? [];
 
                       if (!effectiveRsvpOpen) {
                         const savedRsvp = itemState.baseline;
@@ -820,6 +857,36 @@ export default function InteractiveTimeline({
                               : 'bg-gray-200 text-gray-800 dark:bg-zinc-700 dark:text-zinc-200 border-gray-300 dark:border-zinc-600';
                         const savedPlusOnes =
                           savedRsvp.status === 'declined' ? 0 : savedRsvp.plusOneCount;
+                        const savedPlusOneNames =
+                          savedRsvp.status === 'declined'
+                            ? []
+                            : savedRsvp.plusOneNames.filter((n) => n.trim().length > 0);
+                        const mealMap = new Map(eventMealOptions.map((m) => [m.id, m]));
+                        const savedMealsSummary =
+                          savedRsvp.status === 'attending' && eventMealOptions.length > 0
+                            ? savedRsvp.mealSelections
+                              .map((optId, idx) => {
+                                if (!optId) return null;
+                                const opt = mealMap.get(optId);
+                                const who =
+                                  idx === 0
+                                    ? guestName || 'Primary Guest'
+                                    : savedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
+                                return `${who}: ${opt?.label || optId}`;
+                              })
+                              .filter(Boolean)
+                              .join('; ')
+                            : '';
+                        const savedAnswersSummary =
+                          savedRsvp.status === 'attending' && eventCustomQuestions.length > 0
+                            ? eventCustomQuestions
+                              .map((q) => {
+                                const ans = savedRsvp.customAnswers[q.id];
+                                return ans ? `${q.prompt}: ${ans}` : null;
+                              })
+                              .filter(Boolean)
+                              .join('; ')
+                            : '';
 
                         return (
                           <div
@@ -853,6 +920,7 @@ export default function InteractiveTimeline({
                                 </dt>
                                 <dd className="font-medium text-gray-900 dark:text-zinc-100">
                                   {savedPlusOnes}
+                                  {savedPlusOneNames.length > 0 && ` (${savedPlusOneNames.join(', ')})`}
                                 </dd>
                               </div>
                               <div>
@@ -863,6 +931,26 @@ export default function InteractiveTimeline({
                                   {savedRsvp.dietaryNotes ? savedRsvp.dietaryNotes : 'None noted'}
                                 </dd>
                               </div>
+                              {savedMealsSummary && (
+                                <div className="sm:col-span-3">
+                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                    Entrée Selections
+                                  </dt>
+                                  <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                    {savedMealsSummary}
+                                  </dd>
+                                </div>
+                              )}
+                              {savedAnswersSummary && (
+                                <div className="sm:col-span-3">
+                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                    Additional Responses
+                                  </dt>
+                                  <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                    {savedAnswersSummary}
+                                  </dd>
+                                </div>
+                              )}
                             </dl>
                           </div>
                         );
@@ -871,12 +959,16 @@ export default function InteractiveTimeline({
                       const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
                       const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
                       const isDeclined = itemState.current.status === 'declined';
+                      const isAttending = itemState.current.status === 'attending';
                       const isPlusOneDisabled =
                         isControlDisabled || isZeroPlusOneAllowance || isDeclined;
                       const plusOneMaxAttr =
                         typeof effectiveMaxPlusOnes === 'number'
                           ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, effectiveMaxPlusOnes))
                           : MAX_RSVP_PLUS_ONE_COUNT;
+                      const attendingPlusOneCount =
+                        isZeroPlusOneAllowance || !isAttending ? 0 : itemState.current.plusOneCount;
+                      const attendingPartySize = isAttending ? 1 + attendingPlusOneCount : 0;
 
                       return (
                         <div
@@ -985,6 +1077,198 @@ export default function InteractiveTimeline({
                               />
                             </div>
                           </div>
+
+                          {/* Conditional Plus-One Name Inputs for Attending Guests */}
+                          {isAttending && attendingPlusOneCount > 0 && (
+                            <div
+                              className="mb-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
+                              data-testid={`rsvp-plus-one-names-${event.id}`}
+                            >
+                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                Plus-One Guest {attendingPlusOneCount === 1 ? 'Name' : 'Names'}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {Array.from({ length: attendingPlusOneCount }, (_, idx) => {
+                                  const nameInputId = `rsvp-plus-one-name-${event.id}-${idx}`;
+                                  return (
+                                    <div key={nameInputId}>
+                                      <label
+                                        htmlFor={nameInputId}
+                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                      >
+                                        {attendingPlusOneCount === 1
+                                          ? 'Plus-One Full Name'
+                                          : `Plus-One #${idx + 1} Full Name`}
+                                      </label>
+                                      <input
+                                        id={nameInputId}
+                                        type="text"
+                                        placeholder="e.g. Jordan Taylor"
+                                        disabled={isControlDisabled}
+                                        value={itemState.current.plusOneNames[idx] ?? ''}
+                                        onChange={(e) => {
+                                          const nextNames = Array.from(
+                                            { length: attendingPlusOneCount },
+                                            (__, nIdx) =>
+                                              nIdx === idx
+                                                ? e.target.value
+                                                : (itemState.current.plusOneNames[nIdx] ?? '')
+                                          );
+                                          rsvpManager.updateRsvp(event.id, {
+                                            plusOneNames: nextNames,
+                                          });
+                                        }}
+                                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Conditional Per-Attendee Meal Selectors for Attending Guests */}
+                          {isAttending && eventMealOptions.length > 0 && (
+                            <div
+                              className="mb-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
+                              data-testid={`rsvp-meals-${event.id}`}
+                            >
+                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                Entrée Selections *
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {Array.from({ length: attendingPartySize }, (_, attendeeIdx) => {
+                                  const selectId = `rsvp-meal-${event.id}-${attendeeIdx}`;
+                                  const attendeeLabel =
+                                    attendeeIdx === 0
+                                      ? guestName || 'Primary Guest'
+                                      : (itemState.current.plusOneNames[attendeeIdx - 1] ?? '').trim() ||
+                                        `Plus-One #${attendeeIdx}`;
+                                  const selectedMealId =
+                                    itemState.current.mealSelections[attendeeIdx] ?? '';
+                                  const selectedMealObj = eventMealOptions.find(
+                                    (m) => m.id === selectedMealId
+                                  );
+
+                                  return (
+                                    <div key={selectId}>
+                                      <label
+                                        htmlFor={selectId}
+                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                      >
+                                        {`Entrée for ${attendeeLabel} *`}
+                                      </label>
+                                      <select
+                                        id={selectId}
+                                        required
+                                        disabled={isControlDisabled}
+                                        value={selectedMealId}
+                                        onChange={(e) => {
+                                          const nextMeals = Array.from(
+                                            { length: attendingPartySize },
+                                            (__, mIdx) =>
+                                              mIdx === attendeeIdx
+                                                ? e.target.value
+                                                : (itemState.current.mealSelections[mIdx] ?? '')
+                                          );
+                                          rsvpManager.updateRsvp(event.id, {
+                                            mealSelections: nextMeals,
+                                          });
+                                        }}
+                                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                      >
+                                        <option value="">Select an entrée...</option>
+                                        {eventMealOptions.map((opt) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.dietaryTags.length > 0
+                                              ? `${opt.label} (${opt.dietaryTags.join(', ')})`
+                                              : opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      {selectedMealObj?.description && (
+                                        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                          {selectedMealObj.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Conditional Custom RSVP Prompts for Attending Guests */}
+                          {isAttending && eventCustomQuestions.length > 0 && (
+                            <div
+                              className="mb-3 space-y-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
+                              data-testid={`rsvp-questions-${event.id}`}
+                            >
+                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                Additional RSVP Questions
+                              </p>
+                              <div className="space-y-2.5">
+                                {eventCustomQuestions.map((question) => {
+                                  const qControlId = `rsvp-question-${event.id}-${question.id}`;
+                                  const currentAnswer =
+                                    itemState.current.customAnswers[question.id] ?? '';
+
+                                  return (
+                                    <div key={question.id}>
+                                      <label
+                                        htmlFor={qControlId}
+                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                      >
+                                        {question.prompt}
+                                        {question.required ? ' *' : ''}
+                                      </label>
+                                      {question.type === 'choice' ? (
+                                        <select
+                                          id={qControlId}
+                                          required={question.required}
+                                          disabled={isControlDisabled}
+                                          value={currentAnswer}
+                                          onChange={(e) =>
+                                            rsvpManager.updateRsvp(event.id, {
+                                              customAnswers: {
+                                                ...itemState.current.customAnswers,
+                                                [question.id]: e.target.value,
+                                              },
+                                            })
+                                          }
+                                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                        >
+                                          <option value="">Select an option...</option>
+                                          {question.options.map((choice) => (
+                                            <option key={choice} value={choice}>
+                                              {choice}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <input
+                                          id={qControlId}
+                                          type="text"
+                                          required={question.required}
+                                          disabled={isControlDisabled}
+                                          value={currentAnswer}
+                                          onChange={(e) =>
+                                            rsvpManager.updateRsvp(event.id, {
+                                              customAnswers: {
+                                                ...itemState.current.customAnswers,
+                                                [question.id]: e.target.value,
+                                              },
+                                            })
+                                          }
+                                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
 
                           <div className="flex justify-between items-center">
                             <button

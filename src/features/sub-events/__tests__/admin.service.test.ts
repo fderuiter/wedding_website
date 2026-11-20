@@ -145,4 +145,103 @@ describe('SubEventAdminService', () => {
       expect(mockPrismaClient.subEvent.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('mealOptions and customQuestions JSONB validation', () => {
+    it('validates, trims, and persists structured mealOptions and customQuestions', async () => {
+      mockPrismaClient.subEvent.create.mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: 'se-meals', ...data })
+      );
+
+      const created = await service.create({
+        title: 'Evening Reception',
+        isPrivate: false,
+        mealOptions: [
+          {
+            id: 'meal-salmon',
+            label: '  Herb-Crusted Salmon  ',
+            description: '  Lemon dill butter  ',
+            dietaryTags: ['Gluten-Free', 'gluten-free', 'dairy-free'],
+          },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: '  Will you take the hotel shuttle?  ',
+            type: 'choice',
+            required: true,
+            options: ['  Yes, round-trip  ', 'No, driving'],
+          },
+          {
+            id: 'q-song',
+            prompt: 'Song request',
+            type: 'text',
+            required: false,
+            options: ['ignored for text'],
+          },
+        ],
+      } as any);
+
+      expect(created.mealOptions).toEqual([
+        {
+          id: 'meal-salmon',
+          label: 'Herb-Crusted Salmon',
+          description: 'Lemon dill butter',
+          dietaryTags: ['gluten-free', 'dairy-free'],
+        },
+      ]);
+      expect(created.customQuestions).toEqual([
+        {
+          id: 'q-shuttle',
+          prompt: 'Will you take the hotel shuttle?',
+          type: 'choice',
+          required: true,
+          options: ['Yes, round-trip', 'No, driving'],
+        },
+        {
+          id: 'q-song',
+          prompt: 'Song request',
+          type: 'text',
+          required: false,
+          options: [],
+        },
+      ]);
+    });
+
+    it('rejects duplicate meal option IDs', async () => {
+      await expect(
+        service.create({
+          title: 'Evening Reception',
+          mealOptions: [
+            { id: 'dup-id', label: 'Beef', dietaryTags: [] },
+            { id: 'dup-id', label: 'Chicken', dietaryTags: [] },
+          ],
+        } as any)
+      ).rejects.toThrow(/Duplicate meal option ID/i);
+    });
+
+    it('rejects multiple-choice questions with zero options', async () => {
+      await expect(
+        service.create({
+          title: 'Evening Reception',
+          customQuestions: [
+            {
+              id: 'q-invalid',
+              prompt: 'Pick a shuttle time',
+              type: 'choice',
+              required: true,
+              options: [],
+            },
+          ],
+        } as any)
+      ).rejects.toThrow(/at least one option/i);
+    });
+
+    it('rejects meal options with empty labels', async () => {
+      await expect(
+        service.update('se-1', {
+          mealOptions: [{ id: 'm-1', label: '   ', dietaryTags: [] }],
+        } as any)
+      ).rejects.toThrow(/Meal option label is required/i);
+    });
+  });
 });

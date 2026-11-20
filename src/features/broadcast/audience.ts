@@ -156,7 +156,7 @@ export function filterTargetGuestsInMemory<T extends Record<string, any>>(
 
       const effectiveDietary = filters.dietaryCategory ?? filters.dietaryFilter;
       if (effectiveDietary && effectiveDietary !== 'all') {
-        if (!matchDietaryCategory(item.dietaryNotes, effectiveDietary)) {
+        if (!matchDietaryCategory(item.dietaryNotes, effectiveDietary, item.extraFields)) {
           return false;
         }
       }

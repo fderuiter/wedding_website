@@ -368,6 +368,8 @@ const BackupSubEventSchema = z.object({
   location: z.string().nullable().optional(),
   category: z.string().max(100).nullable().optional(),
   isPrivate: z.boolean().optional(),
+  mealOptions: z.array(z.unknown()).optional(),
+  customQuestions: z.array(z.unknown()).optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -388,6 +390,9 @@ const BackupSubEventRsvpSchema = z.object({
   status: z.string().min(1).max(100).optional(),
   plusOneCount: z.number().int().min(0).optional(),
   dietaryNotes: z.string().nullable().optional(),
+  mealSelections: z.array(z.string()).optional(),
+  customAnswers: z.record(z.string(), z.unknown()).optional(),
+  plusOneNames: z.array(z.string()).optional(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });

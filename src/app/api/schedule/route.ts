@@ -6,11 +6,14 @@ import { evaluateRsvpCutoff } from '@/utils/rsvpDeadline';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const session = await getGuestInviteSession(request);
-  const [schedule, plusOneAllocations, rawRsvpStatus] = await Promise.all([
+  const [schedule, plusOneAllocations, savedPlusOneNames, rawRsvpStatus] = await Promise.all([
     subEventService.getScheduleForGuest(session?.code),
     session?.code && typeof subEventService.getPlusOneAllowanceForGuest === 'function'
       ? subEventService.getPlusOneAllowanceForGuest(session.code)
       : Promise.resolve(null),
+    session?.code && typeof subEventService.getSavedPlusOneNamesForGuest === 'function'
+      ? subEventService.getSavedPlusOneNamesForGuest(session.code)
+      : Promise.resolve([]),
     typeof subEventService.getRsvpStatus === 'function'
       ? subEventService.getRsvpStatus()
       : Promise.resolve(undefined),
@@ -23,6 +26,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     isGuest: Boolean(session),
     guestName: session?.guestName || null,
     plusOneAllocations: session ? (plusOneAllocations ?? 0) : null,
+    savedPlusOneNames: session ? savedPlusOneNames : [],
     rsvpOpen: rsvpStatus.isOpen,
     rsvpDeadlineDate: rsvpStatus.deadlineDate,
     rsvpFormattedDeadline: rsvpStatus.formattedDeadline,

@@ -76,37 +76,39 @@ export function isGuestEligibleForSeating(guest: SeatingGuestCandidate): boolean
 }
 
 /**
- * Returns structured dietary badges for a guest's `dietaryNotes` using
- * `matchDietaryCategory` from `@/features/registry`.
+ * Returns structured dietary badges for a guest's `dietaryNotes` (and optional
+ * structured meal dietary tags) using `matchDietaryCategory` from `@/features/registry`.
  */
-export function getDietaryBadges(notes: string | null | undefined): DietaryBadgeInfo[] {
-  if (!notes || !notes.trim()) {
-    return [];
-  }
-  if (!matchDietaryCategory(notes, 'has_restriction')) {
+export function getDietaryBadges(
+  notes: string | null | undefined,
+  structuredSource?: unknown
+): DietaryBadgeInfo[] {
+  if (!matchDietaryCategory(notes, 'has_restriction', structuredSource)) {
     return [];
   }
 
-  const trimmed = notes.trim();
+  const trimmed = notes ? notes.trim() : '';
   const badges: DietaryBadgeInfo[] = [];
 
-  if (matchDietaryCategory(trimmed, 'gluten-free')) {
+  if (matchDietaryCategory(trimmed, 'gluten-free', structuredSource)) {
     badges.push({ category: 'gluten-free', shortLabel: 'GF', label: 'Gluten-Free' });
   }
-  if (matchDietaryCategory(trimmed, 'vegan')) {
+  if (matchDietaryCategory(trimmed, 'vegan', structuredSource)) {
     badges.push({ category: 'vegan', shortLabel: 'VG', label: 'Vegan' });
   }
-  if (matchDietaryCategory(trimmed, 'vegetarian')) {
+  if (matchDietaryCategory(trimmed, 'vegetarian', structuredSource)) {
     badges.push({ category: 'vegetarian', shortLabel: 'V', label: 'Vegetarian' });
   }
-  if (matchDietaryCategory(trimmed, 'dairy-free')) {
+  if (matchDietaryCategory(trimmed, 'dairy-free', structuredSource)) {
     badges.push({ category: 'dairy-free', shortLabel: 'DF', label: 'Dairy-Free' });
   }
-  if (matchDietaryCategory(trimmed, 'nut-free')) {
+  if (matchDietaryCategory(trimmed, 'nut-free', structuredSource)) {
     badges.push({ category: 'nut-free', shortLabel: 'NF', label: 'Nut-Free' });
   }
-  if (matchDietaryCategory(trimmed, 'other')) {
-    const cleanLabel = trimmed.length > 24 ? `${trimmed.slice(0, 22).trimEnd()}…` : trimmed;
+  if (matchDietaryCategory(trimmed, 'other', structuredSource)) {
+    const fallbackLabel = trimmed || 'Dietary Restriction';
+    const cleanLabel =
+      fallbackLabel.length > 24 ? `${fallbackLabel.slice(0, 22).trimEnd()}…` : fallbackLabel;
     badges.push({ category: 'other', shortLabel: 'DIET', label: cleanLabel });
   }
 

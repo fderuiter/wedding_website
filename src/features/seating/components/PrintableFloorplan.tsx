@@ -95,7 +95,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
               {table.invitationCodes && table.invitationCodes.length > 0 ? (
                 <ol className="list-decimal list-inside space-y-1 text-xs">
                   {table.invitationCodes.map((guest, idx) => {
-                    const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+                    const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
                     return (
                       <li
                         key={guest.id}
@@ -146,7 +146,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
           </h2>
           <div className="grid grid-cols-3 gap-2 text-xs">
             {printableUnassignedGuests.map((guest) => {
-              const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+              const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
               return (
                 <div
                   key={guest.id}
