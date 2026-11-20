@@ -2,16 +2,24 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import PhotosPage from '../page';
 import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
+import { getAppConfig } from '@/lib/config';
+import { contentService } from '@/features/content';
+import { isAdminRequest } from '@/core/auth/auth.server';
 
 // Mock dependencies
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
     modules: { gallery: true },
+    photoAlbumUrl: '',
   }),
 }));
 
 jest.mock('@/lib/modules', () => ({
   isFeatureEnabled: jest.fn().mockReturnValue(true),
+}));
+
+jest.mock('@/core/auth/auth.server', () => ({
+  isAdminRequest: jest.fn().mockResolvedValue(false),
 }));
 
 jest.mock('@/features/content', () => ({
@@ -29,44 +37,118 @@ jest.mock('@/components/photos/PhotoGalleryClient', () => ({
 }));
 
 describe('PhotosPage', () => {
-  it('renders native photo gallery client and accessible page elements without third-party embed', async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (getAppConfig as unknown as jest.Mock).mockResolvedValue({
+      modules: { gallery: true },
+      photoAlbumUrl: '',
+    });
+    (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([]);
+    (isAdminRequest as jest.Mock).mockResolvedValue(false);
+  });
+
+  it('passes empty initialPhotos and omits hardcoded Google Photos links when zero approved photos exist', async () => {
     const pageElement = await PhotosPage();
     const { container } = render(pageElement);
 
-    // Verify main heading
     expect(
       screen.getByRole('heading', { level: 1, name: /our wedding photos/i })
     ).toBeInTheDocument();
 
-    // Verify native photo gallery client is rendered directly
     expect(screen.getByTestId('photo-gallery-client')).toBeInTheDocument();
 
-    // Verify initialPhotos prop passed to PhotoGalleryClient contains curated photos
     expect(PhotoGalleryClient).toHaveBeenCalledWith(
       expect.objectContaining({
-        initialPhotos: expect.arrayContaining([
-          expect.stringContaining('googleusercontent.com'),
-        ]),
+        initialPhotos: [],
+        defaultTab: 'curated',
+        isAdmin: false,
       }),
       undefined
     );
 
-    // Verify third-party embed widget is removed
     const widgetContainer = container.querySelector('.pa-gallery-player-widget');
     expect(widgetContainer).not.toBeInTheDocument();
-
-    // Verify fallback indicator is rendered when live feeds are unavailable
-    expect(screen.getByTestId('photos-fallback-indicator')).toBeInTheDocument();
+    expect(screen.queryByTestId('photos-fallback-indicator')).not.toBeInTheDocument();
     expect(
-      screen.getByText(/displaying curated photo gallery/i)
-    ).toBeInTheDocument();
+      screen.queryByRole('link', { name: /view full album/i })
+    ).not.toBeInTheDocument();
+  });
 
-    // Verify View Full Album link
-    const albumLink = screen.getByRole('link', { name: /view full album \(opens in a new tab\)/i });
+  it('renders configured external album link when photoAlbumUrl is set', async () => {
+    (getAppConfig as unknown as jest.Mock).mockResolvedValue({
+      modules: { gallery: true },
+      photoAlbumUrl: 'https://album.example.com/our-wedding',
+    });
+
+    const pageElement = await PhotosPage();
+    render(pageElement);
+
+    const albumLink = screen.getByRole('link', {
+      name: /view full album \(opens in a new tab\)/i,
+    });
     expect(albumLink).toBeInTheDocument();
     expect(albumLink).toHaveAttribute(
       'href',
-      'https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5'
+      'https://album.example.com/our-wedding'
+    );
+  });
+
+  it('preserves real UUIDs, captions, guest category, and admin status when hydrating approved nodes', async () => {
+    (isAdminRequest as jest.Mock).mockResolvedValue(true);
+    (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        type: 'Photo',
+        tags: ['gallery', 'curated'],
+        data: {
+          url: '/uploads/curated-vows.jpg',
+          title: 'First Kiss',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        type: 'Photo',
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          url: '/uploads/photos/dancefloor.jpg',
+          title: 'Dance Floor Joy',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    const pageElement = await PhotosPage();
+    render(pageElement);
+
+    expect(PhotoGalleryClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAdmin: true,
+        defaultTab: 'curated',
+        initialPhotos: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            url: '/uploads/curated-vows.jpg',
+            title: 'First Kiss',
+            isGuestUpload: false,
+            category: 'curated',
+          },
+          {
+            id: '22222222-2222-4222-8222-222222222222',
+            url: '/uploads/photos/dancefloor.jpg',
+            title: 'Dance Floor Joy',
+            isGuestUpload: true,
+            category: 'guest',
+          },
+        ],
+      }),
+      undefined
     );
   });
 });

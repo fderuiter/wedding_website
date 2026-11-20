@@ -551,6 +551,11 @@ export default function AdminSettingsPage() {
                     <Input type="email" name="contactEmail" value={localConfig.contactEmail || ''} onChange={handleChange} placeholder="e.g. hosts@wedding.example" />
                     <FormMessage>Host contact email address used across guest support touchpoints.</FormMessage>
                   </FormGroup>
+                  <FormGroup>
+                    <Label>External Photo Album URL</Label>
+                    <Input type="url" name="photoAlbumUrl" value={localConfig.photoAlbumUrl || ''} onChange={handleChange} placeholder="https://photos.example.com/shared-album (optional)" />
+                    <FormMessage>Optional external shared photo album link displayed on the public gallery page. Leave blank to hide.</FormMessage>
+                  </FormGroup>
                   {isMultisite && selectedProfileId !== 'global' && (
                     <FormGroup>
                       <Label>Subdomain Identifier</Label>
