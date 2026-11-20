@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/features/admin';
-import type { InvitationCodeDTO } from '@/features/registry';
+import type { InvitationCodeDTO, MergeInvitationCodesResult } from '@/features/registry';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 
@@ -156,6 +156,39 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     },
   });
 
+  const { mutateAsync: mutateMergeDuplicates } = useMutation({
+    mutationFn: async ({
+      primaryId,
+      secondaryIds,
+    }: {
+      primaryId: string;
+      secondaryIds: string[];
+    }) =>
+      apiClient.post<MergeInvitationCodesResult>(`${INVITATION_CODES_ENDPOINT}/merge`, {
+        primaryId,
+        secondaryIds,
+      }),
+    onSuccess: (response, { primaryId, secondaryIds }) => {
+      const secondarySet = new Set(secondaryIds);
+      const mergedRecord = response?.record;
+      queryClient.setQueryData<InvitationCacheValue | undefined>(
+        INVITATION_CODES_QUERY_KEY,
+        (old) =>
+          updateInvitationCache(old, (items) =>
+            items
+              .filter((item) => !secondarySet.has(item.id))
+              .map((item) =>
+                item.id === primaryId && mergedRecord ? { ...item, ...mergedRecord } : item
+              )
+          )
+      );
+    },
+    meta: {
+      showSuccessToast: false,
+      showErrorToast: false,
+    },
+  });
+
   return {
     ...orchestration,
     batchUpdateTags: (
@@ -163,6 +196,8 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
       tags: string[],
       action: TagUpdateAction = 'add'
     ) => mutateBatchUpdateTags({ ids, tags, action }),
+    mergeDuplicates: (primaryId: string, secondaryIds: string[]) =>
+      mutateMergeDuplicates({ primaryId, secondaryIds }),
   };
 }
 
