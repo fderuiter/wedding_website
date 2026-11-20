@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import http from 'http';
+import crypto from 'crypto';
 import { execSync, spawn, spawnSync } from 'child_process';
 import { parseDocument } from 'yaml';
 
@@ -252,7 +253,13 @@ describe('Rollback & Provider Deployment Workflows', () => {
 
     it('declares workflow_call secrets, rollback_environment input, and deploy-provider caller job in rollback.yml', () => {
       expect(rollbackYml).toContain('rollback_environment:');
-      for (const secretName of ['GCP_SA_KEY', 'GCP_PROJECT_ID', 'DEPLOY_WEBHOOK_URL', 'SERVICE_URL']) {
+      for (const secretName of [
+        'GCP_SA_KEY',
+        'GCP_PROJECT_ID',
+        'DEPLOY_WEBHOOK_URL',
+        'DEPLOY_WEBHOOK_SECRET',
+        'SERVICE_URL',
+      ]) {
         expect(rollbackYml).toMatch(new RegExp(`^\\s+${secretName}:\\s*$`, 'm'));
       }
       expect(rollbackYml).toContain('uses: ./.github/workflows/deploy-provider.yml');
@@ -270,21 +277,24 @@ describe('Rollback & Provider Deployment Workflows', () => {
       expect(deployProviderYml).toContain('previous_image_digest:');
       expect(deployProviderYml).toContain('--fail-with-body');
       expect(rollbackYml).toContain(
-        '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+        '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
       );
     });
   });
 
   describe('deploy-provider.yml executable step behavior', () => {
-    it('captures the currently serving Cloud Run image tag and digest before rollout (including digest-only revisions)', () => {
+    it('captures the currently serving Cloud Run image tag and digest under both GCP_SA_KEY and OIDC Workload Identity while honoring environment-isolated service names and regions', () => {
       const script = extractStepRunScript(deployProviderYml, 'Capture Active Image Tag Before Rollout');
       const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-gcloud-'));
+      const gcloudLog = path.join(binDir, 'gcloud-calls.log');
+      fs.writeFileSync(gcloudLog, '');
 
       try {
         const mockGcloud = path.join(binDir, 'gcloud');
         fs.writeFileSync(
           mockGcloud,
           `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> ${JSON.stringify(gcloudLog)}
 if [[ "$*" == *"services describe"* ]]; then
   cat <<'JSON'
 {"status":{"traffic":[{"revisionName":"wedding-website-00008-xyz","percent":100}]},"spec":{"template":{"spec":{"containers":[{"image":"ghcr.io/example/wedding_website:1111111111111111111111111111111111111111"}]}}}}
@@ -299,6 +309,7 @@ fi
         const res = runBashStep(script, {
           PATH: `${binDir}:${process.env.PATH || ''}`,
           PROVIDER: 'google-cloud-run',
+          TARGET_ENV: 'production',
           INCOMING_TAG: 'cccccccccccccccccccccccccccccccccccccccc',
           INCOMING_DIGEST: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           CURRENT_SHA: 'cccccccccccccccccccccccccccccccccccccccc',
@@ -315,25 +326,40 @@ fi
           'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
         );
         expect(res.outputs.previous_tag_source).toBe('cloud-run');
+        expect(res.outputs.cloud_run_service).toBe('wedding-website');
+        expect(res.outputs.cloud_run_region).toBe('us-central1');
 
-        const digestOnlyRes = runBashStep(script, {
+        // OIDC Workload Identity Federation (no GCP_SA_KEY) on staging defaults to isolated wedding-website-staging
+        fs.writeFileSync(gcloudLog, '');
+        const oidcStagingRes = runBashStep(script, {
           PATH: `${binDir}:${process.env.PATH || ''}`,
           MOCK_REVISION_IMAGE:
             'ghcr.io/example/wedding_website@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
           PROVIDER: 'google-cloud-run',
+          TARGET_ENV: 'staging',
+          CLOUD_RUN_REGION: 'europe-west1',
           INCOMING_TAG: 'cccccccccccccccccccccccccccccccccccccccc',
           INCOMING_DIGEST: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
           CURRENT_SHA: 'cccccccccccccccccccccccccccccccccccccccc',
           DRY_RUN: 'false',
-          GCP_SA_KEY: '{"project_id":"demo-project"}',
-          GCP_PROJECT_ID: 'demo-project',
+          GCP_WORKLOAD_IDENTITY_PROVIDER:
+            'projects/123456789/locations/global/workloadIdentityPools/github/providers/oidc',
+          GCP_SERVICE_ACCOUNT: 'deployer@oidc-project.iam.gserviceaccount.com',
+          GCP_SA_KEY: '',
+          GCP_PROJECT_ID: '',
           GITHUB_TOKEN: '',
           GITHUB_REPOSITORY: '',
         });
 
-        expect(digestOnlyRes.status).toBe(0);
-        expect(digestOnlyRes.outputs.previous_image_digest).toBe(
+        expect(oidcStagingRes.status).toBe(0);
+        expect(oidcStagingRes.outputs.previous_image_digest).toBe(
           'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+        );
+        expect(oidcStagingRes.outputs.cloud_run_service).toBe('wedding-website-staging');
+        expect(oidcStagingRes.outputs.cloud_run_region).toBe('europe-west1');
+        const loggedCalls = fs.readFileSync(gcloudLog, 'utf8');
+        expect(loggedCalls).toContain(
+          'run services describe wedding-website-staging --region=europe-west1 --project=oidc-project'
         );
       } finally {
         fs.rmSync(binDir, { recursive: true, force: true });
@@ -379,23 +405,39 @@ fi
       }
     });
 
-    it('enforces --fail-with-body on generic webhook deployments and preserves dry-run output detection', async () => {
+    it('enforces HMAC-SHA256 signed --fail-with-body generic webhook deployments and never coerces live runs to dry-run', async () => {
       const webhookScript = extractStepRunScript(deployProviderYml, 'Deploy via Generic Webhook Adapter');
       const resolveUrlScript = extractStepRunScript(deployProviderYml, 'Resolve Service URL Output');
 
-      const dryRes = runBashStep(resolveUrlScript, {
+      // Live run (INPUT_DRY_RUN=false) with empty credentials/URLs must NEVER coerce is_dry_run to true
+      const liveEmptyRes = runBashStep(resolveUrlScript, {
+        VAR_SERVICE_URL: '',
         CLOUDRUN_URL: '',
-        GCP_SA_KEY: '',
-        DEPLOY_WEBHOOK_URL: '',
+        SECRET_SERVICE_URL: '',
         INPUT_DRY_RUN: 'false',
-        DEFAULT_SERVICE_URL: 'http://127.0.0.1:3000',
       });
-      expect(dryRes.status).toBe(0);
-      expect(dryRes.outputs.is_dry_run).toBe('true');
+      expect(liveEmptyRes.status).toBe(0);
+      expect(liveEmptyRes.outputs.is_dry_run).toBe('false');
+      expect(liveEmptyRes.outputs.service_url).toBe('');
 
+      // Explicit dry-run (INPUT_DRY_RUN=true) sets is_dry_run=true and placeholder localhost URL
+      const explicitDryRes = runBashStep(resolveUrlScript, {
+        VAR_SERVICE_URL: '',
+        CLOUDRUN_URL: '',
+        SECRET_SERVICE_URL: '',
+        INPUT_DRY_RUN: 'true',
+      });
+      expect(explicitDryRes.status).toBe(0);
+      expect(explicitDryRes.outputs.is_dry_run).toBe('true');
+      expect(explicitDryRes.outputs.service_url).toBe('http://127.0.0.1:3000');
+
+      let requestCount = 0;
       let nextStatus = 500;
       let receivedBody = '';
+      let receivedHeaders: http.IncomingHttpHeaders = {};
       const server = http.createServer((req, res) => {
+        requestCount += 1;
+        receivedHeaders = req.headers;
         let data = '';
         req.on('data', chunk => {
           data += chunk;
@@ -403,34 +445,72 @@ fi
         req.on('end', () => {
           receivedBody = data;
           res.writeHead(nextStatus, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: nextStatus === 200, message: nextStatus === 200 ? 'deployed' : 'upstream failure' }));
+          res.end(
+            JSON.stringify({
+              ok: nextStatus === 200,
+              message: nextStatus === 200 ? 'deployed' : 'upstream failure',
+            })
+          );
         });
       });
 
       await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const webhookSecret = 'super-secret-hmac-signing-key-2026';
+      const digest = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
       try {
-        const failRes = await runBashStepAsync(webhookScript, {
-          IMAGE_URI: 'ghcr.io/example/wedding_website:v1.2.3',
+        // Missing DEPLOY_WEBHOOK_SECRET must fail closed without sending any HTTP request
+        const missingSecretRes = await runBashStepAsync(webhookScript, {
+          IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
+          IMAGE_DIGEST: digest,
           TARGET_ENV: 'production',
           DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_SECRET: '',
+        });
+        expect(missingSecretRes.status).not.toBe(0);
+        expect(missingSecretRes.stdout + missingSecretRes.stderr).toContain('Missing DEPLOY_WEBHOOK_SECRET');
+        expect(requestCount).toBe(0);
+
+        const failRes = await runBashStepAsync(webhookScript, {
+          IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
+          IMAGE_DIGEST: digest,
+          TARGET_ENV: 'production',
+          DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_SECRET: webhookSecret,
         });
         expect(failRes.status).not.toBe(0);
         expect(failRes.stdout + failRes.stderr).toContain('upstream failure');
 
         nextStatus = 200;
         const okRes = await runBashStepAsync(webhookScript, {
-          IMAGE_URI: 'ghcr.io/example/wedding_website:v1.2.3',
+          IMAGE_URI: `ghcr.io/example/wedding_website@${digest}`,
+          IMAGE_DIGEST: digest,
           TARGET_ENV: 'production',
           DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_SECRET: webhookSecret,
         });
         expect(okRes.status).toBe(0);
         expect(JSON.parse(receivedBody)).toEqual({
-          image: 'ghcr.io/example/wedding_website:v1.2.3',
+          image: `ghcr.io/example/wedding_website@${digest}`,
+          digest,
           environment: 'production',
         });
+
+        const expectedBodySig = crypto
+          .createHmac('sha256', webhookSecret)
+          .update(receivedBody)
+          .digest('hex');
+        const timestampHeader = String(receivedHeaders['x-deploy-timestamp'] || '');
+        expect(timestampHeader).toMatch(/^\d+$/);
+        const expectedTimestampSig = crypto
+          .createHmac('sha256', webhookSecret)
+          .update(`${timestampHeader}.${receivedBody}`)
+          .digest('hex');
+
+        expect(receivedHeaders['x-hub-signature-256']).toBe(`sha256=${expectedBodySig}`);
+        expect(receivedHeaders['x-deploy-signature-256']).toBe(`sha256=${expectedTimestampSig}`);
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
@@ -659,7 +739,35 @@ fi
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
 
-      // Dry-run validation passes when SERVICE_URL is omitted
+      // Live run (IS_DRY_RUN=false) rejects missing SERVICE_URL immediately
+      const missingLiveRes = await runBashStepAsync(healthProbeScript, {
+        VAR_SERVICE_URL: '',
+        ENV_SERVICE_URL: '',
+        PROVIDER_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+        TARGET_ENV: 'production',
+        RESTORED_TAG: 'v1.2.2',
+      });
+      expect(missingLiveRes.status).toBe(1);
+      expect(missingLiveRes.outputs.health_status).toBe('unhealthy');
+      expect(missingLiveRes.outputs.http_status).toBe('invalid-url');
+
+      // Live run (IS_DRY_RUN=false) rejects unreachable endpoint
+      const fastLiveUnreachableScript = healthProbeScript
+        .replace('MAX_TIMEOUT=55', 'MAX_TIMEOUT=1')
+        .replace('DELAY=2', 'DELAY=1');
+      const unreachableLiveRes = await runBashStepAsync(fastLiveUnreachableScript, {
+        VAR_SERVICE_URL: 'http://127.0.0.1:9',
+        ENV_SERVICE_URL: '',
+        PROVIDER_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+        TARGET_ENV: 'production',
+        RESTORED_TAG: 'v1.2.2',
+      });
+      expect(unreachableLiveRes.status).toBe(1);
+      expect(unreachableLiveRes.outputs.health_status).toBe('unhealthy');
+
+      // Explicit dry-run validation passes when SERVICE_URL is omitted or unreachable
       const fastDryProbeScript = healthProbeScript
         .replace('DELAY=2', 'DELAY=1')
         .replace('ELAPSED -ge 2', 'ELAPSED -ge 0');

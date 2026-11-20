@@ -41,6 +41,11 @@ on:
         required: false
         default: ''
         type: string
+      dry_run:
+        description: 'Run release provider deployment in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       environment:
@@ -67,6 +72,11 @@ on:
         required: false
         default: ''
         type: string
+      dry_run:
+        description: 'Run release provider deployment in explicit dry-run validation mode'
+        required: false
+        default: false
+        type: boolean
     outputs:
       schema_compatibility_status:
         description: 'Schema compatibility check status'
@@ -272,6 +282,7 @@ jobs:
     with:
       environment: 'staging'
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
+      confirm: true
     secrets: inherit
 
   staging-deploy-provider:
@@ -280,6 +291,7 @@ jobs:
       contents: read
       packages: read
       attestations: read
+      id-token: write
     needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
       !cancelled() &&
@@ -304,6 +316,7 @@ jobs:
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
   staging-verify-deployment:
@@ -336,7 +349,7 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           SERVICE_URL: ${{ needs.staging-deploy-provider.outputs.service_url }}
           SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
-          IS_DRY_RUN: ${{ needs.staging-deploy-provider.outputs.is_dry_run }}
+          IS_DRY_RUN: ${{ (inputs.dry_run && needs.staging-deploy-provider.outputs.is_dry_run == 'true') && 'true' || 'false' }}
         run: |
           RESOLVED_URL="${VAR_SERVICE_URL:-}"
           if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
@@ -411,7 +424,7 @@ jobs:
               echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
             fi
 
-            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$HTTP_STATUS" -o "$HTTP_STATUS" = "000" ]; then
+            if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
               if [ $ELAPSED -ge 6 ]; then
                 echo "::notice::Dry-run staging environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true
@@ -455,6 +468,7 @@ jobs:
       contents: read
       packages: read
       attestations: read
+      id-token: write
     needs: [publish-artifact, staging-deploy-provider, staging-verify-deployment]
     if: failure() && needs.staging-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
@@ -495,6 +509,7 @@ jobs:
     with:
       environment: 'production'
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
+      confirm: true
     secrets: inherit
 
   production-deploy-provider:
@@ -503,6 +518,7 @@ jobs:
       contents: read
       packages: read
       attestations: read
+      id-token: write
     needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
       !cancelled() &&
@@ -528,6 +544,7 @@ jobs:
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
   production-verify-deployment:
@@ -560,7 +577,7 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           SERVICE_URL: ${{ needs.production-deploy-provider.outputs.service_url }}
           SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
-          IS_DRY_RUN: ${{ needs.production-deploy-provider.outputs.is_dry_run }}
+          IS_DRY_RUN: ${{ (inputs.dry_run && needs.production-deploy-provider.outputs.is_dry_run == 'true') && 'true' || 'false' }}
         run: |
           RESOLVED_URL="${VAR_SERVICE_URL:-}"
           if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
@@ -636,7 +653,7 @@ jobs:
               echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
             fi
 
-            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$HTTP_STATUS" -o "$HTTP_STATUS" = "000" ]; then
+            if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
               if [ $ELAPSED -ge 6 ]; then
                 echo "::notice::Dry-run production environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true
@@ -681,6 +698,7 @@ jobs:
       contents: read
       packages: read
       attestations: read
+      id-token: write
     needs: [publish-artifact, production-deploy-provider, production-verify-deployment]
     if: failure() && needs.production-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml

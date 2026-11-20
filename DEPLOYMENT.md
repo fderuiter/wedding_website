@@ -46,7 +46,7 @@ To distinguish officially verified deployment targets from community-maintained 
 The canonical portable baseline using the multi-platform `Dockerfile` and `docker-compose.yml`. Orchestrates `db`, a dedicated one-shot `migration` service (`npx prisma migrate deploy` before `app` starts with `RUN_MIGRATIONS="false"`, plus optional `RUN_MIGRATIONS=true` in `docker-entrypoint.sh` for standalone containers), `E2E_TEST=false` production onboarding configuration, built-in Compose healthchecks via `/api/health`, Nginx/Caddy reverse proxy configurations with Let's Encrypt TLS, and networked port-mapped rollbacks.
 
 ### 2. [Google Cloud Run Deployment](./docs/deployment/gcp-cloud-run.md)
-Managed serverless container target deploying attested `ghcr.io` immutable container digests to Cloud Run service `wedding-website` with GCP Secret Manager and Cloud SQL PostgreSQL. Automated via `.github/workflows/deploy.yml` with pre-deployment schema migrations, S3/R2 asset storage, and instant revision traffic splitting for rollbacks.
+Managed serverless container target deploying attested `ghcr.io` immutable container digests to isolated Cloud Run services (`wedding-website-staging` for staging and `wedding-website` for production by default, or parameterized via `vars.CLOUD_RUN_SERVICE` and `vars.CLOUD_RUN_REGION`) using keyless Workload Identity Federation OIDC (`vars.GCP_WORKLOAD_IDENTITY_PROVIDER` and `vars.GCP_SERVICE_ACCOUNT`, with `secrets.GCP_SA_KEY` fallback), GCP Secret Manager, and Cloud SQL PostgreSQL. Automated via `.github/workflows/deploy.yml` with pre-deployment schema migrations, S3/R2 asset storage, and instant revision traffic splitting for rollbacks.
 
 ### 3. [Vercel Deployment](./docs/deployment/vercel.md)
 Optional serverless Node.js deployment target using serverless PostgreSQL connection pooling (Neon, Supabase, RDS Proxy). Supports Vercel automatic custom domain TLS, pre-deploy build migrations (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy && next build`), and instant deployment rollbacks.
@@ -180,11 +180,15 @@ To protect production database integrity and application availability, the deplo
   1. Navigate to **Settings** > **Environments** in your GitHub repository.
   2. Click **New environment** and name it `staging`.
   3. **Protection Rules**: Leave "Required reviewers" unconfigured to permit unblocked, automated continuous delivery on every merge.
-  4. **Environment Variables** (non-secret public URLs):
+  4. **Environment Variables** (non-secret targets & Workload Identity Federation identifiers):
      - `SERVICE_URL`: Public base URL of the staging web service for `/api/health` probes (e.g., `https://staging.wedding.example.com`). Configure `SERVICE_URL` as a GitHub Environment variable (`vars.SERVICE_URL`) so cross-job `service_url` outputs and `$GITHUB_STEP_SUMMARY` diagnostics remain unmasked (`secrets.SERVICE_URL` is supported as a legacy fallback during migration).
+     - `CLOUD_RUN_SERVICE`: Optional Cloud Run service name override for staging (defaults to `wedding-website-staging` so staging promotions never overwrite production `wedding-website`).
+     - `CLOUD_RUN_REGION`: Optional Cloud Run region override for staging (defaults to `us-central1`).
+     - `GCP_WORKLOAD_IDENTITY_PROVIDER`: Primary keyless OIDC Workload Identity Provider resource name (`projects/<project-number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`).
+     - `GCP_SERVICE_ACCOUNT`: Service account email impersonated via Workload Identity Federation (`<sa-name>@<project-id>.iam.gserviceaccount.com`).
   5. **Environment Secrets**:
      - `DATABASE_URL`: Connection string for the isolated staging PostgreSQL instance (e.g., `postgresql://wedding:staging_pass@staging-db.internal:5432/wedding_staging`).
-     - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` for staging Cloud Run/hosting service). Because `staging` has no required reviewers, automated staging rollbacks can resolve variables and secrets directly from `staging` (or an optional `STAGING_ROLLBACK_ENVIRONMENT`).
+     - Provider secrets (`GCP_SA_KEY` fallback when Workload Identity Federation variables are unset, optional `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` + `DEPLOY_WEBHOOK_SECRET` for webhook/Docker host adapters). Because `staging` has no required reviewers, automated staging rollbacks can resolve variables and secrets directly from `staging` (or an optional `STAGING_ROLLBACK_ENVIRONMENT`).
 
 #### 2. Production Environment (`production`)
 - **Purpose**: Live environment hosting attendee traffic, requiring explicit human reviewer approval before executing schema migrations or container updates.
@@ -196,11 +200,15 @@ To protect production database integrity and application availability, the deplo
      - Specify designated maintainers, release managers, or team leads authorized to approve production releases.
      - Select **Prevent self-review** if team policy mandates dual-control sign-off.
   4. **Deployment Branches**: Restrict deployment to `main` branch (and optionally release tags `v*` if manually dispatching tag promotions via `deploy-provider.yml`; automated `deploy.yml` runs trigger on `main` after `CI` succeeds).
-  5. **Environment Variables** (non-secret public URLs):
+  5. **Environment Variables** (non-secret targets & Workload Identity Federation identifiers):
      - `SERVICE_URL`: Public base URL of the live production web service for `/api/health` probes (e.g., `https://wedding.example.com`). Configure `SERVICE_URL` as a GitHub Environment variable (`vars.SERVICE_URL`) so cross-job `service_url` outputs and `$GITHUB_STEP_SUMMARY` diagnostics remain unmasked (`secrets.SERVICE_URL` is supported as a legacy fallback during migration).
+     - `CLOUD_RUN_SERVICE`: Optional Cloud Run service name override for production (defaults to `wedding-website`).
+     - `CLOUD_RUN_REGION`: Optional Cloud Run region override for production (defaults to `us-central1`).
+     - `GCP_WORKLOAD_IDENTITY_PROVIDER`: Primary keyless OIDC Workload Identity Provider resource name for production deployments.
+     - `GCP_SERVICE_ACCOUNT`: Production service account email impersonated via Workload Identity Federation.
   6. **Environment Secrets** (workflow-consumed credentials only):
      - `DATABASE_URL`: Direct (non-pooled) connection string for the isolated production PostgreSQL instance used by `db-migrate.yml` (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
-     - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL`).
+     - Provider secrets (`GCP_SA_KEY` fallback when OIDC variables are unset, optional `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` + `DEPLOY_WEBHOOK_SECRET` for signed webhook/Docker host deployments).
      - *Note*: Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are not read by GitHub Actions workflows and must be configured in your target hosting platform's secret store (such as GCP Secret Manager, Vercel Environment Variables, or VPS `.env`).
 
 #### 3. Unguarded Production Rollback Environment (`production-rollback`)
@@ -208,7 +216,7 @@ To protect production database integrity and application availability, the deplo
 - **Environment Setup**:
   1. Navigate to **Settings** > **Environments** and click **New environment** named `production-rollback`.
   2. **Protection Rules**: Leave **Required reviewers** **unchecked** so emergency rollbacks execute immediately within the 60-second recovery target. Restrict **Deployment branches** to `main` and release tags (`v*`).
-  3. **Environment Variables & Secrets**: Set `SERVICE_URL` under **Environment variables** (`vars.SERVICE_URL`, with `secrets.SERVICE_URL` supported as a legacy fallback) and copy only the container deployment secrets required by `.github/workflows/rollback.yml` and `.github/workflows/deploy-provider.yml` (`GCP_SA_KEY`, `GCP_PROJECT_ID`, and `DEPLOY_WEBHOOK_URL` — `DATABASE_URL` is not needed because rollbacks preserve forward-only N-1 compatible schemas).
+  3. **Environment Variables & Secrets**: Set `SERVICE_URL` (`vars.SERVICE_URL`, with `secrets.SERVICE_URL` supported as a legacy fallback), optional Cloud Run target/OIDC variables (`CLOUD_RUN_SERVICE`, `CLOUD_RUN_REGION`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`), and copy only the container deployment secrets required by `.github/workflows/rollback.yml` and `.github/workflows/deploy-provider.yml` (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, and `DEPLOY_WEBHOOK_SECRET` — `DATABASE_URL` is not needed because rollbacks preserve forward-only N-1 compatible schemas).
   4. **Pipeline Binding**: Set repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT=production-rollback` under **Settings** > **Secrets and variables** > **Actions** > **Variables** (or pass `rollback_environment: production-rollback` during `workflow_dispatch`). When `rollback_environment` is omitted, `rollback.yml` falls back to `target_environment`.
 
 #### 4. Strict Separation of Secrets & Database Credentials
@@ -266,29 +274,33 @@ To protect production database integrity and application availability, the deplo
   - `image_digest`: Attested OCI image digest (`sha256:<64-hex>`) propagated to staging and production deployment jobs.
 
 ### 3. Database Migration (`db-migrate.yml`)
-- **Triggers**: Release pipeline (`workflow_call`), manual `workflow_dispatch` with target environment (`production`, `staging`, `development`).
+- **Triggers**: Release pipeline (`workflow_call`, where `confirm` defaults to `true`), manual `workflow_dispatch` with target environment (`production`, `staging`, `development`) and explicit confirmation (`confirm` defaults to `false`).
 - **Secrets required**: `DATABASE_URL` (direct/unpooled connection string).
 - **Actions**:
   - Declares `environment: ${{ inputs.environment || 'production' }}` on the `migrate` job, enforcing GitHub Environment Protection Rules and pausing for human reviewer sign-off **before** exposing `production` secrets.
-  - After environment unlock, runs `npm run lint:migrations` and validates `DATABASE_URL` format.
+  - Verifies `inputs.confirm == true` first (`Verify Manual Migration Confirmation`) and halts immediately with a non-zero exit code before repository checkout or `npx prisma migrate deploy` when manual dispatches leave `confirm: false`.
+  - After environment unlock and confirmation, runs `npm run lint:migrations` and validates `DATABASE_URL` format.
   - Queries the live target `DATABASE_URL` via `npx prisma migrate status` (`scripts/preflight-migration-summary.ts`) to emit pending migration SQL DDL summaries and detect failed migrations in `$GITHUB_STEP_SUMMARY`.
   - Executes `npx prisma migrate deploy` against `DATABASE_URL` with `PGOPTIONS="-c lock_timeout=5000ms -c statement_timeout=30000ms"`.
   - Emits diagnostic error signaling and resolution guidance if migration fails.
 
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
 - **Triggers**: Release pipeline (`workflow_call`) with `image_digest`, rollback pipeline (`workflow_call`) with `image_digest` / `image_tag` and optional `rollback_environment`, or manual `workflow_dispatch` with an explicit `image_digest` (`sha256:<64-hex>`) or immutable release/commit `image_tag` (unpinned `latest` tags are rejected).
-- **Permissions**: Top-level `contents: read`; deployment job scopes `packages: read` and `attestations: read` for registry inspection and OIDC provenance verification.
-- **Secrets & Variables**: Provider credentials (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`) in GitHub Environment secrets, and `SERVICE_URL` in GitHub Environment variables (`vars.SERVICE_URL` primary, with `secrets.SERVICE_URL` supported as a legacy fallback).
+- **Permissions**: Top-level `contents: read`; deployment job scopes `packages: read`, `attestations: read`, and `id-token: write` for registry inspection, OIDC provenance verification, and Google Cloud Workload Identity Federation.
+- **Secrets & Variables**:
+  - **Environment Variables**: `SERVICE_URL` (`vars.SERVICE_URL` primary, with `secrets.SERVICE_URL` supported as a legacy fallback), `CLOUD_RUN_SERVICE` (defaults to `wedding-website-staging` for `staging` and `wedding-website` for `production`), `CLOUD_RUN_REGION` (defaults to `us-central1`), and primary keyless OIDC authentication variables `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT`.
+  - **Environment Secrets**: Static fallback `GCP_SA_KEY` and optional `GCP_PROJECT_ID` for `google-cloud-run`, or `DEPLOY_WEBHOOK_URL` and mandatory HMAC signing secret `DEPLOY_WEBHOOK_SECRET` for `generic-webhook` and `docker-host`.
 - **Inputs**:
   - `environment`: Target deployment environment (`production` or `staging`).
   - `rollback_environment`: Optional unguarded GitHub Environment override for rollback secret resolution.
   - `image_digest`: Immutable OCI image digest (`sha256:<64-hex>`) to deploy directly.
   - `image_tag`: Immutable version tag or commit SHA (resolved to an immutable `sha256` digest via `docker buildx imagetools inspect` when `image_digest` is omitted).
   - `provider`: Hosting provider adapter (`google-cloud-run`, `docker-host`, or `generic-webhook`).
-  - `dry_run`: Explicit dry-run validation flag.
+  - `cloud_run_service` / `cloud_run_region`: Optional Cloud Run target overrides resolved ahead of `vars.CLOUD_RUN_SERVICE` / `vars.CLOUD_RUN_REGION` and environment defaults.
+  - `dry_run`: Explicit dry-run validation flag (`false` by default; `is_dry_run` is never coerced to `true` when secrets are missing).
 - **Outputs**:
   - `service_url`: Target deployment service URL.
-  - `is_dry_run`: Boolean flag indicating if deployment executed in dry-run mode.
+  - `is_dry_run`: Boolean flag indicating if deployment executed in explicit dry-run mode (`inputs.dry_run == true`).
   - `previous_image_tag`: Currently serving immutable container image tag or last successful release SHA captured prior to rollout.
   - `previous_image_digest`: Currently serving immutable `sha256` OCI image digest captured prior to rollout.
   - `image_digest`: Verified immutable `sha256` OCI image digest deployed.
@@ -298,8 +310,9 @@ To protect production database integrity and application availability, the deplo
   - Declares `environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}`, enforcing GitHub Environment Protection Rules and reviewer sign-off for forward `production` releases while supporting unguarded rollback environments.
   - Rejects unpinned `latest` tags, resolves tag-only manual or rollback dispatches to immutable `sha256` digests via `docker buildx imagetools inspect`, and validates digests against `^sha256:[a-f0-9]{64}$`.
   - Runs `gh attestation verify` against `oci://ghcr.io/<owner>/<repo>@sha256:<hex>` with `--owner` and `--signer-workflow <owner>/<repo>/.github/workflows/publish-artifact.yml` before invoking any provider adapter or dry-run step.
-  - Captures `previous_image_digest` and `previous_image_tag` before updating the target service revision.
-  - Deploys the digest-pinned `@sha256:` container URI to the hosting provider (Google Cloud Run or generic webhook with `--fail-with-body` HTTP error enforcement) and records the verified digest, pinned URI, attestation status, and pre-rollout tag/digest in `$GITHUB_STEP_SUMMARY`.
+  - Fails closed on live runs (`!inputs.dry_run`) in `Verify Selected Provider Credentials` when required adapter credentials are absent (requiring `GCP_WORKLOAD_IDENTITY_PROVIDER` + `GCP_SERVICE_ACCOUNT` or fallback `GCP_SA_KEY` for `google-cloud-run`, and both `DEPLOY_WEBHOOK_URL` + `DEPLOY_WEBHOOK_SECRET` for `generic-webhook` / `docker-host`).
+  - Captures `previous_image_digest` and `previous_image_tag` from the resolved Cloud Run service and region before updating the target service revision.
+  - Deploys the digest-pinned `@sha256:` container URI to the hosting provider (Google Cloud Run via Workload Identity Federation OIDC or `GCP_SA_KEY` fallback, or generic/Docker host webhook signed with HMAC-SHA256 headers `X-Hub-Signature-256`, `X-Deploy-Timestamp`, and `X-Deploy-Signature-256` plus `--fail-with-body` HTTP error enforcement) and records the verified digest, pinned URI, attestation status, and pre-rollout tag/digest in `$GITHUB_STEP_SUMMARY`.
 
 ### 5. Post-Deployment Verification & Automated Rollback (`deploy.yml` & `rollback.yml`)
 - **Triggers**: `deploy.yml` triggers via `workflow_run` after `CI` completes successfully on `main` pushes (or via `workflow_dispatch` / `workflow_call` after confirming a successful `CI` run for `github.sha`), running health verification automatically post-provider deployment for staging and production (`rollback.yml` can also be invoked manually via `workflow_dispatch`).
@@ -489,17 +502,22 @@ Configure the following workflow-consumed secrets in GitHub Settings (**Settings
 | Secret | Description | Required By |
 |---|---|---|
 | `DATABASE_URL` | Direct (non-pooled) production/staging PostgreSQL connection string | `db-migrate.yml` |
-| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (required when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
+| `GCP_SA_KEY` | Google Cloud Service Account JSON Key (legacy static fallback when Workload Identity Federation variables are not set for `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
 | `GCP_PROJECT_ID` | Google Cloud Project ID (optional override when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
 | `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (required when `provider: generic-webhook` or `docker-host`) | `deploy-provider.yml`, `rollback.yml` |
+| `DEPLOY_WEBHOOK_SECRET` | HMAC-SHA256 signing secret required to authenticate `generic-webhook` and `docker-host` payloads | `deploy-provider.yml`, `rollback.yml` |
 | `DOCKERHUB_USERNAME` | Docker Hub username (optional secondary registry) | `publish-artifact.yml` |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |
 
-Configure the following GitHub Environment and repository **Variables** (**Settings > Environments** for environment-scoped `SERVICE_URL`, and **Settings > Secrets and variables > Actions > Variables** for optional rollback environment bindings):
+Configure the following GitHub Environment and repository **Variables** (**Settings > Environments** for environment-scoped target URLs, Cloud Run topology, and Workload Identity Federation providers, and **Settings > Secrets and variables > Actions > Variables** for optional rollback environment bindings):
 
 | Variable | Description | Consumed By |
 |---|---|---|
 | `SERVICE_URL` | Public base URL of the target web service for `/api/health` probes (`vars.SERVICE_URL` primary; `secrets.SERVICE_URL` supported as a legacy fallback without cross-job `$GITHUB_OUTPUT` export) | `deploy.yml`, `deploy-provider.yml`, `rollback.yml` |
+| `CLOUD_RUN_SERVICE` | Target Google Cloud Run service name (defaults to `wedding-website-staging` for `staging` and `wedding-website` for `production`) | `deploy-provider.yml` |
+| `CLOUD_RUN_REGION` | Target Google Cloud Run region (defaults to `us-central1`) | `deploy-provider.yml` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Google Cloud Workload Identity Provider resource name for keyless OIDC authentication (`id-token: write`) | `deploy-provider.yml` |
+| `GCP_SERVICE_ACCOUNT` | Google Cloud Service Account email impersonated via Workload Identity Federation | `deploy-provider.yml` |
 | `PRODUCTION_ROLLBACK_ENVIRONMENT` | Optional unguarded GitHub Environment name (e.g., `production-rollback`) for automated production rollback credential resolution | `deploy.yml` |
 | `STAGING_ROLLBACK_ENVIRONMENT` | Optional unguarded GitHub Environment name for automated staging rollback credential resolution | `deploy.yml` |
 

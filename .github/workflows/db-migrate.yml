@@ -19,7 +19,7 @@ on:
         description: 'Confirm database migration execution'
         required: true
         type: boolean
-        default: true
+        default: false
       commit_sha:
         description: 'Commit SHA to check out for migrations'
         required: false
@@ -35,6 +35,11 @@ on:
         description: 'Commit SHA to check out for migrations'
         required: false
         type: string
+      confirm:
+        description: 'Confirm database migration execution'
+        required: false
+        type: boolean
+        default: true
     secrets:
       DATABASE_URL:
         required: true
@@ -55,6 +60,20 @@ jobs:
     outputs:
       schema_compatibility_status: ${{ steps.lint_migrations.outputs.schema_compatibility_status }}
     steps:
+      - name: Verify Manual Migration Confirmation
+        id: confirm_gate
+        env:
+          CONFIRM: ${{ inputs.confirm && 'true' || 'false' }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+        run: |
+          if [ "$CONFIRM" != "true" ]; then
+            echo "::error::Database migration execution aborted for environment '${TARGET_ENV}': 'confirm' input must be set to true."
+            echo "### 🛑 Database Migration Aborted (Unconfirmed)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Environment:** \`${TARGET_ENV}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Reason:** Manual dispatch requires \`confirm: true\` before mutating the target PostgreSQL database." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
@@ -107,15 +126,21 @@ jobs:
 
       - name: Run Prisma Migrate Deploy
         id: migrate
+        if: steps.confirm_gate.outcome == 'success'
         env:
+          CONFIRM: ${{ inputs.confirm && 'true' || 'false' }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PGOPTIONS: "-c lock_timeout=5000ms -c statement_timeout=30000ms"
         run: |
+          if [ "${CONFIRM:-false}" != "true" ]; then
+            echo "::error::Database migration execution aborted: 'confirm' input must be set to true."
+            exit 1
+          fi
           echo "Executing database migrations..."
           npx prisma migrate deploy
 
       - name: Handle Migration Failure
-        if: failure()
+        if: failure() && steps.confirm_gate.outcome == 'success'
         run: |
           echo "::error::Database migration failed during execution!"
           cat << 'EOF' >> $GITHUB_STEP_SUMMARY
