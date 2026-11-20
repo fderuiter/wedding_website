@@ -3,6 +3,10 @@ import { ApiError } from '../ApiError';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 import { resetRateLimitsForTesting } from '../rateLimit';
+import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
+import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
+import { prisma } from '@/lib/prisma';
 
 describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
   let loggerSpy: jest.SpyInstance;
@@ -367,6 +371,150 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
         headers: new Headers({ 'x-forwarded-for': '192.168.1.105' }),
       } as any;
       const res = await middleware(reqWithoutUrl, {});
+      expect(res.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Active Guest Invitation Session Enforcement', () => {
+    const prismaWithInvite = prisma as unknown as {
+      invitationCode?: {
+        findUnique?: jest.Mock;
+      };
+    };
+    let originalInvitationCode: typeof prismaWithInvite.invitationCode;
+    let mockFindUnique: jest.Mock;
+
+    beforeEach(() => {
+      resetRateLimitsForTesting();
+      originalInvitationCode = prismaWithInvite.invitationCode;
+      mockFindUnique = jest.fn();
+      prismaWithInvite.invitationCode = {
+        findUnique: mockFindUnique,
+      };
+    });
+
+    afterEach(() => {
+      prismaWithInvite.invitationCode = originalInvitationCode;
+    });
+
+    test('returns 401 and expires cookie when guest_invite_session has no active InvitationCode and fallback cookies are absent', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const handler = jest.fn();
+      const middleware = withApiMiddleware(handler);
+
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKED1',
+        guestName: 'Former Guest',
+      });
+      const req = new NextRequest('http://localhost/api/photos', {
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}`,
+        },
+      });
+
+      const res = await middleware(req, {});
+      expect(res.status).toBe(401);
+      expect(handler).not.toHaveBeenCalled();
+
+      const body = await res.json();
+      expect(body).toEqual({
+        success: false,
+        error: 'Unauthorized',
+      });
+
+      const setCookie = res.headers.get('set-cookie') || '';
+      expect(setCookie).toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(setCookie).toContain('Max-Age=0');
+    });
+
+    test('returns 401 when guest_invite_session resolves to a sample InvitationCode', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'sample-1',
+        code: 'SMITH2026',
+        guestName: 'Sample Guest',
+        isSample: true,
+      });
+      const handler = jest.fn();
+      const middleware = withApiMiddleware(handler);
+
+      const sampleToken = await signGuestInviteSessionToken({
+        code: 'SMITH2026',
+        guestName: 'Sample Guest',
+      });
+      const req = new NextRequest('http://localhost/api/registry/items', {
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${sampleToken}`,
+        },
+      });
+
+      const res = await middleware(req, {});
+      expect(res.status).toBe(401);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    test('allows request to proceed when caller also holds valid guest_auth or admin_auth cookie', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const handler = jest.fn().mockImplementation(() =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const middleware = withApiMiddleware(handler);
+
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKED1',
+        guestName: 'Former Guest',
+      });
+      const guestToken = await signGuestToken({
+        guest: true,
+        exp: Date.now() + 60_000,
+      });
+      const adminToken = await signAdminToken({
+        isAdmin: true,
+        iat: Date.now(),
+      });
+
+      const guestReq = new NextRequest('http://localhost/api/photos', {
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}; ${GUEST_COOKIE}=${guestToken}`,
+        },
+      });
+      const guestRes = await middleware(guestReq, {});
+      expect(guestRes.status).toBe(200);
+
+      const adminReq = new NextRequest('http://localhost/api/photos', {
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}; ${ADMIN_COOKIE}=${adminToken}`,
+        },
+      });
+      const adminRes = await middleware(adminReq, {});
+      expect(adminRes.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    test('exempts /api/registry/session from 401 middleware block so session route can return isVerified: false', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const handler = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ isVerified: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+      const middleware = withApiMiddleware(handler);
+
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKED1',
+        guestName: 'Former Guest',
+      });
+      const req = new NextRequest('http://localhost/api/registry/session', {
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}`,
+        },
+      });
+
+      const res = await middleware(req, {});
       expect(res.status).toBe(200);
       expect(handler).toHaveBeenCalledTimes(1);
     });

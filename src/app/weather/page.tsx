@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { formatDate } from '@/utils/intl';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 export const metadata: Metadata = {
   title: 'Weather Forecast',
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered WeatherPage component.
  */
 export default async function WeatherPage() {
+  await enforceActiveGuestPageSession();
   const config = await getAppConfig();
   if (!isFeatureEnabled('weather', config.modules)) {
     notFound();

@@ -17,6 +17,7 @@ import SetupWizard from '@/components/setup/SetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { cookies } from 'next/headers';
 import { generateThemeStylesheet } from '@/lib/theme/stylesheet';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -90,6 +91,8 @@ export default async function RootLayout({
 
   let initialThemeMode: ThemeMode = 'system';
   if (!isStaticExport) {
+    await enforceActiveGuestPageSession();
+
     try {
       const cookieStore = await cookies();
       const rawThemeMode = cookieStore.get('theme_mode')?.value;

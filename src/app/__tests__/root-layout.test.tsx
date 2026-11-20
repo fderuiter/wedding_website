@@ -1,9 +1,22 @@
 import React from 'react';
 import RootLayout from '../layout';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
+import { prisma } from '@/lib/prisma';
 
 jest.mock('next/headers', () => ({
   cookies: jest.fn(),
+  headers: jest.fn(),
+}));
+
+jest.mock('next/navigation', () => ({
+  redirect: jest.fn((url: string) => {
+    const error = new Error('NEXT_REDIRECT') as Error & { digest?: string };
+    error.digest = `NEXT_REDIRECT;replace;${url};307;`;
+    throw error;
+  }),
 }));
 
 jest.mock('@/lib/config', () => ({
@@ -94,5 +107,108 @@ describe('RootLayout Server Component Cookie Hydration', () => {
 
     expect(themeProviderEl).toBeDefined();
     expect(themeProviderEl!.props.hasServerStylesheet).toBe(true);
+  });
+
+  describe('Revoked Guest Invitation SSR Guard', () => {
+    const mockHeaders = headers as unknown as jest.Mock;
+    const mockRedirect = redirect as unknown as jest.Mock;
+    const prismaWithInvite = prisma as unknown as {
+      invitationCode?: {
+        findUnique?: jest.Mock;
+      };
+    };
+    let originalInvitationCode: typeof prismaWithInvite.invitationCode;
+    let mockFindUnique: jest.Mock;
+
+    beforeEach(() => {
+      originalInvitationCode = prismaWithInvite.invitationCode;
+      mockFindUnique = jest.fn();
+      prismaWithInvite.invitationCode = {
+        findUnique: mockFindUnique,
+      };
+    });
+
+    afterEach(() => {
+      prismaWithInvite.invitationCode = originalInvitationCode;
+    });
+
+    it('redirects with 303 digest to /guest/login when guest_invite_session is deleted or rotated and fallback cookies are absent', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKEME1',
+        guestName: 'Former Guest',
+      });
+
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: revokedToken } : undefined),
+      });
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === 'x-guest-gated-page') return '1';
+          if (name === 'x-guest-callback-url') return '/photos';
+          return null;
+        },
+      });
+
+      let caughtError: (Error & { digest?: string }) | null = null;
+      try {
+        await RootLayout({ children: <div>Photos Content</div> });
+      } catch (err) {
+        caughtError = err as Error & { digest?: string };
+      }
+
+      expect(mockRedirect).toHaveBeenCalledWith('/guest/login?callbackUrl=%2Fphotos');
+      expect(caughtError?.digest).toBe('NEXT_REDIRECT;replace;/guest/login?callbackUrl=%2Fphotos;303;');
+    });
+
+    it('does not redirect when caller also holds a valid guest_auth cookie', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKEME1',
+        guestName: 'Former Guest',
+      });
+      const validGuestToken = await signGuestToken({
+        guest: true,
+        exp: Date.now() + 60_000,
+      });
+
+      mockCookies.mockResolvedValue({
+        get: (name: string) => {
+          if (name === GUEST_INVITE_COOKIE) return { value: revokedToken };
+          if (name === GUEST_COOKIE) return { value: validGuestToken };
+          return undefined;
+        },
+      });
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => (name === 'x-guest-gated-page' ? '1' : null),
+      });
+
+      const jsx = await RootLayout({ children: <div>Guest Content</div> });
+      expect(jsx.type).toBe('html');
+      expect(mockRedirect).not.toHaveBeenCalled();
+    });
+
+    it('does not redirect on excluded /guest/login route even when holding a revoked guest_invite_session', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKEME1',
+        guestName: 'Former Guest',
+      });
+
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: revokedToken } : undefined),
+      });
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === 'x-guest-gated-page') return '0';
+          if (name === 'x-guest-callback-url') return '/guest/login';
+          return null;
+        },
+      });
+
+      const jsx = await RootLayout({ children: <div>Login Form</div> });
+      expect(jsx.type).toBe('html');
+      expect(mockRedirect).not.toHaveBeenCalled();
+    });
   });
 });

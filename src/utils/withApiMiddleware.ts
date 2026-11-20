@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { isGuestRequest } from '@/core/auth/guest.server';
+import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { rateLimit, type RateLimitBucket } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
@@ -24,6 +27,25 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
     pathname === '/api/guest/lookup' ||
     (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
     pathname === '/api/registry/validate-code'
+  );
+}
+
+function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean {
+  return (
+    normalizedPathname === '/api/cron' ||
+    normalizedPathname.startsWith('/api/cron/') ||
+    normalizedPathname === '/api/guest/login' ||
+    normalizedPathname === '/api/guest/address' ||
+    normalizedPathname === '/api/guest/address/public' ||
+    normalizedPathname === '/api/registry/validate-code' ||
+    normalizedPathname === '/api/registry/session' ||
+    normalizedPathname === '/api/registry/webhook/stripe' ||
+    normalizedPathname === '/api/admin/login' ||
+    normalizedPathname === '/api/admin/logout' ||
+    normalizedPathname === '/api/admin/me' ||
+    normalizedPathname === '/api/admin/setup' ||
+    normalizedPathname === '/api/health' ||
+    normalizedPathname === '/api/ready'
   );
 }
 
@@ -79,11 +101,34 @@ export function withApiMiddleware(
         }
       }
 
-      // 2. Admin Verification
+      // 2. Admin & Active Guest Invite Verification
       if (isAdminPath) {
         const isAdmin = req ? await isAdminRequest(req) : false;
         if (!isAdmin) {
           throw new ApiError(401, 'Unauthorized');
+        }
+      } else if (req && !isInviteRevocationExcludedApiPath(normalizedPathname)) {
+        const signedInvite = await getSignedGuestInviteSession(req);
+        if (signedInvite) {
+          const hasFallbackAuth = (await isAdminRequest(req)) || (await isGuestRequest(req));
+          if (!hasFallbackAuth) {
+            const activeInvite = await getGuestInviteSession(req);
+            if (!activeInvite) {
+              const unauthorizedResponse = NextResponse.json(
+                { success: false, error: 'Unauthorized' },
+                { status: 401 }
+              );
+              unauthorizedResponse.headers.set('x-api-version', 'v2');
+              unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax',
+                path: '/',
+                maxAge: 0,
+              });
+              return unauthorizedResponse;
+            }
+          }
         }
       }
 

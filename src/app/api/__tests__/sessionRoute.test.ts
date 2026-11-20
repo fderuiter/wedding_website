@@ -2,8 +2,29 @@
 
 import { GET as sessionGetRoute, DELETE as sessionDeleteRoute } from '@/app/api/registry/session/route';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { prisma } from '@/lib/prisma';
 
 describe('session Route', () => {
+  const prismaWithInvite = prisma as unknown as {
+    invitationCode?: {
+      findUnique?: jest.Mock;
+    };
+  };
+  let originalInvitationCode: typeof prismaWithInvite.invitationCode;
+  let mockFindUnique: jest.Mock;
+
+  beforeEach(() => {
+    originalInvitationCode = prismaWithInvite.invitationCode;
+    mockFindUnique = jest.fn();
+    prismaWithInvite.invitationCode = {
+      findUnique: mockFindUnique,
+    };
+  });
+
+  afterEach(() => {
+    prismaWithInvite.invitationCode = originalInvitationCode;
+  });
+
   it('returns isVerified: false when no session cookie is present', async () => {
     const req = new Request('http://localhost/api/registry/session', {
       method: 'GET',
@@ -20,9 +41,17 @@ describe('session Route', () => {
         guestName: null,
       },
     });
+    expect(res.headers.get('set-cookie')).toBeNull();
   });
 
-  it('returns active session details when valid guest_invite_session cookie is present', async () => {
+  it('returns active session details when valid guest_invite_session cookie matches an active invitation', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'inv-1',
+      code: 'WEDDING2026',
+      guestName: 'Jane Doe',
+      isSample: false,
+    });
+
     const token = await signGuestInviteSessionToken({
       code: 'WEDDING2026',
       guestName: 'Jane Doe',
@@ -49,6 +78,69 @@ describe('session Route', () => {
     });
   });
 
+  it('returns isVerified: false and expires stale cookie when invitation record was deleted or rotated', async () => {
+    mockFindUnique.mockResolvedValue(null);
+
+    const token = await signGuestInviteSessionToken({
+      code: 'REVOKEME1',
+      guestName: 'Disinvited Guest',
+    });
+
+    const req = new Request('http://localhost/api/registry/session', {
+      method: 'GET',
+      headers: {
+        cookie: `${GUEST_INVITE_COOKIE}=${token}`,
+      },
+    });
+
+    const res = await sessionGetRoute(req as any);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      success: true,
+      data: {
+        isVerified: false,
+        invitationCode: null,
+        code: null,
+        guestName: null,
+      },
+    });
+
+    const setCookieHeader = res.headers.get('set-cookie') || '';
+    expect(setCookieHeader).toContain(`${GUEST_INVITE_COOKIE}=`);
+    expect(setCookieHeader).toContain('Max-Age=0');
+  });
+
+  it('returns isVerified: false and expires cookie when invitation record is flagged as sample', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'inv-sample',
+      code: 'SMITH2026',
+      guestName: 'Sample Household',
+      isSample: true,
+    });
+
+    const token = await signGuestInviteSessionToken({
+      code: 'SMITH2026',
+      guestName: 'Sample Household',
+    });
+
+    const req = new Request('http://localhost/api/registry/session', {
+      method: 'GET',
+      headers: {
+        cookie: `${GUEST_INVITE_COOKIE}=${token}`,
+      },
+    });
+
+    const res = await sessionGetRoute(req as any);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.isVerified).toBe(false);
+
+    const setCookieHeader = res.headers.get('set-cookie') || '';
+    expect(setCookieHeader).toContain(`${GUEST_INVITE_COOKIE}=`);
+    expect(setCookieHeader).toContain('Max-Age=0');
+  });
+
   it('returns isVerified: false when invalid/tampered cookie is provided', async () => {
     const req = new Request('http://localhost/api/registry/session', {
       method: 'GET',
@@ -61,6 +153,10 @@ describe('session Route', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.data.isVerified).toBe(false);
+
+    const setCookieHeader = res.headers.get('set-cookie') || '';
+    expect(setCookieHeader).toContain(`${GUEST_INVITE_COOKIE}=`);
+    expect(setCookieHeader).toContain('Max-Age=0');
   });
 
   it('clears session cookie on DELETE request', async () => {

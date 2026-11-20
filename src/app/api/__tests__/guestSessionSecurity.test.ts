@@ -6,7 +6,11 @@ import { POST as guestLookupPost } from '@/app/api/guest/lookup/route';
 import { POST as rsvpPost } from '@/app/api/rsvp/route';
 import { GET as addressGet, PUT as addressPut } from '@/app/api/guest/address/route';
 import { GET as scheduleGet } from '@/app/api/schedule/route';
-import { GUEST_COOKIE } from '@/core/auth/guest.server';
+import { GET as photosGet } from '@/app/api/photos/route';
+import { GET as registryItemsGet } from '@/app/api/registry/items/route';
+import { POST as guestPhotosUploadPost } from '@/app/api/guest/photos/upload/route';
+import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
+import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import {
   signGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
@@ -359,6 +363,13 @@ describe('Guest Session Security Integration', () => {
         guestName: 'Valid Guest',
       });
 
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+        id: 'code-1',
+        code: 'VALIDGUEST',
+        guestName: 'Valid Guest',
+        isSample: false,
+      });
+
       mockSubEventService.submitSubEventRsvps.mockResolvedValue([
         {
           id: 'rsvp-1',
@@ -450,6 +461,13 @@ describe('Guest Session Security Integration', () => {
         guestName: 'Valid Guest',
       });
 
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+        id: 'code-1',
+        code: 'VALIDGUEST',
+        guestName: 'Valid Guest',
+        isSample: false,
+      });
+
       mockSubEventService.getScheduleForGuest.mockResolvedValue([
         { id: 'se-1', title: 'Rehearsal Dinner' } as any,
       ]);
@@ -516,6 +534,105 @@ describe('Guest Session Security Integration', () => {
       expect(json.isGuest).toBe(false);
       expect(json.guestName).toBeNull();
       expect(mockSubEventService.getScheduleForGuest).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe('revoked, rotated, and sample invitation session enforcement', () => {
+    test('rejects deleted or rotated guest_invite_session cookies with 401 across guest API routes when guest_auth and admin_auth are absent', async () => {
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKEME1',
+        guestName: 'Disinvited Household',
+      });
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const cookieHeader = `${GUEST_INVITE_COOKIE}=${revokedToken}`;
+
+      const photosRes = await photosGet(
+        new NextRequest('http://localhost:3000/api/photos', {
+          method: 'GET',
+          headers: { cookie: cookieHeader },
+        })
+      );
+      expect(photosRes.status).toBe(401);
+      expect(photosRes.headers.get('set-cookie') || '').toContain('Max-Age=0');
+
+      const registryRes = await registryItemsGet(
+        new NextRequest('http://localhost:3000/api/registry/items', {
+          method: 'GET',
+          headers: { cookie: cookieHeader },
+        }),
+        {}
+      );
+      expect(registryRes.status).toBe(401);
+
+      const lookupRes = await guestLookupPost(
+        new NextRequest('http://localhost:3000/api/guest/lookup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            cookie: cookieHeader,
+          },
+          body: JSON.stringify({ query: 'Alex Smith' }),
+        })
+      );
+      expect(lookupRes.status).toBe(401);
+
+      const scheduleRes = await scheduleGet(
+        new NextRequest('http://localhost:3000/api/schedule', {
+          method: 'GET',
+          headers: { cookie: cookieHeader },
+        })
+      );
+      expect(scheduleRes.status).toBe(401);
+
+      const uploadRes = await guestPhotosUploadPost(
+        new NextRequest('http://localhost:3000/api/guest/photos/upload', {
+          method: 'POST',
+          headers: { cookie: cookieHeader },
+        })
+      );
+      expect(uploadRes.status).toBe(401);
+    });
+
+    test('preserves access when caller also holds a valid guest_auth or admin_auth cookie alongside a revoked guest_invite_session', async () => {
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKEME1',
+        guestName: 'Disinvited Household',
+      });
+      (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+      mockSubEventService.getScheduleForGuest.mockResolvedValue([]);
+
+      const validGuestAuth = await signGuestToken({
+        guest: true,
+        exp: Date.now() + 60 * 60 * 1000,
+      });
+
+      const guestFallbackRes = await scheduleGet(
+        new NextRequest('http://localhost:3000/api/schedule', {
+          method: 'GET',
+          headers: {
+            cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}; ${GUEST_COOKIE}=${validGuestAuth}`,
+          },
+        })
+      );
+      expect(guestFallbackRes.status).toBe(200);
+      const guestJson = await guestFallbackRes.json();
+      expect(guestJson.isGuest).toBe(false);
+
+      const validAdminAuth = await signAdminToken({
+        isAdmin: true,
+        iat: Date.now(),
+      });
+
+      const adminFallbackRes = await scheduleGet(
+        new NextRequest('http://localhost:3000/api/schedule', {
+          method: 'GET',
+          headers: {
+            cookie: `${GUEST_INVITE_COOKIE}=${revokedToken}; ${ADMIN_COOKIE}=${validAdminAuth}`,
+          },
+        })
+      );
+      expect(adminFallbackRes.status).toBe(200);
     });
   });
 });

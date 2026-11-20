@@ -5,6 +5,7 @@ import { attractionsRepository, type AttractionDTO } from '@/features/attraction
 import { withPageQuery } from '@/lib/query-wrapper';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 export const metadata: Metadata = {
   title: 'Things to Do',
@@ -23,6 +24,7 @@ export const metadata: Metadata = {
  * @returns {JSX.Element} The rendered "Things to Do" page.
  */
 export default async function ThingsToDoPage() {
+  await enforceActiveGuestPageSession();
   const config = await getAppConfig();
   if (!isFeatureEnabled('attractions', config.modules)) {
     notFound();

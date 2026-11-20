@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
 import { PhotoGalleryClient, PhotoItem } from '@/components/photos/PhotoGalleryClient';
 
@@ -30,9 +31,14 @@ export const metadata: Metadata = {
  * @returns {Promise<JSX.Element>} The rendered photos page.
  */
 export default async function PhotosPage() {
+  await enforceActiveGuestPageSession();
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
   const [config, isAdmin] = await Promise.all([
     getAppConfig(),
-    isAdminRequest(),
+    isStaticExport ? Promise.resolve(false) : isAdminRequest(),
   ]);
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();
