@@ -120,14 +120,14 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers all 69 route files (.ts and .tsx) and 96 HTTP operations including GET /api/og', () => {
+  it('discovers all 70 route files (.ts and .tsx) and 97 HTTP operations including GET /api/og', () => {
     expect(openapi.openapi).toBe('3.0.3');
 
     const routePaths = Object.keys(openapi.paths);
-    expect(routePaths).toHaveLength(69);
+    expect(routePaths).toHaveLength(70);
 
     const operations = getAllOperations();
-    expect(operations).toHaveLength(96);
+    expect(operations).toHaveLength(97);
 
     const ogRoute = openapi.paths['/api/og'];
     expect(ogRoute).toBeDefined();
@@ -170,10 +170,10 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(nullableCount).toBeGreaterThan(0);
   });
 
-  it('emits requestBody contracts for all 53 body operations including all 9 previously missing operations', () => {
+  it('emits requestBody contracts for all 54 body operations including all 9 previously missing operations', () => {
     const operations = getAllOperations();
     const bodyOperations = operations.filter(({ operation }) => Boolean(operation.requestBody));
-    expect(bodyOperations).toHaveLength(53);
+    expect(bodyOperations).toHaveLength(54);
 
     const previouslyMissingOps = [
       { routePath: '/api/admin/{entity}/batch', method: 'post', expectedProps: ['ids'] },
@@ -251,7 +251,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.required ?? []).toHaveLength(0);
   });
 
-  it('defines components.securitySchemes across all 88 protected operations and query parameters across all 17 query operations', () => {
+  it('defines components.securitySchemes across all 89 protected operations and query parameters across all 17 query operations', () => {
     const schemes = openapi.components?.securitySchemes;
     expect(schemes).toBeDefined();
     expect(schemes?.adminCookieAuth).toEqual(
@@ -274,7 +274,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const protectedOps = operations.filter(
       ({ operation }) => Array.isArray(operation.security) && operation.security.length > 0
     );
-    expect(protectedOps).toHaveLength(88);
+    expect(protectedOps).toHaveLength(89);
 
     const unprotectedOpKeys = operations
       .filter(({ operation }) => !operation.security || operation.security.length === 0)
@@ -557,13 +557,13 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     }
   });
 
-  it('defines top-level domain tags and assigns declared tags across all 96 operations', () => {
+  it('defines top-level domain tags and assigns declared tags across all 97 operations', () => {
     expect(Array.isArray(openapi.tags)).toBe(true);
     expect((openapi.tags ?? []).length).toBeGreaterThanOrEqual(12);
 
     const declaredTags = new Set((openapi.tags ?? []).map((t) => t.name));
     const operations = getAllOperations();
-    expect(operations).toHaveLength(96);
+    expect(operations).toHaveLength(97);
 
     for (const { operation } of operations) {
       expect(Array.isArray(operation.tags)).toBe(true);

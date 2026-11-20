@@ -4703,6 +4703,54 @@
         }
       }
     },
+    "/api/admin/invitation-codes/merge": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/invitation-codes/merge",
+        "description": "Endpoint for /api/admin/invitation-codes/merge",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "primaryId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secondaryIds": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "primaryId",
+                  "secondaryIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/invitation-codes/validate": {
       "post": {
         "tags": [

@@ -376,3 +376,368 @@ export function validateInvitationGuestFields(
 ): string[] {
   return validateInvitationGuestFieldsWithColumns(data, options).errors;
 }
+
+interface ExistingGuestMatchCandidate {
+  id: string;
+  code: string;
+  guestName: string;
+  email?: string | null;
+  householdName?: string | null;
+}
+
+type CompositeMatchSource = 'code' | 'email' | 'name_household' | 'unique_name';
+
+interface BatchGuestMatchEntry {
+  matchedRecord: ExistingGuestMatchCandidate | null;
+  matchedBy: CompositeMatchSource | null;
+  ambiguityWarning: string | null;
+}
+
+function normalizeMatchText(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function normalizeMatchEmail(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Resolves batch invitation records against existing DB guests in memory (zero DB calls).
+ * - Explicit `code` rows match strictly by normalized uppercase code.
+ * - Blank-code rows match by precedence: (1) email, (2) name + household, (3) unique name.
+ * - Ambiguous multi-guest matches emit a warning instead of overwriting any record.
+ */
+export function resolveBatchGuestMatches(
+  normalizedRows: ReadonlyArray<NormalizedInvitationCodeRecord>,
+  existingDbRecords: ReadonlyArray<ExistingGuestMatchCandidate>
+): {
+  dbCodeMap: Map<string, ExistingGuestMatchCandidate>;
+  matches: BatchGuestMatchEntry[];
+} {
+  const dbCodeMap = new Map<string, ExistingGuestMatchCandidate>();
+  const emailMap = new Map<string, ExistingGuestMatchCandidate[]>();
+  const nameHouseholdMap = new Map<string, ExistingGuestMatchCandidate[]>();
+  const nameMap = new Map<string, ExistingGuestMatchCandidate[]>();
+
+  for (const rawRec of existingDbRecords) {
+    if (!rawRec || !rawRec.code) continue;
+    const upperCode = rawRec.code.trim().toUpperCase();
+    if (!upperCode) continue;
+
+    const rec: ExistingGuestMatchCandidate = {
+      id: rawRec.id,
+      code: upperCode,
+      guestName: rawRec.guestName || '',
+      email: rawRec.email ?? null,
+      householdName: rawRec.householdName ?? null,
+    };
+    dbCodeMap.set(upperCode, rec);
+
+    const emailKey = normalizeMatchEmail(rec.email);
+    if (emailKey) {
+      const bucket = emailMap.get(emailKey);
+      if (bucket) bucket.push(rec);
+      else emailMap.set(emailKey, [rec]);
+    }
+
+    const nameKey = normalizeMatchText(rec.guestName);
+    const householdKey = normalizeMatchText(rec.householdName);
+    if (nameKey) {
+      const nBucket = nameMap.get(nameKey);
+      if (nBucket) nBucket.push(rec);
+      else nameMap.set(nameKey, [rec]);
+
+      if (householdKey) {
+        const nhKey = `${nameKey}||${householdKey}`;
+        const nhBucket = nameHouseholdMap.get(nhKey);
+        if (nhBucket) nhBucket.push(rec);
+        else nameHouseholdMap.set(nhKey, [rec]);
+      }
+    }
+  }
+
+  const matches: BatchGuestMatchEntry[] = normalizedRows.map(() => ({
+    matchedRecord: null,
+    matchedBy: null,
+    ambiguityWarning: null,
+  }));
+
+  const claimedDbIds = new Set<string>();
+  const tier3Indices: number[] = [];
+  const unmatchedBatchNameFreq = new Map<string, number>();
+
+  for (let i = 0; i < normalizedRows.length; i++) {
+    const row = normalizedRows[i];
+    if (row.code) {
+      const codeHit = dbCodeMap.get(row.code);
+      if (codeHit) {
+        matches[i] = { matchedRecord: codeHit, matchedBy: 'code', ambiguityWarning: null };
+        claimedDbIds.add(codeHit.id);
+      }
+      continue;
+    }
+
+    const emailKey = normalizeMatchEmail(row.email);
+    const nameKey = normalizeMatchText(row.guestName);
+    const householdKey = normalizeMatchText(row.householdName);
+
+    // Tier 1: Email match
+    if (emailKey && emailMap.has(emailKey)) {
+      const emailCandidates = emailMap.get(emailKey)!;
+      if (emailCandidates.length === 1) {
+        const hit = emailCandidates[0];
+        matches[i] = { matchedRecord: hit, matchedBy: 'email', ambiguityWarning: null };
+        claimedDbIds.add(hit.id);
+        continue;
+      }
+
+      // Disambiguate shared email by name + household, then name
+      let narrowed =
+        nameKey && householdKey
+          ? emailCandidates.filter(
+            (c) =>
+              normalizeMatchText(c.guestName) === nameKey &&
+                normalizeMatchText(c.householdName) === householdKey
+          )
+          : [];
+      if (narrowed.length !== 1 && nameKey) {
+        narrowed = emailCandidates.filter((c) => normalizeMatchText(c.guestName) === nameKey);
+      }
+      if (narrowed.length === 1) {
+        const hit = narrowed[0];
+        matches[i] = { matchedRecord: hit, matchedBy: 'email', ambiguityWarning: null };
+        claimedDbIds.add(hit.id);
+        continue;
+      }
+
+      matches[i] = {
+        matchedRecord: null,
+        matchedBy: null,
+        ambiguityWarning: `Multiple existing guests share email "${row.email}"; a new invitation code will be generated instead of overwriting.`,
+      };
+      continue;
+    }
+
+    // Tier 2: Name + Household match
+    if (nameKey && householdKey) {
+      const nhKey = `${nameKey}||${householdKey}`;
+      const nhCandidates = nameHouseholdMap.get(nhKey);
+      if (nhCandidates && nhCandidates.length === 1) {
+        const hit = nhCandidates[0];
+        matches[i] = { matchedRecord: hit, matchedBy: 'name_household', ambiguityWarning: null };
+        claimedDbIds.add(hit.id);
+        continue;
+      }
+      if (nhCandidates && nhCandidates.length > 1) {
+        matches[i] = {
+          matchedRecord: null,
+          matchedBy: null,
+          ambiguityWarning: `Multiple existing guests named "${row.guestName}" in household "${row.householdName}" found; a new invitation code will be generated instead of overwriting.`,
+        };
+        continue;
+      }
+    }
+
+    // Defer to Tier 3: Unique Name match
+    if (nameKey) {
+      tier3Indices.push(i);
+      unmatchedBatchNameFreq.set(nameKey, (unmatchedBatchNameFreq.get(nameKey) || 0) + 1);
+    }
+  }
+
+  for (const idx of tier3Indices) {
+    const row = normalizedRows[idx];
+    const nameKey = normalizeMatchText(row.guestName);
+    const nameCandidates = nameMap.get(nameKey);
+    if (!nameCandidates || nameCandidates.length === 0) {
+      continue;
+    }
+
+    if (nameCandidates.length >= 2) {
+      matches[idx] = {
+        matchedRecord: null,
+        matchedBy: null,
+        ambiguityWarning: `Multiple existing guests named "${row.guestName}" found without matching email or household; a new invitation code will be generated instead of overwriting.`,
+      };
+      continue;
+    }
+
+    const singleCandidate = nameCandidates[0];
+    if (claimedDbIds.has(singleCandidate.id)) {
+      matches[idx] = {
+        matchedRecord: null,
+        matchedBy: null,
+        ambiguityWarning: `Another row in this import already matched "${singleCandidate.guestName}" (${singleCandidate.code}); a new invitation code will be generated instead of overwriting.`,
+      };
+      continue;
+    }
+
+    if ((unmatchedBatchNameFreq.get(nameKey) || 0) > 1) {
+      matches[idx] = {
+        matchedRecord: null,
+        matchedBy: null,
+        ambiguityWarning: `Multiple rows in this import share the name "${row.guestName}" without matching email or household; a new invitation code will be generated instead of overwriting.`,
+      };
+      continue;
+    }
+
+    matches[idx] = {
+      matchedRecord: singleCandidate,
+      matchedBy: 'unique_name',
+      ambiguityWarning: null,
+    };
+  }
+
+  return { dbCodeMap, matches };
+}
+
+export function mergeDietaryNotes(notesList: ReadonlyArray<string | null | undefined>): string | null {
+  const seen = new Set<string>();
+  const collected: string[] = [];
+
+  for (const raw of notesList) {
+    if (typeof raw !== 'string') continue;
+    const segments = raw
+      .split(';')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (const seg of segments) {
+      const lower = seg.toLowerCase();
+      if (lower === 'none' || lower === 'n/a') continue;
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        collected.push(seg);
+      }
+    }
+  }
+
+  if (collected.length === 0) {
+    // Preserve explicit "None" if that was the only non-empty note
+    for (const raw of notesList) {
+      const trimmed = typeof raw === 'string' ? raw.trim() : '';
+      if (trimmed) return trimmed;
+    }
+    return null;
+  }
+
+  return collected.join('; ');
+}
+
+interface MergeableGuestProfile {
+  id: string;
+  code: string;
+  guestName: string;
+  email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
+  dietaryNotes?: string | null;
+  plusOneAllocations?: number | null;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+  householdName?: string | null;
+  partyGroup?: string | null;
+  partyTags?: string[] | null;
+  extraFields?: Record<string, unknown> | null;
+  used?: boolean;
+  usedAt?: string | Date | null;
+  tableId?: string | null;
+  seatNumber?: number | null;
+}
+
+/**
+ * Computes consolidated fields when merging one or more secondary InvitationCode
+ * records into a primary InvitationCode record. Pure and safe for both UI preview and DB service.
+ */
+export function computeMergedInvitationPreview(
+  primary: MergeableGuestProfile,
+  secondaries: ReadonlyArray<MergeableGuestProfile>
+) {
+  const all = [primary, ...secondaries];
+
+  const pickFirstString = (
+    getter: (_rec: MergeableGuestProfile) => string | null | undefined
+  ): string | null => {
+    for (const rec of all) {
+      const val = normalizeNullableString(getter(rec));
+      if (val) return val;
+    }
+    return null;
+  };
+
+  const maxPlusOnes = all.reduce((max, rec) => {
+    const count = typeof rec.plusOneAllocations === 'number' ? rec.plusOneAllocations : 0;
+    return count > max ? count : max;
+  }, 0);
+
+  const mergedTags = normalizePartyTags(
+    all.flatMap((rec) => (Array.isArray(rec.partyTags) ? rec.partyTags : [])),
+    { dedupe: true }
+  );
+
+  const mergedDietary = mergeDietaryNotes(all.map((rec) => rec.dietaryNotes));
+
+  const mergedExtra: Record<string, unknown> = {};
+  for (let i = all.length - 1; i >= 0; i--) {
+    const ef = all[i].extraFields;
+    if (ef && typeof ef === 'object' && !Array.isArray(ef)) {
+      for (const [k, v] of Object.entries(ef)) {
+        if (v !== null && v !== undefined && String(v).trim() !== '') {
+          mergedExtra[k] = v;
+        }
+      }
+    }
+  }
+
+  const used = all.some((rec) => Boolean(rec.used));
+  const usedAtSource = all.find((rec) => rec.usedAt !== null && rec.usedAt !== undefined);
+  const usedAt = usedAtSource?.usedAt ?? null;
+
+  let tableId: string | null = primary.tableId ?? null;
+  let seatNumber: number | null = primary.seatNumber ?? null;
+  if (!tableId) {
+    const seatedSecondary = secondaries.find((rec) => Boolean(rec.tableId));
+    if (seatedSecondary) {
+      tableId = seatedSecondary.tableId ?? null;
+      seatNumber = seatedSecondary.seatNumber ?? null;
+    }
+  } else if (seatNumber === null || seatNumber === undefined) {
+    const matchingTableSecondary = secondaries.find(
+      (rec) => rec.tableId === tableId && typeof rec.seatNumber === 'number'
+    );
+    if (matchingTableSecondary) {
+      seatNumber = matchingTableSecondary.seatNumber ?? null;
+    }
+  }
+
+  return {
+    id: primary.id,
+    code: primary.code,
+    guestName: primary.guestName.trim() || pickFirstString((r) => r.guestName) || primary.guestName,
+    email: pickFirstString((r) => r.email),
+    addressLine1: pickFirstString((r) => r.addressLine1),
+    addressLine2: pickFirstString((r) => r.addressLine2),
+    city: pickFirstString((r) => r.city),
+    state: pickFirstString((r) => r.state),
+    zipCode: pickFirstString((r) => r.zipCode),
+    country: pickFirstString((r) => r.country),
+    dietaryNotes: mergedDietary,
+    plusOneAllocations: maxPlusOnes,
+    plusOneFirstName: pickFirstString((r) => r.plusOneFirstName),
+    plusOneLastName: pickFirstString((r) => r.plusOneLastName),
+    householdName: pickFirstString((r) => r.householdName),
+    partyGroup: pickFirstString((r) => r.partyGroup),
+    partyTags: mergedTags,
+    extraFields: Object.keys(mergedExtra).length > 0 ? mergedExtra : null,
+    used,
+    usedAt,
+    tableId,
+    seatNumber,
+  };
+}
+

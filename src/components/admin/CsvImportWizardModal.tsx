@@ -10,9 +10,13 @@ import {
   validateSingleCsvRow,
   generateSampleCsvTemplate,
   combineFirstAndLastName,
+  consolidateHouseholdCsvRows,
+  generateFailedRowsCsv,
   MAX_CSV_FILE_SIZE,
   ParsedCsvRow,
   ColumnMappingOptions,
+  type EditableCsvRow,
+  type FailedCsvExportRow,
 } from '@/utils/csv';
 import type { DryRunValidationSummary, DryRunValidationResponse } from '@/features/registry';
 import {
@@ -29,25 +33,7 @@ interface CsvImportWizardModalProps {
   existingCodes?: (string | undefined | null)[];
 }
 
-interface EditableRow {
-  guestName: string;
-  code: string;
-  email: string;
-  addressLine1: string;
-  addressLine2: string;
-  city: string;
-  state: string;
-  zipCode: string;
-  country: string;
-  dietaryNotes: string;
-  plusOneAllocations: string;
-  plusOneFirstName: string;
-  plusOneLastName: string;
-  householdName: string;
-  partyGroup: string;
-  partyTags: string;
-  extraFields: Record<string, string>;
-}
+type EditableRow = EditableCsvRow;
 
 interface CsvImportPersistedState {
   step: 1 | 2 | 3 | 4;
@@ -73,13 +59,16 @@ interface CsvImportPersistedState {
   partyGroupCol: string;
   partyTagsCol: string;
   selectedExtraCols: string[];
+  groupByHousehold: boolean;
   collisionStrategy: InvitationCollisionStrategy;
   editableRows: EditableRow[];
+  failedRows: FailedCsvExportRow[];
   importSummary?: {
     total: number;
     imported: number;
     skipped: number;
     updated: number;
+    invalidSkipped?: number;
   } | null;
 }
 
@@ -107,8 +96,10 @@ const initialCsvImportState: CsvImportPersistedState = {
   partyGroupCol: '',
   partyTagsCol: '',
   selectedExtraCols: [],
+  groupByHousehold: false,
   collisionStrategy: 'skip',
   editableRows: [],
+  failedRows: [],
   importSummary: null,
 };
 
@@ -402,7 +393,7 @@ const EditableTableRow = React.memo(function EditableTableRow({
           value={editableRow?.code || ''}
           aria-label={`Invitation Code for row ${row.rowIndex}`}
           aria-describedby={getCellDescribedBy('code')}
-          placeholder="Auto-generate"
+          placeholder={!editableRow?.code && row.code ? row.code : 'Auto-generate'}
           onChange={(e) => onCellEdit(index, 'code', e.target.value)}
           sizeVariant="compact"
           state={getCellState('code')}
@@ -636,6 +627,11 @@ const EditableTableRow = React.memo(function EditableTableRow({
             Duplicate code
           </span>
         ) : null}
+        {!editableRow?.code && row.code && (
+          <span className="block text-[10px] font-mono font-bold text-blue-800 dark:text-blue-200 bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+            Matched code: {row.code}
+          </span>
+        )}
 
         {/* Error Messages */}
         {row.errors && row.errors.map((err, ei) => (
@@ -686,6 +682,7 @@ interface WizardState extends CsvImportPersistedState {
     imported: number;
     skipped: number;
     updated: number;
+    invalidSkipped?: number;
   } | null;
 }
 
@@ -720,6 +717,7 @@ type WizardAction =
   }
   | { type: 'SET_COLUMN_MAPPING'; field: keyof CsvImportPersistedState; value: string }
   | { type: 'TOGGLE_EXTRA_COL'; header: string }
+  | { type: 'SET_GROUP_BY_HOUSEHOLD'; enabled: boolean }
   | { type: 'SET_COLLISION_STRATEGY'; strategy: 'skip' | 'update' | 'reject' }
   | {
     type: 'CONFIRM_MAPPING';
@@ -758,7 +756,14 @@ type WizardAction =
   | { type: 'COMMIT_START' }
   | {
     type: 'COMMIT_SUCCESS';
-    summary: { total: number; imported: number; skipped: number; updated: number };
+    summary: {
+      total: number;
+      imported: number;
+      skipped: number;
+      updated: number;
+      invalidSkipped?: number;
+    };
+    failedRows: FailedCsvExportRow[];
   }
   | { type: 'COMMIT_FAILURE'; error?: string }
   | { type: 'RESET_MODAL' };
@@ -833,6 +838,8 @@ function initWizardState(initial: WizardState, existingDbSet: Set<string>): Wiza
         return {
           ...initial,
           ...parsed,
+          groupByHousehold: Boolean(parsed.groupByHousehold),
+          failedRows: Array.isArray(parsed.failedRows) ? parsed.failedRows : [],
           importSummary: parsed.importSummary ?? null,
           validatedRows,
           codeFrequencyMap: freqMap,
@@ -909,6 +916,12 @@ function wizardReducer(
           : [...state.selectedExtraCols, action.header],
       };
     }
+    case 'SET_GROUP_BY_HOUSEHOLD': {
+      return {
+        ...state,
+        groupByHousehold: action.enabled,
+      };
+    }
     case 'SET_COLLISION_STRATEGY': {
       return {
         ...state,
@@ -923,6 +936,7 @@ function wizardReducer(
         editableRows: action.editableRows,
         validatedRows: action.validatedRows,
         codeFrequencyMap: action.freqMap,
+        failedRows: [],
         serverSummary: null,
         step: 3,
       };
@@ -1138,6 +1152,7 @@ function wizardReducer(
         ...state,
         isSubmitting: false,
         importSummary: action.summary,
+        failedRows: action.failedRows,
         step: 4,
       };
     }
@@ -1223,8 +1238,10 @@ export function CsvImportWizardModal({
     partyGroupCol,
     partyTagsCol,
     selectedExtraCols,
+    groupByHousehold,
     collisionStrategy,
     editableRows,
+    failedRows,
     isValidating,
     serverSummary,
     validatedRows,
@@ -1275,8 +1292,10 @@ export function CsvImportWizardModal({
     state.partyGroupCol,
     state.partyTagsCol,
     state.selectedExtraCols,
+    state.groupByHousehold,
     state.collisionStrategy,
     state.editableRows,
+    state.failedRows,
     state.importSummary,
   ]);
 
@@ -1457,15 +1476,34 @@ export function CsvImportWizardModal({
       };
     });
 
+    const activeGroupByField: 'householdName' | 'partyGroup' | null = householdNameCol
+      ? 'householdName'
+      : partyGroupCol
+        ? 'partyGroup'
+        : null;
+
+    const mappedRows =
+      groupByHousehold && activeGroupByField
+        ? consolidateHouseholdCsvRows(initialMapped, {
+          groupBy: activeGroupByField,
+          rawFirstNames: guestFirstNameCol
+            ? rawRows.map((r) => (r[guestFirstNameCol] || '').trim())
+            : undefined,
+          rawLastNames: guestLastNameCol
+            ? rawRows.map((r) => (r[guestLastNameCol] || '').trim())
+            : undefined,
+        })
+        : initialMapped;
+
     const { parsed, freqMap } = computeFullValidation(
-      initialMapped,
+      mappedRows,
       selectedExtraCols,
       existingDbSetRef.current
     );
 
     dispatch({
       type: 'CONFIRM_MAPPING',
-      editableRows: initialMapped,
+      editableRows: mappedRows,
       validatedRows: parsed,
       freqMap,
     });
@@ -1639,6 +1677,58 @@ export function CsvImportWizardModal({
     return computeWizardSummary(serverSummary, editableRows, validatedRows, collisionStrategy);
   }, [serverSummary, editableRows, validatedRows, collisionStrategy]);
 
+  const hasRejectCollision = useMemo(
+    () =>
+      collisionStrategy === 'reject' &&
+      validatedRows.some((r) => r.actionOutcome === 'reject'),
+    [collisionStrategy, validatedRows]
+  );
+
+  const currentFailedRows = useMemo<FailedCsvExportRow[]>(() => {
+    const collected: FailedCsvExportRow[] = [];
+    for (let i = 0; i < validatedRows.length; i++) {
+      const vRow = validatedRows[i];
+      const eRow = editableRows[i];
+      if (vRow && eRow && !vRow.isValid) {
+        collected.push({
+          row: eRow,
+          errors: vRow.errors && vRow.errors.length > 0 ? vRow.errors : ['Invalid row'],
+        });
+      }
+    }
+    return collected;
+  }, [validatedRows, editableRows]);
+
+  const handleDownloadFailedRows = useCallback(
+    (rowsToExport: FailedCsvExportRow[]) => {
+      if (rowsToExport.length === 0) return;
+      const csvText = generateFailedRowsCsv(rowsToExport, selectedExtraCols);
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+      if (typeof window !== 'undefined' && typeof window.URL?.createObjectURL === 'function') {
+        let url: string | null = null;
+        try {
+          url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', 'rows_to_fix.csv');
+          link.setAttribute('aria-label', 'Download Rows to Fix');
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } finally {
+          if (url && typeof window.URL?.revokeObjectURL === 'function') {
+            try {
+              window.URL.revokeObjectURL(url);
+            } catch {
+              // Ignore object URL revocation errors in test runners
+            }
+          }
+        }
+      }
+    },
+    [selectedExtraCols]
+  );
+
   const filteredRows = useMemo(() => {
     if (statusFilter === 'valid') {
       return validatedRows.filter((r) => r.isValid);
@@ -1693,26 +1783,57 @@ export function CsvImportWizardModal({
     await flushPendingValidation();
 
     const latest = stateRef.current;
-    const latestSummary = computeWizardSummary(
-      latest.serverSummary,
-      latest.editableRows,
-      latest.validatedRows,
-      latest.collisionStrategy
-    );
-
-    if (latestSummary.invalidCount > 0) {
-      addToast('Please fix or remove invalid rows before submitting.', 'error');
-      return;
-    }
 
     if (latest.isValidating) {
       addToast('Validation in progress. Please wait.', 'error');
       return;
     }
 
+    const latestHasRejectCollision =
+      latest.collisionStrategy === 'reject' &&
+      latest.validatedRows.some((r) => r.actionOutcome === 'reject');
+
+    if (latestHasRejectCollision) {
+      addToast(
+        'Duplicate invitation codes detected while "Reject Batch on Duplicate" is selected.',
+        'error'
+      );
+      return;
+    }
+
+    const validEditableRows: EditableRow[] = [];
+    const skippedFailedRows: FailedCsvExportRow[] = [];
+
+    const rowsForEvaluation =
+      latest.validatedRows.length === latest.editableRows.length
+        ? latest.validatedRows
+        : computeFullValidation(
+          latest.editableRows,
+          latest.selectedExtraCols,
+          existingDbSetRef.current
+        ).parsed;
+
+    for (let i = 0; i < latest.editableRows.length; i++) {
+      const vRow = rowsForEvaluation[i];
+      const eRow = latest.editableRows[i];
+      if (vRow && vRow.isValid) {
+        validEditableRows.push(eRow);
+      } else if (eRow) {
+        skippedFailedRows.push({
+          row: eRow,
+          errors: vRow?.errors && vRow.errors.length > 0 ? vRow.errors : ['Invalid row'],
+        });
+      }
+    }
+
+    if (validEditableRows.length === 0) {
+      addToast('Please fix or remove invalid rows before submitting.', 'error');
+      return;
+    }
+
     dispatch({ type: 'COMMIT_START' });
     try {
-      const payload = buildBatchImportPayload(latest.editableRows, latest.collisionStrategy);
+      const payload = buildBatchImportPayload(validEditableRows, latest.collisionStrategy);
 
       const res = await fetch('/api/admin/invitation-codes/batch', {
         method: 'POST',
@@ -1728,11 +1849,13 @@ export function CsvImportWizardModal({
       dispatch({
         type: 'COMMIT_SUCCESS',
         summary: {
-          total: data.count || latest.editableRows.length,
+          total: data.count || validEditableRows.length,
           imported: data.imported || 0,
           skipped: data.skipped || 0,
           updated: data.updated || 0,
+          invalidSkipped: skippedFailedRows.length,
         },
+        failedRows: skippedFailedRows,
       });
       addToast('Batch CSV import completed successfully.', 'success');
       onImportComplete();
@@ -1822,7 +1945,7 @@ export function CsvImportWizardModal({
       }
       className="max-w-4xl"
     >
-      <div className="space-y-6">
+      <div className="space-y-6 max-h-[80vh] overflow-y-auto pr-1">
         {/* Step Indicator */}
         <nav aria-label="Import progress">
           <ol className="flex justify-between items-center text-xs font-semibold border-b pb-3 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-800">
@@ -2253,6 +2376,31 @@ export function CsvImportWizardModal({
               </div>
             )}
 
+            {/* Household / Party Consolidation Toggle */}
+            <div className="bg-purple-50/70 dark:bg-purple-950/20 p-3.5 rounded-lg border border-purple-200 dark:border-purple-800/60">
+              <label htmlFor="group-by-household-toggle" className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  id="group-by-household-toggle"
+                  type="checkbox"
+                  checked={groupByHousehold}
+                  onChange={(e) =>
+                    dispatch({ type: 'SET_GROUP_BY_HOUSEHOLD', enabled: e.target.checked })
+                  }
+                  className="mt-0.5 rounded border-gray-300 dark:border-zinc-700 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
+                />
+                <span className="space-y-0.5">
+                  <span className="block text-xs font-bold text-gray-900 dark:text-zinc-100">
+                    Consolidate rows sharing a Household or Party onto one invitation
+                  </span>
+                  <span className="block text-xs text-gray-600 dark:text-zinc-300">
+                    {householdNameCol || partyGroupCol
+                      ? `Rows sharing the same "${householdNameCol || partyGroupCol}" value will be grouped into one invitation with companion names, combined plus-one allocations, dietary notes, and tags.`
+                      : 'Select a Household Name or Party Side / Group column above to consolidate multi-row households onto one invitation.'}
+                  </span>
+                </span>
+              </label>
+            </div>
+
             {/* Preview snippet */}
             <div className="bg-gray-50 dark:bg-zinc-800 p-3 rounded-lg border border-gray-200 dark:border-zinc-700">
               <h4 className="text-xs font-bold uppercase text-gray-500 mb-2">Sample Data Preview (First 3 rows)</h4>
@@ -2384,11 +2532,26 @@ export function CsvImportWizardModal({
 
             {/* Error Banner when invalid rows exist */}
             {summary.invalidCount > 0 && (
-              <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 p-2.5 rounded-lg text-xs font-semibold flex items-center gap-2">
-                <span>⚠️</span>
-                <span>
-                  Please fix or remove the {summary.invalidCount} invalid row(s) in the table before submitting the batch import.
-                </span>
+              <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 p-2.5 rounded-lg text-xs font-semibold flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>
+                    {hasRejectCollision
+                      ? `Duplicate collision(s) detected while "Reject Batch on Duplicate" is active. Change duplicate action or resolve ${summary.invalidCount} row(s).`
+                      : summary.validCount > 0
+                        ? `${summary.invalidCount} invalid row(s) have validation errors and will be skipped if you import now. Fix them inline or download them for cleanup.`
+                        : `Please fix or remove the ${summary.invalidCount} invalid row(s) in the table before submitting the batch import.`}
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadFailedRows(currentFailedRows)}
+                  className="text-xs font-semibold shrink-0"
+                >
+                  Download Rows to Fix
+                </Button>
               </div>
             )}
 
@@ -2451,9 +2614,19 @@ export function CsvImportWizardModal({
               </Button>
               <Button
                 onClick={handleCommitBatch}
-                disabled={isSubmitting || isValidating || editableRows.length === 0 || summary.invalidCount > 0}
+                disabled={
+                  isSubmitting ||
+                  isValidating ||
+                  editableRows.length === 0 ||
+                  summary.validCount === 0 ||
+                  hasRejectCollision
+                }
               >
-                {isSubmitting ? 'Importing Batch...' : `Commit Import (${summary.validCount} rows)`}
+                {isSubmitting
+                  ? 'Importing Batch...'
+                  : summary.invalidCount > 0 && summary.validCount > 0 && !hasRejectCollision
+                    ? `Import Valid Rows (${summary.validCount})`
+                    : `Commit Import (${summary.validCount} rows)`}
               </Button>
             </div>
           </div>
@@ -2486,6 +2659,23 @@ export function CsvImportWizardModal({
                 <div className="text-xs uppercase font-semibold text-gray-500">Updated</div>
               </div>
             </div>
+
+            {failedRows.length > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 p-4 rounded-xl max-w-md mx-auto space-y-3">
+                <p className="text-xs font-semibold">
+                  {failedRows.length} invalid {failedRows.length === 1 ? 'row was' : 'rows were'} skipped during import. Download a CSV with validation errors to fix and re-upload.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDownloadFailedRows(failedRows)}
+                  className="text-xs font-semibold"
+                >
+                  Download Rows to Fix
+                </Button>
+              </div>
+            )}
 
             <div className="pt-2">
               <Button onClick={handleResetModal}>Close Wizard</Button>

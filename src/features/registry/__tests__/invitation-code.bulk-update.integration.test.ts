@@ -35,6 +35,8 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
 
   beforeEach(async () => {
     await realPrisma.snapshotVersion.deleteMany();
+    await realPrisma.broadcastRecipient.deleteMany();
+    await realPrisma.broadcastMessage.deleteMany();
     await realPrisma.subEventRsvp.deleteMany();
     await realPrisma.subEventAccess.deleteMany();
     await realPrisma.subEvent.deleteMany();
@@ -49,6 +51,8 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
 
   afterAll(async () => {
     await realPrisma.snapshotVersion.deleteMany();
+    await realPrisma.broadcastRecipient.deleteMany();
+    await realPrisma.broadcastMessage.deleteMany();
     await realPrisma.subEventRsvp.deleteMany();
     await realPrisma.subEventAccess.deleteMany();
     await realPrisma.subEvent.deleteMany();
@@ -526,6 +530,285 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
 
       const snapshots = await cleanPrisma.snapshotVersion.findMany();
       expect(snapshots).toHaveLength(0);
+    });
+  });
+
+  describe('Composite Blank-Code Re-Import & Duplicate Merge SQL Integration', () => {
+    const cleanCompositePrisma = new PrismaClient({ adapter });
+
+    beforeEach(() => {
+      service.repo.client = cleanCompositePrisma;
+    });
+
+    afterAll(async () => {
+      await cleanCompositePrisma.$disconnect();
+    });
+
+    it('re-imports blank-code CSV rows matching existing guests by email, name+household, and unique name without creating duplicate random codes', async () => {
+      await realPrisma.invitationCode.createMany({
+        data: [
+          {
+            code: 'SEEDMAIL',
+            guestName: 'Elena Gilbert',
+            email: 'elena@example.com',
+            city: 'Mystic Falls',
+          },
+          {
+            code: 'SEEDHH01',
+            guestName: 'Alex Chen',
+            householdName: 'Chen Uptown',
+          },
+          {
+            code: 'SEEDHH02',
+            guestName: 'Alex Chen',
+            householdName: 'Chen Downtown',
+          },
+          {
+            code: 'SEEDUNIQ',
+            guestName: 'Damon Salvatore',
+          },
+        ],
+      });
+
+      const dryRun = await service.dryRunValidateBatch(
+        [
+          { guestName: 'Elena Gilbert', code: '', email: 'ELENA@example.com', addressLine1: '2104 Maple St' },
+          { guestName: 'Alex Chen', code: '', householdName: 'Chen Downtown', dietaryNotes: 'Nut Free' },
+          { guestName: 'Damon Salvatore', code: '', partyGroup: 'Groom' },
+        ],
+        'update'
+      );
+
+      expect(dryRun.summary.updatedCount).toBe(3);
+      expect(dryRun.summary.createdCount).toBe(0);
+      expect(dryRun.rows.map((r) => r.code)).toEqual(['SEEDMAIL', 'SEEDHH02', 'SEEDUNIQ']);
+
+      const result = await service.importBatch(
+        [
+          { guestName: 'Elena Gilbert', code: '', email: 'ELENA@example.com', addressLine1: '2104 Maple St' },
+          { guestName: 'Alex Chen', code: '', householdName: 'Chen Downtown', dietaryNotes: 'Nut Free' },
+          { guestName: 'Damon Salvatore', code: '', partyGroup: 'Groom' },
+        ],
+        'update',
+        'ReimportAdmin'
+      );
+
+      expect(result).toEqual({
+        success: true,
+        count: 3,
+        imported: 0,
+        skipped: 0,
+        updated: 3,
+      });
+
+      const allGuests = await realPrisma.invitationCode.findMany({ orderBy: { code: 'asc' } });
+      expect(allGuests).toHaveLength(4);
+
+      const elena = allGuests.find((g: { code: string }) => g.code === 'SEEDMAIL');
+      expect(elena!.addressLine1).toBe('2104 Maple St');
+      expect(elena!.city).toBe('Mystic Falls');
+
+      const alexDowntown = allGuests.find((g: { code: string }) => g.code === 'SEEDHH02');
+      expect(alexDowntown!.dietaryNotes).toBe('Nut Free');
+
+      const alexUptown = allGuests.find((g: { code: string }) => g.code === 'SEEDHH01');
+      expect(alexUptown!.dietaryNotes).toBeNull();
+
+      const damon = allGuests.find((g: { code: string }) => g.code === 'SEEDUNIQ');
+      expect(damon!.partyGroup).toBe('Groom');
+    });
+
+    it('atomically merges duplicate InvitationCode records, transferring gifts, sub-event accesses/RSVPs, broadcast logs, and seating while writing an audit snapshot', async () => {
+      const table = await realPrisma.seatingTable.create({
+        data: { name: 'Garden Table 3', capacity: 8 },
+      });
+
+      const [rehearsalEvent, brunchEvent] = await Promise.all([
+        realPrisma.subEvent.create({
+          data: { title: 'Rehearsal Dinner', isPrivate: true },
+        }),
+        realPrisma.subEvent.create({
+          data: { title: 'Farewell Brunch', isPrivate: true },
+        }),
+      ]);
+
+      const primary = await realPrisma.invitationCode.create({
+        data: {
+          code: 'PRIMARY1',
+          guestName: 'Sophia Martinez',
+          email: null,
+          partyTags: ['Bride Side'],
+          dietaryNotes: 'Vegetarian',
+          plusOneAllocations: 0,
+          used: false,
+          extraFields: { note: 'from-knot' },
+        },
+      });
+
+      const secondary = await realPrisma.invitationCode.create({
+        data: {
+          code: 'DUPSEC02',
+          guestName: 'Sophia M.',
+          email: 'sophia@example.com',
+          householdName: 'Martinez Household',
+          partyGroup: 'Family',
+          partyTags: ['Bride Side', 'VIP'],
+          dietaryNotes: 'Vegetarian; Gluten-Free',
+          plusOneAllocations: 1,
+          plusOneFirstName: 'Lucas',
+          plusOneLastName: 'Martinez',
+          addressLine1: '88 Harbor Way',
+          city: 'Miami',
+          state: 'FL',
+          zipCode: '33101',
+          country: 'USA',
+          used: true,
+          usedAt: new Date('2026-07-10T15:00:00.000Z'),
+          tableId: table.id,
+          seatNumber: 5,
+          extraFields: { phone: '+13055550199', note: 'from-zola' },
+        },
+      });
+
+      // Overlapping SubEventAccess on rehearsalEvent + unique access on brunchEvent
+      await realPrisma.subEventAccess.createMany({
+        data: [
+          { subEventId: rehearsalEvent.id, invitationCodeId: primary.id },
+          { subEventId: rehearsalEvent.id, invitationCodeId: secondary.id },
+          { subEventId: brunchEvent.id, invitationCodeId: secondary.id },
+        ],
+      });
+
+      // Overlapping SubEventRsvp on rehearsalEvent (primary pending, secondary attending) + unique RSVP on brunchEvent
+      await realPrisma.subEventRsvp.createMany({
+        data: [
+          {
+            subEventId: rehearsalEvent.id,
+            invitationCodeId: primary.id,
+            status: 'pending',
+            plusOneCount: 0,
+            dietaryNotes: 'Vegetarian',
+          },
+          {
+            subEventId: rehearsalEvent.id,
+            invitationCodeId: secondary.id,
+            status: 'attending',
+            plusOneCount: 1,
+            dietaryNotes: 'Gluten-Free',
+          },
+          {
+            subEventId: brunchEvent.id,
+            invitationCodeId: secondary.id,
+            status: 'attending',
+            plusOneCount: 1,
+            dietaryNotes: 'Gluten-Free',
+          },
+        ],
+      });
+
+      // Contributor gift linked to secondary
+      const gift = await realPrisma.contributor.create({
+        data: {
+          name: 'Sophia & Lucas',
+          amount: 250,
+          invitationCodeId: secondary.id,
+        },
+      });
+
+      // BroadcastRecipient linked to secondary
+      const broadcast = await realPrisma.broadcastMessage.create({
+        data: {
+          channel: 'EMAIL',
+          subject: 'Save the Date',
+          body: 'See you in Miami!',
+          status: 'SENT',
+        },
+      });
+      const recipientLog = await realPrisma.broadcastRecipient.create({
+        data: {
+          broadcastId: broadcast.id,
+          invitationCodeId: secondary.id,
+          guestName: 'Sophia M.',
+          destination: 'sophia@example.com',
+          status: 'SENT',
+        },
+      });
+
+      const mergeResult = await service.mergeDuplicates(
+        primary.id,
+        [secondary.id],
+        'MergeAdmin'
+      );
+
+      expect(mergeResult.success).toBe(true);
+      expect(mergeResult.mergedCount).toBe(1);
+      expect(mergeResult.record.id).toBe(primary.id);
+      expect(mergeResult.transferredCounts).toEqual({
+        contributors: 1,
+        subEventAccesses: 1,
+        subEventRsvps: 2,
+        broadcastRecipients: 1,
+        seatTransferred: true,
+      });
+
+      // Secondary record must be deleted
+      const deletedSecondary = await realPrisma.invitationCode.findUnique({
+        where: { id: secondary.id },
+      });
+      expect(deletedSecondary).toBeNull();
+
+      // Primary record must retain code PRIMARY1 and consolidate profile + seating + child relations
+      const reloadedPrimary = await realPrisma.invitationCode.findUnique({
+        where: { id: primary.id },
+        include: {
+          contributors: true,
+          subEventAccesses: true,
+          subEventRsvps: true,
+          broadcastRecipients: true,
+        },
+      });
+      expect(reloadedPrimary).not.toBeNull();
+      expect(reloadedPrimary!.code).toBe('PRIMARY1');
+      expect(reloadedPrimary!.guestName).toBe('Sophia Martinez');
+      expect(reloadedPrimary!.email).toBe('sophia@example.com');
+      expect(reloadedPrimary!.householdName).toBe('Martinez Household');
+      expect(reloadedPrimary!.partyGroup).toBe('Family');
+      expect(reloadedPrimary!.partyTags).toEqual(['Bride Side', 'VIP']);
+      expect(reloadedPrimary!.dietaryNotes).toBe('Vegetarian; Gluten-Free');
+      expect(reloadedPrimary!.plusOneAllocations).toBe(1);
+      expect(reloadedPrimary!.plusOneFirstName).toBe('Lucas');
+      expect(reloadedPrimary!.plusOneLastName).toBe('Martinez');
+      expect(reloadedPrimary!.addressLine1).toBe('88 Harbor Way');
+      expect(reloadedPrimary!.city).toBe('Miami');
+      expect(reloadedPrimary!.used).toBe(true);
+      expect(reloadedPrimary!.tableId).toBe(table.id);
+      expect(reloadedPrimary!.seatNumber).toBe(5);
+      expect(reloadedPrimary!.extraFields).toEqual({
+        phone: '+13055550199',
+        note: 'from-knot',
+      });
+
+      // Child relations transferred without orphaned records or unique violations
+      expect(reloadedPrimary!.contributors.map((c: { id: string }) => c.id)).toEqual([gift.id]);
+      expect(reloadedPrimary!.broadcastRecipients.map((b: { id: string }) => b.id)).toEqual([
+        recipientLog.id,
+      ]);
+      expect(reloadedPrimary!.subEventAccesses).toHaveLength(2);
+      expect(reloadedPrimary!.subEventRsvps).toHaveLength(2);
+
+      const mergedRehearsalRsvp = reloadedPrimary!.subEventRsvps.find(
+        (r: { subEventId: string }) => r.subEventId === rehearsalEvent.id
+      );
+      expect(mergedRehearsalRsvp!.status).toBe('attending');
+      expect(mergedRehearsalRsvp!.plusOneCount).toBe(1);
+      expect(mergedRehearsalRsvp!.dietaryNotes).toBe('Vegetarian; Gluten-Free');
+
+      // Audit snapshot written inside transaction
+      const snapshots = await realPrisma.snapshotVersion.findMany({
+        where: { entityType: 'InvitationCode', entityId: 'merge_duplicates' },
+      });
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0].author).toBe('MergeAdmin');
     });
   });
 });

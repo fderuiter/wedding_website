@@ -6,6 +6,8 @@ import {
   generateCsvContent,
   escapeCsvCell,
   generateSampleCsvTemplate,
+  consolidateHouseholdCsvRows,
+  generateFailedRowsCsv,
 } from '../csv';
 
 describe('CSV Parser Utility', () => {
@@ -455,6 +457,161 @@ describe('CSV Parser Utility', () => {
       expect(combineFirstAndLastName('', '')).toBe('');
       expect(combineFirstAndLastName(undefined, undefined)).toBe('');
       expect(combineFirstAndLastName('   ', '   ')).toBe('');
+    });
+  });
+
+  describe('consolidateHouseholdCsvRows', () => {
+    const baseRow = {
+      guestName: '',
+      code: '',
+      email: '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      country: '',
+      dietaryNotes: '',
+      plusOneAllocations: '0',
+      plusOneFirstName: '',
+      plusOneLastName: '',
+      householdName: '',
+      partyGroup: '',
+      partyTags: '',
+      extraFields: {},
+    };
+
+    it('consolidates multi-row households onto one invitation with companion names, allocations, dietary notes, and tags', () => {
+      const editableRows = [
+        {
+          ...baseRow,
+          guestName: 'Jane Doe',
+          email: 'jane@example.com',
+          householdName: 'The Doe Family',
+          dietaryNotes: 'Vegetarian',
+          partyTags: 'VIP, Bride Side',
+          addressLine1: '100 Main St',
+          city: 'Boston',
+        },
+        {
+          ...baseRow,
+          guestName: 'John Doe',
+          householdName: 'the doe family',
+          dietaryNotes: 'Nut Allergy; vegetarian',
+          partyTags: 'VIP, College',
+        },
+        {
+          ...baseRow,
+          guestName: 'Tommy Doe',
+          householdName: 'The Doe Family',
+          dietaryNotes: 'Dairy Free',
+          partyTags: 'Kids',
+        },
+        {
+          ...baseRow,
+          guestName: 'Solo Traveler',
+          email: 'solo@example.com',
+          partyTags: 'Friends',
+          addressLine1: '500 Pine Rd',
+          city: 'Seattle',
+        },
+      ];
+
+      const consolidated = consolidateHouseholdCsvRows(editableRows, {
+        groupBy: 'householdName',
+        rawFirstNames: ['Jane', 'John', 'Tommy', 'Solo'],
+        rawLastNames: ['Doe', 'Doe', 'Doe', 'Traveler'],
+      });
+
+      expect(consolidated).toHaveLength(2);
+      expect(consolidated[0]).toMatchObject({
+        guestName: 'Jane Doe',
+        email: 'jane@example.com',
+        householdName: 'The Doe Family',
+        plusOneFirstName: 'John',
+        plusOneLastName: 'Doe',
+        plusOneAllocations: '2',
+        dietaryNotes: 'Vegetarian; Nut Allergy; Dairy Free',
+        partyTags: 'VIP, Bride Side, College, Kids',
+        addressLine1: '100 Main St',
+        city: 'Boston',
+        extraFields: { additionalGuests: 'Tommy Doe' },
+      });
+
+      expect(consolidated[1]).toMatchObject({
+        guestName: 'Solo Traveler',
+        email: 'solo@example.com',
+        plusOneAllocations: '0',
+        partyTags: 'Friends',
+        city: 'Seattle',
+      });
+    });
+
+    it('supports partyGroup consolidation and splits companion full names when rawFirstNames are omitted', () => {
+      const editableRows = [
+        { ...baseRow, guestName: 'Alex Rivera', partyGroup: 'Rivera Couple', dietaryNotes: 'Gluten-Free' },
+        { ...baseRow, guestName: 'Sam Rivera', partyGroup: 'Rivera Couple', dietaryNotes: 'Vegan' },
+      ];
+
+      const consolidated = consolidateHouseholdCsvRows(editableRows, {
+        groupBy: 'partyGroup',
+      });
+
+      expect(consolidated).toHaveLength(1);
+      expect(consolidated[0]).toMatchObject({
+        guestName: 'Alex Rivera',
+        partyGroup: 'Rivera Couple',
+        plusOneFirstName: 'Sam',
+        plusOneLastName: 'Rivera',
+        plusOneAllocations: '1',
+        dietaryNotes: 'Gluten-Free; Vegan',
+      });
+    });
+  });
+
+  describe('generateFailedRowsCsv', () => {
+    it('exports failed rows with Validation Errors column and neutralizes CSV formula injection payloads', () => {
+      const csv = generateFailedRowsCsv(
+        [
+          {
+            row: {
+              guestName: '=cmd|"/C calc"!A0',
+              code: '+BADCODE',
+              email: '@malicious-email',
+              householdName: '-Household',
+              partyGroup: '\tTabGroup',
+              partyTags: 'VIP',
+              dietaryNotes: '\rCRNote',
+              plusOneAllocations: '-2',
+              plusOneFirstName: '',
+              plusOneLastName: '',
+              addressLine1: '123 St',
+              addressLine2: '',
+              city: 'Boston',
+              state: 'MA',
+              zipCode: '02101',
+              country: 'USA',
+              extraFields: { TablePref: '=HYPERLINK("http://evil.example")' },
+            },
+            errors: ['Invalid email format.', 'Plus-one allocation must be a non-negative integer.'],
+          },
+        ],
+        ['TablePref']
+      );
+
+      const lines = csv.split('\n');
+      expect(lines[0]).toContain('Guest Name,Invitation Code,Email');
+      expect(lines[0]).toContain('TablePref,Validation Errors');
+      // Formula-prefixed cells must be escaped with leading single quote
+      expect(csv).toContain('\'=cmd|""/C calc""!A0');
+      expect(csv).toContain("'+BADCODE");
+      expect(csv).toContain("'@malicious-email");
+      expect(csv).toContain("'-Household");
+      expect(csv).toContain("'\tTabGroup");
+      expect(csv).toContain('\'=HYPERLINK(""http://evil.example"")');
+      expect(csv).toContain(
+        'Invalid email format.; Plus-one allocation must be a non-negative integer.'
+      );
     });
   });
 });

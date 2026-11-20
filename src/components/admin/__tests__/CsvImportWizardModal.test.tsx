@@ -507,12 +507,15 @@ describe('CsvImportWizardModal Component', () => {
     // Verify existing guest name collision indicator
     expect(screen.getByText('Existing guest: John Doe')).toBeInTheDocument();
 
-    // Verify error banner when invalid rows exist
-    expect(screen.getByText(/Please fix or remove the 1 invalid row\(s\)/i)).toBeInTheDocument();
+    // Verify partial-commit warning banner and Download Rows to Fix button when valid + invalid rows coexist
+    expect(
+      screen.getByText(/1 invalid row\(s\) have validation errors and will be skipped if you import now/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Download Rows to Fix/i })).toBeInTheDocument();
 
-    // Verify commit button is disabled while invalid rows exist
-    const commitBtn = screen.getByText(/Commit Import/i);
-    expect(commitBtn).toBeDisabled();
+    // Verify partial commit button is enabled for the 2 valid rows
+    const partialCommitBtn = screen.getByRole('button', { name: 'Import Valid Rows (2)' });
+    expect(partialCommitBtn).not.toBeDisabled();
 
     // Test Status Filter Select
     const filterSelect = screen.getByLabelText(/Filter Status:/i) as HTMLSelectElement;
@@ -585,10 +588,11 @@ describe('CsvImportWizardModal Component', () => {
 
     fireEvent.click(deleteButtons[2]);
 
-    // Invalid count is now 0, commit button becomes enabled
+    // Invalid count is now 0, full Commit Import button is shown and enabled
     await waitFor(() => {
       expect(screen.getByText(/Invalid: 0/i)).toBeInTheDocument();
-      expect(commitBtn).not.toBeDisabled();
+      const fullCommitBtn = screen.getByRole('button', { name: 'Commit Import (2 rows)' });
+      expect(fullCommitBtn).not.toBeDisabled();
     });
   });
 
@@ -1289,4 +1293,304 @@ describe('CsvImportWizardModal Component', () => {
     const axeResults = await axe(container);
     expect(axeResults).toHaveNoViolations();
   });
+
+  test('consolidates multi-row households in Step 2 into single invitations with companion names, allocations, dietary notes, and tags', async () => {
+    window.sessionStorage.clear();
+    const csvData = [
+      'First Name,Last Name,Email,Household Name,Dietary Notes,Party Tags',
+      'Jane,Doe,jane@example.com,Doe Family,Vegetarian,"VIP, Bride"',
+      'John,Doe,,Doe Family,Nut Allergy,"VIP, College"',
+      'Tommy,Doe,,Doe Family,Dairy Free,Kids',
+      'Solo,Guest,solo@example.com,,,Friends',
+    ].join('\n');
+    const file = new File([csvData], 'households.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 2,
+          validCount: 2,
+          invalidCount: 0,
+          duplicateCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          createdCount: 2,
+        },
+        rows: [
+          { rowIndex: 1, guestName: 'Jane Doe', code: '', isValid: true, errors: [], warnings: [] },
+          { rowIndex: 2, guestName: 'Solo Guest', code: '', isValid: true, errors: [], warnings: [] },
+        ],
+      }),
+    });
+
+    renderModal(true);
+
+    const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    const toggle = screen.getByLabelText(
+      /Consolidate rows sharing a Household or Party onto one invitation/i
+    );
+    fireEvent.click(toggle);
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+      expect(screen.getByText(/Total: 2/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue('Jane Doe')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('John')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Doe')).toBeInTheDocument();
+    expect(screen.getByLabelText('Plus-One Allocation for row 1')).toHaveValue(2);
+    expect(screen.getByLabelText('Dietary Notes for row 1')).toHaveValue(
+      'Vegetarian; Nut Allergy; Dairy Free'
+    );
+    expect(screen.getByLabelText('Party Tags for row 1')).toHaveValue(
+      'VIP, Bride, College, Kids'
+    );
+  });
+
+  test('displays matched blank-code guest indicator and Update/Skip badge in Step 3', async () => {
+    window.sessionStorage.clear();
+    const csvData = 'Guest Name,Email\nJane Doe,jane@example.com';
+    const file = new File([csvData], 'blank-code-reimport.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 1,
+          validCount: 1,
+          invalidCount: 0,
+          duplicateCount: 1,
+          updatedCount: 1,
+          skippedCount: 0,
+          createdCount: 0,
+        },
+        rows: [
+          {
+            rowIndex: 1,
+            guestName: 'Jane Doe',
+            code: 'JANE2026',
+            email: 'jane@example.com',
+            isValid: true,
+            errors: [],
+            warnings: ['Matched existing guest "Jane Doe" (code "JANE2026") by email. Will be updated.'],
+            isDuplicate: true,
+            existingGuestName: 'Jane Doe',
+            actionOutcome: 'update',
+          },
+        ],
+      }),
+    });
+
+    renderModal(true);
+    const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('Matched code: JANE2026')).toBeInTheDocument();
+      expect(screen.getByText('Existing guest: Jane Doe')).toBeInTheDocument();
+      expect(screen.getByText('Update')).toBeInTheDocument();
+    });
+  });
+
+  test('commits 48 valid rows out of 50 in partial commit mode and exports 2 sanitized failed rows in Step 3 and Step 4', async () => {
+    window.sessionStorage.clear();
+
+    const csvLines = ['Guest Name,Invitation Code,Email'];
+    for (let i = 1; i <= 48; i++) {
+      const code = `VALID${String(i).padStart(3, '0')}`;
+      csvLines.push(`Guest ${i},${code},guest${i}@example.com`);
+    }
+    csvLines.push('"=cmd|\'/C calc\'!A0",BAD001,not-an-email');
+    csvLines.push(',BAD002,bad-email-2');
+
+    const csvData = csvLines.join('\n');
+    const file = new File([csvData], 'fifty-rows.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    const serverValidatedRows = [
+      ...Array.from({ length: 48 }, (_, idx) => ({
+        rowIndex: idx + 1,
+        guestName: `Guest ${idx + 1}`,
+        code: `VALID${String(idx + 1).padStart(3, '0')}`,
+        email: `guest${idx + 1}@example.com`,
+        isValid: true,
+        errors: [],
+        warnings: [],
+        isDuplicate: false,
+        actionOutcome: 'create' as const,
+      })),
+      {
+        rowIndex: 49,
+        guestName: "=cmd|'/C calc'!A0",
+        code: 'BAD001',
+        email: 'not-an-email',
+        isValid: false,
+        errors: ['Invalid email format.'],
+        fieldErrors: { email: ['Invalid email format.'] },
+        warnings: [],
+        isDuplicate: false,
+        actionOutcome: 'invalid' as const,
+      },
+      {
+        rowIndex: 50,
+        guestName: '',
+        code: 'BAD002',
+        email: 'bad-email-2',
+        isValid: false,
+        errors: ['Guest name is required.', 'Invalid email format.'],
+        fieldErrors: {
+          guestName: ['Guest name is required.'],
+          email: ['Invalid email format.'],
+        },
+        warnings: [],
+        isDuplicate: false,
+        actionOutcome: 'invalid' as const,
+      },
+    ];
+
+    let capturedBatchPayload: any = null;
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: any) => {
+      if (url === '/api/admin/invitation-codes/validate') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: {
+              total: 50,
+              validCount: 48,
+              invalidCount: 2,
+              duplicateCount: 0,
+              updatedCount: 0,
+              skippedCount: 0,
+              createdCount: 48,
+            },
+            rows: serverValidatedRows,
+          }),
+        });
+      }
+      if (url === '/api/admin/invitation-codes/batch') {
+        capturedBatchPayload = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            count: 48,
+            imported: 48,
+            skipped: 0,
+            updated: 0,
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const capturedBlobs: string[] = [];
+    const OriginalBlob = global.Blob;
+    const BlobSpy = jest
+      .spyOn(global, 'Blob')
+      .mockImplementation((parts?: BlobPart[], options?: BlobPropertyBag) => {
+        if (parts && typeof parts[0] === 'string') {
+          capturedBlobs.push(parts[0]);
+        }
+        return new OriginalBlob(parts, options);
+      });
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const anchorClickSpy = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    URL.createObjectURL = jest.fn(() => 'blob:http://localhost/rows_to_fix');
+    URL.revokeObjectURL = jest.fn();
+
+    try {
+      const { container } = render(
+        <ToastProvider>
+          <CsvImportWizardModal
+            isOpen={true}
+            onClose={mockOnClose}
+            onImportComplete={mockOnImportComplete}
+          />
+        </ToastProvider>
+      );
+
+      const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Guest Name Column \(Required\)/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText(/Continue to Review/i));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Total: 50/i)).toBeInTheDocument();
+        expect(screen.getByText(/Valid: 48/i)).toBeInTheDocument();
+        expect(screen.getByText(/Invalid: 2/i)).toBeInTheDocument();
+      });
+
+      const importValidBtn = screen.getByRole('button', { name: 'Import Valid Rows (48)' });
+      expect(importValidBtn).not.toBeDisabled();
+
+      // Export failed rows in Step 3
+      const step3DownloadBtn = screen.getByRole('button', { name: /Download Rows to Fix/i });
+      fireEvent.click(step3DownloadBtn);
+
+      expect(capturedBlobs.length).toBeGreaterThanOrEqual(1);
+      const exportedCsv = capturedBlobs[capturedBlobs.length - 1];
+      expect(exportedCsv).toContain('Validation Errors');
+      expect(exportedCsv).toContain("'=cmd|'/C calc'!A0");
+      expect(exportedCsv).toContain('BAD001');
+      expect(exportedCsv).toContain('BAD002');
+      expect(exportedCsv).toContain('Guest name is required.; Invalid email format.');
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      // Commit the 48 valid rows while skipping the 2 invalid rows
+      fireEvent.click(importValidBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+      });
+
+      expect(capturedBatchPayload).not.toBeNull();
+      expect(capturedBatchPayload.records).toHaveLength(48);
+      expect(
+        capturedBatchPayload.records.some((r: { code: string }) => r.code.startsWith('BAD'))
+      ).toBe(false);
+
+      // Step 4 also displays skipped invalid count and Download Rows to Fix
+      expect(
+        screen.getByText(/2 invalid rows were skipped during import/i)
+      ).toBeInTheDocument();
+      const step4DownloadBtn = screen.getByRole('button', { name: 'Download Rows to Fix' });
+      fireEvent.click(step4DownloadBtn);
+      expect(capturedBlobs.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      anchorClickSpy.mockRestore();
+      BlobSpy.mockRestore();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+  }, 15000);
 });

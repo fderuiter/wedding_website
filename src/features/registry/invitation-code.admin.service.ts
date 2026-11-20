@@ -5,6 +5,7 @@ import {
   DryRunValidatedRow,
   DryRunValidationSummary,
   DryRunValidationResponse,
+  MergeInvitationCodesResult,
 } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
@@ -14,10 +15,13 @@ import {
   BatchInvitationCodeRecord,
   InvitationCollisionStrategy,
   NormalizedInvitationCodeRecord,
+  computeMergedInvitationPreview,
+  mergeDietaryNotes,
   normalizeBatchInvitationRecord,
   normalizeInvitationCode,
   normalizePartialInvitationFields,
   normalizePartyTags,
+  resolveBatchGuestMatches,
   validateInvitationGuestFields,
   validateInvitationGuestFieldsWithColumns,
 } from '@/utils/invitationValidation';
@@ -234,12 +238,10 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
 
       const existingDbRecords = await tx.invitationCode.findMany({
-        select: { id: true, code: true, guestName: true },
+        select: { id: true, code: true, guestName: true, email: true, householdName: true },
       });
-      const dbCodeMap = new Map<string, { id: string; guestName: string }>();
-      for (const rec of existingDbRecords) {
-        dbCodeMap.set(rec.code.toUpperCase(), rec);
-      }
+      const normalizedRows = records.map((r) => normalizeBatchInvitationRecord(r));
+      const { dbCodeMap, matches } = resolveBatchGuestMatches(normalizedRows, existingDbRecords);
 
       let imported = 0;
       let skipped = 0;
@@ -251,9 +253,13 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
 
       for (let i = 0; i < records.length; i++) {
         const row = records[i];
-        const normalized = normalizeBatchInvitationRecord(row);
+        const normalized = normalizedRows[i];
         const guestName = normalized.guestName;
         let code = normalized.code;
+
+        if (!code && matches[i]?.matchedRecord) {
+          code = matches[i].matchedRecord!.code;
+        }
 
         if (!code) {
           let newCode = '';
@@ -480,21 +486,22 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     }
 
     const existingDbRecords = await this.repo.client.invitationCode.findMany({
-      select: { id: true, code: true, guestName: true },
+      select: { id: true, code: true, guestName: true, email: true, householdName: true },
     });
 
-    const dbCodeMap = new Map<string, { id: string; guestName: string }>();
-    for (const rec of existingDbRecords) {
-      if (rec.code) {
-        dbCodeMap.set(rec.code.toUpperCase(), rec);
-      }
-    }
+    const normalizedRows = records.map((r) => normalizeBatchInvitationRecord(r));
+    const { dbCodeMap, matches } = resolveBatchGuestMatches(normalizedRows, existingDbRecords);
 
     const batchCodeFreq = new Map<string, number>();
-    for (const r of records) {
-      const uppercaseCode = normalizeInvitationCode(r.code);
-      if (uppercaseCode) {
-        batchCodeFreq.set(uppercaseCode, (batchCodeFreq.get(uppercaseCode) || 0) + 1);
+    const effectiveCodeFreq = new Map<string, number>();
+    for (let i = 0; i < normalizedRows.length; i++) {
+      const explicitCode = normalizedRows[i].code;
+      if (explicitCode) {
+        batchCodeFreq.set(explicitCode, (batchCodeFreq.get(explicitCode) || 0) + 1);
+      }
+      const effectiveCode = explicitCode || matches[i]?.matchedRecord?.code || '';
+      if (effectiveCode) {
+        effectiveCodeFreq.set(effectiveCode, (effectiveCodeFreq.get(effectiveCode) || 0) + 1);
       }
     }
 
@@ -507,12 +514,13 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     let createdCount = 0;
 
     for (let i = 0; i < records.length; i++) {
-      const normalized = normalizeBatchInvitationRecord(records[i]);
+      const normalized = normalizedRows[i];
+      const matchInfo = matches[i];
       const { errors, fieldErrors } = validateInvitationGuestFieldsWithColumns(normalized, {
         mode: 'row',
       });
       const warnings: string[] = [];
-      const { code } = normalized;
+      let resolvedCode = normalized.code;
 
       const pushCodeError = (msg: string) => {
         errors.push(msg);
@@ -527,36 +535,84 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       let existingGuestName: string | null = null;
       let actionOutcome: 'create' | 'update' | 'skip' | 'reject' | 'invalid' = 'create';
 
-      if (code) {
-        const isBatchDuplicate = (batchCodeFreq.get(code) || 0) > 1;
-        const existingInDb = dbCodeMap.get(code);
+      if (normalized.code) {
+        const isBatchDuplicate = (batchCodeFreq.get(normalized.code) || 0) > 1;
+        const existingInDb = dbCodeMap.get(normalized.code);
 
         if (existingInDb) {
           isDuplicate = true;
           existingGuestName = existingInDb.guestName;
           if (collisionStrategy === 'reject') {
             pushCodeError(
-              `Code "${code}" already exists in database (belongs to "${existingGuestName}").`
+              `Code "${normalized.code}" already exists in database (belongs to "${existingGuestName}").`
             );
             actionOutcome = 'reject';
           } else if (collisionStrategy === 'skip') {
             warnings.push(
-              `Code "${code}" already exists in database for guest "${existingGuestName}". Will be skipped.`
+              `Code "${normalized.code}" already exists in database for guest "${existingGuestName}". Will be skipped.`
             );
             actionOutcome = 'skip';
           } else if (collisionStrategy === 'update') {
             warnings.push(
-              `Code "${code}" already exists in database for guest "${existingGuestName}". Will be updated.`
+              `Code "${normalized.code}" already exists in database for guest "${existingGuestName}". Will be updated.`
             );
             actionOutcome = 'update';
           }
+          if ((effectiveCodeFreq.get(normalized.code) || 0) > 1 && collisionStrategy !== 'reject') {
+            warnings.push(
+              `Multiple rows in this batch resolve to invitation code "${normalized.code}".`
+            );
+          }
         } else if (isBatchDuplicate) {
           isDuplicate = true;
-          pushCodeError(`Duplicate invitation code "${code}" within batch.`);
+          pushCodeError(`Duplicate invitation code "${normalized.code}" within batch.`);
           actionOutcome = 'invalid';
         } else {
           actionOutcome = 'create';
         }
+      } else if (matchInfo?.matchedRecord) {
+        const matched = matchInfo.matchedRecord;
+        resolvedCode = matched.code;
+        isDuplicate = true;
+        existingGuestName = matched.guestName;
+        const matchReasonLabel =
+          matchInfo.matchedBy === 'email'
+            ? 'email'
+            : matchInfo.matchedBy === 'name_household'
+              ? 'name and household'
+              : 'unique name';
+
+        if (collisionStrategy === 'reject') {
+          pushCodeError(
+            `Matched existing guest "${existingGuestName}" (${resolvedCode}) by ${matchReasonLabel}.`
+          );
+          actionOutcome = 'reject';
+        } else if (collisionStrategy === 'skip') {
+          warnings.push(
+            `Matched existing guest "${existingGuestName}" (${resolvedCode}) by ${matchReasonLabel}. Will be skipped.`
+          );
+          actionOutcome = 'skip';
+        } else if (collisionStrategy === 'update') {
+          warnings.push(
+            `Matched existing guest "${existingGuestName}" (${resolvedCode}) by ${matchReasonLabel}. Will be updated.`
+          );
+          actionOutcome = 'update';
+        }
+
+        if ((effectiveCodeFreq.get(resolvedCode) || 0) > 1) {
+          if (collisionStrategy === 'reject') {
+            pushCodeError(
+              `Multiple rows in this batch resolve to invitation code "${resolvedCode}".`
+            );
+          } else {
+            warnings.push(
+              `Multiple rows in this batch resolve to invitation code "${resolvedCode}".`
+            );
+          }
+        }
+      } else if (matchInfo?.ambiguityWarning) {
+        warnings.push(matchInfo.ambiguityWarning);
+        actionOutcome = 'create';
       } else {
         warnings.push('Blank code: Auto-generated code will be assigned.');
         actionOutcome = 'create';
@@ -582,6 +638,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       rows.push({
         rowIndex: i + 1,
         ...normalized,
+        code: resolvedCode,
         isValid,
         errors,
         fieldErrors: errors.length > 0 ? fieldErrors : undefined,
@@ -735,6 +792,260 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       return {
         success: true,
         count: deleteResult.count,
+      };
+    });
+  }
+
+  async mergeDuplicates(
+    primaryId: string,
+    secondaryIds: string[],
+    author: string = 'Admin'
+  ): Promise<MergeInvitationCodesResult> {
+    const cleanPrimaryId = typeof primaryId === 'string' ? primaryId.trim() : '';
+    if (!cleanPrimaryId) {
+      throw new Error('Validation Error: Primary guest ID is required.');
+    }
+    if (!Array.isArray(secondaryIds) || secondaryIds.length === 0) {
+      throw new Error('Validation Error: At least one secondary guest ID is required.');
+    }
+
+    const trimmedSecondaries: string[] = [];
+    for (const rawId of secondaryIds) {
+      if (typeof rawId !== 'string' || rawId.trim() === '') {
+        throw new Error('Validation Error: Secondary guest ID cannot be empty.');
+      }
+      const trimmed = rawId.trim();
+      if (trimmed !== cleanPrimaryId && !trimmedSecondaries.includes(trimmed)) {
+        trimmedSecondaries.push(trimmed);
+      }
+    }
+
+    if (trimmedSecondaries.length === 0) {
+      throw new Error('Validation Error: At least one distinct secondary guest ID is required to merge.');
+    }
+    if (trimmedSecondaries.length > 100) {
+      throw new Error('Validation Error: Maximum of 100 secondary guest records allowed per merge.');
+    }
+
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
+      const allIds = [cleanPrimaryId, ...trimmedSecondaries];
+      const foundRecords = await tx.invitationCode.findMany({
+        where: { id: { in: allIds } },
+      });
+
+      const byId = new Map(foundRecords.map((rec) => [rec.id, rec]));
+      const primary = byId.get(cleanPrimaryId);
+      if (!primary) {
+        throw new Error('Validation Error: Primary guest record not found.');
+      }
+
+      const secondaries = trimmedSecondaries.map((secId) => {
+        const rec = byId.get(secId);
+        if (!rec) {
+          throw new Error(`Validation Error: Secondary guest record "${secId}" not found.`);
+        }
+        return rec;
+      });
+
+      const merged = computeMergedInvitationPreview(
+        primary as unknown as InvitationCodeDTO,
+        secondaries as unknown as InvitationCodeDTO[]
+      );
+      const seatTransferred = !primary.tableId && Boolean(merged.tableId);
+
+      // 1. Transfer linked Contributor gift records
+      const contributorResult = await tx.contributor.updateMany({
+        where: { invitationCodeId: { in: trimmedSecondaries } },
+        data: { invitationCodeId: cleanPrimaryId },
+      });
+
+      // 2. Transfer SubEventAccess records while avoiding @@unique([subEventId, invitationCodeId]) collisions
+      const secOrder = new Map(trimmedSecondaries.map((id, idx) => [id, idx]));
+      const allAccesses = await tx.subEventAccess.findMany({
+        where: { invitationCodeId: { in: allIds } },
+      });
+      const coveredAccessSubEvents = new Set<string>(
+        allAccesses
+          .filter((a) => a.invitationCodeId === cleanPrimaryId)
+          .map((a) => a.subEventId)
+      );
+      const accessIdsToTransfer: string[] = [];
+      const accessIdsToDelete: string[] = [];
+      const secondaryAccesses = allAccesses
+        .filter((a) => a.invitationCodeId !== cleanPrimaryId)
+        .sort((a, b) => (secOrder.get(a.invitationCodeId) ?? 0) - (secOrder.get(b.invitationCodeId) ?? 0));
+
+      for (const acc of secondaryAccesses) {
+        if (coveredAccessSubEvents.has(acc.subEventId)) {
+          accessIdsToDelete.push(acc.id);
+        } else {
+          coveredAccessSubEvents.add(acc.subEventId);
+          accessIdsToTransfer.push(acc.id);
+        }
+      }
+
+      if (accessIdsToDelete.length > 0) {
+        await tx.subEventAccess.deleteMany({
+          where: { id: { in: accessIdsToDelete } },
+        });
+      }
+      if (accessIdsToTransfer.length > 0) {
+        await tx.subEventAccess.updateMany({
+          where: { id: { in: accessIdsToTransfer } },
+          data: { invitationCodeId: cleanPrimaryId },
+        });
+      }
+
+      // 3. Transfer SubEventRsvp records while avoiding @@unique([subEventId, invitationCodeId]) collisions
+      const allRsvps = await tx.subEventRsvp.findMany({
+        where: { invitationCodeId: { in: allIds } },
+      });
+      const rsvpsBySubEvent = new Map<string, typeof allRsvps>();
+      for (const rsvp of allRsvps) {
+        const list = rsvpsBySubEvent.get(rsvp.subEventId);
+        if (list) list.push(rsvp);
+        else rsvpsBySubEvent.set(rsvp.subEventId, [rsvp]);
+      }
+
+      let transferredRsvpCount = 0;
+      const rsvpIdsToDelete: string[] = [];
+
+      for (const [, group] of rsvpsBySubEvent.entries()) {
+        const primaryRsvp = group.find((r) => r.invitationCodeId === cleanPrimaryId);
+        const secRsvps = group
+          .filter((r) => r.invitationCodeId !== cleanPrimaryId)
+          .sort((a, b) => (secOrder.get(a.invitationCodeId) ?? 0) - (secOrder.get(b.invitationCodeId) ?? 0));
+
+        if (secRsvps.length === 0) continue;
+
+        const combinedRsvpDietary =
+          mergeDietaryNotes([
+            primaryRsvp?.dietaryNotes,
+            ...secRsvps.map((r) => r.dietaryNotes),
+          ]) ?? '';
+        const maxRsvpPlusOnes = Math.max(
+          primaryRsvp?.plusOneCount ?? 0,
+          ...secRsvps.map((r) => r.plusOneCount ?? 0)
+        );
+
+        if (primaryRsvp) {
+          const resolvedStatus =
+            primaryRsvp.status !== 'pending'
+              ? primaryRsvp.status
+              : secRsvps.find((r) => r.status !== 'pending')?.status ?? primaryRsvp.status;
+
+          if (
+            resolvedStatus !== primaryRsvp.status ||
+            maxRsvpPlusOnes !== primaryRsvp.plusOneCount ||
+            combinedRsvpDietary !== (primaryRsvp.dietaryNotes ?? '')
+          ) {
+            await tx.subEventRsvp.update({
+              where: { id: primaryRsvp.id },
+              data: {
+                status: resolvedStatus,
+                plusOneCount: maxRsvpPlusOnes,
+                dietaryNotes: combinedRsvpDietary,
+              },
+            });
+            transferredRsvpCount++;
+          }
+          for (const sr of secRsvps) {
+            rsvpIdsToDelete.push(sr.id);
+          }
+        } else {
+          const chosenSec = secRsvps.find((r) => r.status !== 'pending') ?? secRsvps[0];
+          await tx.subEventRsvp.update({
+            where: { id: chosenSec.id },
+            data: {
+              invitationCodeId: cleanPrimaryId,
+              plusOneCount: maxRsvpPlusOnes,
+              dietaryNotes: combinedRsvpDietary,
+            },
+          });
+          transferredRsvpCount++;
+          for (const sr of secRsvps) {
+            if (sr.id !== chosenSec.id) {
+              rsvpIdsToDelete.push(sr.id);
+            }
+          }
+        }
+      }
+
+      if (rsvpIdsToDelete.length > 0) {
+        await tx.subEventRsvp.deleteMany({
+          where: { id: { in: rsvpIdsToDelete } },
+        });
+      }
+
+      // 4. Transfer BroadcastRecipient delivery logs
+      const broadcastResult = await tx.broadcastRecipient.updateMany({
+        where: { invitationCodeId: { in: trimmedSecondaries } },
+        data: { invitationCodeId: cleanPrimaryId },
+      });
+
+      // 5. Consolidate profile & seating fields onto primary InvitationCode
+      const updatedPrimary = await tx.invitationCode.update({
+        where: { id: cleanPrimaryId },
+        data: {
+          guestName: merged.guestName,
+          email: merged.email,
+          addressLine1: merged.addressLine1,
+          addressLine2: merged.addressLine2,
+          city: merged.city,
+          state: merged.state,
+          zipCode: merged.zipCode,
+          country: merged.country,
+          dietaryNotes: merged.dietaryNotes,
+          plusOneAllocations: merged.plusOneAllocations,
+          plusOneFirstName: merged.plusOneFirstName,
+          plusOneLastName: merged.plusOneLastName,
+          householdName: merged.householdName,
+          partyGroup: merged.partyGroup,
+          partyTags: merged.partyTags,
+          extraFields:
+            merged.extraFields === null
+              ? Prisma.DbNull
+              : (merged.extraFields as Prisma.InputJsonValue),
+          used: merged.used,
+          usedAt: merged.usedAt ? new Date(merged.usedAt) : null,
+          tableId: merged.tableId,
+          seatNumber: merged.seatNumber,
+        },
+      });
+
+      // 6. Delete secondary InvitationCode records
+      await tx.invitationCode.deleteMany({
+        where: { id: { in: trimmedSecondaries } },
+      });
+
+      const transferredCounts = {
+        contributors: contributorResult.count,
+        subEventAccesses: accessIdsToTransfer.length,
+        subEventRsvps: transferredRsvpCount,
+        broadcastRecipients: broadcastResult.count,
+        seatTransferred,
+      };
+
+      await createAuditSnapshot(
+        'InvitationCode',
+        'merge_duplicates',
+        {
+          primaryId: cleanPrimaryId,
+          primaryCode: primary.code,
+          mergedSecondaryIds: trimmedSecondaries,
+          mergedSecondaryCodes: secondaries.map((s) => s.code),
+          transferredCounts,
+          record: updatedPrimary,
+        },
+        author,
+        tx
+      );
+
+      return {
+        success: true,
+        record: updatedPrimary as unknown as InvitationCodeDTO,
+        mergedCount: trimmedSecondaries.length,
+        transferredCounts,
       };
     });
   }

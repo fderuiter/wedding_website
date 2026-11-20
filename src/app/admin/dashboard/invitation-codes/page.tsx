@@ -32,6 +32,7 @@ import {
 import type { SubEventDTO } from '@/features/sub-events';
 import {
   PHONE_MAX_LENGTH,
+  computeMergedInvitationPreview,
   normalizeGuestPhone,
   validateGuestPhone,
 } from '@/utils/invitationValidation';
@@ -51,6 +52,7 @@ export default function InvitationCodesDashboardPage() {
     removeBatch,
     updateBatch,
     batchUpdateTags,
+    mergeDuplicates,
     fetchAll,
   } = useAdminInvitationCodes();
 
@@ -68,6 +70,9 @@ export default function InvitationCodesDashboardPage() {
   const [bulkTagModalOpen, setBulkTagModalOpen] = useState(false);
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [bulkTagAction, setBulkTagAction] = useState<'add' | 'remove'>('add');
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [primaryMergeId, setPrimaryMergeId] = useState<string>('');
+  const [isMerging, setIsMerging] = useState(false);
 
   const [newCode, setNewCode] = useState({
     guestName: '',
@@ -564,6 +569,57 @@ export default function InvitationCodesDashboardPage() {
       setSelectedIds([]);
     } catch (e: any) {
       addToast(e.message || 'Failed to update tags.', 'error');
+    }
+  };
+
+  const selectedGuests = useMemo(
+    () => codes.filter((c) => selectedIdsSet.has(c.id)),
+    [codes, selectedIdsSet]
+  );
+
+  const resolvedPrimaryMergeId = useMemo(() => {
+    if (selectedGuests.some((g) => g.id === primaryMergeId)) {
+      return primaryMergeId;
+    }
+    return selectedGuests[0]?.id ?? '';
+  }, [selectedGuests, primaryMergeId]);
+
+  const mergePreview = useMemo(() => {
+    if (selectedGuests.length < 2 || !resolvedPrimaryMergeId) return null;
+    const primary = selectedGuests.find((g) => g.id === resolvedPrimaryMergeId);
+    if (!primary) return null;
+    const secondaries = selectedGuests.filter((g) => g.id !== resolvedPrimaryMergeId);
+    return computeMergedInvitationPreview(primary, secondaries);
+  }, [selectedGuests, resolvedPrimaryMergeId]);
+
+  const handleConfirmMerge = async () => {
+    if (!resolvedPrimaryMergeId || selectedGuests.length < 2) return;
+    const secondaryIds = selectedGuests
+      .map((g) => g.id)
+      .filter((id) => id !== resolvedPrimaryMergeId);
+    if (secondaryIds.length === 0) return;
+
+    setIsMerging(true);
+    try {
+      const result = await mergeDuplicates(resolvedPrimaryMergeId, secondaryIds);
+      const mergedName = result?.record?.guestName || mergePreview?.guestName || 'primary guest';
+      addToast(
+        `Merged ${secondaryIds.length + 1} guest records into ${mergedName}.`,
+        'success'
+      );
+      setIsMergeModalOpen(false);
+      setPrimaryMergeId('');
+      setSelectedIds([]);
+      fetchSubEventsAndMatrix();
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Failed to merge duplicate guest records.',
+        'error'
+      );
+    } finally {
+      setIsMerging(false);
     }
   };
 
@@ -1339,6 +1395,18 @@ export default function InvitationCodesDashboardPage() {
               <Button size="sm" variant="secondary" onClick={() => setBulkHouseholdModalOpen(true)}>
                 Set Household
               </Button>
+              {selectedIds.length >= 2 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setPrimaryMergeId(selectedIds[0] || '');
+                    setIsMergeModalOpen(true);
+                  }}
+                >
+                  Merge Duplicates
+                </Button>
+              )}
               <Button size="sm" variant="secondary" onClick={() => setBulkTagModalOpen(true)}>
                 Manage Tags
               </Button>
@@ -1590,6 +1658,173 @@ export default function InvitationCodesDashboardPage() {
               </Button>
             </div>
           </div>
+        </Dialog>
+
+        <Dialog
+          isOpen={isMergeModalOpen}
+          onClose={() => {
+            if (!isMerging) {
+              setIsMergeModalOpen(false);
+            }
+          }}
+          title={`Merge Duplicate Guests (${selectedGuests.length} Selected)`}
+          className="max-w-2xl w-full"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleConfirmMerge();
+            }}
+            className="space-y-4 max-h-[80vh] overflow-y-auto pr-1"
+          >
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Choose the primary guest invitation to keep. Linked registry gifts, private sub-event permissions, RSVPs, broadcast delivery logs, and table seat assignments will be transferred automatically before secondary records are deleted.
+            </p>
+
+            <div>
+              <span
+                id="merge-primary-guest-label"
+                className="block text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2"
+              >
+                1. Select Primary Record
+              </span>
+              <div
+                role="radiogroup"
+                aria-labelledby="merge-primary-guest-label"
+                className="space-y-2 max-h-48 overflow-y-auto"
+              >
+                {selectedGuests.map((guest) => {
+                  const isPrimary = resolvedPrimaryMergeId === guest.id;
+                  return (
+                    <label
+                      key={guest.id}
+                      className={`flex items-center justify-between gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        isPrimary
+                          ? 'border-primary bg-red-50/50 dark:bg-red-950/30'
+                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="primaryMergeGuest"
+                          value={guest.id}
+                          checked={isPrimary}
+                          onChange={() => setPrimaryMergeId(guest.id)}
+                          className="h-4 w-4 text-primary focus:ring-primary border-gray-300"
+                        />
+                        <div>
+                          <div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
+                            <span>{guest.guestName}</span>
+                            <code className="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-red-700 dark:text-red-300">
+                              {guest.code}
+                            </code>
+                          </div>
+                          <div className="text-xs text-gray-600 dark:text-gray-300">
+                            {[guest.email, guest.householdName].filter(Boolean).join(' • ') || 'No email or household'}
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                          isPrimary
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                            : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        {isPrimary ? 'Primary (Keep Code)' : 'Secondary (Merge & Delete)'}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {mergePreview && (
+              <div
+                data-testid="merge-preview-card"
+                className="bg-gray-50 dark:bg-gray-800/80 p-4 rounded-xl border border-gray-200 dark:border-gray-700 space-y-2 text-xs"
+              >
+                <div className="font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                  2. Combined Profile Preview
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-gray-800 dark:text-gray-200">
+                  <div>
+                    <span className="font-semibold">Guest Name:</span> {mergePreview.guestName}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Retained Code:</span>{' '}
+                    <code className="font-mono font-bold text-red-700 dark:text-red-300">
+                      {mergePreview.code}
+                    </code>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Email:</span> {mergePreview.email || 'None'}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Household:</span> {mergePreview.householdName || 'None'}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Companion / Plus-Ones:</span>{' '}
+                    {[mergePreview.plusOneFirstName, mergePreview.plusOneLastName]
+                      .filter(Boolean)
+                      .join(' ') || 'Unnamed'}{' '}
+                    ({mergePreview.plusOneAllocations} allocation{mergePreview.plusOneAllocations === 1 ? '' : 's'})
+                  </div>
+                  <div>
+                    <span className="font-semibold">Party Group:</span> {mergePreview.partyGroup || 'None'}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="font-semibold">Address:</span>{' '}
+                    {[
+                      mergePreview.addressLine1,
+                      mergePreview.addressLine2,
+                      mergePreview.city,
+                      mergePreview.state,
+                      mergePreview.zipCode,
+                      mergePreview.country,
+                    ]
+                      .filter(Boolean)
+                      .join(', ') || 'No address provided'}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="font-semibold">Dietary Notes:</span>{' '}
+                    {mergePreview.dietaryNotes || 'None'}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="font-semibold">Party Tags:</span>{' '}
+                    {mergePreview.partyTags.length > 0
+                      ? mergePreview.partyTags.map((t) => `#${t}`).join(', ')
+                      : 'None'}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className="font-semibold">Seating:</span>{' '}
+                    {mergePreview.tableId
+                      ? `Assigned${mergePreview.seatNumber ? ` (Seat ${mergePreview.seatNumber})` : ''}`
+                      : 'Unassigned'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={isMerging}
+                onClick={() => setIsMergeModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={isMerging || selectedGuests.length < 2}
+              >
+                {isMerging ? 'Merging Guests...' : `Merge ${selectedGuests.length} Guests`}
+              </Button>
+            </div>
+          </form>
         </Dialog>
 
         <GuestEditorModal

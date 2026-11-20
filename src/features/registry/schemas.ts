@@ -418,5 +418,48 @@ export const BatchCreateRegistryItemsSchema = z.object({
 
 export type BatchCreateRegistryItemsDTO = z.infer<typeof BatchCreateRegistryItemsSchema>;
 
+export const MergeInvitationCodesSchema = z
+  .object({
+    primaryId: z
+      .string({ message: 'Primary guest ID is required.' })
+      .trim()
+      .min(1, 'Primary guest ID is required.'),
+    secondaryIds: z
+      .array(z.string().trim().min(1, 'Secondary guest ID cannot be empty.'))
+      .min(1, 'At least one secondary guest ID is required.')
+      .max(100, 'Maximum of 100 secondary guest records allowed per merge.')
+      .transform((ids) => Array.from(new Set(ids))),
+  })
+  .superRefine((data, ctx) => {
+    const distinctSecondaries = data.secondaryIds.filter((id) => id !== data.primaryId);
+    if (distinctSecondaries.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['secondaryIds'],
+        message: 'At least one distinct secondary guest ID is required to merge.',
+      });
+    }
+  })
+  .transform((data) => ({
+    primaryId: data.primaryId,
+    secondaryIds: data.secondaryIds.filter((id) => id !== data.primaryId),
+  }));
+
+export type MergeInvitationCodesDTO = z.infer<typeof MergeInvitationCodesSchema>;
+
+export interface MergeInvitationCodesResult {
+  success: boolean;
+  record: InvitationCodeDTO;
+  mergedCount: number;
+  transferredCounts: {
+    contributors: number;
+    subEventAccesses: number;
+    subEventRsvps: number;
+    broadcastRecipients: number;
+    seatTransferred: boolean;
+  };
+}
+
+
 
 

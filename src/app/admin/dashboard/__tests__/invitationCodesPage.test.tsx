@@ -82,6 +82,7 @@ describe('InvitationCodesDashboardPage', () => {
   const mockRemoveBatch = jest.fn();
   const mockUpdateBatch = jest.fn();
   const mockBatchUpdateTags = jest.fn();
+  const mockMergeDuplicates = jest.fn();
   const mockFetchAll = jest.fn();
 
   beforeEach(() => {
@@ -96,6 +97,7 @@ describe('InvitationCodesDashboardPage', () => {
       removeBatch: mockRemoveBatch,
       updateBatch: mockUpdateBatch,
       batchUpdateTags: mockBatchUpdateTags,
+      mergeDuplicates: mockMergeDuplicates,
       fetchAll: mockFetchAll,
     });
   });
@@ -1649,6 +1651,70 @@ describe('InvitationCodesDashboardPage', () => {
       expect(within(modal).getByTestId('broadcast-audience-counts')).toHaveTextContent(
         '0 missing email'
       );
+    });
+
+    it('exposes Merge Duplicates when >= 2 guests are selected, previews combined fields dynamically, submits mergeDuplicates, and passes jest-axe', async () => {
+      mockMergeDuplicates.mockResolvedValueOnce({
+        success: true,
+        mergedCount: 1,
+        deletedSecondaryIds: ['code-1'],
+        primaryRecord: mockCodes[1],
+        transferred: {
+          contributors: 1,
+          subEventAccesses: 1,
+          subEventRsvps: 1,
+          broadcastRecipients: 0,
+          seatingAssigned: false,
+        },
+      });
+
+      const { container } = renderComponent();
+
+      // Selecting 1 guest does not show Merge Duplicates
+      const aliceCheckbox = screen.getByRole('checkbox', {
+        name: 'Select invitation code for Alice Smith',
+      });
+      fireEvent.click(aliceCheckbox);
+      expect(screen.queryByRole('button', { name: 'Merge Duplicates' })).not.toBeInTheDocument();
+
+      // Selecting a 2nd guest exposes Merge Duplicates in the batch toolbar
+      const bobCheckbox = screen.getByRole('checkbox', {
+        name: 'Select invitation code for Bob Jones',
+      });
+      fireEvent.click(bobCheckbox);
+
+      const mergeToolbarBtn = screen.getByRole('button', { name: 'Merge Duplicates' });
+      expect(mergeToolbarBtn).toBeInTheDocument();
+
+      fireEvent.click(mergeToolbarBtn);
+
+      const dialog = screen.getByRole('dialog', {
+        name: /Merge Duplicate Guests \(2 Selected\)/i,
+      });
+      expect(dialog).toBeInTheDocument();
+
+      const previewCard = within(dialog).getByTestId('merge-preview-card');
+      expect(previewCard).toHaveTextContent('ALICE123');
+      expect(previewCard).toHaveTextContent('Alice Smith');
+      expect(previewCard).toHaveTextContent('Gluten Free, Dairy Free; Vegan');
+
+      // Switch primary guest radio button to Bob Jones
+      const radios = within(dialog).getAllByRole('radio');
+      expect(radios).toHaveLength(2);
+      fireEvent.click(radios[1]);
+
+      expect(previewCard).toHaveTextContent('BOB456');
+      expect(previewCard).toHaveTextContent('Bob Jones');
+      expect(previewCard).toHaveTextContent('Vegan; Gluten Free, Dairy Free');
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Merge 2 Guests' }));
+
+      await waitFor(() => {
+        expect(mockMergeDuplicates).toHaveBeenCalledWith('code-2', ['code-1']);
+      });
     });
   });
 });
