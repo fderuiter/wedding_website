@@ -1,4 +1,6 @@
 import {
+  PLUS_ONE_NAME_MAX_LENGTH,
+  mergeDietaryNotes,
   normalizeInvitationCode,
   normalizePartyTags,
   validateInvitationGuestFieldsWithColumns,
@@ -335,12 +337,31 @@ export function detectCsvHeaders(headers: string[]): {
   if (!suggestedGuestNameCol && !suggestedGuestFirstNameCol && headers.length > 0) {
     suggestedGuestNameCol = headers[0];
   }
+  const claimedNonCodeCols = new Set(
+    [
+      suggestedGuestNameCol,
+      suggestedGuestFirstNameCol,
+      suggestedGuestLastNameCol,
+      suggestedEmailCol,
+      suggestedAddressLine1Col,
+      suggestedAddressLine2Col,
+      suggestedCityCol,
+      suggestedStateCol,
+      suggestedZipCodeCol,
+      suggestedCountryCol,
+      suggestedDietaryNotesCol,
+      suggestedPlusOneCol,
+      suggestedPlusOneFirstNameCol,
+      suggestedPlusOneLastNameCol,
+      suggestedHouseholdNameCol,
+      suggestedPartyGroupCol,
+      suggestedPartyTagsCol,
+    ].filter(Boolean)
+  );
   if (
     !suggestedCodeCol &&
     headers.length > 1 &&
-    headers[1] !== suggestedGuestNameCol &&
-    headers[1] !== suggestedGuestFirstNameCol &&
-    headers[1] !== suggestedGuestLastNameCol
+    !claimedNonCodeCols.has(headers[1])
   ) {
     suggestedCodeCol = headers[1];
   }
@@ -751,4 +772,290 @@ export function generateSampleCsvTemplate(): string {
     'Plus-One Allocations',
   ]);
 }
+
+export interface EditableCsvRow {
+  guestName: string;
+  code: string;
+  email: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+  dietaryNotes: string;
+  plusOneAllocations: string;
+  plusOneFirstName: string;
+  plusOneLastName: string;
+  householdName: string;
+  partyGroup: string;
+  partyTags: string;
+  extraFields: Record<string, string>;
+}
+
+export interface FailedCsvExportRow {
+  row: EditableCsvRow;
+  errors: string[];
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const cleaned = fullName.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return { firstName: '', lastName: '' };
+  const parts = cleaned.split(' ');
+  if (parts.length === 1) {
+    return {
+      firstName: parts[0].slice(0, PLUS_ONE_NAME_MAX_LENGTH),
+      lastName: '',
+    };
+  }
+  return {
+    firstName: parts[0].slice(0, PLUS_ONE_NAME_MAX_LENGTH),
+    lastName: parts.slice(1).join(' ').slice(0, PLUS_ONE_NAME_MAX_LENGTH),
+  };
+}
+
+/**
+ * Consolidates mapped CSV rows sharing a non-empty `householdName` or `partyGroup`
+ * onto a single invitation row in memory (zero DB calls).
+ */
+export function consolidateHouseholdCsvRows(
+  rows: EditableCsvRow[],
+  options: {
+    groupBy: 'householdName' | 'partyGroup';
+    rawFirstNames?: string[];
+    rawLastNames?: string[];
+  }
+): EditableCsvRow[] {
+  if (!Array.isArray(rows) || rows.length <= 1) {
+    return rows;
+  }
+
+  type GroupBucket = {
+    indices: number[];
+    items: EditableCsvRow[];
+  };
+
+  const orderedEntries: Array<{ type: 'single'; row: EditableCsvRow } | { type: 'group'; key: string }> = [];
+  const buckets = new Map<string, GroupBucket>();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rawGroupVal = row[options.groupBy] || '';
+    const normKey = rawGroupVal.trim().replace(/\s+/g, ' ').toLowerCase();
+
+    if (!normKey) {
+      orderedEntries.push({ type: 'single', row });
+      continue;
+    }
+
+    const existing = buckets.get(normKey);
+    if (existing) {
+      existing.indices.push(i);
+      existing.items.push(row);
+    } else {
+      buckets.set(normKey, { indices: [i], items: [row] });
+      orderedEntries.push({ type: 'group', key: normKey });
+    }
+  }
+
+  const consolidated: EditableCsvRow[] = [];
+
+  for (const entry of orderedEntries) {
+    if (entry.type === 'single') {
+      consolidated.push(entry.row);
+      continue;
+    }
+
+    const bucket = buckets.get(entry.key)!;
+    if (bucket.items.length === 1) {
+      consolidated.push(bucket.items[0]);
+      continue;
+    }
+
+    const [primary, ...companions] = bucket.items;
+    const [, ...companionIndices] = bucket.indices;
+
+    const pickFirst = (getter: (_r: EditableCsvRow) => string): string => {
+      for (const item of bucket.items) {
+        const val = (getter(item) || '').trim();
+        if (val) return val;
+      }
+      return '';
+    };
+
+    let plusOneFirstName = primary.plusOneFirstName.trim();
+    let plusOneLastName = primary.plusOneLastName.trim();
+    let extraCompanionStartIdx = 0;
+
+    if (!plusOneFirstName && !plusOneLastName && companions.length > 0) {
+      const firstCompIdx = companionIndices[0];
+      const explicitFirst = (options.rawFirstNames?.[firstCompIdx] || '').trim();
+      const explicitLast = (options.rawLastNames?.[firstCompIdx] || '').trim();
+      if (explicitFirst || explicitLast) {
+        plusOneFirstName = explicitFirst.slice(0, PLUS_ONE_NAME_MAX_LENGTH);
+        plusOneLastName = explicitLast.slice(0, PLUS_ONE_NAME_MAX_LENGTH);
+      } else {
+        const split = splitFullName(companions[0].guestName);
+        plusOneFirstName = split.firstName;
+        plusOneLastName = split.lastName;
+      }
+      extraCompanionStartIdx = 1;
+    }
+
+    // Preserve any companion plus-one names or 3rd+ household member names in extraFields
+    const additionalGuestNames: string[] = [];
+    if (extraCompanionStartIdx === 1 && (companions[0].plusOneFirstName || companions[0].plusOneLastName)) {
+      const compPlusOne = combineFirstAndLastName(
+        companions[0].plusOneFirstName,
+        companions[0].plusOneLastName
+      );
+      if (compPlusOne) additionalGuestNames.push(compPlusOne);
+    }
+    for (let c = extraCompanionStartIdx; c < companions.length; c++) {
+      const compName = companions[c].guestName.trim();
+      if (compName) additionalGuestNames.push(compName);
+      const compPlusOne = combineFirstAndLastName(
+        companions[c].plusOneFirstName,
+        companions[c].plusOneLastName
+      );
+      if (compPlusOne) additionalGuestNames.push(compPlusOne);
+    }
+
+    // Allocations: preserve malformed string if any; else Math.max(sum of explicit allocations, companions.length + companion plus-ones)
+    let malformedAlloc: string | null = null;
+    let explicitSum = 0;
+    for (const item of bucket.items) {
+      const raw = (item.plusOneAllocations || '').trim();
+      if (raw === '') continue;
+      if (!/^\d+$/.test(raw)) {
+        malformedAlloc = raw;
+        break;
+      }
+      explicitSum += parseInt(raw, 10);
+    }
+    const resolvedAllocations =
+      malformedAlloc !== null
+        ? malformedAlloc
+        : String(Math.max(explicitSum, companions.length));
+
+    const mergedDietary = mergeDietaryNotes(bucket.items.map((item) => item.dietaryNotes)) || '';
+    const mergedTags = normalizePartyTags(
+      bucket.items
+        .map((item) => item.partyTags)
+        .filter(Boolean)
+        .join(','),
+      { dedupe: true }
+    ).join(', ');
+
+    const mergedExtra: Record<string, string> = {};
+    for (let k = bucket.items.length - 1; k >= 0; k--) {
+      const ef = bucket.items[k].extraFields;
+      if (ef) {
+        for (const [fieldKey, fieldVal] of Object.entries(ef)) {
+          if (fieldVal && fieldVal.trim()) {
+            mergedExtra[fieldKey] = fieldVal.trim();
+          }
+        }
+      }
+    }
+    if (additionalGuestNames.length > 0) {
+      const existingAdditional = mergedExtra.additionalGuests
+        ? `${mergedExtra.additionalGuests}, ${additionalGuestNames.join(', ')}`
+        : additionalGuestNames.join(', ');
+      mergedExtra.additionalGuests = existingAdditional;
+    }
+
+    consolidated.push({
+      guestName: primary.guestName.trim() || pickFirst((r) => r.guestName),
+      code: pickFirst((r) => r.code),
+      email: pickFirst((r) => r.email),
+      addressLine1: pickFirst((r) => r.addressLine1),
+      addressLine2: pickFirst((r) => r.addressLine2),
+      city: pickFirst((r) => r.city),
+      state: pickFirst((r) => r.state),
+      zipCode: pickFirst((r) => r.zipCode),
+      country: pickFirst((r) => r.country),
+      dietaryNotes: mergedDietary,
+      plusOneAllocations: resolvedAllocations,
+      plusOneFirstName,
+      plusOneLastName,
+      householdName: pickFirst((r) => r.householdName),
+      partyGroup: pickFirst((r) => r.partyGroup),
+      partyTags: mergedTags,
+      extraFields: mergedExtra,
+    });
+  }
+
+  return consolidated;
+}
+
+const FAILED_ROWS_STANDARD_HEADERS = [
+  'Guest Name',
+  'Invitation Code',
+  'Email',
+  'Address Line 1',
+  'Address Line 2',
+  'City',
+  'State',
+  'ZIP Code',
+  'Country',
+  'Dietary Notes',
+  'Plus-One Allocations',
+  'Plus-One First Name',
+  'Plus-One Last Name',
+  'Household Name',
+  'Party Group',
+  'Party Tags',
+] as const;
+
+/**
+ * Generates a UTF-8 CSV string of skipped/invalid rows with a `Validation Errors` column,
+ * sanitizing every cell via `generateCsvContent` -> `escapeCsvCell` to prevent CSV formula injection.
+ */
+export function generateFailedRowsCsv(
+  failedRows: ReadonlyArray<FailedCsvExportRow>,
+  extraCols: ReadonlyArray<string> = []
+): string {
+  const dynamicExtraCols = Array.from(
+    new Set([
+      ...extraCols,
+      ...failedRows.flatMap((entry) => Object.keys(entry.row.extraFields || {})),
+    ])
+  ).filter(
+    (col) =>
+      col !== 'Validation Errors' &&
+      !(FAILED_ROWS_STANDARD_HEADERS as readonly string[]).includes(col)
+  );
+
+  const headers = [...FAILED_ROWS_STANDARD_HEADERS, ...dynamicExtraCols, 'Validation Errors'];
+
+  const records = failedRows.map(({ row, errors }) => {
+    const rec: Record<string, unknown> = {
+      'Guest Name': row.guestName,
+      'Invitation Code': row.code,
+      Email: row.email,
+      'Address Line 1': row.addressLine1,
+      'Address Line 2': row.addressLine2,
+      City: row.city,
+      State: row.state,
+      'ZIP Code': row.zipCode,
+      Country: row.country,
+      'Dietary Notes': row.dietaryNotes,
+      'Plus-One Allocations': row.plusOneAllocations,
+      'Plus-One First Name': row.plusOneFirstName,
+      'Plus-One Last Name': row.plusOneLastName,
+      'Household Name': row.householdName,
+      'Party Group': row.partyGroup,
+      'Party Tags': row.partyTags,
+    };
+    for (const col of dynamicExtraCols) {
+      rec[col] = row.extraFields?.[col] ?? '';
+    }
+    rec['Validation Errors'] = errors.join('; ');
+    return rec;
+  });
+
+  return generateCsvContent(records, headers);
+}
+
 

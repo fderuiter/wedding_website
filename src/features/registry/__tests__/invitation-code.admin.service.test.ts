@@ -750,4 +750,194 @@ describe('InvitationCodeAdminService', () => {
       expect(mockPrismaClient.$executeRaw).not.toHaveBeenCalled();
     });
   });
+
+  describe('composite blank-code matching in dryRunValidateBatch and importBatch', () => {
+    const seededDbRecords = [
+      {
+        id: 'db-email',
+        code: 'JANE2026',
+        guestName: 'Jane Doe',
+        email: 'jane@example.com',
+        householdName: 'Doe Family',
+      },
+      {
+        id: 'db-hh-1',
+        code: 'JOHN0001',
+        guestName: 'John Smith',
+        email: null,
+        householdName: 'North Smiths',
+      },
+      {
+        id: 'db-hh-2',
+        code: 'JOHN0002',
+        guestName: 'John Smith',
+        email: null,
+        householdName: 'South Smiths',
+      },
+      {
+        id: 'db-uniq',
+        code: 'UNIQ1111',
+        guestName: 'Clara Oswald',
+        email: null,
+        householdName: null,
+      },
+    ];
+
+    it('matches blank-code rows by email, name+household, and unique name in dryRunValidateBatch with a single findMany query and warns on ambiguous names', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue(seededDbRecords);
+
+      const records = [
+        { guestName: 'Jane Doe-Updated', code: '', email: 'JANE@example.com' },
+        { guestName: 'John Smith', code: '', householdName: 'South Smiths' },
+        { guestName: 'Clara Oswald', code: '' },
+        { guestName: 'John Smith', code: '' }, // ambiguous name without email or household
+      ];
+
+      const result = await service.dryRunValidateBatch(records, 'update');
+
+      expect(mockPrismaClient.invitationCode.findMany).toHaveBeenCalledTimes(1);
+      expect(result.summary).toEqual({
+        total: 4,
+        validCount: 4,
+        invalidCount: 0,
+        duplicateCount: 3,
+        updatedCount: 3,
+        skippedCount: 0,
+        createdCount: 1,
+      });
+
+      expect(result.rows[0]).toMatchObject({
+        code: 'JANE2026',
+        isDuplicate: true,
+        existingGuestName: 'Jane Doe',
+        actionOutcome: 'update',
+      });
+      expect(result.rows[1]).toMatchObject({
+        code: 'JOHN0002',
+        isDuplicate: true,
+        existingGuestName: 'John Smith',
+        actionOutcome: 'update',
+      });
+      expect(result.rows[2]).toMatchObject({
+        code: 'UNIQ1111',
+        isDuplicate: true,
+        existingGuestName: 'Clara Oswald',
+        actionOutcome: 'update',
+      });
+      expect(result.rows[3]).toMatchObject({
+        code: '',
+        isDuplicate: false,
+        actionOutcome: 'create',
+      });
+      expect(result.rows[3].warnings[0]).toContain(
+        'Multiple existing guests named "John Smith"'
+      );
+    });
+
+    it('updates matched blank-code guests in importBatch without generating duplicate random codes', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue(seededDbRecords);
+      mockPrismaClient.$executeRaw.mockResolvedValue(2);
+      mockPrismaClient.invitationCode.createMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.importBatch(
+        [
+          { guestName: 'Jane Doe', code: '', email: 'jane@example.com', city: 'Boston' },
+          { guestName: 'Clara Oswald', code: '', dietaryNotes: 'Vegan' },
+          { guestName: 'John Smith', code: '' }, // ambiguous -> creates new code rather than overwriting
+        ],
+        'update',
+        'Admin'
+      );
+
+      expect(mockPrismaClient.invitationCode.findMany).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({
+        success: true,
+        count: 3,
+        imported: 1,
+        skipped: 0,
+        updated: 2,
+      });
+      expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.invitationCode.createMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.invitationCode.createMany.mock.calls[0][0].data).toHaveLength(1);
+      expect(mockPrismaClient.invitationCode.createMany.mock.calls[0][0].data[0].guestName).toBe(
+        'John Smith'
+      );
+    });
+  });
+
+  describe('mergeDuplicates', () => {
+    it('validates primaryId and secondaryIds before querying', async () => {
+      await expect(service.mergeDuplicates('', ['sec-1'])).rejects.toThrow(
+        'Validation Error: Primary guest ID is required.'
+      );
+      await expect(service.mergeDuplicates('pri-1', [])).rejects.toThrow(
+        'Validation Error: At least one secondary guest ID is required.'
+      );
+      await expect(service.mergeDuplicates('pri-1', ['pri-1'])).rejects.toThrow(
+        'Validation Error: At least one distinct secondary guest ID is required to merge.'
+      );
+    });
+
+    it('rejects when one or more invitation codes do not exist', async () => {
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(mockPrismaClient));
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: 'pri-1', code: 'PRI1', guestName: 'Alice' },
+      ]);
+
+      await expect(service.mergeDuplicates('pri-1', ['missing-2'])).rejects.toThrow(
+        'Validation Error: Secondary guest record "missing-2" not found.'
+      );
+    });
+
+    it('rewrites secondary guest IDs inside PENDING/SCHEDULED BroadcastMessage targetFilters.selectedIds', async () => {
+      const broadcastUpdateMock = jest.fn().mockResolvedValue({});
+      const txMock = {
+        ...mockPrismaClient,
+        contributor: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        subEventAccess: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+          updateMany: jest.fn(),
+        },
+        subEventRsvp: {
+          findMany: jest.fn().mockResolvedValue([]),
+          update: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+        broadcastRecipient: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        broadcastMessage: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'bm-1',
+              targetFilters: { selectedIds: ['sec-1', 'pri-1', 'other-9'], partyGroup: 'Bride' },
+            },
+          ]),
+          update: broadcastUpdateMock,
+        },
+        invitationCode: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'pri-1', code: 'PRI1', guestName: 'Alice', partyTags: [] },
+            { id: 'sec-1', code: 'SEC1', guestName: 'Alice S', partyTags: [] },
+          ]),
+          update: jest.fn().mockResolvedValue({ id: 'pri-1', code: 'PRI1', guestName: 'Alice' }),
+          deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        snapshotVersion: { create: jest.fn().mockResolvedValue({}) },
+      };
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(txMock));
+
+      await service.mergeDuplicates('pri-1', ['sec-1'], 'Admin');
+
+      expect(broadcastUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'bm-1' },
+        data: {
+          targetFilters: {
+            selectedIds: ['pri-1', 'other-9'],
+            partyGroup: 'Bride',
+          },
+        },
+      });
+    });
+  });
 });

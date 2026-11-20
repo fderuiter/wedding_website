@@ -198,6 +198,35 @@ export const handlers = [
     }
   }),
 
+  // Duplicate guest merge execution endpoint
+  http.post('*/api/admin/invitation-codes/merge', async ({ request }) => {
+    try {
+      const body = (await request.json()) as { primaryId?: string; secondaryIds?: string[] };
+      const primaryId = body?.primaryId || 'inv-primary';
+      const secondaryIds = Array.isArray(body?.secondaryIds) ? body.secondaryIds : [];
+      return HttpResponse.json({
+        success: true,
+        record: {
+          id: primaryId,
+          code: 'MERGED01',
+          guestName: 'Merged Guest',
+          used: false,
+          partyTags: [],
+        },
+        mergedCount: secondaryIds.length,
+        transferredCounts: {
+          contributors: 0,
+          subEventAccesses: 0,
+          subEventRsvps: 0,
+          broadcastRecipients: 0,
+          seatTransferred: false,
+        },
+      });
+    } catch {
+      return HttpResponse.json({ success: false, error: 'Invalid merge payload' }, { status: 400 });
+    }
+  }),
+
   // Mock Leaflet tiles for ThingsToDoMap (CartoDB / OpenStreetMap)
   http.get('https://*.basemaps.cartocdn.com/*', () => {
     return new HttpResponse(TRANSPARENT_PNG, {

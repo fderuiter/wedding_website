@@ -16,6 +16,9 @@ import {
   normalizePartialInvitationFields,
   normalizeBatchInvitationRecord,
   validateInvitationGuestFields,
+  resolveBatchGuestMatches,
+  mergeDietaryNotes,
+  computeMergedInvitationPreview,
 } from '../invitationValidation';
 import { validateSingleCsvRow } from '../csv';
 import {
@@ -23,6 +26,7 @@ import {
   InvitationCodeSchema,
   BatchImportInvitationCodesSchema,
   DryRunValidateBatchSchema,
+  MergeInvitationCodesSchema,
   GuestAddressUpdateSchema,
   PublicAddressCollectSchema,
 } from '@/features/registry';
@@ -465,6 +469,283 @@ describe('invitationValidation shared helpers', () => {
         city: 'Seattle',
         partyTags: ['VIP'],
       });
+    });
+  });
+
+  describe('composite blank-code guest matching & duplicate merge helpers', () => {
+    it('resolves blank-code rows by precedence: email, guestName + householdName, unique guestName, and warns on ambiguous names', () => {
+      const existingRecords = [
+        {
+          id: 'g-email',
+          code: 'EMAIL001',
+          guestName: 'Alicia Keys',
+          email: 'alicia@example.com',
+          householdName: 'Keys Family',
+        },
+        {
+          id: 'g-hh-1',
+          code: 'SMITH001',
+          guestName: 'John Smith',
+          email: null,
+          householdName: 'Smith-North',
+        },
+        {
+          id: 'g-hh-2',
+          code: 'SMITH002',
+          guestName: 'John Smith',
+          email: null,
+          householdName: 'Smith-South',
+        },
+        {
+          id: 'g-unique',
+          code: 'UNIQ0001',
+          guestName: 'Unique Person',
+          email: null,
+          householdName: null,
+        },
+      ];
+
+      const { matches } = resolveBatchGuestMatches(
+        [
+          { guestName: 'Alicia Renamed', email: '  ALICIA@example.com  ', code: '' },
+          { guestName: '  john   smith ', householdName: ' smith-south ', code: '' },
+          { guestName: '  Unique   Person ', code: '' },
+          { guestName: 'John Smith', code: '' }, // ambiguous across 2 John Smiths
+          { guestName: 'Brand New Guest', code: '' },
+        ].map(normalizeBatchInvitationRecord),
+        existingRecords
+      );
+
+      expect(matches[0]).toEqual({
+        matchedBy: 'email',
+        matchedRecord: existingRecords[0],
+        ambiguityWarning: null,
+      });
+      expect(matches[1]).toEqual({
+        matchedBy: 'name_household',
+        matchedRecord: existingRecords[2],
+        ambiguityWarning: null,
+      });
+      expect(matches[2]).toEqual({
+        matchedBy: 'unique_name',
+        matchedRecord: existingRecords[3],
+        ambiguityWarning: null,
+      });
+      expect(matches[3].matchedBy).toBeNull();
+      expect(matches[3].matchedRecord).toBeNull();
+      expect(matches[3].ambiguityWarning).toContain('Multiple existing guests named "John Smith"');
+
+      expect(matches[4]).toEqual({
+        matchedRecord: null,
+        matchedBy: null,
+        ambiguityWarning: null,
+      });
+    });
+
+    it('merges dietary notes and computes combined invitation preview correctly', () => {
+      expect(mergeDietaryNotes(['Vegan; Nut Allergy', 'vegan; Gluten-Free', null, ''])).toBe(
+        'Vegan; Nut Allergy; Gluten-Free'
+      );
+
+      const preview = computeMergedInvitationPreview(
+        {
+          id: 'pri-1',
+          guestName: 'Alice Smith',
+          code: 'ALICE100',
+          email: null,
+          householdName: null,
+          partyGroup: 'Bride',
+          partyTags: ['VIP'],
+          dietaryNotes: 'Vegan',
+          plusOneAllocations: 0,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          addressLine1: null,
+          city: null,
+          used: false,
+          tableId: null,
+          seatNumber: null,
+          extraFields: { meal: 'tofu', attendanceStatus: 'pending' },
+        },
+        [
+          {
+            id: 'sec-1',
+            guestName: 'Alice S.',
+            code: 'ALICE200',
+            email: 'alice@example.com',
+            householdName: 'Smith Household',
+            partyGroup: 'Groom',
+            partyTags: ['VIP', 'Rehearsal'],
+            dietaryNotes: 'Vegan; Gluten-Free',
+            plusOneAllocations: 1,
+            plusOneFirstName: 'Bob',
+            plusOneLastName: 'Smith',
+            addressLine1: '123 Maple Ave',
+            city: 'Boston',
+            used: true,
+            usedAt: '2026-06-01T12:00:00.000Z',
+            tableId: 'tbl-1',
+            seatNumber: 3,
+            extraFields: { phone: '+15551112222', meal: 'chicken', attendanceStatus: 'attending' },
+          },
+        ]
+      );
+
+      expect(preview).toMatchObject({
+        code: 'ALICE100',
+        guestName: 'Alice Smith',
+        email: 'alice@example.com',
+        householdName: 'Smith Household',
+        partyGroup: 'Bride',
+        partyTags: ['VIP', 'Rehearsal'],
+        dietaryNotes: 'Vegan; Gluten-Free',
+        plusOneAllocations: 1,
+        plusOneFirstName: 'Bob',
+        plusOneLastName: 'Smith',
+        addressLine1: '123 Maple Ave',
+        city: 'Boston',
+        used: true,
+        tableId: 'tbl-1',
+        seatNumber: 3,
+        extraFields: { phone: '+15551112222', meal: 'tofu', attendanceStatus: 'attending' },
+      });
+    });
+
+    it('disambiguates invited guests from public address-collection entries and preserves #1112 seating eligibility on merge', () => {
+      const dbWithPublicSubmission = [
+        {
+          id: 'inv-real',
+          code: 'JORD2026',
+          guestName: 'Jordan Lee',
+          email: 'jordan@example.com',
+          householdName: 'Lee Household',
+          partyTags: ['Bride Side'],
+        },
+        {
+          id: 'inv-collect',
+          code: 'COLL9999',
+          guestName: 'Jordan Lee',
+          email: 'jordan@example.com',
+          householdName: 'Lee Household',
+          partyTags: ['address-collection'],
+        },
+      ];
+
+      const { matches } = resolveBatchGuestMatches(
+        [
+          { guestName: 'Jordan Lee', email: 'jordan@example.com', code: '' },
+          { guestName: 'Jordan Lee', code: '' },
+        ].map(normalizeBatchInvitationRecord),
+        dbWithPublicSubmission
+      );
+
+      // Row 0 matches the single invited guest by email instead of emitting ambiguity
+      expect(matches[0]).toEqual({
+        matchedBy: 'email',
+        matchedRecord: dbWithPublicSubmission[0],
+        ambiguityWarning: null,
+      });
+      // Row 1 sees Jordan Lee already claimed by Row 0
+      expect(matches[1].matchedRecord).toBeNull();
+      expect(matches[1].ambiguityWarning).toContain('already matched "Jordan Lee"');
+
+      // Merging an address-collection submission into an invited guest strips 'address-collection'
+      const mergedInvited = computeMergedInvitationPreview(
+        {
+          id: 'inv-real',
+          code: 'JORD2026',
+          guestName: 'Jordan Lee',
+          partyTags: ['Bride Side'],
+          tableId: 'tbl-head',
+          seatNumber: 2,
+        },
+        [
+          {
+            id: 'inv-collect',
+            code: 'COLL9999',
+            guestName: 'Jordan Lee',
+            addressLine1: '400 Ocean Dr',
+            partyTags: ['address-collection'],
+          },
+        ]
+      );
+      expect(mergedInvited.partyTags).toEqual(['Bride Side']);
+      expect(mergedInvited.addressLine1).toBe('400 Ocean Dr');
+      expect(mergedInvited.tableId).toBe('tbl-head');
+      expect(mergedInvited.seatNumber).toBe(2);
+
+      // Merging two uninvited address-collection rows keeps 'address-collection' and clears seating
+      const mergedCollectOnly = computeMergedInvitationPreview(
+        {
+          id: 'c-1',
+          code: 'COLL0001',
+          guestName: 'Taylor Swift',
+          partyTags: ['address-collection'],
+        },
+        [
+          {
+            id: 'c-2',
+            code: 'COLL0002',
+            guestName: 'Taylor S.',
+            partyTags: ['address-collection'],
+            tableId: 'tbl-1',
+            seatNumber: 4,
+          },
+        ]
+      );
+      expect(mergedCollectOnly.partyTags).toEqual(['address-collection']);
+      expect(mergedCollectOnly.tableId).toBeNull();
+      expect(mergedCollectOnly.seatNumber).toBeNull();
+
+      // Merging a declined RSVP clears tentative table seating per #1112 seating eligibility rules
+      const mergedDeclined = computeMergedInvitationPreview(
+        {
+          id: 'd-1',
+          code: 'DECL0001',
+          guestName: 'Sam Carter',
+          partyTags: ['VIP'],
+          tableId: 'tbl-2',
+          seatNumber: 6,
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        [
+          {
+            id: 'd-2',
+            code: 'DECL0002',
+            guestName: 'Sam Carter',
+            partyTags: ['VIP'],
+            extraFields: { attendanceStatus: 'declined' },
+          },
+        ]
+      );
+      expect(mergedDeclined.extraFields).toEqual({ attendanceStatus: 'declined' });
+      expect(mergedDeclined.tableId).toBeNull();
+      expect(mergedDeclined.seatNumber).toBeNull();
+    });
+
+    it('validates MergeInvitationCodesSchema cleanly', () => {
+      expect(
+        MergeInvitationCodesSchema.safeParse({
+          primaryId: 'inv-1',
+          secondaryIds: ['inv-2', 'inv-1'],
+        }).success
+      ).toBe(true);
+
+      // Rejects when secondaryIds only contains primaryId
+      expect(
+        MergeInvitationCodesSchema.safeParse({
+          primaryId: 'inv-1',
+          secondaryIds: ['inv-1'],
+        }).success
+      ).toBe(false);
+
+      // Rejects empty secondaryIds
+      expect(
+        MergeInvitationCodesSchema.safeParse({
+          primaryId: 'inv-1',
+          secondaryIds: [],
+        }).success
+      ).toBe(false);
     });
   });
 });
