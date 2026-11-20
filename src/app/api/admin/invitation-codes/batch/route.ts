@@ -4,9 +4,11 @@ import { ApiError } from '@/utils/ApiError';
 import {
   BatchImportInvitationCodesSchema,
   BatchDeleteInvitationCodesSchema,
+  BatchUpdateInvitationTagsSchema,
   type BatchDeleteInvitationCodesDTO,
+  type BatchUpdateInvitationTagsDTO,
+  InvitationCodeAdminService,
 } from '@/features/registry';
-import { InvitationCodeAdminService } from '@/features/registry';
 import { formatZodError } from '@/utils/validation';
 import { handleBatchUpdate as handleEntityBatchUpdate } from '@/app/api/admin/[entity]/batch/route';
 
@@ -30,6 +32,43 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     body = typeof req.clone === 'function' ? await req.clone().json() : await req.json();
   } catch {
     throw new ApiError(400, 'Invalid JSON payload.');
+  }
+
+  if (
+    body &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    'ids' in body &&
+    'tags' in body &&
+    'action' in body
+  ) {
+    const tagParseResult = BatchUpdateInvitationTagsSchema.safeParse(body);
+    if (!tagParseResult.success) {
+      throw new ApiError(400, `Validation Error: ${formatZodError(tagParseResult.error)}`);
+    }
+
+    const payload: BatchUpdateInvitationTagsDTO = tagParseResult.data;
+    const service = new InvitationCodeAdminService();
+
+    try {
+      const updatedRecords = await service.batchUpdateTags(
+        payload.ids,
+        payload.tags,
+        payload.action,
+        'Admin'
+      );
+      return NextResponse.json(
+        {
+          success: true,
+          count: updatedRecords.length,
+          updatedCount: updatedRecords.length,
+          records: updatedRecords,
+        },
+        { status: 200 }
+      );
+    } catch (error: any) {
+      handleValidationError(error);
+    }
   }
 
   if (body && typeof body === 'object' && ('ids' in body || !('records' in body))) {
