@@ -41,19 +41,23 @@ export function checkDocDrift(
     }
 
     const driftedFiles: string[] = [];
-    const lines = output.split('\n');
-    for (const rawLine of lines) {
-      if (!rawLine.trim()) continue;
+    const seen = new Set<string>();
+    const lines = output.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
       // In porcelain v1 ('XY path'), Y === ' ' means the working tree matches the staged index
-      // after doc generation ran, so the staged file is already in sync for commit.
-      if (rawLine.length >= 2 && rawLine[1] === ' ') continue;
+      // after doc generation ran, so staged updates/additions are in sync unless deleted ('D ').
+      if (line.length >= 2 && line[1] === ' ' && line[0] !== 'D') continue;
       // git status --porcelain formats: 'XY <filename>' or 'XY <old> -> <new>'
       // Strip porcelain 1-2 character status indicators followed by whitespace
-      const pathPart = rawLine.replace(/^[ ?MADRCU!]{1,2}\s+/, '').trim();
+      const pathPart = line.replace(/^[ ?MADRCU!]{1,2}\s+/, '').trim();
       const targetFile = pathPart.includes('->')
         ? pathPart.split('->')[1].trim()
         : pathPart;
-      driftedFiles.push(targetFile);
+      if (!seen.has(targetFile)) {
+        seen.add(targetFile);
+        driftedFiles.push(targetFile);
+      }
     }
     return driftedFiles;
   } catch (err: unknown) {
