@@ -1,4 +1,4 @@
-import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
+import { FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, GenericNodeSchema, ContentNodeSchema, isPrivateContentNode, RawUpdateAppConfigSchema, AppConfigSchema, layoutTokenSchema, fontTokenSchema, deriveBrandMonogram, ThemeTokensSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../schemas';
 import { ContentNodeAdminService } from '../admin.service';
 
 describe('Content Node Schema Validation', () => {
@@ -1023,6 +1023,27 @@ describe('Content Node Schema Validation', () => {
           data: { url: '/uploads/photos/valid.jpg', status: 'PENDING', isVisible: false },
         })
       ).resolves.not.toThrow();
+    });
+  });
+
+  describe('isPrivateContentNode', () => {
+    it('returns true for boolean true and case-insensitive "true" strings', () => {
+      expect(isPrivateContentNode({ data: { isPrivate: true } })).toBe(true);
+      expect(isPrivateContentNode({ data: { isPrivate: 'true' } })).toBe(true);
+      expect(isPrivateContentNode({ data: { isPrivate: 'TRUE' } })).toBe(true);
+      expect(isPrivateContentNode({ data: { isPrivate: ' True ' } })).toBe(true);
+    });
+
+    it('returns false for boolean false, "false" strings, missing fields, and non-object data', () => {
+      expect(isPrivateContentNode({ data: { isPrivate: false } })).toBe(false);
+      expect(isPrivateContentNode({ data: { isPrivate: 'false' } })).toBe(false);
+      expect(isPrivateContentNode({ data: { isPrivate: 'FALSE' } })).toBe(false);
+      expect(isPrivateContentNode({ data: { isPrivate: '' } })).toBe(false);
+      expect(isPrivateContentNode({ data: {} })).toBe(false);
+      expect(isPrivateContentNode({ data: null })).toBe(false);
+      expect(isPrivateContentNode({ data: ['true'] })).toBe(false);
+      expect(isPrivateContentNode(null)).toBe(false);
+      expect(isPrivateContentNode(undefined)).toBe(false);
     });
   });
 });

@@ -6,6 +6,7 @@ import {
   type RsvpCutoffConfigInput,
   type RsvpCutoffEvaluation,
 } from '@/utils/rsvpDeadline';
+import { isPrivateContentNode } from '@/features/content';
 import { SubEventRsvpSubmissionItem, BatchUpdateSubEventAccessDTO } from './schemas';
 
 export interface ScheduleEventWithRsvp {
@@ -153,8 +154,7 @@ export class SubEventService {
       }
 
       if (node && (node.type === 'Schedule' || node.type === 'Logistics' || node.tags?.includes('Schedule') || node.tags?.includes('schedule'))) {
-        const isPriv = Boolean(node.data?.isPrivate);
-        if (isPriv) {
+        if (isPrivateContentNode(node)) {
           throw new ApiError(403, `Forbidden: You do not have access to private event "${node.data?.title || 'Scheduled Event'}".`);
         }
         return {
@@ -278,8 +278,7 @@ export class SubEventService {
 
       return nodes
         .filter((n: any) => {
-          const isPriv = Boolean(n.data?.isPrivate);
-          if (isPriv) return false;
+          if (isPrivateContentNode(n)) return false;
           return (
             n.type === 'Schedule' ||
             n.tags?.includes('Schedule') ||

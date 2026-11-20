@@ -81,6 +81,7 @@ describe('InvitationCodesDashboardPage', () => {
   const mockRemove = jest.fn();
   const mockRemoveBatch = jest.fn();
   const mockUpdateBatch = jest.fn();
+  const mockBatchUpdateTags = jest.fn();
   const mockFetchAll = jest.fn();
 
   beforeEach(() => {
@@ -94,6 +95,7 @@ describe('InvitationCodesDashboardPage', () => {
       remove: mockRemove,
       removeBatch: mockRemoveBatch,
       updateBatch: mockUpdateBatch,
+      batchUpdateTags: mockBatchUpdateTags,
       fetchAll: mockFetchAll,
     });
   });
@@ -776,8 +778,8 @@ describe('InvitationCodesDashboardPage', () => {
       expect(bobCheckbox.checked).toBe(false);
     });
 
-    it('manages party tags in bulk for selected invitation codes using memoized selection set', async () => {
-      mockUpdateBatch.mockResolvedValue(true);
+    it('manages party tags in bulk for selected invitation codes in a single batchUpdateTags call', async () => {
+      mockBatchUpdateTags.mockResolvedValue({ success: true, count: 2 });
       renderComponent();
 
       fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
@@ -793,9 +795,55 @@ describe('InvitationCodesDashboardPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Apply Tag Changes' }));
 
       await waitFor(() => {
-        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-1'], { partyTags: ['VIP'] });
-        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-4'], { partyTags: ['VIP'] });
+        expect(mockBatchUpdateTags).toHaveBeenCalledTimes(1);
+        expect(mockBatchUpdateTags).toHaveBeenCalledWith(['code-1', 'code-4'], ['VIP'], 'add');
+        expect(mockUpdateBatch).not.toHaveBeenCalled();
         expect(screen.getByText('Updated tags for 2 code(s).')).toBeInTheDocument();
+      });
+    });
+
+    it('tags 120 selected guests in a single batchUpdateTags request with one toast', async () => {
+      const manyGuests = Array.from({ length: 120 }, (_, i) => ({
+        id: `guest-${i + 1}`,
+        guestName: `Guest ${i + 1}`,
+        code: `CODE${i + 1}`,
+        used: false,
+        partyTags: ['Legacy'],
+      }));
+      mockBatchUpdateTags.mockResolvedValue({ success: true, count: 120 });
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: manyGuests,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Manage Tags' }));
+      expect(screen.getByText('Manage Party Tags (120 Selected)')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Remove Tag' }));
+      fireEvent.change(screen.getByPlaceholderText('e.g. VIP'), { target: { value: '  Legacy  ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Tag Changes' }));
+
+      await waitFor(() => {
+        expect(mockBatchUpdateTags).toHaveBeenCalledTimes(1);
+        expect(mockBatchUpdateTags).toHaveBeenCalledWith(
+          manyGuests.map((g) => g.id),
+          ['Legacy'],
+          'remove'
+        );
+        expect(mockUpdateBatch).not.toHaveBeenCalled();
+        expect(screen.getAllByText('Updated tags for 120 code(s).')).toHaveLength(1);
       });
     });
 
