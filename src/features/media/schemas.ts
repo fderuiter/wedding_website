@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isSafeMediaOrPhotoUrl } from '@/utils/validation';
+import { isSafeMediaOrPhotoUrl } from '@/utils/validationPrimitives';
 
 const mediaUrlInputSchema = z
   .string()

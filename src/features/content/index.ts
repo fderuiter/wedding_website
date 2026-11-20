@@ -1,10 +1,10 @@
-export { ContentService, contentService } from './service';
-export { ContentRepository, contentRepository } from './repository';
 export {
   AppConfigSchema,
   PublicAppConfigSchema,
   RawUpdateAppConfigSchema,
   UpdateAppConfigSchema,
+  CreateAppConfigProfileSchema,
+  FeatureSchema,
   deriveBrandMonogram,
   ThemeTokensSchema,
   TypographyScaleSchema,
@@ -24,7 +24,11 @@ export {
   PhotoNodeSchema,
   GenericNodeSchema,
   ContentNodeSchema,
+  ContentNodeInputSchema,
+  ContentNodeUpdateInputSchema,
 } from './schemas';
+export { ContentService, contentService } from './service';
+export { ContentRepository, contentRepository } from './repository';
 export { ContentNodeAdminService } from './admin.service';
 export type {
   ContentNodeDTO,

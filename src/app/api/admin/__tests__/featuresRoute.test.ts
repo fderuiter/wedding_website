@@ -89,7 +89,7 @@ describe('PUT /api/admin/features', () => {
     mockIsAdminRequest.mockResolvedValue(true);
     (mockContentService.updateFeatures as jest.Mock).mockResolvedValue(undefined);
 
-    const validFeatures = [{ id: 'feat1', enabled: false }];
+    const validFeatures = [{ id: 'feat1', type: 'story', title: 'Our Story', visible: false }];
     const req = makeAuthReq('PUT', { features: validFeatures });
     const res = await PUT(req, {});
 
@@ -97,6 +97,18 @@ describe('PUT /api/admin/features', () => {
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(mockContentService.updateFeatures).toHaveBeenCalledWith(validFeatures);
+  });
+
+  it('returns 400 validation error when feature items omit required FeatureSchema fields', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    const req = makeAuthReq('PUT', { features: [{ id: 'feat1' }] });
+    const res = await PUT(req, {});
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    expect(json.error).toContain('type');
   });
 
   it('returns 400 validation error when features are missing', async () => {

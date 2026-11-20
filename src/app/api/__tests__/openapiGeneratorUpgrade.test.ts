@@ -9,7 +9,13 @@ interface OpenApiParameter {
   schema?: Record<string, unknown>;
 }
 
+interface OpenApiResponseObject {
+  description: string;
+  content?: Record<string, { schema: Record<string, unknown> }>;
+}
+
 interface OpenApiOperation {
+  tags?: string[];
   summary: string;
   description: string;
   parameters?: OpenApiParameter[];
@@ -18,11 +24,12 @@ interface OpenApiOperation {
     content: Record<string, { schema: Record<string, unknown> }>;
   };
   security?: Array<Record<string, string[]>>;
-  responses: Record<string, unknown>;
+  responses: Record<string, OpenApiResponseObject>;
 }
 
 interface OpenApiDocument {
   openapi: string;
+  tags?: Array<{ name: string; description?: string }>;
   paths: Record<string, Record<string, unknown>>;
   components?: {
     securitySchemes?: Record<string, Record<string, unknown>>;
@@ -316,5 +323,247 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       expect.arrayContaining(['ids', 'tag', 'category'])
     );
     expect(mediaExportPostParams.filter((p) => p.in === 'query')).toHaveLength(0);
+  });
+
+  it('eliminates empty {} properties, typeless nullable fields, and empty {} anyOf branches across all schemas', () => {
+    const emptyProperties: string[] = [];
+    const typelessNullables: string[] = [];
+    const emptyAnyOfBranches: string[] = [];
+
+    function walkSchema(node: unknown, pointer: string) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) {
+        node.forEach((item, index) => walkSchema(item, `${pointer}[${index}]`));
+        return;
+      }
+
+      const record = node as Record<string, unknown>;
+      if (
+        record.nullable === true &&
+        !record.type &&
+        !Array.isArray(record.anyOf) &&
+        !Array.isArray(record.oneOf)
+      ) {
+        typelessNullables.push(pointer);
+      }
+
+      if (Array.isArray(record.anyOf)) {
+        record.anyOf.forEach((branch, index) => {
+          if (branch && typeof branch === 'object' && Object.keys(branch).length === 0) {
+            emptyAnyOfBranches.push(`${pointer}.anyOf[${index}]`);
+          }
+        });
+      }
+
+      if (record.properties && typeof record.properties === 'object' && !Array.isArray(record.properties)) {
+        for (const [propName, propVal] of Object.entries(record.properties as Record<string, unknown>)) {
+          if (propVal && typeof propVal === 'object' && Object.keys(propVal).length === 0) {
+            emptyProperties.push(`${pointer}.properties.${propName}`);
+          }
+          walkSchema(propVal, `${pointer}.properties.${propName}`);
+        }
+      }
+
+      for (const [key, val] of Object.entries(record)) {
+        if (key !== 'properties') {
+          walkSchema(val, `${pointer}.${key}`);
+        }
+      }
+    }
+
+    for (const { routePath, method, operation } of getAllOperations()) {
+      for (const param of operation.parameters ?? []) {
+        walkSchema(param.schema, `${method} ${routePath} param:${param.name}`);
+      }
+      if (operation.requestBody) {
+        for (const [mediaType, mediaObj] of Object.entries(operation.requestBody.content)) {
+          walkSchema(mediaObj.schema, `${method} ${routePath} [${mediaType}]`);
+        }
+      }
+      for (const [status, resObj] of Object.entries(operation.responses)) {
+        for (const [mediaType, mediaObj] of Object.entries(resObj.content ?? {})) {
+          walkSchema(mediaObj.schema, `${method} ${routePath} response:${status}[${mediaType}]`);
+        }
+      }
+    }
+
+    expect(emptyProperties).toEqual([]);
+    expect(typelessNullables).toEqual([]);
+    expect(emptyAnyOfBranches).toEqual([]);
+  });
+
+  it('serializes backup dates, typed FeatureSchema/JSON fields, and required backup keys on maintenance import and features routes', () => {
+    const importOp = openapi.paths['/api/admin/maintenance/import']?.post as OpenApiOperation;
+    const importSchema = importOp.requestBody?.content['application/json']?.schema as {
+      required?: string[];
+      properties?: Record<string, any>;
+    };
+
+    expect(importSchema.required).toEqual(['appConfig', 'registryItem']);
+
+    const appConfigProps = importSchema.properties?.appConfig?.items?.properties;
+    expect(appConfigProps?.createdAt).toEqual({ type: 'string', format: 'date-time' });
+    expect(appConfigProps?.weddingDate).toEqual(
+      expect.objectContaining({ type: 'string', format: 'date-time' })
+    );
+    expect(appConfigProps?.features?.type).toBe('array');
+    expect(appConfigProps?.features?.items?.required).toEqual(['id', 'type']);
+
+    const contentNodeData = importSchema.properties?.contentNode?.items?.properties?.data;
+    expect(contentNodeData?.type).toBe('object');
+
+    const snapshotData = importSchema.properties?.snapshotVersion?.items?.properties?.data;
+    expect(snapshotData?.type).toBe('object');
+
+    const subEventStart = importSchema.properties?.subEvent?.items?.properties?.startTime;
+    expect(subEventStart).toEqual({ type: 'string', format: 'date-time', nullable: true });
+
+    const featuresPut = openapi.paths['/api/admin/features']?.put as OpenApiOperation;
+    const featuresSchema = featuresPut.requestBody?.content['application/json']?.schema as {
+      properties?: Record<string, any>;
+    };
+    expect(featuresSchema.properties?.features?.items?.properties?.id).toEqual({ type: 'string' });
+    expect(featuresSchema.properties?.features?.items?.properties?.type).toEqual({ type: 'string' });
+  });
+
+  it('emits multi-branch oneOf schemas for POST /api/rsvp and POST /api/admin/invitation-codes/batch', () => {
+    const rsvpPost = openapi.paths['/api/rsvp']?.post as OpenApiOperation;
+    const rsvpSchema = rsvpPost.requestBody?.content['application/json']?.schema as {
+      oneOf?: Array<{ properties?: Record<string, unknown> }>;
+    };
+    expect(rsvpSchema.oneOf).toHaveLength(2);
+    expect(
+      rsvpSchema.oneOf?.some((branch) => Boolean(branch.properties?.rsvps))
+    ).toBe(true);
+    expect(
+      rsvpSchema.oneOf?.some((branch) => Boolean(branch.properties?.subEventId))
+    ).toBe(true);
+
+    const inviteBatchPost = openapi.paths['/api/admin/invitation-codes/batch']
+      ?.post as OpenApiOperation;
+    const inviteBatchSchema = inviteBatchPost.requestBody?.content['application/json']?.schema as {
+      oneOf?: Array<{ properties?: Record<string, unknown> }>;
+    };
+    expect(inviteBatchSchema.oneOf).toHaveLength(2);
+    expect(
+      inviteBatchSchema.oneOf?.some((branch) => Boolean(branch.properties?.ids))
+    ).toBe(true);
+    expect(
+      inviteBatchSchema.oneOf?.some((branch) => Boolean(branch.properties?.records))
+    ).toBe(true);
+  });
+
+  it('documents POST /api/admin/settings with optional id and zero required defaulted fields', () => {
+    const settingsPost = openapi.paths['/api/admin/settings']?.post as OpenApiOperation;
+    const settingsSchema = settingsPost.requestBody?.content['application/json']?.schema as {
+      properties?: Record<string, unknown>;
+      required?: string[];
+    };
+
+    expect(settingsSchema.properties?.id).toEqual({ type: 'string', minLength: 1 });
+    expect(settingsSchema.required ?? []).toHaveLength(0);
+
+    const settingsPut = openapi.paths['/api/admin/settings']?.put as OpenApiOperation;
+    const putSchema = settingsPut.requestBody?.content['application/json']?.schema as {
+      required?: string[];
+    };
+    expect((putSchema.required ?? []).length).toBeGreaterThanOrEqual(19);
+  });
+
+  it('emits {entity} path enums on all 10 admin entity operations and 7-branch oneOf schemas on entity POST/PUT', () => {
+    const expectedSlugs = [
+      'content-nodes',
+      'wedding-party',
+      'attractions',
+      'registry-items',
+      'invitation-codes',
+      'seating-tables',
+      'sub-events',
+    ];
+
+    const entityOps = getAllOperations().filter(({ operation }) =>
+      (operation.parameters ?? []).some((p) => p.in === 'path' && p.name === 'entity')
+    );
+    expect(entityOps).toHaveLength(10);
+
+    for (const { operation } of entityOps) {
+      const entityParam = operation.parameters?.find((p) => p.in === 'path' && p.name === 'entity');
+      expect(entityParam?.schema).toEqual({
+        type: 'string',
+        enum: expectedSlugs,
+      });
+    }
+
+    const entityCreateSchema = (openapi.paths['/api/admin/{entity}']?.post as OpenApiOperation)
+      .requestBody?.content['application/json']?.schema as {
+      type?: string;
+      oneOf?: unknown[];
+    };
+    expect(entityCreateSchema.type).toBe('object');
+    expect(entityCreateSchema.oneOf).toHaveLength(7);
+
+    const entityUpdateSchema = (openapi.paths['/api/admin/{entity}/{id}']?.put as OpenApiOperation)
+      .requestBody?.content['application/json']?.schema as {
+      type?: string;
+      oneOf?: unknown[];
+    };
+    expect(entityUpdateSchema.type).toBe('object');
+    expect(entityUpdateSchema.oneOf).toHaveLength(7);
+  });
+
+  it('documents 201 Created responses on creation routes and explicit response media types on all 8 export operations', () => {
+    for (const creationPath of [
+      '/api/guest/photos/upload',
+      '/api/media',
+      '/api/admin/{entity}',
+      '/api/admin/invitation-codes/batch',
+    ]) {
+      const postOp = openapi.paths[creationPath]?.post as OpenApiOperation;
+      expect(postOp.responses['201']).toEqual(
+        expect.objectContaining({ description: 'Created' })
+      );
+    }
+
+    const batchPostOp = openapi.paths['/api/admin/invitation-codes/batch']?.post as OpenApiOperation;
+    expect(batchPostOp.responses['200']).toBeDefined();
+    expect(batchPostOp.responses['201']).toBeDefined();
+
+    const expectedExportMedia: Array<{
+      routePath: string;
+      method: 'get' | 'post';
+      mediaTypes: string[];
+    }> = [
+      { routePath: '/api/admin/seating/export', method: 'get', mediaTypes: ['application/pdf', 'text/csv'] },
+      { routePath: '/api/admin/invitation-codes/export', method: 'get', mediaTypes: ['text/csv'] },
+      { routePath: '/api/admin/thank-you-notes/export', method: 'get', mediaTypes: ['text/csv'] },
+      { routePath: '/api/admin/thank-you-notes/export-labels', method: 'get', mediaTypes: ['application/pdf'] },
+      { routePath: '/api/media/export', method: 'get', mediaTypes: ['application/zip'] },
+      { routePath: '/api/media/export', method: 'post', mediaTypes: ['application/zip'] },
+      { routePath: '/api/schedule/{id}/ics', method: 'get', mediaTypes: ['text/calendar'] },
+      { routePath: '/api/og', method: 'get', mediaTypes: ['image/png'] },
+    ];
+
+    for (const { routePath, method, mediaTypes } of expectedExportMedia) {
+      const op = openapi.paths[routePath]?.[method] as OpenApiOperation;
+      const content = op.responses['200']?.content ?? {};
+      expect(Object.keys(content).sort()).toEqual([...mediaTypes].sort());
+    }
+  });
+
+  it('defines top-level domain tags and assigns declared tags across all 96 operations', () => {
+    expect(Array.isArray(openapi.tags)).toBe(true);
+    expect((openapi.tags ?? []).length).toBeGreaterThanOrEqual(12);
+
+    const declaredTags = new Set((openapi.tags ?? []).map((t) => t.name));
+    const operations = getAllOperations();
+    expect(operations).toHaveLength(96);
+
+    for (const { operation } of operations) {
+      expect(Array.isArray(operation.tags)).toBe(true);
+      expect((operation.tags ?? []).length).toBeGreaterThan(0);
+      for (const tag of operation.tags ?? []) {
+        expect(declaredTags.has(tag)).toBe(true);
+      }
+    }
   });
 });

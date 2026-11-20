@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AppConfigSchema, PhotoDataSchema, RawUpdateAppConfigSchema } from '@/features/content';
-import { isSafeMediaOrPhotoUrl } from '@/utils/validation';
+import { AppConfigSchema, FeatureSchema, PhotoDataSchema, RawUpdateAppConfigSchema } from '@/features/content';
+import { isSafeMediaOrPhotoUrl } from '@/utils/validationPrimitives';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party';
 import { AttractionSchema } from '@/features/attractions';
 import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry';
@@ -114,7 +114,7 @@ const BackupAppConfigSchema = z.object({
   layoutGridGap: z.string().max(100).optional(),
   layoutCardPadding: z.string().max(100).optional(),
   layoutBorderRadius: z.string().max(100).optional(),
-  features: z.any().optional(),
+  features: z.array(FeatureSchema).optional(),
   timezone: RawUpdateAppConfigSchema.shape.timezone.optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
@@ -270,7 +270,7 @@ const BackupContentNodeSchema = z.object({
   // Database-required columns (No defaults, not nullable)
   type: z.string().min(1).max(255),
   tags: z.array(z.string().max(255)),
-  data: z.any(),
+  data: z.record(z.string(), z.unknown()),
 }).superRefine((node, ctx) => {
   if (node.type === 'Photo') {
     if (!node.data || typeof node.data !== 'object' || Array.isArray(node.data)) {
@@ -422,7 +422,7 @@ const BackupSnapshotVersionSchema = z.object({
   id: z.string().min(1).max(255),
   entityType: z.string().min(1).max(100),
   entityId: z.string().min(1).max(255),
-  data: z.any(),
+  data: z.record(z.string(), z.unknown()),
   createdAt: z.date(),
   author: z.string().max(255).nullable().optional(),
 });
@@ -432,14 +432,14 @@ export const DatabaseBackupSchema = z.object({
   version: z.string().optional(),
   schemaVersion: z.string().optional(),
   exportedAt: z.union([z.string(), z.date()]).optional(),
-  appConfig: z.array(BackupAppConfigSchema).optional(),
+  appConfig: z.array(BackupAppConfigSchema),
   contentNode: z.array(BackupContentNodeSchema).optional(),
   media: z.array(BackupMediaSchema).optional(),
   seatingTable: z.array(BackupSeatingTableSchema).optional(),
   invitationCode: z.array(BackupInvitationCodeSchema).optional(),
   weddingPartyMember: z.array(BackupWeddingPartyMemberSchema).optional(),
   attraction: z.array(BackupAttractionSchema).optional(),
-  registryItem: z.array(BackupRegistryItemSchema).optional(),
+  registryItem: z.array(BackupRegistryItemSchema),
   contributor: z.array(BackupContributorSchema).optional(),
   subEvent: z.array(BackupSubEventSchema).optional(),
   subEventAccess: z.array(BackupSubEventAccessSchema).optional(),
