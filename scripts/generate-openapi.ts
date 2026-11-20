@@ -58,18 +58,43 @@ const routeFiles = project
   .getSourceFiles(['src/app/api/**/route.ts', 'src/app/api/**/route.tsx'])
   .filter((file) => !file.getFilePath().includes('__tests__'));
 
-function getMiddlewarePublicApiExclusions(): Set<string> {
+interface MiddlewareApiExclusions {
+  exact: Set<string>;
+  prefixes: string[];
+}
+
+function getMiddlewarePublicApiExclusions(): MiddlewareApiExclusions {
   const middlewarePath = path.join(rootPath, 'src/middleware.ts');
   const source = fs.readFileSync(middlewarePath, 'utf8');
-  const excluded = new Set<string>();
-  const regex = /normalizedPath\s*===\s*'(\/api\/[^']+)'/g;
+  const exact = new Set<string>();
+  const prefixes: string[] = [];
+
+  const exactRegex = /normalizedPath\s*===\s*'(\/api\/[^']+)'/g;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(source)) !== null) {
+  while ((match = exactRegex.exec(source)) !== null) {
     if (match[1] !== '/api/cron') {
-      excluded.add(match[1]);
+      exact.add(match[1]);
     }
   }
-  return excluded;
+
+  const prefixRegex = /normalizedPath\.startsWith\(\s*'(\/api\/[^']+)'\s*\)/g;
+  while ((match = prefixRegex.exec(source)) !== null) {
+    if (match[1] !== '/api/' && match[1] !== '/api/cron/') {
+      prefixes.push(match[1]);
+    }
+  }
+
+  return { exact, prefixes };
+}
+
+function isMiddlewarePublicApiRoute(
+  routePath: string,
+  exclusions: MiddlewareApiExclusions
+): boolean {
+  if (exclusions.exact.has(routePath)) {
+    return true;
+  }
+  return exclusions.prefixes.some((prefix) => routePath.startsWith(prefix));
 }
 
 function collectMethodScopedNodes(root: Node, method: string): Node[] {
@@ -385,7 +410,7 @@ function resolveOperationSecurity(
   routePath: string,
   method: string,
   allNodes: Node[],
-  publicApiExclusions: Set<string>
+  publicApiExclusions: MiddlewareApiExclusions
 ): Array<Record<string, string[]>> | undefined {
   if (routePath === '/api/cron' || routePath.startsWith('/api/cron/')) {
     return [{ cronBearerAuth: [] }];
@@ -435,7 +460,7 @@ function resolveOperationSecurity(
     return [{ guestCookieAuth: [] }];
   }
 
-  if (!publicApiExclusions.has(routePath)) {
+  if (!isMiddlewarePublicApiRoute(routePath, publicApiExclusions)) {
     return [
       { guestCookieAuth: [] },
       { guestInviteCookieAuth: [] },
@@ -502,7 +527,9 @@ async function run() {
       .replace(/\\/g, '/')
       .replace(/^\/src\/app/, '')
       .replace(/\/route\.(ts|tsx)$/, '');
-    const openapiPath = routePath.replace(/\[([^\]]+)\]/g, '{$1}');
+    const openapiPath = routePath
+      .replace(/\[\.\.\.([^\]]+)\]/g, '{$1}')
+      .replace(/\[([^\]]+)\]/g, '{$1}');
 
     if (!openapi.paths[openapiPath]) {
       openapi.paths[openapiPath] = {};

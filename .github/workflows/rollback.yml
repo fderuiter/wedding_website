@@ -316,8 +316,8 @@ jobs:
             RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
 
             if [ "$HTTP_STATUS" = "200" ]; then
-              STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.status // empty' 2>/dev/null || true)
-              DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.database // empty' 2>/dev/null || true)
+              STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+              DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
 
               if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
                 echo "✅ Post-rollback health probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
@@ -335,7 +335,7 @@ jobs:
                 echo "::notice::Dry-run rollback environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true
                 HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"status":"ok","database":"connected","mode":"dry-run"}'
+                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
                 break
               fi
             fi
@@ -447,7 +447,7 @@ jobs:
 
           #### Diagnostic & Safety Details
           1. **N-1 Backward Compatibility**: Database migrations are verified with \`npm run lint:migrations\` before container restoration.
-          2. **Container Restoration**: Reusable workflow \`deploy-provider.yml\` redeploys immutable tag \`${SAFE_TAG}\` and \`verify\` probes \`/api/health\` for \`status == "ok"\` and \`database == "connected"\`.
+          2. **Container Restoration**: Reusable workflow \`deploy-provider.yml\` redeploys immutable tag \`${SAFE_TAG}\` and \`verify\` probes \`/api/health\` for \`.data.status == "ok"\` and \`.data.database == "connected"\`.
           3. **Next Steps**: Inspect the failed stage logs if status is \`FAILED\`, or investigate the root cause of the triggering release failure before re-attempting forward deployment.
           EOF
 

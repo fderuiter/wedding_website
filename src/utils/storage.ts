@@ -65,6 +65,23 @@ export interface StorageProvider {
   validateConfig(): Promise<StorageValidationResult>;
 }
 
+export interface LocalUploadStreamResult {
+  key: string;
+  size: number;
+  mimeType: string;
+  updatedAt: Date;
+  stream?: ReadableStream<Uint8Array>;
+}
+
+function getLocalUploadMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.ico') return 'image/x-icon';
+  return 'application/octet-stream';
+}
+
 /**
  * @internal Exported for direct containment testing with isolated publicDir directories.
  */
@@ -209,11 +226,7 @@ export class LocalStorageProvider implements StorageProvider {
       if (typeof stats.isFile === 'function' && !stats.isFile()) {
         return null;
       }
-      const ext = path.extname(resolved.realPath).toLowerCase();
-      let mimeType = 'application/octet-stream';
-      if (ext === '.png') mimeType = 'image/png';
-      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-      else if (ext === '.ico') mimeType = 'image/x-icon';
+      const mimeType = getLocalUploadMimeType(resolved.realPath);
 
       return {
         key,
@@ -224,6 +237,99 @@ export class LocalStorageProvider implements StorageProvider {
       };
     } catch {
       return null;
+    }
+  }
+
+  async openReadStream(
+    keyOrUrl: string,
+    options?: { headOnly?: boolean }
+  ): Promise<LocalUploadStreamResult | null> {
+    const key = this.extractKey(keyOrUrl);
+    const uploadsRoot = this.getUploadsRoot();
+    const resolved = await resolveContainedExistingPath(key, {
+      baseDir: this.publicDir,
+      containmentRoot: uploadsRoot,
+    });
+
+    const fs = await import('fs/promises');
+    if (typeof fs.lstat === 'function') {
+      const relInsideUploads = key.replace(/^\/+/, '').replace(/^uploads\/?/, '');
+      const segments = relInsideUploads.split('/').filter(Boolean);
+      let currentPath = path.resolve(uploadsRoot);
+      for (const seg of segments) {
+        currentPath = path.join(currentPath, seg);
+        try {
+          const segStat = await fs.lstat(currentPath);
+          if (segStat.isSymbolicLink()) {
+            throw new PathContainmentError('Symbolic links are not permitted in uploads');
+          }
+        } catch (err: unknown) {
+          if (err instanceof PathContainmentError) {
+            throw err;
+          }
+          if (
+            typeof err === 'object' &&
+            err !== null &&
+            'code' in err &&
+            ((err as { code: string }).code === 'ENOENT' || (err as { code: string }).code === 'ENOTDIR')
+          ) {
+            return null;
+          }
+          throw err;
+        }
+      }
+    }
+
+    if (!resolved.exists) {
+      return null;
+    }
+
+    try {
+      const stats = typeof fs.lstat === 'function'
+        ? await fs.lstat(resolved.realPath)
+        : await fs.stat(resolved.realPath);
+      if (typeof stats.isSymbolicLink === 'function' && stats.isSymbolicLink()) {
+        throw new PathContainmentError('Symbolic links are not permitted in uploads');
+      }
+      if (typeof stats.isFile === 'function' && !stats.isFile()) {
+        return null;
+      }
+
+      const mimeType = getLocalUploadMimeType(resolved.realPath);
+      if (options?.headOnly) {
+        return {
+          key,
+          size: stats.size,
+          mimeType,
+          updatedAt: stats.mtime,
+        };
+      }
+
+      const nodeFs = await import('fs');
+      const { Readable } = await import('stream');
+      const nodeStream = nodeFs.createReadStream(resolved.realPath);
+      const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>;
+
+      return {
+        key,
+        size: stats.size,
+        mimeType,
+        updatedAt: stats.mtime,
+        stream: webStream,
+      };
+    } catch (err: unknown) {
+      if (err instanceof PathContainmentError) {
+        throw err;
+      }
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: string }).code === 'ENOENT'
+      ) {
+        return null;
+      }
+      throw err;
     }
   }
 

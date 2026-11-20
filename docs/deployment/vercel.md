@@ -45,13 +45,13 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 | `POSTGRES_URL_NON_POOLING` | No* | Optional shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts`); recommended when `DATABASE_URL` uses PgBouncer so the build command can override `DATABASE_URL` for `prisma migrate deploy`. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.mydomain.com,*.vercel.app`). |
-| `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
+| `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
 | `TRUST_PROXY` | No | Trust `X-Forwarded-For` / `X-Real-IP` from Vercel edge ingress (`true` or hop count; default `false`). |
 | `GUEST_PASSCODE` | Yes | Unique passcode required for guest access (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | Dedicated secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
-| `CRON_SECRET` | No | Authorization key for background cron triggers. |
+| `CRON_SECRET` | No | Secret token used by Vercel Cron (`vercel.json`) to send `Authorization: Bearer <CRON_SECRET>` to `/api/cron/broadcasts`. |
 | `S3_BUCKET` | Yes** | Bucket name for cloud asset storage. |
 | `S3_REGION` | Yes** | Bucket region (`us-east-1` or `auto` for Cloudflare R2). |
 | `S3_ACCESS_KEY_ID` | Yes** | S3 API access key ID. |
@@ -163,7 +163,32 @@ vercel rollback [DEPLOYMENT_ID]
 
 ---
 
-## 9. Provider-Specific Limitations
+## 9. Webhooks & Scheduled Background Jobs
+
+### Stripe `payment_intent.succeeded` Webhook
+1. Configure `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` (`whsec_...`) in **Vercel Project Settings > Environment Variables**.
+2. In **Stripe Dashboard > Developers > Webhooks**, register `https://wedding.mydomain.com/api/registry/webhook/stripe` (matching `ALLOWED_HOSTS`) and subscribe to **`payment_intent.succeeded`**.
+3. `src/middleware.ts` exempts `/api/registry/webhook/stripe` from session cookies while enforcing `ALLOWED_HOSTS`, and the webhook handler verifies `stripe-signature` against `STRIPE_WEBHOOK_SECRET`.
+
+### Vercel Cron for Scheduled Broadcasts (`vercel.json` & `CRON_SECRET`)
+The repository includes a root [`vercel.json`](../../vercel.json) configuring Vercel Cron to invoke `/api/cron/broadcasts`:
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/broadcasts",
+      "schedule": "0 14 * * *"
+    }
+  ]
+}
+```
+1. Set `CRON_SECRET` (at least 16 random characters) in **Vercel Project Settings > Environment Variables** (`Production`). Vercel Cron automatically attaches `Authorization: Bearer <CRON_SECRET>` on scheduled `GET /api/cron/broadcasts` invocations, which `src/app/api/cron/broadcasts/route.ts` verifies with constant-time comparison.
+2. Ensure your primary Vercel production domain (and `*.vercel.app` if applicable) is listed in `ALLOWED_HOSTS` so `src/middleware.ts` permits incoming Vercel Cron requests.
+3. The default `0 14 * * *` (14:00 UTC daily) schedule is compatible with **Vercel Hobby** accounts (which cap cron frequency to once per day); **Vercel Pro / Enterprise** deployments can tighten `schedule` in `vercel.json` (e.g., `*/5 * * * *`) for near-real-time broadcast dispatch.
+
+---
+
+## 10. Provider-Specific Limitations
 
 1.  **Function Execution Timeout**: Serverless functions have execution timeout limits (10s on Free, 60s on Pro, 300s on Enterprise). Long-running scraper jobs or bulk exports must finish within these bounds.
 2.  **Connection Exhaustion**: Connecting directly to PostgreSQL without connection poolers (PgBouncer/Neon) will quickly exhaust database connections under concurrent traffic. Always set up connection pooling.

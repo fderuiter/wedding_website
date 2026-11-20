@@ -7,9 +7,15 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
   const filesToCopy = [
     'package.json',
     'prisma.config.ts',
+    'prisma/schema.prisma',
+    'Dockerfile',
     'docker-compose.yml',
+    'next.config.ts',
+    'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/middleware.ts',
+    'src/app/api/uploads/[...path]/route.ts',
     'DEPLOYMENT.md',
     'docs/runtime-contract.md',
     'docs/deployment/README.md',
@@ -169,6 +175,52 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining('DEPLOYMENT.md: Missing GitHub Actions workflow reference "storybook.yml"'),
         expect.stringContaining('DEPLOYMENT.md: Missing static HTML showcase script reference "build:export"'),
         expect.stringContaining('Secret "ADMIN_PASSWORD" in Setup and Secrets table is not referenced via secrets.*'),
+      ])
+    );
+  });
+
+  it('rejects missing HOSTNAME=0.0.0.0, missing uploads_data volume, missing webhook exclusion, unwrapped rollback jq, missing v* tag logic, and missing vercel.json cron', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'Dockerfile'),
+      fs.readFileSync(path.join(tempDir, 'Dockerfile'), 'utf8').replace('ENV HOSTNAME="0.0.0.0"', 'ENV HOSTNAME="127.0.0.1"')
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      fs
+        .readFileSync(path.join(tempDir, 'docker-compose.yml'), 'utf8')
+        .replace('HOSTNAME: "0.0.0.0"', 'HOSTNAME: "localhost"')
+        .replace('- uploads_data:/app/public/uploads', '- ./tmp:/tmp')
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'src/middleware.ts'),
+      fs
+        .readFileSync(path.join(tempDir, 'src/middleware.ts'), 'utf8')
+        .replace("normalizedPath === '/api/registry/webhook/stripe' ||", '')
+    );
+    fs.writeFileSync(
+      path.join(tempDir, '.github/workflows/rollback.yml'),
+      fs
+        .readFileSync(path.join(tempDir, '.github/workflows/rollback.yml'), 'utf8')
+        .replace("jq -r '.data.status // empty'", "jq -r '.status // empty'")
+    );
+    fs.writeFileSync(
+      path.join(tempDir, '.github/workflows/publish-artifact.yml'),
+      fs
+        .readFileSync(path.join(tempDir, '.github/workflows/publish-artifact.yml'), 'utf8')
+        .replace(/GITHUB_REF_NAME/g, 'UNUSED_REF')
+    );
+    fs.writeFileSync(path.join(tempDir, 'vercel.json'), JSON.stringify({ crons: [] }));
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Dockerfile: Missing `ENV HOSTNAME="0.0.0.0"`'),
+        expect.stringContaining('docker-compose.yml: `app` service must set `HOSTNAME: "0.0.0.0"`'),
+        expect.stringContaining('docker-compose.yml: `app` service must mount `uploads_data:/app/public/uploads`'),
+        expect.stringContaining('src/middleware.ts: Must exclude `/api/registry/webhook/stripe`'),
+        expect.stringContaining('.github/workflows/rollback.yml: Unwrapped `.status` or `.database` jq query detected'),
+        expect.stringContaining('.github/workflows/publish-artifact.yml: Must publish `GITHUB_REF_NAME`'),
+        expect.stringContaining('vercel.json: Must configure a valid 5-field cron schedule for `/api/cron/broadcasts`'),
       ])
     );
   });

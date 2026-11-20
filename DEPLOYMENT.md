@@ -67,7 +67,7 @@ The application requires the following environment variables. These match the ru
   - **Format**: Must be an scrypt hash in the format `scrypt:[saltBase64]:[keyBase64]`.
   - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
 - `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcard patterns allowed to access the application (e.g. `localhost,127.0.0.1,wedding.example`). Wildcard DNS is not required for default single-site deployments. *Required.*
-- `MULTISITE_ENABLED`: Set to `true` to enable multi-tenant/multi-profile configuration and subdomain-based site routing. Defaults to `false` (1 deployment = 1 wedding site). *Optional.*
+- `MULTISITE_ENABLED`: Set to `true` to enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`). Defaults to `false` (1 deployment = 1 wedding site). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. *Optional.*
 - `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh`. Defaults to `false`. *Optional.*
 - `TRUST_PROXY`: Set to `true` (or a positive integer hop count such as `1` or `2`) when running behind a trusted reverse proxy or ingress controller so rate limiting reads `X-Forwarded-For` / `X-Real-IP`. Defaults to `false` (ignores forwarded IP headers on direct hosts). *Optional.*
 - `GUEST_PASSCODE`: Global passcode required for guest access to the website. *Required.*
@@ -84,7 +84,28 @@ The application requires the following environment variables. These match the ru
 - `S3_PUBLIC_URL`: Public asset delivery URL or CDN prefix used to serve assets publicly. *Optional.*
 - `STRIPE_SECRET_KEY`: Server-side Stripe secret key (`sk_...` or `rk_...`) for online card checkout on registry funds. *Optional (required if `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is specified; placeholder keys are rejected).*
 - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Client-side Stripe publishable key (`pk_...`) for Stripe Elements card checkout on registry funds. *Optional (required if `STRIPE_SECRET_KEY` is specified; placeholder keys are rejected).*
-- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret (`whsec_...`) for verifying `/api/registry/webhook/stripe` deliveries. *Optional.*
+- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret (`whsec_...`) for verifying `/api/registry/webhook/stripe` deliveries (`payment_intent.succeeded`). *Optional.*
+
+---
+
+## Webhooks & Scheduled Background Jobs
+
+### 1. Stripe Registry Webhook (`payment_intent.succeeded`)
+When online card checkout is enabled (`STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`), configure Stripe to deliver webhook events to your public deployment:
+1. In the **Stripe Dashboard > Developers > Webhooks**, click **Add endpoint**.
+2. Set the **Endpoint URL** to `https://<your-domain>/api/registry/webhook/stripe` and ensure `<your-domain>` is listed in `ALLOWED_HOSTS`.
+3. Subscribe to the **`payment_intent.succeeded`** event.
+4. Copy the endpoint's **Signing secret** (`whsec_...`) and set `STRIPE_WEBHOOK_SECRET` in your hosting provider's runtime environment.
+5. `src/middleware.ts` validates `ALLOWED_HOSTS` and exempts `/api/registry/webhook/stripe` from guest/admin session cookies so Stripe deliveries reach `src/features/registry/api/webhook.ts`, which verifies the `stripe-signature` header against `STRIPE_WEBHOOK_SECRET` before recording paid contributions.
+
+### 2. Scheduled Broadcast Cron (`/api/cron/broadcasts`)
+Scheduled guest broadcasts (`ScheduledBroadcast` entries) are processed by calling `/api/cron/broadcasts`:
+1. Generate a high-entropy secret (e.g., `openssl rand -hex 32`) and set `CRON_SECRET` in your hosting provider's runtime environment.
+2. Configure your platform scheduler to issue periodic `GET` or `POST` requests (every 1–5 minutes, or daily on Vercel Hobby via `vercel.json`) to `https://<your-domain>/api/cron/broadcasts` with header:
+   ```http
+   Authorization: Bearer <CRON_SECRET>
+   ```
+3. On **Vercel**, the repository's root `vercel.json` schedules `/api/cron/broadcasts` (`0 14 * * *`) and Vercel automatically injects `Authorization: Bearer <CRON_SECRET>` when `CRON_SECRET` is configured in Vercel Environment Variables. On **Docker/VPS**, **Google Cloud Run**, **Railway**, and **Render**, configure host `crontab`, Cloud Scheduler, or a platform Cron service as documented in each provider recipe under [`docs/deployment/`](./docs/deployment/README.md).
 
 ---
 
@@ -173,7 +194,7 @@ To protect production database integrity and application availability, the deplo
      - Check the **Required reviewers** checkbox.
      - Specify designated maintainers, release managers, or team leads authorized to approve production releases.
      - Select **Prevent self-review** if team policy mandates dual-control sign-off.
-  4. **Deployment Branches**: Restrict deployment to `main` branch or release tags (`v*`).
+  4. **Deployment Branches**: Restrict deployment to `main` branch (and optionally release tags `v*` if manually dispatching tag promotions via `deploy-provider.yml`; automated `deploy.yml` runs trigger on `main` after `CI` succeeds).
   5. **Environment Secrets** (workflow-consumed credentials only):
      - `DATABASE_URL`: Direct (non-pooled) connection string for the isolated production PostgreSQL instance used by `db-migrate.yml` (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
      - `SERVICE_URL`: Base URL of the live production web service for `/api/health` probes (e.g., `https://wedding.example.com`).
@@ -209,7 +230,7 @@ To protect production database integrity and application availability, the deplo
    - Once approved, `.github/workflows/db-migrate.yml` unlocks `production` secrets, verifies `npm run lint:migrations`, queries live production `DATABASE_URL` via `npx prisma migrate status` (`scripts/preflight-migration-summary.ts`) to audit pending/failed migrations and emit the live DDL summary, and runs `npx prisma migrate deploy` with lock and statement timeouts.
    - `production-deploy-provider` promotes the exact `image_digest` attested in `publish-artifact.yml` (or an explicit `image_digest` supplied on manual production-only dispatches), re-verifies OIDC build provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml`, captures the currently serving container image (`previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA) before rollout, and deploys the immutable `@sha256:` URI via `.github/workflows/deploy-provider.yml`.
    - Post-deployment health probes verify `/api/health` with exponential backoff.
-   - **Rollback Guarantee**: If the staging or production health probe fails, `.github/workflows/deploy.yml` passes the captured `previous_image_digest`, `previous_image_tag`, `provider`, and unguarded `rollback_environment` to `.github/workflows/rollback.yml` instead of mutable `latest`. `rollback.yml` rejects `latest` and the failing `github.sha`, verifies `npm run lint:migrations`, delegates redeployment (including OIDC provenance verification) to `.github/workflows/deploy-provider.yml` **without requiring a second human approval step**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `status == "ok"`, `database == "connected"`) before reporting `SUCCESS`.
+   - **Rollback Guarantee**: If the staging or production health probe fails, `.github/workflows/deploy.yml` passes the captured `previous_image_digest`, `previous_image_tag`, `provider`, and unguarded `rollback_environment` to `.github/workflows/rollback.yml` instead of mutable `latest`. `rollback.yml` rejects `latest` and the failing `github.sha`, verifies `npm run lint:migrations`, delegates redeployment (including OIDC provenance verification) to `.github/workflows/deploy-provider.yml` **without requiring a second human approval step**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `.data.status == "ok"`, `.data.database == "connected"`) before reporting `SUCCESS`.
 
 ---
 
@@ -229,17 +250,17 @@ To protect production database integrity and application availability, the deplo
   - `deploy-docs` (`ci.yml`): On pushes to `main` or published releases, builds `docs-portal/.vitepress/dist` via `npm run docs:build` and publishes the static documentation portal to the `github-pages` environment via `actions/deploy-pages`.
 
 ### 2. Artifact Publication (`publish-artifact.yml`)
-- **Triggers**: Reusable `workflow_call` from `deploy.yml` (after `CI` succeeds on `main`), pushes to `v*` tags, and manual `workflow_dispatch`.
+- **Triggers**: Reusable `workflow_call` from `deploy.yml` (after `CI` succeeds on `main`), pushes to `v*` tags, and manual `workflow_dispatch`. Pushing a `v*` tag triggers `publish-artifact.yml` directly (publishing both `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` such as `:v0.1.0` and `ghcr.io/<owner>/<repo>:<sha>`) without automatically invoking `deploy.yml`; operators can promote a tagged release via `deploy-provider.yml` (`image_tag: v0.1.0`) or `deploy.yml` (`workflow_dispatch` with the tag's `image_digest`).
 - **Permissions**: Top-level `contents: read`, with job-scoped `packages: write` (for GitHub Container Registry), `security-events: write` (for uploading SARIF scan results to GitHub Code Scanning), and `id-token: write` / `attestations: write` (for OIDC cryptographic build provenance attestations).
 - **Actions**:
   - Compiles local container image prior to registry publication.
   - Executes Trivy vulnerability scanning (`aquasecurity/trivy-action`) to block builds with `CRITICAL` or `HIGH` severity vulnerabilities.
   - Uploads SARIF vulnerability reports (`trivy-results.sarif`) to GitHub Code Scanning via `github/codeql-action/upload-sarif`.
-  - Publishes multi-platform OCI container images (`linux/amd64`, `linux/arm64`) to registries upon scan success.
+  - Publishes multi-platform OCI container images (`linux/amd64`, `linux/arm64`) to registries upon scan success (tagging both `GITHUB_REF_NAME` and the commit SHA on `v*` tag pushes).
   - Generates signed OIDC build provenance attestations via `actions/attest-build-provenance`.
 - **Outputs**:
-  - `image_uri`: Immutable URI (`ghcr.io/<owner>/<repo>:<sha>`).
-  - `image_tag`: Immutable commit SHA or custom release tag.
+  - `image_uri`: Primary OCI URI (`ghcr.io/<owner>/<repo>:<sha>` on `main` / `workflow_call`, or `ghcr.io/<owner>/<repo>:v*` on `v*` tag pushes alongside `:<sha>`).
+  - `image_tag`: Resolved version tag (`GITHUB_REF_NAME` on `v*` tag pushes) or immutable commit SHA.
   - `image_digest`: Attested OCI image digest (`sha256:<64-hex>`) propagated to staging and production deployment jobs.
 
 ### 3. Database Migration (`db-migrate.yml`)
@@ -282,9 +303,9 @@ To protect production database integrity and application availability, the deplo
 - **Triggers**: `deploy.yml` triggers via `workflow_run` after `CI` completes successfully on `main` pushes (or via `workflow_dispatch` / `workflow_call` after confirming a successful `CI` run for `github.sha`), running health verification automatically post-provider deployment for staging and production (`rollback.yml` can also be invoked manually via `workflow_dispatch`).
 - **Actions**:
   - `verify-deployment` polls `/api/health` with configurable exponential backoff and a 2-minute maximum timeout.
-  - Validates HTTP status code 200 and confirms JSON body `database == 'connected'` and `status == 'ok'`.
+  - Validates HTTP status code 200 and confirms wrapped JSON body `.data.database == "connected"` and `.data.status == "ok"`.
   - Automatically invokes `rollback.yml` with the captured `previous_image_tag` and `provider` if health probes fail or time out, rejecting mutable `latest` or the failing `github.sha` outside explicit dry-run mode.
-  - `rollback.yml` runs `npm run lint:migrations`, calls `deploy-provider.yml` using the unguarded `rollback_environment`, polls `${SERVICE_URL}/api/health` to confirm restoration, and gates `$GITHUB_STEP_SUMMARY` status reporting so any failed stage logs `FAILED` and exits non-zero.
+  - `rollback.yml` runs `npm run lint:migrations`, calls `deploy-provider.yml` using the unguarded `rollback_environment`, polls `${SERVICE_URL}/api/health` (`.data.status == "ok"` and `.data.database == "connected"`) to confirm restoration, and gates `$GITHUB_STEP_SUMMARY` status reporting so any failed stage logs `FAILED` and exits non-zero.
 
 ---
 

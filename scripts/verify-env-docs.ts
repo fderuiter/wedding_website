@@ -381,10 +381,117 @@ export function parseComposeEnvKeys(composeContent: string): string[] {
       if (bareItemMatch) {
         keys.add(bareItemMatch[1]);
       }
+
+      // Explicit container network binding (`HOSTNAME: "0.0.0.0"` or `- HOSTNAME=0.0.0.0`)
+      const containerNetMatch = cleanLine.match(/^\s*(?:-\s*)?(HOSTNAME|PORT)\s*(?::|=)\s*\S+/);
+      if (containerNetMatch) {
+        keys.add(containerNetMatch[1]);
+      }
     }
   }
 
   return Array.from(keys);
+}
+
+function extractDockerfileEnvValue(dockerfileContent: string, targetKey: string): string | null {
+  let foundValue: string | null = null;
+  for (const rawLine of dockerfileContent.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const envMatch = trimmed.match(/^ENV\s+(.+)$/i);
+    if (!envMatch) continue;
+    const rest = envMatch[1].trim();
+    const escapedKey = escapeRegex(targetKey);
+    const kvMatch = rest.match(new RegExp(`(?:^|\\s)${escapedKey}=(?:["']([^"']*)["']|(\\S+))`));
+    if (kvMatch) {
+      foundValue = kvMatch[1] ?? kvMatch[2] ?? null;
+      continue;
+    }
+    const legacyMatch = rest.match(new RegExp(`^${escapedKey}\\s+(?:["']([^"']*)["']|(\\S+))$`));
+    if (legacyMatch) {
+      foundValue = legacyMatch[1] ?? legacyMatch[2] ?? null;
+    }
+  }
+  return foundValue;
+}
+
+function extractComposeServiceEnvValue(
+  composeContent: string,
+  serviceName: string,
+  targetKey: string
+): string | null {
+  let inServices = false;
+  let currentService: string | null = null;
+  let inEnv = false;
+  let envIndent = -1;
+  const escapedKey = escapeRegex(targetKey);
+
+  for (const rawLine of composeContent.split(/\r?\n/)) {
+    if (/^\s*#/.test(rawLine) || !rawLine.trim()) continue;
+    const cleanLine = stripYamlComment(rawLine);
+    if (/^services:\s*$/.test(cleanLine)) {
+      inServices = true;
+      continue;
+    }
+    if (inServices && /^\S/.test(cleanLine)) {
+      inServices = false;
+      currentService = null;
+      inEnv = false;
+    }
+    if (!inServices) continue;
+
+    const svcMatch = cleanLine.match(/^  ([a-zA-Z0-9_-]+):\s*$/);
+    if (svcMatch) {
+      currentService = svcMatch[1];
+      inEnv = false;
+      continue;
+    }
+    if (currentService !== serviceName) continue;
+
+    const indent = (cleanLine.match(/^(\s*)/)?.[1] ?? '').length;
+    if (inEnv && indent <= envIndent) {
+      inEnv = false;
+      envIndent = -1;
+    }
+    if (/^\s*environment:\s*$/.test(cleanLine)) {
+      inEnv = true;
+      envIndent = indent;
+      continue;
+    }
+    if (inEnv) {
+      const mapMatch = cleanLine.match(
+        new RegExp(`^\\s*(?:-\\s*)?${escapedKey}\\s*(?::|=)\\s*(?:["']([^"']*)["']|(\\S+))\\s*$`)
+      );
+      if (mapMatch) {
+        return mapMatch[1] ?? mapMatch[2] ?? null;
+      }
+    }
+  }
+  return null;
+}
+
+export function validateContainerHostnameBinding(
+  dockerfileContent: string,
+  composeContent?: string
+): string[] {
+  const errors: string[] = [];
+  const dockerfileHostname = extractDockerfileEnvValue(dockerfileContent, 'HOSTNAME');
+  if (dockerfileHostname !== '0.0.0.0') {
+    errors.push(
+      `Dockerfile must set ENV HOSTNAME="0.0.0.0" for standalone external/healthcheck reachability (got ${dockerfileHostname ? `"${dockerfileHostname}"` : 'unset'})`
+    );
+  }
+
+  if (composeContent !== undefined && /^  app:\s*$/m.test(composeContent)) {
+    const composeHostname = extractComposeServiceEnvValue(composeContent, 'app', 'HOSTNAME');
+    if (composeHostname !== '0.0.0.0') {
+      errors.push(
+        `docker-compose.yml service "app" must set HOSTNAME to "0.0.0.0" (got ${composeHostname ? `"${composeHostname}"` : 'unset'})`
+      );
+    }
+  }
+
+  return errors;
 }
 
 function walkRuntimeSourceFiles(dirPath: string): string[] {
@@ -972,7 +1079,7 @@ export function validateEnvDocContent(docName: string, docContent: string, keys:
     errors.push(`Duplicate environment variable reference sections in ${docName}: ${headings}`);
   }
 
-  const allowedProviderRunbookKeys = new Set<string>([...keys, 'PORT']);
+  const allowedProviderRunbookKeys = new Set<string>([...keys, 'PORT', 'HOSTNAME']);
 
   for (const section of envSections) {
     for (const key of keys) {
@@ -988,7 +1095,7 @@ export function validateEnvDocContent(docName: string, docContent: string, keys:
       for (const documentedKey of extractStructuredKeys(section.nonCodeLines)) {
         if (!allowedProviderRunbookKeys.has(documentedKey)) {
           errors.push(
-            `Out-of-scope variable ${documentedKey} in section "${section.heading}" of ${docName} (provider runbooks are scoped to src/env.ts keys and PORT)`
+            `Out-of-scope variable ${documentedKey} in section "${section.heading}" of ${docName} (provider runbooks are scoped to src/env.ts keys, PORT, and HOSTNAME)`
           );
         }
       }
@@ -1062,6 +1169,26 @@ export function validateRuntimeContract(
     }
   }
 
+  const containerDefaultSpecs: Array<{ key: string; defaultValue: string }> = [
+    { key: 'HOSTNAME', defaultValue: '0.0.0.0' },
+    { key: 'PORT', defaultValue: '3000' },
+  ];
+  for (const containerSpec of containerDefaultSpecs) {
+    if (!operatorSet.has(containerSpec.key)) continue;
+    const row = rowsByKey.get(containerSpec.key);
+    if (!row) continue;
+    if (row.classification !== 'optional') {
+      errors.push(
+        `Classification mismatch for ${containerSpec.key} in ${docName} (${row.subheading}): expected "optional", got "${row.classification}"`
+      );
+    }
+    if (!row.hasDefaultColumn || row.defaultValue !== containerSpec.defaultValue) {
+      errors.push(
+        `Default value mismatch for ${containerSpec.key} in ${docName} (${row.subheading}): expected "${containerSpec.defaultValue}", got "${row.defaultValue ?? 'none'}"`
+      );
+    }
+  }
+
   return errors;
 }
 
@@ -1095,6 +1222,17 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
   ];
 
   let failed = false;
+
+  const dockerfilePath = path.join(cwd, 'Dockerfile');
+  if (fs.existsSync(dockerfilePath)) {
+    const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf-8');
+    const composePath = path.join(cwd, 'docker-compose.yml');
+    const composeContent = fs.existsSync(composePath) ? fs.readFileSync(composePath, 'utf-8') : undefined;
+    for (const hostErr of validateContainerHostnameBinding(dockerfileContent, composeContent)) {
+      console.error(`❌ ${hostErr}`);
+      failed = true;
+    }
+  }
 
   for (const doc of docsToVerify) {
     if (!fs.existsSync(doc.path)) {

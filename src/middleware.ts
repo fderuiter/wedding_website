@@ -65,6 +65,11 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/api/guest/address' ||
     normalizedPath === '/api/guest/address/public' ||
     normalizedPath === '/api/registry/validate-code' ||
+    normalizedPath === '/api/registry/webhook/stripe' ||
+    normalizedPath === '/api/uploads' ||
+    normalizedPath.startsWith('/api/uploads/') ||
+    normalizedPath === '/uploads' ||
+    normalizedPath.startsWith('/uploads/') ||
     normalizedPath === '/admin/login' ||
     normalizedPath === '/api/admin/login' ||
     normalizedPath === '/api/admin/setup' ||
@@ -127,6 +132,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/api/:path*',
+    '/uploads/:path*',
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

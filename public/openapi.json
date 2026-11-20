@@ -8257,6 +8257,27 @@
         }
       }
     },
+    "/api/uploads/{path}": {
+      "get": {
+        "summary": "GET /api/uploads/[...path]",
+        "description": "Streams locally stored uploaded files dynamically at /uploads/* in standalone server mode.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/weather": {
       "get": {
         "summary": "GET /api/weather",

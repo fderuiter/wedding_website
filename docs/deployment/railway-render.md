@@ -40,7 +40,7 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | `POSTGRES_URL_NON_POOLING` | No | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); can also store a direct PostgreSQL URL for an explicit `DATABASE_URL` override when `DATABASE_URL` uses PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.up.railway.app,wedding.onrender.com,wedding.mydomain.com`). |
-| `MULTISITE_ENABLED` | No | Enable multi-tenant/multi-profile site routing (`false`). |
+| `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
 | `TRUST_PROXY` | No | Trust `X-Forwarded-For` / `X-Real-IP` from platform ingress (`true` or hop count; default `false`). |
 | `GUEST_PASSCODE` | Yes | Unique passcode required for guest access (default `wedding2026` is rejected in production). |
@@ -87,6 +87,7 @@ npx prisma migrate deploy
 Render allows mounting a persistent disk to preserve uploads without external object storage:
 1. In Render Web Service settings, navigate to **Disks**.
 2. Click **Add Disk**: Name `wedding-uploads`, Mount Path `/app/public/uploads`, Size `10 GB`.
+3. In standalone mode (`server.js`), files written to `/app/public/uploads` are streamed dynamically at `/uploads/*` (`src/app/api/uploads/[...path]/route.ts`, with `X-Content-Type-Options: nosniff`) without restarting the container.
 
 ### Option B: S3 / Cloudflare R2 Storage (Recommended for Railway & Render)
 Provide `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` environment variables. Uploads will be written directly to S3/R2 and served globally.
@@ -149,7 +150,22 @@ When `/api/health` returns HTTP 200 `{ "success": true, "data": { "status": "ok"
 
 ---
 
-## 9. Provider-Specific Limitations
+## 9. Webhooks & Scheduled Background Jobs
+
+### Stripe `payment_intent.succeeded` Webhook
+1. Configure `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` (`whsec_...`) in Railway **Variables** or Render **Environment**.
+2. In **Stripe Dashboard > Developers > Webhooks**, register `https://wedding.mydomain.com/api/registry/webhook/stripe` (ensuring the host is included in `ALLOWED_HOSTS`) and subscribe to **`payment_intent.succeeded`**.
+3. `src/middleware.ts` exempts `/api/registry/webhook/stripe` from session cookies while checking `ALLOWED_HOSTS`, and the webhook route verifies `stripe-signature` against `STRIPE_WEBHOOK_SECRET`.
+
+### Scheduled Broadcast Cron (`CRON_SECRET`)
+1. Set `CRON_SECRET` on the web service in Railway or Render.
+2. Trigger `/api/cron/broadcasts` with `Authorization: Bearer <CRON_SECRET>`:
+   *   **Railway Cron Service**: Add an lightweight Alpine/curl service with a **Cron Schedule** (`*/5 * * * *`) running `curl -fsS -X POST https://wedding.mydomain.com/api/cron/broadcasts -H "Authorization: Bearer $CRON_SECRET"`.
+   *   **Render Cron Job**: Create a **New Cron Job** (`*/5 * * * *`) sharing `CRON_SECRET` and running `curl -fsS -X POST https://wedding.mydomain.com/api/cron/broadcasts -H "Authorization: Bearer $CRON_SECRET"`.
+
+---
+
+## 10. Provider-Specific Limitations
 
 1.  **Railway Ephemeral Disks**: Containers on Railway use ephemeral local filesystems. Local uploads will be wiped on restart unless using external S3/R2 storage.
 2.  **Render Free Tier Spin-Down**: Render free web services automatically sleep after 15 minutes of inactivity, causing a 30–50 second cold start delay on the next request. Remedy: Upgrade to a paid instance ($7/mo) for 24/7 uptime.

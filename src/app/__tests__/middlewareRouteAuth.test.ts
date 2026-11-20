@@ -1,7 +1,7 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
-import { middleware } from '@/middleware';
+import { middleware, config as middlewareConfig } from '@/middleware';
 import { signAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 
@@ -19,6 +19,35 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  describe('Stripe webhook and standalone uploads exclusions', () => {
+    it('allows unauthenticated POST /api/registry/webhook/stripe without session cookies', async () => {
+      const req = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: {
+          host: 'localhost:3000',
+          'stripe-signature': 't=1700000000,v1=deadbeef',
+        },
+      });
+
+      const res = await middleware(req);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('location')).toBeNull();
+    });
+
+    it('allows unauthenticated GET /uploads/* and /api/uploads/* without session cookies and matches /uploads/:path* in matcher', async () => {
+      expect(middlewareConfig.matcher).toContain('/uploads/:path*');
+
+      for (const uploadPath of ['/uploads/photo.png', '/uploads/nested/hero.webp', '/uploads/favicon.ico', '/api/uploads/photo.png']) {
+        const req = new NextRequest(`http://localhost:3000${uploadPath}`, {
+          headers: { host: 'localhost:3000' },
+        });
+        const res = await middleware(req);
+        expect(res.status).toBe(200);
+        expect(res.headers.get('location')).toBeNull();
+      }
+    });
   });
 
   describe('First-run setup route classification (/api/admin/setup)', () => {
