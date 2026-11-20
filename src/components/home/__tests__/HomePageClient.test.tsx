@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe } from 'jest-axe';
 import HomePageClient from '../HomePageClient';
@@ -223,6 +223,116 @@ describe('HomePageClient', () => {
     expect(within(travelSection).getByText(/Explore Central Park and Brooklyn Bridge/i)).toBeInTheDocument();
 
     const results = await axe(travelSection);
+    expect(results).toHaveNoViolations();
+  });
+
+  test('updates travel guidance and module-gated links live via DRAFT_UPDATE postMessage inside an iframe', () => {
+    const originalParent = window.parent;
+    Object.defineProperty(window, 'parent', {
+      configurable: true,
+      value: {} as Window,
+    });
+
+    try {
+      const { container } = render(
+        <HomePageClient
+          config={{ ...mockConfig, travelAdvice: 'Initial airport shuttle note.' } as any}
+          attractions={[
+            {
+              id: 'hotel-live-1',
+              name: 'Preview Hotel Block',
+              description: 'Group block near venue.',
+              category: 'Stay',
+              website: 'https://example.com/hotel',
+              directions: '',
+              latitude: 40.7128,
+              longitude: -74.006,
+              isVisible: true,
+              promoCode: 'LIVE2026',
+              roomRate: '$199/night',
+              cutoffDate: null,
+              shuttleInfo: null,
+              bookingUrl: 'https://example.com/book',
+              image: null,
+              isSample: true,
+              createdAt: new Date('2026-01-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+            },
+          ]}
+        />
+      );
+
+      const travelSection = container.querySelector('#travel') as HTMLElement;
+      expect(within(travelSection).getByText('Initial airport shuttle note.')).toBeInTheDocument();
+      expect(screen.getByText('Preview Hotel Block')).toBeInTheDocument();
+      expect(within(travelSection).getByRole('link', { name: /explore local guide & things to do/i })).toBeInTheDocument();
+
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: {
+              type: 'DRAFT_UPDATE',
+              draftType: 'config',
+              draftData: {
+                travelAdvice: 'Updated draft directions from Newark.\n\nGarage validation included.',
+                modules: { attractions: false },
+              },
+            },
+          })
+        );
+      });
+
+      expect(within(travelSection).queryByText('Initial airport shuttle note.')).not.toBeInTheDocument();
+      expect(within(travelSection).getByText('Updated draft directions from Newark.')).toBeInTheDocument();
+      expect(within(travelSection).getByText('Garage validation included.')).toBeInTheDocument();
+      expect(within(travelSection).queryByRole('link', { name: /explore local guide & things to do/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Preview Hotel Block')).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, 'parent', {
+        configurable: true,
+        value: originalParent,
+      });
+    }
+  });
+
+  test('renders hotel block cards in accommodations section, sanitizes unsafe booking URLs, and passes axe', async () => {
+    const { container } = render(
+      <HomePageClient
+        config={{ ...mockConfig, travelAdvice: 'Take the metro north line.' } as any}
+        attractions={[
+          {
+            id: 'hotel-safe-1',
+            name: 'Midtown Suites',
+            description: 'Spacious suites with breakfast.',
+            category: 'hotel',
+            website: 'javascript:alert(1)',
+            directions: 'https://maps.google.com/?q=Midtown+Suites',
+            latitude: 40.75,
+            longitude: -73.98,
+            isVisible: true,
+            promoCode: 'MIDTOWN26',
+            roomRate: '$210/night',
+            cutoffDate: 'November 1, 2026',
+            shuttleInfo: 'Courtesy van at 4:00 PM',
+            bookingUrl: 'javascript:alert(2)',
+            image: null,
+            isSample: false,
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ]}
+      />
+    );
+
+    const accommodationsSection = container.querySelector('#accommodations') as HTMLElement;
+    expect(accommodationsSection).toBeInTheDocument();
+    expect(within(accommodationsSection).getByText('Midtown Suites')).toBeInTheDocument();
+    expect(within(accommodationsSection).getByText('$210/night')).toBeInTheDocument();
+    expect(within(accommodationsSection).getByText('MIDTOWN26')).toBeInTheDocument();
+    expect(within(accommodationsSection).queryByText('Book Hotel Block')).not.toBeInTheDocument();
+    expect(within(accommodationsSection).queryByText('Website')).not.toBeInTheDocument();
+
+    const results = await axe(accommodationsSection);
     expect(results).toHaveNoViolations();
   });
 });
