@@ -118,7 +118,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run check:static
   ```
-  Executes all nine static verification gates configured in `package.json`:
+  Executes all ten static verification gates configured in `package.json`:
   - `npm run check:env-docs`: Validates environment variable documentation alignment across `.env.example` and deployment guides.
   - `npm run check:runbooks`: Validates deployment runbooks against workflows, Docker Compose, and Prisma 7 contracts.
   - `npm run check:identifiers`: Scans for accidentally committed personal/template identifiers.
@@ -128,6 +128,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   - `npm run lint:migrations`: Verifies database migration compatibility.
   - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`) and architecture (`ARCHITECTURE.md`) documentation match current schemas.
   - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `scripts/check-quality.ts`, and `tsconfig.json`.
+  - `npm run check:spec-contracts`: Verifies `/api/...` route citations and module-qualified TypeScript symbol citations across Markdown specifications exist in `src/`.
 
 - **Storybook Static Showcase Build:**
   ```bash

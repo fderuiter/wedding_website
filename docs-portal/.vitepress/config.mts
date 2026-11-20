@@ -68,7 +68,8 @@ export default withMermaid(
             { text: 'Feature Modules', link: '/features/feature-modules' },
             { text: 'Asset Storage', link: '/features/asset-storage' },
             { text: '3D Technical Guide', link: '/features/3d-technical-guide' },
-            { text: 'Web Scraper Pipeline', link: '/features/scraper' }
+            { text: 'Web Scraper Pipeline', link: '/features/scraper' },
+            { text: 'Guest Broadcasts & Messaging', link: '/features/broadcasts' }
           ]
         },
         {

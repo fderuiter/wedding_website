@@ -91,9 +91,10 @@ npm run quality
 10. Verify Migration Compatibility (`npm run lint:migrations`)
 11. Verify Documentation Synchronization (`npm run check:doc-sync`)
 12. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
-13. Build Static Documentation Portal (`npm run docs:build`)
-14. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
-15. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
+13. Verify Specification Route & Symbol Contracts (`npm run check:spec-contracts` / [`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts))
+14. Build Static Documentation Portal (`npm run docs:build`)
+15. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
+16. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
 
 ### Storybook Static Showcase Verification
 
@@ -147,6 +148,7 @@ node scripts/a11y-report.mjs
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
   - `npm run check:doc-sync` — Verify [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`public/openapi.json`](public/openapi.json) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
   - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
+  - `npm run check:spec-contracts` — Verify `/api/...` route citations and module-qualified symbol citations across Markdown specifications exist in `src/` ([`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts)).
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.

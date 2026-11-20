@@ -59,6 +59,11 @@ export const steps: Step[] = [
     remediation: 'Setup, contributor, or testing guide contract drift detected.\nRun "npm run check:setup-guides" locally and reconcile ".env.example", "README.md", "docs/developer-setup.md", ".github/CONTRIBUTING.md", ".github/TESTING.md", and "AGENTS.md" with live repository configurations.',
   },
   {
+    name: 'Verify Specification Route & Symbol Contracts',
+    command: 'npm run check:spec-contracts',
+    remediation: 'Markdown specification route or symbol contract drift detected.\nRun "npm run check:spec-contracts" locally and reconcile cited "/api/..." endpoints and module-qualified TypeScript symbols across Markdown specifications with live files in "src/".',
+  },
+  {
     name: 'Build Static Documentation Portal',
     command: 'npm run docs:build',
     remediation: 'VitePress documentation portal compilation failed.\nRun "npm run docs:build" (or "npm run docs:dev") locally to inspect VitePress build errors, check for markdown/vue syntax issues, or broken documentation links.',

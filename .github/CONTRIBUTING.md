@@ -40,10 +40,11 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
    - **Individual Quality Checks:**
-     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:prisma`, `lint:migrations`, `check:doc-sync`, and `check:setup-guides`).
+     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:prisma`, `lint:migrations`, `check:doc-sync`, `check:setup-guides`, and `check:spec-contracts`).
      - `npm run check:env-docs` - Ensure environment variables match `.env.example` and deployment documentation.
      - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
      - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
+     - `npm run check:spec-contracts` - Verify `/api/...` route citations and module-qualified TypeScript symbol citations across Markdown specifications resolve to live files and symbols in `src/`.
      - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
      - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs.
      - `npm run check:links` - Validate relative documentation links across Markdown files.
