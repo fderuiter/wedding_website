@@ -7,7 +7,7 @@
 
 ## Overview
 
-The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) orchestrated by `docker-compose.yml` across three services: `db` (`postgres:15-alpine`), a dedicated one-shot `migration` job (`npx prisma migrate deploy`), and `app` (running with `RUN_MIGRATIONS="false"` and a built-in `/api/health` container healthcheck). Standalone `docker run` deployments without Compose can opt into entrypoint migrations by setting `RUN_MIGRATIONS=true` in `docker-entrypoint.sh`.
+The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) orchestrated by `docker-compose.yml` across three services: `db` (`postgres:15-alpine`), a dedicated one-shot `migration` job (`npx prisma migrate deploy`), and `app` (running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/health` container healthcheck). Standalone `docker run` deployments without Compose can opt into entrypoint migrations by setting `RUN_MIGRATIONS=true` in `docker-entrypoint.sh`.
 
 ---
 
@@ -42,7 +42,7 @@ The application validates the following runtime environment variables via `src/e
 | `POSTGRES_URL_NON_POOLING` | No | — | Shadow database connection string (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[saltBase64]:[keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
 | `ALLOWED_HOSTS` | Yes | — | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost`). |
-| `MULTISITE_ENABLED` | No | `false` | Enable multi-tenant/multi-profile configuration and subdomain routing. |
+| `MULTISITE_ENABLED` | No | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | No | `false` | Set to `true` (or a positive hop count) when behind Caddy/Nginx so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
 | `GUEST_PASSCODE` | Yes | — | Unique passcode required for guest website access (default `wedding2026` is rejected in production). |
@@ -58,6 +58,8 @@ The application validates the following runtime environment variables via `src/e
 | `STRIPE_SECRET_KEY` | No | — | Server-side Stripe secret key (`sk_...` / `rk_...`). Must be paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` when enabling card checkout. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | — | Client-side Stripe publishable key (`pk_...`). Must be paired with `STRIPE_SECRET_KEY` when enabling card checkout. |
 | `STRIPE_WEBHOOK_SECRET` | No | — | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
+| `PORT` | No | `3000` | Host/container HTTP port (`ENV PORT=3000` in `Dockerfile`; `127.0.0.1:${PORT:-3000}:3000` in `docker-compose.yml`). |
+| `HOSTNAME` | No | `0.0.0.0` | Network interface bound by standalone `server.js` (`ENV HOSTNAME="0.0.0.0"` in `Dockerfile` and `HOSTNAME: "0.0.0.0"` in `docker-compose.yml`). |
 
 ### Limits on `.env` Interpolation in `docker-compose.yml`
 `docker-compose.yml` does **not** set `env_file: .env` on the `app` or `migration` services; Docker Compose only reads `.env` to substitute `${VAR:-default}` expressions declared inside `docker-compose.yml`:
@@ -93,12 +95,16 @@ When running the image directly via `docker run` without Docker Compose's `migra
 
 ## 4. Asset Storage
 
-*   **Local Disk Storage (Default)**: Uploaded files are written to `/app/public/uploads`. The production container pre-creates `/app/public/uploads` owned by `nextjs:nodejs` (UID/GID 1001). Mount a host directory or named volume to preserve files across container redeployments, ensuring write permissions are maintained for UID 1001:
+*   **Local Disk Storage (Default — `uploads_data` Named Volume)**: Uploaded files are written to `/app/public/uploads` and streamed dynamically at `/uploads/*` in standalone mode (`src/app/api/uploads/[...path]/route.ts`, with `X-Content-Type-Options: nosniff`) without needing a container restart. Both `Dockerfile` and `docker-compose.yml` pre-create `/app/public/uploads` owned by `nextjs:nodejs` (UID/GID 1001) and mount the persistent `uploads_data` named volume by default so uploaded photos and branding assets survive `docker compose up -d --build`:
     ```yaml
+    services:
+      app:
+        volumes:
+          - uploads_data:/app/public/uploads
     volumes:
-      - ./uploads:/app/public/uploads
+      uploads_data:
     ```
-    If mounting a host directory, ensure appropriate host ownership/permissions (`chown -R 1001:1001 ./uploads`).
+    If overriding `uploads_data` with a host bind mount (e.g., `./uploads:/app/public/uploads` or `-v /var/lib/wedding/uploads:/app/public/uploads` in standalone `docker run`), ensure host ownership/permissions allow writes by UID 1001 (`chown -R 1001:1001 ./uploads`).
 *   **S3 / Cloudflare R2 Object Storage (Recommended for Multi-Instance)**: Provide all four S3 environment variables (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`). The application will stream uploads directly to S3/R2 and serve them via `S3_PUBLIC_URL`.
 
 ---
@@ -166,12 +172,16 @@ GUEST_SESSION_SECRET=replace-with-random-secret-at-least-32-characters
 E2E_TEST=false
 EOF
 
-# Optional: create docker-compose.override.yml if forwarding TRUST_PROXY, S3_*, STRIPE_*, or an external DATABASE_URL
+# Optional: create docker-compose.override.yml if forwarding TRUST_PROXY, CRON_SECRET, S3_*, STRIPE_*, or an external DATABASE_URL
 cat <<'EOF' > docker-compose.override.yml
 services:
   app:
     environment:
       TRUST_PROXY: "true"
+      CRON_SECRET: "replace-with-random-cron-secret"
+      STRIPE_SECRET_KEY: "sk_live_..."
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_live_..."
+      STRIPE_WEBHOOK_SECRET: "whsec_..."
 EOF
 
 # Build images, run the migration service, and start app in detached mode
@@ -244,8 +254,24 @@ Verify live container health status with `docker compose ps`. The `/api/health` 
 
 ---
 
-## 9. Provider-Specific Limitations
+## 9. Webhooks & Scheduled Background Jobs
+
+### Stripe `payment_intent.succeeded` Webhook
+1. Forward `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` into the `app` service via `docker-compose.override.yml`.
+2. In the **Stripe Dashboard > Developers > Webhooks**, create an endpoint pointing to `https://wedding.mydomain.com/api/registry/webhook/stripe` (ensure `wedding.mydomain.com` is in `ALLOWED_HOSTS`) and subscribe to **`payment_intent.succeeded`**.
+3. Ensure Caddy or Nginx forwards the raw request body and `Stripe-Signature` header untouched (default behavior in both reverse proxy configs above). `src/middleware.ts` exempts `/api/registry/webhook/stripe` from session cookies while verifying `ALLOWED_HOSTS`, and the webhook handler validates `stripe-signature` using `STRIPE_WEBHOOK_SECRET`.
+
+### Scheduled Broadcast Cron (`CRON_SECRET`)
+1. Forward `CRON_SECRET` into `app` via `docker-compose.override.yml`.
+2. Add a host `crontab` entry (`crontab -e`) or systemd timer that triggers `/api/cron/broadcasts` every 5 minutes over loopback with an allowed `Host` header and `Authorization: Bearer <CRON_SECRET>`:
+   ```cron
+   */5 * * * * curl -fsS -X POST http://127.0.0.1:3000/api/cron/broadcasts -H "Host: localhost" -H "Authorization: Bearer replace-with-random-cron-secret" >/dev/null
+   ```
+
+---
+
+## 10. Provider-Specific Limitations
 
 *   **Host Dependency**: Requires managing server OS patches, Docker engine updates, and firewall rules (ports 80, 443, 22).
-*   **Disk Persistence**: If using local filesystem storage, host backups must include host upload volumes.
+*   **Disk Persistence**: If using local filesystem storage, host backups must include the `uploads_data` Docker volume (or host upload directory) alongside `db_data`.
 *   **Single-Node Availability**: Without an external load balancer or swarm/k8s cluster, host maintenance causes brief downtime.

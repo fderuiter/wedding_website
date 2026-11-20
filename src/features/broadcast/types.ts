@@ -6,7 +6,9 @@ export interface BroadcastTargetFilters {
   attendanceStatus?: 'attending' | 'declined' | 'pending' | 'all';
   status?: 'redeemed' | 'unused' | 'all';
   addressStatus?: 'complete' | 'missing' | 'all';
+  addressFilter?: 'complete' | 'missing' | 'all';
   dietaryCategory?: string;
+  dietaryFilter?: string;
   partyGroup?: string;
   subEventId?: string;
   subEventRsvpStatus?: string;
@@ -17,6 +19,8 @@ export interface BroadcastTargetFilters {
 export interface BroadcastTemplateContext {
   guestName: string;
   invitationCode: string;
+  rsvpUrl?: string;
+  baseUrl?: string;
   householdName?: string;
   weddingDate?: string;
   venueName?: string;
@@ -30,6 +34,7 @@ export interface SendBroadcastInput {
   targetFilters?: BroadcastTargetFilters;
   customRecipientIds?: string[];
   scheduledFor?: string;
+  requestOrigin?: string;
 }
 
 export interface PreviewBroadcastInput {
@@ -38,6 +43,7 @@ export interface PreviewBroadcastInput {
   body: string;
   sampleGuestId?: string;
   targetFilters?: BroadcastTargetFilters;
+  requestOrigin?: string;
 }
 
 export interface SendTestBroadcastInput {
@@ -45,6 +51,7 @@ export interface SendTestBroadcastInput {
   subject?: string;
   body: string;
   destination?: string;
+  requestOrigin?: string;
 }
 
 export interface TestConnectionInput {

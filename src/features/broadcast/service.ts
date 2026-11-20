@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
-import { renderBroadcastTemplate, sanitizeEmailSubject } from './template';
+import { buildGuestRsvpUrl, renderBroadcastTemplate, sanitizeEmailSubject } from './template';
 import {
   filterTargetGuestsInMemory,
   getGuestPhone,
@@ -9,6 +9,30 @@ import {
 } from './audience';
 
 const RECIPIENT_CHUNK_SIZE = 250;
+const DEFAULT_FALLBACK_ORIGIN = 'http://localhost:3000';
+
+function resolveBroadcastBaseUrl(
+  configBaseUrl: string | null | undefined,
+  requestOrigin?: string
+): { baseUrl: string; baseUrlWarning?: string } {
+  const configured = (configBaseUrl || '').trim().replace(/\/+$/, '');
+  if (configured) {
+    return { baseUrl: configured };
+  }
+
+  const fallbackOrigin = (
+    requestOrigin?.trim() ||
+    DEFAULT_FALLBACK_ORIGIN
+  ).replace(/\/+$/, '');
+
+  const baseUrlWarning = `Site Base URL is empty in Settings; falling back to ${fallbackOrigin} for personalized RSVP links.`;
+  console.warn(`[BroadcastService] ${baseUrlWarning}`);
+
+  return {
+    baseUrl: fallbackOrigin,
+    baseUrlWarning,
+  };
+}
 import { MultiChannelMessagingProvider } from './providers';
 import {
   SendBroadcastInput,
@@ -34,6 +58,7 @@ export class BroadcastService {
     }
 
     const where: any = {};
+    let isPublicSubEvent = false;
 
     if (filters.selectedIds && filters.selectedIds.length > 0) {
       where.id = { in: filters.selectedIds };
@@ -60,19 +85,63 @@ export class BroadcastService {
       }
 
       if (filters.subEventId) {
-        if (filters.subEventRsvpStatus && filters.subEventRsvpStatus !== 'all') {
-          where.subEventRsvps = {
-            some: {
-              subEventId: filters.subEventId,
-              status: filters.subEventRsvpStatus,
+        const subEvent =
+          typeof (prisma as any).subEvent?.findUnique === 'function'
+            ? await (prisma as any).subEvent.findUnique({
+              where: { id: filters.subEventId },
+              select: { id: true, isPrivate: true },
+            })
+            : undefined;
+
+        isPublicSubEvent = Boolean(subEvent && subEvent.isPrivate === false);
+        const rsvpStatus = filters.subEventRsvpStatus || 'all';
+        const andClauses: any[] = [];
+
+        if (!isPublicSubEvent) {
+          andClauses.push({
+            subEventAccesses: {
+              some: {
+                subEventId: filters.subEventId,
+              },
             },
-          };
-        } else {
-          where.subEventAccesses = {
-            some: {
-              subEventId: filters.subEventId,
+          });
+        }
+
+        if (rsvpStatus === 'pending') {
+          andClauses.push({
+            OR: [
+              {
+                subEventRsvps: {
+                  none: {
+                    subEventId: filters.subEventId,
+                  },
+                },
+              },
+              {
+                subEventRsvps: {
+                  some: {
+                    subEventId: filters.subEventId,
+                    status: 'pending',
+                  },
+                },
+              },
+            ],
+          });
+        } else if (rsvpStatus !== 'all') {
+          andClauses.push({
+            subEventRsvps: {
+              some: {
+                subEventId: filters.subEventId,
+                status: rsvpStatus,
+              },
             },
-          };
+          });
+        }
+
+        if (andClauses.length === 1 && !('OR' in andClauses[0])) {
+          Object.assign(where, andClauses[0]);
+        } else if (andClauses.length > 0) {
+          where.AND = andClauses;
         }
       }
     }
@@ -83,7 +152,10 @@ export class BroadcastService {
       return records;
     }
 
-    return filterTargetGuestsInMemory(records, filters, { applyDbPredicates: false });
+    return filterTargetGuestsInMemory(records, filters, {
+      applyDbPredicates: false,
+      isPublicSubEvent,
+    });
   }
 
   /**
@@ -91,6 +163,10 @@ export class BroadcastService {
    */
   static async renderPreview(input: PreviewBroadcastInput) {
     const config = await getAppConfig('global');
+    const { baseUrl, baseUrlWarning } = resolveBroadcastBaseUrl(
+      (config as any)?.baseUrl,
+      input.requestOrigin
+    );
     let sampleGuest: any = null;
     let matchedGuests: any[] | null = null;
 
@@ -100,7 +176,7 @@ export class BroadcastService {
       });
     }
 
-    if (input.targetFilters) {
+    if (!input.sampleGuestId || input.targetFilters) {
       const matched = await this.resolveTargetGuests(input.targetFilters);
       if (Array.isArray(matched)) {
         matchedGuests = matched;
@@ -119,9 +195,12 @@ export class BroadcastService {
       };
     }
 
-    const context = {
+    const guestCode = sampleGuest.code || '';
+    const context: BroadcastTemplateContext = {
       guestName: sampleGuest.guestName || 'Valued Guest',
-      invitationCode: sampleGuest.code || '',
+      invitationCode: guestCode,
+      rsvpUrl: buildGuestRsvpUrl(baseUrl, guestCode),
+      baseUrl,
       householdName: sampleGuest.householdName || '',
       weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
       venueName: config.venueName || '',
@@ -140,6 +219,7 @@ export class BroadcastService {
     const audienceCounts =
       matchedGuests !== null
         ? {
+          recipientCount: matchedGuests.length,
           matchedCount: matchedGuests.length,
           missingContactCount: matchedGuests.filter(
             (g) => !hasBroadcastChannelContact(g, input.channel)
@@ -154,6 +234,7 @@ export class BroadcastService {
       sampleGuestName: sampleGuest.guestName,
       destination,
       ...audienceCounts,
+      ...(baseUrlWarning ? { baseUrlWarning } : {}),
     };
   }
 
@@ -163,6 +244,10 @@ export class BroadcastService {
    */
   static async sendTestBroadcast(input: SendTestBroadcastInput) {
     const config = await getAppConfig('global');
+    const { baseUrl, baseUrlWarning } = resolveBroadcastBaseUrl(
+      (config as any)?.baseUrl,
+      input.requestOrigin
+    );
 
     // Resolve destination: custom override or administrator contact details from application configuration
     const destination = (input.destination?.trim()) ||
@@ -184,10 +269,13 @@ export class BroadcastService {
       }
     }
 
+    const sampleCode = 'SAMPLE2026';
     const context: BroadcastTemplateContext = {
       guestName: 'Jane Doe',
-      invitationCode: 'SAMPLE2026',
-      code: 'SAMPLE2026',
+      invitationCode: sampleCode,
+      code: sampleCode,
+      rsvpUrl: buildGuestRsvpUrl(baseUrl, sampleCode),
+      baseUrl,
       householdName: 'Doe Family',
       weddingDate: config.weddingDate
         ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -233,6 +321,7 @@ export class BroadcastService {
       destination,
       subject: personalizedSubject,
       body: renderedBody,
+      ...(baseUrlWarning ? { baseUrlWarning } : {}),
     };
   }
 
@@ -251,6 +340,10 @@ export class BroadcastService {
     const isFutureScheduled = scheduledDate && !isNaN(scheduledDate.getTime()) && scheduledDate > new Date();
 
     if (isFutureScheduled) {
+      const { baseUrlWarning } = resolveBroadcastBaseUrl(
+        (config as any)?.baseUrl,
+        input.requestOrigin
+      );
       const broadcastMessage = await prisma.broadcastMessage.create({
         data: {
           channel: input.channel,
@@ -265,7 +358,7 @@ export class BroadcastService {
           recipients: true,
         },
       });
-      return broadcastMessage;
+      return baseUrlWarning ? { ...broadcastMessage, baseUrlWarning } : broadcastMessage;
     }
 
     return this.executeDispatch(
@@ -275,7 +368,9 @@ export class BroadcastService {
       input.targetFilters,
       config,
       guests,
-      scheduledDate || undefined
+      scheduledDate || undefined,
+      undefined,
+      input.requestOrigin
     );
   }
 
@@ -290,8 +385,10 @@ export class BroadcastService {
     config: any,
     guests: any[],
     scheduledFor?: Date,
-    existingBroadcastId?: string
+    existingBroadcastId?: string,
+    requestOrigin?: string
   ) {
+    const { baseUrl, baseUrlWarning } = resolveBroadcastBaseUrl(config?.baseUrl, requestOrigin);
     let broadcastMessage;
     if (existingBroadcastId) {
       broadcastMessage = await prisma.broadcastMessage.findUnique({ where: { id: existingBroadcastId } });
@@ -403,9 +500,12 @@ export class BroadcastService {
 
       await Promise.all(
         batch.map(async ({ recipient, guest }) => {
-          const context = {
+          const guestCode = guest.code || '';
+          const context: BroadcastTemplateContext = {
             guestName: guest.guestName,
-            invitationCode: guest.code,
+            invitationCode: guestCode,
+            rsvpUrl: buildGuestRsvpUrl(baseUrl, guestCode),
+            baseUrl,
             householdName: guest.householdName || '',
             weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
             venueName: config.venueName || '',
@@ -480,14 +580,16 @@ export class BroadcastService {
       },
     });
 
-    return updatedMessage;
+    return baseUrlWarning && updatedMessage
+      ? { ...updatedMessage, baseUrlWarning }
+      : updatedMessage;
   }
 
   /**
    * Processes all due scheduled broadcasts whose scheduledFor timestamp is in the past or present.
    * Uses atomic status updates to prevent race conditions across parallel workers.
    */
-  static async processScheduledBroadcasts() {
+  static async processScheduledBroadcasts(requestOrigin?: string) {
     const now = new Date();
     const config = await getAppConfig('global');
 
@@ -530,7 +632,8 @@ export class BroadcastService {
         config,
         guests,
         broadcast.scheduledFor || undefined,
-        broadcast.id
+        broadcast.id,
+        requestOrigin
       );
 
       processed.push(result);
@@ -581,7 +684,11 @@ export class BroadcastService {
   /**
    * Retries dispatches for failed recipients in a broadcast.
    */
-  static async retryFailedRecipients(broadcastId: string, recipientIds?: string[]) {
+  static async retryFailedRecipients(
+    broadcastId: string,
+    recipientIds?: string[],
+    requestOrigin?: string
+  ) {
     const config = await getAppConfig('global');
     const broadcast = await prisma.broadcastMessage.findUnique({
       where: { id: broadcastId },
@@ -603,6 +710,10 @@ export class BroadcastService {
       return broadcast;
     }
 
+    const { baseUrl, baseUrlWarning } = resolveBroadcastBaseUrl(
+      (config as any)?.baseUrl,
+      requestOrigin
+    );
     const provider = new MultiChannelMessagingProvider(config);
     const batchSize = config.broadcastBatchSize ?? 50;
     const batchDelayMs = config.broadcastBatchDelayMs ?? 500;
@@ -618,9 +729,12 @@ export class BroadcastService {
             householdName: '',
           };
 
-          const context = {
+          const guestCode = guest.code || '';
+          const context: BroadcastTemplateContext = {
             guestName: recipient.guestName,
-            invitationCode: guest.code || '',
+            invitationCode: guestCode,
+            rsvpUrl: buildGuestRsvpUrl(baseUrl, guestCode),
+            baseUrl,
             householdName: guest.householdName || '',
             weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
             venueName: config.venueName || '',
@@ -710,7 +824,7 @@ export class BroadcastService {
         ? 'PARTIALLY_SENT'
         : 'FAILED';
 
-    return prisma.broadcastMessage.update({
+    const updatedBroadcast = await prisma.broadcastMessage.update({
       where: { id: broadcastId },
       data: {
         status: finalStatus,
@@ -721,5 +835,9 @@ export class BroadcastService {
         recipients: true,
       },
     });
+
+    return baseUrlWarning && updatedBroadcast
+      ? { ...updatedBroadcast, baseUrlWarning }
+      : updatedBroadcast;
   }
 }

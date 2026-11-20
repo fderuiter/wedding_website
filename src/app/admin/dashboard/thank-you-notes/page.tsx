@@ -339,27 +339,9 @@ export default function ThankYouNotesPage() {
     if (!templateObj) return;
 
     if (editNote.trim().length > 0) {
-      let isConfirmed = false;
-      const isWindowConfirmMocked =
-        typeof window !== 'undefined' &&
-        typeof window.confirm === 'function' &&
-        Boolean((window.confirm as any)?._isMockFunction || (window.confirm as any)?.mock);
-
-      if (isWindowConfirmMocked) {
-        isConfirmed = window.confirm(
-          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
-        );
-      } else if (confirm) {
-        isConfirmed = await confirm(
-          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
-        );
-      } else if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-        isConfirmed = window.confirm(
-          'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
-        );
-      } else {
-        isConfirmed = true;
-      }
+      const isConfirmed = await confirm(
+        'Replacing the note with a template will overwrite your existing text. Are you sure you want to proceed?'
+      );
 
       if (!isConfirmed) {
         setSelectedTemplate('');

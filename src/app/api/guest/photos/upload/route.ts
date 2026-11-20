@@ -26,16 +26,28 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     if (f) rawFiles = [f];
   }
 
-  const parsed = GuestPhotoUploadSchema.safeParse({ files: rawFiles });
+  const rawUploaderName = typeof formData.get === 'function' ? formData.get('uploaderName') : undefined;
+  const rawCaption = typeof formData.get === 'function' ? formData.get('caption') : undefined;
+
+  const parsed = GuestPhotoUploadSchema.safeParse({
+    files: rawFiles,
+    uploaderName: rawUploaderName,
+    caption: rawCaption,
+  });
   if (!parsed.success) {
     const errorMessage = parsed.error.issues[0]?.message || 'Validation failed';
     throw new ApiError(400, errorMessage);
   }
 
   const files = parsed.data.files as File[];
+  const uploaderName = parsed.data.uploaderName;
+  const caption = parsed.data.caption;
+  const publicTitle = caption || (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
+  const actorName = uploaderName || 'Guest';
   const uploadedPhotos = [];
 
   for (const file of files) {
+    const originalFilename = file.name || undefined;
     const sanitizedFile = await sanitizeImage(file);
 
     const storageResult = await getStorageProvider().upload(sanitizedFile, { folder: 'uploads/photos' });
@@ -43,9 +55,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     // Record in Media table
     const media = await mediaRepository.createMedia({
       url: storageResult.url,
-      altText: file.name || 'Guest Photo',
+      altText: publicTitle,
       isDecorative: false,
-    }, 'Guest');
+    }, actorName);
 
     // Record as ContentNode of type 'Photo' for public gallery feeds
     const photoNode = await contentRepository.createNode({
@@ -55,15 +67,23 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         url: storageResult.url,
         isVisible: false,
         status: 'PENDING',
-        title: file.name || 'Guest Photo',
+        title: publicTitle,
+        altText: publicTitle,
         mediaId: media.id,
+        ...(uploaderName ? { uploaderName } : {}),
+        ...(caption ? { caption } : {}),
+        ...(originalFilename ? { originalFilename } : {}),
       },
-    }, 'Guest');
+    }, actorName);
 
     uploadedPhotos.push({
       id: media.id,
       url: storageResult.url,
       altText: media.altText,
+      title: publicTitle,
+      ...(uploaderName ? { uploaderName } : {}),
+      ...(caption ? { caption } : {}),
+      ...(originalFilename ? { originalFilename } : {}),
       createdAt: media.createdAt,
       nodeId: photoNode.id,
       status: 'PENDING',

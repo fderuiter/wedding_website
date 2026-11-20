@@ -1,7 +1,9 @@
 /**
  * @jest-environment node
  */
+import { spawnSync } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const WORKFLOWS_DIR = path.join(process.cwd(), '.github', 'workflows');
@@ -190,6 +192,69 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
           hasDirectInterpolation: false,
         });
       }
+    }
+  });
+
+  it('publishes GITHUB_REF_NAME alongside commit SHA when triggered by a v* tag push in publish-artifact.yml', () => {
+    const runBlocks = extractRunBlocks(publishWorkflow);
+    const computeTagScript = runBlocks.find((block) => block.includes('primary_uri='));
+    expect(computeTagScript).toBeDefined();
+
+    const tempOutDir = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-tag-test-'));
+    const outputFile = path.join(tempOutDir, 'github_output.txt');
+    const sampleSha = '0123456789abcdef0123456789abcdef01234567';
+
+    try {
+      fs.writeFileSync(outputFile, '');
+      const tagRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          REGISTRY: 'ghcr.io',
+          GITHUB_REPOSITORY: 'FdeRuiter/Wedding_Website',
+          GITHUB_SHA: sampleSha,
+          GITHUB_REF: 'refs/tags/v0.1.0',
+          GITHUB_REF_NAME: 'v0.1.0',
+          RAW_INPUT_TAG: '',
+          INPUT_COMMIT_SHA: '',
+          DOCKERHUB_USERNAME: 'fderuiter',
+          DOCKERHUB_TOKEN: 'dckr_pat_test',
+        },
+      });
+      expect(tagRes.status).toBe(0);
+
+      const outputs = fs.readFileSync(outputFile, 'utf8');
+      expect(outputs).toContain('tag_name=v0.1.0');
+      expect(outputs).toContain('primary_uri=ghcr.io/fderuiter/wedding_website:v0.1.0');
+      expect(outputs).toContain(
+        `tags=ghcr.io/fderuiter/wedding_website:v0.1.0,ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:v0.1.0,fderuiter/wedding-website:${sampleSha},fderuiter/wedding-website:latest`
+      );
+
+      // Verify workflow_call with explicit commit SHA tag publishes only the SHA tag
+      fs.writeFileSync(outputFile, '');
+      const shaRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          REGISTRY: 'ghcr.io',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_SHA: sampleSha,
+          GITHUB_REF: 'refs/heads/main',
+          GITHUB_REF_NAME: 'main',
+          RAW_INPUT_TAG: sampleSha,
+          INPUT_COMMIT_SHA: sampleSha,
+          DOCKERHUB_USERNAME: '',
+          DOCKERHUB_TOKEN: '',
+        },
+      });
+      expect(shaRes.status).toBe(0);
+      const shaOutputs = fs.readFileSync(outputFile, 'utf8');
+      expect(shaOutputs).toContain(`tag_name=${sampleSha}`);
+      expect(shaOutputs).toContain(`tags=ghcr.io/fderuiter/wedding_website:${sampleSha}`);
+    } finally {
+      fs.rmSync(tempOutDir, { recursive: true, force: true });
     }
   });
 });

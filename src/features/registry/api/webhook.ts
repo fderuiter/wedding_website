@@ -1,7 +1,9 @@
 import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { registryService } from '../service';
+import { dispatchContributionNotifications } from '../notifications';
 import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
+import { logger } from '@/lib/logger';
 import { StripeWebhookEventSchema } from '@/utils/validation';
 
 /**
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
         : new Date();
 
       try {
-        await registryService.contributeToItem(itemId, {
+        const updatedItem = await registryService.contributeToItem(itemId, {
           name,
           email,
           amount: baseAmount,
@@ -110,9 +112,28 @@ export async function POST(request: NextRequest) {
           stripeChargeId,
           transactionTimestamp,
         });
+
+        await dispatchContributionNotifications({
+          itemId,
+          updatedItem,
+          contribution: {
+            name,
+            email,
+            amount: baseAmount,
+            message,
+            coverFee,
+            stripePaymentIntentId,
+            transactionTimestamp,
+          },
+          requestUrl: request.url,
+        });
       } catch (err: any) {
-        // Log error but return 200 to Stripe if already processed or handle gracefully
-        console.error('Error processing webhook payment_intent.succeeded:', err);
+        // Log error without PII and return 200 to Stripe if already processed or handled gracefully
+        logger.error('Error processing webhook payment_intent.succeeded', {
+          itemId,
+          stripePaymentIntentId,
+          reason: err instanceof Error ? err.message : 'Unknown error',
+        });
       }
     }
   }

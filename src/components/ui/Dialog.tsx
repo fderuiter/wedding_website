@@ -1,8 +1,48 @@
 'use client';
 
-import React, { useId } from 'react';
+import React, { createContext, useCallback, useContext, useId, useRef } from 'react';
 import { Overlay } from './Overlay';
+import { EnsureToastProvider, ToastContext, type ToastContextValue } from './ToastProvider';
 import { cn } from '@/utils/cn';
+
+const DEFAULT_CONFIRM_DISCARD_MESSAGE =
+  'You have unsaved changes. Are you sure you want to discard them?';
+
+const FallbackToastContext = createContext<ToastContextValue | null>(null);
+
+export function useDirtyConfirmClose(
+  isDirty: boolean,
+  onClose: () => void,
+  confirmDiscardMessage = DEFAULT_CONFIRM_DISCARD_MESSAGE
+) {
+  const optionalToast = useContext(ToastContext ?? FallbackToastContext);
+  const isConfirmingRef = useRef(false);
+
+  return useCallback(() => {
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    if (isConfirmingRef.current) {
+      return;
+    }
+    if (optionalToast?.confirm) {
+      isConfirmingRef.current = true;
+      void optionalToast
+        .confirm(confirmDiscardMessage)
+        .then((confirmed) => {
+          if (confirmed) {
+            onClose();
+          }
+        })
+        .finally(() => {
+          isConfirmingRef.current = false;
+        });
+      return;
+    }
+    onClose();
+  }, [isDirty, onClose, confirmDiscardMessage, optionalToast]);
+}
 
 export interface DialogProps {
   isOpen: boolean;
@@ -16,9 +56,11 @@ export interface DialogProps {
   className?: string;
   contentClassName?: string;
   style?: React.CSSProperties;
+  isDirty?: boolean;
+  confirmDiscardMessage?: string;
 }
 
-export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
+const DialogInner = React.forwardRef<HTMLDivElement, DialogProps>(
   (
     {
       isOpen,
@@ -32,10 +74,13 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       className,
       contentClassName,
       style,
+      isDirty = false,
+      confirmDiscardMessage = DEFAULT_CONFIRM_DISCARD_MESSAGE,
     },
     ref
   ) => {
     const defaultId = useId();
+    const handleRequestClose = useDirtyConfirmClose(isDirty, onClose, confirmDiscardMessage);
 
     const finalLabelId = ariaLabelledby || (title ? `dialog-title-${defaultId}` : undefined);
     const finalDescId = ariaDescribedby || (description ? `dialog-desc-${defaultId}` : undefined);
@@ -44,7 +89,7 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
       <Overlay
         ref={ref}
         isOpen={isOpen}
-        onClose={onClose}
+        onClose={handleRequestClose}
         className={cn(
           'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
           className
@@ -93,5 +138,19 @@ export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>(
     );
   }
 );
+
+DialogInner.displayName = 'DialogInner';
+
+export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>((props, ref) => {
+  if (props.role === 'alertdialog' || typeof EnsureToastProvider !== 'function') {
+    return <DialogInner {...props} ref={ref} />;
+  }
+
+  return (
+    <EnsureToastProvider>
+      <DialogInner {...props} ref={ref} />
+    </EnsureToastProvider>
+  );
+});
 
 Dialog.displayName = 'Dialog';

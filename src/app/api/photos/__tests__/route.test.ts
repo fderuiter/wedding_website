@@ -82,6 +82,45 @@ describe('GET /api/photos', () => {
     });
   });
 
+  it('includes guest caption, uploaderName, and isGuestUpload flag on approved guest uploads', async () => {
+    mockGetPublicPhotos.mockResolvedValue([
+      {
+        id: 'guest-node-1',
+        type: 'Photo',
+        tags: ['gallery', 'guest-upload'],
+        createdAt: new Date('2026-06-20T20:00:00.000Z'),
+        updatedAt: new Date('2026-06-20T20:05:00.000Z'),
+        data: {
+          url: '/uploads/photos/sparklers.jpg',
+          title: 'Sparkler exit!',
+          altText: 'Sparkler exit!',
+          caption: 'Sparkler exit!',
+          uploaderName: 'Aunt Clara',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost/api/photos');
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.photos).toEqual([
+      {
+        id: 'guest-node-1',
+        url: '/uploads/photos/sparklers.jpg',
+        title: 'Sparkler exit!',
+        altText: 'Sparkler exit!',
+        caption: 'Sparkler exit!',
+        uploaderName: 'Aunt Clara',
+        isGuestUpload: true,
+        createdAt: '2026-06-20T20:00:00.000Z',
+      },
+    ]);
+  });
+
   it('queries only photos created after since cursor when since query parameter is present', async () => {
     mockGetPublicPhotos.mockResolvedValue([]);
 

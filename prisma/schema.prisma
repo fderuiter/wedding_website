@@ -183,6 +183,8 @@ model Contributor {
   stripePaymentIntentId String? @unique
   stripeChargeId        String?
   transactionTimestamp  DateTime?
+  confirmationEmailSentAt DateTime?
+  alertEmailSentAt        DateTime?
   registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
   registryItemId String?
   createdAt      DateTime      @default(now())

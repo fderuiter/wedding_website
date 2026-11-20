@@ -465,6 +465,32 @@ class RegistryRepository implements IRegistryRepository {
       throw err;
     }
   }
+
+  /**
+   * Atomically claims an outbound email timestamp on a Contributor record so
+   * concurrent browser callbacks and Stripe webhooks never send duplicate emails.
+   */
+  async claimContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<boolean> {
+    if (!contributorId || typeof this.client?.contributor?.updateMany !== 'function') {
+      return false;
+    }
+
+    const field = kind === 'confirmation' ? 'confirmationEmailSentAt' : 'alertEmailSentAt';
+    const result = await this.client.contributor.updateMany({
+      where: {
+        id: contributorId,
+        [field]: null,
+      },
+      data: {
+        [field]: new Date(),
+      },
+    });
+
+    return Boolean(result && result.count === 1);
+  }
 }
 
 export function createRegistryRepository(client: any = prisma): IRegistryRepository {

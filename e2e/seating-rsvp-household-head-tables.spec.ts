@@ -141,6 +141,7 @@ test('seating chart supports RSVP filters, household seating, 1-sided head/sweet
 
     // 2. Navigate to Seating Chart Dashboard
     await page.goto('/admin/dashboard/seating-chart', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    expect(new URL(page.url()).pathname).toBe('/admin/dashboard/seating-chart');
     await expect(
       page.getByRole('heading', { name: 'Interactive Seating Chart & Reception Floorplan' })
     ).toBeVisible({ timeout: 25000 });

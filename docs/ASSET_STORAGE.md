@@ -56,16 +56,16 @@ export interface StorageProvider {
 
 ## Storage Adapters
 
-### 1. Local Development (`LocalStorageProvider`)
-- Used when S3 credentials are not defined in environment variables (see [src/utils/storage.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/storage.ts#L369-L384)).
+### 1. Local Development & Persistent Volume Mode (`LocalStorageProvider`)
+- Used when S3 credentials are not defined in environment variables (see [src/utils/storage.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/storage.ts)).
 - Stores assets in the local directory under `public/uploads/` (or configured directory).
-- Serves static files directly via relative public paths (e.g. `/uploads/abcd1234ef56789a.png`).
+- Serves files dynamically at `/uploads/*` in Next.js standalone/server mode via `next.config.ts` server `rewrites()` to `src/app/api/uploads/[...path]/route.ts`, which verifies path containment (`resolveContainedExistingPath`), rejects symlinks, and attaches `X-Content-Type-Options: nosniff` on every response so newly uploaded files are immediately readable without restarting `node server.js`.
 
 > ⚠️ **WARNING: Ephemeral Container Local Storage Hazard**
 >
-> Files uploaded when using `LocalStorageProvider` are saved directly to `public/uploads/` inside the local application container filesystem. Inside containerized environments (such as Docker or Kubernetes), this writable layer is **ephemeral**. If a container is restarted, updated, or recreated, all files stored in `public/uploads/` will be **permanently lost**.
+> Files uploaded when using `LocalStorageProvider` are saved directly to `public/uploads/` inside the local application container filesystem. Inside containerized environments (such as Docker or Kubernetes), this writable layer is **ephemeral** unless backed by a persistent volume. If an unmounted container is restarted, updated, or recreated, all files stored in `public/uploads/` will be **permanently lost**.
 >
-> **Production Requirement:** When S3 object storage credentials are not configured in production environments, deployers **must** configure a persistent Docker volume mount pointing to `public/uploads/` (e.g., `-v /var/lib/wedding/uploads:/app/public/uploads` or a Docker Compose persistent volume definition) to ensure asset durability.
+> **Production Requirement:** When S3 object storage credentials are not configured in production environments, deployers **must** mount a persistent volume at `/app/public/uploads` (such as the default `uploads_data:/app/public/uploads` named volume in `docker-compose.yml`, `-v /var/lib/wedding/uploads:/app/public/uploads`, or a Render Persistent Disk) to ensure asset durability.
 
 ### 2. S3-Compatible Production (`S3StorageProvider`)
 - Used when all required S3 credentials are configured in environment variables.

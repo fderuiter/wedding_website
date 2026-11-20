@@ -45,6 +45,7 @@ services:
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     environment:
+      HOSTNAME: "0.0.0.0"
       DATABASE_URL: postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost,app,db,wedding_website-app-1,0.0.0.0}
@@ -52,6 +53,8 @@ services:
       GUEST_SESSION_SECRET: ${GUEST_SESSION_SECRET:-playwright-e2e-session-secret-32-chars-min}
       RUN_MIGRATIONS: "false"
       E2E_TEST: ${E2E_TEST:-true}
+    volumes:
+      - uploads_data:/app/public/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -67,3 +70,4 @@ services:
 
 volumes:
   db_data:
+  uploads_data:

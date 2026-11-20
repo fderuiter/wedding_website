@@ -2,6 +2,7 @@
 
 import {
   getStorageProvider,
+  LocalStorageProvider,
   resetStorageProvider,
   StorageUploadInputObject,
 } from '../storage';
@@ -145,7 +146,7 @@ describe('Hybrid Storage Provider', () => {
       expect(provider.getPublicUrl('https://cdn.com/uploads/photo.jpg')).toBe('https://cdn.com/uploads/photo.jpg');
     });
 
-    it('fetches metadata for an existing file', async () => {
+    it('fetches metadata for an existing file and detects webp MIME type', async () => {
       const provider = getStorageProvider();
       (stat as jest.Mock).mockResolvedValueOnce({
         size: 2048,
@@ -160,6 +161,19 @@ describe('Hybrid Storage Provider', () => {
         mimeType: 'image/png',
         updatedAt: new Date('2026-01-01'),
       });
+
+      (stat as jest.Mock).mockResolvedValueOnce({
+        size: 1024,
+        mtime: new Date('2026-01-02'),
+      });
+      const webpMeta = await provider.getMetadata('/uploads/photo.webp');
+      expect(webpMeta?.mimeType).toBe('image/webp');
+    });
+
+    it('rejects openReadStream traversal keys outside public/uploads', async () => {
+      const localProvider = new LocalStorageProvider();
+      await expect(localProvider.openReadStream('/../canary.txt')).rejects.toThrow();
+      await expect(localProvider.openReadStream('/images/placeholder.png')).rejects.toThrow();
     });
 
     it('returns null when metadata file is missing', async () => {

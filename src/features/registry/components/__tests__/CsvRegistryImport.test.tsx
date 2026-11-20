@@ -25,6 +25,7 @@ const mockApiClientPost = apiClient.post as jest.Mock;
 
 describe('CsvRegistryImport', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     jest.clearAllMocks();
   });
 
@@ -121,5 +122,45 @@ Air Fryer,99.99,Kitchen`;
       });
       expect(onSuccess).toHaveBeenCalled();
     });
+    expect(window.sessionStorage.getItem('registry_csv_import_draft')).toBeNull();
+  });
+
+  it('preserves file metadata and edited preview rows across remounts and resets via Reset Draft', async () => {
+    const { unmount } = render(<CsvRegistryImport />);
+
+    const csvContent = `Product Name,Price,Category,Quantity
+Linen Sheet Set,180.00,Bedroom,1`;
+    const file = new File([csvContent], 'bedroom_registry.csv', { type: 'text/csv' });
+
+    const dropZone = screen.getByRole('button', { name: /Upload CSV file drop zone/i });
+    fireEvent.drop(dropZone, {
+      dataTransfer: {
+        files: [file],
+      },
+    });
+
+    expect(await screen.findByText('Linen Sheet Set')).toBeInTheDocument();
+    expect(screen.getByText('bedroom_registry.csv')).toBeInTheDocument();
+
+    // Edit parsed row
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Linen Sheet Set' }));
+    fireEvent.change(screen.getByPlaceholderText('Product name'), {
+      target: { value: 'Organic Linen Sheet Set' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Done editing Organic Linen Sheet Set' }));
+    expect(screen.getByText('Organic Linen Sheet Set')).toBeInTheDocument();
+
+    unmount();
+
+    // Remount and verify file metadata and edited row are preserved
+    render(<CsvRegistryImport />);
+    expect(screen.getByText('bedroom_registry.csv')).toBeInTheDocument();
+    expect(screen.getByText('Organic Linen Sheet Set')).toBeInTheDocument();
+
+    // Reset Draft clears metadata, rows, and sessionStorage
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Draft' }));
+    expect(screen.queryByText('bedroom_registry.csv')).not.toBeInTheDocument();
+    expect(screen.queryByText('Organic Linen Sheet Set')).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem('registry_csv_import_draft')).toBeNull();
   });
 });

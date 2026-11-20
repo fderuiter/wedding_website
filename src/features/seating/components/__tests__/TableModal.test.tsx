@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { TableModal } from '../TableModal';
 import { SeatingTableDTO } from '../../schemas';
@@ -136,23 +136,92 @@ describe('TableModal component', () => {
     );
   });
 
-  test('calls onDelete when delete button is clicked and confirmed', () => {
-    jest.spyOn(window, 'confirm').mockReturnValue(true);
+  test('calls onDelete when delete button is clicked and confirmed via alertdialog without window.confirm', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm');
 
     render(<TableModal {...defaultProps} table={mockTable} />);
 
     const deleteBtn = screen.getByRole('button', { name: /delete table/i });
     fireEvent.click(deleteBtn);
 
-    expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining('Table 1 - VIP')
-    );
-    expect(defaultProps.onDelete).toHaveBeenCalledWith('table-1');
-    expect(defaultProps.onClose).toHaveBeenCalled();
+    const alertDialog = await screen.findByRole('alertdialog');
+    expect(alertDialog).toHaveTextContent('Table 1 - VIP');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(defaultProps.onDelete).not.toHaveBeenCalled();
+
+    // Cancel keeps table and modal open
+    fireEvent.click(within(alertDialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(defaultProps.onDelete).not.toHaveBeenCalled();
+    expect(defaultProps.onClose).not.toHaveBeenCalled();
+
+    // Click Delete again and Confirm
+    fireEvent.click(deleteBtn);
+    const secondAlert = await screen.findByRole('alertdialog');
+    fireEvent.click(within(secondAlert).getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => {
+      expect(defaultProps.onDelete).toHaveBeenCalledWith('table-1');
+      expect(defaultProps.onClose).toHaveBeenCalled();
+    });
+
+    confirmSpy.mockRestore();
   });
 
-  test('supports selecting 1-sided head and sweetheart table shapes', () => {
-    render(<TableModal {...defaultProps} />);
+  test('prompts via alertdialog when reducing table capacity below seated count and when dismissing dirty edits', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm');
+    const tableWithGuests = {
+      ...mockTable,
+      invitationCodes: [{ id: 'g1' }, { id: 'g2' }, { id: 'g3' }, { id: 'g4' }, { id: 'g5' }, { id: 'g6' }],
+    } as SeatingTableDTO & { invitationCodes: Array<{ id: string }> };
+
+    render(<TableModal {...defaultProps} table={tableWithGuests} />);
+
+    const capacityInput = screen.getByLabelText(/Seating Capacity/i);
+    fireEvent.change(capacityInput, { target: { value: '4' } });
+
+    // Dirty Escape prompts before discarding edits
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const dirtyAlert = await screen.findByRole('alertdialog');
+    expect(defaultProps.onClose).not.toHaveBeenCalled();
+    fireEvent.click(within(dirtyAlert).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+
+    // Submitting capacity drop below seated count prompts via alertdialog
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    const capAlert = await screen.findByRole('alertdialog');
+    expect(capAlert).toHaveTextContent(/currently has 6 seated guests, which exceeds the new capacity of 4/i);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(defaultProps.onSave).not.toHaveBeenCalled();
+
+    // Cancel aborts save
+    fireEvent.click(within(capAlert).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(defaultProps.onSave).not.toHaveBeenCalled();
+
+    // Submit again and confirm
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    const confirmCapAlert = await screen.findByRole('alertdialog');
+    fireEvent.click(within(confirmCapAlert).getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => {
+      expect(defaultProps.onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'table-1', capacity: 4 })
+      );
+      expect(defaultProps.onClose).toHaveBeenCalledTimes(1);
+    });
+
+    confirmSpy.mockRestore();
+  });
+
+  test('supports selecting 1-sided head and sweetheart table shapes and tracks dirty shape edits', async () => {
+    const { unmount } = render(<TableModal {...defaultProps} />);
 
     const nameInput = screen.getByLabelText(/table name/i);
     fireEvent.change(nameInput, { target: { value: 'Sweetheart Table' } });
@@ -170,5 +239,29 @@ describe('TableModal component', () => {
         shape: 'sweetheart',
       })
     );
+
+    unmount();
+    jest.clearAllMocks();
+
+    render(<TableModal {...defaultProps} table={mockTable} />);
+    fireEvent.change(screen.getByLabelText(/shape/i), { target: { value: 'head' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    const dirtyAlert = await screen.findByRole('alertdialog');
+    expect(defaultProps.onClose).not.toHaveBeenCalled();
+    fireEvent.click(within(dirtyAlert).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    await waitFor(() => {
+      expect(defaultProps.onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'table-1',
+          shape: 'head',
+        })
+      );
+    });
   });
 });

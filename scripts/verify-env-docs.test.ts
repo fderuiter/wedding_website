@@ -1,7 +1,12 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { getKeysFromSource, validateEnvDocContent, verifyEnvDocs } from './verify-env-docs';
+import {
+  getKeysFromSource,
+  validateContainerHostnameBinding,
+  validateEnvDocContent,
+  verifyEnvDocs,
+} from './verify-env-docs';
 
 describe('verify-env-docs section-aware validation', () => {
   const sampleKeys = [
@@ -207,5 +212,18 @@ describe('verify-env-docs section-aware validation', () => {
       mockErr.mockRestore();
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('validates container HOSTNAME="0.0.0.0" binding in Dockerfile and docker-compose.yml', () => {
+    const validDockerfile = 'FROM node:22-alpine\nENV NODE_ENV=production\nENV HOSTNAME="0.0.0.0"\nENV PORT=3000\n';
+    const validCompose = 'services:\n  app:\n    environment:\n      HOSTNAME: "0.0.0.0"\n      PORT: 3000\n';
+    expect(validateContainerHostnameBinding(validDockerfile, validCompose)).toEqual([]);
+
+    const missingHostnameDockerfile = 'FROM node:22-alpine\nENV PORT=3000\n';
+    const loopbackCompose = 'services:\n  app:\n    environment:\n      HOSTNAME: "127.0.0.1"\n';
+    expect(validateContainerHostnameBinding(missingHostnameDockerfile, loopbackCompose)).toEqual([
+      expect.stringContaining('Dockerfile must set ENV HOSTNAME="0.0.0.0"'),
+      expect.stringContaining('docker-compose.yml service "app" must set HOSTNAME to "0.0.0.0"'),
+    ]);
   });
 });

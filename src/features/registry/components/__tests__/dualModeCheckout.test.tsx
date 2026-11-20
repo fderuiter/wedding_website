@@ -727,4 +727,105 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       'stripe'
     );
   });
+
+  it('copies receipt details for both direct transfers and card contributions before closing modal', async () => {
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={hybridFundItem}
+          onClose={mockOnClose}
+          onContribute={mockOnContribute}
+          cardCheckoutEnabled={false}
+          stripePublishableKey={null}
+        />
+      </Overlay>
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Morgan Guest' } });
+    fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '125' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record Direct Transfer' }));
+
+    expect(await screen.findByText('Direct Transfer Recorded!')).toBeInTheDocument();
+    const copyButton = screen.getByTestId('copy-receipt-button');
+    expect(copyButton).toHaveTextContent('Copy Receipt');
+
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(copyButton).toHaveTextContent('Receipt Copied!');
+    });
+    expect(writeTextMock).toHaveBeenCalledTimes(1);
+    const copiedSummary = writeTextMock.mock.calls[0][0] as string;
+    expect(copiedSummary).toContain('Amalfi Coast Honeymoon Fund');
+    expect(copiedSummary).toContain('Contributor: Morgan Guest');
+    expect(copiedSummary).toContain('Gift Amount: $125.00');
+    expect(copiedSummary).toContain('Direct Transfer (Venmo: @couple-honeymoon)');
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  it('re-synchronizes PaymentIntent with empty email when guest clears email input before retrying payment', async () => {
+    mockConfirmPayment
+      .mockResolvedValueOnce({
+        error: { message: 'Your card was declined.' },
+      })
+      .mockResolvedValueOnce({
+        paymentIntent: { id: 'pi_real_123', status: 'succeeded' },
+      });
+
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={unconfiguredFundItem}
+          onClose={mockOnClose}
+          onContribute={mockOnContribute}
+          cardCheckoutEnabled={true}
+          stripePublishableKey="pk_test_real_publishable_12345"
+        />
+      </Overlay>
+    );
+
+    fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Taylor Guest' } });
+    fireEvent.change(screen.getByLabelText(/Email Address/i), {
+      target: { value: 'taylor@example.com' },
+    });
+    fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '80' } });
+
+    // First attempt syncs email: 'taylor@example.com' onto PaymentIntent, then card fails
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+    expect(await screen.findByText('Your card was declined.')).toBeInTheDocument();
+
+    expect(postSpy).toHaveBeenLastCalledWith(
+      '/api/registry/payment-intent',
+      expect.objectContaining({
+        itemId: 'fund-unconfigured-1',
+        amount: 80,
+        email: 'taylor@example.com',
+      })
+    );
+
+    // Guest clears email input before retrying payment
+    fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Contribution' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Contribution Confirmed!')).toBeInTheDocument();
+    });
+
+    const intentSyncCalls = postSpy.mock.calls.filter(
+      ([url]) => url === '/api/registry/payment-intent'
+    );
+    const lastIntentPayload = intentSyncCalls[intentSyncCalls.length - 1][1];
+    expect(lastIntentPayload).toMatchObject({
+      itemId: 'fund-unconfigured-1',
+      paymentIntentId: 'pi_real_123',
+      amount: 80,
+      email: '',
+    });
+  });
 });

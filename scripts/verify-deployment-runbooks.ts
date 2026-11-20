@@ -275,22 +275,45 @@ function parseDockerComposeContract(composeContent: string): {
   interpolatedVars: string[];
   appHasHealthcheck: boolean;
   appHasEnvFile: boolean;
+  appHostname: string | null;
+  appUploadsVolumeMounted: boolean;
+  topLevelUploadsVolumeDeclared: boolean;
 } {
   const lines = composeContent.split(/\r?\n/);
   const services: string[] = [];
   let inServices = false;
+  let inTopLevelVolumes = false;
   let currentService: string | null = null;
+  let inAppEnv = false;
+  let inAppVolumes = false;
   let appHasHealthcheck = false;
   let appHasEnvFile = false;
+  let appHostname: string | null = null;
+  let appUploadsVolumeMounted = false;
+  let topLevelUploadsVolumeDeclared = false;
 
   for (const line of lines) {
     if (/^services:\s*$/.test(line)) {
       inServices = true;
+      inTopLevelVolumes = false;
       continue;
     }
-    if (inServices && /^\S/.test(line) && !line.trim().startsWith('#')) {
+    if (/^volumes:\s*$/.test(line)) {
       inServices = false;
+      inTopLevelVolumes = true;
       currentService = null;
+      continue;
+    }
+    if (/^\S/.test(line) && !line.trim().startsWith('#')) {
+      inServices = false;
+      inTopLevelVolumes = false;
+      currentService = null;
+    }
+    if (inTopLevelVolumes) {
+      if (/^  uploads_data:\s*(?:#.*)?$/.test(line)) {
+        topLevelUploadsVolumeDeclared = true;
+      }
+      continue;
     }
     if (!inServices) {
       continue;
@@ -300,15 +323,32 @@ function parseDockerComposeContract(composeContent: string): {
     if (serviceMatch) {
       currentService = serviceMatch[1];
       services.push(currentService);
+      inAppEnv = false;
+      inAppVolumes = false;
       continue;
     }
 
     if (currentService === 'app') {
+      if (/^    [a-zA-Z0-9_-]+:/.test(line)) {
+        inAppEnv = /^    environment:\s*$/.test(line);
+        inAppVolumes = /^    volumes:\s*$/.test(line);
+      }
       if (/^    healthcheck:\s*$/.test(line)) {
         appHasHealthcheck = true;
       }
       if (/^    env_file:\s*/.test(line)) {
         appHasEnvFile = true;
+      }
+      if (inAppEnv) {
+        const hostMatch = line.match(/^\s*(?:-\s*)?HOSTNAME\s*(?::|=)\s*(?:["']([^"']*)["']|(\S+))\s*(?:#.*)?$/);
+        if (hostMatch) {
+          appHostname = hostMatch[1] ?? hostMatch[2] ?? null;
+        }
+      }
+      if (inAppVolumes) {
+        if (/^\s*-\s*uploads_data:\/app\/public\/uploads(?::rw)?\s*(?:#.*)?$/.test(line)) {
+          appUploadsVolumeMounted = true;
+        }
       }
     }
   }
@@ -325,6 +365,9 @@ function parseDockerComposeContract(composeContent: string): {
     interpolatedVars: Array.from(interpolatedSet),
     appHasHealthcheck,
     appHasEnvFile,
+    appHostname,
+    appUploadsVolumeMounted,
+    topLevelUploadsVolumeDeclared,
   };
 }
 
@@ -435,9 +478,15 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   const requiredFiles = [
     'package.json',
     'prisma.config.ts',
+    'prisma/schema.prisma',
+    'Dockerfile',
     'docker-compose.yml',
+    'next.config.ts',
+    'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/middleware.ts',
+    'src/app/api/uploads/[...path]/route.ts',
     'DEPLOYMENT.md',
     'docs/runtime-contract.md',
     'docs/deployment/README.md',
@@ -725,6 +774,51 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // Verify HOSTNAME=0.0.0.0 and uploads_data:/app/public/uploads across Dockerfile, docker-compose.yml, and docs
+  const dockerfileRaw = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
+  const runtimeContractMd = runbookContents.get('docs/runtime-contract.md') ?? '';
+  if (!/^ENV\s+HOSTNAME=(?:"0\.0\.0\.0"|'0\.0\.0\.0'|0\.0\.0\.0)\s*$/m.test(dockerfileRaw)) {
+    errors.push('Dockerfile: Missing `ENV HOSTNAME="0.0.0.0"` in runner image');
+  }
+  if (composeContract.appHostname !== '0.0.0.0') {
+    errors.push('docker-compose.yml: `app` service must set `HOSTNAME: "0.0.0.0"`');
+  }
+  if (!composeContract.appUploadsVolumeMounted || !composeContract.topLevelUploadsVolumeDeclared) {
+    errors.push(
+      'docker-compose.yml: `app` service must mount `uploads_data:/app/public/uploads` with `uploads_data:` declared under top-level `volumes:`'
+    );
+  }
+  if (!/\|\s*`HOSTNAME`\s*\|\s*`0\.0\.0\.0`/.test(runtimeContractMd)) {
+    errors.push('docs/runtime-contract.md: Missing `HOSTNAME` (`0.0.0.0`) entry in Environment Variable Matrix');
+  }
+  if (!dockerMd.includes('uploads_data') || !dockerMd.includes('/app/public/uploads')) {
+    errors.push('docs/deployment/docker-vps.md: Must document `uploads_data` volume mounted at `/app/public/uploads`');
+  }
+
+  // Verify standalone /uploads/* rewrite and nosniff upload route contract
+  const nextConfigRaw = fs.readFileSync(path.join(repoRoot, 'next.config.ts'), 'utf8');
+  const uploadRouteRaw = fs.readFileSync(path.join(repoRoot, 'src/app/api/uploads/[...path]/route.ts'), 'utf8');
+  if (!nextConfigRaw.includes("source: '/uploads/:path*'") || !nextConfigRaw.includes("destination: '/api/uploads/:path*'")) {
+    errors.push('next.config.ts: Missing server rewrite from `/uploads/:path*` to `/api/uploads/:path*`');
+  }
+  if (!uploadRouteRaw.includes('X-Content-Type-Options') || !uploadRouteRaw.includes('nosniff')) {
+    errors.push('src/app/api/uploads/[...path]/route.ts: Must set `X-Content-Type-Options: nosniff` on responses');
+  }
+
+  // Verify middleware webhook & uploads exclusions preserve ALLOWED_HOSTS check
+  const middlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/middleware.ts'), 'utf8');
+  const hostCheckIdx = middlewareRaw.indexOf('!isHostAllowed(');
+  const excludedGuardIdx = middlewareRaw.indexOf('const isExcluded');
+  if (hostCheckIdx === -1 || excludedGuardIdx === -1 || hostCheckIdx > excludedGuardIdx) {
+    errors.push('src/middleware.ts: `isHostAllowed` perimeter check must execute before `isExcluded` evaluation');
+  }
+  if (!middlewareRaw.includes("normalizedPath === '/api/registry/webhook/stripe'")) {
+    errors.push('src/middleware.ts: Must exclude `/api/registry/webhook/stripe` from session cookie checks');
+  }
+  if (!middlewareRaw.includes("'/uploads/:path*'")) {
+    errors.push("src/middleware.ts: `config.matcher` must include `'/uploads/:path*'` so `ALLOWED_HOSTS` runs on `/uploads/*`");
+  }
+
   // 4. GitHub Workflows, Secrets, Approval Gate, CI Jobs, & Static Export Contract
   const workflowsDir = path.join(repoRoot, '.github/workflows');
   const { workflowFiles, workflowSecrets, workflowVars, workflowYamlErrors } =
@@ -910,6 +1004,116 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           );
         }
       }
+    }
+  }
+
+  // 5. Rollback workflow jq `.data.status` / `.data.database` & `publish-artifact.yml` `v*` tag checks
+  const rollbackWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'rollback.yml'), 'utf8');
+  if (!rollbackWorkflowRaw.includes('.data.status') || !rollbackWorkflowRaw.includes('.data.database')) {
+    errors.push('.github/workflows/rollback.yml: Health check jq query must read `.data.status` and `.data.database`');
+  }
+  if (/jq\s+-r\s+['"]\.(?:status|database)\s*\/\//.test(rollbackWorkflowRaw)) {
+    errors.push(
+      '.github/workflows/rollback.yml: Unwrapped `.status` or `.database` jq query detected (must read `.data.status` / `.data.database`)'
+    );
+  }
+  for (const relPath of ['DEPLOYMENT.md', 'docs/deployment/gcp-cloud-run.md']) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!content.includes('.data.status') || !content.includes('.data.database')) {
+      errors.push(`${relPath}: Rollback health probe documentation must reference \`.data.status\` and \`.data.database\``);
+    }
+  }
+
+  if (
+    !publishArtifactRaw.includes('GITHUB_REF_NAME') ||
+    !/refs\/tags\/v\*/.test(publishArtifactRaw) ||
+    !publishArtifactRaw.includes('${RESOLVED_SHA}')
+  ) {
+    errors.push(
+      '.github/workflows/publish-artifact.yml: Must publish `GITHUB_REF_NAME` alongside `${RESOLVED_SHA}` on `refs/tags/v*` pushes'
+    );
+  }
+  for (const relPath of ['DEPLOYMENT.md', 'docs/deployment/gcp-cloud-run.md']) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!content.includes('GITHUB_REF_NAME')) {
+      errors.push(`${relPath}: Must document \`GITHUB_REF_NAME\` tag publication in \`publish-artifact.yml\` on \`v*\` tag pushes`);
+    }
+    for (const line of content.split(/\r?\n/)) {
+      if (
+        /(?:deploy\.yml`?\s+(?:automatically\s+)?(?:triggers?|runs?)\s+on\s+[^.;\n]*\bv\*|\bv\*`?\s+(?:tag\s+pushes?\s+|tags?\s+)?(?:automatically\s+)?(?:triggers?|invokes?)\s+`?(?:\.github\/workflows\/)?deploy\.yml)/i.test(
+          line
+        ) &&
+        !/\b(?:not|without|never)\b/i.test(line)
+      ) {
+        errors.push(`${relPath}: Stale claim that \`v*\` tag pushes automatically trigger \`deploy.yml\``);
+      }
+    }
+  }
+
+  // 6. Vercel cron (`vercel.json`), Stripe webhook & CRON_SECRET scheduler instructions, and MULTISITE_ENABLED shared tables
+  const vercelJsonRaw = fs.readFileSync(path.join(repoRoot, 'vercel.json'), 'utf8');
+  let vercelCronConfigured = false;
+  try {
+    const parsedVercel = JSON.parse(vercelJsonRaw) as {
+      crons?: Array<{ path?: string; schedule?: string }>;
+    };
+    vercelCronConfigured = Boolean(
+      parsedVercel.crons?.some(
+        (cron) =>
+          cron.path === '/api/cron/broadcasts' &&
+          typeof cron.schedule === 'string' &&
+          cron.schedule.trim().split(/\s+/).length === 5
+      )
+    );
+  } catch {
+    errors.push('vercel.json: Invalid JSON syntax');
+  }
+  if (!vercelCronConfigured) {
+    errors.push('vercel.json: Must configure a valid 5-field cron schedule for `/api/cron/broadcasts`');
+  }
+  if (!vercelMd.includes('vercel.json')) {
+    errors.push('docs/deployment/vercel.md: Must document root `vercel.json` cron schedule for `/api/cron/broadcasts`');
+  }
+
+  const hostingGuides = [
+    'DEPLOYMENT.md',
+    'docs/deployment/README.md',
+    'docs/deployment/docker-vps.md',
+    'docs/deployment/gcp-cloud-run.md',
+    'docs/deployment/railway-render.md',
+    'docs/deployment/vercel.md',
+  ];
+  for (const relPath of hostingGuides) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (
+      !content.includes('/api/registry/webhook/stripe') ||
+      !content.includes('payment_intent.succeeded') ||
+      !content.includes('STRIPE_WEBHOOK_SECRET')
+    ) {
+      errors.push(
+        `${relPath}: Missing Stripe \`payment_intent.succeeded\` webhook setup (\`/api/registry/webhook/stripe\` & \`STRIPE_WEBHOOK_SECRET\`)`
+      );
+    }
+    if (!content.includes('/api/cron/broadcasts') || !content.includes('CRON_SECRET')) {
+      errors.push(`${relPath}: Missing scheduled broadcast cron instructions (\`/api/cron/broadcasts\` & \`CRON_SECRET\`)`);
+    }
+  }
+
+  const forwardedIdx = configTsRaw.indexOf("'x-forwarded-host'");
+  const hostIdx = configTsRaw.indexOf("headersList.get('host')");
+  if (forwardedIdx === -1 || hostIdx === -1 || forwardedIdx > hostIdx) {
+    errors.push("src/lib/config.ts: `getSubdomainFromHeaders` must check `'x-forwarded-host'` before `'host'`");
+  }
+
+  const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');
+  const totalModels = (prismaSchemaRaw.match(/^model\s+[A-Za-z0-9_]+\s*\{/gm) ?? []).length;
+  const sharedTableCount = Math.max(0, totalModels - 1);
+  for (const relPath of runbookRelPaths) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!new RegExp(`\\b${sharedTableCount}\\s+tables\\b`).test(content) || !content.includes('AppConfig')) {
+      errors.push(
+        `${relPath}: Must state that \`prisma/schema.prisma\` shares ${sharedTableCount} tables across subdomains (\`MULTISITE_ENABLED\` switches \`AppConfig\` rows only)`
+      );
     }
   }
 

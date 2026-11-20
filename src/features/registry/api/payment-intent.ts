@@ -75,6 +75,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       { status: 503 }
     );
   }
+  const trimmedEmail = email?.trim() || '';
   const metadata = {
     itemId: targetItem.id,
     itemName: targetItem.name,
@@ -83,7 +84,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     coverFee: coverFee ? 'true' : 'false',
     totalChargeAmount: totalChargeAmount.toFixed(2),
     contributorName: name || '',
-    contributorEmail: email || '',
+    contributorEmail: trimmedEmail,
     contributorMessage: message || '',
     invitationCode: finalCode || '',
   };
@@ -123,6 +124,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       try {
         const updated = await stripe.paymentIntents.update(paymentIntentId, {
           amount: totalChargeCents,
+          receipt_email: trimmedEmail || null,
           metadata,
         });
         return NextResponse.json({
@@ -145,6 +147,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     amount: totalChargeCents,
     currency: 'usd',
     automatic_payment_methods: { enabled: true },
+    ...(trimmedEmail ? { receipt_email: trimmedEmail } : {}),
     metadata,
   });
 
