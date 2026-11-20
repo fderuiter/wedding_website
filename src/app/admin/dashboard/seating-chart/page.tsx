@@ -8,6 +8,7 @@ import {
   TableModal,
   PrintableFloorplan,
   useSeatingState,
+  resolveSeatAssignments,
   ADDRESS_COLLECTION_TAG,
   getDietaryBadges,
   getGuestAttendanceStatus,
@@ -84,11 +85,21 @@ export default function SeatingChartAdminPage() {
 
   // Detect any currently seated guest whose RSVP status has changed to 'declined'
   const declinedSeatedGuests = useMemo(() => {
-    const flagged: Array<{ guest: InvitationCodeDTO; tableId: string; tableName: string }> = [];
+    const flagged: Array<{ guest: InvitationCodeDTO; tableId: string; tableName: string; resolvedSeat?: number }> = [];
     for (const table of tables) {
+      const seatMap = resolveSeatAssignments(table.invitationCodes, table.capacity);
+      const guestSeatLookup = new Map<string, number>();
+      seatMap.forEach((g, seatNum) => {
+        if (g.id) guestSeatLookup.set(g.id, seatNum);
+      });
       for (const guest of table.invitationCodes || []) {
         if (getGuestAttendanceStatus(guest) === 'declined') {
-          flagged.push({ guest, tableId: table.id, tableName: table.name });
+          flagged.push({
+            guest,
+            tableId: table.id,
+            tableName: table.name,
+            resolvedSeat: guest.seatNumber || guestSeatLookup.get(guest.id),
+          });
         }
       }
     }
@@ -116,6 +127,15 @@ export default function SeatingChartAdminPage() {
   };
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
+  const selectedTableSeatLookup = useMemo(() => {
+    const lookup = new Map<string, number>();
+    if (!selectedTable?.invitationCodes) return lookup;
+    const seatMap = resolveSeatAssignments(selectedTable.invitationCodes, selectedTable.capacity);
+    seatMap.forEach((g, seatNum) => {
+      if (g.id) lookup.set(g.id, seatNum);
+    });
+    return lookup;
+  }, [selectedTable]);
 
   return (
     <div className="space-y-6">
@@ -208,7 +228,7 @@ export default function SeatingChartAdminPage() {
                 {declinedSeatedGuests.length} seated guest{declinedSeatedGuests.length === 1 ? ' has' : 's have'} declined RSVP
               </p>
               <div className="flex flex-wrap gap-2">
-                {declinedSeatedGuests.map(({ guest, tableId, tableName }) => (
+                {declinedSeatedGuests.map(({ guest, tableId, tableName, resolvedSeat }) => (
                   <span
                     key={guest.id}
                     className="inline-flex items-center gap-1.5 text-xs bg-white dark:bg-gray-900 px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-800 text-red-900 dark:text-red-100"
@@ -218,7 +238,7 @@ export default function SeatingChartAdminPage() {
                       onClick={() => setSelectedTableId(tableId)}
                       className="min-h-[24px] font-semibold underline hover:no-underline"
                     >
-                      {guest.guestName} ({tableName}, Seat {guest.seatNumber || '?'})
+                      {guest.guestName} ({tableName}, Seat {resolvedSeat || '?'})
                     </button>
                     <button
                       type="button"
@@ -262,7 +282,7 @@ export default function SeatingChartAdminPage() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-1.5 top-1.5 w-6 h-6 inline-flex items-center justify-center text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 font-bold text-xs rounded"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-6 min-h-6 inline-flex items-center justify-center text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 font-bold text-xs rounded"
                   aria-label="Clear search query"
                 >
                   ×
@@ -362,7 +382,7 @@ export default function SeatingChartAdminPage() {
                             }`}
                           >
                             <span>
-                              Seat {guest.seatNumber || '?'}: {guest.guestName}
+                              Seat {guest.seatNumber || selectedTableSeatLookup.get(guest.id) || '?'}: {guest.guestName}
                             </span>
                             {isDeclined && (
                               <span
@@ -405,7 +425,7 @@ export default function SeatingChartAdminPage() {
                               <button
                                 type="button"
                                 onClick={() => handleUnassignGuest(guest.id)}
-                                className="min-w-[24px] min-h-[24px] inline-flex items-center justify-center text-gray-500 hover:text-red-600 font-bold ml-0.5 rounded"
+                                className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-600 hover:text-red-600 dark:text-gray-200 dark:hover:text-red-400 font-bold ml-0.5 rounded"
                                 title="Unassign guest"
                                 aria-label={`Unassign ${guest.guestName}`}
                               >
@@ -430,7 +450,7 @@ export default function SeatingChartAdminPage() {
                         const next = (current - 45 + 360) % 360;
                         handleUpdateTableRotation(selectedTable.id, next);
                       }}
-                      className="min-w-[32px] min-h-[26px] px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                      className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
                       title="Rotate -45°"
                     >
                       -45°
@@ -445,7 +465,7 @@ export default function SeatingChartAdminPage() {
                         const next = (current + 45) % 360;
                         handleUpdateTableRotation(selectedTable.id, next);
                       }}
-                      className="min-w-[32px] min-h-[26px] px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                      className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
                       title="Rotate +45°"
                     >
                       +45°

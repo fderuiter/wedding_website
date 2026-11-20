@@ -212,4 +212,32 @@ describe('PrintableFloorplan component', () => {
     expect(badges.map((b) => b.textContent).join(' ')).toContain('Dairy-Free');
     expect(badges.map((b) => b.textContent).join(' ')).toContain('VG');
   });
+
+  it('resolves unnumbered guest seat numbers into open seats without colliding with explicit seatNumber occupants', () => {
+    const sparseTables: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        capacity: 6,
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-unnum',
+            code: 'UN1',
+            guestName: 'Unnumbered Guest',
+            seatNumber: null,
+          }),
+          createMockInvitationCode({
+            id: 'g-exp-1',
+            code: 'EX1',
+            guestName: 'Explicit Seat One',
+            seatNumber: 1,
+          }),
+        ],
+      },
+    ];
+
+    render(<PrintableFloorplan tables={sparseTables} unassignedGuests={[]} />);
+
+    expect(screen.getByText('Seat 1: Explicit Seat One')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Unnumbered Guest')).toBeInTheDocument();
+  });
 });
