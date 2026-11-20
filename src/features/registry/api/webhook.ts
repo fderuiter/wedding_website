@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { registryService } from '../service';
-import { getStripeInstance } from '@/lib/stripe';
+import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
 import { StripeWebhookEventSchema } from '@/utils/validation';
 
 /**
@@ -42,12 +42,53 @@ export async function POST(request: NextRequest) {
     const itemId = metadata.itemId;
 
     if (itemId) {
-      const baseAmount = parseFloat(metadata.baseAmount || '') || (paymentIntent.amount / 100);
+      const rawMetaCoverFee = metadata.coverFee;
+      if (
+        rawMetaCoverFee !== undefined &&
+        rawMetaCoverFee !== '' &&
+        rawMetaCoverFee !== 'true' &&
+        rawMetaCoverFee !== 'false'
+      ) {
+        return new NextResponse('Invalid PaymentIntent coverFee metadata', { status: 400 });
+      }
+      const coverFee = rawMetaCoverFee === 'true';
+
+      let baseAmount: number;
+      if (metadata.baseAmount !== undefined && metadata.baseAmount !== '') {
+        const parsedBaseAmount = Number(metadata.baseAmount);
+        if (!Number.isFinite(parsedBaseAmount) || parsedBaseAmount <= 0) {
+          return new NextResponse('Invalid PaymentIntent baseAmount metadata', { status: 400 });
+        }
+        baseAmount = parsedBaseAmount;
+      } else if (!coverFee && typeof paymentIntent.amount === 'number' && paymentIntent.amount > 0) {
+        baseAmount = paymentIntent.amount / 100;
+      } else {
+        return new NextResponse('Missing PaymentIntent baseAmount metadata', { status: 400 });
+      }
+
+      const invariantCheck = validatePaymentIntentInvariants(
+        {
+          ...paymentIntent,
+          status: paymentIntent.status ?? 'succeeded',
+        },
+        {
+          itemId,
+          baseAmount,
+          coverFee,
+        }
+      );
+
+      if (!invariantCheck.valid) {
+        return new NextResponse(
+          `Webhook PaymentIntent validation failed: ${invariantCheck.error}`,
+          { status: 400 }
+        );
+      }
+
       const name = metadata.contributorName || 'Anonymous Guest';
       const email = metadata.contributorEmail || null;
       const message = metadata.contributorMessage || null;
       const code = metadata.invitationCode || undefined;
-      const coverFee = metadata.coverFee === 'true';
       const stripePaymentIntentId = paymentIntent.id;
       const stripeChargeId =
         typeof paymentIntent.latest_charge === 'string'

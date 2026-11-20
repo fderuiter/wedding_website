@@ -169,3 +169,102 @@ export function calculateContributionAmounts(baseAmount: number, coverFee: boole
     netPayout,
   };
 }
+
+/**
+ * Validates that a Stripe PaymentIntent satisfies all settlement invariants for a registry contribution:
+ * succeeded status, USD currency, matching itemId and coverFee metadata, and exact cent charge.
+ */
+export function validatePaymentIntentInvariants(
+  paymentIntent: {
+    status?: string | null;
+    currency?: string | null;
+    amount?: number | null;
+    amount_received?: number | null;
+    metadata?: Record<string, string | undefined> | null;
+  },
+  expected: {
+    itemId: string;
+    baseAmount: number;
+    coverFee: boolean;
+  }
+): { valid: boolean; error?: string; totalChargeCents: number } {
+  const { totalChargeCents } = calculateContributionAmounts(
+    expected.baseAmount,
+    expected.coverFee
+  );
+
+  if (!paymentIntent || paymentIntent.status !== 'succeeded') {
+    return {
+      valid: false,
+      totalChargeCents,
+      error: `PaymentIntent status is '${paymentIntent?.status ?? 'unknown'}'. Payment must be succeeded before recording contribution.`,
+    };
+  }
+
+  if (paymentIntent.currency !== 'usd') {
+    return {
+      valid: false,
+      totalChargeCents,
+      error: `PaymentIntent currency '${paymentIntent.currency ?? 'unknown'}' does not match expected currency 'usd'.`,
+    };
+  }
+
+  const metadata = paymentIntent.metadata ?? {};
+  if (!metadata.itemId || metadata.itemId !== expected.itemId) {
+    return {
+      valid: false,
+      totalChargeCents,
+      error: 'PaymentIntent metadata itemId does not match the target registry item.',
+    };
+  }
+
+  const normalizedMetaCoverFee =
+    metadata.coverFee === undefined || metadata.coverFee === ''
+      ? 'false'
+      : metadata.coverFee;
+  const expectedMetaCoverFee = expected.coverFee ? 'true' : 'false';
+  if (normalizedMetaCoverFee !== expectedMetaCoverFee) {
+    return {
+      valid: false,
+      totalChargeCents,
+      error: 'PaymentIntent metadata coverFee does not match the contribution request.',
+    };
+  }
+
+  if (metadata.baseAmount !== undefined && metadata.baseAmount !== '') {
+    const parsedMetaBase = Number(metadata.baseAmount);
+    if (
+      !Number.isFinite(parsedMetaBase) ||
+      parsedMetaBase <= 0 ||
+      Math.round(parsedMetaBase * 100) !== Math.round(expected.baseAmount * 100)
+    ) {
+      return {
+        valid: false,
+        totalChargeCents,
+        error: 'PaymentIntent metadata baseAmount does not match the contribution amount.',
+      };
+    }
+  }
+
+  if (typeof paymentIntent.amount !== 'number' || paymentIntent.amount !== totalChargeCents) {
+    return {
+      valid: false,
+      totalChargeCents,
+      error: `PaymentIntent amount (${paymentIntent.amount ?? 'unknown'} cents) does not match expected charge (${totalChargeCents} cents).`,
+    };
+  }
+
+  const amountReceived = paymentIntent.amount_received ?? paymentIntent.amount;
+  if (typeof amountReceived !== 'number' || amountReceived < totalChargeCents) {
+    return {
+      valid: false,
+      totalChargeCents,
+      error: `PaymentIntent amount_received (${amountReceived} cents) is less than expected charge (${totalChargeCents} cents).`,
+    };
+  }
+
+  return {
+    valid: true,
+    totalChargeCents,
+  };
+}
