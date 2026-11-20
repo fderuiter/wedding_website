@@ -142,6 +142,7 @@ export const PaymentIntentRequestSchema = z.object({
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   coverFee: z.boolean().optional().default(false),
   paymentIntentId: z.string().trim().optional(),
+  clientSecret: z.string().trim().optional(),
   name: z.string().trim().optional(),
   email: optionalNullableEmailField,
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),

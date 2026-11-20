@@ -167,4 +167,76 @@ describe('Registry Gift Contribution Concurrency & Row-Level Locking', () => {
     expect(finalItem!.purchased).toBe(true);
     expect(finalItem!.contributors).toHaveLength(1); // Only the winner
   });
+
+  test('enforces unique stripePaymentIntentId across items while keeping concurrent same-item writes idempotent and allowing multiple null values', async () => {
+    const media = await realPrisma.media.findFirstOrThrow();
+    const otherItem = await realPrisma.registryItem.create({
+      data: {
+        name: 'Second Cash Fund',
+        description: 'Another fund.',
+        category: 'Cash Fund',
+        itemType: 'CASH_FUND',
+        price: 500,
+        imageId: media.id,
+        quantity: 1,
+        isGroupGift: true,
+        amountContributed: 0,
+        purchased: false,
+      },
+    });
+
+    // Concurrent writes for the exact same stripePaymentIntentId and same itemId stay idempotent
+    const [res1, res2] = await Promise.all([
+      realRepository.contributeToItem(testItem.id, {
+        name: 'Card Guest',
+        amount: 40,
+        coverFee: true,
+        stripePaymentIntentId: 'pi_concurrent_same_item_1',
+        stripeChargeId: 'ch_concurrent_1',
+      }),
+      realRepository.contributeToItem(testItem.id, {
+        name: 'Card Guest',
+        amount: 40,
+        coverFee: true,
+        stripePaymentIntentId: 'pi_concurrent_same_item_1',
+        stripeChargeId: 'ch_concurrent_1',
+      }),
+    ]);
+
+    expect(res1.amountContributed).toBe(40);
+    expect(res2.amountContributed).toBe(40);
+
+    const afterSameItem = await realPrisma.registryItem.findUnique({
+      where: { id: testItem.id },
+      include: { contributors: true },
+    });
+    expect(afterSameItem!.contributors).toHaveLength(1);
+
+    // Reusing the same stripePaymentIntentId on a different item must be rejected
+    await expect(
+      realRepository.contributeToItem(otherItem.id, {
+        name: 'Replay Guest',
+        amount: 40,
+        coverFee: true,
+        stripePaymentIntentId: 'pi_concurrent_same_item_1',
+      })
+    ).rejects.toThrow('Stripe PaymentIntent has already been used for another registry item.');
+
+    // Multiple non-card contributions with null stripePaymentIntentId succeed without unique conflict
+    await realRepository.contributeToItem(otherItem.id, {
+      name: 'Direct Guest 1',
+      amount: 50,
+    });
+    await realRepository.contributeToItem(otherItem.id, {
+      name: 'Direct Guest 2',
+      amount: 75,
+    });
+
+    const afterNulls = await realPrisma.registryItem.findUnique({
+      where: { id: otherItem.id },
+      include: { contributors: true },
+    });
+    expect(afterNulls!.amountContributed).toBe(125);
+    expect(afterNulls!.contributors).toHaveLength(2);
+  });
 });

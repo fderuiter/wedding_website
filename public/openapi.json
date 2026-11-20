@@ -7917,6 +7917,9 @@
                   "paymentIntentId": {
                     "type": "string"
                   },
+                  "clientSecret": {
+                    "type": "string"
+                  },
                   "name": {
                     "type": "string"
                   },

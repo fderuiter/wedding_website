@@ -70,7 +70,10 @@ describe('POST /api/registry/webhook/stripe', () => {
   it('Criterion 4: processes payment_intent.succeeded events idempotently and records contribution details', async () => {
     const mockPaymentIntent = {
       id: 'pi_test_webhook_success_999',
+      status: 'succeeded',
       amount: 10250,
+      amount_received: 10250,
+      currency: 'usd',
       latest_charge: 'ch_test_charge_999',
       created: 1731763200, // Unix timestamp in seconds
       metadata: {
@@ -126,5 +129,61 @@ describe('POST /api/registry/webhook/stripe', () => {
         transactionTimestamp: new Date(1731763200 * 1000),
       })
     );
+  });
+
+  it('rejects payment_intent.succeeded webhooks when currency is not usd or metadata.baseAmount mismatches paymentIntent.amount', async () => {
+    const nonUsdIntent = {
+      id: 'pi_webhook_non_usd',
+      status: 'succeeded',
+      amount: 10000,
+      currency: 'eur',
+      metadata: {
+        itemId: 'item-cash-fund-1',
+        baseAmount: '100.00',
+        coverFee: 'false',
+      },
+    };
+    mockConstructEvent.mockReturnValueOnce({
+      type: 'payment_intent.succeeded',
+      data: { object: nonUsdIntent },
+    });
+
+    const nonUsdRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: { 'stripe-signature': 't=12345,v1=validsig' },
+        body: JSON.stringify({ type: 'payment_intent.succeeded', data: { object: nonUsdIntent } }),
+      })
+    );
+    expect(nonUsdRes.status).toBe(400);
+
+    const mismatchedAmountIntent = {
+      id: 'pi_webhook_mismatch',
+      status: 'succeeded',
+      amount: 100,
+      currency: 'usd',
+      metadata: {
+        itemId: 'item-cash-fund-1',
+        baseAmount: '100.00',
+        coverFee: 'false',
+      },
+    };
+    mockConstructEvent.mockReturnValueOnce({
+      type: 'payment_intent.succeeded',
+      data: { object: mismatchedAmountIntent },
+    });
+
+    const mismatchRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: { 'stripe-signature': 't=12345,v1=validsig' },
+        body: JSON.stringify({
+          type: 'payment_intent.succeeded',
+          data: { object: mismatchedAmountIntent },
+        }),
+      })
+    );
+    expect(mismatchRes.status).toBe(400);
+    expect(registryService.contributeToItem).not.toHaveBeenCalled();
   });
 });
