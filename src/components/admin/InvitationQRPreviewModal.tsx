@@ -130,6 +130,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
               size={512}
               style={{ width: 220, height: 220, maxWidth: '100%' }}
               level="H"
+              bgColor="#ffffff"
               minContrastRatio={4.5}
               aria-label={`Personalized QR code for ${guest.guestName}`}
             />

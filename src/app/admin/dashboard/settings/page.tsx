@@ -18,6 +18,7 @@ import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { cssTokenKeyRegex, isValidCssTokenValue } from '@/features/content';
 import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
@@ -209,7 +210,8 @@ function extractThemeOverrideRows(cfg: any): ThemeOverrideRow[] {
     if (!tokensObj || typeof tokensObj !== 'object' || Array.isArray(tokensObj)) {
       return [];
     }
-    return Object.entries(tokensObj)
+    const sparseTokens = stripPresetDefaultTokens(tokensObj, cfg?.themePreset);
+    return Object.entries(sparseTokens)
       .filter(([key]) => !isPrintTokenKey(key))
       .map(([key, val], idx) => ({
         id: `override-${idx}-${key}`,
@@ -476,7 +478,19 @@ export default function AdminSettingsPage() {
       return;
     }
     try {
-      const saved: any = await saveSettings(localConfig);
+      const rawTokens =
+        localConfig.themeTokens && typeof localConfig.themeTokens === 'object'
+          ? localConfig.themeTokens
+          : {};
+      const payloadThemeTokens =
+        Object.keys(rawTokens).length >= 25
+          ? stripPresetDefaultTokens(rawTokens, localConfig.themePreset)
+          : rawTokens;
+      const payloadToSave = {
+        ...localConfig,
+        themeTokens: payloadThemeTokens,
+      };
+      const saved: any = await saveSettings(payloadToSave);
       const nextSavedConfig = {
         ...localConfig,
         ...(saved && typeof saved === 'object' ? saved : {}),
@@ -939,16 +953,57 @@ export default function AdminSettingsPage() {
                     brandDimensions: localConfig.brandDimensions,
                   }}
                   onChange={(updated) => {
+                    const prevPreset = localConfig?.themePreset || 'classic';
+                    const nextPreset = (updated.themePreset as string | undefined) || prevPreset;
+                    const isPresetSwitch = Boolean(
+                      updated.themePreset && updated.themePreset !== prevPreset
+                    );
+
+                    if (isPresetSwitch) {
+                      const filteredRows = themeOverrideRows.filter((row) => {
+                        const k = row.key.trim();
+                        if (!k) return true;
+                        const cleaned = stripPresetDefaultTokens(
+                          { [k]: row.value },
+                          nextPreset,
+                          prevPreset
+                        );
+                        return Object.prototype.hasOwnProperty.call(cleaned, k);
+                      });
+                      setOverrideRowsState({ base: initialConfig, rows: filteredRows });
+                    }
+
                     setLocalConfig((prev: any) => {
-                      const mergedTokens = {
-                        ...(prev?.themeTokens || {}),
-                        ...(updated.themeTokens || {}),
-                      };
+                      const activePrevPreset = prev?.themePreset || 'classic';
+                      const activeNextPreset =
+                        (updated.themePreset as string | undefined) || activePrevPreset;
+                      let nextThemeTokens: Record<string, string>;
+
+                      if (updated.themePreset && updated.themePreset !== activePrevPreset) {
+                        nextThemeTokens = stripPresetDefaultTokens(
+                          updated.themeTokens ?? prev?.themeTokens,
+                          activeNextPreset,
+                          activePrevPreset
+                        );
+                      } else if (updated.themeTokens !== undefined) {
+                        const customNonPrint: Record<string, string> = {};
+                        for (const [k, v] of Object.entries(prev?.themeTokens || {})) {
+                          if (!isPrintTokenKey(k) && typeof v === 'string') {
+                            customNonPrint[k] = v;
+                          }
+                        }
+                        nextThemeTokens = {
+                          ...customNonPrint,
+                          ...updated.themeTokens,
+                        };
+                      } else {
+                        nextThemeTokens = prev?.themeTokens || {};
+                      }
 
                       return {
                         ...prev,
                         ...updated,
-                        themeTokens: mergedTokens,
+                        themeTokens: nextThemeTokens,
                       };
                     });
                   }}

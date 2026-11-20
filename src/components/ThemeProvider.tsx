@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   ThemePreset,
   THEME_PRESETS,
@@ -79,6 +79,8 @@ type ThemeContextType = {
   extrusion: ThemeExtrusion;
   lighting: ThemeLighting;
   glowFilter: string;
+  hasThemeProvider?: boolean;
+  setPreviewConfig?: (preview: Partial<NonNullable<ThemeProviderProps['config']>> | null) => void;
 };
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -95,7 +97,7 @@ const ThemeContext = createContext<ThemeContextType>({
   themeMode: 'system',
   mode: 'system',
   setThemeMode: () => {},
-  resolvedTheme: 'dark',
+  resolvedTheme: 'light',
   layoutContainerMaxWidth: '64rem',
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
@@ -134,17 +136,47 @@ const ThemeContext = createContext<ThemeContextType>({
     directionalIntensity: 1.6,
   },
   glowFilter: 'drop-shadow(0 0 10px var(--color-accent, #D4AF37))',
+  hasThemeProvider: false,
+  setPreviewConfig: () => {},
 });
 
 export const useTheme = () => useContext(ThemeContext);
 
 const emptySubscribe = () => () => {};
 
-function getSystemTheme(): ResolvedTheme {
-  if (typeof window !== 'undefined' && window.matchMedia) {
-    return window.matchMedia('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light';
+function readDocumentThemeClass(): ResolvedTheme | null {
+  if (typeof document === 'undefined' || !document.documentElement?.classList) {
+    return null;
   }
-  return 'dark';
+  if (document.documentElement.classList.contains('dark')) {
+    return 'dark';
+  }
+  if (document.documentElement.classList.contains('light')) {
+    return 'light';
+  }
+  return null;
+}
+
+function readCookieThemeMode(): ThemeMode | null {
+  if (typeof document === 'undefined' || typeof document.cookie !== 'string') {
+    return null;
+  }
+  const match = document.cookie.match(/(?:^|;\s*)theme_mode=(dark|light|system)(?:;|$)/);
+  return match ? (match[1] as ThemeMode) : null;
+}
+
+function getSystemTheme(): ResolvedTheme {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mql && typeof mql.matches === 'boolean') {
+      return mql.matches ? 'dark' : 'light';
+    }
+  }
+  const docTheme = readDocumentThemeClass();
+  if (docTheme) {
+    return docTheme;
+  }
+  return 'light';
 }
 
 function applyResolvedTheme(resolved: ResolvedTheme) {
@@ -241,6 +273,26 @@ export function ThemeProvider({
     value: NormalizedThemeConfig;
   } | null>(null);
 
+  const setPreviewConfig = useCallback(
+    (preview: Partial<NonNullable<ThemeProviderProps['config']>> | null) => {
+      if (preview === null) {
+        setDraftConfigOverride(null);
+        return;
+      }
+      setDraftConfigOverride((prev) => {
+        const current = prev && prev.base === baseConfig ? prev.value : baseConfig;
+        return {
+          base: baseConfig,
+          value: normalizeThemeConfig({
+            ...current,
+            ...preview,
+          }),
+        };
+      });
+    },
+    [baseConfig]
+  );
+
   const config =
     draftConfigOverride && draftConfigOverride.base === baseConfig
       ? draftConfigOverride.value
@@ -263,7 +315,7 @@ export function ThemeProvider({
     if (userThemeMode !== null) {
       return userThemeMode;
     }
-    if (!isHydrated) {
+    if (typeof window === 'undefined') {
       return initialThemeMode;
     }
     if (!initialThemeMode || initialThemeMode === 'system') {
@@ -273,23 +325,29 @@ export function ThemeProvider({
           return saved;
         }
       } catch {}
+      const cookieMode = readCookieThemeMode();
+      if (cookieMode) {
+        return cookieMode;
+      }
     }
     return initialThemeMode;
-  }, [userThemeMode, isHydrated, initialThemeMode]);
+  }, [userThemeMode, initialThemeMode]);
 
   const resolvedTheme = useMemo<ResolvedTheme>(() => {
     if (themeMode === 'light') return 'light';
     if (themeMode === 'dark') return 'dark';
-    if (!isHydrated) return 'dark';
+    if (typeof document === 'undefined') {
+      return 'light';
+    }
     if (systemThemeOverride !== null) {
       return systemThemeOverride;
     }
-    if (
-      typeof document !== 'undefined' &&
-      (document.documentElement.classList.contains('dark') ||
-        document.documentElement.classList.contains('light'))
-    ) {
-      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    const docTheme = readDocumentThemeClass();
+    if (docTheme) {
+      return docTheme;
+    }
+    if (!isHydrated) {
+      return getSystemTheme();
     }
     return getSystemTheme();
   }, [themeMode, isHydrated, systemThemeOverride]);
@@ -532,6 +590,8 @@ export function ThemeProvider({
     mode: themeMode,
     setThemeMode,
     resolvedTheme,
+    hasThemeProvider: true,
+    setPreviewConfig,
   };
 
   return (

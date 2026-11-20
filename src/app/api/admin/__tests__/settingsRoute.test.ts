@@ -302,6 +302,37 @@ describe('PUT /api/admin/settings', () => {
     );
   });
 
+  it('strips stale light preset defaults from previous preset during PUT save while keeping explicit overrides', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const { getPresetTokens } = await import('@/lib/theme/presets');
+    const classicDefaults = getPresetTokens('classic', 'light') as unknown as Record<string, unknown>;
+    const hydratedClassicTokens: Record<string, string> = {};
+    for (const [k, v] of Object.entries(classicDefaults)) {
+      if (k.startsWith('--') && typeof v === 'string') {
+        hydratedClassicTokens[k] = v;
+      }
+    }
+    hydratedClassicTokens['--btn-radius'] = '0.625rem';
+
+    const req = makeAuthReq({
+      ...validConfigData,
+      themePreset: 'romantic',
+      themeTokens: hydratedClassicTokens,
+    });
+    await PUT(req);
+
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          themePreset: 'romantic',
+          themeTokens: {
+            '--btn-radius': '0.625rem',
+          },
+        }),
+      })
+    );
+  });
+
   it('persists themePreset and layout tokens to database', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({

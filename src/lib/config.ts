@@ -8,7 +8,7 @@ import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDead
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG } from './modules';
-import { getPresetTokens } from './theme/presets';
+import { stripPresetDefaultTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
   return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
@@ -591,17 +591,26 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
 
   const envOverrides = getEnvConfigOverrides();
   const activePreset = envOverrides.themePreset || dbConfig?.themePreset || APP_DEFAULTS.themePreset;
-  const presetTokens = getPresetTokens(activePreset, 'light');
-  const { darkTokens, serverExportTokens, ...cleanPresetTokens } = presetTokens as any;
+  const previousDbPreset = dbConfig?.themePreset;
 
-  // Deterministic Precedence: Default Component Tokens < DB Stored Tokens < Env Overrides
-  const mergedThemeTokens = {
-    ...cleanPresetTokens,
-    ...((dbConfig as any)?.themeTokens || {}),
-    ...((envOverrides as any)?.themeTokens || {}),
-  };
-  delete (mergedThemeTokens as any).darkTokens;
-  delete (mergedThemeTokens as any).serverExportTokens;
+  // Deterministic Precedence: Sparse DB Custom Overrides < Sparse Env Overrides
+  // Preset defaults stay in presets.ts so changing presets never carries stale defaults forward
+  const sparseDbTokens = stripPresetDefaultTokens(
+    (dbConfig as any)?.themeTokens,
+    activePreset,
+    previousDbPreset && previousDbPreset !== activePreset ? previousDbPreset : undefined
+  );
+  const rawEnvTokens =
+    (envOverrides as any)?.themeTokens && typeof (envOverrides as any).themeTokens === 'object'
+      ? (envOverrides as any).themeTokens
+      : {};
+  const mergedThemeTokens = stripPresetDefaultTokens(
+    {
+      ...sparseDbTokens,
+      ...rawEnvTokens,
+    },
+    activePreset
+  );
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
   const mergedConfig = {

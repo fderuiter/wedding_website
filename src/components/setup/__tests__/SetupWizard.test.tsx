@@ -1128,4 +1128,58 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  test('previews Step 2 theme preset, color, and layout changes live via ThemeProvider and maintains dark mode accessibility', async () => {
+    const { ThemeProvider } = await import('@/components/ThemeProvider');
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 2,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+        weddingDate: '2026-12-31',
+        baseUrl: 'https://alexandsam.com',
+      })
+    );
+
+    const headStyle = document.createElement('style');
+    headStyle.id = 'dynamic-theme-style';
+    document.head.appendChild(headStyle);
+
+    try {
+      const { container } = renderWithProviders(
+        <ThemeProvider initialThemeMode="dark" hasServerStylesheet>
+          <SetupWizard />
+        </ThemeProvider>
+      );
+
+      await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
+      expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+      const introCopy = screen.getByText(/Let's start with your names and when the big day is\./i);
+      expect(introCopy).toHaveClass('dark:text-gray-200');
+
+      const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
+      fireEvent.change(presetSelect, { target: { value: 'romantic' } });
+
+      const primaryInput = screen.getByLabelText(/Primary Color Code/i);
+      fireEvent.change(primaryInput, { target: { value: '#be123c' } });
+
+      const maxWidthInput = screen.getByLabelText(/Container Max Width/i);
+      fireEvent.change(maxWidthInput, { target: { value: '72rem' } });
+
+      await waitFor(() => {
+        expect(headStyle.textContent).toContain('--container-max-w: 72rem;');
+        expect(headStyle.textContent).toContain('--color-primary: #be123c;');
+        expect(headStyle.textContent).toContain('--card-bg: #231118;');
+      });
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+    } finally {
+      headStyle.remove();
+      document.documentElement.className = '';
+    }
+  });
 });

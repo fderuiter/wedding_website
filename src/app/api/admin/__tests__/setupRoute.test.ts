@@ -256,6 +256,50 @@ describe('Setup API Route (/api/admin/setup)', () => {
       });
     });
 
+    test('strips unchanged light preset defaults from themeTokens during setup save', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => ({
+        ...uninitializedConfig,
+        ...create,
+        features: '[]',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://ourwedding.com',
+          venueName: 'The Glasshouse',
+          venueCity: 'Seattle',
+          venueState: 'WA',
+          themePreset: 'editorial',
+          themeTokens: {
+            '--card-bg': '#ffffff',
+            '--btn-radius': '0.125rem',
+            '--custom-hero-gap': '3rem',
+          },
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            themePreset: 'editorial',
+            themeTokens: {
+              '--custom-hero-gap': '3rem',
+            },
+          }),
+        })
+      );
+    });
+
     test('persists trimmed partner1Name and partner2Name and marks isSiteInitialized true', async () => {
       (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
 

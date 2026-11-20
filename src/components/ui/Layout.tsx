@@ -10,7 +10,7 @@ export const Container = React.forwardRef<HTMLDivElement, React.HTMLAttributes<H
           backgroundColor: 'var(--container-bg, var(--color-background, #fff1f2))',
           ...style,
         }}
-        className={cn('min-h-screen flex items-center justify-center text-gray-900 p-[var(--card-padding)] max-w-[var(--container-max-w)] w-full mx-auto', className)}
+        className={cn('min-h-screen flex items-center justify-center text-gray-900 dark:text-gray-100 p-[var(--card-padding)] max-w-[var(--container-max-w)] w-full mx-auto', className)}
         {...props}
       />
     );
