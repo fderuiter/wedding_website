@@ -9,6 +9,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance } from '@/lib/stripe';
+import { dispatchContributionNotifications } from '../notifications';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
@@ -103,6 +104,23 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),
+  });
+
+  await dispatchContributionNotifications({
+    itemId,
+    targetItem,
+    updatedItem,
+    contribution: {
+      name,
+      email,
+      amount,
+      message,
+      coverFee: effectiveCoverFee,
+      stripePaymentIntentId,
+      transactionTimestamp,
+    },
+    config,
+    requestUrl: request.url,
   });
 
   const isAdmin = await isAdminRequest(request);

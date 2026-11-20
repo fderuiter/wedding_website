@@ -3,6 +3,8 @@
  */
 
 import { createRegistryRepository } from '../repository';
+import { dispatchContributionNotifications } from '../notifications';
+import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -166,5 +168,65 @@ describe('Registry Gift Contribution Concurrency & Row-Level Locking', () => {
     expect(finalItem!.amountContributed).toBe(100);
     expect(finalItem!.purchased).toBe(true);
     expect(finalItem!.contributors).toHaveLength(1); // Only the winner
+  });
+
+  test('claims email send timestamps atomically across concurrent contribute and webhook calls so zero duplicate emails are sent', async () => {
+    const sendEmailSpy = jest
+      .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+      .mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return { success: true };
+      });
+
+    try {
+      const sharedContribution = {
+        name: 'Concurrent Card Guest',
+        email: 'concurrent.guest@example.com',
+        amount: 50,
+        coverFee: true,
+        message: 'Arriving together!',
+        stripePaymentIntentId: 'pi_concurrent_atomic_123',
+        stripeChargeId: 'ch_concurrent_atomic_123',
+        transactionTimestamp: new Date('2026-11-20T12:00:00.000Z'),
+      };
+
+      const sharedConfig = {
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        smtpFrom: 'noreply@wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+        timezone: 'UTC',
+      };
+
+      const simulateEndpoint = async () => {
+        const updatedItem = await realRepository.contributeToItem(testItem.id, sharedContribution);
+        await dispatchContributionNotifications({
+          itemId: testItem.id,
+          updatedItem,
+          contribution: sharedContribution,
+          config: sharedConfig,
+          requestUrl: 'https://couple.wedding.test/api/registry/contribute',
+          repository: realRepository,
+        });
+      };
+
+      // Simulate browser callback and Stripe webhook arriving simultaneously
+      await Promise.all([simulateEndpoint(), simulateEndpoint()]);
+
+      const contributors = await realPrisma.contributor.findMany({
+        where: { stripePaymentIntentId: 'pi_concurrent_atomic_123' },
+      });
+      expect(contributors).toHaveLength(1);
+      expect(contributors[0].confirmationEmailSentAt).toBeInstanceOf(Date);
+      expect(contributors[0].alertEmailSentAt).toBeInstanceOf(Date);
+
+      // Exactly 1 guest confirmation email and 1 couple alert email sent across both concurrent executions
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+      const recipients = sendEmailSpy.mock.calls.map(([payload]) => payload.to).sort();
+      expect(recipients).toEqual(['concurrent.guest@example.com', 'couple@wedding.test']);
+    } finally {
+      sendEmailSpy.mockRestore();
+    }
   });
 });

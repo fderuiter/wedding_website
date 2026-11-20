@@ -101,11 +101,87 @@ describe('POST /api/registry/payment-intent', () => {
         amount: 10000, // $100 in cents
         currency: 'usd',
         automatic_payment_methods: { enabled: true },
+        receipt_email: 'alex@example.com',
         metadata: expect.objectContaining({
           itemId: 'fund-101',
           baseAmount: '100.00',
           coverFee: 'false',
           contributorName: 'Alex Guest',
+          contributorEmail: 'alex@example.com',
+        }),
+      })
+    );
+  });
+
+  it('omits receipt_email when creating a PaymentIntent without a guest email', async () => {
+    const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        name: 'Alex Guest',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+
+    const createPayload = mockPaymentIntentsCreate.mock.calls[0][0];
+    expect(createPayload).not.toHaveProperty('receipt_email');
+  });
+
+  it('populates receipt_email on PaymentIntent update and clears it when the guest removes their email', async () => {
+    // 1. Update with guest email present
+    const requestWithEmail = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        paymentIntentId: 'pi_test_existing_456',
+        name: 'Alex Guest',
+        email: '  alex@example.com  ',
+      }),
+    });
+
+    const response1 = await POST(requestWithEmail);
+    expect(response1.status).toBe(200);
+    expect(mockPaymentIntentsUpdate).toHaveBeenCalledWith(
+      'pi_test_existing_456',
+      expect.objectContaining({
+        amount: 10000,
+        receipt_email: 'alex@example.com',
+        metadata: expect.objectContaining({
+          contributorEmail: 'alex@example.com',
+        }),
+      })
+    );
+
+    mockPaymentIntentsUpdate.mockClear();
+
+    // 2. Guest clears email input before paying -> receipt_email removed (set to null)
+    const requestClearedEmail = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        paymentIntentId: 'pi_test_existing_456',
+        name: 'Alex Guest',
+        email: '',
+      }),
+    });
+
+    const response2 = await POST(requestClearedEmail);
+    expect(response2.status).toBe(200);
+    expect(mockPaymentIntentsUpdate).toHaveBeenCalledWith(
+      'pi_test_existing_456',
+      expect.objectContaining({
+        amount: 10000,
+        receipt_email: null,
+        metadata: expect.objectContaining({
+          contributorEmail: '',
         }),
       })
     );

@@ -431,9 +431,11 @@ jest.mock('@prisma/client', () => {
     },
     contributor: {
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       delete: jest.fn(),
       upsert: jest.fn(),
     },

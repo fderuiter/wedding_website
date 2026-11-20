@@ -5,6 +5,9 @@ import { registryService } from '../../service';
 import { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig } from '@/lib/config';
+import { MultiChannelMessagingProvider } from '@/features/broadcast';
+import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 
 jest.mock('../../service', () => ({
   registryService: {
@@ -243,5 +246,272 @@ describe('POST /api/registry/contribute', () => {
       expect(body.error).toMatch(/Invalid or unresolved Stripe PaymentIntent/i);
       expect(registryService.contributeToItem).not.toHaveBeenCalled();
     });
+  });
+
+  describe('Inline Transactional Gift Emails & Provider Resilience', () => {
+    let sendEmailSpy: jest.SpyInstance;
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+      warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      (prisma.contributor.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    });
+
+    afterEach(() => {
+      sendEmailSpy.mockRestore();
+      warnSpy.mockRestore();
+    });
+
+    it('dispatches guest confirmation and couple alert emails for a card contribution and strips email from response', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        smtpFrom: 'noreply@wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+        timezone: 'UTC',
+      });
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_card_gift_777',
+        status: 'succeeded',
+        latest_charge: 'ch_card_gift_777',
+        created: 1731763200,
+      });
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        id: 'fund-honeymoon',
+        name: 'Tokyo Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        amountContributed: 100,
+        contributors: [
+          {
+            id: 'contrib-card-1',
+            name: 'Clara Guest',
+            email: 'clara@example.com',
+            amount: 100,
+            coverFee: true,
+            feeAmount: 2.5,
+            message: 'Have an amazing trip!',
+            date: '2026-11-16T12:00:00.000Z',
+            stripePaymentIntentId: 'pi_card_gift_777',
+            transactionTimestamp: '2026-11-16T12:00:00.000Z',
+          },
+        ],
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-honeymoon',
+          name: 'Clara Guest',
+          email: 'clara@example.com',
+          amount: 100,
+          coverFee: true,
+          message: 'Have an amazing trip!',
+          paymentIntentId: 'pi_card_gift_777',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      const responseJson = await response.json();
+      expect(JSON.stringify(responseJson)).not.toContain('clara@example.com');
+
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+
+      const guestPayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'clara@example.com')?.[0];
+      expect(guestPayload).toBeDefined();
+      expect(guestPayload.subject).toContain('Tokyo Honeymoon Fund');
+      expect(guestPayload.body).toContain('Tokyo Honeymoon Fund');
+      expect(guestPayload.body).toContain('$100.00');
+      expect(guestPayload.body).toContain('+$2.50 processing fee');
+      expect(guestPayload.body).toContain('$102.50 total charged');
+      expect(guestPayload.body).toContain('November 16, 2026');
+      expect(guestPayload.body).toContain('pi_card_gift_777');
+      expect(guestPayload.body).toContain('https://couple.wedding.test/registry');
+
+      const couplePayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'couple@wedding.test')?.[0];
+      expect(couplePayload).toBeDefined();
+      expect(couplePayload.body).toContain('Clara Guest');
+      expect(couplePayload.body).toContain('Tokyo Honeymoon Fund');
+      expect(couplePayload.body).toContain('$100.00');
+      expect(couplePayload.body).toContain('Card Checkout');
+      expect(couplePayload.body).toContain('Have an amazing trip!');
+      expect(couplePayload.body).toContain('https://couple.wedding.test/admin/dashboard/thank-you-notes');
+    });
+
+    it('includes payment handle and external transfer reminder for self-reported fund transfers', async () => {
+      const fundItem = {
+        ...mockItem,
+        id: 'fund-venmo-1',
+        name: 'Home Down Payment Fund',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@alex-and-taylor',
+      };
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce(fundItem);
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...fundItem,
+        amountContributed: 75,
+        contributors: [
+          {
+            id: 'contrib-direct-1',
+            name: 'Jordan Transfer',
+            email: 'jordan@example.com',
+            amount: 75,
+            coverFee: false,
+            feeAmount: 0,
+            message: 'Sent on Venmo!',
+            date: '2026-11-20T15:00:00.000Z',
+          },
+        ],
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-venmo-1',
+          name: 'Jordan Transfer',
+          email: 'jordan@example.com',
+          amount: 75,
+          message: 'Sent on Venmo!',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+
+      const guestPayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'jordan@example.com')?.[0];
+      expect(guestPayload.body).toContain('@alex-and-taylor');
+      expect(guestPayload.body).toContain('Venmo');
+      expect(guestPayload.body).toMatch(/finish sending your transfer externally/i);
+      expect(guestPayload.body).toContain('No processing fee ($0.00)');
+      expect(guestPayload.body).toContain('contrib-direct-1');
+      expect(guestPayload.body).toContain('https://couple.wedding.test/registry');
+
+      const couplePayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'couple@wedding.test')?.[0];
+      expect(couplePayload.body).toContain('Direct Transfer (Venmo)');
+    });
+
+    it('escapes untrusted HTML and subject injection sequences in guest names, item titles, and notes', async () => {
+      const unsafeItem = {
+        ...mockItem,
+        id: 'item-xss',
+        name: 'Crystal Vase <img src=x onerror=alert(1)>\r\nBcc: leak@evil.test',
+        itemType: 'PHYSICAL',
+        isGroupGift: false,
+        price: 50,
+      };
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce(unsafeItem);
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...unsafeItem,
+        purchased: true,
+        amountContributed: 50,
+        contributors: [
+          {
+            id: 'contrib-xss-1',
+            name: '<script>alert("name")</script>',
+            email: 'safe@example.com',
+            amount: 50,
+            message: 'Congrats! <svg onload=alert(\'xss\')>',
+            date: '2026-11-20T15:00:00.000Z',
+          },
+        ],
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-xss',
+          name: '<script>alert("name")</script>',
+          email: 'safe@example.com',
+          amount: 50,
+          message: 'Congrats! <svg onload=alert(\'xss\')>',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+
+      for (const [payload] of sendEmailSpy.mock.calls) {
+        expect(payload.subject).not.toMatch(/[\r\n<>]/);
+        expect(payload.body).not.toContain('<script>');
+        expect(payload.body).not.toContain('<img src=x');
+        expect(payload.body).not.toContain('<svg onload=');
+      }
+      const couplePayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'couple@wedding.test')?.[0];
+      expect(couplePayload.body).toContain('&lt;script&gt;alert(&quot;name&quot;)&lt;/script&gt;');
+      expect(couplePayload.body).toContain('&lt;svg onload=alert(&#39;xss&#39;)&gt;');
+      expect(couplePayload.body).toContain('Physical Gift Claim');
+    });
+
+    it.each([
+      ['resend', 'Resend API error (502): Invalid recipient john@example.com for John Wellwisher'],
+      ['sendgrid', 'SendGrid API error (500): Upstream failure for john@example.com'],
+      ['smtp', 'SMTP connection refused while sending Congrats! to john@example.com'],
+    ])(
+      'logs a server warning without PII and returns HTTP 200 when %s dispatch fails',
+      async (providerName, simulatedError) => {
+        (getAppConfig as jest.Mock).mockResolvedValue({
+          modules: ['registry', 'groupGifting'],
+          emailProvider: providerName,
+          resendApiKey: 're_test_key',
+          sendgridApiKey: 'SG.test_key',
+          smtpHost: 'smtp.wedding.test',
+          contactEmail: 'couple@wedding.test',
+          baseUrl: 'https://couple.wedding.test',
+        });
+
+        sendEmailSpy.mockResolvedValue({
+          success: false,
+          error: simulatedError,
+        });
+
+        const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'John Wellwisher',
+            email: 'john@example.com',
+            amount: 50,
+            message: 'Congrats!',
+          }),
+        });
+
+        const response = await POST(request);
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.success).toBe(true);
+        expect(body.data.id).toBe('item-123');
+        expect(JSON.stringify(body)).not.toContain('john@example.com');
+
+        expect(warnSpy).toHaveBeenCalled();
+        const serializedWarnings = JSON.stringify(warnSpy.mock.calls);
+        expect(serializedWarnings).not.toContain('john@example.com');
+        expect(serializedWarnings).not.toContain('couple@wedding.test');
+        expect(serializedWarnings).not.toContain('John Wellwisher');
+        expect(serializedWarnings).not.toContain('Congrats!');
+      }
+    );
   });
 });

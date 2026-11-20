@@ -1,4 +1,4 @@
-import { renderBroadcastTemplate, sanitizeEmailSubject } from '../template';
+import { escapeHtmlEntities, renderBroadcastTemplate, sanitizeEmailSubject } from '../template';
 
 describe('renderBroadcastTemplate', () => {
   const sampleContext = {
@@ -75,5 +75,13 @@ describe('sanitizeEmailSubject', () => {
 
     expect(sanitized).toBe('Event update for b data-canary="m"O\'Connor & Family/bBcc: attacker@example.invalid');
     expect(sanitized).not.toMatch(/[\r\n<>]/);
+  });
+});
+
+describe('escapeHtmlEntities', () => {
+  it('escapes HTML entities in untrusted text', () => {
+    expect(escapeHtmlEntities('<script>alert("O\'Connor & Co")</script>')).toBe(
+      '&lt;script&gt;alert(&quot;O&#39;Connor &amp; Co&quot;)&lt;/script&gt;'
+    );
   });
 });

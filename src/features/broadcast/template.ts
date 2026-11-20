@@ -8,7 +8,10 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
   "'": '&#39;',
 };
 
-function escapeHtmlEntities(value: string): string {
+/**
+ * Escapes HTML special characters (&, <, >, ", ') to prevent XSS in HTML email bodies.
+ */
+export function escapeHtmlEntities(value: string): string {
   return value.replace(/[&<>"']/g, (char) => HTML_ESCAPE_MAP[char] ?? char);
 }
 

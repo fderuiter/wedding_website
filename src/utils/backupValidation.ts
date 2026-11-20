@@ -256,6 +256,8 @@ const BackupContributorSchema = z.object({
   stripePaymentIntentId: z.string().max(255).nullable().optional(),
   stripeChargeId: z.string().max(255).nullable().optional(),
   transactionTimestamp: z.date().nullable().optional(),
+  confirmationEmailSentAt: z.date().nullable().optional(),
+  alertEmailSentAt: z.date().nullable().optional(),
   registryItemId: z.string().max(255).nullable().optional(),
   invitationCodeId: z.string().max(255).nullable().optional(),
 });

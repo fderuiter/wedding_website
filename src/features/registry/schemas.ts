@@ -77,6 +77,8 @@ export const ContributorSchema = z.object({
   stripePaymentIntentId: z.string().nullable().optional(),
   stripeChargeId: z.string().nullable().optional(),
   transactionTimestamp: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
+  confirmationEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
+  alertEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
   registryItemId: z.string().nullable().optional(),
   registryItem: z.object({
     id: z.string(),

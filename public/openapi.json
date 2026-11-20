@@ -3104,6 +3104,12 @@
                         "transactionTimestamp": {
                           "nullable": true
                         },
+                        "confirmationEmailSentAt": {
+                          "nullable": true
+                        },
+                        "alertEmailSentAt": {
+                          "nullable": true
+                        },
                         "registryItemId": {
                           "nullable": true,
                           "type": "string",
