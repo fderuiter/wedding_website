@@ -264,20 +264,43 @@ jobs:
       - name: Poll Restored Service Health
         id: health_probe
         env:
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           ENV_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           PROVIDER_SERVICE_URL: ${{ needs.redeploy.outputs.service_url }}
           IS_DRY_RUN: ${{ needs.redeploy.outputs.is_dry_run }}
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag }}
         run: |
-          RESOLVED_URL="${ENV_SERVICE_URL:-$PROVIDER_SERVICE_URL}"
-          TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
+          CONFIGURED_SERVICE_URL=""
+          USED_SECRET_FALLBACK="false"
+          if [ -n "${VAR_SERVICE_URL:-}" ]; then
+            CONFIGURED_SERVICE_URL="$VAR_SERVICE_URL"
+          elif [ -n "${ENV_SERVICE_URL:-}" ]; then
+            CONFIGURED_SERVICE_URL="$ENV_SERVICE_URL"
+            USED_SECRET_FALLBACK="true"
+          fi
+
+          RESOLVED_URL="$CONFIGURED_SERVICE_URL"
+          if [ -z "$RESOLVED_URL" ] && [ -n "${PROVIDER_SERVICE_URL:-}" ] && [ "$PROVIDER_SERVICE_URL" != "***" ]; then
+            RESOLVED_URL="$PROVIDER_SERVICE_URL"
+          fi
+
+          if [ "${IS_DRY_RUN:-false}" = "true" ]; then
+            TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
+          else
+            TARGET_URL="$RESOLVED_URL"
+          fi
           TARGET_URL="${TARGET_URL%/}"
 
-          if [[ ! "$TARGET_URL" =~ ^https?:// ]]; then
-            echo "::error::Invalid SERVICE_URL '${TARGET_URL}'. Must start with http:// or https://."
+          OUTPUT_SERVICE_URL="$TARGET_URL"
+          if [ "$USED_SECRET_FALLBACK" = "true" ]; then
+            OUTPUT_SERVICE_URL=""
+          fi
+
+          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
+            echo "::error::Invalid or missing SERVICE_URL '${OUTPUT_SERVICE_URL}'. Must start with http:// or https://."
             echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
-            echo "service_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+            echo "service_url=${OUTPUT_SERVICE_URL}" >> "$GITHUB_OUTPUT"
             echo "http_status=invalid-url" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -330,7 +353,7 @@ jobs:
               echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
             fi
 
-            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$ENV_SERVICE_URL" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
+            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$CONFIGURED_SERVICE_URL" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
               if [ $ELAPSED -ge 2 ]; then
                 echo "::notice::Dry-run rollback environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true
@@ -347,7 +370,7 @@ jobs:
             fi
           done
 
-          echo "service_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+          echo "service_url=${OUTPUT_SERVICE_URL}" >> "$GITHUB_OUTPUT"
           echo "http_status=${HTTP_STATUS:-unreachable}" >> "$GITHUB_OUTPUT"
 
           if [ "$SUCCESS" = "true" ]; then
