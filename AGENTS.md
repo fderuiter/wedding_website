@@ -82,7 +82,7 @@ npm run quality
 1. Verify Environment Documentation (`npx tsx scripts/verify-env-docs.ts` / `check:env-docs`)
 2. Verify Deployment Runbooks (`npx tsx scripts/verify-deployment-runbooks.ts` / `check:runbooks`)
 3. Check Personal/Template Identifier Isolation (`npx tsx scripts/check-personal-identifiers.ts` / `check:identifiers`)
-4. Check Third-Party Action Pin Commit SHAs (`npm run check:action-pins`)
+4. Check Workflow YAML 1.2 Syntax & Third-Party Action Pin Commit SHAs (`npm run check:action-pins`)
 5. Check Documentation Relative Links (`npx tsx scripts/check-doc-links.ts` / `check:links`)
 6. Validate Prisma Schema (`npx tsx scripts/check-prisma-schema.ts` / `check:prisma`)
 7. TypeScript Typecheck across all four project configs (`npm run typecheck`)
@@ -142,7 +142,7 @@ node scripts/a11y-report.mjs
   - `npm run check:env-docs` — Ensure environment variables align with [`.env.example`](.env.example) and deployment docs ([`scripts/verify-env-docs.ts`](scripts/verify-env-docs.ts)).
   - `npm run check:runbooks` — Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts ([`scripts/verify-deployment-runbooks.ts`](scripts/verify-deployment-runbooks.ts)).
   - `npm run check:identifiers` — Guard against prohibited personal/template identifiers in runtime code ([`scripts/check-personal-identifiers.ts`](scripts/check-personal-identifiers.ts)).
-  - `npm run check:action-pins` — Verify every external GitHub Action in `.github/workflows/*.yml` is pinned to a full 40-character commit SHA ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
+  - `npm run check:action-pins` — Validate strict YAML 1.2 syntax across `.github/workflows/*.yml` and verify every external GitHub Action is pinned to a full 40-character commit SHA ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
   - `npm run check:links` — Verify all relative Markdown links resolve to existing repository files ([`scripts/check-doc-links.ts`](scripts/check-doc-links.ts)).
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
   - `npm run check:doc-sync` — Verify [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`public/openapi.json`](public/openapi.json) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
