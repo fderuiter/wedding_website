@@ -2,14 +2,23 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Icon } from '@/components/ui/Icon';
-import { MAX_GUEST_PHOTO_SIZE, GUEST_PHOTO_ACCEPTED_TYPES, GUEST_PHOTO_ALLOWED_EXTENSIONS, getFileExtension } from '@/utils/validation';
+import {
+  MAX_GUEST_PHOTO_SIZE,
+  GUEST_PHOTO_ACCEPTED_TYPES,
+  GUEST_PHOTO_ALLOWED_EXTENSIONS,
+  getFileExtension,
+  isHeicExtension,
+} from '@/utils/validation';
 
 const MAX_CONCURRENT_UPLOADS = 2;
 
 export interface UploadedPhoto {
   id: string;
   url: string;
+  title?: string;
   altText?: string | null;
+  uploaderName?: string;
+  caption?: string;
   createdAt?: string | Date;
   nodeId?: string;
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -26,6 +35,8 @@ export interface UploadStatus {
   url?: string;
   file?: File;
   order?: number;
+  uploaderName?: string;
+  caption?: string;
 }
 
 interface GuestPhotoDropzoneProps {
@@ -37,6 +48,8 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
   const [isDragging, setIsDragging] = useState(false);
   const [uploads, setUploads] = useState<UploadStatus[]>([]);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [uploaderName, setUploaderName] = useState('');
+  const [caption, setCaption] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -50,13 +63,23 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       return `"${file.name}" exceeds the 10 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`;
     }
     const ext = getFileExtension(file.name);
-    if (!GUEST_PHOTO_ACCEPTED_TYPES.includes(file.type) || !GUEST_PHOTO_ALLOWED_EXTENSIONS.includes(ext)) {
-      return `"${file.name}" is an unsupported format. Please upload JPEG, PNG, or WebP images.`;
+    const mime = (file.type || '').toLowerCase();
+    const isAllowedHeicFallback =
+      isHeicExtension(ext) && (mime === '' || mime === 'application/octet-stream');
+    if (
+      (!GUEST_PHOTO_ACCEPTED_TYPES.includes(mime) && !isAllowedHeicFallback) ||
+      !GUEST_PHOTO_ALLOWED_EXTENSIONS.includes(ext)
+    ) {
+      return `"${file.name}" is an unsupported format. Please upload JPEG, PNG, WebP, or HEIC images.`;
     }
     return null;
   }, []);
 
-  const uploadFile = useCallback(async (file: File, uploadId: string) => {
+  const uploadFile = useCallback(async (
+    file: File,
+    uploadId: string,
+    metadata?: { uploaderName?: string; caption?: string }
+  ) => {
     const controller = new AbortController();
     abortControllersRef.current.set(uploadId, controller);
 
@@ -71,6 +94,14 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
     try {
       const formData = new FormData();
       formData.append('file', file);
+      const trimmedUploaderName = metadata?.uploaderName?.trim();
+      const trimmedCaption = metadata?.caption?.trim();
+      if (trimmedUploaderName) {
+        formData.append('uploaderName', trimmedUploaderName);
+      }
+      if (trimmedCaption) {
+        formData.append('caption', trimmedCaption);
+      }
 
       setUploads((prev) => {
         const next = prev.map((item) =>
@@ -126,31 +157,27 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       if (onUploadSuccess && json.data) {
         const isApprovedUpload = (photo: UploadedPhoto | null | undefined): photo is UploadedPhoto =>
           Boolean(photo && photo.status === 'APPROVED' && photo.isVisible !== false);
+        const mapApprovedPhoto = (photo: UploadedPhoto): UploadedPhoto => ({
+          id: photo.nodeId || photo.id,
+          url: photo.url,
+          title: photo.title,
+          altText: photo.altText,
+          uploaderName: photo.uploaderName,
+          caption: photo.caption,
+          createdAt: photo.createdAt,
+          nodeId: photo.nodeId,
+          status: photo.status,
+          isVisible: photo.isVisible,
+        });
 
         if (Array.isArray(json.data)) {
           json.data.forEach((photo: UploadedPhoto) => {
             if (isApprovedUpload(photo)) {
-              onUploadSuccess({
-                id: photo.nodeId || photo.id,
-                url: photo.url,
-                altText: photo.altText,
-                createdAt: photo.createdAt,
-                nodeId: photo.nodeId,
-                status: photo.status,
-                isVisible: photo.isVisible,
-              });
+              onUploadSuccess(mapApprovedPhoto(photo));
             }
           });
         } else if (isApprovedUpload(json.data)) {
-          onUploadSuccess({
-            id: json.data.nodeId || json.data.id,
-            url: json.data.url,
-            altText: json.data.altText,
-            createdAt: json.data.createdAt,
-            nodeId: json.data.nodeId,
-            status: json.data.status,
-            isVisible: json.data.isVisible,
-          });
+          onUploadSuccess(mapApprovedPhoto(json.data));
         }
       }
     } catch (err: unknown) {
@@ -211,7 +238,10 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
     const itemsToStart = pendingItems.slice(0, availableSlots);
     itemsToStart.forEach((item) => {
       if (item.file) {
-        uploadFile(item.file, item.id);
+        uploadFile(item.file, item.id, {
+          uploaderName: item.uploaderName,
+          caption: item.caption,
+        });
       }
     });
   }, [uploadFile]);
@@ -240,6 +270,8 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
 
     if (fileArray.length === 0) return;
 
+    const capturedUploaderName = uploaderName.trim() || undefined;
+    const capturedCaption = caption.trim() || undefined;
     const newStatuses: UploadStatus[] = [];
 
     fileArray.forEach((file) => {
@@ -256,6 +288,8 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           errorMessage: validationError,
           file,
           order: uploadCounterRef.current++,
+          uploaderName: capturedUploaderName,
+          caption: capturedCaption,
         });
       } else {
         newStatuses.push({
@@ -266,6 +300,8 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           status: 'pending',
           file,
           order: uploadCounterRef.current++,
+          uploaderName: capturedUploaderName,
+          caption: capturedCaption,
         });
       }
     });
@@ -277,7 +313,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
     });
 
     processQueueRef.current();
-  }, [validateFile]);
+  }, [validateFile, uploaderName, caption]);
 
   const handleRetry = useCallback((uploadId: string) => {
     const item = uploadsRef.current.find((u) => u.id === uploadId);
@@ -297,6 +333,9 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       return;
     }
 
+    const updatedUploaderName = uploaderName.trim() || item.uploaderName;
+    const updatedCaption = caption.trim() || item.caption;
+
     setUploads((prev) => {
       const next = prev.map((u) =>
         u.id === uploadId
@@ -306,6 +345,8 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             progress: 0,
             errorMessage: undefined,
             order: uploadCounterRef.current++,
+            uploaderName: updatedUploaderName,
+            caption: updatedCaption,
           }
           : u
       );
@@ -314,7 +355,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
     });
 
     processQueueRef.current();
-  }, [validateFile]);
+  }, [validateFile, uploaderName, caption]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -375,6 +416,47 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
 
   return (
     <div className={className}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label
+            htmlFor="guest-photo-uploader-name"
+            className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1"
+          >
+            Your Name <span className="text-stone-500 dark:text-stone-400 font-normal">(optional)</span>
+          </label>
+          <input
+            id="guest-photo-uploader-name"
+            name="uploaderName"
+            type="text"
+            maxLength={100}
+            value={uploaderName}
+            onChange={(e) => setUploaderName(e.target.value)}
+            placeholder="e.g. Aunt Clara"
+            data-testid="guest-photo-uploader-name"
+            className="w-full rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+        <div>
+          <label
+            htmlFor="guest-photo-caption"
+            className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1"
+          >
+            Caption or Note <span className="text-stone-500 dark:text-stone-400 font-normal">(optional)</span>
+          </label>
+          <input
+            id="guest-photo-caption"
+            name="caption"
+            type="text"
+            maxLength={500}
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="e.g. Sparkler exit!"
+            data-testid="guest-photo-caption"
+            className="w-full rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+      </div>
+
       <label htmlFor="guest-photo-file-input" className="sr-only">
         Upload wedding photos
       </label>
@@ -383,7 +465,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
         id="guest-photo-file-input"
         ref={fileInputRef}
         onChange={handleFileInputChange}
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
         multiple
         className="hidden"
         data-testid="guest-photo-file-input"
@@ -418,12 +500,12 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             <p className="text-lg font-semibold text-stone-800 dark:text-stone-200">
               {isDragging ? 'Drop your photos here!' : 'Share Your Wedding Photos'}
             </p>
-            <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
+            <p className="text-sm text-stone-600 dark:text-stone-400 mt-1">
               Drag and drop image files here, or <span className="text-primary font-medium underline">browse files</span>
             </p>
           </div>
-          <p className="text-xs text-stone-400 dark:text-stone-500">
-            Supports JPEG, PNG, and WebP (up to 10 MB per file)
+          <p className="text-xs text-stone-500 dark:text-stone-400">
+            Supports JPEG, PNG, WebP, and HEIC (up to 10 MB per file)
           </p>
         </div>
       </div>

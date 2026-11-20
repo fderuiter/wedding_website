@@ -66,4 +66,20 @@ describe('Perimeter Host Header Filtering Middleware', () => {
     const res = await middleware(req);
     expect(res.status).toBe(400);
   });
+
+  it('enforces ALLOWED_HOSTS checks on /api/registry/webhook/stripe, /api/cron/broadcasts, and /uploads/* before exclusions', async () => {
+    for (const targetPath of ['/api/registry/webhook/stripe', '/api/cron/broadcasts', '/uploads/photo.png']) {
+      const req = new NextRequest(`http://localhost:3000${targetPath}`, {
+        method: targetPath.includes('webhook') ? 'POST' : 'GET',
+        headers: {
+          host: 'localhost:3000',
+          'x-forwarded-host': 'spoofed-host.invalid',
+        },
+      });
+
+      const res = await middleware(req);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'Invalid Host header' });
+    }
+  });
 });

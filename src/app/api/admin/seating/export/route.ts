@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
-import { generateSeatingChartPdf } from '@/features/seating';
+import { generateSeatingChartPdf, isGuestEligibleForSeating } from '@/features/seating';
 import {
   formatAttendanceLabel,
   formatGuestPlusOneNames,
@@ -42,7 +42,7 @@ interface SeatingExportRecord extends Record<string, unknown> {
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const format = request?.url ? new URL(request.url).searchParams.get('format')?.toLowerCase() : null;
 
-  const [tables, unassignedGuests] = await Promise.all([
+  const [rawTables, rawUnassignedGuests] = await Promise.all([
     prisma.seatingTable.findMany({
       include: {
         invitationCodes: {
@@ -56,6 +56,16 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       orderBy: { guestName: 'asc' },
     }),
   ]);
+
+  const tables = rawTables.map((table) => ({
+    ...table,
+    invitationCodes: (table.invitationCodes || []).filter((guest) =>
+      isGuestEligibleForSeating(guest)
+    ),
+  }));
+  const unassignedGuests = rawUnassignedGuests.filter((guest) =>
+    isGuestEligibleForSeating(guest)
+  );
 
   if (format === 'pdf') {
     let siteTitle = 'Wedding Reception Seating Chart';

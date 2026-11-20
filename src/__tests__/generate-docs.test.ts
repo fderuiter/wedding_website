@@ -6,7 +6,9 @@ import {
   getZodType,
   getZodDescription,
   escapeMarkdownTableCell,
+  encodeRouteMermaidNodeId,
   generateConfigTable,
+  generateRoutesDiagram,
   generateApiRoutesSection,
   generateEnvSpecs,
   generateFeatureMetadataTable,
@@ -165,7 +167,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 71 Prisma columns, 16 virtual DTO fields, 69 public fields, 14 admin-only fields, and 4 masked secrets', () => {
+    it('distinguishes 72 Prisma columns, 15 virtual DTO fields, 69 public fields, 14 admin-only fields, and 4 masked secrets', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
 
@@ -181,8 +183,8 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
 
-      expect(prismaRows).toHaveLength(71);
-      expect(virtualRows).toHaveLength(16);
+      expect(prismaRows).toHaveLength(72);
+      expect(virtualRows).toHaveLength(15);
       expect(publicRows).toHaveLength(69);
       expect(adminOnlyRows).toHaveLength(14);
       expect(maskedSecretRows).toHaveLength(4);
@@ -193,23 +195,86 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 69 API route handlers and marks /api/media and /api/media/[id] as Admin-only', () => {
+    it('lists all 70 API route handlers and marks /api/media Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **69**');
+      expect(apiSection).toContain('Total API route handlers: **70**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(69);
+      expect(handlerRows).toHaveLength(70);
 
       expect(apiSection).toContain('| `/api/media` | `src/app/api/media/route.ts` | `GET`, `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media/[id]` | `src/app/api/media/[id]/route.ts` | `PUT`, `DELETE` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media/export` | `src/app/api/media/export/route.ts` | `GET`, `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/cron/broadcasts` | `src/app/api/cron/broadcasts/route.ts` | `GET`, `POST` | `Bearer (CRON_SECRET)` |');
+      expect(apiSection).toContain(
+        '| `/api/registry/webhook/stripe` | `src/app/api/registry/webhook/stripe/route.ts` | `POST` | `stripeSignature (STRIPE_WEBHOOK_SECRET)` |'
+      );
+      expect(apiSection).toContain(
+        '| `/api/uploads/[...path]` | `src/app/api/uploads/[...path]/route.ts` | `GET`, `HEAD` | `Public` |'
+      );
     });
 
     it('generates non-empty environment specifications', () => {
       expect(generateEnvSpecs()).toContain('**Node.js**: v22.x');
+    });
+
+    it('encodes bracketed, hyphenated, and catch-all route segments into distinct collision-free Mermaid node IDs', () => {
+      const candidates = [
+        'id',
+        '[id]',
+        'export-labels',
+        'exportlabels',
+        'export_labels',
+        'export/labels',
+        'path',
+        '[...path]',
+        '...path',
+        'api/admin/[entity]/[id]',
+        'api/admin/entity/id',
+      ];
+
+      const encodedIds = candidates.map((rel) => encodeRouteMermaidNodeId(rel));
+      expect(new Set(encodedIds).size).toBe(candidates.length);
+      for (const id of encodedIds) {
+        expect(id).toMatch(/^node_[A-Za-z0-9_]+$/);
+      }
+
+      const tmpAppDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-diagram-'));
+      try {
+        const routeDirs = [
+          'items/id',
+          'items/[id]',
+          'notes/export-labels',
+          'notes/exportlabels',
+          'uploads/[...path]',
+          'uploads/path',
+        ];
+        for (const rel of routeDirs) {
+          const full = path.join(tmpAppDir, rel);
+          fs.mkdirSync(full, { recursive: true });
+          fs.writeFileSync(path.join(full, 'route.ts'), 'export async function GET() {}\n', 'utf8');
+        }
+
+        const diagram = generateRoutesDiagram(tmpAppDir);
+        const idNodeLines = diagram
+          .split('\n')
+          .filter((line) => line.includes('["id"]') || line.includes('["[id]"]'));
+        expect(idNodeLines).toHaveLength(2);
+
+        const exportLines = diagram
+          .split('\n')
+          .filter((line) => line.includes('["export-labels"]') || line.includes('["exportlabels"]'));
+        expect(exportLines).toHaveLength(2);
+
+        const uploadLines = diagram
+          .split('\n')
+          .filter((line) => line.includes('["[...path]"]') || line.includes('["path"]'));
+        expect(uploadLines).toHaveLength(2);
+      } finally {
+        fs.rmSync(tmpAppDir, { recursive: true, force: true });
+      }
     });
 
     it('escapes both backslashes and pipe characters in Markdown table cells', () => {
@@ -229,10 +294,11 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('FEATURE_MODULES.md Automated Table Generation', () => {
-    it('generates all 10 presentation feature toggles with dependencies, persistence, and HTTP 400 groupGifting coverage', () => {
+    it('generates all 9 presentation feature toggles with dependencies, Prisma persistence, and HTTP 400 groupGifting coverage', () => {
       const table = generateFeatureMetadataTable();
       const rows = table.trim().split('\n').slice(2);
-      expect(rows).toHaveLength(10);
+      expect(rows).toHaveLength(9);
+      expect(table).not.toContain('`guestPasscode`');
 
       for (const key of Object.keys(FEATURE_METADATA)) {
         expect(table).toContain(`| \`${key}\` |`);
@@ -241,8 +307,8 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('Requires `registry`');
       expect(table).toContain('HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent`');
       expect(table).toContain('`/registry/edit-item/[id]`');
-      expect(table).toContain('`Virtual DTO` + `Prisma` (`showCountdown`)');
-      expect(table).toContain('`Virtual DTO` + `Prisma` (`showAddToCalendar`)');
+      expect(table).toContain('`Prisma` (`modules` + `showCountdown`)');
+      expect(table).toContain('`Prisma` (`modules` + `showAddToCalendar`)');
     });
 
     it('generates all 7 exact plural ENTITY_KEY slugs from src/features/admin/registry.ts', () => {

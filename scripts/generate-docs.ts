@@ -31,6 +31,7 @@ const API_GROUP_LABELS: Record<string, string> = {
   registry: 'Registry Routes',
   rsvp: 'RSVP Routes',
   schedule: 'Schedule Routes',
+  uploads: 'Uploads Routes',
   weather: 'Weather Routes',
 };
 
@@ -315,8 +316,38 @@ function buildRouteTree(srcPath: string, relativePath: string = ''): RouteNode |
   return null;
 }
 
-export function generateRoutesDiagram(): string {
-  const srcAppPath = path.join(ROOT_DIR, 'src/app');
+const MERMAID_CHAR_TOKENS: Record<string, string> = {
+  '/': '__',
+  '-': '_d_',
+  '_': '_u_',
+  '[': '_lb_',
+  ']': '_rb_',
+  '.': '_p_',
+  '(': '_lp_',
+  ')': '_rp_',
+  '@': '_at_',
+};
+
+export function encodeRouteMermaidNodeId(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!normalized) {
+    return 'App';
+  }
+
+  let encoded = 'node_';
+  for (const ch of normalized) {
+    if (/[A-Za-z0-9]/.test(ch)) {
+      encoded += ch;
+    } else if (Object.prototype.hasOwnProperty.call(MERMAID_CHAR_TOKENS, ch)) {
+      encoded += MERMAID_CHAR_TOKENS[ch];
+    } else {
+      encoded += `_x${ch.codePointAt(0)!.toString(16)}_`;
+    }
+  }
+  return encoded;
+}
+
+export function generateRoutesDiagram(srcAppPath: string = path.join(ROOT_DIR, 'src/app')): string {
   const tree = buildRouteTree(srcAppPath);
 
   let treeMarkdown = '```mermaid\nflowchart LR\n';
@@ -338,7 +369,7 @@ export function generateRoutesDiagram(): string {
       id = 'App';
       displayName = 'src/app';
     } else {
-      id = 'node_' + node.relativePath.replace(/\\/g, '/').split('/').join('_').replace(/\[|\]|-/g, '');
+      id = encodeRouteMermaidNodeId(node.relativePath);
     }
 
     let type: 'page' | 'api' | 'none' = 'none';
@@ -435,27 +466,145 @@ function extractExportedHttpMethods(filePath: string): string[] {
   return HTTP_METHODS.filter((method) => found.has(method));
 }
 
-function getMiddlewarePublicApiExclusions(): Set<string> {
+interface MiddlewareApiExclusions {
+  exact: Set<string>;
+  prefixes: string[];
+}
+
+function getMiddlewarePublicApiExclusions(): MiddlewareApiExclusions {
   const middlewarePath = path.join(ROOT_DIR, 'src/middleware.ts');
   const source = fs.readFileSync(middlewarePath, 'utf8');
-  const excluded = new Set<string>();
-  const regex = /normalizedPath\s*===\s*'(\/api\/[^']+)'/g;
+  const exact = new Set<string>();
+  const prefixes: string[] = [];
+
+  const exactRegex = /normalizedPath\s*===\s*'(\/api\/[^']+)'/g;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(source)) !== null) {
+  while ((match = exactRegex.exec(source)) !== null) {
     if (match[1] !== '/api/cron') {
-      excluded.add(match[1]);
+      exact.add(match[1]);
     }
   }
-  return excluded;
+
+  const prefixRegex = /normalizedPath\.startsWith\(\s*'(\/api\/[^']+)'\s*\)/g;
+  while ((match = prefixRegex.exec(source)) !== null) {
+    if (match[1] !== '/api/' && match[1] !== '/api/cron/') {
+      prefixes.push(match[1]);
+    }
+  }
+
+  return { exact, prefixes };
+}
+
+function isMiddlewarePublicApiRoute(
+  routePath: string,
+  exclusions: MiddlewareApiExclusions,
+): boolean {
+  if (exclusions.exact.has(routePath)) {
+    return true;
+  }
+  return exclusions.prefixes.some((prefix) => routePath.startsWith(prefix));
+}
+
+function resolveLocalModuleFile(fromFile: string, specifier: string): string | null {
+  let baseResolved: string;
+  if (specifier.startsWith('@/')) {
+    baseResolved = path.join(ROOT_DIR, 'src', specifier.slice(2));
+  } else if (specifier.startsWith('.')) {
+    baseResolved = path.resolve(path.dirname(fromFile), specifier);
+  } else {
+    return null;
+  }
+
+  const candidates = [
+    baseResolved,
+    `${baseResolved}.ts`,
+    `${baseResolved}.tsx`,
+    path.join(baseResolved, 'index.ts'),
+    path.join(baseResolved, 'index.tsx'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function fileChecksStripeSignature(
+  filePath: string,
+  targetSymbols?: Set<string>,
+  visited = new Set<string>(),
+): boolean {
+  const visitKey = `${filePath}::${targetSymbols ? Array.from(targetSymbols).sort().join(',') : '*'}`;
+  if (visited.has(visitKey)) {
+    return false;
+  }
+  visited.add(visitKey);
+
+  const sourceText = fs.readFileSync(filePath, 'utf8');
+  const sf = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
+
+  let hasReExports = false;
+  for (const stmt of sf.statements) {
+    if (ts.isExportDeclaration(stmt) && stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)) {
+      hasReExports = true;
+      const targetFile = resolveLocalModuleFile(filePath, stmt.moduleSpecifier.text);
+      if (!targetFile) continue;
+
+      if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+        const nextSymbols = new Set<string>();
+        for (const el of stmt.exportClause.elements) {
+          const exportedName = el.name.text;
+          const localName = el.propertyName ? el.propertyName.text : el.name.text;
+          if (!targetSymbols || targetSymbols.has(exportedName)) {
+            nextSymbols.add(localName);
+          }
+        }
+        if (nextSymbols.size > 0 && fileChecksStripeSignature(targetFile, nextSymbols, visited)) {
+          return true;
+        }
+      } else if (fileChecksStripeSignature(targetFile, targetSymbols, visited)) {
+        return true;
+      }
+    } else if (ts.isImportDeclaration(stmt) && stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)) {
+      const targetFile = resolveLocalModuleFile(filePath, stmt.moduleSpecifier.text);
+      if (!targetFile || !stmt.importClause?.namedBindings || !ts.isNamedImports(stmt.importClause.namedBindings)) {
+        continue;
+      }
+      const nextSymbols = new Set<string>();
+      for (const el of stmt.importClause.namedBindings.elements) {
+        const importedLocal = el.name.text;
+        const origName = el.propertyName ? el.propertyName.text : el.name.text;
+        if (new RegExp(`\\b${importedLocal}\\b`).test(sourceText)) {
+          nextSymbols.add(origName);
+        }
+      }
+      if (nextSymbols.size > 0 && fileChecksStripeSignature(targetFile, nextSymbols, visited)) {
+        return true;
+      }
+    }
+  }
+
+  if (!hasReExports && /headers\.get\(\s*['"]stripe-signature['"]\s*\)/.test(sourceText)) {
+    return true;
+  }
+
+  return /headers\.get\(\s*['"]stripe-signature['"]\s*\)/.test(sourceText) && !filePath.endsWith('/index.ts');
 }
 
 function resolveRouteAccessTier(
   routePath: string,
+  fullPath: string,
   methods: string[],
-  publicApiExclusions: Set<string>,
+  publicApiExclusions: MiddlewareApiExclusions,
 ): string {
   if (routePath === '/api/cron' || routePath.startsWith('/api/cron/')) {
     return '`Bearer (CRON_SECRET)`';
+  }
+
+  const httpSymbolSet = new Set(methods);
+  if (fileChecksStripeSignature(fullPath, httpSymbolSet)) {
+    return '`stripeSignature (STRIPE_WEBHOOK_SECRET)`';
   }
 
   const tierMethods = new Map<string, string[]>();
@@ -463,7 +612,7 @@ function resolveRouteAccessTier(
     let tier: string;
     if (isProtectedRoute(routePath, method)) {
       tier = 'Admin-only';
-    } else if (publicApiExclusions.has(routePath)) {
+    } else if (isMiddlewarePublicApiRoute(routePath, publicApiExclusions)) {
       tier = 'Public';
     } else {
       tier = 'Guest / Admin';
@@ -496,7 +645,7 @@ export function generateApiRoutesSection(): string {
     const segments = routePath.replace(/^\/api\//, '').split('/');
     const group = segments[0] || 'root';
     const methods = extractExportedHttpMethods(fullPath);
-    const accessTier = resolveRouteAccessTier(routePath, methods, publicApiExclusions);
+    const accessTier = resolveRouteAccessTier(routePath, fullPath, methods, publicApiExclusions);
 
     return {
       group,
@@ -584,59 +733,53 @@ interface FeatureRuntimeEnforcement {
 
 const FEATURE_RUNTIME_ENFORCEMENT: Record<FeatureId, FeatureRuntimeEnforcement> = {
   registry: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
-      'Nav hidden; `/registry`, `/registry/add-item`, `/registry/edit-item/[id]` skip server `isFeatureEnabled`',
+      'Nav hidden; `/registry`, `/registry/add-item`, `/registry/edit-item/[id]` return HTTP 404 (`/admin/dashboard/registry` skips `isFeatureEnabled`)',
     apiCoverage:
-      'HTTP 404 on `/api/registry/{items,items/batch,capabilities,contribute,payment-intent}`; skipped on `items/[id]`, `scrape`, `scrape/batch`, `session`, `validate-code`, `webhook/stripe`, `/api/admin/[entity]`',
+      'HTTP 404 on `/api/registry/{items,items/[id],items/batch,capabilities,contribute,payment-intent,scrape/batch}`; skipped on `scrape`, `session`, `validate-code`, `webhook/stripe`, `/api/admin/[entity]`',
   },
   groupGifting: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage: '`/registry` (group gift contribution UI)',
     apiCoverage: 'HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent`',
   },
-  guestPasscode: {
-    persistence: '`Virtual DTO`',
-    uiCoverage:
-      'Unchecked (`/guest/login`, `/guest`, `/guest/collect`, and `src/middleware.ts` skip `isFeatureEnabled`)',
-    apiCoverage: 'Unchecked (`POST /api/guest/login` skips `isFeatureEnabled`)',
-  },
   weather: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage: 'Nav hidden; `/weather` returns HTTP 404',
     apiCoverage: 'HTTP 404 on `GET /api/weather`',
   },
   weddingParty: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
       'Nav hidden; `/wedding-party` returns HTTP 404 (`/admin/dashboard/wedding-party` skips `isFeatureEnabled`)',
     apiCoverage: 'Unchecked (`/api/admin/[entity]` with `wedding-party` skips `isFeatureEnabled`)',
   },
   attractions: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
       'Nav hidden; `/things-to-do` returns HTTP 404 (`/admin/dashboard/attractions` skips `isFeatureEnabled`)',
     apiCoverage: 'Unchecked (`/api/admin/[entity]` with `attractions` skips `isFeatureEnabled`)',
   },
   gallery: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
       'Nav + `/` link hidden; `/photos` & `/photos/slideshow` return HTTP 404 (`/admin/dashboard/media` skips `isFeatureEnabled`)',
     apiCoverage:
       'HTTP 404 on `/api/photos`, `/api/photos/upload`, `/api/guest/photos/upload`, `/api/media/*`, `/api/admin/photos/*`',
   },
   countdown: {
-    persistence: '`Virtual DTO` + `Prisma` (`showCountdown`)',
+    persistence: '`Prisma` (`modules` + `showCountdown`)',
     uiCoverage: 'Homepage (`/`) widget (`config.showCountdown && isFeatureEnabled`)',
     apiCoverage: 'N/A',
   },
   addToCalendar: {
-    persistence: '`Virtual DTO` + `Prisma` (`showAddToCalendar`)',
+    persistence: '`Prisma` (`modules` + `showAddToCalendar`)',
     uiCoverage: 'Homepage (`/`) widget (`config.showAddToCalendar && isFeatureEnabled`)',
     apiCoverage: 'N/A (`GET /api/schedule/[id]/ics` skips `isFeatureEnabled`)',
   },
   interactive3D: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage: 'Homepage (`/`) section hidden; `/heart` returns HTTP 404',
     apiCoverage: 'N/A',
   },

@@ -6,21 +6,15 @@ import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { AttractionEditorForm, AttractionCard } from '@/components/admin/AttractionEditor';
-import { useToast } from '@/components/ui/ToastProvider';
+import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 
 interface AttractionsManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerModalProps) {
-  let toastConfirm: ((_msg: string) => Promise<boolean>) | null = null;
-  try {
-    const toast = useToast();
-    toastConfirm = toast.confirm;
-  } catch {
-    // Fallback if rendered outside ToastProvider
-  }
+function AttractionsManagerModalContent({ isOpen, onClose }: AttractionsManagerModalProps) {
+  const { confirm } = useToast();
 
   const {
     data: attractions,
@@ -78,10 +72,7 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
   };
 
   const handleDelete = async (id: string) => {
-    const isConfirmed = toastConfirm
-      ? await toastConfirm('Are you sure you want to delete this attraction?')
-      : window.confirm('Are you sure you want to delete this attraction?');
-
+    const isConfirmed = await confirm('Are you sure you want to delete this attraction?');
     if (!isConfirmed) return;
     try {
       await remove(id);
@@ -163,5 +154,15 @@ export function AttractionsManagerModal({ isOpen, onClose }: AttractionsManagerM
         </div>
       </div>
     </Dialog>
+  );
+}
+
+export function AttractionsManagerModal(props: AttractionsManagerModalProps) {
+  const ToastBoundary =
+    typeof EnsureToastProvider === 'function' ? EnsureToastProvider : React.Fragment;
+  return (
+    <ToastBoundary>
+      <AttractionsManagerModalContent {...props} />
+    </ToastBoundary>
   );
 }

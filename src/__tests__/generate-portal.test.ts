@@ -4,6 +4,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import {
   ARCHITECTURAL_DOCS,
+  cleanStagedPortalDocs,
   DocMapping,
   escapeVueMustache,
   generatePortal,
@@ -21,9 +22,14 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(typeof generatePortal).toBe('function');
   });
 
-  it('includes Development category documents including AGENTS.md in ARCHITECTURAL_DOCS', () => {
+  it('includes Development and Guides category documents including README.md, AGENTS.md, and CHANGELOG.md in ARCHITECTURAL_DOCS', () => {
     const devDocs = ARCHITECTURAL_DOCS.filter(doc => doc.category === 'Development');
-    expect(devDocs).toHaveLength(4);
+    expect(devDocs).toHaveLength(5);
+
+    const readmeDoc = devDocs.find(d => d.src === 'README.md');
+    expect(readmeDoc).toBeDefined();
+    expect(readmeDoc?.dest).toBe('development/readme.md');
+    expect(readmeDoc?.title).toBe('Project Overview');
 
     const setupDoc = devDocs.find(d => d.src === 'docs/developer-setup.md');
     expect(setupDoc).toBeDefined();
@@ -44,6 +50,14 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(agentsDoc).toBeDefined();
     expect(agentsDoc?.dest).toBe('development/agents.md');
     expect(agentsDoc?.title).toBe('Agent & Contributor Guidelines');
+
+    const guideDocs = ARCHITECTURAL_DOCS.filter(doc => doc.category === 'Guides');
+    expect(guideDocs).toHaveLength(3);
+
+    const changelogDoc = guideDocs.find(d => d.src === 'CHANGELOG.md');
+    expect(changelogDoc).toBeDefined();
+    expect(changelogDoc?.dest).toBe('guides/changelog.md');
+    expect(changelogDoc?.title).toBe('Changelog');
   });
 
   it('ensures all source files in ARCHITECTURAL_DOCS exist in repository', () => {
@@ -67,6 +81,7 @@ describe('Portal Documentation Generator & Development Section', () => {
     const configPath = path.join(rootDir, 'docs-portal/.vitepress/config.mts');
     const configContent = fs.readFileSync(configPath, 'utf8');
 
+    expect(configContent).toContain('base: normalizeBasePath(process.env.VITEPRESS_BASE)');
     expect(configContent).toContain("{ text: 'Development', link: '/development/developer-setup' }");
     expect(configContent).toContain('ignoreDeadLinks: false');
     expect(configContent).toContain("env: 'dotenv'");
@@ -74,15 +89,17 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(configContent).toContain("attrSet('v-pre', '')");
   });
 
-  it('verifies VitePress sidebar contains Development group with all four runbooks', () => {
+  it('verifies VitePress sidebar contains Development and Guides groups with README.md and CHANGELOG.md', () => {
     const configPath = path.join(rootDir, 'docs-portal/.vitepress/config.mts');
     const configContent = fs.readFileSync(configPath, 'utf8');
 
     expect(configContent).toContain("text: 'Development'");
+    expect(configContent).toContain("{ text: 'Project Overview', link: '/development/readme' }");
     expect(configContent).toContain("{ text: 'Local Environment Setup', link: '/development/developer-setup' }");
     expect(configContent).toContain("{ text: 'Testing Strategy', link: '/development/testing' }");
     expect(configContent).toContain("{ text: 'Contribution Guidelines', link: '/development/contributing' }");
     expect(configContent).toContain("{ text: 'Agent & Contributor Guidelines', link: '/development/agents' }");
+    expect(configContent).toContain("{ text: 'Changelog', link: '/guides/changelog' }");
   });
 
   it('verifies docs-portal/index.md contains Developer Onboarding feature card', () => {
@@ -93,19 +110,62 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(indexContent).toContain('link: /development/developer-setup');
   });
 
-  it('verifies staged development documents exist and route AGENTS.md internally', () => {
+  it('verifies staged documents exist and route AGENTS.md, README.md, and CHANGELOG.md internally', () => {
+    const stagedReadme = path.join(rootDir, 'docs-portal/development/readme.md');
     const stagedSetup = path.join(rootDir, 'docs-portal/development/developer-setup.md');
     const stagedTesting = path.join(rootDir, 'docs-portal/development/testing.md');
     const stagedContributing = path.join(rootDir, 'docs-portal/development/contributing.md');
     const stagedAgents = path.join(rootDir, 'docs-portal/development/agents.md');
+    const stagedUpgrading = path.join(rootDir, 'docs-portal/guides/upgrading.md');
+    const stagedChangelog = path.join(rootDir, 'docs-portal/guides/changelog.md');
 
+    expect(fs.existsSync(stagedReadme)).toBe(true);
     expect(fs.existsSync(stagedSetup)).toBe(true);
     expect(fs.existsSync(stagedTesting)).toBe(true);
     expect(fs.existsSync(stagedContributing)).toBe(true);
     expect(fs.existsSync(stagedAgents)).toBe(true);
+    expect(fs.existsSync(stagedUpgrading)).toBe(true);
+    expect(fs.existsSync(stagedChangelog)).toBe(true);
 
-    expect(fs.readFileSync(stagedContributing, 'utf8')).toContain('[AGENTS.md](/development/agents)');
+    const contributingContent = fs.readFileSync(stagedContributing, 'utf8');
+    expect(contributingContent).toContain('[AGENTS.md](/development/agents)');
+    expect(contributingContent).toContain('[README.md](/development/readme#setup-installation)');
     expect(fs.readFileSync(stagedTesting, 'utf8')).toContain('[AGENTS.md](/development/agents)');
+
+    const upgradingContent = fs.readFileSync(stagedUpgrading, 'utf8');
+    expect(upgradingContent).toContain('[`CHANGELOG.md`](/guides/changelog)');
+  });
+
+  it('cleans orphaned staged Markdown files while preserving authored portal files', () => {
+    const tmpPortal = fs.mkdtempSync(path.join(os.tmpdir(), 'portal-clean-'));
+    try {
+      fs.mkdirSync(path.join(tmpPortal, '.vitepress'), { recursive: true });
+      fs.mkdirSync(path.join(tmpPortal, 'api'), { recursive: true });
+      fs.mkdirSync(path.join(tmpPortal, 'public'), { recursive: true });
+      fs.mkdirSync(path.join(tmpPortal, 'development'), { recursive: true });
+      fs.mkdirSync(path.join(tmpPortal, 'legacy-section/nested'), { recursive: true });
+
+      fs.writeFileSync(path.join(tmpPortal, 'index.md'), '# Home\n', 'utf8');
+      fs.writeFileSync(path.join(tmpPortal, 'api/index.md'), '# API\n', 'utf8');
+      fs.writeFileSync(path.join(tmpPortal, 'postcss.config.mjs'), 'export default {};\n', 'utf8');
+      fs.writeFileSync(path.join(tmpPortal, '.vitepress/cached.md'), '# Cached\n', 'utf8');
+      fs.writeFileSync(path.join(tmpPortal, 'development/orphan.md'), '# Orphan\n', 'utf8');
+      fs.writeFileSync(path.join(tmpPortal, 'legacy-section/nested/stale.md'), '# Stale\n', 'utf8');
+      fs.writeFileSync(path.join(tmpPortal, 'stray.md'), '# Stray\n', 'utf8');
+
+      const removed = cleanStagedPortalDocs(tmpPortal);
+      expect(removed).toBe(3);
+
+      expect(fs.existsSync(path.join(tmpPortal, 'index.md'))).toBe(true);
+      expect(fs.existsSync(path.join(tmpPortal, 'api/index.md'))).toBe(true);
+      expect(fs.existsSync(path.join(tmpPortal, 'postcss.config.mjs'))).toBe(true);
+      expect(fs.existsSync(path.join(tmpPortal, '.vitepress/cached.md'))).toBe(true);
+      expect(fs.existsSync(path.join(tmpPortal, 'development/orphan.md'))).toBe(false);
+      expect(fs.existsSync(path.join(tmpPortal, 'legacy-section'))).toBe(false);
+      expect(fs.existsSync(path.join(tmpPortal, 'stray.md'))).toBe(false);
+    } finally {
+      fs.rmSync(tmpPortal, { recursive: true, force: true });
+    }
   });
 
   describe('rewriteMarkdownLinks', () => {

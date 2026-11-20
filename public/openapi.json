@@ -50,6 +50,10 @@
       "description": "Event schedule retrieval and iCalendar (.ics) download endpoints"
     },
     {
+      "name": "Uploads",
+      "description": "Dynamic streaming endpoints for locally stored uploaded media assets in standalone mode"
+    },
+    {
       "name": "Weather",
       "description": "Venue weather forecast proxy endpoints"
     }
@@ -450,6 +454,15 @@
                                 "type": "string"
                               },
                               "altText": {
+                                "type": "string"
+                              },
+                              "uploaderName": {
+                                "type": "string"
+                              },
+                              "caption": {
+                                "type": "string"
+                              },
+                              "originalFilename": {
                                 "type": "string"
                               },
                               "status": {
@@ -1077,6 +1090,30 @@
                                 }
                               ]
                             },
+                            "confirmationEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "alertEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
                             "registryItemId": {
                               "nullable": true,
                               "type": "string"
@@ -1399,7 +1436,9 @@
                         "enum": [
                           "round",
                           "rectangular",
-                          "square"
+                          "square",
+                          "head",
+                          "sweetheart"
                         ]
                       },
                       "capacity": {
@@ -2286,6 +2325,15 @@
                               "altText": {
                                 "type": "string"
                               },
+                              "uploaderName": {
+                                "type": "string"
+                              },
+                              "caption": {
+                                "type": "string"
+                              },
+                              "originalFilename": {
+                                "type": "string"
+                              },
                               "status": {
                                 "default": "PENDING",
                                 "type": "string",
@@ -3139,7 +3187,9 @@
                         "enum": [
                           "round",
                           "rectangular",
-                          "square"
+                          "square",
+                          "head",
+                          "sweetheart"
                         ]
                       },
                       "capacity": {
@@ -3488,6 +3538,14 @@
                           "all"
                         ]
                       },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
                       "dietaryCategory": {
                         "anyOf": [
                           {
@@ -3507,6 +3565,9 @@
                             "type": "string"
                           }
                         ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
                       },
                       "partyGroup": {
                         "type": "string"
@@ -3687,6 +3748,14 @@
                           "all"
                         ]
                       },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
                       "dietaryCategory": {
                         "anyOf": [
                           {
@@ -3706,6 +3775,9 @@
                             "type": "string"
                           }
                         ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
                       },
                       "partyGroup": {
                         "type": "string"
@@ -5485,6 +5557,47 @@
                             ]
                           }
                         },
+                        "modules": {
+                          "type": "object",
+                          "properties": {
+                            "registry": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "groupGifting": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "weather": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "weddingParty": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "attractions": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "gallery": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "countdown": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "addToCalendar": {
+                              "default": true,
+                              "type": "boolean"
+                            },
+                            "interactive3D": {
+                              "default": true,
+                              "type": "boolean"
+                            }
+                          }
+                        },
                         "timezone": {
                           "type": "string"
                         },
@@ -6321,6 +6434,16 @@
                           "type": "string",
                           "format": "date-time"
                         },
+                        "confirmationEmailSentAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "alertEmailSentAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "registryItemId": {
                           "nullable": true,
                           "type": "string",
@@ -7111,27 +7234,104 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "invitationCodeId": {
-                    "type": "string",
-                    "minLength": 1
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "invitationCodeId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "tableId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "seatNumber": {
+                        "nullable": true,
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "invitationCodeId",
+                      "tableId"
+                    ]
                   },
-                  "tableId": {
-                    "nullable": true,
-                    "type": "string"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "invitationCodeIds": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "tableId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "assignBatch",
+                          "clearTable",
+                          "undo"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "invitationCodeIds",
+                      "tableId"
+                    ]
                   },
-                  "seatNumber": {
-                    "nullable": true,
-                    "type": "integer",
-                    "minimum": 0,
-                    "exclusiveMinimum": true,
-                    "maximum": 9007199254740991
+                  {
+                    "type": "object",
+                    "properties": {
+                      "assignments": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "invitationCodeId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "tableId": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "seatNumber": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "invitationCodeId",
+                            "tableId"
+                          ]
+                        }
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "assignBatch",
+                          "clearTable",
+                          "undo"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "assignments"
+                    ]
                   }
-                },
-                "required": [
-                  "invitationCodeId",
-                  "tableId"
                 ]
               }
             }
@@ -7165,6 +7365,9 @@
                 "properties": {
                   "author": {
                     "type": "string"
+                  },
+                  "includePending": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -7466,227 +7669,6 @@
                       "type": "string"
                     }
                   },
-                  "typographyScale": {
-                    "default": {
-                      "fontSizeXs": "0.75rem",
-                      "fontSizeSm": "0.875rem",
-                      "fontSizeBase": "1rem",
-                      "fontSizeLg": "1.125rem",
-                      "fontSizeXl": "1.25rem",
-                      "fontSize2xl": "1.5rem",
-                      "fontWeightNormal": "400",
-                      "fontWeightMedium": "500",
-                      "fontWeightBold": "700",
-                      "lineHeightTight": "1.25",
-                      "lineHeightNormal": "1.5",
-                      "lineHeightRelaxed": "1.75"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "fontSizeXs": {
-                        "default": "0.75rem",
-                        "type": "string"
-                      },
-                      "fontSizeSm": {
-                        "default": "0.875rem",
-                        "type": "string"
-                      },
-                      "fontSizeBase": {
-                        "default": "1rem",
-                        "type": "string"
-                      },
-                      "fontSizeLg": {
-                        "default": "1.125rem",
-                        "type": "string"
-                      },
-                      "fontSizeXl": {
-                        "default": "1.25rem",
-                        "type": "string"
-                      },
-                      "fontSize2xl": {
-                        "default": "1.5rem",
-                        "type": "string"
-                      },
-                      "fontWeightNormal": {
-                        "default": "400",
-                        "type": "string"
-                      },
-                      "fontWeightMedium": {
-                        "default": "500",
-                        "type": "string"
-                      },
-                      "fontWeightBold": {
-                        "default": "700",
-                        "type": "string"
-                      },
-                      "lineHeightTight": {
-                        "default": "1.25",
-                        "type": "string"
-                      },
-                      "lineHeightNormal": {
-                        "default": "1.5",
-                        "type": "string"
-                      },
-                      "lineHeightRelaxed": {
-                        "default": "1.75",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "spacingScale": {
-                    "default": {
-                      "spacingXs": "0.25rem",
-                      "spacingSm": "0.5rem",
-                      "spacingMd": "1rem",
-                      "spacingLg": "1.5rem",
-                      "spacingXl": "2rem",
-                      "spacing2xl": "3rem",
-                      "containerMaxWidth": "64rem",
-                      "gridGap": "1.5rem",
-                      "cardPadding": "2rem"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "spacingXs": {
-                        "default": "0.25rem",
-                        "type": "string"
-                      },
-                      "spacingSm": {
-                        "default": "0.5rem",
-                        "type": "string"
-                      },
-                      "spacingMd": {
-                        "default": "1rem",
-                        "type": "string"
-                      },
-                      "spacingLg": {
-                        "default": "1.5rem",
-                        "type": "string"
-                      },
-                      "spacingXl": {
-                        "default": "2rem",
-                        "type": "string"
-                      },
-                      "spacing2xl": {
-                        "default": "3rem",
-                        "type": "string"
-                      },
-                      "containerMaxWidth": {
-                        "default": "64rem",
-                        "type": "string"
-                      },
-                      "gridGap": {
-                        "default": "1.5rem",
-                        "type": "string"
-                      },
-                      "cardPadding": {
-                        "default": "2rem",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "borderTreatment": {
-                    "default": {
-                      "borderRadiusSm": "0.25rem",
-                      "borderRadiusMd": "0.5rem",
-                      "borderRadiusLg": "1rem",
-                      "borderRadiusFull": "9999px",
-                      "borderWidthThin": "1px",
-                      "borderWidthMedium": "2px",
-                      "borderWidthThick": "4px",
-                      "borderStyleDefault": "solid"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "borderRadiusSm": {
-                        "default": "0.25rem",
-                        "type": "string"
-                      },
-                      "borderRadiusMd": {
-                        "default": "0.5rem",
-                        "type": "string"
-                      },
-                      "borderRadiusLg": {
-                        "default": "1rem",
-                        "type": "string"
-                      },
-                      "borderRadiusFull": {
-                        "default": "9999px",
-                        "type": "string"
-                      },
-                      "borderWidthThin": {
-                        "default": "1px",
-                        "type": "string"
-                      },
-                      "borderWidthMedium": {
-                        "default": "2px",
-                        "type": "string"
-                      },
-                      "borderWidthThick": {
-                        "default": "4px",
-                        "type": "string"
-                      },
-                      "borderStyleDefault": {
-                        "default": "solid",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "brandDimensions": {
-                    "default": {
-                      "logoWidth": "120px",
-                      "logoHeight": "40px",
-                      "heroHeight": "400px",
-                      "watermarkWidth": "200px",
-                      "watermarkOpacity": "0.1",
-                      "badgeSize": "48px"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "logoWidth": {
-                        "default": "120px",
-                        "type": "string"
-                      },
-                      "logoHeight": {
-                        "default": "40px",
-                        "type": "string"
-                      },
-                      "heroHeight": {
-                        "default": "400px",
-                        "type": "string"
-                      },
-                      "watermarkWidth": {
-                        "default": "200px",
-                        "type": "string"
-                      },
-                      "watermarkOpacity": {
-                        "default": "0.1",
-                        "type": "string"
-                      },
-                      "badgeSize": {
-                        "default": "48px",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "brandLogoWidth": {
-                    "type": "string"
-                  },
-                  "brandLogoHeight": {
-                    "type": "string"
-                  },
-                  "brandHeroHeight": {
-                    "type": "string"
-                  },
-                  "brandWatermarkWidth": {
-                    "type": "string"
-                  },
-                  "brandWatermarkOpacity": {
-                    "type": "string"
-                  },
-                  "brandBadgeSize": {
-                    "type": "string"
-                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -7869,10 +7851,6 @@
                         "type": "boolean"
                       },
                       "groupGifting": {
-                        "default": true,
-                        "type": "boolean"
-                      },
-                      "guestPasscode": {
                         "default": true,
                         "type": "boolean"
                       },
@@ -8134,227 +8112,6 @@
                       "type": "string"
                     }
                   },
-                  "typographyScale": {
-                    "default": {
-                      "fontSizeXs": "0.75rem",
-                      "fontSizeSm": "0.875rem",
-                      "fontSizeBase": "1rem",
-                      "fontSizeLg": "1.125rem",
-                      "fontSizeXl": "1.25rem",
-                      "fontSize2xl": "1.5rem",
-                      "fontWeightNormal": "400",
-                      "fontWeightMedium": "500",
-                      "fontWeightBold": "700",
-                      "lineHeightTight": "1.25",
-                      "lineHeightNormal": "1.5",
-                      "lineHeightRelaxed": "1.75"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "fontSizeXs": {
-                        "default": "0.75rem",
-                        "type": "string"
-                      },
-                      "fontSizeSm": {
-                        "default": "0.875rem",
-                        "type": "string"
-                      },
-                      "fontSizeBase": {
-                        "default": "1rem",
-                        "type": "string"
-                      },
-                      "fontSizeLg": {
-                        "default": "1.125rem",
-                        "type": "string"
-                      },
-                      "fontSizeXl": {
-                        "default": "1.25rem",
-                        "type": "string"
-                      },
-                      "fontSize2xl": {
-                        "default": "1.5rem",
-                        "type": "string"
-                      },
-                      "fontWeightNormal": {
-                        "default": "400",
-                        "type": "string"
-                      },
-                      "fontWeightMedium": {
-                        "default": "500",
-                        "type": "string"
-                      },
-                      "fontWeightBold": {
-                        "default": "700",
-                        "type": "string"
-                      },
-                      "lineHeightTight": {
-                        "default": "1.25",
-                        "type": "string"
-                      },
-                      "lineHeightNormal": {
-                        "default": "1.5",
-                        "type": "string"
-                      },
-                      "lineHeightRelaxed": {
-                        "default": "1.75",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "spacingScale": {
-                    "default": {
-                      "spacingXs": "0.25rem",
-                      "spacingSm": "0.5rem",
-                      "spacingMd": "1rem",
-                      "spacingLg": "1.5rem",
-                      "spacingXl": "2rem",
-                      "spacing2xl": "3rem",
-                      "containerMaxWidth": "64rem",
-                      "gridGap": "1.5rem",
-                      "cardPadding": "2rem"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "spacingXs": {
-                        "default": "0.25rem",
-                        "type": "string"
-                      },
-                      "spacingSm": {
-                        "default": "0.5rem",
-                        "type": "string"
-                      },
-                      "spacingMd": {
-                        "default": "1rem",
-                        "type": "string"
-                      },
-                      "spacingLg": {
-                        "default": "1.5rem",
-                        "type": "string"
-                      },
-                      "spacingXl": {
-                        "default": "2rem",
-                        "type": "string"
-                      },
-                      "spacing2xl": {
-                        "default": "3rem",
-                        "type": "string"
-                      },
-                      "containerMaxWidth": {
-                        "default": "64rem",
-                        "type": "string"
-                      },
-                      "gridGap": {
-                        "default": "1.5rem",
-                        "type": "string"
-                      },
-                      "cardPadding": {
-                        "default": "2rem",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "borderTreatment": {
-                    "default": {
-                      "borderRadiusSm": "0.25rem",
-                      "borderRadiusMd": "0.5rem",
-                      "borderRadiusLg": "1rem",
-                      "borderRadiusFull": "9999px",
-                      "borderWidthThin": "1px",
-                      "borderWidthMedium": "2px",
-                      "borderWidthThick": "4px",
-                      "borderStyleDefault": "solid"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "borderRadiusSm": {
-                        "default": "0.25rem",
-                        "type": "string"
-                      },
-                      "borderRadiusMd": {
-                        "default": "0.5rem",
-                        "type": "string"
-                      },
-                      "borderRadiusLg": {
-                        "default": "1rem",
-                        "type": "string"
-                      },
-                      "borderRadiusFull": {
-                        "default": "9999px",
-                        "type": "string"
-                      },
-                      "borderWidthThin": {
-                        "default": "1px",
-                        "type": "string"
-                      },
-                      "borderWidthMedium": {
-                        "default": "2px",
-                        "type": "string"
-                      },
-                      "borderWidthThick": {
-                        "default": "4px",
-                        "type": "string"
-                      },
-                      "borderStyleDefault": {
-                        "default": "solid",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "brandDimensions": {
-                    "default": {
-                      "logoWidth": "120px",
-                      "logoHeight": "40px",
-                      "heroHeight": "400px",
-                      "watermarkWidth": "200px",
-                      "watermarkOpacity": "0.1",
-                      "badgeSize": "48px"
-                    },
-                    "type": "object",
-                    "properties": {
-                      "logoWidth": {
-                        "default": "120px",
-                        "type": "string"
-                      },
-                      "logoHeight": {
-                        "default": "40px",
-                        "type": "string"
-                      },
-                      "heroHeight": {
-                        "default": "400px",
-                        "type": "string"
-                      },
-                      "watermarkWidth": {
-                        "default": "200px",
-                        "type": "string"
-                      },
-                      "watermarkOpacity": {
-                        "default": "0.1",
-                        "type": "string"
-                      },
-                      "badgeSize": {
-                        "default": "48px",
-                        "type": "string"
-                      }
-                    }
-                  },
-                  "brandLogoWidth": {
-                    "type": "string"
-                  },
-                  "brandLogoHeight": {
-                    "type": "string"
-                  },
-                  "brandHeroHeight": {
-                    "type": "string"
-                  },
-                  "brandWatermarkWidth": {
-                    "type": "string"
-                  },
-                  "brandWatermarkOpacity": {
-                    "type": "string"
-                  },
-                  "brandBadgeSize": {
-                    "type": "string"
-                  },
                   "layoutContainerMaxWidth": {
                     "type": "string"
                   },
@@ -8537,10 +8294,6 @@
                         "type": "boolean"
                       },
                       "groupGifting": {
-                        "default": true,
-                        "type": "boolean"
-                      },
-                      "guestPasscode": {
                         "default": true,
                         "type": "boolean"
                       },
@@ -9902,6 +9655,14 @@
                       "type": "string",
                       "format": "binary"
                     }
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [
@@ -10354,6 +10115,14 @@
                       "type": "string",
                       "format": "binary"
                     }
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [
@@ -11945,6 +11714,30 @@
           },
           {
             "adminCookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/uploads/{path}": {
+      "get": {
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "GET /api/uploads/[...path]",
+        "description": "Streams locally stored uploaded files dynamically at /uploads/* in standalone server mode.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
+import React, { useMemo, useState } from 'react';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -53,37 +53,65 @@ interface SubEventEditorModalProps {
   onRequestDelete?: (_subEvent: EditableSubEvent) => void;
 }
 
+interface SubEventFormSnapshot {
+  title: string;
+  description: string;
+  locationName: string;
+  category: string;
+  startTime: string;
+  endTime: string;
+  isPrivate: boolean;
+  mealOptionsJson: string;
+  customQuestionsJson: string;
+}
+
+function createInitialSubEventSnapshot(editingEvent: EditableSubEvent | null): SubEventFormSnapshot {
+  const initialMeals = editingEvent ? normalizeMealOptions(editingEvent.mealOptions) : [];
+  const initialQuestions = editingEvent ? normalizeCustomQuestions(editingEvent.customQuestions) : [];
+  return {
+    title: editingEvent ? (editingEvent.title ?? '') : '',
+    description: editingEvent ? (editingEvent.description ?? '') : '',
+    locationName: editingEvent ? (editingEvent.locationName ?? '') : '',
+    category: editingEvent ? (editingEvent.category ?? '') : '',
+    startTime: editingEvent ? toDateTimeLocalValue(editingEvent.startTime) : '',
+    endTime: editingEvent ? toDateTimeLocalValue(editingEvent.endTime) : '',
+    isPrivate: editingEvent ? Boolean(editingEvent.isPrivate) : true,
+    mealOptionsJson: JSON.stringify(initialMeals),
+    customQuestionsJson: JSON.stringify(initialQuestions),
+  };
+}
+
+function isSubEventDirty(current: SubEventFormSnapshot, initial: SubEventFormSnapshot): boolean {
+  return (Object.keys(initial) as Array<keyof SubEventFormSnapshot>).some(
+    (key) => current[key] !== initial[key]
+  );
+}
+
 interface SubEventEditorFormProps {
   editingEvent: EditableSubEvent | null;
   onClose: () => void;
   onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
+  onDirtyChange: (_isDirty: boolean) => void;
 }
 
 const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   editingEvent,
   onClose,
   onSave,
+  onDirtyChange,
 }) => {
   const { addToast } = useToast();
-  const [title, setTitle] = useState(() => (editingEvent ? (editingEvent.title ?? '') : ''));
-  const [description, setDescription] = useState(() =>
-    editingEvent ? (editingEvent.description ?? '') : ''
+  const initialSnapshot = useMemo(
+    () => createInitialSubEventSnapshot(editingEvent),
+    [editingEvent]
   );
-  const [locationName, setLocationName] = useState(() =>
-    editingEvent ? (editingEvent.locationName ?? '') : ''
-  );
-  const [category, setCategory] = useState(() =>
-    editingEvent ? (editingEvent.category ?? '') : ''
-  );
-  const [startTime, setStartTime] = useState(() =>
-    editingEvent ? toDateTimeLocalValue(editingEvent.startTime) : ''
-  );
-  const [endTime, setEndTime] = useState(() =>
-    editingEvent ? toDateTimeLocalValue(editingEvent.endTime) : ''
-  );
-  const [isPrivate, setIsPrivate] = useState(() =>
-    editingEvent ? Boolean(editingEvent.isPrivate) : true
-  );
+  const [title, setTitle] = useState(() => initialSnapshot.title);
+  const [description, setDescription] = useState(() => initialSnapshot.description);
+  const [locationName, setLocationName] = useState(() => initialSnapshot.locationName);
+  const [category, setCategory] = useState(() => initialSnapshot.category);
+  const [startTime, setStartTime] = useState(() => initialSnapshot.startTime);
+  const [endTime, setEndTime] = useState(() => initialSnapshot.endTime);
+  const [isPrivate, setIsPrivate] = useState(() => initialSnapshot.isPrivate);
   const [mealOptions, setMealOptions] = useState<MealOptionDTO[]>(() =>
     editingEvent ? normalizeMealOptions(editingEvent.mealOptions) : []
   );
@@ -93,12 +121,44 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const currentSnapshot: SubEventFormSnapshot = {
+    title,
+    description,
+    locationName,
+    category,
+    startTime,
+    endTime,
+    isPrivate,
+    mealOptionsJson: JSON.stringify(mealOptions),
+    customQuestionsJson: JSON.stringify(customQuestions),
+  };
+  const isDirty = isSubEventDirty(currentSnapshot, initialSnapshot);
+  const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
+
+  const updateSnapshotField = <K extends keyof SubEventFormSnapshot>(
+    field: K,
+    value: SubEventFormSnapshot[K]
+  ) => {
+    const next = { ...currentSnapshot, [field]: value };
+    onDirtyChange(isSubEventDirty(next, initialSnapshot));
+  };
+
+  const applyMealOptions = (nextMeals: MealOptionDTO[]) => {
+    setMealOptions(nextMeals);
+    updateSnapshotField('mealOptionsJson', JSON.stringify(nextMeals));
+  };
+
+  const applyCustomQuestions = (nextQuestions: CustomRsvpQuestionDTO[]) => {
+    setCustomQuestions(nextQuestions);
+    updateSnapshotField('customQuestionsJson', JSON.stringify(nextQuestions));
+  };
+
   const isEditMode = Boolean(editingEvent);
   const scheduleInvalid = isEndTimeBeforeStartTime(startTime, endTime);
 
   const handleAddMealOption = () => {
-    setMealOptions((prev) => [
-      ...prev,
+    applyMealOptions([
+      ...mealOptions,
       {
         id: createDraftId('meal'),
         label: '',
@@ -110,15 +170,15 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   };
 
   const handleUpdateMealOption = (index: number, patch: Partial<MealOptionDTO>) => {
-    setMealOptions((prev) =>
-      prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item))
+    applyMealOptions(
+      mealOptions.map((item, idx) => (idx === index ? { ...item, ...patch } : item))
     );
     if (validationError) setValidationError(null);
   };
 
   const handleToggleMealTag = (index: number, tag: string) => {
-    setMealOptions((prev) =>
-      prev.map((item, idx) => {
+    applyMealOptions(
+      mealOptions.map((item, idx) => {
         if (idx !== index) return item;
         const exists = item.dietaryTags.includes(tag);
         const nextTags = exists
@@ -130,24 +190,22 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   };
 
   const handleMoveMealOption = (index: number, direction: -1 | 1) => {
-    setMealOptions((prev) => {
-      const targetIndex = index + direction;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(index, 1);
-      next.splice(targetIndex, 0, moved);
-      return next;
-    });
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= mealOptions.length) return;
+    const next = [...mealOptions];
+    const [moved] = next.splice(index, 1);
+    next.splice(targetIndex, 0, moved);
+    applyMealOptions(next);
   };
 
   const handleRemoveMealOption = (index: number) => {
-    setMealOptions((prev) => prev.filter((_, idx) => idx !== index));
+    applyMealOptions(mealOptions.filter((_, idx) => idx !== index));
     if (validationError) setValidationError(null);
   };
 
   const handleAddCustomQuestion = () => {
-    setCustomQuestions((prev) => [
-      ...prev,
+    applyCustomQuestions([
+      ...customQuestions,
       {
         id: createDraftId('question'),
         prompt: '',
@@ -163,8 +221,8 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
     index: number,
     patch: Partial<CustomRsvpQuestionDTO>
   ) => {
-    setCustomQuestions((prev) =>
-      prev.map((item, idx) => {
+    applyCustomQuestions(
+      customQuestions.map((item, idx) => {
         if (idx !== index) return item;
         const nextType = patch.type ?? item.type;
         let nextOptions = patch.options ?? item.options;
@@ -181,24 +239,22 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   };
 
   const handleMoveCustomQuestion = (index: number, direction: -1 | 1) => {
-    setCustomQuestions((prev) => {
-      const targetIndex = index + direction;
-      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(index, 1);
-      next.splice(targetIndex, 0, moved);
-      return next;
-    });
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= customQuestions.length) return;
+    const next = [...customQuestions];
+    const [moved] = next.splice(index, 1);
+    next.splice(targetIndex, 0, moved);
+    applyCustomQuestions(next);
   };
 
   const handleRemoveCustomQuestion = (index: number) => {
-    setCustomQuestions((prev) => prev.filter((_, idx) => idx !== index));
+    applyCustomQuestions(customQuestions.filter((_, idx) => idx !== index));
     if (validationError) setValidationError(null);
   };
 
   const handleAddQuestionChoice = (questionIndex: number) => {
-    setCustomQuestions((prev) =>
-      prev.map((item, idx) =>
+    applyCustomQuestions(
+      customQuestions.map((item, idx) =>
         idx === questionIndex ? { ...item, options: [...item.options, ''] } : item
       )
     );
@@ -210,8 +266,8 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
     choiceIndex: number,
     value: string
   ) => {
-    setCustomQuestions((prev) =>
-      prev.map((item, idx) => {
+    applyCustomQuestions(
+      customQuestions.map((item, idx) => {
         if (idx !== questionIndex) return item;
         const nextOptions = item.options.map((opt, cIdx) =>
           cIdx === choiceIndex ? value : opt
@@ -223,8 +279,8 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   };
 
   const handleRemoveQuestionChoice = (questionIndex: number, choiceIndex: number) => {
-    setCustomQuestions((prev) =>
-      prev.map((item, idx) =>
+    applyCustomQuestions(
+      customQuestions.map((item, idx) =>
         idx === questionIndex
           ? { ...item, options: item.options.filter((_, cIdx) => cIdx !== choiceIndex) }
           : item
@@ -343,7 +399,9 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
           required
           value={title}
           onChange={(e) => {
-            setTitle(e.target.value);
+            const val = e.target.value;
+            setTitle(val);
+            updateSnapshotField('title', val);
             if (validationError) setValidationError(null);
           }}
           placeholder="e.g. Rehearsal Dinner"
@@ -357,7 +415,9 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
             type="datetime-local"
             value={startTime}
             onChange={(e) => {
-              setStartTime(e.target.value);
+              const val = e.target.value;
+              setStartTime(val);
+              updateSnapshotField('startTime', val);
               if (validationError) setValidationError(null);
             }}
           />
@@ -370,7 +430,9 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
             value={endTime}
             min={startTime || undefined}
             onChange={(e) => {
-              setEndTime(e.target.value);
+              const val = e.target.value;
+              setEndTime(val);
+              updateSnapshotField('endTime', val);
               if (validationError) setValidationError(null);
             }}
           />
@@ -383,7 +445,11 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
           <Input
             type="text"
             value={locationName}
-            onChange={(e) => setLocationName(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setLocationName(val);
+              updateSnapshotField('locationName', val);
+            }}
             placeholder="e.g. The Grand Ballroom"
           />
         </FormGroup>
@@ -393,7 +459,11 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
           <Input
             type="text"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCategory(val);
+              updateSnapshotField('category', val);
+            }}
             placeholder="e.g. Dining"
           />
         </FormGroup>
@@ -404,7 +474,11 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         <Textarea
           rows={2}
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setDescription(val);
+            updateSnapshotField('description', val);
+          }}
           placeholder="e.g. Invitation-only dinner for wedding party"
         />
       </FormGroup>
@@ -413,7 +487,11 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         <div className="flex items-center gap-2 pt-1">
           <Checkbox
             checked={isPrivate}
-            onChange={(e) => setIsPrivate(e.target.checked)}
+            onChange={(e) => {
+              const val = e.target.checked;
+              setIsPrivate(val);
+              updateSnapshotField('isPrivate', val);
+            }}
           />
           <Label className="font-medium cursor-pointer">
             Private Sub-Event (requires explicit access assignment)
@@ -730,7 +808,7 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
       </div>
 
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-zinc-800">
-        <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
+        <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
           Cancel
         </Button>
         <Button type="submit" disabled={isSaving}>
@@ -745,6 +823,128 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   );
 };
 
+interface SubEventEditorModalBodyProps {
+  editingEvent: EditableSubEvent | null;
+  onClose: () => void;
+  onSave: (_payload: Partial<SubEventDTO>, _editingId?: string) => Promise<unknown>;
+  existingSubEvents?: EditableSubEvent[];
+  onSelectEdit?: (_subEvent: EditableSubEvent | null) => void;
+  onRequestDelete?: (_subEvent: EditableSubEvent) => void;
+  isDirty: boolean;
+  onDirtyChange: (_isDirty: boolean) => void;
+}
+
+const SubEventEditorModalBody: React.FC<SubEventEditorModalBodyProps> = ({
+  editingEvent,
+  onClose,
+  onSave,
+  existingSubEvents,
+  onSelectEdit,
+  onRequestDelete,
+  isDirty,
+  onDirtyChange,
+}) => {
+  const { confirm } = useToast();
+  const isEditMode = Boolean(editingEvent);
+
+  const handleSelectEdit = async (target: EditableSubEvent | null) => {
+    if (!onSelectEdit) return;
+    if ((target?.id ?? null) === (editingEvent?.id ?? null)) return;
+    if (isDirty) {
+      const confirmed = await confirm(
+        'You have unsaved changes. Are you sure you want to discard them?'
+      );
+      if (!confirmed) return;
+    }
+    onSelectEdit(target);
+  };
+
+  return (
+    <div className="space-y-5">
+      {Array.isArray(existingSubEvents) && existingSubEvents.length > 0 && (
+        <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/70 dark:bg-zinc-800/50 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Existing Sub-Events ({existingSubEvents.length})
+            </span>
+            {isEditMode && onSelectEdit && (
+              <button
+                type="button"
+                onClick={() => void handleSelectEdit(null)}
+                className="text-xs font-semibold text-primary hover:underline"
+              >
+                + Switch to Create New
+              </button>
+            )}
+          </div>
+          <ul className="divide-y divide-gray-200 dark:divide-zinc-700 max-h-40 overflow-y-auto">
+            {existingSubEvents.map((evt) => {
+              const scheduleText = formatSubEventSchedule(evt.startTime, evt.endTime);
+              const isSelected = editingEvent?.id === evt.id;
+              return (
+                <li
+                  key={evt.id}
+                  className={`py-2 px-1.5 flex items-center justify-between gap-2 text-sm rounded ${
+                    isSelected ? 'bg-red-50/70 dark:bg-red-950/30' : ''
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold truncate text-gray-900 dark:text-white">
+                        {evt.title}
+                      </span>
+                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-gray-300">
+                        {evt.isPrivate ? 'Private' : 'Public'}
+                      </span>
+                    </div>
+                    {scheduleText && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {scheduleText}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onSelectEdit && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        aria-label={`Edit sub-event ${evt.title}`}
+                        onClick={() => void handleSelectEdit(evt)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    {onRequestDelete && (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        aria-label={`Delete sub-event ${evt.title}`}
+                        onClick={() => onRequestDelete(evt)}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <SubEventEditorForm
+        key={editingEvent?.id ?? 'create'}
+        editingEvent={editingEvent}
+        onClose={onClose}
+        onSave={onSave}
+        onDirtyChange={onDirtyChange}
+      />
+    </div>
+  );
+};
+
 export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
   isOpen,
   onClose,
@@ -754,99 +954,36 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
   onSelectEdit,
   onRequestDelete,
 }) => {
+  const [dirtyEntry, setDirtyEntry] = useState<{ key: string; isDirty: boolean }>({
+    key: '',
+    isDirty: false,
+  });
+
   if (!isOpen) return null;
 
   const isEditMode = Boolean(editingEvent);
+  const editingKey = editingEvent?.id ?? 'create';
+  const isDirty = dirtyEntry.key === editingKey && dirtyEntry.isDirty;
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
+      isDirty={isDirty}
       title={isEditMode ? 'Edit Sub-Event' : 'Create New Sub-Event'}
       className="max-w-2xl max-h-[90vh] flex flex-col"
       contentClassName="px-6 py-4 overflow-y-auto max-h-[78vh]"
     >
-      <div className="space-y-5">
-        {Array.isArray(existingSubEvents) && existingSubEvents.length > 0 && (
-          <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/70 dark:bg-zinc-800/50 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Existing Sub-Events ({existingSubEvents.length})
-              </span>
-              {isEditMode && onSelectEdit && (
-                <button
-                  type="button"
-                  onClick={() => onSelectEdit(null)}
-                  className="text-xs font-semibold text-primary hover:underline"
-                >
-                  + Switch to Create New
-                </button>
-              )}
-            </div>
-            <ul className="divide-y divide-gray-200 dark:divide-zinc-700 max-h-40 overflow-y-auto">
-              {existingSubEvents.map((evt) => {
-                const scheduleText = formatSubEventSchedule(evt.startTime, evt.endTime);
-                const isSelected = editingEvent?.id === evt.id;
-                return (
-                  <li
-                    key={evt.id}
-                    className={`py-2 px-1.5 flex items-center justify-between gap-2 text-sm rounded ${
-                      isSelected ? 'bg-red-50/70 dark:bg-red-950/30' : ''
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold truncate text-gray-900 dark:text-white">
-                          {evt.title}
-                        </span>
-                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-gray-300">
-                          {evt.isPrivate ? 'Private' : 'Public'}
-                        </span>
-                      </div>
-                      {scheduleText && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {scheduleText}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {onSelectEdit && (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          aria-label={`Edit sub-event ${evt.title}`}
-                          onClick={() => onSelectEdit(evt)}
-                        >
-                          Edit
-                        </Button>
-                      )}
-                      {onRequestDelete && (
-                        <Button
-                          type="button"
-                          variant="danger"
-                          size="sm"
-                          aria-label={`Delete sub-event ${evt.title}`}
-                          onClick={() => onRequestDelete(evt)}
-                        >
-                          Delete
-                        </Button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-
-        <SubEventEditorForm
-          key={editingEvent?.id ?? 'create'}
-          editingEvent={editingEvent}
-          onClose={onClose}
-          onSave={onSave}
-        />
-      </div>
+      <SubEventEditorModalBody
+        editingEvent={editingEvent}
+        onClose={onClose}
+        onSave={onSave}
+        existingSubEvents={existingSubEvents}
+        onSelectEdit={onSelectEdit}
+        onRequestDelete={onRequestDelete}
+        isDirty={isDirty}
+        onDirtyChange={(nextDirty) => setDirtyEntry({ key: editingKey, isDirty: nextDirty })}
+      />
     </Dialog>
   );
 };

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { InvitationCodeSchema } from '@/features/registry';
 
-const SeatingTableShapeSchema = z.enum(['round', 'rectangular', 'square']);
+const SeatingTableShapeSchema = z.enum(['round', 'rectangular', 'square', 'head', 'sweetheart']);
 
 export const SeatingTableSchema = z.object({
   id: z.string(),
@@ -29,14 +29,38 @@ export const SeatingTableInputSchema = SeatingTableSchema.omit({
 });
 export const SeatingTableUpdateInputSchema = SeatingTableInputSchema.partial();
 
-export const AssignSeatSchema = z.object({
+const SingleAssignSeatSchema = z.object({
   invitationCodeId: z.string().min(1, 'Invitation code ID is required.'),
   tableId: z.string().nullable(),
   seatNumber: z.number().int().positive().nullable().optional(),
 });
 
+const BatchSeatActionEnum = z.enum(['assignBatch', 'clearTable', 'undo']);
+
+const BatchAssignSeatIdsSchema = z.object({
+  invitationCodeIds: z
+    .array(z.string().min(1, 'Invitation code ID is required.'))
+    .min(1, 'At least one invitation code ID is required.'),
+  tableId: z.string().nullable(),
+  action: BatchSeatActionEnum.optional(),
+});
+
+const BatchAssignSeatEntriesSchema = z.object({
+  assignments: z
+    .array(SingleAssignSeatSchema)
+    .min(1, 'At least one assignment is required.'),
+  action: BatchSeatActionEnum.optional(),
+});
+
+export const AssignSeatSchema = z.union([
+  SingleAssignSeatSchema,
+  BatchAssignSeatIdsSchema,
+  BatchAssignSeatEntriesSchema,
+]);
+
 export const AutoAssignSchema = z.object({
   author: z.string().optional(),
+  includePending: z.boolean().optional(),
 }).optional();
 
 export type AutoAssignDTO = z.infer<typeof AutoAssignSchema>;

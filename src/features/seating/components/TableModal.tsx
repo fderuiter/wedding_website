@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
+import React, { useMemo, useState } from 'react';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
+import { useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
 
 interface TableModalProps {
@@ -12,11 +13,44 @@ interface TableModalProps {
   onDelete?: (tableId: string) => void;
 }
 
+type TableShapeValue = SeatingTableDTO['shape'];
+
+interface TableFormSnapshot {
+  name: string;
+  shape: TableShapeValue;
+  capacity: number;
+  width: number;
+  height: number;
+  rotation: number;
+  x: number;
+  y: number;
+}
+
+function createInitialTableSnapshot(table: SeatingTableDTO | null): TableFormSnapshot {
+  return {
+    name: table?.name ?? '',
+    shape: (table?.shape as TableShapeValue) || 'round',
+    capacity: table ? table.capacity : 8,
+    width: table?.width || 120,
+    height: table?.height || 120,
+    rotation: table?.rotation || 0,
+    x: table?.x || 0,
+    y: table?.y || 0,
+  };
+}
+
+function isTableFormDirty(current: TableFormSnapshot, initial: TableFormSnapshot): boolean {
+  return (Object.keys(initial) as Array<keyof TableFormSnapshot>).some(
+    (key) => current[key] !== initial[key]
+  );
+}
+
 interface TableModalFormProps {
   table: SeatingTableDTO | null;
   onClose: () => void;
   onSave: (tableData: Partial<SeatingTableDTO>) => void;
   onDelete?: (tableId: string) => void;
+  onDirtyChange: (_isDirty: boolean) => void;
 }
 
 function TableModalForm({
@@ -24,26 +58,51 @@ function TableModalForm({
   onClose,
   onSave,
   onDelete,
+  onDirtyChange,
 }: TableModalFormProps) {
-  const [name, setName] = useState(table?.name ?? '');
-  const [shape, setShape] = useState<'round' | 'rectangular' | 'square'>(
-    (table?.shape as 'round' | 'rectangular' | 'square') || 'round'
-  );
-  const [capacity, setCapacity] = useState(table ? table.capacity : 8);
-  const [width, setWidth] = useState(table?.width || 120);
-  const [height, setHeight] = useState(table?.height || 120);
-  const [rotation, setRotation] = useState(table?.rotation || 0);
-  const [x, setX] = useState(table?.x || 0);
-  const [y, setY] = useState(table?.y || 0);
+  const { confirm } = useToast();
+  const initialSnapshot = useMemo(() => createInitialTableSnapshot(table), [table]);
+  const [name, setName] = useState(initialSnapshot.name);
+  const [shape, setShape] = useState<TableShapeValue>(initialSnapshot.shape);
+  const [capacity, setCapacity] = useState(initialSnapshot.capacity);
+  const [width, setWidth] = useState(initialSnapshot.width);
+  const [height, setHeight] = useState(initialSnapshot.height);
+  const [rotation, setRotation] = useState(initialSnapshot.rotation);
+  const [x, setX] = useState(initialSnapshot.x);
+  const [y, setY] = useState(initialSnapshot.y);
+
+  const currentSnapshot: TableFormSnapshot = {
+    name,
+    shape,
+    capacity,
+    width,
+    height,
+    rotation,
+    x,
+    y,
+  };
+  const isDirty = isTableFormDirty(currentSnapshot, initialSnapshot);
+  const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
+
+  const updateSnapshotField = <K extends keyof TableFormSnapshot>(
+    field: K,
+    value: TableFormSnapshot[K]
+  ) => {
+    const next = { ...currentSnapshot, [field]: value };
+    onDirtyChange(isTableFormDirty(next, initialSnapshot));
+  };
 
   const currentSeatedCount = table?.invitationCodes?.length || 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
     if (table && capacity < currentSeatedCount) {
-      if (!confirm(`Warning: This table currently has ${currentSeatedCount} seated guests, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`)) {
+      const confirmed = await confirm(
+        `Warning: This table currently has ${currentSeatedCount} seated guests, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`
+      );
+      if (!confirmed) {
         return;
       }
     }
@@ -73,7 +132,11 @@ function TableModalForm({
           type="text"
           required
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setName(val);
+            updateSnapshotField('name', val);
+          }}
           placeholder="e.g. Table 1 - Family"
           className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
         />
@@ -87,12 +150,18 @@ function TableModalForm({
           <select
             id="table-shape"
             value={shape}
-            onChange={(e) => setShape(e.target.value as any)}
+            onChange={(e) => {
+              const val = e.target.value as TableShapeValue;
+              setShape(val);
+              updateSnapshotField('shape', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           >
             <option value="round">Round</option>
             <option value="rectangular">Rectangular</option>
             <option value="square">Square</option>
+            <option value="head">Head Table (1-Sided)</option>
+            <option value="sweetheart">Sweetheart (1-Sided)</option>
           </select>
         </div>
 
@@ -106,7 +175,11 @@ function TableModalForm({
             min={1}
             max={50}
             value={capacity}
-            onChange={(e) => setCapacity(parseInt(e.target.value) || 1)}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 1;
+              setCapacity(val);
+              updateSnapshotField('capacity', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
           {table && capacity < currentSeatedCount && (
@@ -128,7 +201,11 @@ function TableModalForm({
             min={60}
             max={400}
             value={width}
-            onChange={(e) => setWidth(parseInt(e.target.value) || 120)}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 120;
+              setWidth(val);
+              updateSnapshotField('width', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
@@ -143,7 +220,11 @@ function TableModalForm({
             min={60}
             max={400}
             value={height}
-            onChange={(e) => setHeight(parseInt(e.target.value) || 120)}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 120;
+              setHeight(val);
+              updateSnapshotField('height', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
@@ -158,7 +239,11 @@ function TableModalForm({
             min={0}
             max={360}
             value={rotation}
-            onChange={(e) => setRotation(parseInt(e.target.value) || 0)}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 0;
+              setRotation(val);
+              updateSnapshotField('rotation', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
           />
         </div>
@@ -175,7 +260,11 @@ function TableModalForm({
             min={0}
             max={2000}
             value={x}
-            onChange={(e) => setX(parseInt(e.target.value) || 0)}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 0;
+              setX(val);
+              updateSnapshotField('x', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
           />
         </div>
@@ -189,7 +278,11 @@ function TableModalForm({
             min={0}
             max={2000}
             value={y}
-            onChange={(e) => setY(parseInt(e.target.value) || 0)}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 0;
+              setY(val);
+              updateSnapshotField('y', val);
+            }}
             className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
           />
         </div>
@@ -200,10 +293,15 @@ function TableModalForm({
           <button
             type="button"
             onClick={() => {
-              if (confirm(`Are you sure you want to delete "${table.name}"? Assigned guests will become unassigned.`)) {
-                onDelete(table.id);
-                onClose();
-              }
+              void (async () => {
+                const confirmed = await confirm(
+                  `Are you sure you want to delete "${table.name}"? Assigned guests will become unassigned.`
+                );
+                if (confirmed) {
+                  onDelete(table.id);
+                  onClose();
+                }
+              })();
             }}
             className="px-3 py-2 text-xs font-medium bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg border border-red-200 dark:border-red-800 transition-colors"
           >
@@ -216,7 +314,7 @@ function TableModalForm({
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="px-4 py-2 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             Cancel
@@ -241,20 +339,28 @@ export function TableModal({
   onDelete,
 }: TableModalProps) {
   const titleText = table ? 'Edit Reception Table' : 'Create New Table';
+  const formKey = `${isOpen ? 'open' : 'closed'}-${table?.id ?? 'new'}`;
+  const [dirtyEntry, setDirtyEntry] = useState<{ key: string; isDirty: boolean }>({
+    key: '',
+    isDirty: false,
+  });
+  const isDirty = dirtyEntry.key === formKey && dirtyEntry.isDirty;
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
+      isDirty={isDirty}
       title={titleText}
       className="max-w-md w-full"
     >
       <TableModalForm
-        key={`${isOpen ? 'open' : 'closed'}-${table?.id ?? 'new'}`}
+        key={formKey}
         table={table}
         onClose={onClose}
         onSave={onSave}
         onDelete={onDelete}
+        onDirtyChange={(nextDirty) => setDirtyEntry({ key: formKey, isDirty: nextDirty })}
       />
     </Dialog>
   );

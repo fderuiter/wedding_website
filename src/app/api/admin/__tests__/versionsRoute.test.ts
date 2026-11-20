@@ -390,6 +390,71 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     });
   });
 
+  it('preserves AppConfig modules alongside showCountdown and showAddToCalendar during snapshot restore', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const mockAppConfigSnapshot = {
+      partner1Name: 'Alice',
+      partner2Name: 'Bob',
+      weddingDate: '2026-06-20T00:00:00.000Z',
+      baseUrl: 'https://wedding.example.com',
+      venueName: 'The Castle',
+      showCountdown: false,
+      showAddToCalendar: true,
+      modules: {
+        registry: false,
+        groupGifting: true,
+        guestPasscode: false,
+        weather: false,
+        weddingParty: true,
+        attractions: false,
+        gallery: false,
+        countdown: false,
+        addToCalendar: true,
+        interactive3D: false,
+      },
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'v-app-modules',
+      entityType: 'AppConfig',
+      entityId: 'global',
+      data: mockAppConfigSnapshot,
+    });
+    (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValueOnce({});
+    (mockPrisma.snapshotVersion.create as jest.Mock).mockResolvedValueOnce({});
+
+    const req = new NextRequest('http://localhost/api/admin/versions/v-app-modules/restore', { method: 'POST' });
+    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-app-modules' }) });
+    expect(res.status).toBe(200);
+
+    const expectedModules = {
+      registry: false,
+      groupGifting: false,
+      weather: false,
+      weddingParty: true,
+      attractions: false,
+      gallery: false,
+      countdown: false,
+      addToCalendar: true,
+      interactive3D: false,
+    };
+
+    expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
+      where: { id: 'global' },
+      update: expect.objectContaining({
+        modules: expectedModules,
+        showCountdown: false,
+        showAddToCalendar: true,
+      }),
+      create: expect.objectContaining({
+        id: 'global',
+        modules: expectedModules,
+        showCountdown: false,
+        showAddToCalendar: true,
+      }),
+    });
+  });
+
   it('restores ContentNode successfully', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const mockContentSnapshot = {

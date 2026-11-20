@@ -94,6 +94,22 @@ class RegistryService {
 
     return this.repository.contributeToItem(itemId, contribution);
   }
+
+  /**
+   * Atomically claims a contributor confirmation or couple alert timestamp.
+   */
+  async claimContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<boolean> {
+    if (typeof this.repository.claimContributorEmailSend === 'function') {
+      return this.repository.claimContributorEmailSend(contributorId, kind);
+    }
+    if (typeof registryRepository.claimContributorEmailSend === 'function') {
+      return registryRepository.claimContributorEmailSend(contributorId, kind);
+    }
+    return false;
+  }
 }
 
 export const registryService = new RegistryService(registryRepository);

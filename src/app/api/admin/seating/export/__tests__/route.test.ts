@@ -522,4 +522,99 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
       'Table 1,ROUND,8,1,Jane Doe,JANE26,No shellfish,John Doe,Attending,Jane Doe: Herb Salmon (gluten-free); John Doe: Short Rib,Shuttle?: Yes'
     );
   });
+
+  it('excludes declined RSVPs and address-collection rows from CSV and PDF exports', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't1',
+        name: 'Table 1',
+        shape: 'head',
+        capacity: 4,
+        x: 50,
+        y: 50,
+        width: 200,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-seated-ok',
+            guestName: 'Confirmed Seated',
+            code: 'OK01',
+            seatNumber: 1,
+            tableId: 't1',
+            used: true,
+            extraFields: JSON.stringify({ attending: 'yes' }),
+            partyTags: [],
+            dietaryNotes: 'Vegan',
+          },
+          {
+            id: 'g-seated-declined',
+            guestName: 'Declined Seated',
+            code: 'DEC01',
+            seatNumber: 2,
+            tableId: 't1',
+            used: true,
+            extraFields: JSON.stringify({ attending: 'no' }),
+            partyTags: [],
+            dietaryNotes: null,
+          },
+        ],
+      },
+    ] as any);
+
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'g-unassigned-ok',
+        guestName: 'Pending Eligible',
+        code: 'PEN01',
+        seatNumber: null,
+        tableId: null,
+        used: false,
+        extraFields: null,
+        partyTags: [],
+        dietaryNotes: null,
+      },
+      {
+        id: 'g-unassigned-declined',
+        guestName: 'Declined Unassigned',
+        code: 'DEC02',
+        seatNumber: null,
+        tableId: null,
+        used: true,
+        extraFields: { attending: false },
+        partyTags: [],
+        dietaryNotes: null,
+      },
+      {
+        id: 'g-address-only',
+        guestName: 'Address Collector',
+        code: 'ADDR01',
+        seatNumber: null,
+        tableId: null,
+        used: false,
+        extraFields: null,
+        partyTags: ['address-collection'],
+        dietaryNotes: null,
+      },
+    ] as any);
+
+    const csvReq = new NextRequest('http://localhost:3000/api/admin/seating/export');
+    const csvRes = await GET(csvReq);
+    expect(csvRes.status).toBe(200);
+    const csvText = await csvRes.text();
+
+    expect(csvText).toContain('Confirmed Seated');
+    expect(csvText).toContain('Pending Eligible');
+    expect(csvText).not.toContain('Declined Seated');
+    expect(csvText).not.toContain('Declined Unassigned');
+    expect(csvText).not.toContain('Address Collector');
+
+    const pdfReq = new NextRequest('http://localhost:3000/api/admin/seating/export?format=pdf');
+    const pdfRes = await GET(pdfReq);
+    expect(pdfRes.status).toBe(200);
+    expect(pdfRes.headers.get('content-type')).toBe('application/pdf');
+  });
 });

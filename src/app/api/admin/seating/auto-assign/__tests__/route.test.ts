@@ -70,6 +70,25 @@ describe('POST /api/admin/seating/auto-assign', () => {
     expect(mockAutoAssign).toHaveBeenCalledWith('Admin');
   });
 
+  it('should forward includePending: false to autoAssignSeats when specified', async () => {
+    const mockAutoAssign = jest.fn().mockResolvedValue({
+      assignedCount: 2,
+      unassignedCount: 0,
+      assignedGuests: [],
+    });
+    (SeatingTableAdminService as jest.MockedClass<typeof SeatingTableAdminService>).prototype.autoAssignSeats =
+      mockAutoAssign;
+
+    const req = new NextRequest('http://localhost/api/admin/seating/auto-assign', {
+      method: 'POST',
+      body: JSON.stringify({ includePending: false }),
+    });
+
+    const res = await POST(req, {});
+    expect(res.status).toBe(200);
+    expect(mockAutoAssign).toHaveBeenCalledWith('Admin', { includePending: false });
+  });
+
   it('should return 401 Unauthorized when request is not from an authenticated admin', async () => {
     (isAdminRequest as jest.Mock).mockResolvedValue(false);
 

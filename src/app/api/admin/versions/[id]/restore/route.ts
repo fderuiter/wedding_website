@@ -8,6 +8,7 @@ import { PhotoDataSchema } from '@/features/content';
 import { MediaSchema } from '@/features/media';
 import { translateSnapshotToActive } from '@/features/registry';
 import { APP_CONFIG_SECRET_KEYS } from '@/lib/config';
+import { resolveModuleConfig } from '@/lib/modules';
 
 const FALLBACK_SECRET_KEYS = [
   'smtpPass',
@@ -127,6 +128,29 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
         }
       }
 
+      const hasSnapshotModules =
+        snapshotData.modules !== undefined &&
+        snapshotData.modules !== null &&
+        typeof snapshotData.modules === 'object' &&
+        !Array.isArray(snapshotData.modules);
+      const resolvedModules = resolveModuleConfig({
+        ...(snapshotData.showCountdown !== undefined
+          ? { countdown: snapshotData.showCountdown !== false }
+          : {}),
+        ...(snapshotData.showAddToCalendar !== undefined
+          ? { addToCalendar: snapshotData.showAddToCalendar !== false }
+          : {}),
+        ...(hasSnapshotModules ? snapshotData.modules : {}),
+      });
+      const resolvedShowCountdown =
+        hasSnapshotModules && typeof snapshotData.modules.countdown === 'boolean'
+          ? resolvedModules.countdown
+          : snapshotData.showCountdown !== false;
+      const resolvedShowAddToCalendar =
+        hasSnapshotModules && typeof snapshotData.modules.addToCalendar === 'boolean'
+          ? resolvedModules.addToCalendar
+          : snapshotData.showAddToCalendar !== false;
+
       const data: Record<string, any> = {
         partner1Name: snapshotData.partner1Name ?? snapshotData.brideName ?? '',
         partner2Name: snapshotData.partner2Name ?? snapshotData.groomName ?? '',
@@ -152,13 +176,14 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
         ogImageUrl: snapshotData.ogImageUrl ?? '/images/placeholder.png',
         seoKeywords: snapshotData.seoKeywords ?? '',
         features: snapshotData.features ?? [],
+        modules: resolvedModules,
         colorPrimary: snapshotData.colorPrimary ?? '#B91C1C',
         colorSecondary: snapshotData.colorSecondary ?? '#B45309',
         themePreset: snapshotData.themePreset ?? 'classic',
         themeTokens: snapshotData.themeTokens === null ? Prisma.DbNull : (snapshotData.themeTokens ?? {}),
         timezone: snapshotData.timezone ?? 'UTC',
-        showCountdown: snapshotData.showCountdown !== false,
-        showAddToCalendar: snapshotData.showAddToCalendar !== false,
+        showCountdown: resolvedShowCountdown,
+        showAddToCalendar: resolvedShowAddToCalendar,
         subdomain: snapshotData.subdomain ?? null,
         ...optionalFields,
       };

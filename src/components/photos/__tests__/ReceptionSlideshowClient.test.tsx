@@ -1122,4 +1122,52 @@ describe('ReceptionSlideshowClient', () => {
     expect(await axe(secondaryControls)).toHaveNoViolations();
     expect(await axe(playPauseBtn)).toHaveNoViolations();
   });
+
+  it('displays guest caption and uploaderName attribution on initial photos and newly polled photos', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        photos: [
+          {
+            id: 'polled-guest-1',
+            url: 'https://example.com/polled-guest.jpg',
+            title: 'Late Night Tacos',
+            caption: 'Late Night Tacos',
+            uploaderName: 'Cousin Leo',
+            isGuestUpload: true,
+            createdAt: '2026-06-20T22:00:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={[
+          {
+            id: 'guest-init-1',
+            url: 'https://example.com/sparklers.jpg',
+            title: 'Sparkler exit!',
+            caption: 'Sparkler exit!',
+            uploaderName: 'Aunt Clara',
+            isGuestUpload: true,
+            createdAt: '2026-06-20T21:00:00.000Z',
+          },
+        ]}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Sparkler exit!');
+    expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent('Shared by Aunt Clara');
+
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+
+    fireEvent.click(screen.getByTestId('slideshow-next-btn'));
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Late Night Tacos');
+    expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent('Shared by Cousin Leo');
+  });
 });

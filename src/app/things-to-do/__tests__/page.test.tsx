@@ -57,4 +57,42 @@ describe('ThingsToDoPage', () => {
     render(Component);
     expect(screen.getByTestId('things-to-do-list')).toBeInTheDocument();
   });
+
+  it('renders saved travel guidance paragraphs above ThingsToDoList when non-empty', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      modules: { attractions: true },
+      venueCity: 'Chicago',
+      latitude: 41.8781,
+      longitude: -87.6298,
+      travelAdvice: 'Fly into ORD or MDW.\n\nThe CTA Blue Line runs directly downtown.',
+    });
+
+    const Component = await ThingsToDoPage();
+    render(Component);
+
+    const travelSection = screen.getByRole('region', { name: 'Getting Here & Travel Advice' });
+    const listElement = screen.getByTestId('things-to-do-list');
+
+    expect(travelSection).toBeInTheDocument();
+    expect(screen.getByText('Fly into ORD or MDW.')).toBeInTheDocument();
+    expect(screen.getByText('The CTA Blue Line runs directly downtown.')).toBeInTheDocument();
+    expect(
+      travelSection.compareDocumentPosition(listElement) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('omits travel guidance section when travelAdvice is empty or whitespace', async () => {
+    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+      modules: { attractions: true },
+      venueCity: 'Chicago',
+      latitude: 41.8781,
+      longitude: -87.6298,
+      travelAdvice: '   ',
+    });
+
+    const Component = await ThingsToDoPage();
+    render(Component);
+
+    expect(screen.queryByRole('region', { name: 'Getting Here & Travel Advice' })).not.toBeInTheDocument();
+  });
 });

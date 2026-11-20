@@ -48,6 +48,10 @@ export const MIME_TO_EXTENSIONS: Record<string, string[]> = {
   'image/jpeg': ['.jpg', '.jpeg'],
   'image/png': ['.png'],
   'image/webp': ['.webp'],
+  'image/heic': ['.heic', '.heif'],
+  'image/heif': ['.heic', '.heif'],
+  'image/heic-sequence': ['.heic', '.heif'],
+  'image/heif-sequence': ['.heic', '.heif'],
   'image/x-icon': ['.ico'],
   'image/vnd.microsoft.icon': ['.ico'],
 };
@@ -56,13 +60,31 @@ const MIME_TO_NORMALIZED_EXT: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/heic-sequence': '.heic',
+  'image/heif-sequence': '.heif',
   'image/x-icon': '.ico',
   'image/vnd.microsoft.icon': '.ico',
 };
 
 export const MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024;
-export const GUEST_PHOTO_ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-export const GUEST_PHOTO_ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+export const GUEST_PHOTO_ACCEPTED_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence',
+];
+export const GUEST_PHOTO_ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+export const HEIC_EXTENSIONS = ['.heic', '.heif'];
+
+export function isHeicExtension(ext?: string | null): boolean {
+  if (!ext || typeof ext !== 'string') return false;
+  return HEIC_EXTENSIONS.includes(ext.toLowerCase());
+}
 
 export function getFileExtension(filename?: string | null): string {
   if (!filename || typeof filename !== 'string') return '';

@@ -54,6 +54,7 @@ model AppConfig {
   layoutCardPadding       String @default("2rem")
   layoutBorderRadius      String @default("1rem")
   features         Json     @default("[]")
+  modules          Json     @default("{}")
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
   showAddToCalendar Boolean  @default(true)
@@ -183,6 +184,8 @@ model Contributor {
   stripePaymentIntentId String? @unique
   stripeChargeId        String?
   transactionTimestamp  DateTime?
+  confirmationEmailSentAt DateTime?
+  alertEmailSentAt        DateTime?
   registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
   registryItemId String?
   createdAt      DateTime      @default(now())

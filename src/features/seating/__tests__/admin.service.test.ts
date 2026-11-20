@@ -85,7 +85,19 @@ describe('SeatingTableAdminService', () => {
 
     await expect(
       service.create({ name: 'Table 1', capacity: 8, shape: 'triangle' as any }, 'Admin')
-    ).rejects.toThrow('Validation Error: Shape must be round, rectangular, or square.');
+    ).rejects.toThrow('Validation Error: Shape must be round, rectangular, square, head, or sweetheart.');
+  });
+
+  it('should accept head and sweetheart 1-sided table shapes', async () => {
+    mockTxSeatingTableCreate
+      .mockResolvedValueOnce({ id: 'tbl-head', name: 'Head Table', shape: 'head', capacity: 8 })
+      .mockResolvedValueOnce({ id: 'tbl-sweet', name: 'Sweetheart', shape: 'sweetheart', capacity: 2 });
+
+    const head = await service.create({ name: 'Head Table', shape: 'head', capacity: 8 }, 'Admin');
+    const sweet = await service.create({ name: 'Sweetheart', shape: 'sweetheart', capacity: 2 }, 'Admin');
+
+    expect(head.shape).toBe('head');
+    expect(sweet.shape).toBe('sweetheart');
   });
 
   it('should create a seating table and create an audit snapshot', async () => {
@@ -457,6 +469,223 @@ describe('SeatingTableAdminService', () => {
       expect(result.assignedGuests).toEqual([]);
       expect(mockTxExecuteRaw).not.toHaveBeenCalled();
       expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('should exclude declined RSVPs and address-collection rows from autoAssignSeats', async () => {
+      mockTxSeatingTableFindMany.mockResolvedValue([
+        { id: 'table-1', name: 'Table 1', capacity: 6, invitationCodes: [] },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValue([
+        {
+          id: 'g-attending',
+          guestName: 'Attending Guest',
+          householdName: null,
+          tableId: null,
+          used: true,
+          extraFields: JSON.stringify({ attending: 'yes' }),
+          partyTags: ['family'],
+        },
+        {
+          id: 'g-pending',
+          guestName: 'Pending Guest',
+          householdName: null,
+          tableId: null,
+          used: false,
+          extraFields: null,
+          partyTags: [],
+        },
+        {
+          id: 'g-declined',
+          guestName: 'Declined Guest',
+          householdName: null,
+          tableId: null,
+          used: true,
+          extraFields: JSON.stringify({ attending: 'no' }),
+          partyTags: [],
+        },
+        {
+          id: 'g-address',
+          guestName: 'Address Submission',
+          householdName: null,
+          tableId: null,
+          used: false,
+          extraFields: null,
+          partyTags: ['address-collection'],
+        },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValue(2);
+
+      const result = await service.autoAssignSeats('Admin');
+
+      expect(result.assignedCount).toBe(2);
+      expect(result.unassignedCount).toBe(0);
+      expect(result.assignedGuests.map((g) => g.id).sort()).toEqual(['g-attending', 'g-pending']);
+    });
+
+    it('should exclude pending RSVPs when includePending is false', async () => {
+      mockTxSeatingTableFindMany.mockResolvedValue([
+        { id: 'table-1', name: 'Table 1', capacity: 6, invitationCodes: [] },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValue([
+        {
+          id: 'g-attending',
+          guestName: 'Attending Guest',
+          householdName: null,
+          tableId: null,
+          used: true,
+          extraFields: { attending: true },
+          partyTags: [],
+        },
+        {
+          id: 'g-pending',
+          guestName: 'Pending Guest',
+          householdName: null,
+          tableId: null,
+          used: false,
+          extraFields: null,
+          partyTags: [],
+        },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValue(1);
+
+      const result = await service.autoAssignSeats('Admin', { includePending: false });
+
+      expect(result.assignedCount).toBe(1);
+      expect(result.unassignedCount).toBe(0);
+      expect(result.assignedGuests).toHaveLength(1);
+      expect(result.assignedGuests[0].id).toBe('g-attending');
+    });
+  });
+
+  describe('assignSeatsBatch & restoreSeatAssignments', () => {
+    it('assigns a household batch atomically and records batch audit snapshots', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null, used: true, extraFields: { attending: true } },
+        { id: 'g2', guestName: 'Bob', tableId: null, seatNumber: null, used: true, extraFields: { attending: true } },
+      ]);
+
+      mockTxSeatingTableFindUnique.mockResolvedValue({
+        id: 'table-1',
+        name: 'Table 1',
+        capacity: 4,
+        invitationCodes: [{ id: 'existing', guestName: 'VIP', seatNumber: 1 }],
+      });
+
+      mockTxExecuteRaw.mockResolvedValue(2);
+
+      const result = await service.assignSeatsBatch(['g1', 'g2'], 'table-1', {
+        action: 'assignBatch',
+        author: 'Admin',
+      });
+
+      expect(result.updatedGuests).toHaveLength(2);
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'InvitationCode',
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityId: 'g1',
+            data: expect.objectContaining({ tableId: 'table-1', seatNumber: 2, action: 'assignBatch' }),
+          }),
+          expect.objectContaining({
+            entityId: 'g2',
+            data: expect.objectContaining({ tableId: 'table-1', seatNumber: 3, action: 'assignBatch' }),
+          }),
+        ]),
+        'Admin',
+        expect.any(Object)
+      );
+    });
+
+    it('rejects assignSeatsBatch when table lacks sufficient open capacity', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null, used: true, extraFields: { attending: true } },
+        { id: 'g2', guestName: 'Bob', tableId: null, seatNumber: null, used: true, extraFields: { attending: true } },
+      ]);
+
+      mockTxSeatingTableFindUnique.mockResolvedValue({
+        id: 'table-1',
+        name: 'Table 1',
+        capacity: 2,
+        invitationCodes: [{ id: 'existing', guestName: 'VIP', seatNumber: 1 }],
+      });
+
+      await expect(
+        service.assignSeatsBatch(['g1', 'g2'], 'table-1', { action: 'assignBatch', author: 'Admin' })
+      ).rejects.toThrow('Validation Error: Table "Table 1" has reached its maximum capacity of 2.');
+
+      expect(mockTxExecuteRaw).not.toHaveBeenCalled();
+      expect(createBatchAuditSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('clears table seats in batch and records clearTable batch audit snapshots', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: 'table-1', seatNumber: 1 },
+        { id: 'g2', guestName: 'Bob', tableId: 'table-1', seatNumber: 2 },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValue(2);
+
+      const cleared = await service.assignSeatsBatch(['g1', 'g2'], null, {
+        action: 'clearTable',
+        author: 'Admin',
+      });
+      expect(cleared.updatedGuests).toHaveLength(2);
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'InvitationCode',
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityId: 'g1',
+            data: expect.objectContaining({ tableId: null, seatNumber: null, action: 'clearTable' }),
+          }),
+        ]),
+        'Admin',
+        expect.any(Object)
+      );
+    });
+
+    it('restores prior seat assignments atomically for undo and writes batch audit snapshots', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null },
+        { id: 'g2', guestName: 'Bob', tableId: 'table-2', seatNumber: 1 },
+      ]);
+
+      mockTxSeatingTableFindMany.mockResolvedValue([
+        { id: 'table-1', name: 'Table 1', capacity: 4, invitationCodes: [] },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValue(2);
+
+      const restored = await service.restoreSeatAssignments(
+        [
+          { invitationCodeId: 'g1', tableId: 'table-1', seatNumber: 1 },
+          { invitationCodeId: 'g2', tableId: null, seatNumber: null },
+        ],
+        { action: 'undo', author: 'Admin' }
+      );
+
+      expect(restored.updatedGuests).toHaveLength(2);
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalledWith(
+        'InvitationCode',
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityId: 'g1',
+            data: expect.objectContaining({ tableId: 'table-1', seatNumber: 1, action: 'undo' }),
+          }),
+          expect.objectContaining({
+            entityId: 'g2',
+            data: expect.objectContaining({ tableId: null, seatNumber: null, action: 'undo' }),
+          }),
+        ]),
+        'Admin',
+        expect.any(Object)
+      );
     });
   });
 });

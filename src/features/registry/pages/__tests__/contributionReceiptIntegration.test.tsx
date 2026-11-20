@@ -240,6 +240,20 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     expect(within(dialog).getByText(/Transaction Reference:/i)).toBeInTheDocument();
     expect(within(dialog).getByText('pi_verified_receipt_456')).toBeInTheDocument();
 
+    // Guest can copy transaction reference and gift summary before closing checkout
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    const copyBtn = within(dialog).getByRole('button', { name: /Copy Receipt/i });
+    fireEvent.click(copyBtn);
+    expect(await within(dialog).findByRole('button', { name: /Receipt Copied!/i })).toBeInTheDocument();
+    expect(writeTextMock).toHaveBeenCalledTimes(1);
+    expect(writeTextMock.mock.calls[0][0]).toContain('Tokyo Honeymoon Fund');
+    expect(writeTextMock.mock.calls[0][0]).toContain('$50.00');
+    expect(writeTextMock.mock.calls[0][0]).toContain('Transaction Reference: pi_verified_receipt_456');
+
     expect(recordedContributeBody).toMatchObject({
       itemId: 'fund-honeymoon',
       purchaserName: 'Jane Donor',

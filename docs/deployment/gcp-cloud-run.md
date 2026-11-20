@@ -51,7 +51,7 @@ All sensitive values must be stored in **GCP Secret Manager** and attached to th
 | `POSTGRES_URL_NON_POOLING` | No | Secret Manager | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` reads `DATABASE_URL` and requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | Secret Manager | `scrypt:[saltBase64]:[keyBase64]` hash. |
 | `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). |
-| `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable multi-tenant/multi-profile site routing (`false`). |
+| `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
 | `TRUST_PROXY` | No | Cloud Run Env Var | Trust `X-Forwarded-For` / `X-Real-IP` from Cloud Run ingress (`true` or hop count; default `false`). |
 | `GUEST_PASSCODE` | Yes | Secret Manager | Unique guest passcode required in production (default `wedding2026` is rejected in production). |
@@ -210,7 +210,7 @@ production-deploy-provider:
 To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules and cryptographic OIDC provenance verification:
 1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a file-based **Pre-Flight Schema Migration Status & SQL DDL Summary** from `prisma/migrations/` in `$GITHUB_STEP_SUMMARY` (`schema-compatibility` runs without `DATABASE_URL`). `publish-artifact` builds and signs the multi-arch container image on `ghcr.io`, `staging-database-migration` applies migrations against staging `DATABASE_URL`, and `staging-deploy-provider` verifies OIDC provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml` before deploying the immutable `ghcr.io/<owner>/<repo>@sha256:<hex>` digest to Cloud Run service `wedding-website`.
 2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the job before exposing production secrets. Maintainers review the file-based preflight DDL summary and live staging health check outcome before approving the deployment; after approval, `db-migrate.yml` audits live production `DATABASE_URL` (`npx prisma migrate status`), emits the live pending DDL summary, and runs `npx prisma migrate deploy`, after which `production-deploy-provider` re-verifies OIDC provenance for the exact `image_digest` validated in staging before updating the production `wedding-website` Cloud Run service.
-3. **Automated Rollback Guarantee**: Before updating the Cloud Run service, `.github/workflows/deploy-provider.yml` inspects the currently serving Cloud Run revision image (capturing `previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA). If the staging or production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/deploy.yml` automatically triggers `.github/workflows/rollback.yml` with the captured `previous_image_digest`, `previous_image_tag`, `provider`, and optional unguarded `rollback_environment` (e.g., `production-rollback`, configured without Required Reviewers, setting `SERVICE_URL` via `vars.SERVICE_URL` with `secrets.SERVICE_URL` as a legacy fallback, and holding `GCP_SA_KEY`, `GCP_PROJECT_ID`, and `DEPLOY_WEBHOOK_URL`). `rollback.yml` rejects mutable `latest` or the failing `github.sha`, verifies `npm run lint:migrations`, redeploys the previous image via `deploy-provider.yml` (including OIDC provenance verification) **without requiring a second human approval gate**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `status == "ok"`, `database == "connected"`) before reporting `SUCCESS`.
+3. **Automated Rollback Guarantee**: Before updating the Cloud Run service, `.github/workflows/deploy-provider.yml` inspects the currently serving Cloud Run revision image (capturing `previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA). If the staging or production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/deploy.yml` automatically triggers `.github/workflows/rollback.yml` with the captured `previous_image_digest`, `previous_image_tag`, `provider`, and optional unguarded `rollback_environment` (e.g., `production-rollback`, configured without Required Reviewers, setting `SERVICE_URL` via `vars.SERVICE_URL` with `secrets.SERVICE_URL` as a legacy fallback, and holding `GCP_SA_KEY`, `GCP_PROJECT_ID`, and `DEPLOY_WEBHOOK_URL`). `rollback.yml` rejects mutable `latest` or the failing `github.sha`, verifies `npm run lint:migrations`, redeploys the previous image via `deploy-provider.yml` (including OIDC provenance verification) **without requiring a second human approval gate**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `.data.status == "ok"`, `.data.database == "connected"`) before reporting `SUCCESS`.
 
 #### Workflow Parameters, Manual Dispatches & Preflight Checks
 The release pipeline supports automated merges as well as manual triggers via GitHub Actions `workflow_dispatch`:
@@ -305,7 +305,7 @@ Google Cloud Run provides free, automatically managed TLS certificates for custo
 ## 6. Build & Deploy Commands
 
 ### Automated Deployment via GitHub Actions
-The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`:
+The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch`); pushing a `v*` tag triggers `publish-artifact.yml` to publish `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy-provider.yml` (`image_tag: v0.1.0`), `deploy.yml` (`image_digest`), or manual CLI deployment below:
 *   **GitHub Environment Variables** (`staging`, `production`, and optional `production-rollback`):
     *   `SERVICE_URL`: Public base URL of the Cloud Run service for post-deploy and post-rollback `/api/health` verification (`vars.SERVICE_URL` primary so job outputs and deployment summaries remain unmasked; `secrets.SERVICE_URL` is supported as a legacy fallback during migration).
 *   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):
@@ -387,7 +387,28 @@ Rollbacks execute in under 2 seconds without rebuilding images.
 
 ---
 
-## 9. Provider-Specific Limitations
+## 9. Webhooks & Scheduled Background Jobs
+
+### Stripe `payment_intent.succeeded` Webhook
+1. Store `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (`whsec_...`) in **GCP Secret Manager** and set `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` on the Cloud Run service revision.
+2. In **Stripe Dashboard > Developers > Webhooks**, add endpoint `https://wedding.mydomain.com/api/registry/webhook/stripe` (matching `ALLOWED_HOSTS`) subscribed to **`payment_intent.succeeded`**.
+3. `src/middleware.ts` exempts `/api/registry/webhook/stripe` from session cookies while enforcing `ALLOWED_HOSTS`, and the route handler verifies `stripe-signature` against `STRIPE_WEBHOOK_SECRET`.
+
+### Cloud Scheduler Broadcast Cron (`CRON_SECRET`)
+1. Store `CRON_SECRET` in **GCP Secret Manager** and mount `--set-secrets="CRON_SECRET=CRON_SECRET:latest"` on `wedding-website`.
+2. Create a **Google Cloud Scheduler** HTTP job that calls `/api/cron/broadcasts` with `Authorization: Bearer <CRON_SECRET>`:
+   ```bash
+   gcloud scheduler jobs create http wedding-broadcasts \
+       --location=us-central1 \
+       --schedule="*/5 * * * *" \
+       --uri="https://wedding.mydomain.com/api/cron/broadcasts" \
+       --http-method=POST \
+       --headers="Authorization=Bearer YOUR_CRON_SECRET"
+   ```
+
+---
+
+## 10. Provider-Specific Limitations
 
 1.  **Cold Starts**: Initial HTTP requests to a scaled-to-zero instance incur 1.5–3.0s latency while container initializes. Remedy: Set `--min-instances=1`.
 2.  **Stateless Filesystem**: Disk writes to `/tmp` are kept in container RAM and cleared when instances terminate. All persistent uploads must use S3/R2.

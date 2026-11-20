@@ -1,10 +1,12 @@
 import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
+import { attractionsRepository, type AttractionDTO } from '@/features/attractions';
 import { logisticsService } from '@/features/logistics';
 import { subEventService } from '@/features/sub-events';
 import { ContentNodeSchema, isPrivateContentNode, type ContentNodeDTO } from '@/features/content';
 import { enforceActiveGuestPageSession, getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { isFeatureEnabled } from '@/lib/modules';
 import { withPageQuery } from '@/lib/query-wrapper';
 
 /**
@@ -167,5 +169,19 @@ export default async function HomePage() {
     }
   }
 
-  return <HomePageClient config={publicConfig} contentNodes={contentNodes} />;
+  const attractions = isFeatureEnabled('attractions', config.modules)
+    ? await withPageQuery(
+      async () => {
+        const rawAttractions = await attractionsRepository.getVisibleAttractions();
+        return [...rawAttractions].sort((a, b) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeB - timeA;
+        });
+      },
+      [] as AttractionDTO[]
+    )
+    : [];
+
+  return <HomePageClient config={publicConfig} contentNodes={contentNodes} attractions={attractions} />;
 }
