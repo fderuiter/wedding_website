@@ -181,4 +181,69 @@ describe('SettingsPage View State', () => {
 
     expect(screen.getAllByText('Configured')).toHaveLength(2);
   });
+
+  it('renders 9 persisted module checkboxes, omits guestPasscode checkbox, and shows environment passcode guidance', () => {
+    (useAdminSettings as jest.Mock).mockReturnValue({
+      config: {
+        id: 'global',
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        weddingDate: '2026-10-10',
+        showCountdown: true,
+        showAddToCalendar: true,
+        modules: {
+          registry: true,
+          groupGifting: true,
+          weather: true,
+          weddingParty: true,
+          attractions: true,
+          gallery: true,
+          countdown: true,
+          addToCalendar: true,
+          interactive3D: true,
+        },
+      },
+      loading: false,
+      saving: false,
+      error: null,
+      saveSettings: mockSaveSettings,
+      profiles: [],
+      loadingList: false,
+      createProfile: mockCreateProfile,
+      creating: false,
+      fetchAll: mockFetchAll,
+    });
+
+    render(<SettingsPage />);
+
+    // Guest Passcode checkbox is absent; read-only environment guidance is displayed
+    expect(document.getElementById('feature-guestPasscode')).toBeNull();
+    const passcodeNotice = screen.getByRole('note', { name: /Guest login passcode configuration/i });
+    expect(passcodeNotice).toHaveTextContent(/GUEST_PASSCODE/i);
+    expect(passcodeNotice).toHaveTextContent(/GUEST_SESSION_SECRET/i);
+
+    // All 9 module checkboxes are rendered
+    const expectedIds = [
+      'registry',
+      'groupGifting',
+      'weather',
+      'weddingParty',
+      'attractions',
+      'gallery',
+      'countdown',
+      'addToCalendar',
+      'interactive3D',
+    ];
+    for (const id of expectedIds) {
+      expect(document.getElementById(`feature-${id}`)).toBeInTheDocument();
+    }
+
+    // Disabling registry automatically turns off and disables groupGifting
+    const registryCheckbox = document.getElementById('feature-registry') as HTMLInputElement;
+    const groupGiftingCheckbox = document.getElementById('feature-groupGifting') as HTMLInputElement;
+    fireEvent.click(registryCheckbox);
+    expect(registryCheckbox.checked).toBe(false);
+    expect(groupGiftingCheckbox.checked).toBe(false);
+    expect(groupGiftingCheckbox).toBeDisabled();
+  });
 });

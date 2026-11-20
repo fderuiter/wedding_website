@@ -36,12 +36,12 @@ graph TD
         A[React Frontend]
     end
 
-    subgraph Server (Node.js / Container Runtime)
+    subgraph Server ["Server (Node.js / Container Runtime)"]
         B[Next.js Route Handlers]
         C[Prisma Client]
     end
 
-    subgraph Database [PostgreSQL Database]
+    subgraph Database ["PostgreSQL Database"]
         D[PostgreSQL]
     end
 
@@ -74,338 +74,338 @@ flowchart LR
 
     App["src/app"]
     node_admin["admin"]
-    node_admin_dashboard["dashboard"]
-    node_admin_dashboard_attractions["attractions"]
-    node_admin_dashboard_content["content"]
-    node_admin_dashboard_history["history"]
-    node_admin_dashboard_invitationcodes["invitation-codes"]
-    node_admin_dashboard_maintenance["maintenance"]
-    node_admin_dashboard_media["media"]
-    node_admin_dashboard_seatingchart["seating-chart"]
-    node_admin_dashboard_settings["settings"]
-    node_admin_dashboard_sitemanager["site-manager"]
-    node_admin_dashboard_subevents["sub-events"]
-    node_admin_dashboard_thankyounotes["thank-you-notes"]
-    node_admin_dashboard_weddingparty["wedding-party"]
-    node_admin_login["login"]
+    node_admin__dashboard["dashboard"]
+    node_admin__dashboard__attractions["attractions"]
+    node_admin__dashboard__content["content"]
+    node_admin__dashboard__history["history"]
+    node_admin__dashboard__invitation_d_codes["invitation-codes"]
+    node_admin__dashboard__maintenance["maintenance"]
+    node_admin__dashboard__media["media"]
+    node_admin__dashboard__seating_d_chart["seating-chart"]
+    node_admin__dashboard__settings["settings"]
+    node_admin__dashboard__site_d_manager["site-manager"]
+    node_admin__dashboard__sub_d_events["sub-events"]
+    node_admin__dashboard__thank_d_you_d_notes["thank-you-notes"]
+    node_admin__dashboard__wedding_d_party["wedding-party"]
+    node_admin__login["login"]
     node_api["api"]
-    node_api_admin["admin"]
-    node_api_admin_entity["[entity]"]
-    node_api_admin_entity_id["[id]"]
-    node_api_admin_entity_batch["batch"]
-    node_api_admin_broadcast["broadcast"]
-    node_api_admin_broadcast_history["history"]
-    node_api_admin_broadcast_preview["preview"]
-    node_api_admin_broadcast_retry["retry"]
-    node_api_admin_broadcast_schedule["schedule"]
-    node_api_admin_broadcast_schedule_id["[id]"]
-    node_api_admin_broadcast_send["send"]
-    node_api_admin_broadcast_testconnection["test-connection"]
-    node_api_admin_broadcast_testsend["test-send"]
-    node_api_admin_features["features"]
-    node_api_admin_invitationcodes["invitation-codes"]
-    node_api_admin_invitationcodes_batch["batch"]
-    node_api_admin_invitationcodes_batch_validate["validate"]
-    node_api_admin_invitationcodes_export["export"]
-    node_api_admin_invitationcodes_validate["validate"]
-    node_api_admin_login["login"]
-    node_api_admin_logout["logout"]
-    node_api_admin_maintenance["maintenance"]
-    node_api_admin_maintenance_export["export"]
-    node_api_admin_maintenance_import["import"]
-    node_api_admin_me["me"]
-    node_api_admin_onboardingmilestones["onboarding-milestones"]
-    node_api_admin_photos["photos"]
-    node_api_admin_photos_id["[id]"]
-    node_api_admin_photos_moderation["moderation"]
-    node_api_admin_photos_moderation_batch["batch"]
-    node_api_admin_sampledata["sample-data"]
-    node_api_admin_seating["seating"]
-    node_api_admin_seating_assign["assign"]
-    node_api_admin_seating_autoassign["auto-assign"]
-    node_api_admin_seating_export["export"]
-    node_api_admin_settings["settings"]
-    node_api_admin_setup["setup"]
-    node_api_admin_subevents["sub-events"]
-    node_api_admin_subevents_access["access"]
-    node_api_admin_subevents_access_batch["batch"]
-    node_api_admin_thankyounotes["thank-you-notes"]
-    node_api_admin_thankyounotes_id["[id]"]
-    node_api_admin_thankyounotes_batch["batch"]
-    node_api_admin_thankyounotes_export["export"]
-    node_api_admin_thankyounotes_exportlabels["export-labels"]
-    node_api_admin_upload["upload"]
-    node_api_admin_versions["versions"]
-    node_api_admin_versions_id["[id]"]
-    node_api_admin_versions_id_restore["restore"]
-    node_api_cron["cron"]
-    node_api_cron_broadcasts["broadcasts"]
-    node_api_guest["guest"]
-    node_api_guest_address["address"]
-    node_api_guest_address_public["public"]
-    node_api_guest_login["login"]
-    node_api_guest_lookup["lookup"]
-    node_api_guest_photos["photos"]
-    node_api_guest_photos_upload["upload"]
-    node_api_health["health"]
-    node_api_media["media"]
-    node_api_media_id["[id]"]
-    node_api_media_export["export"]
-    node_api_og["og"]
-    node_api_photos["photos"]
-    node_api_photos_upload["upload"]
-    node_api_ready["ready"]
-    node_api_registry["registry"]
-    node_api_registry_capabilities["capabilities"]
-    node_api_registry_contribute["contribute"]
-    node_api_registry_items["items"]
-    node_api_registry_items_id["[id]"]
-    node_api_registry_items_batch["batch"]
-    node_api_registry_paymentintent["payment-intent"]
-    node_api_registry_scrape["scrape"]
-    node_api_registry_scrape_batch["batch"]
-    node_api_registry_session["session"]
-    node_api_registry_validatecode["validate-code"]
-    node_api_registry_webhook["webhook"]
-    node_api_registry_webhook_stripe["stripe"]
-    node_api_rsvp["rsvp"]
-    node_api_schedule["schedule"]
-    node_api_schedule_id["[id]"]
-    node_api_schedule_id_ics["ics"]
-    node_api_uploads["uploads"]
-    node_api_uploads_path["[...path]"]
-    node_api_weather["weather"]
+    node_api__admin["admin"]
+    node_api__admin___lb_entity_rb_["[entity]"]
+    node_api__admin___lb_entity_rb____lb_id_rb_["[id]"]
+    node_api__admin___lb_entity_rb___batch["batch"]
+    node_api__admin__broadcast["broadcast"]
+    node_api__admin__broadcast__history["history"]
+    node_api__admin__broadcast__preview["preview"]
+    node_api__admin__broadcast__retry["retry"]
+    node_api__admin__broadcast__schedule["schedule"]
+    node_api__admin__broadcast__schedule___lb_id_rb_["[id]"]
+    node_api__admin__broadcast__send["send"]
+    node_api__admin__broadcast__test_d_connection["test-connection"]
+    node_api__admin__broadcast__test_d_send["test-send"]
+    node_api__admin__features["features"]
+    node_api__admin__invitation_d_codes["invitation-codes"]
+    node_api__admin__invitation_d_codes__batch["batch"]
+    node_api__admin__invitation_d_codes__batch__validate["validate"]
+    node_api__admin__invitation_d_codes__export["export"]
+    node_api__admin__invitation_d_codes__validate["validate"]
+    node_api__admin__login["login"]
+    node_api__admin__logout["logout"]
+    node_api__admin__maintenance["maintenance"]
+    node_api__admin__maintenance__export["export"]
+    node_api__admin__maintenance__import["import"]
+    node_api__admin__me["me"]
+    node_api__admin__onboarding_d_milestones["onboarding-milestones"]
+    node_api__admin__photos["photos"]
+    node_api__admin__photos___lb_id_rb_["[id]"]
+    node_api__admin__photos__moderation["moderation"]
+    node_api__admin__photos__moderation__batch["batch"]
+    node_api__admin__sample_d_data["sample-data"]
+    node_api__admin__seating["seating"]
+    node_api__admin__seating__assign["assign"]
+    node_api__admin__seating__auto_d_assign["auto-assign"]
+    node_api__admin__seating__export["export"]
+    node_api__admin__settings["settings"]
+    node_api__admin__setup["setup"]
+    node_api__admin__sub_d_events["sub-events"]
+    node_api__admin__sub_d_events__access["access"]
+    node_api__admin__sub_d_events__access__batch["batch"]
+    node_api__admin__thank_d_you_d_notes["thank-you-notes"]
+    node_api__admin__thank_d_you_d_notes___lb_id_rb_["[id]"]
+    node_api__admin__thank_d_you_d_notes__batch["batch"]
+    node_api__admin__thank_d_you_d_notes__export["export"]
+    node_api__admin__thank_d_you_d_notes__export_d_labels["export-labels"]
+    node_api__admin__upload["upload"]
+    node_api__admin__versions["versions"]
+    node_api__admin__versions___lb_id_rb_["[id]"]
+    node_api__admin__versions___lb_id_rb___restore["restore"]
+    node_api__cron["cron"]
+    node_api__cron__broadcasts["broadcasts"]
+    node_api__guest["guest"]
+    node_api__guest__address["address"]
+    node_api__guest__address__public["public"]
+    node_api__guest__login["login"]
+    node_api__guest__lookup["lookup"]
+    node_api__guest__photos["photos"]
+    node_api__guest__photos__upload["upload"]
+    node_api__health["health"]
+    node_api__media["media"]
+    node_api__media___lb_id_rb_["[id]"]
+    node_api__media__export["export"]
+    node_api__og["og"]
+    node_api__photos["photos"]
+    node_api__photos__upload["upload"]
+    node_api__ready["ready"]
+    node_api__registry["registry"]
+    node_api__registry__capabilities["capabilities"]
+    node_api__registry__contribute["contribute"]
+    node_api__registry__items["items"]
+    node_api__registry__items___lb_id_rb_["[id]"]
+    node_api__registry__items__batch["batch"]
+    node_api__registry__payment_d_intent["payment-intent"]
+    node_api__registry__scrape["scrape"]
+    node_api__registry__scrape__batch["batch"]
+    node_api__registry__session["session"]
+    node_api__registry__validate_d_code["validate-code"]
+    node_api__registry__webhook["webhook"]
+    node_api__registry__webhook__stripe["stripe"]
+    node_api__rsvp["rsvp"]
+    node_api__schedule["schedule"]
+    node_api__schedule___lb_id_rb_["[id]"]
+    node_api__schedule___lb_id_rb___ics["ics"]
+    node_api__uploads["uploads"]
+    node_api__uploads___lb__p__p__p_path_rb_["[...path]"]
+    node_api__weather["weather"]
     node_archive["archive"]
     node_guest["guest"]
-    node_guest_collect["collect"]
-    node_guest_login["login"]
+    node_guest__collect["collect"]
+    node_guest__login["login"]
     node_heart["heart"]
     node_photos["photos"]
-    node_photos_slideshow["slideshow"]
-    node_projectinfo["project-info"]
+    node_photos__slideshow["slideshow"]
+    node_project_d_info["project-info"]
     node_registry["registry"]
-    node_registry_additem["add-item"]
-    node_registry_edititem["edit-item"]
-    node_registry_edititem_id["[id]"]
-    node_thingstodo["things-to-do"]
+    node_registry__add_d_item["add-item"]
+    node_registry__edit_d_item["edit-item"]
+    node_registry__edit_d_item___lb_id_rb_["[id]"]
+    node_things_d_to_d_do["things-to-do"]
     node_weather["weather"]
-    node_weddingparty["wedding-party"]
+    node_wedding_d_party["wedding-party"]
     App --> node_admin
-    node_admin --> node_admin_dashboard
-    node_admin_dashboard --> node_admin_dashboard_attractions
-    node_admin_dashboard --> node_admin_dashboard_content
-    node_admin_dashboard --> node_admin_dashboard_history
-    node_admin_dashboard --> node_admin_dashboard_invitationcodes
-    node_admin_dashboard --> node_admin_dashboard_maintenance
-    node_admin_dashboard --> node_admin_dashboard_media
-    node_admin_dashboard --> node_admin_dashboard_seatingchart
-    node_admin_dashboard --> node_admin_dashboard_settings
-    node_admin_dashboard --> node_admin_dashboard_sitemanager
-    node_admin_dashboard --> node_admin_dashboard_subevents
-    node_admin_dashboard --> node_admin_dashboard_thankyounotes
-    node_admin_dashboard --> node_admin_dashboard_weddingparty
-    node_admin --> node_admin_login
+    node_admin --> node_admin__dashboard
+    node_admin__dashboard --> node_admin__dashboard__attractions
+    node_admin__dashboard --> node_admin__dashboard__content
+    node_admin__dashboard --> node_admin__dashboard__history
+    node_admin__dashboard --> node_admin__dashboard__invitation_d_codes
+    node_admin__dashboard --> node_admin__dashboard__maintenance
+    node_admin__dashboard --> node_admin__dashboard__media
+    node_admin__dashboard --> node_admin__dashboard__seating_d_chart
+    node_admin__dashboard --> node_admin__dashboard__settings
+    node_admin__dashboard --> node_admin__dashboard__site_d_manager
+    node_admin__dashboard --> node_admin__dashboard__sub_d_events
+    node_admin__dashboard --> node_admin__dashboard__thank_d_you_d_notes
+    node_admin__dashboard --> node_admin__dashboard__wedding_d_party
+    node_admin --> node_admin__login
     App --> node_api
-    node_api --> node_api_admin
-    node_api_admin --> node_api_admin_entity
-    node_api_admin_entity --> node_api_admin_entity_id
-    node_api_admin_entity --> node_api_admin_entity_batch
-    node_api_admin --> node_api_admin_broadcast
-    node_api_admin_broadcast --> node_api_admin_broadcast_history
-    node_api_admin_broadcast --> node_api_admin_broadcast_preview
-    node_api_admin_broadcast --> node_api_admin_broadcast_retry
-    node_api_admin_broadcast --> node_api_admin_broadcast_schedule
-    node_api_admin_broadcast_schedule --> node_api_admin_broadcast_schedule_id
-    node_api_admin_broadcast --> node_api_admin_broadcast_send
-    node_api_admin_broadcast --> node_api_admin_broadcast_testconnection
-    node_api_admin_broadcast --> node_api_admin_broadcast_testsend
-    node_api_admin --> node_api_admin_features
-    node_api_admin --> node_api_admin_invitationcodes
-    node_api_admin_invitationcodes --> node_api_admin_invitationcodes_batch
-    node_api_admin_invitationcodes_batch --> node_api_admin_invitationcodes_batch_validate
-    node_api_admin_invitationcodes --> node_api_admin_invitationcodes_export
-    node_api_admin_invitationcodes --> node_api_admin_invitationcodes_validate
-    node_api_admin --> node_api_admin_login
-    node_api_admin --> node_api_admin_logout
-    node_api_admin --> node_api_admin_maintenance
-    node_api_admin_maintenance --> node_api_admin_maintenance_export
-    node_api_admin_maintenance --> node_api_admin_maintenance_import
-    node_api_admin --> node_api_admin_me
-    node_api_admin --> node_api_admin_onboardingmilestones
-    node_api_admin --> node_api_admin_photos
-    node_api_admin_photos --> node_api_admin_photos_id
-    node_api_admin_photos --> node_api_admin_photos_moderation
-    node_api_admin_photos_moderation --> node_api_admin_photos_moderation_batch
-    node_api_admin --> node_api_admin_sampledata
-    node_api_admin --> node_api_admin_seating
-    node_api_admin_seating --> node_api_admin_seating_assign
-    node_api_admin_seating --> node_api_admin_seating_autoassign
-    node_api_admin_seating --> node_api_admin_seating_export
-    node_api_admin --> node_api_admin_settings
-    node_api_admin --> node_api_admin_setup
-    node_api_admin --> node_api_admin_subevents
-    node_api_admin_subevents --> node_api_admin_subevents_access
-    node_api_admin_subevents_access --> node_api_admin_subevents_access_batch
-    node_api_admin --> node_api_admin_thankyounotes
-    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_id
-    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_batch
-    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_export
-    node_api_admin_thankyounotes --> node_api_admin_thankyounotes_exportlabels
-    node_api_admin --> node_api_admin_upload
-    node_api_admin --> node_api_admin_versions
-    node_api_admin_versions --> node_api_admin_versions_id
-    node_api_admin_versions_id --> node_api_admin_versions_id_restore
-    node_api --> node_api_cron
-    node_api_cron --> node_api_cron_broadcasts
-    node_api --> node_api_guest
-    node_api_guest --> node_api_guest_address
-    node_api_guest_address --> node_api_guest_address_public
-    node_api_guest --> node_api_guest_login
-    node_api_guest --> node_api_guest_lookup
-    node_api_guest --> node_api_guest_photos
-    node_api_guest_photos --> node_api_guest_photos_upload
-    node_api --> node_api_health
-    node_api --> node_api_media
-    node_api_media --> node_api_media_id
-    node_api_media --> node_api_media_export
-    node_api --> node_api_og
-    node_api --> node_api_photos
-    node_api_photos --> node_api_photos_upload
-    node_api --> node_api_ready
-    node_api --> node_api_registry
-    node_api_registry --> node_api_registry_capabilities
-    node_api_registry --> node_api_registry_contribute
-    node_api_registry --> node_api_registry_items
-    node_api_registry_items --> node_api_registry_items_id
-    node_api_registry_items --> node_api_registry_items_batch
-    node_api_registry --> node_api_registry_paymentintent
-    node_api_registry --> node_api_registry_scrape
-    node_api_registry_scrape --> node_api_registry_scrape_batch
-    node_api_registry --> node_api_registry_session
-    node_api_registry --> node_api_registry_validatecode
-    node_api_registry --> node_api_registry_webhook
-    node_api_registry_webhook --> node_api_registry_webhook_stripe
-    node_api --> node_api_rsvp
-    node_api --> node_api_schedule
-    node_api_schedule --> node_api_schedule_id
-    node_api_schedule_id --> node_api_schedule_id_ics
-    node_api --> node_api_uploads
-    node_api_uploads --> node_api_uploads_path
-    node_api --> node_api_weather
+    node_api --> node_api__admin
+    node_api__admin --> node_api__admin___lb_entity_rb_
+    node_api__admin___lb_entity_rb_ --> node_api__admin___lb_entity_rb____lb_id_rb_
+    node_api__admin___lb_entity_rb_ --> node_api__admin___lb_entity_rb___batch
+    node_api__admin --> node_api__admin__broadcast
+    node_api__admin__broadcast --> node_api__admin__broadcast__history
+    node_api__admin__broadcast --> node_api__admin__broadcast__preview
+    node_api__admin__broadcast --> node_api__admin__broadcast__retry
+    node_api__admin__broadcast --> node_api__admin__broadcast__schedule
+    node_api__admin__broadcast__schedule --> node_api__admin__broadcast__schedule___lb_id_rb_
+    node_api__admin__broadcast --> node_api__admin__broadcast__send
+    node_api__admin__broadcast --> node_api__admin__broadcast__test_d_connection
+    node_api__admin__broadcast --> node_api__admin__broadcast__test_d_send
+    node_api__admin --> node_api__admin__features
+    node_api__admin --> node_api__admin__invitation_d_codes
+    node_api__admin__invitation_d_codes --> node_api__admin__invitation_d_codes__batch
+    node_api__admin__invitation_d_codes__batch --> node_api__admin__invitation_d_codes__batch__validate
+    node_api__admin__invitation_d_codes --> node_api__admin__invitation_d_codes__export
+    node_api__admin__invitation_d_codes --> node_api__admin__invitation_d_codes__validate
+    node_api__admin --> node_api__admin__login
+    node_api__admin --> node_api__admin__logout
+    node_api__admin --> node_api__admin__maintenance
+    node_api__admin__maintenance --> node_api__admin__maintenance__export
+    node_api__admin__maintenance --> node_api__admin__maintenance__import
+    node_api__admin --> node_api__admin__me
+    node_api__admin --> node_api__admin__onboarding_d_milestones
+    node_api__admin --> node_api__admin__photos
+    node_api__admin__photos --> node_api__admin__photos___lb_id_rb_
+    node_api__admin__photos --> node_api__admin__photos__moderation
+    node_api__admin__photos__moderation --> node_api__admin__photos__moderation__batch
+    node_api__admin --> node_api__admin__sample_d_data
+    node_api__admin --> node_api__admin__seating
+    node_api__admin__seating --> node_api__admin__seating__assign
+    node_api__admin__seating --> node_api__admin__seating__auto_d_assign
+    node_api__admin__seating --> node_api__admin__seating__export
+    node_api__admin --> node_api__admin__settings
+    node_api__admin --> node_api__admin__setup
+    node_api__admin --> node_api__admin__sub_d_events
+    node_api__admin__sub_d_events --> node_api__admin__sub_d_events__access
+    node_api__admin__sub_d_events__access --> node_api__admin__sub_d_events__access__batch
+    node_api__admin --> node_api__admin__thank_d_you_d_notes
+    node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes___lb_id_rb_
+    node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes__batch
+    node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes__export
+    node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes__export_d_labels
+    node_api__admin --> node_api__admin__upload
+    node_api__admin --> node_api__admin__versions
+    node_api__admin__versions --> node_api__admin__versions___lb_id_rb_
+    node_api__admin__versions___lb_id_rb_ --> node_api__admin__versions___lb_id_rb___restore
+    node_api --> node_api__cron
+    node_api__cron --> node_api__cron__broadcasts
+    node_api --> node_api__guest
+    node_api__guest --> node_api__guest__address
+    node_api__guest__address --> node_api__guest__address__public
+    node_api__guest --> node_api__guest__login
+    node_api__guest --> node_api__guest__lookup
+    node_api__guest --> node_api__guest__photos
+    node_api__guest__photos --> node_api__guest__photos__upload
+    node_api --> node_api__health
+    node_api --> node_api__media
+    node_api__media --> node_api__media___lb_id_rb_
+    node_api__media --> node_api__media__export
+    node_api --> node_api__og
+    node_api --> node_api__photos
+    node_api__photos --> node_api__photos__upload
+    node_api --> node_api__ready
+    node_api --> node_api__registry
+    node_api__registry --> node_api__registry__capabilities
+    node_api__registry --> node_api__registry__contribute
+    node_api__registry --> node_api__registry__items
+    node_api__registry__items --> node_api__registry__items___lb_id_rb_
+    node_api__registry__items --> node_api__registry__items__batch
+    node_api__registry --> node_api__registry__payment_d_intent
+    node_api__registry --> node_api__registry__scrape
+    node_api__registry__scrape --> node_api__registry__scrape__batch
+    node_api__registry --> node_api__registry__session
+    node_api__registry --> node_api__registry__validate_d_code
+    node_api__registry --> node_api__registry__webhook
+    node_api__registry__webhook --> node_api__registry__webhook__stripe
+    node_api --> node_api__rsvp
+    node_api --> node_api__schedule
+    node_api__schedule --> node_api__schedule___lb_id_rb_
+    node_api__schedule___lb_id_rb_ --> node_api__schedule___lb_id_rb___ics
+    node_api --> node_api__uploads
+    node_api__uploads --> node_api__uploads___lb__p__p__p_path_rb_
+    node_api --> node_api__weather
     App --> node_archive
     App --> node_guest
-    node_guest --> node_guest_collect
-    node_guest --> node_guest_login
+    node_guest --> node_guest__collect
+    node_guest --> node_guest__login
     App --> node_heart
     App --> node_photos
-    node_photos --> node_photos_slideshow
-    App --> node_projectinfo
+    node_photos --> node_photos__slideshow
+    App --> node_project_d_info
     App --> node_registry
-    node_registry --> node_registry_additem
-    node_registry --> node_registry_edititem
-    node_registry_edititem --> node_registry_edititem_id
-    App --> node_thingstodo
+    node_registry --> node_registry__add_d_item
+    node_registry --> node_registry__edit_d_item
+    node_registry__edit_d_item --> node_registry__edit_d_item___lb_id_rb_
+    App --> node_things_d_to_d_do
     App --> node_weather
-    App --> node_weddingparty
+    App --> node_wedding_d_party
     class App page;
-    class node_admin_dashboard page;
-    class node_admin_dashboard_attractions page;
-    class node_admin_dashboard_content page;
-    class node_admin_dashboard_history page;
-    class node_admin_dashboard_invitationcodes page;
-    class node_admin_dashboard_maintenance page;
-    class node_admin_dashboard_media page;
-    class node_admin_dashboard_seatingchart page;
-    class node_admin_dashboard_settings page;
-    class node_admin_dashboard_sitemanager page;
-    class node_admin_dashboard_subevents page;
-    class node_admin_dashboard_thankyounotes page;
-    class node_admin_dashboard_weddingparty page;
-    class node_admin_login page;
-    class node_api_admin_entity api;
-    class node_api_admin_entity_id api;
-    class node_api_admin_entity_batch api;
-    class node_api_admin_broadcast_history api;
-    class node_api_admin_broadcast_preview api;
-    class node_api_admin_broadcast_retry api;
-    class node_api_admin_broadcast_schedule_id api;
-    class node_api_admin_broadcast_send api;
-    class node_api_admin_broadcast_testconnection api;
-    class node_api_admin_broadcast_testsend api;
-    class node_api_admin_features api;
-    class node_api_admin_invitationcodes_batch api;
-    class node_api_admin_invitationcodes_batch_validate api;
-    class node_api_admin_invitationcodes_export api;
-    class node_api_admin_invitationcodes_validate api;
-    class node_api_admin_login api;
-    class node_api_admin_logout api;
-    class node_api_admin_maintenance_export api;
-    class node_api_admin_maintenance_import api;
-    class node_api_admin_me api;
-    class node_api_admin_onboardingmilestones api;
-    class node_api_admin_photos_id api;
-    class node_api_admin_photos_moderation api;
-    class node_api_admin_photos_moderation_batch api;
-    class node_api_admin_sampledata api;
-    class node_api_admin_seating_assign api;
-    class node_api_admin_seating_autoassign api;
-    class node_api_admin_seating_export api;
-    class node_api_admin_settings api;
-    class node_api_admin_setup api;
-    class node_api_admin_subevents_access api;
-    class node_api_admin_subevents_access_batch api;
-    class node_api_admin_thankyounotes api;
-    class node_api_admin_thankyounotes_id api;
-    class node_api_admin_thankyounotes_batch api;
-    class node_api_admin_thankyounotes_export api;
-    class node_api_admin_thankyounotes_exportlabels api;
-    class node_api_admin_upload api;
-    class node_api_admin_versions api;
-    class node_api_admin_versions_id_restore api;
-    class node_api_cron_broadcasts api;
-    class node_api_guest_address api;
-    class node_api_guest_address_public api;
-    class node_api_guest_login api;
-    class node_api_guest_lookup api;
-    class node_api_guest_photos_upload api;
-    class node_api_health api;
-    class node_api_media api;
-    class node_api_media_id api;
-    class node_api_media_export api;
-    class node_api_og api;
-    class node_api_photos api;
-    class node_api_photos_upload api;
-    class node_api_ready api;
-    class node_api_registry_capabilities api;
-    class node_api_registry_contribute api;
-    class node_api_registry_items api;
-    class node_api_registry_items_id api;
-    class node_api_registry_items_batch api;
-    class node_api_registry_paymentintent api;
-    class node_api_registry_scrape api;
-    class node_api_registry_scrape_batch api;
-    class node_api_registry_session api;
-    class node_api_registry_validatecode api;
-    class node_api_registry_webhook_stripe api;
-    class node_api_rsvp api;
-    class node_api_schedule api;
-    class node_api_schedule_id_ics api;
-    class node_api_uploads_path api;
-    class node_api_weather api;
+    class node_admin__dashboard page;
+    class node_admin__dashboard__attractions page;
+    class node_admin__dashboard__content page;
+    class node_admin__dashboard__history page;
+    class node_admin__dashboard__invitation_d_codes page;
+    class node_admin__dashboard__maintenance page;
+    class node_admin__dashboard__media page;
+    class node_admin__dashboard__seating_d_chart page;
+    class node_admin__dashboard__settings page;
+    class node_admin__dashboard__site_d_manager page;
+    class node_admin__dashboard__sub_d_events page;
+    class node_admin__dashboard__thank_d_you_d_notes page;
+    class node_admin__dashboard__wedding_d_party page;
+    class node_admin__login page;
+    class node_api__admin___lb_entity_rb_ api;
+    class node_api__admin___lb_entity_rb____lb_id_rb_ api;
+    class node_api__admin___lb_entity_rb___batch api;
+    class node_api__admin__broadcast__history api;
+    class node_api__admin__broadcast__preview api;
+    class node_api__admin__broadcast__retry api;
+    class node_api__admin__broadcast__schedule___lb_id_rb_ api;
+    class node_api__admin__broadcast__send api;
+    class node_api__admin__broadcast__test_d_connection api;
+    class node_api__admin__broadcast__test_d_send api;
+    class node_api__admin__features api;
+    class node_api__admin__invitation_d_codes__batch api;
+    class node_api__admin__invitation_d_codes__batch__validate api;
+    class node_api__admin__invitation_d_codes__export api;
+    class node_api__admin__invitation_d_codes__validate api;
+    class node_api__admin__login api;
+    class node_api__admin__logout api;
+    class node_api__admin__maintenance__export api;
+    class node_api__admin__maintenance__import api;
+    class node_api__admin__me api;
+    class node_api__admin__onboarding_d_milestones api;
+    class node_api__admin__photos___lb_id_rb_ api;
+    class node_api__admin__photos__moderation api;
+    class node_api__admin__photos__moderation__batch api;
+    class node_api__admin__sample_d_data api;
+    class node_api__admin__seating__assign api;
+    class node_api__admin__seating__auto_d_assign api;
+    class node_api__admin__seating__export api;
+    class node_api__admin__settings api;
+    class node_api__admin__setup api;
+    class node_api__admin__sub_d_events__access api;
+    class node_api__admin__sub_d_events__access__batch api;
+    class node_api__admin__thank_d_you_d_notes api;
+    class node_api__admin__thank_d_you_d_notes___lb_id_rb_ api;
+    class node_api__admin__thank_d_you_d_notes__batch api;
+    class node_api__admin__thank_d_you_d_notes__export api;
+    class node_api__admin__thank_d_you_d_notes__export_d_labels api;
+    class node_api__admin__upload api;
+    class node_api__admin__versions api;
+    class node_api__admin__versions___lb_id_rb___restore api;
+    class node_api__cron__broadcasts api;
+    class node_api__guest__address api;
+    class node_api__guest__address__public api;
+    class node_api__guest__login api;
+    class node_api__guest__lookup api;
+    class node_api__guest__photos__upload api;
+    class node_api__health api;
+    class node_api__media api;
+    class node_api__media___lb_id_rb_ api;
+    class node_api__media__export api;
+    class node_api__og api;
+    class node_api__photos api;
+    class node_api__photos__upload api;
+    class node_api__ready api;
+    class node_api__registry__capabilities api;
+    class node_api__registry__contribute api;
+    class node_api__registry__items api;
+    class node_api__registry__items___lb_id_rb_ api;
+    class node_api__registry__items__batch api;
+    class node_api__registry__payment_d_intent api;
+    class node_api__registry__scrape api;
+    class node_api__registry__scrape__batch api;
+    class node_api__registry__session api;
+    class node_api__registry__validate_d_code api;
+    class node_api__registry__webhook__stripe api;
+    class node_api__rsvp api;
+    class node_api__schedule api;
+    class node_api__schedule___lb_id_rb___ics api;
+    class node_api__uploads___lb__p__p__p_path_rb_ api;
+    class node_api__weather api;
     class node_archive page;
     class node_guest page;
-    class node_guest_collect page;
-    class node_guest_login page;
+    class node_guest__collect page;
+    class node_guest__login page;
     class node_heart page;
     class node_photos page;
-    class node_photos_slideshow page;
-    class node_projectinfo page;
+    class node_photos__slideshow page;
+    class node_project_d_info page;
     class node_registry page;
-    class node_registry_additem page;
-    class node_registry_edititem_id page;
-    class node_thingstodo page;
+    class node_registry__add_d_item page;
+    class node_registry__edit_d_item___lb_id_rb_ page;
+    class node_things_d_to_d_do page;
     class node_weather page;
-    class node_weddingparty page;
+    class node_wedding_d_party page;
 ```
 
 <!-- END AUTOGENERATED ROUTES -->
@@ -708,14 +708,14 @@ Site Configuration (Database AppConfig)
 Application Defaults (Generic Technical Fallbacks)
 ```
 
-Every configurable value has one authoritative home. Ordinary site customization requires zero source code edits. At runtime boundaries (especially in production), configuration payloads are validated against Zod schemas (`AppConfigSchema` in [src/features/content/schemas.ts](src/features/content/schemas.ts), covering 71 persisted PostgreSQL columns in [prisma/schema.prisma](prisma/schema.prisma) and 16 virtual DTO fields including `modules` piped through `ModuleConfigSchema`), ensuring immediate, clear failure if misconfigured.
+Every configurable value has one authoritative home. Ordinary site customization requires zero source code edits. At runtime boundaries (especially in production), configuration payloads are validated against Zod schemas (`AppConfigSchema` in [src/features/content/schemas.ts](src/features/content/schemas.ts), covering 72 persisted PostgreSQL columns in [prisma/schema.prisma](prisma/schema.prisma) — including `modules` piped through `ModuleConfigSchema` — and 15 virtual DTO fields), ensuring immediate, clear failure if misconfigured.
 
 DTO and backup sanitization in [src/lib/config.ts](src/lib/config.ts) enforces three distinct boundaries:
 - **Public DTO (`PublicAppConfig` / `toPublicAppConfig` in [src/lib/config.ts](src/lib/config.ts#L281-L320), validated via `PublicAppConfigSchema` in [src/features/content/schemas.ts](src/features/content/schemas.ts)):** Applies a strict 69-field allowlist exclusively for public SSR and client payloads, stripping `rsvpGracePeriodHours` and all 17 email/SMS delivery settings and credentials while injecting runtime `multisiteEnabled` and computed `isRsvpOpen`.
-- **Admin DTO (`AdminAppConfig` / `toAdminAppConfig` in [src/lib/config.ts](src/lib/config.ts#L427-L457)):** Extends `toPublicAppConfig` for authenticated admin settings endpoints (`/api/admin/settings`) with the 14 `Admin-only` non-secret RSVP and email/SMS provider/batching fields (`rsvpGracePeriodHours`, `emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `smtpSecure`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, `twilioFromNumber`, `broadcastBatchSize`, `broadcastBatchDelayMs`), while omitting the 4 raw provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) in favor of boolean presence flags (`hasSmtpPass`, `hasResendApiKey`, `hasSendgridApiKey`, `hasTwilioAuthToken`).
-- **Backup Export Sanitizer (`sanitizeAppConfigForBackup` in [src/lib/config.ts](src/lib/config.ts#L331-L420)):** Used instead of `toPublicAppConfig` by `GET /api/admin/maintenance/export` ([src/app/api/admin/maintenance/export/route.ts](src/app/api/admin/maintenance/export/route.ts#L7-L229)), retaining all 67 persisted non-secret `AppConfig` columns in `APP_CONFIG_BACKUP_KEYS` (including the 13 non-secret email/SMS provider and batching columns) while stripping the 4 raw provider credentials (`APP_CONFIG_SECRET_KEYS`) and 16 virtual DTO keys from both live `AppConfig` rows and `SnapshotVersion` audit snapshots.
+- **Admin DTO (`AdminAppConfig` / `toAdminAppConfig` in [src/lib/config.ts](src/lib/config.ts#L444-L474)):** Extends `toPublicAppConfig` for authenticated admin settings endpoints (`/api/admin/settings`) with the 14 `Admin-only` non-secret RSVP and email/SMS provider/batching fields (`rsvpGracePeriodHours`, `emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `smtpSecure`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, `twilioFromNumber`, `broadcastBatchSize`, `broadcastBatchDelayMs`), while omitting the 4 raw provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) in favor of boolean presence flags (`hasSmtpPass`, `hasResendApiKey`, `hasSendgridApiKey`, `hasTwilioAuthToken`).
+- **Backup Export Sanitizer (`sanitizeAppConfigForBackup` in [src/lib/config.ts](src/lib/config.ts#L331-L437)):** Used instead of `toPublicAppConfig` by `GET /api/admin/maintenance/export` ([src/app/api/admin/maintenance/export/route.ts](src/app/api/admin/maintenance/export/route.ts#L7-L229)), retaining all 68 persisted non-secret `AppConfig` columns in `APP_CONFIG_BACKUP_KEYS` (including `modules` and the 13 non-secret email/SMS provider and batching columns) while stripping the 4 raw provider credentials (`APP_CONFIG_SECRET_KEYS`) and 15 virtual DTO keys from both live `AppConfig` rows and `SnapshotVersion` audit snapshots.
 
-Database backup exports stream all **15 Prisma models** (`AppConfig`, `Media`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `InvitationCode`, `SeatingTable`, `ContentNode`, `SnapshotVersion`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`, `BroadcastMessage`, `BroadcastRecipient`) in chunks of `100` under `schemaVersion: "2.0"` (`BACKUP_SCHEMA_VERSION = '2.0'`), while `POST /api/admin/maintenance/import` (`ImportBackupSchema` in [src/utils/validation.ts](src/utils/validation.ts#L304-L323) and [src/app/api/admin/maintenance/import/route.ts](src/app/api/admin/maintenance/import/route.ts#L45-L334)) accepts both `schemaVersion: "1.0"` and `"2.0"` archives for backward-compatible restores.
+Database backup exports stream all **15 Prisma models** (`AppConfig`, `Media`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `InvitationCode`, `SeatingTable`, `ContentNode`, `SnapshotVersion`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`, `BroadcastMessage`, `BroadcastRecipient`) in chunks of `100` under `schemaVersion: "2.0"` (`BACKUP_SCHEMA_VERSION = '2.0'`), while `POST /api/admin/maintenance/import` (`ImportBackupSchema` in [src/utils/validation.ts](src/utils/validation.ts#L304-L323) and [src/app/api/admin/maintenance/import/route.ts](src/app/api/admin/maintenance/import/route.ts#L45-L353)) accepts both `schemaVersion: "1.0"` and `"2.0"` archives for backward-compatible restores.
 
 <!-- BEGIN AUTOGENERATED CONFIG -->
 | Field | Type | Storage | DTO Exposure | Description |
@@ -803,7 +803,7 @@ Database backup exports stream all **15 Prisma models** (`AppConfig`, `Media`, `
 | `twilioFromNumber` | `string` | `Prisma` | `Admin-only` | Twilio E.164 sender phone number or messaging source for SMS broadcasts. |
 | `broadcastBatchSize` | `number` | `Prisma` | `Admin-only` | Maximum number of broadcast recipients processed per delivery batch. |
 | `broadcastBatchDelayMs` | `number` | `Prisma` | `Admin-only` | Delay in milliseconds between consecutive outbound broadcast batches. |
-| `modules` | `object` | `Virtual DTO` | `Public` | Virtual DTO feature module enablement map validated against ModuleConfigSchema with dependency resolution. |
+| `modules` | `object` | `Prisma` | `Public` | Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution. |
 | `features` | `object[]` | `Prisma` | `Public` | Ordered homepage content section definitions controlling section titles, visibility, and copy. |
 | `createdAt` | `date` | `Prisma` | `Public` | Timestamp recording when the configuration record was initially created. |
 | `updatedAt` | `date` | `Prisma` | `Public` | Timestamp recording when the configuration record was last modified. |

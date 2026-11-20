@@ -68,8 +68,10 @@ export { serviceMap };
     writeFixture(
       tempDir,
       'src/lib/stripe.ts',
-      `export function getStripeCapability() {
-  return { cardCheckoutEnabled: false, stripePublishableKey: null };
+      `import { useMemo } from 'react';
+export function getStripeCapability() {
+  const performanceTier = useMemo(() => 'high', []);
+  return { cardCheckoutEnabled: false, stripePublishableKey: null, performanceTier };
 }
 `,
     );
@@ -114,7 +116,7 @@ export { serviceMap };
         '# Valid Spec',
         '- Weather endpoint: `GET /api/weather` and wildcard `/api/*`.',
         '- Dynamic admin route: `GET /api/admin/registry-items` via `RegistryAdminService` in `src/features/registry/index.ts`.',
-        '- Capability helper: `getStripeCapability` in [src/lib/stripe.ts](src/lib/stripe.ts#L1-L3).',
+        '- Capability helper: `getStripeCapability` in [src/lib/stripe.ts](src/lib/stripe.ts#L1-L3) using `useMemo` hooks in [src/lib/stripe.ts](src/lib/stripe.ts#L1-L3).',
         '- Validation schemas: `ScrapeUrlSchema` ([src/utils/validation.ts](src/utils/validation.ts)) and `BatchScrapeUrlsSchema` ([src/features/registry/schemas.ts](src/features/registry/schemas.ts)).',
         '- Repository method: `RegistryRepository.getAllItems` ([src/features/registry/repository.ts](src/features/registry/repository.ts)).',
         '- Perimeter check: validates `X-Forwarded-Host` / `Host` in `src/middleware.ts` and `TRUST_PROXY` in `src/env.ts`.',

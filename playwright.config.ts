@@ -2,6 +2,23 @@ import { defineConfig } from '@playwright/test';
 import fs from 'fs';
 
 const runWebServer = !process.env.TEST_CONTAINER;
+const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERVER === 'true';
+const localDbBootstrapScript = [
+  'import cp from \'node:child_process\';',
+  'if (cp.spawnSync(\'docker\', [\'info\'], { stdio: \'ignore\', shell: true }).status === 0) {',
+  '  cp.spawnSync(\'docker\', [\'compose\', \'up\', \'-d\', \'db\'], { stdio: \'inherit\', shell: true });',
+  '  for (let i = 0; i < 30; i++) {',
+  '    if (cp.spawnSync(\'docker\', [\'compose\', \'exec\', \'-T\', \'db\', \'pg_isready\', \'-h\', \'127.0.0.1\', \'-U\', \'wedding\'], { stdio: \'ignore\', shell: true }).status === 0) break;',
+  '    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);',
+  '  }',
+  '}',
+].join(' ');
+const localWebServerCommand = [
+  `node --input-type=module -e "${localDbBootstrapScript}"`,
+  'npx prisma db push --accept-data-loss',
+  'npx tsx scripts/seed.ts',
+  'npm run dev',
+].join(' && ');
 const defaultChromePath = '/usr/bin/google-chrome';
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (fs.existsSync(defaultChromePath) ? defaultChromePath : undefined);
 
@@ -12,9 +29,9 @@ export default defineConfig({
   workers: 1,
   retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
-    command: process.env.CI ? 'node .next/standalone/server.js' : 'npm run dev',
+    command: process.env.CI ? 'node .next/standalone/server.js' : localWebServerCommand,
     url: 'http://127.0.0.1:3000/api/ready',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer,
     timeout: 120000,
     env: {
       PORT: '3000',

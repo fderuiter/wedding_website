@@ -12,9 +12,13 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'tsconfig.json',
     'docker-compose.yml',
     'eslint.config.mjs',
+    'playwright.config.ts',
     '.githooks/pre-commit',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
+    'scripts/a11y-report.mjs',
+    'scripts/seed.ts',
+    'scripts/verify-doc-sync.ts',
     'scripts/test-standalone.mjs',
     'scripts/test-container.mjs',
     'README.md',
@@ -205,6 +209,97 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('.github/TESTING.md: Must warn that scripts/test-standalone.mjs requires "npm run build"'),
         'AGENTS.md: Missing tsconfig.json exclude entry "jest.setup.js" in TypeScript Configuration Split section',
         'AGENTS.md: Full Local Quality Gate section misorders check-quality.ts step "npm run lint:migrations"',
+      ])
+    );
+  });
+
+  it('rejects missing pretest* hooks, DEFAULT_DOC_FILES drift, and check:static / pre-commit parity gaps', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs.readFileSync(pkgPath, 'utf8').replace('    "pretest:cov": "npm run pretest",\n', '')
+    );
+
+    const preCommitPath = path.join(tempDir, '.githooks/pre-commit');
+    fs.writeFileSync(
+      preCommitPath,
+      fs
+        .readFileSync(preCommitPath, 'utf8')
+        .replace("    { name: 'Deployment runbooks verification check', script: 'check:runbooks' },\n", '')
+    );
+
+    const verifyDocSyncPath = path.join(tempDir, 'scripts/verify-doc-sync.ts');
+    fs.writeFileSync(
+      verifyDocSyncPath,
+      fs
+        .readFileSync(verifyDocSyncPath, 'utf8')
+        .replace("'FEATURE_MODULES.md',", "'FEATURE_MODULES.md',\n  'GENERATED_SCHEMAS.md',")
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
+        expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
+        '.githooks/pre-commit: Must enforce check:static sub-script "check:runbooks"',
+        expect.stringContaining('Commit Your Changes claims "twelve" sequential workspace checks, expected "eleven"'),
+        '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
+        '.github/TESTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
+        'AGENTS.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
+      ])
+    );
+  });
+
+  it('rejects playwright server reuse regressions, seed empty update objects, missing a11y reseeding, and stale db:seed pre-steps', () => {
+    const playwrightPath = path.join(tempDir, 'playwright.config.ts');
+    fs.writeFileSync(
+      playwrightPath,
+      fs
+        .readFileSync(playwrightPath, 'utf8')
+        .replace(
+          "const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERVER === 'true';",
+          'const reuseExistingServer = !process.env.CI;'
+        )
+        .replace('reuseExistingServer,', 'reuseExistingServer: !process.env.CI,')
+    );
+
+    const seedPath = path.join(tempDir, 'scripts/seed.ts');
+    fs.writeFileSync(
+      seedPath,
+      fs.readFileSync(seedPath, 'utf8').replace('update: defaultAppConfig,', 'update: {},')
+    );
+
+    const a11yPath = path.join(tempDir, 'scripts/a11y-report.mjs');
+    fs.writeFileSync(
+      a11yPath,
+      fs.readFileSync(a11yPath, 'utf8').replace('scripts/seed.ts', 'scripts/noop.ts')
+    );
+
+    const agentsPath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(
+      agentsPath,
+      fs
+        .readFileSync(agentsPath, 'utf8')
+        .replace(
+          'npm run build\nCI=true npm run test:a11y',
+          'npm run build\nDATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public" npm run db:seed\nCI=true npm run test:a11y'
+        )
+    );
+
+    const testingPath = path.join(tempDir, '.github/TESTING.md');
+    fs.writeFileSync(
+      testingPath,
+      fs.readFileSync(testingPath, 'utf8').replace(/PLAYWRIGHT_REUSE_SERVER/g, 'LEGACY_REUSE_FLAG')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('playwright.config.ts: Must disable automatic server reuse by default'),
+        expect.stringContaining('scripts/seed.ts: appConfig.upsert must populate update fields'),
+        expect.stringContaining('scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts"'),
+        expect.stringContaining('AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y"'),
+        expect.stringContaining('.github/TESTING.md: Must document PLAYWRIGHT_REUSE_SERVER opt-in'),
       ])
     );
   });

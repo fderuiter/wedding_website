@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import { SeatingTableDTO } from './schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+import { getDietaryBadges, isOneSidedTableShape } from './utils/seatingHelpers';
 
 interface GeneratePdfOptions {
   siteTitle?: string;
@@ -140,6 +141,7 @@ export async function generateSeatingChartPdf(
 
           const shapeLower = (table.shape || 'round').toLowerCase();
           const isRound = shapeLower === 'round';
+          const isOneSided = isOneSidedTableShape(shapeLower);
           const assignedCount = table.invitationCodes?.length || 0;
           const isOverCapacity = assignedCount > table.capacity;
 
@@ -191,15 +193,19 @@ export async function generateSeatingChartPdf(
 
               const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
               const isSeated = !!guest;
+              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes) : [];
 
               if (isSeated) {
-                doc.circle(sx, sy, seatDotRadius).fillAndStroke('#0284c7', '#0369a1');
+                doc.circle(sx, sy, seatDotRadius).fillAndStroke(
+                  guestBadges.length > 0 ? '#047857' : '#0284c7',
+                  guestBadges.length > 0 ? '#065f46' : '#0369a1'
+                );
               } else {
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke('#ffffff', '#94a3b8');
               }
             }
           } else {
-            // Rectangular or square table
+            // Rectangular, square, head, or sweetheart table
             doc.roundedRect(tx, ty, tw, th, Math.max(3, 6 * scale)).fillAndStroke(fillColor, strokeColor);
 
             doc.fontSize(Math.max(7, Math.min(10, 10 * scale)))
@@ -218,40 +224,50 @@ export async function generateSeatingChartPdf(
                 align: 'center',
               });
 
-            // Draw seat dots around rectangle perimeter
+            // Draw seat dots (along 1 side for head/sweetheart, or 4-sided perimeter for rectangular/square)
             const seatDotRadius = Math.max(3, 4.5 * scale);
             const cap = table.capacity;
 
             for (let i = 1; i <= cap; i++) {
-              const perimeterIndex = i - 1;
-              const side = Math.floor((perimeterIndex / cap) * 4);
               let sx = tx;
               let sy = ty;
               const offset = 10 * scale;
 
-              if (side === 0) {
-                // Top
-                sx = tx + (tw / (cap / 2 + 1)) * (perimeterIndex + 1);
+              if (isOneSided) {
+                sx = tx + (tw / (cap + 1)) * i;
                 sy = ty - offset;
-              } else if (side === 1) {
-                // Right
-                sx = tx + tw + offset;
-                sy = ty + (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
-              } else if (side === 2) {
-                // Bottom
-                sx = tx + tw - (tw / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
-                sy = ty + th + offset;
               } else {
-                // Left
-                sx = tx - offset;
-                sy = ty + th - (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
+                const perimeterIndex = i - 1;
+                const side = Math.floor((perimeterIndex / cap) * 4);
+
+                if (side === 0) {
+                  // Top
+                  sx = tx + (tw / (cap / 2 + 1)) * (perimeterIndex + 1);
+                  sy = ty - offset;
+                } else if (side === 1) {
+                  // Right
+                  sx = tx + tw + offset;
+                  sy = ty + (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
+                } else if (side === 2) {
+                  // Bottom
+                  sx = tx + tw - (tw / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
+                  sy = ty + th + offset;
+                } else {
+                  // Left
+                  sx = tx - offset;
+                  sy = ty + th - (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
+                }
               }
 
               const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
               const isSeated = !!guest;
+              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes) : [];
 
               if (isSeated) {
-                doc.circle(sx, sy, seatDotRadius).fillAndStroke('#0284c7', '#0369a1');
+                doc.circle(sx, sy, seatDotRadius).fillAndStroke(
+                  guestBadges.length > 0 ? '#047857' : '#0284c7',
+                  guestBadges.length > 0 ? '#065f46' : '#0369a1'
+                );
               } else {
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke('#ffffff', '#94a3b8');
               }
@@ -275,6 +291,10 @@ export async function generateSeatingChartPdf(
       // Over capacity legend item
       doc.rect(margin + 220, legendY, 12, 8).fillAndStroke('#fef2f2', '#ef4444');
       doc.fontSize(8).font('Helvetica').fillColor('#334155').text('Over Capacity Warning', margin + 236, legendY);
+
+      // Dietary restriction seat legend item
+      doc.circle(margin + 355, legendY + 3, 4).fillAndStroke('#047857', '#065f46');
+      doc.fontSize(8).font('Helvetica').fillColor('#334155').text('Dietary Restriction', margin + 363, legendY);
 
 
       // ==========================================
@@ -348,7 +368,10 @@ export async function generateSeatingChartPdf(
               doc.text(seatDisplay, margin + 6, currentY + 5, { width: colSeatW });
               doc.text(guest.guestName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
               doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
-              doc.font('Helvetica').text(guest.dietaryNotes || '—', margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
+              const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+              const dietaryPrefix = dietaryBadges.length > 0 ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}] ` : '';
+              const dietaryText = guest.dietaryNotes ? `${dietaryPrefix}${guest.dietaryNotes}` : '—';
+              doc.font('Helvetica').text(dietaryText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
 
               currentY += 18;
             }
@@ -382,7 +405,10 @@ export async function generateSeatingChartPdf(
             doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
             doc.text(guest.guestName, margin + 6, currentY + 5, { width: colNameW + colSeatW });
             doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
-            doc.font('Helvetica').text(guest.dietaryNotes || '—', margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
+            const unassignedBadges = getDietaryBadges(guest.dietaryNotes);
+            const unassignedPrefix = unassignedBadges.length > 0 ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}] ` : '';
+            const unassignedDietText = guest.dietaryNotes ? `${unassignedPrefix}${guest.dietaryNotes}` : '—';
+            doc.font('Helvetica').text(unassignedDietText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
 
             currentY += 18;
           }

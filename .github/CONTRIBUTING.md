@@ -50,14 +50,14 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:links` - Validate relative documentation links across Markdown files.
      - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
      - `npm run check:standalone` - Verify Next.js standalone build & container portability.
-     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json` and `ARCHITECTURE.md`) is synchronized with codebase schemas without drift.
+     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
      - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
      - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (production app, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.
-     - `npx playwright test` - Run Playwright E2E and smoke tests.
-     - `npm run test:a11y` - Run accessibility checks and generate summary reports.
+     - `npx playwright test` - Run Playwright E2E and smoke tests against the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
+     - `npm run test:a11y` - Run Jest tests, reseed `wedding_test` (`npx tsx scripts/seed.ts`), run Playwright accessibility checks, and generate summary reports.
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash
@@ -67,7 +67,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
     Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm install`), which:
     1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
-    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs ten sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs twelve sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:prisma`, `npm run lint:migrations`, `npm run check:doc-sync`, and `npm run check:spec-contracts`.
 
 8. **Push to Your Fork:**
 

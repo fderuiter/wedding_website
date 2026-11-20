@@ -104,6 +104,7 @@ interface ModuleSymbolInventory {
   classAndObjectMembers: Map<string, Set<string>>;
   allClassMemberNames: Set<string>;
   propertyAndConstLiterals: Set<string>;
+  astIdentifiers: Set<string>;
 }
 
 function collectMarkdownFilesUnderDir(dirPath: string): string[] {
@@ -255,6 +256,7 @@ function getModuleSymbolInventory(
   const classAndObjectMembers = new Map<string, Set<string>>();
   const allClassMemberNames = new Set<string>();
   const propertyAndConstLiterals = new Set<string>();
+  const astIdentifiers = new Set<string>();
 
   if (!fs.existsSync(filePath)) {
     return {
@@ -264,6 +266,7 @@ function getModuleSymbolInventory(
       classAndObjectMembers,
       allClassMemberNames,
       propertyAndConstLiterals,
+      astIdentifiers,
     };
   }
 
@@ -276,6 +279,9 @@ function getModuleSymbolInventory(
   }
 
   function collectPropertiesAndLiterals(node: ts.Node) {
+    if (ts.isIdentifier(node)) {
+      astIdentifiers.add(node.text);
+    }
     if (
       (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
       node.name &&
@@ -393,6 +399,7 @@ function getModuleSymbolInventory(
     classAndObjectMembers,
     allClassMemberNames,
     propertyAndConstLiterals,
+    astIdentifiers,
   };
 
   if (visited.size === 0) {
@@ -808,6 +815,7 @@ function verifySymbolInModule(
     inventory.topLevelDeclarations.has(citation.symbol) ||
     inventory.allClassMemberNames.has(citation.symbol) ||
     inventory.propertyAndConstLiterals.has(citation.symbol) ||
+    inventory.astIdentifiers.has(citation.symbol) ||
     ((citation.roleWord === 'schema' || citation.roleWord === 'schemas') &&
       inventory.topLevelDeclarations.has(`${citation.symbol}Schema`))
   ) {

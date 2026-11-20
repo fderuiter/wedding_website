@@ -1,8 +1,174 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import vm from 'vm';
+import ts from 'typescript';
+import { isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
 
 const ROOT_DIR = process.cwd();
+
+export interface DocMapping {
+  src: string;
+  dest: string;
+  category: 'Architecture' | 'Deployment' | 'Features' | 'Security' | 'Guides' | 'Development';
+  title: string;
+}
+
+export const ARCHITECTURAL_DOCS: DocMapping[] = [
+  // Development
+  {
+    src: 'README.md',
+    dest: 'development/readme.md',
+    category: 'Development',
+    title: 'Project Overview',
+  },
+  {
+    src: 'docs/developer-setup.md',
+    dest: 'development/developer-setup.md',
+    category: 'Development',
+    title: 'Local Environment Setup',
+  },
+  {
+    src: '.github/TESTING.md',
+    dest: 'development/testing.md',
+    category: 'Development',
+    title: 'Testing Strategy',
+  },
+  {
+    src: '.github/CONTRIBUTING.md',
+    dest: 'development/contributing.md',
+    category: 'Development',
+    title: 'Contribution Guidelines',
+  },
+  {
+    src: 'AGENTS.md',
+    dest: 'development/agents.md',
+    category: 'Development',
+    title: 'Agent & Contributor Guidelines',
+  },
+  // Architecture
+  {
+    src: 'ARCHITECTURE.md',
+    dest: 'architecture/architecture.md',
+    category: 'Architecture',
+    title: 'System Architecture',
+  },
+  {
+    src: 'docs/runtime-contract.md',
+    dest: 'architecture/runtime-contract.md',
+    category: 'Architecture',
+    title: 'Runtime Contract',
+  },
+  // Deployment
+  {
+    src: 'DEPLOYMENT.md',
+    dest: 'deployment/deployment.md',
+    category: 'Deployment',
+    title: 'Deployment Strategy',
+  },
+  {
+    src: 'docs/deployment/README.md',
+    dest: 'deployment/recipes.md',
+    category: 'Deployment',
+    title: 'Deployment Recipes Overview',
+  },
+  {
+    src: 'docs/deployment/docker-vps.md',
+    dest: 'deployment/docker-vps.md',
+    category: 'Deployment',
+    title: 'Generic Docker / VPS',
+  },
+  {
+    src: 'docs/deployment/gcp-cloud-run.md',
+    dest: 'deployment/gcp-cloud-run.md',
+    category: 'Deployment',
+    title: 'Google Cloud Run',
+  },
+  {
+    src: 'docs/deployment/railway-render.md',
+    dest: 'deployment/railway-render.md',
+    category: 'Deployment',
+    title: 'Railway & Render',
+  },
+  {
+    src: 'docs/deployment/vercel.md',
+    dest: 'deployment/vercel.md',
+    category: 'Deployment',
+    title: 'Vercel',
+  },
+  // Features
+  {
+    src: 'FEATURE_MODULES.md',
+    dest: 'features/feature-modules.md',
+    category: 'Features',
+    title: 'Feature Modules',
+  },
+  {
+    src: 'docs/ASSET_STORAGE.md',
+    dest: 'features/asset-storage.md',
+    category: 'Features',
+    title: 'Asset Storage',
+  },
+  {
+    src: 'docs/3D_TECHNICAL_GUIDE.md',
+    dest: 'features/3d-technical-guide.md',
+    category: 'Features',
+    title: '3D Technical Guide',
+  },
+  {
+    src: 'SCRAPER.md',
+    dest: 'features/scraper.md',
+    category: 'Features',
+    title: 'Web Scraper Pipeline',
+  },
+  {
+    src: 'docs/BROADCASTS.md',
+    dest: 'features/broadcasts.md',
+    category: 'Features',
+    title: 'Guest Broadcasts & Messaging',
+  },
+  // Security
+  {
+    src: 'SECURITY.md',
+    dest: 'security/security.md',
+    category: 'Security',
+    title: 'Security Policy',
+  },
+  {
+    src: 'docs/THREAT_MODEL.md',
+    dest: 'security/threat-model.md',
+    category: 'Security',
+    title: 'Threat Model',
+  },
+  // Guides
+  {
+    src: 'docs/upgrading.md',
+    dest: 'guides/upgrading.md',
+    category: 'Guides',
+    title: 'Upgrading Guide',
+  },
+  {
+    src: 'docs/versioning.md',
+    dest: 'guides/versioning.md',
+    category: 'Guides',
+    title: 'Versioning Policy',
+  },
+  {
+    src: 'CHANGELOG.md',
+    dest: 'guides/changelog.md',
+    category: 'Guides',
+    title: 'Changelog',
+  },
+];
+
+const PORTAL_ROUTE_TO_SRC = new Map<string, string>();
+for (const doc of ARCHITECTURAL_DOCS) {
+  const cleanDest = doc.dest.replace(/\\/g, '/').replace(/\.md$/, '').replace(/^\/+|\/+$/g, '');
+  PORTAL_ROUTE_TO_SRC.set(cleanDest, doc.src);
+  if (cleanDest.endsWith('/index')) {
+    PORTAL_ROUTE_TO_SRC.set(cleanDest.slice(0, -'/index'.length), doc.src);
+  }
+}
 
 const EXCLUDE_SEGMENTS = new Set([
   'node_modules',
@@ -74,6 +240,91 @@ interface InlineCodeSpan {
 interface FileCandidate {
   rawPath: string;
   position: number;
+}
+
+export interface ExtractedMermaidBlock {
+  sourceFile: string;
+  fenceStartLine: number;
+  code: string;
+}
+
+interface MermaidParserApi {
+  parse: (_text: string, _parseOptions?: { suppressErrors?: boolean }) => Promise<unknown>;
+}
+
+interface MermaidRuntime {
+  api: MermaidParserApi;
+  domWindow: Record<string, unknown>;
+  hostGlobal: Record<string, unknown>;
+}
+
+let cachedMermaidRuntimePromise: Promise<MermaidRuntime> | null = null;
+
+async function withMermaidDomGlobals<T>(
+  hostGlobal: Record<string, unknown>,
+  domWindow: Record<string, unknown>,
+  fn: () => Promise<T>
+): Promise<T> {
+  const hadWindow = 'window' in hostGlobal;
+  const hadDocument = 'document' in hostGlobal;
+  const prevWindow = hostGlobal.window;
+  const prevDocument = hostGlobal.document;
+
+  if (!hostGlobal.window) {
+    hostGlobal.window = domWindow;
+    hostGlobal.document = domWindow.document;
+  }
+
+  try {
+    return await fn();
+  } finally {
+    if (!hadWindow) {
+      delete hostGlobal.window;
+    } else {
+      hostGlobal.window = prevWindow;
+    }
+    if (!hadDocument) {
+      delete hostGlobal.document;
+    } else {
+      hostGlobal.document = prevDocument;
+    }
+  }
+}
+
+function getMermaidRuntime(): Promise<MermaidRuntime> {
+  if (!cachedMermaidRuntimePromise) {
+    cachedMermaidRuntimePromise = (async () => {
+      const scriptFile =
+        typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
+
+      const hostGlobal = vm.runInThisContext('globalThis') as Record<string, unknown>;
+      const createHostRequire = vm.runInThisContext(
+        "(filename) => process.getBuiltinModule('node:module').createRequire(filename)"
+      ) as (_filename: string) => NodeRequire;
+
+      const hostReq = createHostRequire(scriptFile);
+      const jsdomMod = hostReq('jsdom') as {
+        JSDOM: new (_html?: string, _opts?: { url?: string }) => {
+          window: Record<string, unknown>;
+        };
+      };
+      const domWindow = new jsdomMod.JSDOM('', { url: 'http://localhost/' }).window;
+
+      const api = await withMermaidDomGlobals(hostGlobal, domWindow, async () => {
+        const mod = hostReq('mermaid') as {
+          default?: MermaidParserApi;
+        } & Partial<MermaidParserApi>;
+        const resolved = mod.default ?? (mod as MermaidParserApi);
+        if (!resolved || typeof resolved.parse !== 'function') {
+          throw new Error('Failed to load mermaid.parse from installed mermaid package');
+        }
+        return resolved;
+      });
+
+      return { api, domWindow, hostGlobal };
+    })();
+  }
+  return cachedMermaidRuntimePromise;
 }
 
 function isExcludedRelPath(relPath: string): boolean {
@@ -683,12 +934,485 @@ function resolveProseFileToken(
   return path.resolve(rootDir, decoded);
 }
 
+function resolvePortalRouteToSourceFile(
+  cleanRoute: string,
+  sourceAbsPath: string,
+  rootDir: string
+): string | null {
+  const portalDir = path.join(rootDir, 'docs-portal');
+  let routeRel: string;
+
+  if (cleanRoute.startsWith('/')) {
+    routeRel = cleanRoute
+      .replace(/^\/+/, '')
+      .replace(/\.(?:html|md)$/, '')
+      .replace(/\/+$/, '');
+  } else {
+    const resolvedFromSource = path.resolve(path.dirname(sourceAbsPath), cleanRoute);
+    routeRel = path
+      .relative(portalDir, resolvedFromSource)
+      .replace(/\\/g, '/')
+      .replace(/\.(?:html|md)$/, '')
+      .replace(/\/+$/, '');
+  }
+
+  if (routeRel.startsWith('..')) {
+    return null;
+  }
+
+  if (routeRel === '' || routeRel === 'index') {
+    const homeFile = path.join(portalDir, 'index.md');
+    return fs.existsSync(homeFile) && fs.statSync(homeFile).isFile() ? homeFile : null;
+  }
+
+  const mappedSrc = PORTAL_ROUTE_TO_SRC.get(routeRel);
+  if (mappedSrc) {
+    const mappedAbs = path.resolve(rootDir, mappedSrc);
+    if (fs.existsSync(mappedAbs) && fs.statSync(mappedAbs).isFile()) {
+      return mappedAbs;
+    }
+  }
+
+  const authoredCandidates = [
+    path.join(portalDir, `${routeRel}.md`),
+    path.join(portalDir, routeRel, 'index.md'),
+  ];
+  for (const candidate of authoredCandidates) {
+    const relFromRoot = path.relative(rootDir, candidate).replace(/\\/g, '/');
+    if (!isExcludedRelPath(relFromRoot) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function validateStandardOrPortalLinkTarget(
+  rawTarget: string,
+  sourceAbsPath: string,
+  relSource: string,
+  lineNum: number,
+  linkText: string,
+  isPortalRoute: boolean,
+  errors: LinkError[],
+  rootDir: string,
+  lineCountCache: Map<string, number>,
+  headingSlugCache: Map<string, Set<string>>
+) {
+  const trimmed = rawTarget.trim();
+  if (!trimmed) {
+    errors.push({
+      sourceFile: relSource,
+      line: lineNum,
+      linkText,
+      targetPath: rawTarget,
+      resolvedPath: relSource,
+    });
+    return;
+  }
+
+  if (trimmed.startsWith('mailto:') || trimmed.startsWith('tel:')) {
+    return;
+  }
+
+  if (trimmed.startsWith('#')) {
+    const fragment = trimmed.slice(1);
+    if (
+      !fragment ||
+      !sourceAbsPath.endsWith('.md') ||
+      !validateFragmentOnFile(sourceAbsPath, fragment, lineCountCache, headingSlugCache)
+    ) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `${relSource}${trimmed}`,
+      });
+    }
+    return;
+  }
+
+  const repoMatch = trimmed.match(REPO_GITHUB_URL_RE);
+  if (repoMatch) {
+    const refKind = repoMatch[1];
+    const repoRel = safeDecodeURIComponent(repoMatch[2]).replace(/\/+$/, '');
+    const fragment = repoMatch[3] || '';
+    const resolvedRepoPath = repoRel ? path.resolve(rootDir, repoRel) : rootDir;
+    const relResolved = path.relative(rootDir, resolvedRepoPath).replace(/\\/g, '/');
+
+    if (!fs.existsSync(resolvedRepoPath)) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: relResolved,
+      });
+      return;
+    }
+
+    const stat = fs.statSync(resolvedRepoPath);
+    if (refKind === 'tree') {
+      if (!stat.isDirectory() || LINE_FRAGMENT_RE.test(fragment)) {
+        errors.push({
+          sourceFile: relSource,
+          line: lineNum,
+          linkText,
+          targetPath: trimmed,
+          resolvedPath: `${relResolved}${fragment ? '#' + fragment : ''}`,
+        });
+      }
+      return;
+    }
+
+    if (!stat.isFile()) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: relResolved,
+      });
+      return;
+    }
+
+    if (
+      fragment &&
+      !validateFragmentOnFile(resolvedRepoPath, fragment, lineCountCache, headingSlugCache)
+    ) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `${relResolved}#${fragment}`,
+      });
+    }
+    return;
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return;
+  }
+
+  const hashIdx = trimmed.indexOf('#');
+  const beforeHash = hashIdx === -1 ? trimmed : trimmed.slice(0, hashIdx);
+  const fragment = hashIdx === -1 ? '' : trimmed.slice(hashIdx + 1);
+  const cleanTarget = safeDecodeURIComponent(beforeHash.split('?')[0]);
+
+  if (!cleanTarget) {
+    errors.push({
+      sourceFile: relSource,
+      line: lineNum,
+      linkText,
+      targetPath: trimmed,
+      resolvedPath: relSource,
+    });
+    return;
+  }
+
+  if (isPortalRoute) {
+    const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);
+    if (!resolvedPortalFile) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `docs-portal/${cleanTarget.replace(/^\/+/, '')}`,
+      });
+      return;
+    }
+
+    if (
+      fragment &&
+      !validateFragmentOnFile(resolvedPortalFile, fragment, lineCountCache, headingSlugCache)
+    ) {
+      const relPortalFile = path.relative(rootDir, resolvedPortalFile).replace(/\\/g, '/');
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `${relPortalFile}#${fragment}`,
+      });
+    }
+    return;
+  }
+
+  const fileDir = path.dirname(sourceAbsPath);
+  const resolvedPath = cleanTarget.startsWith('/')
+    ? path.resolve(rootDir, cleanTarget.slice(1))
+    : path.resolve(fileDir, cleanTarget);
+  const relResolved = path.relative(rootDir, resolvedPath).replace(/\\/g, '/');
+
+  if (!fs.existsSync(resolvedPath)) {
+    errors.push({
+      sourceFile: relSource,
+      line: lineNum,
+      linkText,
+      targetPath: trimmed,
+      resolvedPath: relResolved,
+    });
+    return;
+  }
+
+  if (fragment) {
+    const stat = fs.statSync(resolvedPath);
+    if (
+      !stat.isFile() ||
+      !validateFragmentOnFile(resolvedPath, fragment, lineCountCache, headingSlugCache)
+    ) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `${relResolved}#${fragment}`,
+      });
+    }
+  }
+}
+
+function checkFrontmatterLinks(
+  frontmatterLines: string[],
+  filePath: string,
+  relSource: string,
+  errors: LinkError[],
+  rootDir: string,
+  lineCountCache: Map<string, number>,
+  headingSlugCache: Map<string, Set<string>>
+) {
+  const fmContent = frontmatterLines.join('\n');
+  if (!fmContent.trim()) {
+    return;
+  }
+
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(fmContent, { lineCounter });
+  const isPortalDoc = relSource === 'docs-portal' || relSource.startsWith('docs-portal/');
+
+  function visitYamlNode(node: unknown) {
+    if (isMap(node)) {
+      let contextLabel = 'frontmatter link';
+      for (const pair of node.items) {
+        if (isPair(pair) && isScalar(pair.key) && isScalar(pair.value)) {
+          const keyName = String(pair.key.value);
+          if ((keyName === 'text' || keyName === 'title') && pair.value.value) {
+            contextLabel = String(pair.value.value);
+            break;
+          }
+        }
+      }
+
+      for (const pair of node.items) {
+        if (!isPair(pair)) {
+          continue;
+        }
+        if (isScalar(pair.key) && String(pair.key.value) === 'link') {
+          if (pair.value && isMap(pair.value)) {
+            visitYamlNode(pair.value);
+            continue;
+          }
+          const offset =
+            (pair.value &&
+            typeof pair.value === 'object' &&
+            'range' in pair.value &&
+            Array.isArray(pair.value.range)
+              ? pair.value.range[0]
+              : undefined) ??
+            pair.key.range?.[0] ??
+            0;
+          const fileLine = lineCounter.linePos(offset).line + 1;
+          const rawVal =
+            pair.value && isScalar(pair.value) && pair.value.value !== null && pair.value.value !== undefined
+              ? String(pair.value.value)
+              : '';
+
+          validateStandardOrPortalLinkTarget(
+            rawVal,
+            filePath,
+            relSource,
+            fileLine,
+            contextLabel,
+            isPortalDoc,
+            errors,
+            rootDir,
+            lineCountCache,
+            headingSlugCache
+          );
+          continue;
+        }
+        visitYamlNode(pair.value);
+      }
+      return;
+    }
+
+    if (isSeq(node)) {
+      for (const item of node.items) {
+        visitYamlNode(item);
+      }
+    }
+  }
+
+  visitYamlNode(doc.contents);
+}
+
+export function checkVitePressConfigLinks(
+  rootDir: string,
+  errors: LinkError[],
+  lineCountCache: Map<string, number> = new Map(),
+  headingSlugCache: Map<string, Set<string>> = new Map()
+) {
+  const configRel = 'docs-portal/.vitepress/config.mts';
+  const configAbs = path.join(rootDir, configRel);
+  if (!fs.existsSync(configAbs) || !fs.statSync(configAbs).isFile()) {
+    return;
+  }
+
+  let content: string;
+  try {
+    content = fs.readFileSync(configAbs, 'utf8');
+  } catch {
+    return;
+  }
+
+  const sf = ts.createSourceFile(configAbs, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+  function getPropertyKeyName(nameNode: ts.PropertyName): string | null {
+    if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode) || ts.isNoSubstitutionTemplateLiteral(nameNode)) {
+      return nameNode.text;
+    }
+    return null;
+  }
+
+  function scanNavOrSidebarSubtree(node: ts.Node, sectionLabel: string) {
+    if (ts.isObjectLiteralExpression(node)) {
+      let itemLabel = `${sectionLabel} link`;
+      for (const prop of node.properties) {
+        if (ts.isPropertyAssignment(prop) && getPropertyKeyName(prop.name) === 'text') {
+          if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+            itemLabel = prop.initializer.text;
+          }
+        }
+      }
+
+      for (const prop of node.properties) {
+        if (ts.isPropertyAssignment(prop) && getPropertyKeyName(prop.name) === 'link') {
+          const lineNum = sf.getLineAndCharacterOfPosition(prop.initializer.getStart(sf)).line + 1;
+          if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+            validateStandardOrPortalLinkTarget(
+              prop.initializer.text,
+              configAbs,
+              configRel,
+              lineNum,
+              itemLabel,
+              true,
+              errors,
+              rootDir,
+              lineCountCache,
+              headingSlugCache
+            );
+          } else {
+            errors.push({
+              sourceFile: configRel,
+              line: lineNum,
+              linkText: itemLabel,
+              targetPath: prop.initializer.getText(sf),
+              resolvedPath: configRel,
+            });
+          }
+        } else {
+          ts.forEachChild(prop, child => scanNavOrSidebarSubtree(child, sectionLabel));
+        }
+      }
+      return;
+    }
+
+    ts.forEachChild(node, child => scanNavOrSidebarSubtree(child, sectionLabel));
+  }
+
+  function visitRoot(node: ts.Node) {
+    if (ts.isPropertyAssignment(node)) {
+      const propName = getPropertyKeyName(node.name);
+      if (propName === 'nav' || propName === 'sidebar') {
+        scanNavOrSidebarSubtree(node.initializer, propName);
+        return;
+      }
+    }
+    ts.forEachChild(node, visitRoot);
+  }
+
+  visitRoot(sf);
+}
+
+async function validateMermaidBlocks(
+  blocks: ExtractedMermaidBlock[],
+  errors: LinkError[]
+): Promise<void> {
+  if (blocks.length === 0) {
+    return;
+  }
+
+  const { api: mermaidApi, domWindow, hostGlobal } = await getMermaidRuntime();
+
+  await withMermaidDomGlobals(hostGlobal, domWindow, async () => {
+    for (const block of blocks) {
+      if (!block.code.trim()) {
+        errors.push({
+          sourceFile: block.sourceFile,
+          line: block.fenceStartLine,
+          linkText: 'mermaid diagram',
+          targetPath: '```mermaid',
+          resolvedPath: 'Empty Mermaid diagram block',
+        });
+        continue;
+      }
+
+      try {
+        const result = await mermaidApi.parse(block.code, { suppressErrors: false });
+        if (result === false) {
+          throw new Error('Invalid Mermaid diagram syntax');
+        }
+      } catch (err: unknown) {
+        const rawMsg = err instanceof Error ? err.message : String(err);
+        const lineMatch = rawMsg.match(/\bon line (\d+)\b/i);
+        const hashLine =
+          typeof (err as { hash?: { line?: unknown } })?.hash?.line === 'number'
+            ? (err as { hash: { line: number } }).hash.line + 1
+            : null;
+        const relLine = lineMatch ? parseInt(lineMatch[1], 10) : hashLine;
+        const blockLineCount = block.code.split(/\r?\n/).length;
+        const clampedRel = relLine && relLine >= 1 ? Math.min(relLine, blockLineCount) : 0;
+        const errorLine = clampedRel > 0 ? block.fenceStartLine + clampedRel : block.fenceStartLine;
+        const summary =
+          rawMsg
+            .split(/\r?\n/)
+            .map(s => s.trim())
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(' ') || 'Mermaid syntax error';
+
+        errors.push({
+          sourceFile: block.sourceFile,
+          line: errorLine,
+          linkText: 'mermaid diagram',
+          targetPath: '```mermaid',
+          resolvedPath: summary,
+        });
+      }
+    }
+  });
+}
+
 export function checkLinksInFile(
   filePath: string,
   errors: LinkError[],
   rootDir: string = ROOT_DIR,
   lineCountCache: Map<string, number> = new Map(),
-  headingSlugCache: Map<string, Set<string>> = new Map()
+  headingSlugCache: Map<string, Set<string>> = new Map(),
+  mermaidBlocks: ExtractedMermaidBlock[] = []
 ) {
   const relSource = path.relative(rootDir, filePath).replace(/\\/g, '/');
   let content: string;
@@ -700,11 +1424,16 @@ export function checkLinksInFile(
 
   const lines = content.split(/\r?\n/);
   const fileDir = path.dirname(filePath);
+  const isPortalDoc = relSource === 'docs-portal' || relSource.startsWith('docs-portal/');
 
   let inFrontmatter = false;
+  const frontmatterLines: string[] = [];
   let inFence = false;
   let fenceChar = '';
   let fenceLen = 0;
+  let inMermaidFence = false;
+  let mermaidFenceStartLine = 0;
+  let mermaidLines: string[] = [];
   let inHtmlComment = false;
   let paragraphCandidates: FileCandidate[] = [];
 
@@ -718,6 +1447,17 @@ export function checkLinksInFile(
     if (inFrontmatter) {
       if (rawLine.trim() === '---' || rawLine.trim() === '...') {
         inFrontmatter = false;
+        checkFrontmatterLinks(
+          frontmatterLines,
+          filePath,
+          relSource,
+          errors,
+          rootDir,
+          lineCountCache,
+          headingSlugCache
+        );
+      } else {
+        frontmatterLines.push(rawLine);
       }
       return;
     }
@@ -733,10 +1473,26 @@ export function checkLinksInFile(
           inFence = true;
           fenceChar = ch;
           fenceLen = len;
+          const infoLang = rest.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+          if (infoLang === 'mermaid' || infoLang === 'mmd') {
+            inMermaidFence = true;
+            mermaidFenceStartLine = lineNum;
+            mermaidLines = [];
+          }
           paragraphCandidates = [];
           return;
         }
       } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
+        if (inMermaidFence) {
+          mermaidBlocks.push({
+            sourceFile: relSource,
+            fenceStartLine: mermaidFenceStartLine,
+            code: mermaidLines.join('\n'),
+          });
+          inMermaidFence = false;
+          mermaidFenceStartLine = 0;
+          mermaidLines = [];
+        }
         inFence = false;
         fenceChar = '';
         fenceLen = 0;
@@ -746,6 +1502,9 @@ export function checkLinksInFile(
     }
 
     if (inFence) {
+      if (inMermaidFence) {
+        mermaidLines.push(rawLine);
+      }
       return;
     }
 
@@ -898,6 +1657,21 @@ export function checkLinksInFile(
       const relResolved = path.relative(rootDir, resolvedPath).replace(/\\/g, '/');
 
       if (!fs.existsSync(resolvedPath)) {
+        if (isPortalDoc && cleanTarget.startsWith('/')) {
+          validateStandardOrPortalLinkTarget(
+            rawTarget,
+            filePath,
+            relSource,
+            lineNum,
+            link.linkText,
+            true,
+            errors,
+            rootDir,
+            lineCountCache,
+            headingSlugCache
+          );
+          continue;
+        }
         errors.push({
           sourceFile: relSource,
           line: lineNum,
@@ -1013,25 +1787,44 @@ export function checkLinksInFile(
       paragraphCandidates.push(...lineCandidates);
     }
   });
+
+  if (inMermaidFence) {
+    mermaidBlocks.push({
+      sourceFile: relSource,
+      fenceStartLine: mermaidFenceStartLine,
+      code: mermaidLines.join('\n'),
+    });
+  }
 }
 
-export function checkDocLinks(
+export async function checkDocLinks(
   rootDir: string = ROOT_DIR
-): { passed: boolean; errors: LinkError[]; count: number } {
+): Promise<{ passed: boolean; errors: LinkError[]; count: number }> {
   const mdFiles = findMarkdownFiles(rootDir);
   const errors: LinkError[] = [];
   const lineCountCache = new Map<string, number>();
   const headingSlugCache = new Map<string, Set<string>>();
+  const mermaidBlocks: ExtractedMermaidBlock[] = [];
 
   for (const file of mdFiles) {
-    checkLinksInFile(file, errors, rootDir, lineCountCache, headingSlugCache);
+    checkLinksInFile(
+      file,
+      errors,
+      rootDir,
+      lineCountCache,
+      headingSlugCache,
+      mermaidBlocks
+    );
   }
+
+  checkVitePressConfigLinks(rootDir, errors, lineCountCache, headingSlugCache);
+  await validateMermaidBlocks(mermaidBlocks, errors);
 
   return { passed: errors.length === 0, errors, count: mdFiles.length };
 }
 
-function main() {
-  const { passed, errors, count } = checkDocLinks();
+async function main() {
+  const { passed, errors, count } = await checkDocLinks();
 
   if (!passed) {
     console.error('\n❌ Dead documentation link(s) detected:\n');
@@ -1045,10 +1838,10 @@ function main() {
 ================================================================================
 ACTIONABLE REMEDIATION:
 --------------------------------------------------------------------------------
-1. Fix or remove broken relative file links, #anchor slugs, or #L / (L...) line
-   citations in repository Markdown documents.
-2. Ensure target file paths, headings, and line ranges exist relative to the
-   Markdown file or repository root.
+1. Fix or remove broken relative file links, #anchor slugs, #L / (L...) line
+   citations, frontmatter links, or VitePress nav/sidebar routes.
+2. Ensure target file paths, headings, line ranges, and fenced Mermaid diagram
+   blocks parse and resolve cleanly offline.
 ================================================================================
 `);
     process.exit(1);
@@ -1062,5 +1855,8 @@ const isMain =
   typeof process.argv[1] === 'string' &&
   path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (isMain) {
-  main();
+  main().catch(err => {
+    console.error('Documentation link check failed with unexpected error:', err);
+    process.exit(1);
+  });
 }

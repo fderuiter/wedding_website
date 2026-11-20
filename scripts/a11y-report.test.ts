@@ -152,37 +152,65 @@ describe('a11y-report', () => {
   });
 
   describe('runA11ySuite orchestrator', () => {
-    it('cleans stale test-results, runs Jest and Playwright, writes summary, and returns 0 when clean', () => {
+    it('cleans stale test-results, runs Jest, reseeds wedding_test, runs Playwright, writes summary, and returns 0 when clean', () => {
       const staleDir = path.join(tempDir, 'test-results');
       fs.mkdirSync(staleDir, { recursive: true });
       fs.writeFileSync(path.join(staleDir, 'stale.txt'), 'stale');
 
       const invoked: string[] = [];
-      const exitCode = runA11ySuite({
-        cwd: tempDir,
-        runStep: (cmd: string, args: string[], cwd: string) => {
-          invoked.push(`${cmd} ${args.join(' ')}`);
-          const dir = path.join(cwd, 'test-results');
-          fs.mkdirSync(dir, { recursive: true });
-          if (cmd === 'npm') {
-            fs.writeFileSync(path.join(dir, 'jest-a11y-violations.json'), '[]');
-          } else if (cmd === 'npx') {
-            fs.writeFileSync(
-              path.join(dir, 'playwright-a11y-violations.json'),
-              JSON.stringify({ '/': [] })
-            );
-          }
-          return 0;
-        },
-      });
+      let capturedSeedEnv: Record<string, string | undefined> | undefined;
+      const originalDbUrl = process.env.DATABASE_URL;
+      delete process.env.DATABASE_URL;
 
-      expect(exitCode).toBe(0);
-      expect(invoked).toEqual(['npm test', 'npx playwright test']);
-      expect(fs.existsSync(path.join(staleDir, 'stale.txt'))).toBe(false);
-      expect(fs.existsSync(path.join(staleDir, 'a11y-summary.md'))).toBe(true);
+      try {
+        const exitCode = runA11ySuite({
+          cwd: tempDir,
+          runStep: (
+            cmd: string,
+            args: string[],
+            cwd: string,
+            envOverrides?: Record<string, string | undefined>
+          ) => {
+            const fullCmd = `${cmd} ${args.join(' ')}`;
+            invoked.push(fullCmd);
+            const dir = path.join(cwd, 'test-results');
+            fs.mkdirSync(dir, { recursive: true });
+            if (fullCmd === 'npm test') {
+              fs.writeFileSync(path.join(dir, 'jest-a11y-violations.json'), '[]');
+            } else if (fullCmd === 'npx tsx scripts/seed.ts') {
+              capturedSeedEnv = envOverrides;
+            } else if (fullCmd === 'npx playwright test') {
+              fs.writeFileSync(
+                path.join(dir, 'playwright-a11y-violations.json'),
+                JSON.stringify({ '/': [] })
+              );
+            }
+            return 0;
+          },
+        });
+
+        expect(exitCode).toBe(0);
+        expect(invoked).toEqual([
+          'npm test',
+          'npx tsx scripts/seed.ts',
+          'npx playwright test',
+        ]);
+        expect(capturedSeedEnv?.DATABASE_URL).toBe(
+          'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public'
+        );
+        expect(capturedSeedEnv?.ADMIN_PASSWORD).toBeDefined();
+        expect(fs.existsSync(path.join(staleDir, 'stale.txt'))).toBe(false);
+        expect(fs.existsSync(path.join(staleDir, 'a11y-summary.md'))).toBe(true);
+      } finally {
+        if (originalDbUrl === undefined) {
+          delete process.env.DATABASE_URL;
+        } else {
+          process.env.DATABASE_URL = originalDbUrl;
+        }
+      }
     });
 
-    it('propagates non-zero exit code when Jest fails while still running Playwright and writing summary', () => {
+    it('propagates non-zero exit code when Jest fails while still reseeding, running Playwright, and writing summary', () => {
       const invoked: string[] = [];
       const exitCode = runA11ySuite({
         cwd: tempDir,
@@ -193,7 +221,31 @@ describe('a11y-report', () => {
       });
 
       expect(exitCode).toBe(2);
-      expect(invoked).toEqual(['npm test', 'npx playwright test']);
+      expect(invoked).toEqual([
+        'npm test',
+        'npx tsx scripts/seed.ts',
+        'npx playwright test',
+      ]);
+      expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
+    });
+
+    it('propagates non-zero exit code when reseeding fails while still writing summary', () => {
+      const invoked: string[] = [];
+      const exitCode = runA11ySuite({
+        cwd: tempDir,
+        runStep: (cmd: string, args: string[]) => {
+          const fullCmd = `${cmd} ${args.join(' ')}`;
+          invoked.push(fullCmd);
+          return fullCmd === 'npx tsx scripts/seed.ts' ? 3 : 0;
+        },
+      });
+
+      expect(exitCode).toBe(3);
+      expect(invoked).toEqual([
+        'npm test',
+        'npx tsx scripts/seed.ts',
+        'npx playwright test',
+      ]);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
 
@@ -202,13 +254,18 @@ describe('a11y-report', () => {
       const exitCode = runA11ySuite({
         cwd: tempDir,
         runStep: (cmd: string, args: string[]) => {
-          invoked.push(`${cmd} ${args.join(' ')}`);
-          return cmd === 'npx' ? 1 : 0;
+          const fullCmd = `${cmd} ${args.join(' ')}`;
+          invoked.push(fullCmd);
+          return fullCmd === 'npx playwright test' ? 1 : 0;
         },
       });
 
       expect(exitCode).toBe(1);
-      expect(invoked).toEqual(['npm test', 'npx playwright test']);
+      expect(invoked).toEqual([
+        'npm test',
+        'npx tsx scripts/seed.ts',
+        'npx playwright test',
+      ]);
       expect(fs.existsSync(path.join(tempDir, 'test-results', 'a11y-summary.md'))).toBe(true);
     });
 
@@ -223,8 +280,8 @@ describe('a11y-report', () => {
         expect(() => {
           main(['--run'], {
             cwd: tempDir,
-            runStep: (cmd: string, _args: string[], cwd: string) => {
-              if (cmd === 'npx') {
+            runStep: (cmd: string, args: string[], cwd: string) => {
+              if (`${cmd} ${args.join(' ')}` === 'npx playwright test') {
                 const dir = path.join(cwd, 'test-results');
                 fs.mkdirSync(dir, { recursive: true });
                 fs.writeFileSync(

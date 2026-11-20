@@ -5,6 +5,7 @@ import { spawnSync } from 'child_process';
 import {
   checkDocLinks,
   checkLinksInFile,
+  checkVitePressConfigLinks,
   extractMarkdownHeadings,
   findInlineCodeEnd,
   findMarkdownFiles,
@@ -31,8 +32,8 @@ describe('check-doc-links', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('verifies all 35 authored Markdown files in the repository with zero errors', () => {
-    const result = checkDocLinks(process.cwd());
+  it('verifies all 35 authored Markdown files in the repository with zero errors', async () => {
+    const result = await checkDocLinks(process.cwd());
     expect(result.errors).toEqual([]);
     expect(result.passed).toBe(true);
     expect(result.count).toBe(35);
@@ -126,7 +127,7 @@ describe('check-doc-links', () => {
     expect(errors).toEqual([]);
   });
 
-  it('validates intra-file and cross-file #anchor fragments against heading slugs', () => {
+  it('validates intra-file and cross-file #anchor fragments against heading slugs', async () => {
     const targetPath = path.join(tempDir, 'DEPLOYMENT.md');
     fs.writeFileSync(
       targetPath,
@@ -166,7 +167,7 @@ describe('check-doc-links', () => {
       'utf8'
     );
 
-    const res = checkDocLinks(tempDir);
+    const res = await checkDocLinks(tempDir);
     expect(res.passed).toBe(false);
     expect(res.errors).toHaveLength(2);
     expect(res.errors[0].targetPath).toBe('#missing-section');
@@ -175,7 +176,7 @@ describe('check-doc-links', () => {
     );
   });
 
-  it('validates #L<start>-L<end> fragments and parenthetical (L<start>-L<end>) citations against file line counts', () => {
+  it('validates #L<start>-L<end> fragments and parenthetical (L<start>-L<end>) citations against file line counts', async () => {
     fs.mkdirSync(path.join(tempDir, 'src'), { recursive: true });
     fs.writeFileSync(
       path.join(tempDir, 'src/sample.ts'),
@@ -199,7 +200,7 @@ describe('check-doc-links', () => {
       'utf8'
     );
 
-    const res = checkDocLinks(tempDir);
+    const res = await checkDocLinks(tempDir);
     expect(res.passed).toBe(false);
     expect(res.errors.map(e => e.targetPath)).toEqual([
       './src/sample.ts#L2-L10',
@@ -207,6 +208,159 @@ describe('check-doc-links', () => {
       'src/sample.ts (L3–L9)',
       'src/missing.ts (L1–L2)',
     ]);
+  });
+
+  it('validates frontmatter link fields in docs-portal/index.md and rejects dead routes or anchors', async () => {
+    fs.mkdirSync(path.join(tempDir, 'docs-portal/api'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# Architecture\n', 'utf8');
+    fs.writeFileSync(
+      path.join(tempDir, 'README.md'),
+      '# Project\n\n## Setup & Installation\n',
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, 'docs-portal/api/index.md'), '# API\n', 'utf8');
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docs-portal/index.md'),
+      [
+        '---',
+        'layout: home',
+        'hero:',
+        '  actions:',
+        '    - theme: brand',
+        '      text: Explore Architecture',
+        '      link: /architecture/architecture',
+        '    - theme: alt',
+        '      text: API Explorer',
+        '      link: /api/',
+        'features:',
+        '  - title: Valid Anchor',
+        '    link: /development/readme#setup-installation',
+        '  - title: Dead Feature Route',
+        '    link: /guides/does-not-exist',
+        '  - title: Dead Feature Anchor',
+        '    link: /development/readme#nonexistent-heading',
+        '---',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const res = await checkDocLinks(tempDir);
+    expect(res.passed).toBe(false);
+    expect(res.errors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'docs-portal/index.md',
+        line: 15,
+        linkText: 'Dead Feature Route',
+        targetPath: '/guides/does-not-exist',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/index.md',
+        line: 17,
+        linkText: 'Dead Feature Anchor',
+        targetPath: '/development/readme#nonexistent-heading',
+      }),
+    ]);
+  });
+
+  it('validates VitePress nav and sidebar routes in docs-portal/.vitepress/config.mts', async () => {
+    fs.mkdirSync(path.join(tempDir, 'docs-portal/.vitepress'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'docs-portal/api'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# Architecture\n', 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'CHANGELOG.md'), '# Changelog\n', 'utf8');
+    fs.writeFileSync(path.join(tempDir, 'docs-portal/api/index.md'), '# API\n', 'utf8');
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docs-portal/.vitepress/config.mts'),
+      [
+        "import { defineConfig } from 'vitepress';",
+        'export default defineConfig({',
+        '  themeConfig: {',
+        '    nav: [',
+        "      { text: 'Architecture', link: '/architecture/architecture' },",
+        "      { text: 'Broken Nav', link: '/missing/nav-target' },",
+        '    ],',
+        '    sidebar: [',
+        '      {',
+        "        text: 'Guides',",
+        '        items: [',
+        "          { text: 'Changelog', link: '/guides/changelog' },",
+        "          { text: 'API', link: '/api/' },",
+        "          { text: 'Dead Sidebar', link: '/guides/dead-sidebar' },",
+        '        ],',
+        '      },',
+        '    ],',
+        '  },',
+        '});',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const directErrors: LinkError[] = [];
+    checkVitePressConfigLinks(tempDir, directErrors);
+    expect(directErrors).toHaveLength(2);
+
+    const res = await checkDocLinks(tempDir);
+    expect(res.passed).toBe(false);
+    expect(res.errors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        line: 6,
+        linkText: 'Broken Nav',
+        targetPath: '/missing/nav-target',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        line: 14,
+        linkText: 'Dead Sidebar',
+        targetPath: '/guides/dead-sidebar',
+      }),
+    ]);
+  });
+
+  it('validates fenced Mermaid blocks offline and fails via CLI on invalid Mermaid syntax', async () => {
+    const mdPath = path.join(tempDir, 'ARCH.md');
+    fs.writeFileSync(
+      mdPath,
+      [
+        '# Architecture Diagrams',
+        '',
+        '```mermaid',
+        'flowchart LR',
+        '    App["src/app"] --> node_id["id"]',
+        '    App --> node__lb_id_rb_["[id]"]',
+        '```',
+        '',
+        '```mermaid',
+        'graph TD',
+        '    subgraph Server (Node.js / Container Runtime)',
+        '        B[Next.js]',
+        '    end',
+        '```',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const res = await checkDocLinks(tempDir);
+    expect(res.passed).toBe(false);
+    expect(res.errors).toHaveLength(1);
+    expect(res.errors[0]).toEqual(
+      expect.objectContaining({
+        sourceFile: 'ARCH.md',
+        line: 11,
+        linkText: 'mermaid diagram',
+        targetPath: '```mermaid',
+      })
+    );
+
+    const cliScript = path.resolve(process.cwd(), 'scripts/check-doc-links.ts');
+    const tsxBin = path.resolve(process.cwd(), 'node_modules/.bin/tsx');
+    const proc = spawnSync(tsxBin, [cliScript], {
+      cwd: tempDir,
+      encoding: 'utf8',
+    });
+    expect(proc.status).toBe(1);
+    expect(proc.stderr).toContain('ARCH.md:11');
   });
 
   it('exits with status 1 via CLI when broken links, anchors, or line ranges exist', () => {

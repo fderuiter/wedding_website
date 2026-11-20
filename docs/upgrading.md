@@ -49,7 +49,7 @@ git fetch upstream --tags
 
 ### Step 3: Review Release Notes & `CHANGELOG.md`
 
-Before merging, inspect the upstream `CHANGELOG.md` or release notes on GitHub:
+Before merging, inspect the upstream [`CHANGELOG.md`](../CHANGELOG.md) or release notes on GitHub:
 
 ```bash
 git log HEAD..upstream/main --oneline CHANGELOG.md
@@ -141,7 +141,7 @@ Upstream releases may add new configuration fields to `AppConfig` or content sch
 
 - **Non-Breaking Schema Additions**: New configuration fields in `prisma/schema.prisma` include default values (e.g., `@default(true)` or `@default("")`). When `npm run migrate:deploy` runs, PostgreSQL automatically fills existing `AppConfig` records with default values.
 - **Zod Validation Fallbacks**: Zod schemas (`src/features/content/schemas.ts`) use fallback defaults so that missing optional fields in older database records do not cause runtime crashes.
-- **Configuration Migration Scripts**: If a major release restructures configuration fields, a migration script will be provided under `scripts/migrations/` and documented in `CHANGELOG.md`.
+- **Configuration Migration Scripts**: If a major release restructures configuration fields, a migration script will be provided under `scripts/migrations/` and documented in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ---
 
@@ -169,7 +169,7 @@ Before performing major version upgrades, export a unified full-database backup 
 Use this checklist for every upstream upgrade:
 
 - [ ] Fetched latest upstream commits (`git fetch upstream`).
-- [ ] Reviewed `CHANGELOG.md` for breaking changes and adopter action notices.
+- [ ] Reviewed [`CHANGELOG.md`](../CHANGELOG.md) for breaking changes and adopter action notices.
 - [ ] Merged upstream branch (`git merge upstream/main`).
 - [ ] Resolved any merge conflicts.
 - [ ] Updated npm dependencies (`npm ci`).

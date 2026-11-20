@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
     "pretest": "node scripts/pretest.mjs",
     "pretest:watch": "npm run pretest",
+    "pretest:cov": "npm run pretest",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",

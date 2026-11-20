@@ -181,6 +181,39 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         expect(() => DatabaseBackupSchema.parse(backupFavicon)).toThrow();
       }
     });
+
+    test('preserves all 9 module flags, normalizes groupGifting dependency, and strips legacy guestPasscode in appConfig backups', () => {
+      const backup: any = getValidBackup();
+      backup.appConfig[0].modules = {
+        registry: false,
+        groupGifting: true,
+        guestPasscode: false,
+        weather: false,
+        weddingParty: true,
+        attractions: false,
+        gallery: false,
+        countdown: false,
+        addToCalendar: true,
+        interactive3D: false,
+      };
+      backup.appConfig[0].showCountdown = false;
+      backup.appConfig[0].showAddToCalendar = true;
+
+      const parsed = DatabaseBackupSchema.parse(backup);
+      expect(parsed.appConfig[0].modules).toEqual({
+        registry: false,
+        groupGifting: false,
+        weather: false,
+        weddingParty: true,
+        attractions: false,
+        gallery: false,
+        countdown: false,
+        addToCalendar: true,
+        interactive3D: false,
+      });
+      expect(parsed.appConfig[0].showCountdown).toBe(false);
+      expect(parsed.appConfig[0].showAddToCalendar).toBe(true);
+    });
   });
 
   describe('Media and ContentNode Path Guard Validations', () => {

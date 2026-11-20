@@ -266,5 +266,166 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       const results = await axe(container);
       expect(results).toHaveNoViolations();
     });
+
+    test('passes includePending: false when "Include pending RSVPs in auto-assign" is unchecked', async () => {
+      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { assignedCount: 1, unassignedCount: 0, assignedGuests: [] },
+        }),
+      } as Response);
+
+      render(
+        <ToastProvider>
+          <UnassignedGuestPanel {...defaultProps} />
+        </ToastProvider>
+      );
+
+      const includePendingCheckbox = screen.getByLabelText(/include pending rsvps in auto-assign/i);
+      expect(includePendingCheckbox).toBeChecked();
+
+      fireEvent.click(includePendingCheckbox);
+      expect(includePendingCheckbox).not.toBeChecked();
+
+      fireEvent.click(screen.getByRole('button', { name: /auto-assign all/i }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith('/api/admin/seating/auto-assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ includePending: false }),
+        });
+      });
+    });
+  });
+
+  describe('RSVP filters, household grouping, dietary badges, and accessibility', () => {
+    const richGuests: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'hh-1',
+        code: 'VANCE1',
+        guestName: 'Eleanor Vance',
+        householdName: 'Vance Family',
+        partyGroup: 'Bride Family',
+        partyTags: ['vip', 'family'],
+        dietaryNotes: 'Gluten-Free, Nut Allergy',
+        used: true,
+        extraFields: { attending: true },
+      }),
+      createMockInvitationCode({
+        id: 'hh-2',
+        code: 'VANCE2',
+        guestName: 'Arthur Vance',
+        householdName: 'Vance Family',
+        partyGroup: 'Bride Family',
+        partyTags: ['family'],
+        dietaryNotes: null,
+        used: true,
+        extraFields: { attending: true },
+      }),
+      createMockInvitationCode({
+        id: 'solo-pending',
+        code: 'PEND1',
+        guestName: 'Chloe Bennett',
+        householdName: null,
+        partyGroup: 'College Friends',
+        partyTags: ['friends'],
+        dietaryNotes: 'Vegan',
+        used: false,
+        extraFields: null,
+      }),
+      createMockInvitationCode({
+        id: 'declined-1',
+        code: 'DECL1',
+        guestName: 'Declined Person',
+        used: true,
+        extraFields: { attending: false },
+      }),
+      createMockInvitationCode({
+        id: 'addr-1',
+        code: 'ADDR1',
+        guestName: 'Address Only Entry',
+        used: false,
+        partyTags: ['address-collection'],
+      }),
+    ];
+
+    test('excludes declined and address-collection guests and filters by RSVP status, partyGroup, and partyTags', () => {
+      render(<UnassignedGuestPanel {...defaultProps} unassignedGuests={richGuests} />);
+
+      // Declined and address-collection guests are hidden from panel
+      expect(screen.queryByText('Declined Person')).not.toBeInTheDocument();
+      expect(screen.queryByText('Address Only Entry')).not.toBeInTheDocument();
+      expect(screen.getByText('3 unassigned')).toBeInTheDocument();
+
+      // Filter by RSVP Status = Attending
+      const rsvpSelect = screen.getByLabelText(/rsvp status/i);
+      fireEvent.change(rsvpSelect, { target: { value: 'attending' } });
+      expect(screen.getByText('Eleanor Vance')).toBeInTheDocument();
+      expect(screen.queryByText('Chloe Bennett')).not.toBeInTheDocument();
+
+      // Filter by RSVP Status = Pending
+      fireEvent.change(rsvpSelect, { target: { value: 'pending' } });
+      expect(screen.getByText('Chloe Bennett')).toBeInTheDocument();
+      expect(screen.queryByText('Eleanor Vance')).not.toBeInTheDocument();
+
+      // Reset RSVP to All Eligible, filter by Party Group
+      fireEvent.change(rsvpSelect, { target: { value: 'all' } });
+      const groupSelect = screen.getByLabelText(/party group/i);
+      fireEvent.change(groupSelect, { target: { value: 'College Friends' } });
+      expect(screen.getByText('Chloe Bennett')).toBeInTheDocument();
+      expect(screen.queryByText('Eleanor Vance')).not.toBeInTheDocument();
+
+      // Reset Party Group, filter by Party Tag
+      fireEvent.change(groupSelect, { target: { value: 'all' } });
+      const tagSelect = screen.getByLabelText(/party tag/i);
+      fireEvent.change(tagSelect, { target: { value: 'vip' } });
+      expect(screen.getByText('Eleanor Vance')).toBeInTheDocument();
+      expect(screen.queryByText('Chloe Bennett')).not.toBeInTheDocument();
+    });
+
+    test('groups household members and assigns entire household via Seat Household modal', async () => {
+      const onAssignGuestsToTable = jest.fn().mockResolvedValue(true);
+
+      render(
+        <UnassignedGuestPanel
+          {...defaultProps}
+          unassignedGuests={richGuests}
+          onAssignGuestsToTable={onAssignGuestsToTable}
+        />
+      );
+
+      expect(screen.getByTestId('household-group-card')).toBeInTheDocument();
+
+      const seatHouseholdBtn = screen.getByRole('button', {
+        name: /seat vance family household \(2 guests\)/i,
+      });
+      fireEvent.click(seatHouseholdBtn);
+
+      const confirmBtn = screen.getByRole('button', { name: /confirm household seating/i });
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(onAssignGuestsToTable).toHaveBeenCalledWith(['hh-1', 'hh-2'], 'table-1');
+      });
+    });
+
+    test('renders dietary badges and passes jest-axe accessibility audit when populated', async () => {
+      const { container } = render(
+        <ToastProvider>
+          <UnassignedGuestPanel {...defaultProps} unassignedGuests={richGuests} />
+        </ToastProvider>
+      );
+
+      const dietaryBadges = screen.getAllByTestId('guest-dietary-badge');
+      expect(dietaryBadges.length).toBeGreaterThanOrEqual(3); // GF, NF on Eleanor + VG on Chloe
+      expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('GF');
+      expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('NF');
+      expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('VG');
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 });

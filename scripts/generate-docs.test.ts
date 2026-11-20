@@ -364,5 +364,22 @@ export async function POST() {
         'Unchecked in UI (`/registry` delegates enforcement to contribution APIs)',
       apiCoverage: 'HTTP 400 on `POST /api/registry/contribute`',
     });
+
+    // When AppConfig defines `modules Json @default("{}")` in prisma/schema.prisma, persistence reflects Prisma (`modules`)
+    writeFile(
+      tempDir,
+      'prisma/schema.prisma',
+      `model AppConfig {
+  id String @id @default("global")
+  modules Json @default("{}")
+  showCountdown Boolean @default(true)
+}
+`,
+    );
+
+    const persistedExtracted = extractFeatureRuntimeEnforcement(tempDir, fixtureMetadata);
+    expect(persistedExtracted.weather.persistence).toBe('`Prisma` (`modules`)');
+    expect(persistedExtracted.countdown.persistence).toBe('`Prisma` (`modules` + `showCountdown`)');
+    expect(persistedExtracted.groupGifting.persistence).toBe('`Prisma` (`modules`)');
   });
 });

@@ -84,6 +84,7 @@ try {
     { name: 'TypeScript type check', script: 'type-check' },
     { name: 'Knip dead-code analysis', script: 'lint:unused' },
     { name: 'Environment variables documentation check', script: 'check:env-docs' },
+    { name: 'Deployment runbooks verification check', script: 'check:runbooks' },
     { name: 'Setup and contributor guides contract check', script: 'check:setup-guides' },
     { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
     { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
@@ -91,6 +92,7 @@ try {
     { name: 'Prisma schema validation', script: 'check:prisma' },
     { name: 'Migration compatibility check', script: 'lint:migrations' },
     { name: 'Documentation synchronization check', script: 'check:doc-sync' },
+    { name: 'Specification route and symbol contract check', script: 'check:spec-contracts' },
   ];
 
   for (const check of checks) {
