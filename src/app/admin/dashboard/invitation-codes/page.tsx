@@ -24,6 +24,7 @@ import {
 } from '@/components/admin/SubEventEditorModal';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import {
+  extractDietaryTags,
   matchDietaryCategory,
   getAttendanceStatus,
   isAddressComplete,
@@ -341,16 +342,18 @@ export default function InvitationCodesDashboardPage() {
     let other = 0;
 
     for (const item of codes) {
-      if (!item.dietaryNotes || !item.dietaryNotes.trim()) continue;
+      const hasNotes = Boolean(item.dietaryNotes && item.dietaryNotes.trim());
+      const restrictionTags = extractDietaryTags(item.extraFields).filter((t) => t !== 'kids');
+      if (!hasNotes && restrictionTags.length === 0) continue;
       totalWithRestrictions++;
-      const notes = item.dietaryNotes.trim();
+      const notes = hasNotes ? item.dietaryNotes!.trim() : '';
 
-      const gf = matchDietaryCategory(notes, 'gluten-free');
-      const veg = matchDietaryCategory(notes, 'vegetarian');
-      const vgn = matchDietaryCategory(notes, 'vegan');
-      const df = matchDietaryCategory(notes, 'dairy-free');
-      const nut = matchDietaryCategory(notes, 'nut-free');
-      const oth = matchDietaryCategory(notes, 'other');
+      const gf = matchDietaryCategory(notes, 'gluten-free', item.extraFields);
+      const veg = matchDietaryCategory(notes, 'vegetarian', item.extraFields);
+      const vgn = matchDietaryCategory(notes, 'vegan', item.extraFields);
+      const df = matchDietaryCategory(notes, 'dairy-free', item.extraFields);
+      const nut = matchDietaryCategory(notes, 'nut-free', item.extraFields);
+      const oth = matchDietaryCategory(notes, 'other', item.extraFields);
 
       if (gf) glutenFree++;
       if (veg) vegetarian++;
@@ -387,7 +390,7 @@ export default function InvitationCodesDashboardPage() {
       }
 
       if (dietaryFilter !== 'all') {
-        if (!matchDietaryCategory(item.dietaryNotes, dietaryFilter)) {
+        if (!matchDietaryCategory(item.dietaryNotes, dietaryFilter, item.extraFields)) {
           return false;
         }
       }

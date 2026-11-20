@@ -1,5 +1,70 @@
 import { z } from 'zod';
 import { deriveAdminInputSchema } from '@/utils/validationPrimitives';
+import {
+  DIETARY_TAG_OPTIONS,
+  MAX_RSVP_PLUS_ONE_COUNT,
+  MealOptionSchema,
+  CustomRsvpQuestionSchema,
+  normalizeMealOptions,
+  normalizeCustomQuestions,
+  normalizeMealSelections,
+  normalizeCustomAnswers,
+  normalizePlusOneNames,
+  type DietaryTagOption,
+  type MealOptionDTO,
+  type CustomRsvpQuestionDTO,
+} from '@/utils/rsvpPrompts';
+
+export {
+  DIETARY_TAG_OPTIONS,
+  MAX_RSVP_PLUS_ONE_COUNT,
+  MealOptionSchema,
+  CustomRsvpQuestionSchema,
+  normalizeMealOptions,
+  normalizeCustomQuestions,
+  normalizeMealSelections,
+  normalizeCustomAnswers,
+  normalizePlusOneNames,
+  type DietaryTagOption,
+  type MealOptionDTO,
+  type CustomRsvpQuestionDTO,
+};
+
+export const MealOptionsListSchema = z
+  .array(MealOptionSchema)
+  .max(30, 'Cannot exceed 30 meal options per sub-event.')
+  .superRefine((items, ctx) => {
+    const seen = new Set<string>();
+    items.forEach((item, index) => {
+      const normalizedId = item.id.trim();
+      if (seen.has(normalizedId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index, 'id'],
+          message: `Duplicate meal option ID "${normalizedId}".`,
+        });
+      }
+      seen.add(normalizedId);
+    });
+  });
+
+export const CustomRsvpQuestionsListSchema = z
+  .array(CustomRsvpQuestionSchema)
+  .max(30, 'Cannot exceed 30 custom RSVP questions per sub-event.')
+  .superRefine((items, ctx) => {
+    const seen = new Set<string>();
+    items.forEach((item, index) => {
+      const normalizedId = item.id.trim();
+      if (seen.has(normalizedId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [index, 'id'],
+          message: `Duplicate custom question ID "${normalizedId}".`,
+        });
+      }
+      seen.add(normalizedId);
+    });
+  });
 
 export const SubEventSchema = z.object({
   id: z.string(),
@@ -11,6 +76,8 @@ export const SubEventSchema = z.object({
   location: z.string().optional().default(''),
   category: z.string().optional().default(''),
   isPrivate: z.boolean().default(false),
+  mealOptions: MealOptionsListSchema.optional().default([]),
+  customQuestions: CustomRsvpQuestionsListSchema.optional().default([]),
   createdAt: z.union([z.string(), z.date()]).optional(),
   updatedAt: z.union([z.string(), z.date()]).optional(),
 });
@@ -19,8 +86,6 @@ export type SubEventDTO = z.infer<typeof SubEventSchema>;
 
 export const SubEventInputSchema = deriveAdminInputSchema(SubEventSchema, false);
 export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, true);
-
-export const MAX_RSVP_PLUS_ONE_COUNT = 20;
 
 export const SubEventRsvpSubmissionItemSchema = z.object({
   subEventId: z.string().min(1, 'Sub-event ID is required.'),
@@ -33,6 +98,9 @@ export const SubEventRsvpSubmissionItemSchema = z.object({
     .optional()
     .default(0),
   dietaryNotes: z.string().optional().default(''),
+  mealSelections: z.array(z.string().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
+  customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
+  plusOneNames: z.array(z.string().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
 });
 
 export const SubEventRsvpBatchSubmissionSchema = z.object({

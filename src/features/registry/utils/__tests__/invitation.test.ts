@@ -1,7 +1,12 @@
 import crypto from 'crypto';
 import {
+  extractDietaryTags,
   matchDietaryCategory,
   getAttendanceStatus,
+  formatAttendanceLabel,
+  formatGuestPlusOneNames,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
   isAddressComplete,
   generateRandomCode,
   AttendanceStatus,
@@ -272,6 +277,80 @@ describe('invitation utils', () => {
         randomIntSpy.mockRestore();
         mathRandomSpy.mockRestore();
       }
+    });
+  });
+
+  describe('structured dietary tags & RSVP export formatters', () => {
+    it('extracts and matches structured dietary tags from extraFields and mealSelections even when free-text notes are empty', () => {
+      const extra = {
+        dietaryTags: ['Gluten-Free'],
+        mealSelections: [
+          {
+            subEventId: 'se-1',
+            subEventTitle: 'Reception',
+            selections: [
+              { attendee: 'Jane', optionId: 'm1', label: 'Salmon', dietaryTags: ['gluten-free', 'dairy-free'] },
+              { attendee: 'John', optionId: 'm2', label: 'Falafel', dietaryTags: ['vegan', 'halal'] },
+            ],
+          },
+        ],
+      };
+
+      expect(extractDietaryTags(extra)).toEqual(['gluten-free', 'dairy-free', 'vegan', 'halal']);
+      expect(matchDietaryCategory('', 'gluten-free', extra)).toBe(true);
+      expect(matchDietaryCategory('', 'dairy-free', extra)).toBe(true);
+      expect(matchDietaryCategory('', 'vegan', extra)).toBe(true);
+      expect(matchDietaryCategory('', 'other', extra)).toBe(true); // 'halal' matches 'other'
+      expect(matchDietaryCategory('', 'nut-free', extra)).toBe(false);
+      expect(matchDietaryCategory('', 'has_restriction', extra)).toBe(true);
+
+      // 'kids' portion tag alone does not count as a dietary restriction unless filtering by 'kids'
+      const kidsOnly = { dietaryTags: ['kids'] };
+      expect(matchDietaryCategory('', 'has_restriction', kidsOnly)).toBe(false);
+      expect(matchDietaryCategory('', 'other', kidsOnly)).toBe(false);
+      expect(matchDietaryCategory('', 'kids', kidsOnly)).toBe(true);
+    });
+
+    it('formats attendance labels, plus-one names, meal selections, and custom answers for CSV exports', () => {
+      const syncedGuest = {
+        used: true,
+        plusOneFirstName: 'John',
+        plusOneLastName: 'Doe',
+        extraFields: {
+          attendanceStatus: 'attending',
+          plusOneNames: ['John Doe', 'Alex Doe'],
+          mealSelections: [
+            {
+              subEventId: 'se-1',
+              subEventTitle: 'Reception',
+              selections: [
+                { attendee: 'Jane Doe', optionId: 'm1', label: 'Herb Salmon', dietaryTags: ['gluten-free'] },
+                { attendee: 'John Doe', optionId: 'm2', label: 'Short Rib', dietaryTags: [] },
+              ],
+            },
+          ],
+          customAnswers: [
+            {
+              subEventId: 'se-1',
+              subEventTitle: 'Reception',
+              answers: [{ questionId: 'q1', prompt: 'Shuttle?', answer: 'Yes, round-trip' }],
+            },
+          ],
+        },
+      };
+
+      expect(formatAttendanceLabel(syncedGuest)).toBe('Attending');
+      expect(formatGuestPlusOneNames(syncedGuest)).toBe('John Doe, Alex Doe');
+      expect(formatGuestMealSelections(syncedGuest)).toBe(
+        'Jane Doe: Herb Salmon (gluten-free); John Doe: Short Rib'
+      );
+      expect(formatGuestCustomAnswers(syncedGuest)).toBe('Shuttle?: Yes, round-trip');
+
+      expect(formatAttendanceLabel({ used: true, extraFields: { attendanceStatus: 'declined' } })).toBe('Declined');
+      expect(formatAttendanceLabel({ used: false, extraFields: null })).toBe('Pending');
+      expect(
+        formatGuestPlusOneNames({ plusOneFirstName: 'Legacy', plusOneLastName: 'Guest', extraFields: null })
+      ).toBe('Legacy Guest');
     });
   });
 });

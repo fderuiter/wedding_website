@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Label, Input, Textarea, Checkbox } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   toDateTimeLocalValue,
@@ -11,7 +11,16 @@ import {
   isEndTimeBeforeStartTime,
   formatSubEventSchedule,
 } from '@/utils/dateTime';
-import type { SubEventDTO } from '@/features/sub-events';
+import {
+  DIETARY_TAG_OPTIONS,
+  normalizeMealOptions,
+  normalizeCustomQuestions,
+} from '@/utils/rsvpPrompts';
+import type {
+  SubEventDTO,
+  MealOptionDTO,
+  CustomRsvpQuestionDTO,
+} from '@/features/sub-events';
 
 export interface EditableSubEvent {
   id: string;
@@ -23,6 +32,15 @@ export interface EditableSubEvent {
   location?: string | null;
   category?: string | null;
   isPrivate: boolean;
+  mealOptions?: MealOptionDTO[];
+  customQuestions?: CustomRsvpQuestionDTO[];
+}
+
+function createDraftId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 interface SubEventEditorModalProps {
@@ -66,11 +84,154 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
   const [isPrivate, setIsPrivate] = useState(() =>
     editingEvent ? Boolean(editingEvent.isPrivate) : true
   );
+  const [mealOptions, setMealOptions] = useState<MealOptionDTO[]>(() =>
+    editingEvent ? normalizeMealOptions(editingEvent.mealOptions) : []
+  );
+  const [customQuestions, setCustomQuestions] = useState<CustomRsvpQuestionDTO[]>(() =>
+    editingEvent ? normalizeCustomQuestions(editingEvent.customQuestions) : []
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const isEditMode = Boolean(editingEvent);
   const scheduleInvalid = isEndTimeBeforeStartTime(startTime, endTime);
+
+  const handleAddMealOption = () => {
+    setMealOptions((prev) => [
+      ...prev,
+      {
+        id: createDraftId('meal'),
+        label: '',
+        description: '',
+        dietaryTags: [],
+      },
+    ]);
+    if (validationError) setValidationError(null);
+  };
+
+  const handleUpdateMealOption = (index: number, patch: Partial<MealOptionDTO>) => {
+    setMealOptions((prev) =>
+      prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item))
+    );
+    if (validationError) setValidationError(null);
+  };
+
+  const handleToggleMealTag = (index: number, tag: string) => {
+    setMealOptions((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        const exists = item.dietaryTags.includes(tag);
+        const nextTags = exists
+          ? item.dietaryTags.filter((t) => t !== tag)
+          : [...item.dietaryTags, tag];
+        return { ...item, dietaryTags: nextTags };
+      })
+    );
+  };
+
+  const handleMoveMealOption = (index: number, direction: -1 | 1) => {
+    setMealOptions((prev) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleRemoveMealOption = (index: number) => {
+    setMealOptions((prev) => prev.filter((_, idx) => idx !== index));
+    if (validationError) setValidationError(null);
+  };
+
+  const handleAddCustomQuestion = () => {
+    setCustomQuestions((prev) => [
+      ...prev,
+      {
+        id: createDraftId('question'),
+        prompt: '',
+        type: 'text',
+        required: false,
+        options: [],
+      },
+    ]);
+    if (validationError) setValidationError(null);
+  };
+
+  const handleUpdateCustomQuestion = (
+    index: number,
+    patch: Partial<CustomRsvpQuestionDTO>
+  ) => {
+    setCustomQuestions((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== index) return item;
+        const nextType = patch.type ?? item.type;
+        let nextOptions = patch.options ?? item.options;
+        if (nextType === 'choice' && nextOptions.length === 0 && patch.options === undefined) {
+          nextOptions = ['', ''];
+        }
+        if (nextType === 'text' && patch.type === 'text') {
+          nextOptions = [];
+        }
+        return { ...item, ...patch, type: nextType, options: nextOptions };
+      })
+    );
+    if (validationError) setValidationError(null);
+  };
+
+  const handleMoveCustomQuestion = (index: number, direction: -1 | 1) => {
+    setCustomQuestions((prev) => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(index, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleRemoveCustomQuestion = (index: number) => {
+    setCustomQuestions((prev) => prev.filter((_, idx) => idx !== index));
+    if (validationError) setValidationError(null);
+  };
+
+  const handleAddQuestionChoice = (questionIndex: number) => {
+    setCustomQuestions((prev) =>
+      prev.map((item, idx) =>
+        idx === questionIndex ? { ...item, options: [...item.options, ''] } : item
+      )
+    );
+    if (validationError) setValidationError(null);
+  };
+
+  const handleUpdateQuestionChoice = (
+    questionIndex: number,
+    choiceIndex: number,
+    value: string
+  ) => {
+    setCustomQuestions((prev) =>
+      prev.map((item, idx) => {
+        if (idx !== questionIndex) return item;
+        const nextOptions = item.options.map((opt, cIdx) =>
+          cIdx === choiceIndex ? value : opt
+        );
+        return { ...item, options: nextOptions };
+      })
+    );
+    if (validationError) setValidationError(null);
+  };
+
+  const handleRemoveQuestionChoice = (questionIndex: number, choiceIndex: number) => {
+    setCustomQuestions((prev) =>
+      prev.map((item, idx) =>
+        idx === questionIndex
+          ? { ...item, options: item.options.filter((_, cIdx) => cIdx !== choiceIndex) }
+          : item
+      )
+    );
+    if (validationError) setValidationError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,6 +250,54 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
       return;
     }
 
+    for (let i = 0; i < mealOptions.length; i++) {
+      if (!mealOptions[i].label.trim()) {
+        const msg = `Meal option #${i + 1} requires an entrée name.`;
+        setValidationError(msg);
+        addToast(msg, 'error');
+        return;
+      }
+    }
+
+    for (let i = 0; i < customQuestions.length; i++) {
+      const q = customQuestions[i];
+      if (!q.prompt.trim()) {
+        const msg = `Custom RSVP question #${i + 1} requires a prompt.`;
+        setValidationError(msg);
+        addToast(msg, 'error');
+        return;
+      }
+      if (q.type === 'choice') {
+        const validChoices = q.options.map((opt) => opt.trim()).filter(Boolean);
+        if (validChoices.length === 0) {
+          const msg = `Multiple-choice question "${q.prompt.trim()}" requires at least one choice option.`;
+          setValidationError(msg);
+          addToast(msg, 'error');
+          return;
+        }
+      }
+    }
+
+    const cleanedMeals: MealOptionDTO[] = mealOptions.map((item) => ({
+      id: item.id.trim() || createDraftId('meal'),
+      label: item.label.trim(),
+      description: (item.description ?? '').trim(),
+      dietaryTags: Array.from(
+        new Set(item.dietaryTags.map((t) => t.trim().toLowerCase()).filter(Boolean))
+      ),
+    }));
+
+    const cleanedQuestions: CustomRsvpQuestionDTO[] = customQuestions.map((item) => ({
+      id: item.id.trim() || createDraftId('question'),
+      prompt: item.prompt.trim(),
+      type: item.type,
+      required: Boolean(item.required),
+      options:
+        item.type === 'choice'
+          ? Array.from(new Set(item.options.map((opt) => opt.trim()).filter(Boolean)))
+          : [],
+    }));
+
     setValidationError(null);
     setIsSaving(true);
 
@@ -101,6 +310,8 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         startTime: fromDateTimeLocalValue(startTime),
         endTime: fromDateTimeLocalValue(endTime),
         isPrivate,
+        mealOptions: cleanedMeals,
+        customQuestions: cleanedQuestions,
       };
 
       await onSave(payload, editingEvent?.id);
@@ -210,6 +421,314 @@ const SubEventEditorForm: React.FC<SubEventEditorFormProps> = ({
         </div>
       </FormGroup>
 
+      {/* Entrée / Meal Options List Editor */}
+      <div
+        className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/60 dark:bg-zinc-800/40 p-3.5 space-y-3"
+        data-testid="meal-options-editor"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-zinc-100">
+              Entrée / Meal Options ({mealOptions.length})
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
+              Optional: configure plated dinner entrées and dietary tags for attending guests.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleAddMealOption}
+            disabled={isSaving}
+          >
+            + Add Meal Option
+          </Button>
+        </div>
+
+        {mealOptions.length > 0 && (
+          <div className="space-y-3">
+            {mealOptions.map((option, index) => (
+              <div
+                key={option.id}
+                className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/70 p-3 space-y-2.5"
+                data-testid={`meal-option-row-${index}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-zinc-300">
+                    Meal Option #{index + 1}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Move meal option ${option.label || `#${index + 1}`} up`}
+                      disabled={index === 0 || isSaving}
+                      onClick={() => handleMoveMealOption(index, -1)}
+                    >
+                      ↑ Up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Move meal option ${option.label || `#${index + 1}`} down`}
+                      disabled={index === mealOptions.length - 1 || isSaving}
+                      onClick={() => handleMoveMealOption(index, 1)}
+                    >
+                      ↓ Down
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      aria-label={`Remove meal option ${option.label || `#${index + 1}`}`}
+                      disabled={isSaving}
+                      onClick={() => handleRemoveMealOption(index)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormGroup>
+                    <Label htmlFor={`meal-label-${option.id}`}>Entrée Name *</Label>
+                    <Input
+                      id={`meal-label-${option.id}`}
+                      type="text"
+                      value={option.label}
+                      onChange={(e) =>
+                        handleUpdateMealOption(index, { label: e.target.value })
+                      }
+                      placeholder="e.g. Herb-Crusted Salmon"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor={`meal-desc-${option.id}`}>Description (Optional)</Label>
+                    <Input
+                      id={`meal-desc-${option.id}`}
+                      type="text"
+                      value={option.description || ''}
+                      onChange={(e) =>
+                        handleUpdateMealOption(index, { description: e.target.value })
+                      }
+                      placeholder="e.g. Wild rice & lemon butter"
+                    />
+                  </FormGroup>
+                </div>
+
+                <fieldset className="space-y-1.5">
+                  <legend className="text-xs font-semibold text-gray-700 dark:text-zinc-300">
+                    Dietary Tags
+                  </legend>
+                  <div className="flex flex-wrap gap-2">
+                    {DIETARY_TAG_OPTIONS.map((tag) => {
+                      const checked = option.dietaryTags.includes(tag);
+                      return (
+                        <label
+                          key={tag}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors ${
+                            checked
+                              ? 'border-red-600 bg-red-50 text-red-900 dark:border-red-500 dark:bg-red-950/50 dark:text-red-200'
+                              : 'border-gray-300 bg-white text-gray-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-red-700 focus:ring-red-600"
+                            checked={checked}
+                            onChange={() => handleToggleMealTag(index, tag)}
+                          />
+                          <span>{tag}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Custom RSVP Questions List Editor */}
+      <div
+        className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/60 dark:bg-zinc-800/40 p-3.5 space-y-3"
+        data-testid="custom-questions-editor"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 dark:text-zinc-100">
+              Custom RSVP Questions ({customQuestions.length})
+            </h3>
+            <p className="text-xs text-gray-500 dark:text-zinc-400">
+              Optional: ask attending guests text or multiple-choice prompts (e.g. shuttle, song requests).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleAddCustomQuestion}
+            disabled={isSaving}
+          >
+            + Add Question
+          </Button>
+        </div>
+
+        {customQuestions.length > 0 && (
+          <div className="space-y-3">
+            {customQuestions.map((question, index) => (
+              <div
+                key={question.id}
+                className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/70 p-3 space-y-2.5"
+                data-testid={`custom-question-row-${index}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-zinc-300">
+                    Question #{index + 1}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Move question ${question.prompt || `#${index + 1}`} up`}
+                      disabled={index === 0 || isSaving}
+                      onClick={() => handleMoveCustomQuestion(index, -1)}
+                    >
+                      ↑ Up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Move question ${question.prompt || `#${index + 1}`} down`}
+                      disabled={index === customQuestions.length - 1 || isSaving}
+                      onClick={() => handleMoveCustomQuestion(index, 1)}
+                    >
+                      ↓ Down
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      aria-label={`Remove question ${question.prompt || `#${index + 1}`}`}
+                      disabled={isSaving}
+                      onClick={() => handleRemoveCustomQuestion(index)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+
+                <FormGroup>
+                  <Label htmlFor={`question-prompt-${question.id}`}>Question Prompt *</Label>
+                  <Input
+                    id={`question-prompt-${question.id}`}
+                    type="text"
+                    value={question.prompt}
+                    onChange={(e) =>
+                      handleUpdateCustomQuestion(index, { prompt: e.target.value })
+                    }
+                    placeholder="e.g. Will you use the hotel shuttle?"
+                  />
+                </FormGroup>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                  <FormGroup>
+                    <Label htmlFor={`question-type-${question.id}`}>Response Type</Label>
+                    <Select
+                      id={`question-type-${question.id}`}
+                      value={question.type}
+                      onChange={(e) =>
+                        handleUpdateCustomQuestion(index, {
+                          type: e.target.value === 'choice' ? 'choice' : 'text',
+                        })
+                      }
+                    >
+                      <option value="text">Free-text answer</option>
+                      <option value="choice">Multiple choice</option>
+                    </Select>
+                  </FormGroup>
+
+                  <FormGroup>
+                    <div className="flex items-center gap-2 sm:pt-5">
+                      <Checkbox
+                        id={`question-required-${question.id}`}
+                        checked={question.required}
+                        onChange={(e) =>
+                          handleUpdateCustomQuestion(index, { required: e.target.checked })
+                        }
+                      />
+                      <Label
+                        htmlFor={`question-required-${question.id}`}
+                        className="font-medium cursor-pointer"
+                      >
+                        Required for attending guests
+                      </Label>
+                    </div>
+                  </FormGroup>
+                </div>
+
+                {question.type === 'choice' && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-gray-700 dark:text-zinc-300">
+                        Choice Options *
+                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleAddQuestionChoice(index)}
+                        disabled={isSaving}
+                      >
+                        + Add Choice
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {question.options.map((choiceVal, cIdx) => (
+                        <div key={`${question.id}-opt-${cIdx}`} className="flex items-center gap-2">
+                          <label
+                            htmlFor={`question-${question.id}-choice-${cIdx}`}
+                            className="sr-only"
+                          >
+                            {`Question ${index + 1} choice ${cIdx + 1}`}
+                          </label>
+                          <Input
+                            id={`question-${question.id}-choice-${cIdx}`}
+                            type="text"
+                            value={choiceVal}
+                            onChange={(e) =>
+                              handleUpdateQuestionChoice(index, cIdx, e.target.value)
+                            }
+                            placeholder={`Choice #${cIdx + 1} (e.g. Yes, round-trip)`}
+                          />
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            aria-label={`Remove choice ${cIdx + 1} from question ${index + 1}`}
+                            disabled={question.options.length <= 1 || isSaving}
+                            onClick={() => handleRemoveQuestionChoice(index, cIdx)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-zinc-800">
         <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
           Cancel
@@ -244,7 +763,7 @@ export const SubEventEditorModal: React.FC<SubEventEditorModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={isEditMode ? 'Edit Sub-Event' : 'Create New Sub-Event'}
-      className="max-w-lg max-h-[90vh] flex flex-col"
+      className="max-w-2xl max-h-[90vh] flex flex-col"
       contentClassName="px-6 py-4 overflow-y-auto max-h-[78vh]"
     >
       <div className="space-y-5">

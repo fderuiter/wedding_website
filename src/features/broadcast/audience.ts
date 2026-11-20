@@ -154,7 +154,7 @@ export function filterTargetGuestsInMemory<T extends Record<string, any>>(
       }
 
       if (filters.dietaryCategory && filters.dietaryCategory !== 'all') {
-        if (!matchDietaryCategory(item.dietaryNotes, filters.dietaryCategory)) {
+        if (!matchDietaryCategory(item.dietaryNotes, filters.dietaryCategory, item.extraFields)) {
           return false;
         }
       }

@@ -12,12 +12,16 @@ describe('GET /api/schedule Route', () => {
   const mockGetPlusOneAllowance = subEventService.getPlusOneAllowanceForGuest as jest.MockedFunction<
     typeof subEventService.getPlusOneAllowanceForGuest
   >;
+  const mockGetSavedPlusOneNames = subEventService.getSavedPlusOneNamesForGuest as jest.MockedFunction<
+    typeof subEventService.getSavedPlusOneNamesForGuest
+  >;
   const mockGetRsvpStatus = subEventService.getRsvpStatus as jest.MockedFunction<
     typeof subEventService.getRsvpStatus
   >;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetSavedPlusOneNames.mockResolvedValue([]);
   });
 
   it('returns public sub-events and null plusOneAllocations for unauthenticated visitors', async () => {
@@ -35,8 +39,10 @@ describe('GET /api/schedule Route', () => {
     expect(json.data[0].title).toBe('Main Ceremony');
     expect(json.isGuest).toBe(false);
     expect(json.plusOneAllocations).toBeNull();
+    expect(json.plusOneNames).toBeNull();
     expect(mockGetScheduleForGuest).toHaveBeenCalledWith(undefined);
     expect(mockGetPlusOneAllowance).not.toHaveBeenCalled();
+    expect(mockGetSavedPlusOneNames).not.toHaveBeenCalled();
   });
 
   it('returns public plus private sub-events and plusOneAllocations for authenticated guests', async () => {
@@ -45,7 +51,15 @@ describe('GET /api/schedule Route', () => {
       guestName: 'Jane Smith',
     });
     mockGetScheduleForGuest.mockResolvedValue([
-      { id: '1', title: 'Main Ceremony', isPrivate: false, isReadOnly: false, userRsvp: null },
+      {
+        id: '1',
+        title: 'Main Ceremony',
+        isPrivate: false,
+        isReadOnly: false,
+        mealOptions: [{ id: 'm1', label: 'Salmon', dietaryTags: ['gluten-free'] }],
+        customQuestions: [{ id: 'q1', prompt: 'Shuttle?', type: 'text', required: false, options: [] }],
+        userRsvp: null,
+      },
       {
         id: '2',
         title: 'Rehearsal Dinner',
@@ -55,6 +69,7 @@ describe('GET /api/schedule Route', () => {
       },
     ]);
     mockGetPlusOneAllowance.mockResolvedValue(2);
+    mockGetSavedPlusOneNames.mockResolvedValue(['John Smith']);
 
     const req = new NextRequest('http://localhost:3000/api/schedule');
     const res = await GET(req, {});
@@ -62,11 +77,15 @@ describe('GET /api/schedule Route', () => {
 
     expect(json.success).toBe(true);
     expect(json.data).toHaveLength(2);
+    expect(json.data[0].mealOptions).toHaveLength(1);
+    expect(json.data[0].customQuestions).toHaveLength(1);
     expect(json.isGuest).toBe(true);
     expect(json.guestName).toBe('Jane Smith');
     expect(json.plusOneAllocations).toBe(2);
+    expect(json.plusOneNames).toEqual(['John Smith']);
     expect(mockGetScheduleForGuest).toHaveBeenCalledWith('GUESTCODE1');
     expect(mockGetPlusOneAllowance).toHaveBeenCalledWith('GUESTCODE1');
+    expect(mockGetSavedPlusOneNames).toHaveBeenCalledWith('GUESTCODE1');
   });
 
   it('returns RSVP open status, formatted deadline date, venue timezone, and closing message without exposing grace-period hours', async () => {

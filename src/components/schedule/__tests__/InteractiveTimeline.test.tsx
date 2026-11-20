@@ -828,5 +828,138 @@ describe('InteractiveTimeline Component', () => {
       expect(readOnly).toHaveTextContent('No peanuts');
       expect(screen.queryByTestId('rsvp-batch-bar')).not.toBeInTheDocument();
     });
+
+    it('renders conditional plus-one name fields, per-attendee entrée selectors, and custom RSVP prompts for attending guests with zero axe violations', async () => {
+      let submittedPayload: any = null;
+      (global.fetch as jest.Mock).mockImplementation(async (url, init) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Jane Doe',
+              plusOneAllocations: 1,
+              plusOneNames: ['John Doe'],
+              rsvpOpen: true,
+              timezone: 'UTC',
+              data: [
+                {
+                  id: 'se-plated',
+                  title: 'Plated Reception',
+                  startTime: '2026-06-20T18:00:00.000Z',
+                  category: 'Reception',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  mealOptions: [
+                    {
+                      id: 'm-salmon',
+                      label: 'Herb-Crusted Salmon',
+                      description: 'Wild rice & lemon dill',
+                      dietaryTags: ['gluten-free'],
+                    },
+                    {
+                      id: 'm-gnocchi',
+                      label: 'Truffle Gnocchi',
+                      description: 'Roasted wild mushrooms',
+                      dietaryTags: ['vegan'],
+                    },
+                  ],
+                  customQuestions: [
+                    {
+                      id: 'q-shuttle',
+                      prompt: 'Will you use the hotel shuttle?',
+                      type: 'choice',
+                      required: true,
+                      options: ['Yes, round-trip', 'No, driving'],
+                    },
+                    {
+                      id: 'q-song',
+                      prompt: 'Song request',
+                      type: 'text',
+                      required: false,
+                      options: [],
+                    },
+                  ],
+                  userRsvp: {
+                    status: 'pending',
+                    plusOneCount: 0,
+                    dietaryNotes: '',
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        if (url === '/api/rsvp') {
+          submittedPayload = JSON.parse(init.body);
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              data: [submittedPayload],
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      const { container } = render(
+        <InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events" />
+      );
+
+      const card = await screen.findByTestId('rsvp-card-se-plated');
+
+      // While status is pending, conditional meal & question sections are hidden
+      expect(within(card).queryByTestId('rsvp-meals-se-plated')).not.toBeInTheDocument();
+      expect(within(card).queryByTestId('rsvp-questions-se-plated')).not.toBeInTheDocument();
+
+      // Switch to Attending and set plus-one count to 1
+      fireEvent.click(within(card).getByRole('radio', { name: /^attending$/i }));
+      const plusOneCountInput = within(card).getByLabelText(/plus-one count/i);
+      fireEvent.change(plusOneCountInput, { target: { value: '1' } });
+
+      // Conditional plus-one name, 2 entrée selects, and 2 custom question controls appear
+      const plusOneNameInput = within(card).getByLabelText('Plus-One Full Name') as HTMLInputElement;
+      expect(plusOneNameInput.value).toBe('John Doe');
+
+      const primaryMealSelect = within(card).getByLabelText('Entrée for Jane Doe *') as HTMLSelectElement;
+      const plusOneMealSelect = within(card).getByLabelText('Entrée for John Doe *') as HTMLSelectElement;
+      const shuttleSelect = within(card).getByLabelText(
+        'Will you use the hotel shuttle? *'
+      ) as HTMLSelectElement;
+      const songInput = within(card).getByLabelText('Song request') as HTMLInputElement;
+
+      // Attempt to save before answering required meal/question -> blocked client-side
+      fireEvent.click(within(card).getByRole('button', { name: 'Save RSVP' }));
+      expect(await within(card).findByRole('alert')).toHaveTextContent(
+        'Please select an entrée option for all 2 attending guests.'
+      );
+      expect(submittedPayload).toBeNull();
+
+      // Complete selections and submit
+      fireEvent.change(primaryMealSelect, { target: { value: 'm-salmon' } });
+      fireEvent.change(plusOneMealSelect, { target: { value: 'm-gnocchi' } });
+      fireEvent.change(shuttleSelect, { target: { value: 'Yes, round-trip' } });
+      fireEvent.change(songInput, { target: { value: 'September' } });
+
+      // Verify zero WCAG / axe violations with all conditional inputs rendered
+      expect(await axe(container)).toHaveNoViolations();
+
+      fireEvent.click(within(card).getByRole('button', { name: 'Save RSVP' }));
+      expect(await screen.findByText('RSVP submitted successfully!')).toBeInTheDocument();
+      expect(submittedPayload).toEqual({
+        subEventId: 'se-plated',
+        status: 'attending',
+        plusOneCount: 1,
+        dietaryNotes: '',
+        mealSelections: ['m-salmon', 'm-gnocchi'],
+        customAnswers: {
+          'q-shuttle': 'Yes, round-trip',
+          'q-song': 'September',
+        },
+        plusOneNames: ['John Doe'],
+      });
+    });
   });
 });

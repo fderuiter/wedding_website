@@ -182,9 +182,9 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
-    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,\'+15551234567,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused');
-    expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,http://localhost:3000/guest?code=BOB2026,bob@example.com,,,Smiths,Groom,Local,"456 Oak Rd, Austin, TX, 78701, USA","Gluten-Free, Dairy-Free",0,Redeemed');
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status,Attendance,Meal Selections,Custom Answers');
+    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,\'+15551234567,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused,Pending,,');
+    expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,http://localhost:3000/guest?code=BOB2026,bob@example.com,,,Smiths,Groom,Local,"456 Oak Rd, Austin, TX, 78701, USA","Gluten-Free, Dairy-Free",0,Redeemed,Attending,,');
   });
 
   it('correctly parses phone numbers from stringified JSON, mobile/phoneNumber aliases, and handles malformed extraFields', async () => {
@@ -314,7 +314,7 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status');
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status,Attendance,Meal Selections,Custom Answers');
     expect(lines[1]).toContain('"\'=HYPERLINK(""http://attacker.com"")"');
     expect(lines[1]).toContain('\'+INVITE1');
     expect(lines[1]).toContain('\'-admin@example.com');
@@ -323,5 +323,54 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     expect(lines[1]).toContain('"\'\rGroup"');
     expect(lines[1]).toContain('"\'=Tag1, Tag2"');
     expect(lines[1]).toContain('\'=ALERT(1)');
+  });
+
+  it('filters by structured meal dietary tags and exports synced attendance, plus-one names, meal selections, and custom answers', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'ic-vegan',
+        guestName: 'Clara Oswald',
+        code: 'CLARA26',
+        email: 'clara@example.com',
+        dietaryNotes: null,
+        plusOneAllocations: 1,
+        used: true,
+        extraFields: {
+          attendanceStatus: 'attending',
+          plusOneNames: ['Danny Pink'],
+          dietaryTags: ['vegan'],
+          mealSummary: 'Clara Oswald: Truffle Gnocchi (vegan); Danny Pink: Herb Salmon (gluten-free)',
+          customAnswersSummary: 'Hotel shuttle?: Yes, round-trip',
+        },
+      },
+      {
+        id: 'ic-declined',
+        guestName: 'Rory Williams',
+        code: 'RORY26',
+        email: 'rory@example.com',
+        dietaryNotes: null,
+        plusOneAllocations: 0,
+        used: true,
+        extraFields: {
+          attendanceStatus: 'declined',
+          dietaryTags: [],
+        },
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/invitation-codes/export?dietary=vegan');
+    const res = await GET(req);
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
+
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('Clara Oswald');
+    expect(lines[1]).toContain('Danny Pink');
+    expect(lines[1]).toContain('Attending');
+    expect(lines[1]).toContain(
+      'Clara Oswald: Truffle Gnocchi (vegan); Danny Pink: Herb Salmon (gluten-free)'
+    );
+    expect(lines[1]).toContain('"Hotel shuttle?: Yes, round-trip"');
   });
 });

@@ -1488,6 +1488,88 @@
                       "isPrivate": {
                         "default": false,
                         "type": "boolean"
+                      },
+                      "mealOptions": {
+                        "default": [],
+                        "maxItems": 30,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "dietaryTags": {
+                              "default": [],
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 50
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ]
+                        }
+                      },
+                      "customQuestions": {
+                        "default": [],
+                        "maxItems": 30,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "type": {
+                              "default": "text",
+                              "type": "string",
+                              "enum": [
+                                "text",
+                                "choice"
+                              ]
+                            },
+                            "required": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "options": {
+                              "default": [],
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 150
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "prompt"
+                          ]
+                        }
                       }
                     }
                   }
@@ -3149,6 +3231,88 @@
                       "isPrivate": {
                         "default": false,
                         "type": "boolean"
+                      },
+                      "mealOptions": {
+                        "default": [],
+                        "maxItems": 30,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "dietaryTags": {
+                              "default": [],
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 50
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ]
+                        }
+                      },
+                      "customQuestions": {
+                        "default": [],
+                        "maxItems": 30,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 300
+                            },
+                            "type": {
+                              "default": "text",
+                              "type": "string",
+                              "enum": [
+                                "text",
+                                "choice"
+                              ]
+                            },
+                            "required": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "options": {
+                              "default": [],
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 150
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "prompt"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -6221,6 +6385,14 @@
                         "isPrivate": {
                           "type": "boolean"
                         },
+                        "mealOptions": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "customQuestions": {
+                          "type": "array",
+                          "items": {}
+                        },
                         "createdAt": {
                           "type": "string",
                           "format": "date-time"
@@ -6303,6 +6475,22 @@
                         "dietaryNotes": {
                           "nullable": true,
                           "type": "string"
+                        },
+                        "mealSelections": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "customAnswers": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "plusOneNames": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         },
                         "createdAt": {
                           "type": "string",
@@ -11597,6 +11785,29 @@
                             "dietaryNotes": {
                               "default": "",
                               "type": "string"
+                            },
+                            "mealSelections": {
+                              "maxItems": 21,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 100
+                              }
+                            },
+                            "customAnswers": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string",
+                                "maxLength": 1000
+                              }
+                            },
+                            "plusOneNames": {
+                              "maxItems": 20,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 120
+                              }
                             }
                           },
                           "required": [
@@ -11634,6 +11845,29 @@
                       "dietaryNotes": {
                         "default": "",
                         "type": "string"
+                      },
+                      "mealSelections": {
+                        "maxItems": 21,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 100
+                        }
+                      },
+                      "customAnswers": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 1000
+                        }
+                      },
+                      "plusOneNames": {
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 120
+                        }
                       }
                     },
                     "required": [
