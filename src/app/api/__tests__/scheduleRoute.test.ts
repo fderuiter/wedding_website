@@ -12,6 +12,9 @@ describe('GET /api/schedule Route', () => {
   const mockGetPlusOneAllowance = subEventService.getPlusOneAllowanceForGuest as jest.MockedFunction<
     typeof subEventService.getPlusOneAllowanceForGuest
   >;
+  const mockGetRsvpStatus = subEventService.getRsvpStatus as jest.MockedFunction<
+    typeof subEventService.getRsvpStatus
+  >;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -64,5 +67,38 @@ describe('GET /api/schedule Route', () => {
     expect(json.plusOneAllocations).toBe(2);
     expect(mockGetScheduleForGuest).toHaveBeenCalledWith('GUESTCODE1');
     expect(mockGetPlusOneAllowance).toHaveBeenCalledWith('GUESTCODE1');
+  });
+
+  it('returns RSVP open status, formatted deadline date, venue timezone, and closing message without exposing grace-period hours', async () => {
+    mockGetGuestInviteSession.mockResolvedValue({
+      code: 'GUESTCODE1',
+      guestName: 'Jane Smith',
+    });
+    mockGetScheduleForGuest.mockResolvedValue([
+      { id: '1', title: 'Main Ceremony', isPrivate: false, isReadOnly: false, userRsvp: null },
+    ]);
+    mockGetPlusOneAllowance.mockResolvedValue(1);
+    mockGetRsvpStatus.mockResolvedValue({
+      isOpen: true,
+      isManuallyLocked: false,
+      isPastDeadline: true,
+      isInGraceWindow: true,
+      deadlineDate: '2026-08-15',
+      formattedDeadline: 'August 15, 2026',
+      timezone: 'America/Chicago',
+      closedMessage: 'Online RSVPs are closed — email hosts@example.com.',
+    });
+
+    const req = new NextRequest('http://localhost:3000/api/schedule');
+    const res = await GET(req, {});
+    const json = await res.json();
+
+    expect(json.rsvpOpen).toBe(true);
+    expect(json.rsvpDeadlineDate).toBe('2026-08-15');
+    expect(json.rsvpFormattedDeadline).toBe('August 15, 2026');
+    expect(json.timezone).toBe('America/Chicago');
+    expect(json.rsvpClosedMessage).toBe('Online RSVPs are closed — email hosts@example.com.');
+    expect(json.rsvpGracePeriodHours).toBeUndefined();
+    expect(json.isInGraceWindow).toBeUndefined();
   });
 });

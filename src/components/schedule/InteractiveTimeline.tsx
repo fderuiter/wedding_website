@@ -8,6 +8,11 @@ import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 import { MAX_RSVP_PLUS_ONE_COUNT } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
+import { useGuestHelp } from '@/components/guest/GuestHelpModal';
+import {
+  DEFAULT_RSVP_CLOSED_MESSAGE,
+  sanitizeRsvpClosedMessage,
+} from '@/utils/rsvpDeadline';
 
 interface CategoryColorStyle {
   bg?: string;
@@ -37,6 +42,14 @@ interface ScheduleEventItem {
   createdAt?: Date;
 }
 
+export interface ScheduleRsvpStatusInfo {
+  rsvpOpen: boolean;
+  rsvpDeadlineDate: string | null;
+  rsvpFormattedDeadline: string | null;
+  timezone: string;
+  rsvpClosedMessage: string;
+}
+
 interface InteractiveTimelineProps {
   events: ContentNodeDTO[];
   timezone?: string;
@@ -44,6 +57,11 @@ interface InteractiveTimelineProps {
   className?: string;
   maxPlusOnes?: number | null;
   emptyStateMessage?: string;
+  rsvpOpen?: boolean;
+  rsvpFormattedDeadline?: string | null;
+  rsvpClosedMessage?: string;
+  hideStatusBanner?: boolean;
+  onRsvpStatusChange?: (_status: ScheduleRsvpStatusInfo) => void;
 }
 
 /**
@@ -180,15 +198,80 @@ export default function InteractiveTimeline({
   className = '',
   maxPlusOnes,
   emptyStateMessage,
+  rsvpOpen: rsvpOpenProp,
+  rsvpFormattedDeadline: rsvpFormattedDeadlineProp,
+  rsvpClosedMessage: rsvpClosedMessageProp,
+  hideStatusBanner = false,
+  onRsvpStatusChange,
 }: InteractiveTimelineProps) {
   const [subEventsFromApi, setSubEventsFromApi] = useState<ScheduleEventItem[] | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
   const [apiMaxPlusOnes, setApiMaxPlusOnes] = useState<number | null | undefined>(undefined);
+  const [apiRsvpOpen, setApiRsvpOpen] = useState<boolean | undefined>(undefined);
+  const [apiDeadlineDate, setApiDeadlineDate] = useState<string | null | undefined>(undefined);
+  const [apiFormattedDeadline, setApiFormattedDeadline] = useState<string | null | undefined>(
+    undefined
+  );
+  const [apiTimezone, setApiTimezone] = useState<string | undefined>(undefined);
+  const [apiClosedMessage, setApiClosedMessage] = useState<string | undefined>(undefined);
+  const [hasResolvedRsvpStatus, setHasResolvedRsvpStatus] = useState<boolean>(
+    () =>
+      rsvpOpenProp !== undefined ||
+      rsvpFormattedDeadlineProp !== undefined ||
+      rsvpClosedMessageProp !== undefined
+  );
   const [isLoadingSchedule, setIsLoadingSchedule] = useState<boolean>(
     () => initialNodes.length === 0 && Boolean(emptyStateMessage)
   );
   const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
+
+  const guestHelp = useGuestHelp();
+  const syncLiveHelpRef = useRef(guestHelp.syncLiveConfig);
+  useEffect(() => {
+    syncLiveHelpRef.current = guestHelp.syncLiveConfig;
+  }, [guestHelp.syncLiveConfig]);
+
+  const onRsvpStatusChangeRef = useRef(onRsvpStatusChange);
+  useEffect(() => {
+    onRsvpStatusChangeRef.current = onRsvpStatusChange;
+  }, [onRsvpStatusChange]);
+
+  const effectiveRsvpOpen =
+    apiRsvpOpen !== undefined ? apiRsvpOpen : (rsvpOpenProp ?? true);
+  const effectiveFormattedDeadline =
+    apiFormattedDeadline !== undefined
+      ? apiFormattedDeadline
+      : (rsvpFormattedDeadlineProp ?? null);
+  const effectiveTimezone = apiTimezone || timezone || 'UTC';
+  const effectiveClosedMessage =
+    sanitizeRsvpClosedMessage(apiClosedMessage ?? rsvpClosedMessageProp) ||
+    DEFAULT_RSVP_CLOSED_MESSAGE;
+
+  useEffect(() => {
+    if (!hasResolvedRsvpStatus) return;
+    onRsvpStatusChangeRef.current?.({
+      rsvpOpen: effectiveRsvpOpen,
+      rsvpDeadlineDate: apiDeadlineDate ?? null,
+      rsvpFormattedDeadline: effectiveFormattedDeadline,
+      timezone: effectiveTimezone,
+      rsvpClosedMessage: effectiveClosedMessage,
+    });
+    syncLiveHelpRef.current?.({
+      isRsvpOpen: effectiveRsvpOpen,
+      rsvpOpen: effectiveRsvpOpen,
+      rsvpDeadlineDate: apiDeadlineDate ?? '',
+      rsvpClosedMessage: effectiveClosedMessage,
+      timezone: effectiveTimezone,
+    });
+  }, [
+    hasResolvedRsvpStatus,
+    effectiveRsvpOpen,
+    apiDeadlineDate,
+    effectiveFormattedDeadline,
+    effectiveTimezone,
+    effectiveClosedMessage,
+  ]);
 
   const effectiveMaxPlusOnes =
     apiMaxPlusOnes !== undefined
@@ -209,9 +292,18 @@ export default function InteractiveTimeline({
     });
   }, [initialNodes]);
 
+  const handleRsvpClosedMidSession = useCallback((closedMessage: string) => {
+    setApiRsvpOpen(false);
+    if (closedMessage) {
+      setApiClosedMessage(closedMessage);
+    }
+    setHasResolvedRsvpStatus(true);
+  }, []);
+
   const rsvpManager = useScheduleRsvpManager({
     initialEvents,
     maxPlusOnes: effectiveMaxPlusOnes,
+    onRsvpClosed: handleRsvpClosedMidSession,
   });
   const { initializeEvents } = rsvpManager;
 
@@ -243,6 +335,23 @@ export default function InteractiveTimeline({
         if (json.isGuest) {
           setIsGuest(true);
           setGuestName(json.guestName || null);
+        }
+        if (typeof json.rsvpOpen === 'boolean') {
+          setApiRsvpOpen(json.rsvpOpen);
+          setHasResolvedRsvpStatus(true);
+        }
+        if ('rsvpDeadlineDate' in json) {
+          setApiDeadlineDate(json.rsvpDeadlineDate ?? null);
+        }
+        if ('rsvpFormattedDeadline' in json) {
+          setApiFormattedDeadline(json.rsvpFormattedDeadline ?? null);
+          setHasResolvedRsvpStatus(true);
+        }
+        if (typeof json.timezone === 'string' && json.timezone.trim()) {
+          setApiTimezone(json.timezone.trim());
+        }
+        if (typeof json.rsvpClosedMessage === 'string') {
+          setApiClosedMessage(json.rsvpClosedMessage);
         }
         if (Array.isArray(data) && (data.length > 0 || initialNodes.length === 0)) {
           const mapped: ScheduleEventItem[] = data.map((item: any) => ({
@@ -476,8 +585,40 @@ export default function InteractiveTimeline({
         </div>
       )}
 
+      {/* Schedule RSVP Deadline or Closed Notice (when not hoisted by parent portal) */}
+      {!hideStatusBanner && effectiveRsvpOpen && effectiveFormattedDeadline && (
+        <div
+          role="note"
+          aria-label="RSVP deadline"
+          data-testid="schedule-rsvp-deadline-banner"
+          className="mb-8 rounded-2xl border border-amber-200 dark:border-amber-800/70 bg-amber-50/80 dark:bg-amber-950/30 px-5 py-4 text-sm text-amber-950 dark:text-amber-100"
+        >
+          <p className="font-medium">
+            Please submit or update your RSVPs by{' '}
+            <strong className="font-bold">{effectiveFormattedDeadline}</strong> (midnight in{' '}
+            <span className="font-semibold">{effectiveTimezone}</span>).
+          </p>
+        </div>
+      )}
+
+      {!hideStatusBanner &&
+        !effectiveRsvpOpen &&
+        (isGuest || normalizedEvents.some((ev) => ev.userRsvp !== undefined)) && (
+        <div
+          role="status"
+          data-testid="schedule-rsvp-closed-banner"
+          className="mb-8 rounded-2xl border border-gray-300 dark:border-zinc-700 bg-gray-100/90 dark:bg-zinc-800/90 px-5 py-4 text-sm text-gray-800 dark:text-zinc-100"
+        >
+          <p className="font-semibold">{effectiveClosedMessage}</p>
+        </div>
+      )}
+
       {/* Batch Coordination Action Bar */}
-      {(rsvpManager.dirtyCount > 0 || rsvpManager.isBatchSubmitting || rsvpManager.batchError || rsvpManager.batchSuccessMessage) && (
+      {effectiveRsvpOpen &&
+        (rsvpManager.dirtyCount > 0 ||
+          rsvpManager.isBatchSubmitting ||
+          rsvpManager.batchError ||
+          rsvpManager.batchSuccessMessage) && (
         <div
           role="region"
           aria-label="RSVP batch coordination"
@@ -559,8 +700,8 @@ export default function InteractiveTimeline({
                 timezone
               );
 
-              const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, timezone);
-              const dateHeaderStr = formatDateHeader(event.startTime, timezone);
+              const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, effectiveTimezone);
+              const dateHeaderStr = formatDateHeader(event.startTime, effectiveTimezone);
 
               return (
                 <div key={event.id} className="relative group">
@@ -659,9 +800,74 @@ export default function InteractiveTimeline({
                       {event.description && <p className="pt-2 opacity-80">{event.description}</p>}
                     </div>
 
-                    {/* Interactive RSVP Form for Authenticated Guests */}
+                    {/* Interactive RSVP Form or Read-Only Saved Summary for Authenticated Guests */}
                     {!event.isReadOnly && (isGuest || event.userRsvp !== undefined) && (() => {
                       const itemState = rsvpManager.getRsvpState(event.id);
+
+                      if (!effectiveRsvpOpen) {
+                        const savedRsvp = itemState.baseline;
+                        const statusLabel =
+                          savedRsvp.status === 'attending'
+                            ? 'Attending'
+                            : savedRsvp.status === 'declined'
+                              ? 'Declined'
+                              : 'Pending';
+                        const statusBadgeClass =
+                          savedRsvp.status === 'attending'
+                            ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                            : savedRsvp.status === 'declined'
+                              ? 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                              : 'bg-gray-200 text-gray-800 dark:bg-zinc-700 dark:text-zinc-200 border-gray-300 dark:border-zinc-600';
+                        const savedPlusOnes =
+                          savedRsvp.status === 'declined' ? 0 : savedRsvp.plusOneCount;
+
+                        return (
+                          <div
+                            className="mb-6 p-4 rounded-xl border bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
+                            data-testid={`rsvp-readonly-${event.id}`}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                              <span className="font-bold text-sm">
+                                Your Saved RSVP for {event.title}
+                              </span>
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-zinc-200">
+                                RSVPs Closed
+                              </span>
+                            </div>
+                            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                              <div>
+                                <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                  Attendance Status
+                                </dt>
+                                <dd>
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-semibold border ${statusBadgeClass}`}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                  Plus-One Guests
+                                </dt>
+                                <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                  {savedPlusOnes}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                  Dietary Notes
+                                </dt>
+                                <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                  {savedRsvp.dietaryNotes ? savedRsvp.dietaryNotes : 'None noted'}
+                                </dd>
+                              </div>
+                            </dl>
+                          </div>
+                        );
+                      }
+
                       const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
                       const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
                       const isDeclined = itemState.current.status === 'declined';

@@ -1061,4 +1061,89 @@ describe('SubEventService', () => {
       expect(matrix.subEvents[0].allowedInvitationCodeIds).toContain('inv-135');
     });
   });
+
+  describe('RSVP deadline, silent grace period, and manual lock enforcement', () => {
+    it('accepts submissions silently during an active grace window and rejects with 403 once grace expires', async () => {
+      mockPrisma.appConfig = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'global',
+          rsvpOpen: true,
+          rsvpDeadlineDate: '2026-08-15',
+          rsvpGracePeriodHours: 48,
+          rsvpClosedMessage: 'Online RSVPs have closed. Email hosts@example.com.',
+          timezone: 'America/Chicago',
+        }),
+      };
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        guestName: 'Jane Guest',
+        plusOneAllocations: 1,
+        isSample: false,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Reception', isPrivate: false, accesses: [] },
+      ]);
+      mockPrisma.subEventRsvp.upsert.mockResolvedValue({
+        id: 'rsvp-1',
+        subEventId: 'se-1',
+        invitationCodeId: 'inv-1',
+        status: 'attending',
+        plusOneCount: 1,
+        dietaryNotes: 'Vegan',
+      });
+
+      // 12 hours past midnight America/Chicago (inside 48h grace window) -> accepted!
+      const duringGrace = new Date('2026-08-16T17:00:00.000Z');
+      const saved = await service.submitSubEventRsvps(
+        'GUEST1',
+        [{ subEventId: 'se-1', status: 'attending', plusOneCount: 1, dietaryNotes: 'Vegan' }],
+        duringGrace
+      );
+      expect(saved).toHaveLength(1);
+      expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledTimes(1);
+
+      // 49 hours past midnight America/Chicago (past 48h grace window) -> rejected with 403!
+      const afterGrace = new Date('2026-08-18T06:00:00.000Z');
+      await expect(
+        service.submitSubEventRsvps(
+          'GUEST1',
+          [{ subEventId: 'se-1', status: 'declined', plusOneCount: 0, dietaryNotes: '' }],
+          afterGrace
+        )
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        message: 'Online RSVPs have closed. Email hosts@example.com.',
+      });
+      expect(mockPrisma.subEventRsvp.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects submissions with 403 when RSVPs are manually locked via rsvpOpen=false', async () => {
+      mockPrisma.appConfig = {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'global',
+          rsvpOpen: false,
+          rsvpDeadlineDate: '',
+          rsvpGracePeriodHours: 0,
+          rsvpClosedMessage: '<script>bad()</script>Seating is finalized — text Alex!',
+          timezone: 'America/Chicago',
+        }),
+      };
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        guestName: 'Jane Guest',
+        plusOneAllocations: 0,
+        isSample: false,
+      });
+
+      await expect(
+        service.submitSubEventRsvps('GUEST1', [
+          { subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        message: 'bad()Seating is finalized — text Alex!',
+      });
+      expect(mockPrisma.subEvent.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

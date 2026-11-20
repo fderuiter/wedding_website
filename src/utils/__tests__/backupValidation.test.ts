@@ -246,4 +246,37 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       expect(() => DatabaseBackupSchema.parse(backup)).not.toThrow();
     });
   });
+
+  describe('RSVP Deadline & Lock Backup Compatibility', () => {
+    test('legacy backups without RSVP cutoff fields parse cleanly without locking RSVPs', () => {
+      const legacyBackup = getValidBackup();
+      const parsed = DatabaseBackupSchema.parse(legacyBackup);
+      expect(parsed.appConfig?.[0].rsvpOpen).toBeUndefined();
+      expect(parsed.appConfig?.[0].rsvpDeadlineDate).toBeUndefined();
+    });
+
+    test('modern backups with valid RSVP cutoff, grace window, lock, and sanitized message parse cleanly', () => {
+      const backup: any = getValidBackup();
+      backup.appConfig[0].rsvpOpen = false;
+      backup.appConfig[0].rsvpDeadlineDate = '2026-08-15';
+      backup.appConfig[0].rsvpGracePeriodHours = 48;
+      backup.appConfig[0].rsvpClosedMessage = '<b>RSVPs closed</b> — email us!';
+
+      const parsed = DatabaseBackupSchema.parse(backup);
+      expect(parsed.appConfig?.[0].rsvpOpen).toBe(false);
+      expect(parsed.appConfig?.[0].rsvpDeadlineDate).toBe('2026-08-15');
+      expect(parsed.appConfig?.[0].rsvpGracePeriodHours).toBe(48);
+      expect(parsed.appConfig?.[0].rsvpClosedMessage).toBe('RSVPs closed — email us!');
+    });
+
+    test('rejects invalid grace period hours or invalid cutoff calendar dates in backups', () => {
+      const badGrace: any = getValidBackup();
+      badGrace.appConfig[0].rsvpGracePeriodHours = 15;
+      expect(() => DatabaseBackupSchema.parse(badGrace)).toThrow();
+
+      const badDate: any = getValidBackup();
+      badDate.appConfig[0].rsvpDeadlineDate = '2026-02-30';
+      expect(() => DatabaseBackupSchema.parse(badDate)).toThrow();
+    });
+  });
 });

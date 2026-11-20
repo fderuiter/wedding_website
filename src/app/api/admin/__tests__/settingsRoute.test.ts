@@ -811,4 +811,63 @@ describe('toAppConfigDbPayload mapper', () => {
 
     expect(dbPayload.subdomain).toBe('alexjordan');
   });
+
+  it('persists, clears, and sanitizes RSVP cutoff date, grace window, manual toggle, and closing message', () => {
+    const baseInput = {
+      brideName: 'Alex',
+      groomName: 'Jordan',
+      weddingDate: '2026-09-15T12:00:00.000Z',
+      baseUrl: 'https://wedding.example',
+      venueName: 'Grand Hall',
+      venueAddress: '123 Main St',
+      venueCity: 'Austin',
+      venueState: 'TX',
+      venueZip: '78701',
+      latitude: 0,
+      longitude: 0,
+      storyText: '',
+      venueDescription: '',
+      travelAdvice: '',
+      heroTitle: '',
+      heroSubtitle: '',
+      seoTitle: '',
+      seoDescription: '',
+      faviconUrl: '/favicon.ico',
+      ogImageUrl: '/og.jpg',
+      seoKeywords: '',
+    };
+
+    const parsed = UpdateAppConfigSchema.parse({
+      ...baseInput,
+      rsvpOpen: false,
+      rsvpDeadlineDate: '2026-08-15',
+      rsvpGracePeriodHours: 48,
+      rsvpClosedMessage: '<img src=x onerror=alert(1)>Please email hosts@wedding.example',
+    });
+    const dbPayload = toAppConfigDbPayload(parsed);
+
+    expect(dbPayload.rsvpOpen).toBe(false);
+    expect(dbPayload.rsvpDeadlineDate).toBe('2026-08-15');
+    expect(dbPayload.rsvpGracePeriodHours).toBe(48);
+    expect(dbPayload.rsvpClosedMessage).toBe('Please email hosts@wedding.example');
+
+    // Clearing cutoff date with null or empty string normalizes to ''
+    const cleared = toAppConfigDbPayload(
+      UpdateAppConfigSchema.parse({
+        ...baseInput,
+        rsvpDeadlineDate: null,
+        rsvpGracePeriodHours: '0',
+      })
+    );
+    expect(cleared.rsvpDeadlineDate).toBe('');
+    expect(cleared.rsvpGracePeriodHours).toBe(0);
+
+    // Rejects unsupported grace period hours
+    expect(() =>
+      UpdateAppConfigSchema.parse({
+        ...baseInput,
+        rsvpGracePeriodHours: 10,
+      })
+    ).toThrow(/Grace period must be 0, 12, 24, 48, 72, or 168 hours/i);
+  });
 });

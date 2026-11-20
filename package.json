@@ -146,7 +146,7 @@
     "@storybook/nextjs": {
       "next": "$next"
     },
-    "effect": "^3.22.1",
+    "effect": "^3.22.5",
     "image-size": "^2.1.0",
     "msw-storybook-addon": {
       "msw": "$msw"

@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/prisma';
+import { getAppConfig } from '@/lib/config';
 import { ApiError } from '@/utils/ApiError';
+import {
+  evaluateRsvpCutoff,
+  type RsvpCutoffConfigInput,
+  type RsvpCutoffEvaluation,
+} from '@/utils/rsvpDeadline';
 import { SubEventRsvpSubmissionItem, BatchUpdateSubEventAccessDTO } from './schemas';
 
 export interface ScheduleEventWithRsvp {
@@ -32,6 +38,41 @@ export interface AccessMatrixQueryParams {
 
 export class SubEventService {
   constructor(private client: any = prisma) {}
+
+  /**
+   * Loads RSVP cutoff configuration from AppConfig (using getAppConfig for the primary
+   * Prisma client or querying an injected test client when available).
+   */
+  private async loadRsvpConfig(): Promise<RsvpCutoffConfigInput | null> {
+    if (this.client === prisma) {
+      return getAppConfig();
+    }
+    if (typeof this.client?.appConfig?.findUnique === 'function') {
+      return this.client.appConfig.findUnique({ where: { id: 'global' } });
+    }
+    return null;
+  }
+
+  /**
+   * Evaluates whether online RSVPs are currently open using the server clock and
+   * the venue IANA timezone configured in AppConfig.
+   */
+  async getRsvpStatus(now: Date = new Date()): Promise<RsvpCutoffEvaluation> {
+    const config = await this.loadRsvpConfig();
+    return evaluateRsvpCutoff(config, now);
+  }
+
+  /**
+   * Throws HTTP 403 with the configured closing message when online RSVPs are closed
+   * manually or past the midnight cutoff + silent grace window.
+   */
+  async assertRsvpsOpen(now: Date = new Date()): Promise<RsvpCutoffEvaluation> {
+    const status = await this.getRsvpStatus(now);
+    if (!status.isOpen) {
+      throw new ApiError(403, status.closedMessage);
+    }
+    return status;
+  }
 
   /**
    * Retrieves the plus-one allowance assigned to an invitation code, or null if not found.
@@ -292,7 +333,8 @@ export class SubEventService {
    */
   async submitSubEventRsvps(
     code: string,
-    submissions: SubEventRsvpSubmissionItem[]
+    submissions: SubEventRsvpSubmissionItem[],
+    now: Date = new Date()
   ) {
     if (!code || typeof code !== 'string') {
       throw new ApiError(401, 'Invitation code is required.');
@@ -306,6 +348,8 @@ export class SubEventService {
     if (!invite || invite.isSample) {
       throw new ApiError(401, 'Invalid invitation session.');
     }
+
+    await this.assertRsvpsOpen(now);
 
     if (!submissions || submissions.length === 0) {
       return [];

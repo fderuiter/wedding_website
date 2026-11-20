@@ -401,4 +401,57 @@ describe('useScheduleRsvpManager', () => {
       }),
     });
   });
+
+  it('surfaces HTTP 403 closing message in polite liveMessage and invokes onRsvpClosed when cutoff expires while page stays open', async () => {
+    const onRsvpClosed = jest.fn();
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          success: false,
+          error: 'Online RSVPs closed at midnight. Please email couple@example.com.',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          success: false,
+          error: 'Online RSVPs closed at midnight. Please email couple@example.com.',
+        }),
+      });
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({ initialEvents: sampleEvents, onRsvpClosed })
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-1', { status: 'attending' });
+    });
+
+    let singleOk = true;
+    await act(async () => {
+      singleOk = await result.current.submitSingle('event-1');
+    });
+
+    expect(singleOk).toBe(false);
+    expect(result.current.liveMessage).toBe(
+      'Online RSVPs closed at midnight. Please email couple@example.com.'
+    );
+    expect(onRsvpClosed).toHaveBeenCalledWith(
+      'Online RSVPs closed at midnight. Please email couple@example.com.'
+    );
+
+    let batchOk = true;
+    await act(async () => {
+      batchOk = await result.current.submitBatch();
+    });
+
+    expect(batchOk).toBe(false);
+    expect(result.current.liveMessage).toBe(
+      'Online RSVPs closed at midnight. Please email couple@example.com.'
+    );
+    expect(onRsvpClosed).toHaveBeenCalledTimes(2);
+  });
 });

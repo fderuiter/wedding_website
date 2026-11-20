@@ -223,4 +223,82 @@ describe('GuestHelpModal component & WAI-ARIA compliance', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Registry & Gifts/i }));
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('displays the formatted active RSVP deadline while open and shows closed guidance linking to host contacts once RSVPs close', async () => {
+    const { container, rerender } = render(
+      <GuestHelpModal
+        isOpen={true}
+        onClose={jest.fn()}
+        initialCategory="dietary"
+        config={{
+          ...sampleConfig,
+          rsvpOpen: true,
+          isRsvpOpen: true,
+          rsvpDeadlineDate: '2026-08-15',
+          timezone: 'America/Chicago',
+        }}
+      />
+    );
+
+    expect(screen.getByText(/RSVP deadline & updating responses/i)).toBeInTheDocument();
+    expect(screen.getByText(/August 15, 2026 \(midnight in America\/Chicago\)/i)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    rerender(
+      <GuestHelpModal
+        isOpen={true}
+        onClose={jest.fn()}
+        initialCategory="dietary"
+        config={{
+          ...sampleConfig,
+          rsvpOpen: false,
+          isRsvpOpen: false,
+          rsvpClosedMessage: '<script>xss()</script>RSVPs are now closed — reach out to us directly!',
+          timezone: 'America/Chicago',
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText(/Online RSVPs Are Closed — Host Contact Guidance/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/xss\(\)RSVPs are now closed — reach out to us directly!/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Need to update a closed RSVP\? Contact the hosts/i)
+    ).toBeInTheDocument();
+
+    const jumpLink = screen.getByRole('link', { name: /Contact the hosts below/i });
+    expect(jumpLink.getAttribute('href')).toMatch(/^#help-contacts-/);
+    expect(screen.getByRole('link', { name: /couple@example\.com/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /\+1 \(555\) 867-5309/i })).toBeInTheDocument();
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('propagates live RSVP closed config overrides from GuestHelpTrigger to GuestHelpProvider', () => {
+    render(
+      <GuestHelpProvider
+        pathname="/guest"
+        config={{ ...sampleConfig, rsvpOpen: true, isRsvpOpen: true }}
+      >
+        <GuestHelpTrigger
+          defaultCategory="dietary"
+          label="Host Contact Details & Help"
+          config={{
+            rsvpOpen: false,
+            isRsvpOpen: false,
+            rsvpClosedMessage: 'Online RSVPs closed at midnight.',
+            timezone: 'America/Chicago',
+          }}
+        />
+      </GuestHelpProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Host Contact Details & Help/i }));
+
+    expect(screen.getByTestId('help-modal-rsvp-closed')).toBeInTheDocument();
+    expect(screen.getByText('Online RSVPs closed at midnight.')).toBeInTheDocument();
+  });
 });

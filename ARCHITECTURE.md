@@ -766,6 +766,11 @@ Import and export formats include versioning metadata (`schemaVersion: "1.0"`) t
 | `timezone` | `string` | `Prisma` | `Public` | IANA timezone identifier used to format event schedules and countdown timers. |
 | `showCountdown` | `boolean` | `Prisma` | `Public` | Toggle controlling whether the live wedding countdown widget renders on public pages. |
 | `showAddToCalendar` | `boolean` | `Prisma` | `Public` | Toggle controlling whether Add-to-Calendar links and ICS downloads are shown. |
+| `rsvpOpen` | `boolean` | `Prisma` | `Public` | Manual toggle controlling whether online guest RSVP submissions and edits are enabled. |
+| `isRsvpOpen` | `boolean` | `Virtual DTO` | `Public` | Virtual server-evaluated flag indicating whether online RSVPs are currently open after evaluating manual lock, cutoff date, and grace period. |
+| `rsvpDeadlineDate` | `string` | `Prisma` | `Public` | Optional global RSVP cutoff calendar date (YYYY-MM-DD) enforced at midnight in the venue timezone. |
+| `rsvpGracePeriodHours` | `number` | `Prisma` | `Admin-only` | Admin-only silent grace window in hours (0, 12, 24, 48, 72, or 168) after the midnight RSVP cutoff; omitted from public DTOs. |
+| `rsvpClosedMessage` | `string` | `Prisma` | `Public` | Sanitized custom message displayed to guests and returned by RSVP APIs once online RSVPs close. |
 | `emailProvider` | `string` | `Prisma` | `Admin-only` | Active outbound email transport provider identifier (smtp, resend, or sendgrid). |
 | `smtpHost` | `string` | `Prisma` | `Admin-only` | Hostname of the outbound SMTP relay server for guest broadcasts. |
 | `smtpPort` | `number` | `Prisma` | `Admin-only` | TCP port number used when connecting to the outbound SMTP server. |

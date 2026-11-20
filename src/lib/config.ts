@@ -4,6 +4,7 @@ import { AppConfigSchema, PublicAppConfigSchema, PublicAppConfigDTO, TypographyS
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
+import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDeadline';
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG } from './modules';
@@ -82,6 +83,10 @@ export const APP_DEFAULTS: LocalAppConfig = {
   // Toggles to conditionally render the countdown and add-to-calendar widgets on the layout
   showCountdown: true,
   showAddToCalendar: true,
+  rsvpOpen: true,
+  rsvpDeadlineDate: '',
+  rsvpGracePeriodHours: 0,
+  rsvpClosedMessage: '',
   emailProvider: 'smtp',
   smtpHost: '',
   smtpPort: 587,
@@ -139,6 +144,10 @@ export const STATIC_MOCK_CONFIG: LocalAppConfig = {
   timezone: 'America/Chicago',
   showCountdown: true,
   showAddToCalendar: true,
+  rsvpOpen: true,
+  rsvpDeadlineDate: '',
+  rsvpGracePeriodHours: 0,
+  rsvpClosedMessage: '',
   features: [
     { id: 'story', type: 'story', title: 'Our Story', visible: true },
     { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
@@ -242,6 +251,7 @@ function hasConfiguredSecret(value: unknown): boolean {
 }
 
 export interface AdminAppConfig extends PublicAppConfig {
+  rsvpGracePeriodHours: number;
   emailProvider: string;
   smtpHost: string;
   smtpPort: number;
@@ -275,11 +285,16 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
 
   const picked: Record<string, unknown> = {};
   for (const key of PUBLIC_APP_CONFIG_KEYS) {
-    if (key in config && key !== 'multisiteEnabled') {
+    if (key in config && key !== 'multisiteEnabled' && key !== 'isRsvpOpen') {
       picked[key] = (config as Record<string, unknown>)[key];
     }
   }
+  const rsvpEvaluation = evaluateRsvpCutoff(config as Record<string, any>);
   picked.multisiteEnabled = isMultisiteEnabled();
+  picked.isRsvpOpen = rsvpEvaluation.isOpen;
+  if (typeof picked.rsvpClosedMessage === 'string') {
+    picked.rsvpClosedMessage = sanitizeRsvpClosedMessage(picked.rsvpClosedMessage);
+  }
 
   const parsed = PublicAppConfigSchema.safeParse(picked);
   if (parsed.success) {
@@ -288,9 +303,10 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
 
   const partialSanitized: Record<string, unknown> = {
     multisiteEnabled: isMultisiteEnabled(),
+    isRsvpOpen: rsvpEvaluation.isOpen,
   };
   for (const key of PUBLIC_APP_CONFIG_KEYS) {
-    if (key === 'multisiteEnabled' || !(key in picked)) continue;
+    if (key === 'multisiteEnabled' || key === 'isRsvpOpen' || !(key in picked)) continue;
     const fieldSchema = PublicAppConfigSchema.shape[key];
     const fieldResult = fieldSchema.safeParse(picked[key]);
     if (fieldResult.success) {
@@ -361,6 +377,10 @@ const APP_CONFIG_BACKUP_KEYS = [
   'timezone',
   'showCountdown',
   'showAddToCalendar',
+  'rsvpOpen',
+  'rsvpDeadlineDate',
+  'rsvpGracePeriodHours',
+  'rsvpClosedMessage',
   'emailProvider',
   'smtpHost',
   'smtpPort',
@@ -414,6 +434,8 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(c
 
   return {
     ...publicConfig,
+    rsvpOpen: typeof raw.rsvpOpen === 'boolean' ? raw.rsvpOpen : true,
+    rsvpGracePeriodHours: typeof raw.rsvpGracePeriodHours === 'number' ? raw.rsvpGracePeriodHours : 0,
     emailProvider: typeof raw.emailProvider === 'string' && raw.emailProvider ? raw.emailProvider : 'smtp',
     smtpHost: raw.smtpHost ?? '',
     smtpPort: typeof raw.smtpPort === 'number' ? raw.smtpPort : 587,
@@ -547,6 +569,10 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
             timezone: 'UTC',
             showCountdown: true,
             showAddToCalendar: true,
+            rsvpOpen: true,
+            rsvpDeadlineDate: '',
+            rsvpGracePeriodHours: 0,
+            rsvpClosedMessage: '',
           },
         }));
       } else {
