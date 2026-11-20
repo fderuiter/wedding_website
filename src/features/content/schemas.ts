@@ -165,16 +165,6 @@ const rawUpdateAppConfigBaseSchema = z.object({
   colorSecondary: z.string().regex(hexColorRegex).optional(),
   themePreset: z.enum(['classic', 'modern', 'romantic', 'minimal', 'editorial']).default('classic'),
   themeTokens: ThemeTokensSchema.optional().default({}),
-  typographyScale: TypographyScaleSchema.optional().default(() => TypographyScaleSchema.parse({})),
-  spacingScale: SpacingScaleSchema.optional().default(() => SpacingScaleSchema.parse({})),
-  borderTreatment: BorderTreatmentSchema.optional().default(() => BorderTreatmentSchema.parse({})),
-  brandDimensions: BrandDimensionsSchema.optional().default(() => BrandDimensionsSchema.parse({})),
-  brandLogoWidth: layoutTokenSchema.optional(),
-  brandLogoHeight: layoutTokenSchema.optional(),
-  brandHeroHeight: layoutTokenSchema.optional(),
-  brandWatermarkWidth: layoutTokenSchema.optional(),
-  brandWatermarkOpacity: z.string().optional(),
-  brandBadgeSize: layoutTokenSchema.optional(),
   layoutContainerMaxWidth: layoutTokenSchema.optional(),
   layoutGridGap: layoutTokenSchema.optional(),
   layoutCardPadding: layoutTokenSchema.optional(),
@@ -287,17 +277,18 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
       colorSecondary: data.colorSecondary ?? '#B45309',
       themePreset: data.themePreset ?? 'classic',
       themeTokens: data.themeTokens ?? {},
-      typographyScale: data.typographyScale ?? TypographyScaleSchema.parse({}),
-      spacingScale: data.spacingScale ?? SpacingScaleSchema.parse({}),
-      borderTreatment: data.borderTreatment ?? BorderTreatmentSchema.parse({}),
-      brandDimensions: data.brandDimensions ?? BrandDimensionsSchema.parse({}),
       layoutContainerMaxWidth: !data.layoutContainerMaxWidth || data.layoutContainerMaxWidth === '' ? '64rem' : data.layoutContainerMaxWidth,
       layoutGridGap: !data.layoutGridGap || data.layoutGridGap === '' ? '1.5rem' : data.layoutGridGap,
       layoutCardPadding: !data.layoutCardPadding || data.layoutCardPadding === '' ? '2rem' : data.layoutCardPadding,
       layoutBorderRadius: !data.layoutBorderRadius || data.layoutBorderRadius === '' ? '1rem' : data.layoutBorderRadius,
       timezone: data.timezone ?? 'UTC',
-      showCountdown: data.showCountdown ?? true,
-      showAddToCalendar: data.showAddToCalendar ?? true,
+      showCountdown: typeof data.modules?.countdown === 'boolean' ? data.modules.countdown : (data.showCountdown ?? true),
+      showAddToCalendar: typeof data.modules?.addToCalendar === 'boolean' ? data.modules.addToCalendar : (data.showAddToCalendar ?? true),
+      modules: resolveModuleConfig({
+        ...(data.showCountdown !== undefined ? { countdown: data.showCountdown } : {}),
+        ...(data.showAddToCalendar !== undefined ? { addToCalendar: data.showAddToCalendar } : {}),
+        ...(data.modules ?? {}),
+      }),
       emailProvider: data.emailProvider ?? 'smtp',
       smtpHost: data.smtpHost ?? '',
       smtpPort: data.smtpPort ?? 587,
@@ -322,12 +313,18 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
 export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) => {
   const partner1Name = data.partner1Name || data.brideName || '';
   const partner2Name = data.partner2Name || data.groomName || '';
+  const hasCountdownModule = typeof data.modules?.countdown === 'boolean';
+  const hasAddToCalendarModule = typeof data.modules?.addToCalendar === 'boolean';
+  const syncedShowCountdown = hasCountdownModule ? data.modules!.countdown : data.showCountdown;
+  const syncedShowAddToCalendar = hasAddToCalendarModule ? data.modules!.addToCalendar : data.showAddToCalendar;
   return {
     ...data,
     partner1Name,
     partner2Name,
     brideName: partner1Name,
     groomName: partner2Name,
+    showCountdown: syncedShowCountdown,
+    showAddToCalendar: syncedShowAddToCalendar,
     layoutContainerMaxWidth: !data.layoutContainerMaxWidth || data.layoutContainerMaxWidth === '' ? '64rem' : data.layoutContainerMaxWidth,
     layoutGridGap: !data.layoutGridGap || data.layoutGridGap === '' ? '1.5rem' : data.layoutGridGap,
     layoutCardPadding: !data.layoutCardPadding || data.layoutCardPadding === '' ? '2rem' : data.layoutCardPadding,
@@ -342,6 +339,16 @@ export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) =
  * @returns Object formatted for Prisma appConfig create, update, and upsert operations.
  */
 export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>) {
+  const hasCountdownModule = typeof data.modules?.countdown === 'boolean';
+  const hasAddToCalendarModule = typeof data.modules?.addToCalendar === 'boolean';
+  const resolvedModules = resolveModuleConfig({
+    ...(data.showCountdown !== undefined ? { countdown: data.showCountdown } : {}),
+    ...(data.showAddToCalendar !== undefined ? { addToCalendar: data.showAddToCalendar } : {}),
+    ...(data.modules ?? {}),
+  });
+  const resolvedShowCountdown = hasCountdownModule ? resolvedModules.countdown : data.showCountdown;
+  const resolvedShowAddToCalendar = hasAddToCalendarModule ? resolvedModules.addToCalendar : data.showAddToCalendar;
+
   return {
     partner1Name: data.partner1Name,
     partner2Name: data.partner2Name,
@@ -386,9 +393,10 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     layoutGridGap: data.layoutGridGap,
     layoutCardPadding: data.layoutCardPadding,
     layoutBorderRadius: data.layoutBorderRadius,
+    modules: resolvedModules,
     timezone: data.timezone,
-    showCountdown: data.showCountdown,
-    showAddToCalendar: data.showAddToCalendar,
+    showCountdown: resolvedShowCountdown,
+    showAddToCalendar: resolvedShowAddToCalendar,
     rsvpOpen: data.rsvpOpen,
     rsvpDeadlineDate: data.rsvpDeadlineDate,
     rsvpGracePeriodHours: data.rsvpGracePeriodHours,
@@ -755,7 +763,7 @@ export const AppConfigSchema = z.object({
   twilioFromNumber: z.string().nullable().optional().default('').describe('Twilio E.164 sender phone number or messaging source for SMS broadcasts.'),
   broadcastBatchSize: z.number().default(50).describe('Maximum number of broadcast recipients processed per delivery batch.'),
   broadcastBatchDelayMs: z.number().default(500).describe('Delay in milliseconds between consecutive outbound broadcast batches.'),
-  modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Virtual DTO feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
+  modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
   features: z.union([
     z.string().transform((str) => {
       try {

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Icon } from '@/components/ui/Icon';
+import type { AttractionDTO } from '@/features/attractions';
 import type { ContentNodeDTO } from '@/features/content';
 import type { PublicAppConfig } from '@/lib/config';
 import Link from 'next/link';
@@ -14,6 +15,7 @@ import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
 import FaqAccordion from '@/components/faq/FaqAccordion';
+import ThingsToDoCard from '@/app/things-to-do/components/ThingsToDoCard';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
@@ -32,19 +34,56 @@ function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   return safe ? `url("${safe}")` : undefined;
 }
 
+function splitParagraphs(text?: string | null): string[] {
+  if (!text || typeof text !== 'string') return [];
+  return text
+    .split(/\r?\n\s*\r?\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
+function isHotelRecommendation(attraction: AttractionDTO): boolean {
+  if (attraction.isVisible === false) return false;
+  const normalizedCategory = attraction.category?.trim().toLowerCase() || '';
+  const isHotelCategory =
+    normalizedCategory === 'hotel' ||
+    normalizedCategory === 'hotels' ||
+    normalizedCategory === 'stay' ||
+    normalizedCategory === 'lodging' ||
+    normalizedCategory === 'accommodation' ||
+    normalizedCategory === 'accommodations';
+  const hasRoomBlockDetails = Boolean(
+    attraction.promoCode?.trim() ||
+    attraction.roomRate?.trim() ||
+    attraction.cutoffDate?.trim() ||
+    sanitizeUrl(attraction.bookingUrl) ||
+    attraction.shuttleInfo?.trim()
+  );
+  return isHotelCategory || hasRoomBlockDetails;
+}
+
 /**
  * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.
  *
- * Renders sections (story, details, accommodations, venue, travel, faq, and custom) driven by `config` and `contentNodes`, formats the wedding date for display, and animates sections with Framer Motion. While mounted inside an iframe, listens for postMessage events of type `DRAFT_UPDATE` and merges incoming `config` updates or replaces `contentNodes` when draft data arrives.
+ * Renders sections (story, details, accommodations, venue, travel, faq, and custom) driven by `config`, `contentNodes`, and `attractions`, formats the wedding date for display, and animates sections with Framer Motion. While mounted inside an iframe, listens for postMessage events of type `DRAFT_UPDATE` and merges incoming `config` updates or replaces `contentNodes` / `attractions` when draft data arrives.
  *
- * @param calendarEvent - Calendar event data used for calendar-related features (provided to optional calendar components).
  * @param config - Initial public application configuration used to populate page content and settings.
  * @param contentNodes - Optional initial array of CMS content nodes that drive FAQs, logistics, and custom sections.
+ * @param attractions - Optional initial array of visible attractions used to render hotel room block cards.
  * @returns The rendered homepage JSX element.
  */
-export default function HomePageClient({ config: initialConfig, contentNodes: initialContentNodes = [] }: { config: PublicAppConfig, contentNodes?: ContentNodeDTO[] }) {
+export default function HomePageClient({
+  config: initialConfig,
+  contentNodes: initialContentNodes = [],
+  attractions: initialAttractions = [],
+}: {
+  config: PublicAppConfig;
+  contentNodes?: ContentNodeDTO[];
+  attractions?: AttractionDTO[];
+}) {
   const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
+  const [attractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
   const { themePreset } = useTheme();
   const presetTokens = getPresetTokens(themePreset);
 
@@ -69,17 +108,19 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
     if (typeof window !== 'undefined' && window !== window.parent) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE') {
-          if (event.data.draftType === 'config') {
-            setConfig({ ...config, ...event.data.draftData });
-          } else if (event.data.draftType === 'content') {
+          if (event.data.draftType === 'config' && event.data.draftData) {
+            setConfig((prev) => ({ ...prev, ...event.data.draftData }));
+          } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
             setContentNodes(event.data.draftData);
+          } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
+            setAttractions(event.data.draftData);
           }
         }
       };
       window.addEventListener('message', handleMessage);
       return () => window.removeEventListener('message', handleMessage);
     }
-  }, [config]);
+  }, []);
 
   let formattedDate: string;
   try {
@@ -176,14 +217,31 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
       }
       case 'accommodations': {
         const accNode = logisticsNodes.find(n => n.title?.includes('Accommodations') || n.description?.includes('hotel'));
+        const isAttractionsEnabled = isFeatureEnabled('attractions', config.modules);
+        const hotelAttractions = isAttractionsEnabled
+          ? attractions.filter(isHotelRecommendation)
+          : [];
         return (
-          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+          <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-5xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="type-h2 text-primary">{accNode?.title || feature.title || 'Accommodations'}</h2>
-            {accNode?.description ? (
+            {accNode?.description && (
               <p className="mx-auto max-w-xl type-body">{accNode.description}</p>
-            ) : (
-              <div className="text-center text-gray-500 dark:text-gray-400">Accommodation details coming soon...</div>
             )}
+            {hotelAttractions.length > 0 ? (
+              <div
+                className={
+                  hotelAttractions.length === 1
+                    ? 'mx-auto max-w-md text-left'
+                    : 'mx-auto grid max-w-5xl gap-8 text-left md:grid-cols-2'
+                }
+              >
+                {hotelAttractions.map((hotel) => (
+                  <ThingsToDoCard key={hotel.id || hotel.name} attraction={hotel} />
+                ))}
+              </div>
+            ) : !accNode?.description ? (
+              <div className="text-center text-gray-500 dark:text-gray-400">Accommodation details coming soon...</div>
+            ) : null}
           </motion.section>
         );
       }
@@ -197,21 +255,45 @@ export default function HomePageClient({ config: initialConfig, contentNodes: in
           </motion.section>
         );
       case 'travel': {
+        const travelParagraphs = splitParagraphs(config.travelAdvice);
         const travelNodes = logisticsNodes.filter(n => !n.ceremonyTitle && !n.title?.includes('Accommodations'));
+        const hasTravelContent = travelParagraphs.length > 0 || travelNodes.length > 0;
+        const isAttractionsEnabled = isFeatureEnabled('attractions', config.modules);
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="type-h2 text-primary">{feature.title || 'Travel & Things to Do'}</h2>
-            {travelNodes.length > 0 ? (
-              travelNodes.map((node: any, i: number) => (
-                <Interactive3DCard as="article" key={i} className="mt-4">
-                  <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-[var(--shadow-lg)] border border-primary dark:border-primary h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                    {node.title && <h3 className="type-h3 mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
-                    {node.description && <p className="type-body [transform:translateZ(10px)]">{node.description}</p>}
-                  </div>
-                </Interactive3DCard>
-              ))
-            ) : (
+            {travelParagraphs.length > 0 && (
+              <div className="space-y-4">
+                {travelParagraphs.map((paragraph, i) => (
+                  <p key={i} className="mx-auto max-w-2xl type-body whitespace-pre-line">{paragraph}</p>
+                ))}
+              </div>
+            )}
+            {travelNodes.length > 0 && (
+              <div className="space-y-4">
+                {travelNodes.map((node: any, i: number) => (
+                  <Interactive3DCard as="article" key={i} className="mt-4">
+                    <div className="text-left bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-[var(--shadow-lg)] border border-primary dark:border-primary h-full" style={{ boxShadow: 'var(--shadow-lg)' }}>
+                      {node.title && <h3 className="type-h3 mb-2 text-primary [transform:translateZ(10px)]">{node.title}</h3>}
+                      {node.description && <p className="type-body [transform:translateZ(10px)]">{node.description}</p>}
+                    </div>
+                  </Interactive3DCard>
+                ))}
+              </div>
+            )}
+            {!hasTravelContent && (
               <div className="text-center text-gray-500 dark:text-gray-400">Travel details coming soon...</div>
+            )}
+            {isAttractionsEnabled && (
+              <div className="pt-2">
+                <Link
+                  href="/things-to-do"
+                  className="btn-secondary inline-flex items-center gap-2 rounded-full px-6 py-3"
+                >
+                  <Icon name="MapPin" className="h-5 w-5" />
+                  Explore Local Guide &amp; Things to Do
+                </Link>
+              </div>
             )}
           </motion.section>
         );

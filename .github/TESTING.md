@@ -35,7 +35,7 @@ npm run test:cov
 
 ### Pretest Lifecycle & Database Automation
 
-Before Jest executes, npm automatically triggers the `pretest` hook defined in [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
+Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
 
 1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci --legacy-peer-deps`).
 2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
@@ -88,7 +88,9 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npx playwright test
   ```
-  Executes browser-based end-to-end tests against a running Next.js application instance backed by an isolated test database.
+  Executes browser-based end-to-end tests against a Next.js application instance backed by the isolated `wedding_test` database.
+  - **Automated `wedding_test` Bootstrap:** When `CI` and `TEST_CONTAINER` are unset, [playwright.config.ts](../playwright.config.ts) automatically starts the Docker Compose PostgreSQL `db` container (if Docker is running), synchronizes the schema (`npx prisma db push --accept-data-loss`), and seeds `AppConfig` (`npx tsx scripts/seed.ts`) in `wedding_test` before launching `npm run dev` and probing `/api/ready`.
+  - **Isolated Server Lifecycle & Explicit Reuse Opt-In:** [playwright.config.ts](../playwright.config.ts) disables `reuseExistingServer` by default so Playwright never silently reuses a running `npm run dev` process bound to `.env` (which targets the `wedding` development database and uses local `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values that cause `src/core/auth/guest.server.ts` to reject E2E cookies). Stop any running `npm run dev` on port `3000` before running `npx playwright test`, or set `PLAYWRIGHT_REUSE_SERVER=true` (when `CI` is unset) only when the existing server explicitly targets `wedding_test` and shares aligned E2E session secrets.
   - **E2E Cookie Signing & Secret Alignment:** Playwright specs authenticate using shared helpers in [e2e/helpers/auth.ts](../e2e/helpers/auth.ts), which sign `guest_auth` cookies with `GUEST_SESSION_SECRET` and `admin_auth` cookies with `ADMIN_PASSWORD` across both `http://127.0.0.1:3000` and `http://localhost:3000`.
   - **Default Local & Container Secrets:** [playwright.config.ts](../playwright.config.ts), [docker-compose.yml](../docker-compose.yml), [.env.test](../.env.test), and [e2e/helpers/auth.ts](../e2e/helpers/auth.ts) all align on the default 32+-character `GUEST_SESSION_SECRET` (`playwright-e2e-session-secret-32-chars-min`). For `GUEST_PASSCODE`, `playwright.config.ts`, `docker-compose.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` work without manual secret configuration), whereas `.env.test` (loaded by `scripts/pretest.mjs` for Jest runs) sets `GUEST_PASSCODE` to `build-fallback-guest-passcode`.
   - **Custom Secret Overrides:** When overriding `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD` locally or in CI, provide identical values to both the application server (or container) and the Playwright runner, ensuring `GUEST_SESSION_SECRET` is at least 32 characters long and never matches `GUEST_PASSCODE`.
@@ -97,7 +99,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run test:a11y
   ```
-  Runs unit tests, Playwright audits, and `node scripts/a11y-report.mjs` to evaluate WCAG compliance and generate accessibility report summaries.
+  Runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--run`), which executes `npm test`, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test`, and writes `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`).
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -126,7 +128,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   - `npm run check:links`: Verifies that internal Markdown document links resolve cleanly without broken references.
   - `npm run check:prisma`: Validates Prisma schema formatting and relations.
   - `npm run lint:migrations`: Verifies database migration compatibility.
-  - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`) and architecture (`ARCHITECTURE.md`) documentation match current schemas.
+  - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
   - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `scripts/check-quality.ts`, and `tsconfig.json`.
 
 - **Storybook Static Showcase Build:**

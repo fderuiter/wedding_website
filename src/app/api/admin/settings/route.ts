@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { AppConfigSchema, CreateAppConfigProfileSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
+import { resolveModuleConfig } from '@/lib/modules';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { formatZodError } from '@/utils/validation';
 
@@ -86,6 +87,25 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
+  const incomingModules =
+    data && typeof data.modules === 'object' && data.modules !== null && !Array.isArray(data.modules)
+      ? (data.modules as Record<string, unknown>)
+      : {};
+  const existingRawModules =
+    typeof (existing as Record<string, unknown>).modules === 'object' &&
+    (existing as Record<string, unknown>).modules !== null &&
+    !Array.isArray((existing as Record<string, unknown>).modules)
+      ? ((existing as Record<string, unknown>).modules as Record<string, unknown>)
+      : {};
+  const mergedModules = resolveModuleConfig({
+    countdown: existing.showCountdown,
+    addToCalendar: existing.showAddToCalendar,
+    ...existingRawModules,
+    ...(data && typeof data.showCountdown === 'boolean' ? { countdown: data.showCountdown } : {}),
+    ...(data && typeof data.showAddToCalendar === 'boolean' ? { addToCalendar: data.showAddToCalendar } : {}),
+    ...incomingModules,
+  });
+
   const cleanedThemeTokens = stripPresetDefaultTokens(
     validData.themeTokens,
     validData.themePreset,
@@ -97,6 +117,9 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       ...validData,
       themeTokens: cleanedThemeTokens,
     }),
+    modules: mergedModules,
+    showCountdown: mergedModules.countdown,
+    showAddToCalendar: mergedModules.addToCalendar,
     smtpPass: resolveSecretField(validData.smtpPass, existing.smtpPass),
     resendApiKey: resolveSecretField(validData.resendApiKey, existing.resendApiKey),
     sendgridApiKey: resolveSecretField(validData.sendgridApiKey, existing.sendgridApiKey),

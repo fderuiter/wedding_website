@@ -80,7 +80,7 @@ type ThemeContextType = {
   lighting: ThemeLighting;
   glowFilter: string;
   hasThemeProvider?: boolean;
-  setPreviewConfig?: (preview: Partial<NonNullable<ThemeProviderProps['config']>> | null) => void;
+  setPreviewConfig?: (_preview: Partial<NonNullable<ThemeProviderProps['config']>> | null) => void;
 };
 
 const ThemeContext = createContext<ThemeContextType>({

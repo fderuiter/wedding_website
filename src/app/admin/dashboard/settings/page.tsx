@@ -934,23 +934,6 @@ export default function AdminSettingsPage() {
                     printBorder: localConfig.printBorder || localConfig.themeTokens?.['--print-border'],
                     printHeaderBorder: localConfig.printHeaderBorder || localConfig.themeTokens?.['--print-header-border'],
                     printBadgeBg: localConfig.printBadgeBg || localConfig.themeTokens?.['--print-badge-bg'],
-                    fontSizeBase: localConfig.fontSizeBase,
-                    fontSizeLg: localConfig.fontSizeLg,
-                    fontWeightNormal: localConfig.fontWeightNormal,
-                    spacingMd: localConfig.spacingMd,
-                    borderRadiusSm: localConfig.borderRadiusSm,
-                    borderWidthThin: localConfig.borderWidthThin,
-                    borderStyleDefault: localConfig.borderStyleDefault,
-                    brandLogoWidth: localConfig.brandLogoWidth,
-                    brandLogoHeight: localConfig.brandLogoHeight,
-                    brandHeroHeight: localConfig.brandHeroHeight,
-                    brandWatermarkWidth: localConfig.brandWatermarkWidth,
-                    brandWatermarkOpacity: localConfig.brandWatermarkOpacity,
-                    brandBadgeSize: localConfig.brandBadgeSize,
-                    typographyScale: localConfig.typographyScale,
-                    spacingScale: localConfig.spacingScale,
-                    borderTreatment: localConfig.borderTreatment,
-                    brandDimensions: localConfig.brandDimensions,
                   }}
                   onChange={(updated) => {
                     const prevPreset = localConfig?.themePreset || 'classic';
@@ -1095,6 +1078,17 @@ export default function AdminSettingsPage() {
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                   Enable or disable optional site capabilities. Disabling a feature removes its navigation links, protects page routes, disables backend API endpoints, and handles dependencies automatically.
                 </p>
+
+                <div
+                  role="note"
+                  aria-label="Guest login passcode configuration"
+                  className="p-4 rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30 text-sm text-blue-900 dark:text-blue-200"
+                >
+                  <p className="font-semibold">Guest Login Passcode</p>
+                  <p className="text-xs text-blue-800 dark:text-blue-300 mt-1">
+                    Site-wide guest login gatekeeping is controlled via environment configuration (<code className="font-mono">GUEST_PASSCODE</code> and <code className="font-mono">GUEST_SESSION_SECRET</code>) enforced in Edge middleware rather than a database toggle. Update your deployment environment variables to enable, rotate, or disable the guest passcode gate.
+                  </p>
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {Object.entries(FEATURE_METADATA).map(([id, meta]) => {

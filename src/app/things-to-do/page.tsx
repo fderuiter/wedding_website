@@ -42,11 +42,32 @@ export default async function ThingsToDoPage() {
     ? `Things to Do in ${config.venueCity.trim()}`
     : 'Things to Do';
 
+  const travelParagraphs = (config.travelAdvice || '')
+    .split(/\r?\n\s*\r?\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         {heading}
       </h1>
+      {travelParagraphs.length > 0 && (
+        <section
+          aria-label="Getting Here & Travel Advice"
+          className="mx-auto mb-10 max-w-3xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 sm:p-8 shadow-[var(--shadow-lg)] space-y-4"
+          style={{ boxShadow: 'var(--shadow-lg)' }}
+        >
+          <h2 className="text-2xl font-bold text-primary dark:text-primary">
+            Getting Here &amp; Travel Advice
+          </h2>
+          {travelParagraphs.map((paragraph, index) => (
+            <p key={index} className="type-body text-gray-700 dark:text-gray-300 whitespace-pre-line">
+              {paragraph}
+            </p>
+          ))}
+        </section>
+      )}
       <ThingsToDoList attractions={attractions} defaultCenter={[config.latitude, config.longitude]} />
     </div>
   );

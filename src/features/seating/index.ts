@@ -26,6 +26,17 @@ export {
 export type {
   SeatingState,
   SeatingAction,
+  SeatingUndoSnapshot,
+  GuestSeatSnapshot,
   UseSeatingStateOptions,
 } from './hooks/useSeatingState';
 export { generateSeatingChartPdf } from './pdf.service';
+export {
+  ADDRESS_COLLECTION_TAG,
+  isGuestEligibleForSeating,
+  getDietaryBadges,
+  getGuestAttendanceStatus,
+  hasAddressCollectionTag,
+  isOneSidedTableShape,
+} from './utils/seatingHelpers';
+export type { DietaryBadgeInfo } from './utils/seatingHelpers';

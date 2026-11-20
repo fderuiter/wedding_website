@@ -788,6 +788,7 @@ describe('toAppConfigDbPayload mapper', () => {
       layoutGridGap: '1.5rem',
       layoutCardPadding: '2rem',
       layoutBorderRadius: '1rem',
+      modules: DEFAULT_MODULE_CONFIG,
       timezone: 'America/Chicago',
       showCountdown: true,
       showAddToCalendar: true,
@@ -942,5 +943,67 @@ describe('toAppConfigDbPayload mapper', () => {
     } finally {
       process.env.MULTISITE_ENABLED = prevMultisite;
     }
+  });
+
+  it('saves all 9 module flags via PUT /api/admin/settings, returns matching values, auto-disables groupGifting when registry is false, and syncs countdown/addToCalendar', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    const customModulesInput = {
+      registry: false,
+      groupGifting: true,
+      weather: false,
+      weddingParty: false,
+      attractions: true,
+      gallery: false,
+      countdown: false,
+      addToCalendar: false,
+      interactive3D: false,
+    };
+
+    const expectedResolvedModules = {
+      registry: false,
+      groupGifting: false,
+      weather: false,
+      weddingParty: false,
+      attractions: true,
+      gallery: false,
+      countdown: false,
+      addToCalendar: false,
+      interactive3D: false,
+    };
+
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...updatedConfig,
+      id: 'global',
+    });
+    (mockPrisma.appConfig.update as jest.Mock).mockImplementationOnce(async ({ data }) => ({
+      ...updatedConfig,
+      ...data,
+    }));
+
+    const req = makeAuthReq({
+      ...validConfigData,
+      showCountdown: true,
+      showAddToCalendar: true,
+      modules: customModulesInput,
+    });
+    const res = await PUT(req);
+    expect(res.status).toBe(200);
+
+    expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'global' },
+        data: expect.objectContaining({
+          modules: expectedResolvedModules,
+          showCountdown: false,
+          showAddToCalendar: false,
+        }),
+      })
+    );
+
+    const json = await res.json();
+    expect(json.data.modules).toEqual(expectedResolvedModules);
+    expect(json.data.showCountdown).toBe(false);
+    expect(json.data.showAddToCalendar).toBe(false);
   });
 });

@@ -169,8 +169,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     layoutCardPadding: body.layoutCardPadding,
     layoutBorderRadius: body.layoutBorderRadius,
     timezone: body.timezone ?? 'America/Chicago',
-    showCountdown: body.showCountdown ?? true,
-    showAddToCalendar: body.showAddToCalendar ?? true,
+    showCountdown: body.showCountdown ?? config.showCountdown ?? true,
+    showAddToCalendar: body.showAddToCalendar ?? config.showAddToCalendar ?? true,
+    modules: body.modules ?? config.modules,
     subdomain: body.subdomain || null,
   };
   const parseResult = UpdateAppConfigSchema.safeParse(normalizedSetupConfig);

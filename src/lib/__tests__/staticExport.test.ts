@@ -1,4 +1,5 @@
 import { getAppConfig, STATIC_MOCK_CONFIG, isSiteInitialized } from '../config';
+import { attractionsRepository } from '@/features/attractions';
 import { logisticsRepository } from '@/features/logistics';
 import { prisma } from '../prisma';
 
@@ -8,6 +9,9 @@ jest.mock('../prisma', () => ({
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       upsert: jest.fn(),
+    },
+    attraction: {
+      findMany: jest.fn(),
     },
     contentNode: {
       findMany: jest.fn(),
@@ -50,5 +54,18 @@ describe('Dual-mode static export mock adapter', () => {
     const ceremony = nodes.find(n => (n.data as any)?.ceremonyTitle);
     expect(ceremony).toBeDefined();
     expect((ceremony?.data as any)?.ceremonyTitle).toBe('Wedding Ceremony');
+  });
+
+  it('provides mock attractions with hotel block details without database queries when STATIC_EXPORT is enabled', async () => {
+    process.env.STATIC_EXPORT = 'true';
+
+    const attractions = await attractionsRepository.getVisibleAttractions();
+
+    expect(prisma.attraction.findMany).not.toHaveBeenCalled();
+    expect(attractions.length).toBeGreaterThan(0);
+    const hotel = attractions.find((a) => a.category === 'hotel');
+    expect(hotel).toBeDefined();
+    expect(hotel?.promoCode).toBe('WEDDING2026');
+    expect(hotel?.roomRate).toBe('$189/night');
   });
 });

@@ -241,7 +241,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(siteUrlInput).toHaveAttribute('aria-invalid', 'true');
   });
 
-  test('submits theme preset and layout tokens during Step 2 setup save', async () => {
+  test('submits theme preset and brand colors during Step 2 setup save without rendering layout, print, or sizing inputs', async () => {
     let savedPayload: any = null;
     let callCount = 0;
     global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
@@ -271,6 +271,15 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
     await waitFor(() => expect(screen.getByText('Step 2: The Essentials')).toBeInTheDocument());
 
+    // Step 2 shows preset + color controls only, deferring layout & print tuning to Site Settings
+    expect(screen.queryByLabelText(/Container Max Width/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Grid Gap/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Card Padding/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Card Border Radius/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Print Background Color Code/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Base Font Size/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Logo Width/i)).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
@@ -279,13 +288,11 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'IL' } });
     fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
 
-    // Change theme preset
+    // Change theme preset and brand colors
     const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
     fireEvent.change(presetSelect, { target: { value: 'romantic' } });
-
-    // Change container max width layout token
-    const maxWidthInput = screen.getByLabelText(/Container Max Width/i);
-    fireEvent.change(maxWidthInput, { target: { value: '72rem' } });
+    fireEvent.change(screen.getByLabelText(/Primary Color Code/i), { target: { value: '#9F1239' } });
+    fireEvent.change(screen.getByLabelText(/Secondary Color Code/i), { target: { value: '#78350F' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Next Step' }));
 
@@ -295,7 +302,9 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
     expect(savedPayload).toBeTruthy();
     expect(savedPayload.themePreset).toBe('romantic');
-    expect(savedPayload.layoutContainerMaxWidth).toBe('72rem');
+    expect(savedPayload.colorPrimary).toBe('#9F1239');
+    expect(savedPayload.colorSecondary).toBe('#78350F');
+    expect(savedPayload.layoutContainerMaxWidth).toBeUndefined();
   });
 
   test('trims partner names before Step 2 submission and rejects whitespace-only partner names', async () => {
@@ -1129,7 +1138,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(results).toHaveNoViolations();
   });
 
-  test('previews Step 2 theme preset, color, and layout changes live via ThemeProvider and maintains dark mode accessibility', async () => {
+  test('previews Step 2 essentials preset and brand color changes live via ThemeProvider and maintains dark mode accessibility', async () => {
     const { ThemeProvider } = await import('@/components/ThemeProvider');
     (checkAdminClient as jest.Mock).mockResolvedValue(true);
     window.sessionStorage.setItem(
@@ -1159,6 +1168,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
       const introCopy = screen.getByText(/Let's start with your names and when the big day is\./i);
       expect(introCopy).toHaveClass('dark:text-gray-200');
+      expect(screen.queryByLabelText(/Container Max Width/i)).not.toBeInTheDocument();
 
       const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
       fireEvent.change(presetSelect, { target: { value: 'romantic' } });
@@ -1166,12 +1176,12 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       const primaryInput = screen.getByLabelText(/Primary Color Code/i);
       fireEvent.change(primaryInput, { target: { value: '#be123c' } });
 
-      const maxWidthInput = screen.getByLabelText(/Container Max Width/i);
-      fireEvent.change(maxWidthInput, { target: { value: '72rem' } });
+      const secondaryInput = screen.getByLabelText(/Secondary Color Code/i);
+      fireEvent.change(secondaryInput, { target: { value: '#14532d' } });
 
       await waitFor(() => {
-        expect(headStyle.textContent).toContain('--container-max-w: 72rem;');
         expect(headStyle.textContent).toContain('--color-primary: #be123c;');
+        expect(headStyle.textContent).toContain('--color-secondary: #14532d;');
         expect(headStyle.textContent).toContain('--card-bg: #231118;');
       });
 

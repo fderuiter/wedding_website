@@ -15,12 +15,22 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    ...actual,
+    getAppConfig: jest.fn(() => Promise.resolve(actual.APP_DEFAULTS)),
+  };
+});
+
 import { registryAddItemPOST as addItem } from '@/features/registry';
 import { registryContributePOST as contribute } from '@/features/registry';
 import { registryGetItemsGET as getItems } from '@/features/registry';
 import { registryItemByIdGET as getItemByIdRoute, registryItemByIdPUT as updateItemRoute, registryItemByIdDELETE as deleteItemRoute } from '@/features/registry';
 import { registryService } from '@/features/registry';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getAppConfig, APP_DEFAULTS } from '@/lib/config';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import type { NextRequest } from 'next/server';
 
 const mockCreateItem = registryService.createItem as jest.Mock;
@@ -30,6 +40,7 @@ const mockGetItemById = registryService.getItemById as jest.Mock;
 const mockUpdateItem = registryService.updateItem as jest.Mock;
 const mockDeleteItem = registryService.deleteItem as jest.Mock;
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
 
 describe('Registry API routes', () => {
   beforeEach(() => {
@@ -363,6 +374,35 @@ describe('Registry API routes', () => {
         const json = await res.json();
         expect(json.data).toEqual({ message: 'Item deleted successfully' });
       });
+    });
+
+    it('returns 404 across GET, PUT, and DELETE when registry module is disabled', async () => {
+      mockIsAdminRequest.mockResolvedValue(true);
+      const disabledConfig = {
+        ...APP_DEFAULTS,
+        modules: { ...DEFAULT_MODULE_CONFIG, registry: false, groupGifting: false },
+      } as any;
+
+      mockGetAppConfig.mockResolvedValueOnce(disabledConfig);
+      const getRes = await getItemByIdRoute(new Request(baseUrl) as unknown as NextRequest, { params: mockParams });
+      expect(getRes.status).toBe(404);
+
+      mockGetAppConfig.mockResolvedValueOnce(disabledConfig);
+      const putRes = await updateItemRoute(
+        new Request(baseUrl, {
+          method: 'PUT',
+          body: JSON.stringify({ name: 'Lamp', price: 20, quantity: 1 }),
+        }) as unknown as NextRequest,
+        { params: mockParams }
+      );
+      expect(putRes.status).toBe(404);
+
+      mockGetAppConfig.mockResolvedValueOnce(disabledConfig);
+      const deleteRes = await deleteItemRoute(
+        new Request(baseUrl, { method: 'DELETE' }) as unknown as NextRequest,
+        { params: mockParams }
+      );
+      expect(deleteRes.status).toBe(404);
     });
   });
 });

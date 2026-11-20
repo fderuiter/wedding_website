@@ -2,6 +2,8 @@
 
 import { POST } from '../batch-scrape';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getAppConfig } from '@/lib/config';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import { server } from '@/mocks/server';
 import { http, HttpResponse } from 'msw';
 import type { NextRequest } from 'next/server';
@@ -25,12 +27,32 @@ jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn(),
+}));
+
 const mockIsAdminRequest = isAdminRequest as jest.Mock;
+const mockGetAppConfig = getAppConfig as jest.Mock;
 
 describe('POST /api/registry/scrape/batch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsAdminRequest.mockResolvedValue(true);
+    mockGetAppConfig.mockResolvedValue({ modules: { ...DEFAULT_MODULE_CONFIG } });
+  });
+
+  it('returns 404 when registry feature module is disabled', async () => {
+    mockGetAppConfig.mockResolvedValueOnce({
+      modules: { ...DEFAULT_MODULE_CONFIG, registry: false, groupGifting: false },
+    });
+
+    const request = new Request('http://localhost/api/registry/scrape/batch', {
+      method: 'POST',
+      body: JSON.stringify({ urls: ['https://example.com/product1'] }),
+    });
+
+    const response = await POST(request as unknown as NextRequest);
+    expect(response.status).toBe(404);
   });
 
   it('rejects unauthenticated requests with 401', async () => {

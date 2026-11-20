@@ -177,4 +177,87 @@ describe('SeatingChartAdminPage Dialog integration', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  test('flags declined seated guests with one-click Release Seat, renders dietary badges, and triggers Clear Seats + Undo', () => {
+    const mockClearTableSeats = jest.fn();
+    const mockUndoLastBatchAction = jest.fn();
+    const mockAssignGuestsToTable = jest.fn();
+
+    const tableWithSeatedGuests = {
+      ...mockTable,
+      capacity: 4,
+      invitationCodes: [
+        {
+          id: 'g-declined-seated',
+          guestName: 'Declined Cousin',
+          code: 'DEC99',
+          tableId: 'table-1',
+          seatNumber: 1,
+          used: true,
+          extraFields: { attending: false },
+          dietaryNotes: null,
+        },
+        {
+          id: 'g-attending-diet',
+          guestName: 'Vegan Aunt',
+          code: 'VEG01',
+          tableId: 'table-1',
+          seatNumber: 2,
+          used: true,
+          extraFields: { attending: true },
+          dietaryNotes: 'Strict Vegan',
+        },
+      ],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [tableWithSeatedGuests],
+      allGuests: tableWithSeatedGuests.invitationCodes,
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: true,
+      undoLabel: 'Cleared 2 seats from Table 1',
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: mockAssignGuestsToTable,
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: mockClearTableSeats,
+      undoLastBatchAction: mockUndoLastBatchAction,
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    // Top banner flags declined seated guest
+    expect(screen.getByTestId('declined-seated-alert')).toBeInTheDocument();
+
+    // Select Table 1 to inspect seated guests
+    fireEvent.click(screen.getByRole('button', { name: /Table 1 - Head Table, shape/i }));
+
+    // Inspector flags declined guest and renders dietary badge for Vegan Aunt
+    expect(screen.getByTestId('seated-declined-badge')).toHaveTextContent('RSVP Declined');
+    expect(screen.getByTestId('inspector-dietary-badge')).toHaveTextContent('VG');
+
+    // One-click Release Seat in inspector releases declined guest's seat
+    const releaseBtn = screen.getByRole('button', {
+      name: /Release seat for declined guest Declined Cousin/i,
+    });
+    fireEvent.click(releaseBtn);
+    expect(mockUnassignGuest).toHaveBeenCalledWith('g-declined-seated');
+
+    // Clear Seats empties the table without deleting it
+    const clearBtn = screen.getByTestId('clear-table-seats-button');
+    fireEvent.click(clearBtn);
+    expect(mockClearTableSeats).toHaveBeenCalledWith('table-1');
+
+    // Undo button restores previous seat snapshot
+    const undoBtn = screen.getByTestId('seating-undo-button');
+    expect(undoBtn).not.toBeDisabled();
+    fireEvent.click(undoBtn);
+    expect(mockUndoLastBatchAction).toHaveBeenCalledTimes(1);
+  });
 });
