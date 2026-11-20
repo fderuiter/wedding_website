@@ -42,7 +42,7 @@ export default function EditRegistryItemPage() {
         queryClient.invalidateQueries({ queryKey: ['registry-items'] }),
       ]);
       addToast('Item updated successfully!', 'success');
-      router.push('/admin/dashboard');
+      router.push('/admin/dashboard/registry');
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to update item');
       addToast('Failed to update item', 'error');

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+import Link from 'next/link';
 import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
@@ -365,72 +366,83 @@ export function PhotoGalleryClient({
 
   return (
     <div className="space-y-8" data-hydrated={isHydrated}>
-      {/* Accessible Tab Bar */}
-      <div
-        role="tablist"
-        aria-label="Photo gallery views"
-        data-testid="photo-gallery-tabs"
-        className="flex items-center justify-center gap-3 border-b border-stone-200 dark:border-stone-800 pb-4 mb-6"
-      >
-        <button
-          ref={tabCuratedRef}
-          id="tab-curated"
-          role="tab"
-          type="button"
-          aria-selected={activeTab === 'curated'}
-          aria-controls="tabpanel-curated"
-          tabIndex={activeTab === 'curated' ? 0 : -1}
-          onClick={() => handleTabChange('curated')}
-          onKeyDown={(e) => handleTabKeyDown(e, 'curated')}
-          data-testid="tab-curated"
-          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-            activeTab === 'curated'
-              ? 'bg-primary text-white shadow-md'
-              : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
-          }`}
+      {/* Accessible Tab Bar and Live Slideshow Launcher */}
+      <div className="flex flex-wrap items-center justify-center gap-3 border-b border-stone-200 dark:border-stone-800 pb-4 mb-6">
+        <div
+          role="tablist"
+          aria-label="Photo gallery views"
+          data-testid="photo-gallery-tabs"
+          className="flex flex-wrap items-center justify-center gap-3"
         >
-          <Icon name="Camera" className="w-4 h-4" />
-          <span>Curated Album</span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+          <button
+            ref={tabCuratedRef}
+            id="tab-curated"
+            role="tab"
+            type="button"
+            aria-selected={activeTab === 'curated'}
+            aria-controls="tabpanel-curated"
+            tabIndex={activeTab === 'curated' ? 0 : -1}
+            onClick={() => handleTabChange('curated')}
+            onKeyDown={(e) => handleTabKeyDown(e, 'curated')}
+            data-testid="tab-curated"
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
               activeTab === 'curated'
-                ? 'bg-white/25 text-white'
-                : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+                ? 'bg-primary text-white shadow-md'
+                : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            {curatedPhotos.length}
-          </span>
-        </button>
+            <Icon name="Camera" className="w-4 h-4" />
+            <span>Curated Album</span>
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                activeTab === 'curated'
+                  ? 'bg-white/25 text-white'
+                  : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+              }`}
+            >
+              {curatedPhotos.length}
+            </span>
+          </button>
 
-        <button
-          ref={tabGuestRef}
-          id="tab-guest"
-          role="tab"
-          type="button"
-          aria-selected={activeTab === 'guest'}
-          aria-controls="tabpanel-guest"
-          tabIndex={activeTab === 'guest' ? 0 : -1}
-          onClick={() => handleTabChange('guest')}
-          onKeyDown={(e) => handleTabKeyDown(e, 'guest')}
-          data-testid="tab-guest"
-          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-            activeTab === 'guest'
-              ? 'bg-primary text-white shadow-md'
-              : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
-          }`}
-        >
-          <Icon name="Upload" className="w-4 h-4" />
-          <span>Guest Uploads</span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+          <button
+            ref={tabGuestRef}
+            id="tab-guest"
+            role="tab"
+            type="button"
+            aria-selected={activeTab === 'guest'}
+            aria-controls="tabpanel-guest"
+            tabIndex={activeTab === 'guest' ? 0 : -1}
+            onClick={() => handleTabChange('guest')}
+            onKeyDown={(e) => handleTabKeyDown(e, 'guest')}
+            data-testid="tab-guest"
+            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
               activeTab === 'guest'
-                ? 'bg-white/25 text-white'
-                : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+                ? 'bg-primary text-white shadow-md'
+                : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
             }`}
           >
-            {guestPhotos.length}
-          </span>
-        </button>
+            <Icon name="Upload" className="w-4 h-4" />
+            <span>Guest Uploads</span>
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                activeTab === 'guest'
+                  ? 'bg-white/25 text-white'
+                  : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+              }`}
+            >
+              {guestPhotos.length}
+            </span>
+          </button>
+        </div>
+
+        <Link
+          href="/photos/slideshow"
+          data-testid="launch-slideshow-link"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+        >
+          <Icon name="Monitor" className="w-4 h-4" />
+          <span>Live Slideshow</span>
+        </Link>
       </div>
 
       {/* Main Bulk Export Toolbar (Admin Only) */}

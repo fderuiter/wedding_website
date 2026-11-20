@@ -6,7 +6,7 @@ This document defines the runtime contract for presentation feature toggles in [
 
 Presentation feature toggles govern optional guest-facing experiences through six distinct mechanisms—each with explicit runtime boundaries:
 
-1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L36-L39) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
+1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L37-L40) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
 2. **Selective Route & Render Protection**: Only routes and components that explicitly call `isFeatureEnabled()` enforce toggle state (see [Route & Endpoint Enforcement Coverage](#route--endpoint-enforcement-coverage) below). Unchecked UI routes, unchecked API handlers, and dynamic admin entity routes remain reachable even when a toggle is `false`.
 3. **Persistence Model (`Virtual DTO` vs. `Prisma`)**: The `AppConfig` model in [prisma/schema.prisma](prisma/schema.prisma#L11-L78) has **no `modules` column**. `config.modules` is a virtual DTO field that resets to `DEFAULT_MODULE_CONFIG` on every database read, whereas `showCountdown` and `showAddToCalendar` are persisted boolean columns on `AppConfig`.
 4. **Feature Dependencies**: `groupGifting` depends on `registry`; [resolveModuleConfig](src/lib/modules.ts#L128-L150) normalizes `groupGifting` to `false` whenever `registry` is `false` without throwing validation errors.
@@ -81,14 +81,14 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L298-L328))**:
+- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L299-L344))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
   - Hides the homepage photo gallery link when `gallery` is disabled and hides the 3D experience callout when `interactive3D` is disabled.
 - **UI Pages Skipping Server-Side `isFeatureEnabled`**:
   - **Registry UI**: `/registry`, `/registry/add-item`, and `/registry/edit-item/[id]` do not call `isFeatureEnabled('registry')` at the page route level (note the dynamic `[id]` segment on `/registry/edit-item/[id]`, implemented at [src/app/registry/edit-item/[id]/page.tsx](src/app/registry/edit-item/[id]/page.tsx)).
   - **Guest Login & Collection UI**: `/guest/login`, `/guest`, and `/guest/collect` do not inspect `guestPasscode`.
-  - **Admin Dashboard Subpages**: `/admin/dashboard/*` routes (such as `/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) filter sidebar navigation links in [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L36-L39) but do not throw HTTP 404 on direct URL navigation.
+  - **Admin Dashboard Subpages**: `/admin/dashboard/*` routes (such as `/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) filter sidebar navigation links in [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L37-L40) while keeping `/admin/dashboard` (`Overview`) and `/admin/dashboard/invitation-codes` (`Invitation Codes`) always visible; subpages do not throw HTTP 404 on direct URL navigation.
 
 ### Middleware & `guestPasscode` Gatekeeping
 

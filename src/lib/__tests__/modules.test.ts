@@ -105,7 +105,8 @@ describe('Feature / Module Configuration Model', () => {
 
       expect(hrefs).toContain('/');
       expect(hrefs).toContain('/registry');
-      expect(hrefs).toContain('/archive');
+      expect(hrefs).not.toContain('/archive');
+      expect(hrefs).not.toContain('/admin/login');
       expect(hrefs).not.toContain('/weather');
       expect(hrefs).not.toContain('/photos');
       expect(hrefs).not.toContain('/wedding-party');

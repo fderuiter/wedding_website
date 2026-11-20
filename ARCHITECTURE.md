@@ -81,6 +81,7 @@ flowchart LR
     node_admin_dashboard_invitationcodes["invitation-codes"]
     node_admin_dashboard_maintenance["maintenance"]
     node_admin_dashboard_media["media"]
+    node_admin_dashboard_registry["registry"]
     node_admin_dashboard_seatingchart["seating-chart"]
     node_admin_dashboard_settings["settings"]
     node_admin_dashboard_sitemanager["site-manager"]
@@ -198,6 +199,7 @@ flowchart LR
     node_admin_dashboard --> node_admin_dashboard_invitationcodes
     node_admin_dashboard --> node_admin_dashboard_maintenance
     node_admin_dashboard --> node_admin_dashboard_media
+    node_admin_dashboard --> node_admin_dashboard_registry
     node_admin_dashboard --> node_admin_dashboard_seatingchart
     node_admin_dashboard --> node_admin_dashboard_settings
     node_admin_dashboard --> node_admin_dashboard_sitemanager
@@ -315,6 +317,7 @@ flowchart LR
     class node_admin_dashboard_invitationcodes page;
     class node_admin_dashboard_maintenance page;
     class node_admin_dashboard_media page;
+    class node_admin_dashboard_registry page;
     class node_admin_dashboard_seatingchart page;
     class node_admin_dashboard_settings page;
     class node_admin_dashboard_sitemanager page;

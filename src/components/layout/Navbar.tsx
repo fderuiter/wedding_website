@@ -2,11 +2,21 @@
 
 import { Icon } from '../ui/Icon';
 import { Overlay } from '../ui/Overlay';
-import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  useId,
+  useSyncExternalStore,
+} from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
+import { useOverlay } from '@/hooks/useOverlay';
+import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { ThemeSelector } from '../ui/ThemeSelector';
 import {
   GuestHelpProvider,
@@ -31,6 +41,20 @@ interface NavbarProps {
   config: PublicAppConfig;
 }
 
+interface NavLinkItem {
+  href: string;
+  label: string;
+}
+
+interface HomeFeatureSection {
+  id?: string;
+  type?: string;
+  title?: string;
+  visible?: boolean;
+}
+
+const PRIMARY_GUEST_PATHS = new Set(['/', '/guest', '/registry', '/photos']);
+
 function subscribeToHashChange(onStoreChange: () => void) {
   if (typeof window === 'undefined') {
     return () => {};
@@ -49,7 +73,7 @@ function getServerHashSnapshot() {
   return '';
 }
 
-const DEFAULT_HOME_FEATURES = [
+const DEFAULT_HOME_FEATURES: HomeFeatureSection[] = [
   { id: 'story', type: 'story', title: 'Our Story', visible: true },
   { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
   { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
@@ -61,8 +85,10 @@ const DEFAULT_HOME_FEATURES = [
 /**
  * @function Navbar
  * @description A responsive navigation bar component for the application.
- * It displays different navigation links based on the current page and user's admin status.
- * It also includes a mobile-friendly menu.
+ * Keeps primary links consistent across all routes, groups secondary event sections
+ * and guides into an accessible keyboard-navigable dropdown menu on desktop,
+ * deduplicates `/#travel` when `/things-to-do` is active, and supports vertical
+ * scrolling on compact mobile viewports.
  * @param {NavbarProps} props - The props for the component.
  * @returns {JSX.Element} The rendered Navbar component.
  */
@@ -70,6 +96,11 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   const pathname = usePathname();
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
+  const guideTriggerRef = useRef<HTMLButtonElement>(null);
+  const wasGuideOpenOnMouseDownRef = useRef(false);
+  const guideTriggerId = useId();
+
   const browserHash = useSyncExternalStore(
     subscribeToHashChange,
     getHashSnapshot,
@@ -86,14 +117,24 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     setManualHashOverride({ base: getHashSnapshot(), hash });
   }, []);
 
+  const handleCloseGuideMenu = useCallback(() => {
+    setIsGuideMenuOpen(false);
+  }, []);
+
+  const { overlayRef: guideOverlayRef } = useOverlay(isGuideMenuOpen, handleCloseGuideMenu);
+  const { handleMenuKeyDown } = useMenuNavigation(guideOverlayRef);
+
   // Safely parse features array
-  const features = useMemo(() => {
-    let parsed: any[] = [];
+  const features = useMemo<HomeFeatureSection[]>(() => {
+    let parsed: HomeFeatureSection[] = [];
     try {
       if (typeof config.features === 'string') {
-        parsed = JSON.parse(config.features);
+        const candidate = JSON.parse(config.features);
+        if (Array.isArray(candidate)) {
+          parsed = candidate;
+        }
       } else if (Array.isArray(config.features)) {
-        parsed = config.features;
+        parsed = config.features as HomeFeatureSection[];
       }
     } catch {
       // Ignore malformed JSON and fall back to default sections
@@ -105,7 +146,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     if (pathname !== '/' || typeof window === 'undefined') return;
 
     const sectionIds = features
-      .filter((f) => f.visible && f.id !== 'hero')
+      .filter((f): f is HomeFeatureSection & { id: string } => Boolean(f.visible && f.id && f.id !== 'hero'))
       .map((f) => f.id);
 
     if (typeof IntersectionObserver === 'undefined') return;
@@ -153,20 +194,45 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     return pathname === href;
   };
 
-  const homeNavLinks = features
-    .filter((f) => f.visible && f.id !== 'hero' && f.id !== 'story')
-    .map((f) => ({ href: `/#${f.id}`, label: f.title || f.id }));
-
   const role = isAdmin ? 'admin' : 'public';
-  const baseLinks = getNavLinks(role, (config as any)?.modules);
+  const baseLinks = getNavLinks(role, config.modules);
 
-  const adminLinks = baseLinks.filter(l => l.href.startsWith('/admin'));
-  const regularLinks = baseLinks.filter(l => !l.href.startsWith('/admin'));
+  const adminLinks = baseLinks.filter((l) => l.href.startsWith('/admin'));
+  const regularLinks = baseLinks.filter((l) => !l.href.startsWith('/admin'));
 
-  const allLinks =
-    pathname === '/' 
-      ? [...regularLinks, ...homeNavLinks, ...adminLinks] 
-      : [...baseLinks];
+  const primaryLinks = regularLinks.filter((l) => PRIMARY_GUEST_PATHS.has(l.href));
+  const rawGuidePageLinks = regularLinks.filter((l) => !PRIMARY_GUEST_PATHS.has(l.href));
+  const hasThingsToDoPage = rawGuidePageLinks.some((l) => l.href === '/things-to-do');
+
+  const { sectionLinks, guidePageLinks, secondaryLinks } = useMemo(() => {
+    const seenHrefs = new Set<string>(primaryLinks.map((l) => l.href));
+    const dedupedSections: NavLinkItem[] = [];
+    const dedupedGuides: NavLinkItem[] = [];
+
+    for (const f of features) {
+      if (!f.visible || !f.id || f.id === 'hero' || f.id === 'story') continue;
+      if (hasThingsToDoPage && (f.id === 'travel' || f.type === 'travel')) continue;
+      const href = `/#${f.id}`;
+      if (seenHrefs.has(href)) continue;
+      seenHrefs.add(href);
+      dedupedSections.push({ href, label: f.title || f.id });
+    }
+
+    for (const guide of rawGuidePageLinks) {
+      if (seenHrefs.has(guide.href)) continue;
+      seenHrefs.add(guide.href);
+      dedupedGuides.push(guide);
+    }
+
+    return {
+      sectionLinks: dedupedSections,
+      guidePageLinks: dedupedGuides,
+      secondaryLinks: [...dedupedSections, ...dedupedGuides],
+    };
+  }, [features, hasThingsToDoPage, primaryLinks, rawGuidePageLinks]);
+
+  const mobileLinks = [...primaryLinks, ...secondaryLinks, ...adminLinks];
+  const isSecondaryActive = secondaryLinks.some((link) => isLinkActive(link.href));
 
   const brandLogoUrl = config.brandLogoUrl;
   const partner1 = config.partner1Name || config.brideName || '';
@@ -176,6 +242,67 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
   const monogram = deriveBrandMonogram(config);
   const disablePrefetch = pathname === '/guest/login';
   const defaultHelpCategory = resolveHelpCategoryForPath(pathname);
+
+  const handleGuideTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!isGuideMenuOpen) {
+        setIsGuideMenuOpen(true);
+      }
+    }
+  };
+
+  const renderDesktopLink = (link: NavLinkItem) => {
+    const active = isLinkActive(link.href);
+    return (
+      <Link
+        key={link.href}
+        href={link.href}
+        prefetch={disablePrefetch ? false : undefined}
+        aria-current={active ? 'page' : undefined}
+        onClick={() => {
+          if (link.href.includes('#')) {
+            setActiveHash(link.href.substring(link.href.indexOf('#')));
+          }
+          setIsGuideMenuOpen(false);
+        }}
+        className={`px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
+          active
+            ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
+            : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
+        }`}
+      >
+        {link.label}
+      </Link>
+    );
+  };
+
+  const renderDropdownMenuItem = (link: NavLinkItem) => {
+    const active = isLinkActive(link.href);
+    return (
+      <Link
+        key={link.href}
+        href={link.href}
+        role="menuitem"
+        prefetch={disablePrefetch ? false : undefined}
+        aria-current={active ? 'page' : undefined}
+        onKeyDown={handleMenuKeyDown}
+        onClick={() => {
+          if (link.href.includes('#')) {
+            setActiveHash(link.href.substring(link.href.indexOf('#')));
+          }
+          setIsGuideMenuOpen(false);
+        }}
+        className={`block w-full text-left px-3.5 py-2 text-sm font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] ${
+          active
+            ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
+            : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
+        }`}
+      >
+        {link.label}
+      </Link>
+    );
+  };
 
   const navbarContent = (
     <>
@@ -204,29 +331,70 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
             </div>
             <div className="hidden md:block flex-1 min-w-0">
               <nav aria-label="Global Navigation" className="ml-3 lg:ml-6 flex flex-wrap items-center gap-x-1 lg:gap-x-2 gap-y-1">
-                {allLinks.map((link) => {
-                  const active = isLinkActive(link.href);
-                  return (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      prefetch={disablePrefetch ? false : undefined}
-                      aria-current={active ? 'page' : undefined}
+                {primaryLinks.map(renderDesktopLink)}
+
+                {secondaryLinks.length > 0 && (
+                  <div className="relative inline-block text-left">
+                    <button
+                      ref={guideTriggerRef}
+                      id={guideTriggerId}
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={isGuideMenuOpen}
+                      aria-controls="desktop-guide-menu"
+                      onMouseDown={() => {
+                        wasGuideOpenOnMouseDownRef.current = isGuideMenuOpen;
+                      }}
                       onClick={() => {
-                        if (link.href.includes('#')) {
-                          setActiveHash(link.href.substring(link.href.indexOf('#')));
+                        if (wasGuideOpenOnMouseDownRef.current) {
+                          wasGuideOpenOnMouseDownRef.current = false;
+                          setIsGuideMenuOpen(false);
+                        } else {
+                          setIsGuideMenuOpen((prev) => !prev);
                         }
                       }}
-                      className={`px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
-                        active
+                      onKeyDown={handleGuideTriggerKeyDown}
+                      className={`inline-flex items-center gap-1 px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
+                        isSecondaryActive || isGuideMenuOpen
                           ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'
                           : 'text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]'
                       }`}
                     >
-                      {link.label}
-                    </Link>
-                  );
-                })}
+                      <span>Event Guide</span>
+                      <Icon
+                        name="ChevronDown"
+                        className={`h-4 w-4 transition-transform ${isGuideMenuOpen ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+
+                    {isGuideMenuOpen && (
+                      <div
+                        id="desktop-guide-menu"
+                        ref={guideOverlayRef}
+                        className="origin-top-left absolute left-0 mt-2 w-64 max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg shadow-xl bg-[var(--card-bg,#ffffff)] border border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)] p-1.5 z-50"
+                      >
+                        <div
+                          role="menu"
+                          aria-orientation="vertical"
+                          aria-labelledby={guideTriggerId}
+                          className="space-y-0.5"
+                        >
+                          {sectionLinks.map(renderDropdownMenuItem)}
+                          {sectionLinks.length > 0 && guidePageLinks.length > 0 && (
+                            <div
+                              role="separator"
+                              className="my-1 border-t border-[var(--color-surface-border,#e5e7eb)]"
+                            />
+                          )}
+                          {guidePageLinks.map(renderDropdownMenuItem)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {adminLinks.map(renderDesktopLink)}
               </nav>
             </div>
             <div className="hidden md:flex md:items-center md:gap-3 flex-shrink-0">
@@ -269,16 +437,16 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
         </div>
       </header>
 
-      <Overlay 
-        isOpen={isMenuOpen} 
-        onClose={() => setIsMenuOpen(false)} 
-        id="mobile-menu" 
+      <Overlay
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        id="mobile-menu"
         animationType="slide-down"
         layoutClassName="fixed top-16 bottom-0 left-0 right-0 z-40 flex flex-col justify-start"
-        className="w-full bg-[var(--card-bg,#ffffff)] shadow-xl border-b border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)]"
+        className="w-full max-h-full overflow-y-auto overscroll-contain bg-[var(--card-bg,#ffffff)] shadow-xl border-b border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)]"
       >
-        <nav aria-label="Mobile Navigation" className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-          {allLinks.map((link) => {
+        <nav aria-label="Mobile Navigation" className="px-2 pt-2 pb-4 space-y-1 sm:px-3">
+          {mobileLinks.map((link) => {
             const active = isLinkActive(link.href);
             return (
               <Link

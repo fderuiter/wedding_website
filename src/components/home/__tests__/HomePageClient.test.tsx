@@ -225,5 +225,17 @@ describe('HomePageClient', () => {
     const results = await axe(travelSection);
     expect(results).toHaveNoViolations();
   });
+
+  test('renders subtle accessible Admin Login link in the footer and passes axe', async () => {
+    render(<HomePageClient config={mockConfig} />);
+
+    const footer = screen.getByRole('contentinfo');
+    const loginLink = within(footer).getByRole('link', { name: /admin login/i });
+    expect(loginLink).toBeInTheDocument();
+    expect(loginLink).toHaveAttribute('href', '/admin/login');
+
+    const results = await axe(footer);
+    expect(results).toHaveNoViolations();
+  });
 });
 
