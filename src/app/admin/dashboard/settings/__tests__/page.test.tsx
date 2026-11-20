@@ -757,5 +757,16 @@ describe('AdminSettingsPage RSVP Deadline & Access Control', () => {
     expect(savedPayload.rsvpGracePeriodHours).toBe(48);
     expect(savedPayload.rsvpClosedMessage).toBe('RSVPs closed — contact hosts@example.com');
   });
+
+  it('renders a direct link to Broadcast Delivery Logs in Messaging & Broadcast Settings', async () => {
+    render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const logsLink = screen.getByRole('link', { name: /Broadcast Delivery Logs/i });
+    expect(logsLink).toHaveAttribute('href', '/admin/dashboard/history?tab=broadcasts');
+  });
 });
 

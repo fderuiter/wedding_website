@@ -3,21 +3,13 @@ import { getAppConfig } from '@/lib/config';
 import { generateSecureUUID } from '@/utils/uuid';
 import { buildGuestRsvpUrl, renderBroadcastTemplate, sanitizeEmailSubject } from './template';
 import {
-  getAttendanceStatus,
-  isAddressComplete,
-  matchDietaryCategory,
-} from '@/features/registry';
+  filterTargetGuestsInMemory,
+  getGuestPhone,
+  hasBroadcastChannelContact,
+} from './audience';
 
 const RECIPIENT_CHUNK_SIZE = 250;
-const ADDRESS_COLLECTION_TAG = 'address-collection';
 const DEFAULT_FALLBACK_ORIGIN = 'http://localhost:3000';
-
-function hasAddressCollectionTag(tags: unknown): boolean {
-  return (
-    Array.isArray(tags) &&
-    tags.some((tag) => typeof tag === 'string' && tag.trim().toLowerCase() === ADDRESS_COLLECTION_TAG)
-  );
-}
 
 function resolveBroadcastBaseUrl(
   configBaseUrl: string | null | undefined,
@@ -41,59 +33,6 @@ function resolveBroadcastBaseUrl(
     baseUrlWarning,
   };
 }
-
-function matchesGuestMultiFieldSearch(item: any, rawQuery: string): boolean {
-  const query = rawQuery.trim().toLowerCase();
-  if (!query) return true;
-
-  const matchesName = item.guestName ? String(item.guestName).toLowerCase().includes(query) : false;
-  const matchesCode = item.code ? String(item.code).toLowerCase().includes(query) : false;
-  const matchesEmail = item.email ? String(item.email).toLowerCase().includes(query) : false;
-  const matchesPlusOneFirstName = item.plusOneFirstName
-    ? String(item.plusOneFirstName).toLowerCase().includes(query)
-    : false;
-  const matchesPlusOneLastName = item.plusOneLastName
-    ? String(item.plusOneLastName).toLowerCase().includes(query)
-    : false;
-  const matchesAddress = [
-    item.addressLine1,
-    item.addressLine2,
-    item.city,
-    item.state,
-    item.zipCode,
-    item.country,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-    .includes(query);
-  const matchesDietary = item.dietaryNotes
-    ? String(item.dietaryNotes).toLowerCase().includes(query)
-    : false;
-  const matchesHousehold = item.householdName
-    ? String(item.householdName).toLowerCase().includes(query)
-    : false;
-  const matchesPartyGroup = item.partyGroup
-    ? String(item.partyGroup).toLowerCase().includes(query)
-    : false;
-  const matchesTags = Array.isArray(item.partyTags)
-    ? item.partyTags.some((t: unknown) => typeof t === 'string' && t.toLowerCase().includes(query))
-    : false;
-
-  return (
-    matchesName ||
-    matchesCode ||
-    matchesEmail ||
-    matchesPlusOneFirstName ||
-    matchesPlusOneLastName ||
-    matchesAddress ||
-    matchesDietary ||
-    matchesHousehold ||
-    matchesPartyGroup ||
-    matchesTags
-  );
-}
-
 import { MultiChannelMessagingProvider } from './providers';
 import {
   SendBroadcastInput,
@@ -114,7 +53,7 @@ export class BroadcastService {
     if (!filters) {
       const allRecords = await prisma.invitationCode.findMany();
       return Array.isArray(allRecords)
-        ? allRecords.filter((item) => !hasAddressCollectionTag((item as any).partyTags))
+        ? filterTargetGuestsInMemory(allRecords)
         : allRecords;
     }
 
@@ -128,8 +67,11 @@ export class BroadcastService {
         where.partyTags = { hasSome: filters.partyTags };
       }
 
-      if (filters.partyGroup && filters.partyGroup !== 'all') {
-        where.partyGroup = filters.partyGroup;
+      if (filters.householdName && filters.householdName.trim()) {
+        where.householdName = {
+          contains: filters.householdName.trim(),
+          mode: 'insensitive',
+        };
       }
 
       if (filters.status === 'redeemed') {
@@ -138,11 +80,8 @@ export class BroadcastService {
         where.used = false;
       }
 
-      if (filters.householdName && filters.householdName.trim()) {
-        where.householdName = {
-          contains: filters.householdName.trim(),
-          mode: 'insensitive',
-        };
+      if (filters.partyGroup && filters.partyGroup !== 'all') {
+        where.partyGroup = filters.partyGroup;
       }
 
       if (filters.subEventId) {
@@ -207,96 +146,16 @@ export class BroadcastService {
       }
     }
 
-    let records = await prisma.invitationCode.findMany({ where });
+    const records = await prisma.invitationCode.findMany({ where });
 
     if (!Array.isArray(records)) {
       return records;
     }
 
-    const explicitlyIncludesAddressCollection = Boolean(
-      filters.partyTags &&
-      filters.partyTags.some(
-        (tag) => typeof tag === 'string' && tag.trim().toLowerCase() === ADDRESS_COLLECTION_TAG
-      )
-    );
-
-    if (!explicitlyIncludesAddressCollection) {
-      const selectedIdSet =
-        filters.selectedIds && filters.selectedIds.length > 0
-          ? new Set(filters.selectedIds)
-          : null;
-
-      records = records.filter((item) => {
-        if (!hasAddressCollectionTag((item as any).partyTags)) {
-          return true;
-        }
-        return selectedIdSet !== null && selectedIdSet.has(item.id);
-      });
-    }
-
-    const hasManualSelection = Boolean(filters.selectedIds && filters.selectedIds.length > 0);
-
-    if (!hasManualSelection) {
-      if (filters.status === 'redeemed') {
-        records = records.filter((item) => Boolean(item.used));
-      } else if (filters.status === 'unused') {
-        records = records.filter((item) => !item.used);
-      }
-
-      if (filters.partyGroup && filters.partyGroup !== 'all') {
-        records = records.filter((item) => ((item as any).partyGroup || '') === filters.partyGroup);
-      }
-
-      if (filters.addressFilter && filters.addressFilter !== 'all') {
-        records = records.filter((item) =>
-          filters.addressFilter === 'complete'
-            ? isAddressComplete(item as any)
-            : !isAddressComplete(item as any)
-        );
-      }
-
-      if (filters.dietaryFilter && filters.dietaryFilter !== 'all') {
-        records = records.filter((item) =>
-          matchDietaryCategory((item as any).dietaryNotes, filters.dietaryFilter)
-        );
-      }
-
-      if (filters.searchQuery && filters.searchQuery.trim()) {
-        records = records.filter((item) =>
-          matchesGuestMultiFieldSearch(item, filters.searchQuery!)
-        );
-      }
-
-      if (filters.subEventId) {
-        const rsvpStatus = filters.subEventRsvpStatus || 'all';
-        records = records.filter((item: any) => {
-          if (!isPublicSubEvent && Array.isArray(item.subEventAccesses)) {
-            const hasAccess = item.subEventAccesses.some(
-              (acc: any) => acc.subEventId === filters.subEventId
-            );
-            if (!hasAccess) return false;
-          }
-          if (Array.isArray(item.subEventRsvps)) {
-            const matchingRsvp = item.subEventRsvps.find(
-              (r: any) => r.subEventId === filters.subEventId
-            );
-            if (rsvpStatus === 'pending') {
-              return !matchingRsvp || matchingRsvp.status === 'pending';
-            }
-            if (rsvpStatus !== 'all') {
-              return Boolean(matchingRsvp && matchingRsvp.status === rsvpStatus);
-            }
-          }
-          return true;
-        });
-      }
-    }
-
-    if (filters.attendanceStatus && filters.attendanceStatus !== 'all') {
-      records = records.filter((item) => getAttendanceStatus(item as any) === filters.attendanceStatus);
-    }
-
-    return records;
+    return filterTargetGuestsInMemory(records, filters, {
+      applyDbPredicates: false,
+      isPublicSubEvent,
+    });
   }
 
   /**
@@ -309,7 +168,7 @@ export class BroadcastService {
       input.requestOrigin
     );
     let sampleGuest: any = null;
-    let recipientCount: number | undefined = undefined;
+    let matchedGuests: any[] | null = null;
 
     if (input.sampleGuestId) {
       sampleGuest = await prisma.invitationCode.findUnique({
@@ -320,7 +179,7 @@ export class BroadcastService {
     if (!input.sampleGuestId || input.targetFilters) {
       const matched = await this.resolveTargetGuests(input.targetFilters);
       if (Array.isArray(matched)) {
-        recipientCount = matched.length;
+        matchedGuests = matched;
         if (!sampleGuest && matched.length > 0) {
           sampleGuest = matched[0];
         }
@@ -348,14 +207,25 @@ export class BroadcastService {
     };
 
     const isEmail = input.channel === 'EMAIL';
-    const renderedBody = renderBroadcastTemplate(input.body, context, { escapeHtml: isEmail });
+    const renderedBody = renderBroadcastTemplate(input.body, context);
     const rawSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : undefined;
     const renderedSubject =
       rawSubject !== undefined && isEmail ? sanitizeEmailSubject(rawSubject) : rawSubject;
 
     const destination = input.channel === 'EMAIL'
       ? (sampleGuest.email || 'jane@example.com')
-      : (sampleGuest.extraFields?.phone || sampleGuest.extraFields?.mobile || '+15551234567');
+      : (getGuestPhone(sampleGuest) || '+15551234567');
+
+    const audienceCounts =
+      matchedGuests !== null
+        ? {
+          recipientCount: matchedGuests.length,
+          matchedCount: matchedGuests.length,
+          missingContactCount: matchedGuests.filter(
+            (g) => !hasBroadcastChannelContact(g, input.channel)
+          ).length,
+        }
+        : {};
 
     return {
       channel: input.channel,
@@ -363,7 +233,7 @@ export class BroadcastService {
       body: renderedBody,
       sampleGuestName: sampleGuest.guestName,
       destination,
-      ...(recipientCount !== undefined ? { recipientCount } : {}),
+      ...audienceCounts,
       ...(baseUrlWarning ? { baseUrlWarning } : {}),
     };
   }
@@ -565,18 +435,9 @@ export class BroadcastService {
     }[] = [];
 
     for (const guest of guests) {
-      let extra = guest.extraFields;
-      if (typeof extra === 'string') {
-        try {
-          extra = JSON.parse(extra);
-        } catch {
-          extra = {};
-        }
-      }
-
       const destination = channel === 'EMAIL'
         ? (guest.email || '')
-        : ((extra as any)?.phone || (extra as any)?.mobile || '');
+        : getGuestPhone(guest);
 
       const isValid = Boolean(destination);
       const recipientId = generateSecureUUID();

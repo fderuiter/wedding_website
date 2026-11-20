@@ -81,6 +81,7 @@ describe('InvitationCodesDashboardPage', () => {
   const mockRemove = jest.fn();
   const mockRemoveBatch = jest.fn();
   const mockUpdateBatch = jest.fn();
+  const mockBatchUpdateTags = jest.fn();
   const mockFetchAll = jest.fn();
 
   beforeEach(() => {
@@ -94,6 +95,7 @@ describe('InvitationCodesDashboardPage', () => {
       remove: mockRemove,
       removeBatch: mockRemoveBatch,
       updateBatch: mockUpdateBatch,
+      batchUpdateTags: mockBatchUpdateTags,
       fetchAll: mockFetchAll,
     });
   });
@@ -776,8 +778,8 @@ describe('InvitationCodesDashboardPage', () => {
       expect(bobCheckbox.checked).toBe(false);
     });
 
-    it('manages party tags in bulk for selected invitation codes using memoized selection set', async () => {
-      mockUpdateBatch.mockResolvedValue(true);
+    it('manages party tags in bulk for selected invitation codes in a single batchUpdateTags call', async () => {
+      mockBatchUpdateTags.mockResolvedValue({ success: true, count: 2 });
       renderComponent();
 
       fireEvent.click(screen.getByRole('checkbox', { name: 'Select invitation code for Alice Smith' }));
@@ -793,9 +795,55 @@ describe('InvitationCodesDashboardPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Apply Tag Changes' }));
 
       await waitFor(() => {
-        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-1'], { partyTags: ['VIP'] });
-        expect(mockUpdateBatch).toHaveBeenCalledWith(['code-4'], { partyTags: ['VIP'] });
+        expect(mockBatchUpdateTags).toHaveBeenCalledTimes(1);
+        expect(mockBatchUpdateTags).toHaveBeenCalledWith(['code-1', 'code-4'], ['VIP'], 'add');
+        expect(mockUpdateBatch).not.toHaveBeenCalled();
         expect(screen.getByText('Updated tags for 2 code(s).')).toBeInTheDocument();
+      });
+    });
+
+    it('tags 120 selected guests in a single batchUpdateTags request with one toast', async () => {
+      const manyGuests = Array.from({ length: 120 }, (_, i) => ({
+        id: `guest-${i + 1}`,
+        guestName: `Guest ${i + 1}`,
+        code: `CODE${i + 1}`,
+        used: false,
+        partyTags: ['Legacy'],
+      }));
+      mockBatchUpdateTags.mockResolvedValue({ success: true, count: 120 });
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: manyGuests,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Manage Tags' }));
+      expect(screen.getByText('Manage Party Tags (120 Selected)')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Remove Tag' }));
+      fireEvent.change(screen.getByPlaceholderText('e.g. VIP'), { target: { value: '  Legacy  ' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply Tag Changes' }));
+
+      await waitFor(() => {
+        expect(mockBatchUpdateTags).toHaveBeenCalledTimes(1);
+        expect(mockBatchUpdateTags).toHaveBeenCalledWith(
+          manyGuests.map((g) => g.id),
+          ['Legacy'],
+          'remove'
+        );
+        expect(mockUpdateBatch).not.toHaveBeenCalled();
+        expect(screen.getAllByText('Updated tags for 120 code(s).')).toHaveLength(1);
       });
     });
 
@@ -1478,7 +1526,7 @@ describe('InvitationCodesDashboardPage', () => {
       expect(results).toHaveNoViolations();
     });
 
-    it('forwards searchQuery, partyGroup, status, addressFilter, dietaryFilter, attendanceStatus, and partyTags into BroadcastModal when Send Broadcast is clicked', async () => {
+    it('forwards searchQuery, partyGroup, status, addressStatus, dietaryCategory, attendanceStatus, and partyTags into BroadcastModal without mapping searchQuery onto householdName', async () => {
       const originalFetch = global.fetch;
       const previewBodies: Array<Record<string, unknown>> = [];
       const fetchSpy = jest.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1500,11 +1548,13 @@ describe('InvitationCodesDashboardPage', () => {
           }
           return new Response(
             JSON.stringify({
-              subject: '',
-              body: '',
+              subject: 'RSVP Reminder for Alice Smith',
+              body: 'Hi Alice Smith, RSVP at https://wedding.example.com/guest?code=ALICE1',
               sampleGuestName: 'Alice Smith',
               destination: 'alice@example.com',
               recipientCount: 1,
+              matchedCount: 1,
+              missingContactCount: 0,
             }),
             {
               status: 200,
@@ -1595,19 +1645,23 @@ describe('InvitationCodesDashboardPage', () => {
         expect(dialog).toBeInTheDocument();
 
         // Target Audience summary reflects all 7 forwarded filters and does NOT map searchQuery onto Household
-        expect(within(dialog).getByText(/Search: "alice@example\.com"/i)).toBeInTheDocument();
-        expect(within(dialog).getByText(/Group: "Bride"/i)).toBeInTheDocument();
-        expect(within(dialog).getByText(/Tags: \[VIP\]/i)).toBeInTheDocument();
-        expect(within(dialog).getByText(/Code Status: unused/i)).toBeInTheDocument();
-        expect(within(dialog).getByText(/RSVP: pending/i)).toBeInTheDocument();
-        expect(within(dialog).getByText(/Address: missing/i)).toBeInTheDocument();
-        expect(within(dialog).getByText(/Dietary: vegan/i)).toBeInTheDocument();
+        const banner = within(dialog).getByTestId('broadcast-audience-banner');
+        expect(banner).toHaveTextContent('Search: "alice@example.com"');
+        expect(banner).toHaveTextContent('Group: Bride');
+        expect(banner).toHaveTextContent('Tags: [VIP]');
+        expect(banner).toHaveTextContent('Redemption: unused');
+        expect(banner).toHaveTextContent('Status: pending');
+        expect(banner).toHaveTextContent('Address: missing');
+        expect(banner).toHaveTextContent('Dietary: vegan');
         expect(within(dialog).queryByText(/Household:/i)).not.toBeInTheDocument();
+        expect(within(dialog).getByTestId('broadcast-recipient-count')).toHaveTextContent(
+          '1 matching recipient'
+        );
+
+        // Apply starter template with {{rsvpUrl}} to trigger preview/baseUrl check and verify API payload
+        fireEvent.click(within(dialog).getByRole('button', { name: 'RSVP Reminder' }));
 
         await waitFor(() => {
-          expect(within(dialog).getByTestId('broadcast-recipient-count')).toHaveTextContent(
-            '1 matching recipient'
-          );
           expect(previewBodies.length).toBeGreaterThan(0);
         });
 
@@ -1618,8 +1672,8 @@ describe('InvitationCodesDashboardPage', () => {
           searchQuery: 'alice@example.com',
           partyGroup: 'Bride',
           status: 'unused',
-          addressFilter: 'missing',
-          dietaryFilter: 'vegan',
+          addressStatus: 'missing',
+          dietaryCategory: 'vegan',
           attendanceStatus: 'pending',
           partyTags: ['VIP'],
         });
@@ -1627,6 +1681,131 @@ describe('InvitationCodesDashboardPage', () => {
       } finally {
         global.fetch = originalFetch;
       }
+    });
+
+    it('saves phone in extraFields on manual code creation, passes all 7 active filters to BroadcastModal, and links to Broadcast Delivery Logs', async () => {
+      mockCreate.mockResolvedValueOnce({ id: 'new-sms-guest' });
+      const richCodes = [
+        {
+          id: 'g-match',
+          guestName: 'Hannah Abbott',
+          code: 'HANNAH1',
+          email: 'hannah@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['VIP'],
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'g-other',
+          guestName: 'Ian Other',
+          code: 'IAN1',
+          email: 'ian@example.com',
+          used: true,
+          addressLine1: '1 Main St',
+          city: 'Boston',
+          state: 'MA',
+          zipCode: '02108',
+          dietaryNotes: 'Vegan',
+          partyGroup: 'Groom',
+          partyTags: ['Friends'],
+          extraFields: { attendanceStatus: 'attending', phone: '+15558889999' },
+        },
+      ];
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: richCodes,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      // Verify direct Broadcast Delivery Logs link
+      const logsLink = screen.getByRole('link', { name: /Broadcast Delivery Logs/i });
+      expect(logsLink).toHaveAttribute('href', '/admin/dashboard/history?tab=broadcasts');
+
+      // Manual create form validates and saves phone inside extraFields.phone
+      fireEvent.click(screen.getByRole('button', { name: 'Generate New Code' }));
+      fireEvent.change(screen.getByPlaceholderText('e.g. John Doe'), {
+        target: { value: 'Manual SMS Guest' },
+      });
+      fireEvent.change(screen.getByPlaceholderText('e.g. +15551234567'), {
+        target: { value: 'bad-phone' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+      expect(mockCreate).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByPlaceholderText('e.g. +15551234567'), {
+        target: { value: '+1 (555) 777-8888' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+      await waitFor(() => {
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            guestName: 'Manual SMS Guest',
+            extraFields: { phone: '+15557778888' },
+          })
+        );
+      });
+
+      // Set all 7 active guest list filters
+      fireEvent.change(screen.getByLabelText('Search invitation codes'), {
+        target: { value: 'Hannah' },
+      });
+      fireEvent.change(screen.getByLabelText('Filter by party side or group'), {
+        target: { value: 'Bride' },
+      });
+      fireEvent.change(screen.getByLabelText('Filter by dietary category'), {
+        target: { value: 'gluten-free' },
+      });
+      fireEvent.click(
+        within(screen.getByRole('group', { name: /Party Tags/i })).getByRole('button', {
+          name: '#VIP',
+        })
+      );
+      fireEvent.click(screen.getByRole('tab', { name: /Unused/i }));
+      fireEvent.click(
+        within(screen.getByRole('group', { name: /Address/i })).getByRole('button', {
+          name: /Address Missing/i,
+        })
+      );
+      fireEvent.click(
+        within(screen.getByRole('group', { name: /Attendance/i })).getByRole('button', {
+          name: /Pending/i,
+        })
+      );
+
+      // Open Send Broadcast modal and verify all 7 filters + live audience counts
+      fireEvent.click(screen.getByRole('button', { name: 'Send Broadcast' }));
+
+      const modal = screen.getByRole('dialog', { name: 'Compose Multi-Channel Broadcast' });
+      const banner = within(modal).getByTestId('broadcast-audience-banner');
+      expect(banner).toHaveTextContent('Search: "Hannah"');
+      expect(banner).toHaveTextContent('Redemption: unused');
+      expect(banner).toHaveTextContent('Address: missing');
+      expect(banner).toHaveTextContent('Status: pending');
+      expect(banner).toHaveTextContent('Dietary: gluten-free');
+      expect(banner).toHaveTextContent('Group: Bride');
+      expect(banner).toHaveTextContent('Tags: [VIP]');
+      expect(within(modal).getByTestId('broadcast-audience-counts')).toHaveTextContent(
+        '1 matched guest'
+      );
+      expect(within(modal).getByTestId('broadcast-audience-counts')).toHaveTextContent(
+        '0 missing email'
+      );
     });
   });
 });

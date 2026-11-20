@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
+import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { FormGroup, Label, Input, Textarea, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
@@ -13,6 +15,7 @@ import {
   BroadcastStarterTemplate,
   AVAILABLE_TEMPLATE_PLACEHOLDERS,
   BROADCAST_STARTER_TEMPLATES,
+  summarizeBroadcastAudience,
 } from '@/features/broadcast';
 
 export interface BroadcastModalProps {
@@ -22,9 +25,11 @@ export interface BroadcastModalProps {
   targetFilters?: BroadcastTargetFilters;
   selectedCount?: number;
   initialRecipientCount?: number;
+  guests?: Array<Record<string, any>>;
   subEvents?: any[];
   adminEmail?: string;
   adminPhone?: string;
+  onViewDeliveryLogs?: () => void;
 }
 
 function buildEffectiveTargetFilters(
@@ -48,11 +53,13 @@ function buildEffectiveTargetFilters(
   if (filters.status && filters.status !== 'all') {
     normalized.status = filters.status;
   }
-  if (filters.addressFilter && filters.addressFilter !== 'all') {
-    normalized.addressFilter = filters.addressFilter;
+  const effectiveAddressStatus = filters.addressStatus ?? filters.addressFilter;
+  if (effectiveAddressStatus && effectiveAddressStatus !== 'all') {
+    normalized.addressStatus = effectiveAddressStatus;
   }
-  if (filters.dietaryFilter && filters.dietaryFilter !== 'all') {
-    normalized.dietaryFilter = filters.dietaryFilter;
+  const effectiveDietary = filters.dietaryCategory ?? filters.dietaryFilter;
+  if (effectiveDietary && effectiveDietary !== 'all') {
+    normalized.dietaryCategory = effectiveDietary;
   }
   if (filters.attendanceStatus && filters.attendanceStatus !== 'all') {
     normalized.attendanceStatus = filters.attendanceStatus;
@@ -76,9 +83,11 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   targetFilters,
   selectedCount,
   initialRecipientCount,
+  guests,
   subEvents = [],
   adminEmail,
   adminPhone,
+  onViewDeliveryLogs,
 }) => {
   const { addToast } = useToast();
   const { contactEmail } = useTheme();
@@ -112,12 +121,18 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const [testDestination, setTestDestination] = useState('');
   const [activeTab, setActiveTab] = useState<'compose' | 'preview'>('compose');
   const [previewResult, setPreviewResult] = useState<any>(null);
+  const [lastPreviewSignature, setLastPreviewSignature] = useState<string | null>(null);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
   const [recipientCount, setRecipientCount] = useState<number | null>(
     manualSelectionCount ?? initialRecipientCount ?? null
   );
+  const [serverAudienceCounts, setServerAudienceCounts] = useState<{
+    matchedCount: number;
+    missingContactCount: number;
+  } | null>(null);
   const [resolvedCountKey, setResolvedCountKey] = useState<string | null>(null);
+  const [hasCheckedBaseUrl, setHasCheckedBaseUrl] = useState(false);
   const [baseUrlWarning, setBaseUrlWarning] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -132,11 +147,20 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     [effectiveTargetFilters]
   );
 
+  const usesRsvpUrl = body.includes('{{rsvpUrl}}') || subject.includes('{{rsvpUrl}}');
+  const requiresServerCount =
+    !Array.isArray(guests) || Boolean(effectiveTargetFilters?.subEventId);
+  const shouldFetchCount =
+    typeof countRecipients === 'function' &&
+    (requiresServerCount || (usesRsvpUrl && !hasCheckedBaseUrl));
+
   const countingRecipients =
-    typeof countRecipients === 'function' && resolvedCountKey !== filtersKey;
+    typeof countRecipients === 'function' &&
+    requiresServerCount &&
+    resolvedCountKey !== filtersKey;
 
   useEffect(() => {
-    if (typeof countRecipients !== 'function') {
+    if (!shouldFetchCount || typeof countRecipients !== 'function') {
       return;
     }
 
@@ -148,7 +172,17 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         if (typeof res?.recipientCount === 'number') {
           setRecipientCount(res.recipientCount);
         }
+        if (
+          typeof res?.matchedCount === 'number' &&
+          typeof res?.missingContactCount === 'number'
+        ) {
+          setServerAudienceCounts({
+            matchedCount: res.matchedCount,
+            missingContactCount: res.missingContactCount,
+          });
+        }
         setBaseUrlWarning(res?.baseUrlWarning ?? null);
+        setHasCheckedBaseUrl(true);
       })
       .catch(() => {
         // Preserve existing fallback count if live count request fails
@@ -162,7 +196,72 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [countRecipients, filtersKey, effectiveTargetFilters]);
+  }, [shouldFetchCount, countRecipients, filtersKey, effectiveTargetFilters]);
+
+  const currentPreviewSignature = useMemo(
+    () =>
+      JSON.stringify({
+        channel,
+        subject: channel === 'EMAIL' ? subject : undefined,
+        body,
+        targetFilters: effectiveTargetFilters,
+      }),
+    [channel, subject, body, effectiveTargetFilters]
+  );
+
+  const audienceStats = useMemo(() => {
+    if (Array.isArray(guests) && !effectiveTargetFilters?.subEventId) {
+      return summarizeBroadcastAudience(guests, effectiveTargetFilters, channel);
+    }
+    if (
+      previewResult &&
+      typeof previewResult.matchedCount === 'number' &&
+      typeof previewResult.missingContactCount === 'number'
+    ) {
+      return {
+        matchedCount: previewResult.matchedCount,
+        missingContactCount: previewResult.missingContactCount,
+        reachableCount: previewResult.matchedCount - previewResult.missingContactCount,
+      };
+    }
+    if (serverAudienceCounts && channel === 'EMAIL') {
+      return {
+        matchedCount: serverAudienceCounts.matchedCount,
+        missingContactCount: serverAudienceCounts.missingContactCount,
+        reachableCount:
+          serverAudienceCounts.matchedCount - serverAudienceCounts.missingContactCount,
+      };
+    }
+    return null;
+  }, [guests, effectiveTargetFilters, channel, previewResult, serverAudienceCounts]);
+
+  const effectiveRecipientCount = useMemo(() => {
+    if (isManualSelection) {
+      return manualSelectionCount ?? audienceStats?.matchedCount ?? null;
+    }
+    if (effectiveTargetFilters?.subEventId) {
+      return recipientCount;
+    }
+    if (Array.isArray(guests) && audienceStats !== null) {
+      return audienceStats.matchedCount;
+    }
+    return recipientCount;
+  }, [
+    isManualSelection,
+    manualSelectionCount,
+    effectiveTargetFilters?.subEventId,
+    guests,
+    audienceStats,
+    recipientCount,
+  ]);
+
+  const navigateToDeliveryLogs = () => {
+    if (onViewDeliveryLogs) {
+      onViewDeliveryLogs();
+    } else if (typeof window !== 'undefined') {
+      window.location.assign('/admin/dashboard/history?tab=broadcasts');
+    }
+  };
 
   const handleChannelChange = (nextChannel: BroadcastChannel) => {
     if (selectedTemplateId) {
@@ -187,6 +286,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     setSubject(template.subject);
     setBody(channel === 'EMAIL' ? template.emailBody : template.smsBody);
     setPreviewResult(null);
+    setLastPreviewSignature(null);
   };
 
   const insertPlaceholder = (ph: string) => {
@@ -208,11 +308,22 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     }, 0);
   };
 
-  const handleGeneratePreview = async () => {
+  const runPreviewRequest = async (options?: {
+    silentEmpty?: boolean;
+    switchToPreview?: boolean;
+  }) => {
     if (!body.trim()) {
-      addToast('Please enter a message body before previewing.', 'error');
+      if (!options?.silentEmpty) {
+        addToast('Please enter a message body before previewing.', 'error');
+      }
       return;
     }
+    const requestSignature = JSON.stringify({
+      channel,
+      subject: channel === 'EMAIL' ? subject : undefined,
+      body,
+      targetFilters: effectiveTargetFilters,
+    });
     try {
       const res: any = await previewBroadcast({
         channel,
@@ -223,13 +334,38 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       setPreviewResult(res);
       if (typeof res?.recipientCount === 'number') {
         setRecipientCount(res.recipientCount);
+      } else if (typeof res?.matchedCount === 'number') {
+        setRecipientCount(res.matchedCount);
       }
       if (res?.baseUrlWarning) {
         setBaseUrlWarning(res.baseUrlWarning);
       }
-      setActiveTab('preview');
+      setHasCheckedBaseUrl(true);
+      setLastPreviewSignature(requestSignature);
+      if (options?.switchToPreview) {
+        setActiveTab('preview');
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to generate preview', 'error');
+    }
+  };
+
+  const handleGeneratePreview = async () => {
+    await runPreviewRequest({ switchToPreview: true });
+  };
+
+  const handleRefreshPreview = async () => {
+    await runPreviewRequest({ switchToPreview: false });
+  };
+
+  const handleTabChange = (nextTab: 'compose' | 'preview') => {
+    setActiveTab(nextTab);
+    if (
+      nextTab === 'preview' &&
+      body.trim() &&
+      lastPreviewSignature !== currentPreviewSignature
+    ) {
+      void runPreviewRequest({ silentEmpty: true });
     }
   };
 
@@ -295,20 +431,31 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         scheduledFor: scheduledIso,
       });
 
-      if (result?.baseUrlWarning && (body.includes('{{rsvpUrl}}') || subject.includes('{{rsvpUrl}}'))) {
-        addToast(result.baseUrlWarning, 'info');
-      }
+      const deliveryLogsAction = {
+        label: 'View Delivery Logs',
+        onClick: navigateToDeliveryLogs,
+      };
 
       if (result.status === 'SCHEDULED') {
         addToast(
           `Broadcast scheduled for ${new Date(result.scheduledFor || scheduledFor).toLocaleString()}!`,
-          'success'
+          'success',
+          undefined,
+          undefined,
+          deliveryLogsAction
         );
       } else {
         addToast(
           `Broadcast dispatched! Sent: ${result.sentCount || 0}, Failed: ${result.failedCount || 0}`,
-          (result.failedCount || 0) === 0 ? 'success' : 'info'
+          (result.failedCount || 0) === 0 ? 'success' : 'info',
+          undefined,
+          undefined,
+          deliveryLogsAction
         );
+      }
+
+      if (result?.baseUrlWarning && usesRsvpUrl) {
+        addToast(result.baseUrlWarning, 'info');
       }
       onClose();
     } catch (err: any) {
@@ -327,26 +474,26 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     if (effectiveTargetFilters?.searchQuery) {
       parts.push(`Search: "${effectiveTargetFilters.searchQuery}"`);
     }
+    if (effectiveTargetFilters?.status) {
+      parts.push(`Redemption: ${effectiveTargetFilters.status}`);
+    }
+    if (effectiveTargetFilters?.addressStatus) {
+      parts.push(`Address: ${effectiveTargetFilters.addressStatus}`);
+    }
+    if (effectiveTargetFilters?.attendanceStatus) {
+      parts.push(`Status: ${effectiveTargetFilters.attendanceStatus}`);
+    }
+    if (effectiveTargetFilters?.dietaryCategory) {
+      parts.push(`Dietary: ${effectiveTargetFilters.dietaryCategory}`);
+    }
     if (effectiveTargetFilters?.partyGroup) {
-      parts.push(`Group: "${effectiveTargetFilters.partyGroup}"`);
+      parts.push(`Group: ${effectiveTargetFilters.partyGroup}`);
     }
     if (effectiveTargetFilters?.partyTags && effectiveTargetFilters.partyTags.length > 0) {
       parts.push(`Tags: [${effectiveTargetFilters.partyTags.join(', ')}]`);
     }
     if (effectiveTargetFilters?.householdName) {
       parts.push(`Household: "${effectiveTargetFilters.householdName}"`);
-    }
-    if (effectiveTargetFilters?.status) {
-      parts.push(`Code Status: ${effectiveTargetFilters.status}`);
-    }
-    if (effectiveTargetFilters?.attendanceStatus) {
-      parts.push(`RSVP: ${effectiveTargetFilters.attendanceStatus}`);
-    }
-    if (effectiveTargetFilters?.addressFilter) {
-      parts.push(`Address: ${effectiveTargetFilters.addressFilter}`);
-    }
-    if (effectiveTargetFilters?.dietaryFilter) {
-      parts.push(`Dietary: ${effectiveTargetFilters.dietaryFilter}`);
     }
     if (effectiveTargetFilters?.subEventId) {
       const foundSub = subEvents.find((s) => s.id === effectiveTargetFilters.subEventId);
@@ -363,65 +510,61 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   };
 
   const activeWarning = previewResult?.baseUrlWarning || baseUrlWarning;
-  const usesRsvpUrl = body.includes('{{rsvpUrl}}') || subject.includes('{{rsvpUrl}}');
   const showBaseUrlWarning = Boolean(activeWarning && (usesRsvpUrl || activeTab === 'preview'));
+  const missingContactLabel = channel === 'EMAIL' ? 'email' : 'phone';
 
   return (
     <div className="space-y-4">
       {/* Navigation Tabs */}
-      <div
-        role="tablist"
-        aria-label="Broadcast navigation tabs"
-        className="flex border-b border-gray-200 dark:border-zinc-700"
-      >
-        <button
-          type="button"
-          role="tab"
-          id="broadcast-tab-compose"
-          aria-selected={activeTab === 'compose'}
-          aria-controls="broadcast-tabpanel-compose"
-          onClick={() => setActiveTab('compose')}
-          className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'compose'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
-          }`}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SegmentedTabs
+          aria-label="Broadcast navigation tabs"
+          value={activeTab}
+          onChange={handleTabChange}
+          tabs={[
+            {
+              value: 'compose',
+              label: 'Compose Message',
+              id: 'broadcast-tab-compose',
+              panelId: 'broadcast-tabpanel-compose',
+            },
+            {
+              value: 'preview',
+              label: 'Live Preview',
+              id: 'broadcast-tab-preview',
+              panelId: 'broadcast-tabpanel-preview',
+            },
+          ]}
+        />
+        <Link
+          href="/admin/dashboard/history?tab=broadcasts"
+          prefetch={false}
+          className="text-xs font-semibold text-primary dark:text-zinc-200 underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-1 py-0.5"
         >
-          Compose Message
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="broadcast-tab-preview"
-          aria-selected={activeTab === 'preview'}
-          aria-controls="broadcast-tabpanel-preview"
-          onClick={() => setActiveTab('preview')}
-          className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'preview'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
-          }`}
-        >
-          Live Preview
-        </button>
+          Delivery Logs
+        </Link>
       </div>
 
       {/* Target Summary & Live Recipient Count Banner */}
-      <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary space-y-3">
+      <div
+        data-testid="broadcast-audience-banner"
+        className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-gray-900 dark:text-zinc-100 space-y-2.5"
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
+            <span className="font-semibold text-primary dark:text-zinc-100">Target Audience:</span>{' '}
+            <span>{getTargetSummary()}</span>
           </div>
           <div className="flex items-center gap-2">
-            {(countingRecipients || recipientCount !== null) && (
+            {(countingRecipients || effectiveRecipientCount !== null) && (
               <span
                 data-testid="broadcast-recipient-count"
                 aria-live="polite"
-                className="inline-flex items-center px-2.5 py-0.5 rounded-full font-semibold bg-white dark:bg-zinc-900 border border-primary/30 text-primary"
+                className="inline-flex items-center px-2.5 py-0.5 rounded-full font-semibold bg-white dark:bg-zinc-900 border border-primary/30 text-primary dark:text-zinc-100"
               >
                 {countingRecipients
                   ? 'Counting recipients...'
-                  : `${recipientCount} matching ${recipientCount === 1 ? 'recipient' : 'recipients'}`}
+                  : `${effectiveRecipientCount} matching ${effectiveRecipientCount === 1 ? 'recipient' : 'recipients'}`}
               </span>
             )}
             {!isManualSelection && effectiveTargetFilters && (
@@ -430,14 +573,35 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
                 onClick={() => {
                   setLocalFilters({});
                   setPreviewResult(null);
+                  setLastPreviewSignature(null);
                 }}
-                className="underline font-medium hover:opacity-80"
+                className="underline font-medium text-primary dark:text-zinc-200 hover:opacity-80"
               >
                 Reset Filters
               </button>
             )}
           </div>
         </div>
+
+        {audienceStats !== null && (
+          <div
+            data-testid="broadcast-audience-counts"
+            className="flex flex-wrap items-center gap-2 pt-0.5"
+          >
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-600 font-semibold text-gray-800 dark:text-zinc-100">
+              {audienceStats.matchedCount} matched {audienceStats.matchedCount === 1 ? 'guest' : 'guests'}
+            </span>
+            <span
+              className={
+                audienceStats.missingContactCount > 0
+                  ? 'inline-flex items-center px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 border border-amber-400 dark:border-amber-700 font-semibold text-amber-900 dark:text-amber-200'
+                  : 'inline-flex items-center px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 font-semibold text-emerald-900 dark:text-emerald-200'
+              }
+            >
+              {audienceStats.missingContactCount} missing {missingContactLabel}
+            </span>
+          </div>
+        )}
 
         {!isManualSelection && activeTab === 'compose' && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-primary/15 text-gray-800 dark:text-zinc-200">
@@ -467,12 +631,13 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
               <Label htmlFor="broadcast-filter-address">Address Completion</Label>
               <Select
                 id="broadcast-filter-address"
-                value={localFilters.addressFilter || 'all'}
+                value={localFilters.addressStatus ?? localFilters.addressFilter ?? 'all'}
                 onChange={(e) => {
-                  const val = e.target.value as BroadcastTargetFilters['addressFilter'];
+                  const val = e.target.value as BroadcastTargetFilters['addressStatus'];
                   setLocalFilters((prev) => ({
                     ...prev,
-                    addressFilter: val === 'all' ? undefined : val,
+                    addressStatus: val === 'all' ? undefined : val,
+                    addressFilter: undefined,
                   }));
                   setPreviewResult(null);
                 }}
@@ -546,10 +711,9 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       )}
 
       {activeTab === 'compose' ? (
-        <div
-          role="tabpanel"
+        <SegmentedTabPanel
           id="broadcast-tabpanel-compose"
-          aria-labelledby="broadcast-tab-compose"
+          tabId="broadcast-tab-compose"
           className="space-y-4"
         >
           <FormGroup>
@@ -567,7 +731,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 
           {/* Starter Templates */}
           <div>
-            <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1.5 block">
+            <span className="text-xs font-semibold text-gray-600 dark:text-zinc-300 mb-1.5 block">
               Starter Templates:
             </span>
             <div
@@ -613,7 +777,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 
           {/* Template Variables Quick Insert Toolbar */}
           <div>
-            <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1.5 block">
+            <span className="text-xs font-semibold text-gray-600 dark:text-zinc-300 mb-1.5 block">
               Insert Dynamic Placeholders:
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -623,7 +787,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
                   type="button"
                   onClick={() => insertPlaceholder(item.placeholder)}
                   title={item.description}
-                  className="inline-flex items-center px-2 py-1 text-xs font-mono bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 rounded border border-gray-300 dark:border-zinc-600 transition-colors"
+                  className="inline-flex items-center px-2 py-1 text-xs font-mono bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-800 dark:text-zinc-200 rounded border border-gray-300 dark:border-zinc-600 transition-colors"
                 >
                   + {item.placeholder}
                 </button>
@@ -663,7 +827,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
               onChange={(e) => setTestDestination(e.target.value)}
               className="w-full"
             />
-            <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+            <span className="text-xs text-gray-600 dark:text-zinc-300 mt-1 block">
               Leave blank to deliver to configured host {channel === 'EMAIL' ? 'contact email' : 'phone number'}.
             </span>
           </FormGroup>
@@ -691,48 +855,64 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
                   onChange={(e) => setScheduledFor(e.target.value)}
                   className="w-full"
                 />
-                <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+                <span className="text-xs text-gray-600 dark:text-zinc-300 mt-1 block">
                   The background cron worker will automatically dispatch this message when the scheduled time arrives.
                 </span>
               </FormGroup>
             )}
           </div>
-        </div>
+        </SegmentedTabPanel>
       ) : (
-      /* Preview Tab Content */
-        <div
-          role="tabpanel"
+        /* Preview Tab Content */
+        <SegmentedTabPanel
           id="broadcast-tabpanel-preview"
-          aria-labelledby="broadcast-tab-preview"
+          tabId="broadcast-tab-preview"
           className="space-y-4"
         >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-600 dark:text-zinc-300">
+              Personalized sample output ({channel === 'EMAIL' ? 'Email' : 'SMS'})
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={handleRefreshPreview}
+              disabled={previewing || !body.trim()}
+            >
+              {previewing ? 'Refreshing...' : 'Refresh Preview'}
+            </Button>
+          </div>
+
           {previewResult ? (
             <div className="border border-gray-200 dark:border-zinc-700 rounded-md p-4 bg-gray-50 dark:bg-zinc-900/50 space-y-3">
-              <div className="text-xs text-gray-500 dark:text-zinc-400 flex justify-between border-b pb-2 dark:border-zinc-700">
+              <div className="text-xs text-gray-600 dark:text-zinc-300 flex justify-between border-b pb-2 dark:border-zinc-700">
                 <span>Sample Recipient: <strong>{previewResult.sampleGuestName}</strong></span>
                 <span>Destination: <strong>{previewResult.destination}</strong></span>
               </div>
 
               {previewResult.subject && (
                 <div>
-                  <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold">Subject:</span>
+                  <span className="text-xs text-gray-600 dark:text-zinc-300 uppercase tracking-wider block font-semibold">Subject:</span>
                   <h3 className="text-base font-semibold text-gray-900 dark:text-zinc-100">{previewResult.subject}</h3>
                 </div>
               )}
 
               <div>
-                <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
+                <span className="text-xs text-gray-600 dark:text-zinc-300 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
                 <div className="bg-white dark:bg-zinc-800 p-3 rounded border border-gray-200 dark:border-zinc-700 whitespace-pre-wrap text-sm text-gray-800 dark:text-zinc-200">
                   {previewResult.body}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="p-6 text-center text-sm text-gray-500 dark:text-zinc-400">
-              Click "Live Preview" or switch tabs to render dynamic variables.
+            <div className="p-6 text-center text-sm text-gray-600 dark:text-zinc-300">
+              {previewing
+                ? 'Rendering dynamic variables...'
+                : 'Enter a message body in Compose Message or click Refresh Preview to render dynamic variables.'}
             </div>
           )}
-        </div>
+        </SegmentedTabPanel>
       )}
 
       {/* Modal Actions */}
@@ -760,7 +940,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
             sendingTest ||
             !body.trim() ||
             (channel === 'EMAIL' && !subject.trim()) ||
-            recipientCount === 0
+            effectiveRecipientCount === 0
           }
         >
           {sending

@@ -225,6 +225,131 @@ describe('BroadcastService', () => {
         expect(res.map((g) => g.id)).toEqual(['invited-1', 'public-1']);
       });
     });
+
+    describe('all seven guest list filters parity', () => {
+      const comprehensiveGuests = [
+        {
+          id: 'match-1',
+          guestName: 'Elena Gilbert',
+          code: 'ELENA1',
+          email: 'elena@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party', 'Out of Town'],
+          plusOneFirstName: 'Stefan',
+          plusOneLastName: 'Salvatore',
+          extraFields: { attendanceStatus: 'pending', phone: '+15552223333' },
+        },
+        {
+          id: 'nonmatch-redeemed',
+          guestName: 'Elena Redeemed',
+          code: 'ELENA2',
+          email: 'elena2@example.com',
+          used: true,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'nonmatch-complete-addr',
+          guestName: 'Elena CompleteAddr',
+          code: 'ELENA3',
+          email: 'elena3@example.com',
+          used: false,
+          addressLine1: '100 Oak Rd',
+          city: 'Mystic Falls',
+          state: 'VA',
+          zipCode: '22901',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'nonmatch-dietary',
+          guestName: 'Elena Vegan',
+          code: 'ELENA4',
+          email: 'elena4@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Vegan',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'nonmatch-group',
+          guestName: 'Elena GroomSide',
+          code: 'ELENA5',
+          email: 'elena5@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Groom',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'public-addr-col',
+          guestName: 'Elena Public',
+          code: 'ELENA6',
+          email: 'elena6@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party', 'address-collection'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+      ];
+
+      it('evaluates status, addressStatus, attendanceStatus, dietaryCategory, partyGroup, partyTags, and searchQuery simultaneously', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(comprehensiveGuests);
+
+        const res = await BroadcastService.resolveTargetGuests({
+          searchQuery: 'Stefan',
+          status: 'unused',
+          addressStatus: 'missing',
+          attendanceStatus: 'pending',
+          dietaryCategory: 'gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+        });
+
+        expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({
+          where: {
+            partyTags: { hasSome: ['Bridal Party'] },
+            used: false,
+            partyGroup: 'Bride',
+          },
+        });
+        expect(res.map((g) => g.id)).toEqual(['match-1']);
+      });
+    });
   });
 
   describe('renderPreview', () => {
@@ -269,10 +394,10 @@ describe('BroadcastService', () => {
       expect(preview.destination).toBe('pen@example.com');
     });
 
-    it('escapes dynamic placeholders in EMAIL previews, strips CR/LF/<> in subjects, and leaves SMS previews unescaped', async () => {
+    it('returns unescaped preview body strings for both EMAIL and SMS while sanitizing CR/LF/<> in EMAIL subjects', async () => {
       (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
         id: 'canary-1',
-        guestName: '<b data-canary="guest-html-marker">O\'Connor</b>\r\nInjected',
+        guestName: 'Sean O\'Connor\r\nInjected',
         code: 'CANARY1',
         householdName: '<i data-canary="household-html-marker">O\'Connor & Family</i>',
         email: 'oconnor@example.com',
@@ -282,17 +407,17 @@ describe('BroadcastService', () => {
       const emailPreview = await BroadcastService.renderPreview({
         channel: 'EMAIL',
         subject: 'Event update for {{guestName}} ({{householdName}})',
-        body: '<p>Dear {{guestName}} ({{householdName}}), here is your event update.</p>',
+        body: 'Dear {{guestName}} ({{householdName}}), we can\'t wait & hope to see you!',
         sampleGuestId: 'canary-1',
       });
 
       expect(emailPreview.body).toBe(
-        '<p>Dear &lt;b data-canary=&quot;guest-html-marker&quot;&gt;O&#39;Connor&lt;/b&gt;\r\nInjected (&lt;i data-canary=&quot;household-html-marker&quot;&gt;O&#39;Connor &amp; Family&lt;/i&gt;), here is your event update.</p>'
+        'Dear Sean O\'Connor\r\nInjected (<i data-canary="household-html-marker">O\'Connor & Family</i>), we can\'t wait & hope to see you!'
       );
-      expect(emailPreview.body).not.toContain('<b data-canary=');
-      expect(emailPreview.body).not.toContain('<i data-canary=');
+      expect(emailPreview.body).not.toContain('&#39;');
+      expect(emailPreview.body).not.toContain('&amp;');
       expect(emailPreview.subject).toBe(
-        'Event update for b data-canary="guest-html-marker"O\'Connor/bInjected (i data-canary="household-html-marker"O\'Connor & Family/i)'
+        'Event update for Sean O\'ConnorInjected (i data-canary="household-html-marker"O\'Connor & Family/i)'
       );
       expect(emailPreview.subject).not.toMatch(/[\r\n<>]/);
 
@@ -302,6 +427,22 @@ describe('BroadcastService', () => {
         sampleGuestId: 'canary-1',
       });
       expect(smsPreview.body).toBe('Hi <i data-canary="household-html-marker">O\'Connor & Family</i>!');
+    });
+
+    it('includes matchedCount and missingContactCount when targetFilters are provided', async () => {
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+        { id: 'g1', guestName: 'Alice', code: 'A1', email: 'alice@example.com', used: false, extraFields: { phone: '+15551112222' } },
+        { id: 'g2', guestName: 'Bob', code: 'B1', email: null, used: false, extraFields: {} },
+      ]);
+
+      const smsPreview = await BroadcastService.renderPreview({
+        channel: 'SMS',
+        body: 'Reminder for {{guestName}}',
+        targetFilters: { status: 'unused' },
+      });
+
+      expect(smsPreview.matchedCount).toBe(2);
+      expect(smsPreview.missingContactCount).toBe(1);
     });
   });
 

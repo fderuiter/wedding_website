@@ -2,12 +2,14 @@ export type BroadcastChannel = 'EMAIL' | 'SMS';
 
 export interface BroadcastTargetFilters {
   partyTags?: string[];
-  partyGroup?: string;
   householdName?: string;
-  status?: 'all' | 'redeemed' | 'unused';
-  addressFilter?: 'all' | 'complete' | 'missing';
-  dietaryFilter?: string;
   attendanceStatus?: 'attending' | 'declined' | 'pending' | 'all';
+  status?: 'redeemed' | 'unused' | 'all';
+  addressStatus?: 'complete' | 'missing' | 'all';
+  addressFilter?: 'complete' | 'missing' | 'all';
+  dietaryCategory?: string;
+  dietaryFilter?: string;
+  partyGroup?: string;
   subEventId?: string;
   subEventRsvpStatus?: string;
   selectedIds?: string[];

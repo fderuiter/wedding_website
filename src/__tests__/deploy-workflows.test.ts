@@ -2,10 +2,12 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { parseDocument } from 'yaml';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const DEPLOY_YML_PATH = path.join(REPO_ROOT, '.github', 'workflows', 'deploy.yml');
-const DEPLOY_PROVIDER_YML_PATH = path.join(REPO_ROOT, '.github', 'workflows', 'deploy-provider.yml');
+const WORKFLOWS_DIR = path.join(REPO_ROOT, '.github', 'workflows');
+const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
+const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
 const CLOUD_RUN_DOC_PATH = path.join(REPO_ROOT, 'docs', 'deployment', 'gcp-cloud-run.md');
 
@@ -139,6 +141,42 @@ process.exit(1);
       },
     });
   }
+
+  it('parses every workflow in .github/workflows/ as strict YAML 1.2 with zero errors or warnings and preserves provenance.if', () => {
+    const workflowFiles = fs
+      .readdirSync(WORKFLOWS_DIR)
+      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      .sort();
+
+    expect(workflowFiles.length).toBeGreaterThan(0);
+
+    for (const file of workflowFiles) {
+      const content = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8');
+      const doc = parseDocument(content, { version: '1.2', strict: true });
+      expect({
+        file,
+        errors: doc.errors.map((e) => e.message),
+        warnings: doc.warnings.map((w) => w.message),
+      }).toEqual({
+        file,
+        errors: [],
+        warnings: [],
+      });
+    }
+
+    const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true });
+    const parsed = deployProviderDoc.toJS() as {
+      jobs?: {
+        deploy?: {
+          steps?: Array<{ id?: string; if?: string }>;
+        };
+      };
+    };
+    const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
+    expect(provenanceStep?.if).toBe(
+      "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
+    );
+  });
 
   it('keeps top-level permissions at contents: read and scopes attestations/packages read to deployment jobs', () => {
     expect(deployYml).toMatch(/^permissions:\n  contents: read\n/m);

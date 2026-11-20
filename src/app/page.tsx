@@ -3,7 +3,7 @@ import HomePageClient from '@/components/home/HomePageClient';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { logisticsService } from '@/features/logistics';
 import { subEventService } from '@/features/sub-events';
-import { ContentNodeSchema, type ContentNodeDTO } from '@/features/content';
+import { ContentNodeSchema, isPrivateContentNode, type ContentNodeDTO } from '@/features/content';
 import { enforceActiveGuestPageSession, getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { withPageQuery } from '@/lib/query-wrapper';
 
@@ -88,10 +88,12 @@ export default async function HomePage() {
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
 
-  let contentNodes = await withPageQuery(
-    () => logisticsService.getHomepageLogistics(),
-    []
-  );
+  let contentNodes = (
+    await withPageQuery(
+      () => logisticsService.getHomepageLogistics(),
+      []
+    )
+  ).filter((n) => !isPrivateContentNode(n));
 
   const isStaticExport =
     process.env.STATIC_EXPORT === 'true' ||
@@ -109,6 +111,9 @@ export default async function HomePage() {
 
       if (guestSchedule.length > 0) {
         const nonScheduleNodes = contentNodes.filter((n) => {
+          if (isPrivateContentNode(n)) {
+            return false;
+          }
           const data = n.data as any;
           return !(
             n.type === 'Schedule' ||

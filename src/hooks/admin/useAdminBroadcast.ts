@@ -50,17 +50,32 @@ export function useAdminBroadcast() {
   const countRecipients = useCallback(
     async (
       targetFilters?: BroadcastTargetFilters
-    ): Promise<{ recipientCount: number; baseUrlWarning?: string }> => {
+    ): Promise<{
+      recipientCount: number;
+      matchedCount?: number;
+      missingContactCount?: number;
+      baseUrlWarning?: string;
+    }> => {
       const res = await apiClient.post<{
         recipientCount?: number;
+        matchedCount?: number;
+        missingContactCount?: number;
         baseUrlWarning?: string;
       }>('/api/admin/broadcast/preview', {
         channel: 'EMAIL',
         body: '{{guestName}}',
         targetFilters,
       });
+      const resolvedCount =
+        typeof res?.recipientCount === 'number'
+          ? res.recipientCount
+          : typeof res?.matchedCount === 'number'
+            ? res.matchedCount
+            : 0;
       return {
-        recipientCount: typeof res?.recipientCount === 'number' ? res.recipientCount : 0,
+        recipientCount: resolvedCount,
+        matchedCount: res?.matchedCount,
+        missingContactCount: res?.missingContactCount,
         baseUrlWarning: res?.baseUrlWarning,
       };
     },

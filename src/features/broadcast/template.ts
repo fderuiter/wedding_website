@@ -33,6 +33,8 @@ export function buildGuestRsvpUrl(
 
 /**
  * Replaces dynamic placeholders in a message template string.
+ * Returns readable, unescaped strings by default (for live UI previews and SMS plain text)
+ * and escapes HTML entities only when `options.escapeHtml` is explicitly enabled.
  * Supports:
  * - {{guestName}}
  * - {{invitationCode}} or {{code}}
