@@ -11,6 +11,22 @@ describe('routes', () => {
 
       expect(isProtectedRoute('/guest', 'GET')).toBe(false);
     });
+
+    it('omits /archive, /admin/login, and /photos/slideshow from public and admin header navigation while preserving route protection', () => {
+      const publicHrefs = getNavLinks('public').map((link) => link.href);
+      expect(publicHrefs).not.toContain('/archive');
+      expect(publicHrefs).not.toContain('/admin/login');
+      expect(publicHrefs).not.toContain('/photos/slideshow');
+
+      const adminHrefs = getNavLinks('admin').map((link) => link.href);
+      expect(adminHrefs).not.toContain('/archive');
+      expect(adminHrefs).not.toContain('/admin/login');
+      expect(adminHrefs).toContain('/admin/dashboard');
+
+      expect(isProtectedRoute('/archive', 'GET')).toBe(false);
+      expect(isProtectedRoute('/admin/login', 'GET')).toBe(false);
+      expect(isProtectedRoute('/admin/dashboard/registry', 'GET')).toBe(true);
+    });
   });
 
   describe('isProtectedRoute', () => {

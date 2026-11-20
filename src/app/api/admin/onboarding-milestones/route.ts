@@ -3,6 +3,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { getAppConfig, isSiteInitialized } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -15,10 +16,14 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(401, 'Unauthorized');
   }
 
-  const [config, guestCount, registryCount, seatingCount] = await Promise.all([
-    getAppConfig(),
+  const config = await getAppConfig();
+  const registryEnabled = isFeatureEnabled('registry', config?.modules);
+
+  const [guestCount, registryCount, seatingCount] = await Promise.all([
     prisma.invitationCode.count({ where: { isSample: false } }),
-    prisma.registryItem.count({ where: { isSample: false } }),
+    registryEnabled
+      ? prisma.registryItem.count({ where: { isSample: false } })
+      : Promise.resolve(0),
     prisma.seatingTable.count({ where: { isSample: false } }),
   ]);
 
@@ -48,14 +53,18 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
       href: '/admin/dashboard/invitation-codes',
       actionLabel: guestListCompleted ? 'Manage Guest List' : 'Add Guest List',
     },
-    {
-      id: 'registry',
-      title: 'Gift Registry',
-      description: 'Add gifts or cash funds to your wedding registry.',
-      completed: registryCompleted,
-      href: '/registry/add-item',
-      actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
-    },
+    ...(registryEnabled
+      ? [
+        {
+          id: 'registry',
+          title: 'Gift Registry',
+          description: 'Add gifts or cash funds to your wedding registry.',
+          completed: registryCompleted,
+          href: '/registry/add-item',
+          actionLabel: registryCompleted ? 'Add More Gifts' : 'Add Registry Gifts',
+        },
+      ]
+      : []),
     {
       id: 'seating-layout',
       title: 'Seating Layout',

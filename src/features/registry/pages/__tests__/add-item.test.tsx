@@ -9,9 +9,11 @@ jest.mock('@/lib/apiClient', () => ({
   },
 }));
 
+const mockPush = jest.fn();
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: jest.fn(),
+    push: mockPush,
   }),
 }));
 
@@ -159,6 +161,7 @@ describe('AddRegistryItemPage Tabbed Navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: /Save All to Registry \(1\)/i }));
     await waitFor(() => {
       expect(window.sessionStorage.getItem('registry_batch_url_draft')).toBeNull();
+      expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
     });
   });
 });

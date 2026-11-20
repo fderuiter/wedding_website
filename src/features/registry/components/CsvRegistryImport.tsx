@@ -207,7 +207,7 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
       if (onSuccess) {
         onSuccess();
       } else {
-        router.push('/admin/dashboard');
+        router.push('/admin/dashboard/registry');
       }
     } catch (err: any) {
       addToast(`Failed to import items: ${err?.message || 'Unknown error'}`, 'error');

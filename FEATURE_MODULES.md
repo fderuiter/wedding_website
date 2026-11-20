@@ -6,7 +6,7 @@ This document defines the runtime contract for presentation feature toggles in [
 
 Presentation feature toggles govern optional guest-facing experiences through six distinct mechanisms—each with explicit runtime boundaries:
 
-1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L36-L39) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
+1. **Navigation Visibility**: [getNavLinks](src/lib/routes.ts#L69-L82) and [AdminDashboardLayout](src/app/admin/dashboard/layout.tsx#L37-L40) filter out navigation links whose `requiredModule` is disabled. Note that [isProtectedRoute](src/lib/routes.ts#L84-L118) evaluates `roles` only and does **not** enforce `requiredModule`.
 2. **Selective Route & Render Protection**: Only routes and components that explicitly call `isFeatureEnabled()` enforce toggle state (see [Route & Endpoint Enforcement Coverage](#route--endpoint-enforcement-coverage) below). Unchecked UI routes, unchecked API handlers, and dynamic admin entity routes remain reachable even when a toggle is `false`.
 3. **Persistence Model (`Prisma` `modules` JSON Column)**: The `AppConfig` model in [prisma/schema.prisma](prisma/schema.prisma#L11-L79) persists all 9 module flags in `modules Json @default("{}")` alongside `showCountdown` and `showAddToCalendar`, preserving module state across page refreshes, backup exports/imports, and snapshot version rollbacks.
 4. **Feature Dependencies**: `groupGifting` depends on `registry`; [resolveModuleConfig](src/lib/modules.ts#L119-L141) normalizes `groupGifting` to `false` whenever `registry` is `false` without throwing validation errors.
@@ -80,12 +80,12 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L298-L328))**:
+- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L380-L426))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
   - Hides the homepage photo gallery link when `gallery` is disabled and hides the 3D experience callout when `interactive3D` is disabled.
 - **UI Pages Skipping Server-Side `isFeatureEnabled`**:
-  - **Admin Dashboard Subpages**: `/admin/dashboard/*` routes (such as `/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) do not throw HTTP 404 on direct URL navigation so administrators can still curate underlying records while a guest-facing module is turned off.
+  - **Admin Dashboard Overview & Subpages**: `/admin/dashboard` renders a decoupled administrative overview (`OnboardingChecklist` + module-aware workflow cards) without querying registry items so core guest invitations, seating, and settings remain accessible when `registry` is disabled, while subpages (`/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) do not throw HTTP 404 on direct URL navigation so administrators can still curate underlying records while a guest-facing module is turned off.
 
 ### Middleware & Guest Passcode Environment Gatekeeping
 
