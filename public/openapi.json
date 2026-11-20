@@ -4,6 +4,56 @@
     "title": "Universal API",
     "version": "1.0.0"
   },
+  "tags": [
+    {
+      "name": "Admin",
+      "description": "Administrative endpoints for site configuration, content management, invitations, seating, broadcasts, and maintenance"
+    },
+    {
+      "name": "Cron",
+      "description": "Scheduled background job endpoints protected by CRON_SECRET bearer authentication"
+    },
+    {
+      "name": "Guest",
+      "description": "Guest authentication, invitation lookup, address collection, and guest photo upload endpoints"
+    },
+    {
+      "name": "Health",
+      "description": "Service liveness health check endpoints"
+    },
+    {
+      "name": "Media",
+      "description": "Media asset library CRUD and ZIP archive export endpoints"
+    },
+    {
+      "name": "Open Graph",
+      "description": "Dynamic Open Graph social preview image generation endpoints"
+    },
+    {
+      "name": "Photos",
+      "description": "Shared wedding photo gallery and photo upload endpoints"
+    },
+    {
+      "name": "Readiness",
+      "description": "Database and dependency readiness probe endpoints"
+    },
+    {
+      "name": "Registry",
+      "description": "Gift registry catalog, URL scraping, contributions, PaymentIntents, and Stripe webhook endpoints"
+    },
+    {
+      "name": "RSVP",
+      "description": "Guest sub-event RSVP submission and availability status endpoints"
+    },
+    {
+      "name": "Schedule",
+      "description": "Event schedule retrieval and iCalendar (.ics) download endpoints"
+    },
+    {
+      "name": "Weather",
+      "description": "Venue weather forecast proxy endpoints"
+    }
+  ],
   "components": {
     "securitySchemes": {
       "adminCookieAuth": {
@@ -40,6 +90,9 @@
   "paths": {
     "/api/admin/{entity}/{id}": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/[entity]/[id]",
         "description": "Endpoint for /api/admin/[entity]/[id]",
         "security": [
@@ -53,7 +106,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           },
           {
@@ -72,6 +134,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/[entity]/[id]",
         "description": "Endpoint for /api/admin/[entity]/[id]",
         "security": [
@@ -85,7 +150,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           },
           {
@@ -102,8 +176,1347 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": {}
+                "oneOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "FAQ"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "question": {
+                                "type": "string"
+                              },
+                              "answer": {
+                                "type": "string"
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "categoryTags": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "keywords": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "Logistics"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "ceremonyTitle": {
+                                "type": "string"
+                              },
+                              "ceremonyTime": {
+                                "type": "string"
+                              },
+                              "receptionTitle": {
+                                "type": "string"
+                              },
+                              "receptionTime": {
+                                "type": "string"
+                              },
+                              "receptionDetails": {
+                                "type": "string"
+                              },
+                              "receptionAttire": {
+                                "type": "string"
+                              },
+                              "startTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "endTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "categoryTags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "locationName": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "type": "string"
+                              },
+                              "attireRules": {
+                                "type": "string"
+                              },
+                              "attire": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "Schedule"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "startTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "endTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "categoryColors": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "object",
+                                  "properties": {
+                                    "bg": {
+                                      "type": "string"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "border": {
+                                      "type": "string"
+                                    },
+                                    "accent": {
+                                      "type": "string"
+                                    },
+                                    "color": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              },
+                              "categoryTags": {
+                                "default": [],
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "bg": {
+                                          "type": "string"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "border": {
+                                          "type": "string"
+                                        },
+                                        "accent": {
+                                          "type": "string"
+                                        },
+                                        "color": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "locationName": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "type": "string"
+                              },
+                              "attireRules": {
+                                "type": "string"
+                              },
+                              "attire": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "Photo"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "altText": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "default": "PENDING",
+                                "type": "string",
+                                "enum": [
+                                  "PENDING",
+                                  "APPROVED",
+                                  "REJECTED"
+                                ]
+                              },
+                              "isVisible": {
+                                "default": false,
+                                "type": "boolean"
+                              },
+                              "mediaId": {
+                                "type": "string"
+                              },
+                              "publishToGallery": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "data": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      },
+                      "bio": {
+                        "type": "string"
+                      },
+                      "side": {
+                        "nullable": true,
+                        "type": "string",
+                        "enum": [
+                          "BRIDE",
+                          "GROOM",
+                          "JOINT"
+                        ]
+                      },
+                      "link": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "order": {
+                        "type": "number"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "photoId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "photoUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "photoAlt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "photoDecorative": {
+                        "type": "boolean"
+                      },
+                      "photo": {
+                        "nullable": true,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "publishToGallery": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "website": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "directions": {
+                        "type": "string"
+                      },
+                      "latitude": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "longitude": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "isVisible": {
+                        "type": "boolean"
+                      },
+                      "promoCode": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "bookingUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "roomRate": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "cutoffDate": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "shuttleInfo": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "imageId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "imageAlt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageDecorative": {
+                        "type": "boolean"
+                      },
+                      "image": {
+                        "nullable": true,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "publishToGallery": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "itemType": {
+                        "default": "PHYSICAL",
+                        "type": "string",
+                        "enum": [
+                          "PHYSICAL",
+                          "CASH_FUND",
+                          "EXPERIENCE_FUND"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "price": {
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "quantity": {
+                        "default": 1,
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      "category": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "description": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "vendorUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "isGroupGift": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "on"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "off"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "isMostWanted": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "displayOrder": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "paymentHandleType": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "paymentHandle": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "imageAlt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageDecorative": {
+                        "type": "boolean"
+                      },
+                      "image": {
+                        "nullable": true,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "publishToGallery": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative"
+                        ]
+                      },
+                      "purchased": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "purchaserName": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "amountContributed": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "contributors": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "isPlusOne": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "amount": {
+                              "type": "number",
+                              "minimum": 0,
+                              "exclusiveMinimum": true
+                            },
+                            "coverFee": {
+                              "default": false,
+                              "type": "boolean"
+                            },
+                            "feeAmount": {
+                              "default": 0,
+                              "type": "number"
+                            },
+                            "message": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "date": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "thankYouStatus": {
+                              "default": "Unsent",
+                              "type": "string"
+                            },
+                            "thankYouSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "thankYouNote": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "stripePaymentIntentId": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "stripeChargeId": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "transactionTimestamp": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "confirmationEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "alertEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "registryItemId": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "registryItem": {
+                              "nullable": true,
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "category": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ]
+                            },
+                            "invitationCodeId": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "invitationCode": {
+                              "nullable": true,
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "code": {
+                                  "type": "string"
+                                },
+                                "guestName": {
+                                  "type": "string"
+                                },
+                                "addressLine1": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "addressLine2": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "city": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "zipCode": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "country": {
+                                  "nullable": true,
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "amount",
+                            "date"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 50
+                      },
+                      "guestName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "email": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "addressLine1": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 150
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "addressLine2": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 150
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "city": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "state": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "zipCode": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 20
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "country": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "dietaryNotes": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "plusOneAllocations": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "plusOneFirstName": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "plusOneLastName": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "householdName": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "partyGroup": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "partyTags": {
+                        "default": [],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "extraFields": {
+                        "nullable": true,
+                        "type": "object",
+                        "additionalProperties": {}
+                      },
+                      "used": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "usedAt": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        ]
+                      },
+                      "tableId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "seatNumber": {
+                        "nullable": true,
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "shape": {
+                        "default": "round",
+                        "type": "string",
+                        "enum": [
+                          "round",
+                          "rectangular",
+                          "square"
+                        ]
+                      },
+                      "capacity": {
+                        "default": 8,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50
+                      },
+                      "x": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "y": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "width": {
+                        "default": 120,
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "height": {
+                        "default": 120,
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "rotation": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "startTime": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        ]
+                      },
+                      "endTime": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        ]
+                      },
+                      "locationName": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "location": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "category": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "isPrivate": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ],
+                "type": "object"
               }
             }
           }
@@ -115,6 +1528,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "DELETE /api/admin/[entity]/[id]",
         "description": "Endpoint for /api/admin/[entity]/[id]",
         "security": [
@@ -128,7 +1544,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           },
           {
@@ -149,6 +1574,9 @@
     },
     "/api/admin/{entity}/batch": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/[entity]/batch",
         "description": "Endpoint for /api/admin/[entity]/batch",
         "security": [
@@ -162,7 +1590,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           }
         ],
@@ -198,6 +1635,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/[entity]/batch",
         "description": "Endpoint for /api/admin/[entity]/batch",
         "security": [
@@ -211,7 +1651,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           }
         ],
@@ -247,6 +1696,9 @@
         }
       },
       "patch": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PATCH /api/admin/[entity]/batch",
         "description": "Endpoint for /api/admin/[entity]/batch",
         "security": [
@@ -260,7 +1712,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           }
         ],
@@ -296,6 +1757,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "DELETE /api/admin/[entity]/batch",
         "description": "Endpoint for /api/admin/[entity]/batch",
         "security": [
@@ -309,7 +1773,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           }
         ],
@@ -346,6 +1819,9 @@
     },
     "/api/admin/{entity}": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/[entity]",
         "description": "Endpoint for /api/admin/[entity]",
         "security": [
@@ -359,7 +1835,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           },
           {
@@ -418,6 +1903,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/[entity]",
         "description": "Endpoint for /api/admin/[entity]",
         "security": [
@@ -431,7 +1919,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           }
         ],
@@ -440,19 +1937,1264 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": {}
+                "oneOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "FAQ"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "question": {
+                                "type": "string"
+                              },
+                              "answer": {
+                                "type": "string"
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "categoryTags": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "keywords": {
+                                "anyOf": [
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "tags",
+                          "type",
+                          "data"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "Logistics"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "ceremonyTitle": {
+                                "type": "string"
+                              },
+                              "ceremonyTime": {
+                                "type": "string"
+                              },
+                              "receptionTitle": {
+                                "type": "string"
+                              },
+                              "receptionTime": {
+                                "type": "string"
+                              },
+                              "receptionDetails": {
+                                "type": "string"
+                              },
+                              "receptionAttire": {
+                                "type": "string"
+                              },
+                              "startTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "endTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "categoryTags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "locationName": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "type": "string"
+                              },
+                              "attireRules": {
+                                "type": "string"
+                              },
+                              "attire": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "tags",
+                          "type",
+                          "data"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "Schedule"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "startTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "endTime": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "categoryColors": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "object",
+                                  "properties": {
+                                    "bg": {
+                                      "type": "string"
+                                    },
+                                    "text": {
+                                      "type": "string"
+                                    },
+                                    "border": {
+                                      "type": "string"
+                                    },
+                                    "accent": {
+                                      "type": "string"
+                                    },
+                                    "color": {
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              },
+                              "categoryTags": {
+                                "default": [],
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string"
+                                        },
+                                        "bg": {
+                                          "type": "string"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "border": {
+                                          "type": "string"
+                                        },
+                                        "accent": {
+                                          "type": "string"
+                                        },
+                                        "color": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "name"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              },
+                              "category": {
+                                "type": "string"
+                              },
+                              "locationName": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "type": "string"
+                              },
+                              "attireRules": {
+                                "type": "string"
+                              },
+                              "attire": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "tags",
+                          "type",
+                          "data"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "Photo"
+                            ]
+                          },
+                          "data": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "altText": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "default": "PENDING",
+                                "type": "string",
+                                "enum": [
+                                  "PENDING",
+                                  "APPROVED",
+                                  "REJECTED"
+                                ]
+                              },
+                              "isVisible": {
+                                "default": false,
+                                "type": "boolean"
+                              },
+                              "mediaId": {
+                                "type": "string"
+                              },
+                              "publishToGallery": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "tags",
+                          "type",
+                          "data"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "data": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "tags",
+                          "type",
+                          "data"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      },
+                      "bio": {
+                        "type": "string"
+                      },
+                      "side": {
+                        "nullable": true,
+                        "type": "string",
+                        "enum": [
+                          "BRIDE",
+                          "GROOM",
+                          "JOINT"
+                        ]
+                      },
+                      "link": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "order": {
+                        "type": "number"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "photoId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "photoUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "photoAlt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "photoDecorative": {
+                        "type": "boolean"
+                      },
+                      "photo": {
+                        "nullable": true,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "publishToGallery": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "role",
+                      "bio",
+                      "order"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "website": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "directions": {
+                        "type": "string"
+                      },
+                      "latitude": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "longitude": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "isVisible": {
+                        "type": "boolean"
+                      },
+                      "promoCode": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "bookingUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "roomRate": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "cutoffDate": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "shuttleInfo": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "imageId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "imageAlt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageDecorative": {
+                        "type": "boolean"
+                      },
+                      "image": {
+                        "nullable": true,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "publishToGallery": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "description",
+                      "category",
+                      "directions",
+                      "latitude",
+                      "longitude",
+                      "isVisible"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "itemType": {
+                        "default": "PHYSICAL",
+                        "type": "string",
+                        "enum": [
+                          "PHYSICAL",
+                          "CASH_FUND",
+                          "EXPERIENCE_FUND"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "price": {
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "quantity": {
+                        "default": 1,
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      "category": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "description": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "vendorUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "isGroupGift": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "on"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "off"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "isMostWanted": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "on"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "off"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "displayOrder": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "paymentHandleType": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "paymentHandle": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "imageId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageUrl": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 2000
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "imageAlt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "imageDecorative": {
+                        "type": "boolean"
+                      },
+                      "image": {
+                        "nullable": true,
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "altText": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "isDecorative": {
+                            "type": "boolean"
+                          },
+                          "isSample": {
+                            "default": false,
+                            "type": "boolean"
+                          },
+                          "publishToGallery": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "altText",
+                          "isDecorative"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "price",
+                      "category"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 50
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "guestName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "email": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "addressLine1": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 150
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "addressLine2": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 150
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "city": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "state": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "zipCode": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 20
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "country": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "dietaryNotes": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "plusOneAllocations": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "plusOneFirstName": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "plusOneLastName": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "householdName": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "partyGroup": {
+                        "anyOf": [
+                          {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              ""
+                            ]
+                          }
+                        ]
+                      },
+                      "partyTags": {
+                        "default": [],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "extraFields": {
+                        "nullable": true,
+                        "type": "object",
+                        "additionalProperties": {}
+                      },
+                      "used": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "usedAt": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        ]
+                      },
+                      "tableId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "seatNumber": {
+                        "nullable": true,
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "guestName"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "shape": {
+                        "default": "round",
+                        "type": "string",
+                        "enum": [
+                          "round",
+                          "rectangular",
+                          "square"
+                        ]
+                      },
+                      "capacity": {
+                        "default": 8,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50
+                      },
+                      "x": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "y": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "width": {
+                        "default": 120,
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "height": {
+                        "default": 120,
+                        "type": "number",
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                      },
+                      "rotation": {
+                        "default": 0,
+                        "type": "number"
+                      },
+                      "isSample": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "startTime": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        ]
+                      },
+                      "endTime": {
+                        "nullable": true,
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        ]
+                      },
+                      "locationName": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "location": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "category": {
+                        "default": "",
+                        "type": "string"
+                      },
+                      "isPrivate": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "title"
+                    ]
+                  }
+                ],
+                "type": "object"
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "201": {
+            "description": "Created"
           }
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/[entity]",
         "description": "Endpoint for /api/admin/[entity]",
         "security": [
@@ -466,7 +3208,16 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "content-nodes",
+                "wedding-party",
+                "attractions",
+                "registry-items",
+                "invitation-codes",
+                "seating-tables",
+                "sub-events"
+              ]
             }
           }
         ],
@@ -507,6 +3258,9 @@
     },
     "/api/admin/broadcast/history": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/broadcast/history",
         "description": "Endpoint for /api/admin/broadcast/history",
         "security": [
@@ -523,6 +3277,9 @@
     },
     "/api/admin/broadcast/preview": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/broadcast/preview",
         "description": "Endpoint for /api/admin/broadcast/preview",
         "security": [
@@ -575,6 +3332,56 @@
                           "all"
                         ]
                       },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "redeemed",
+                          "unused",
+                          "all"
+                        ]
+                      },
+                      "addressStatus": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
+                      "dietaryCategory": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "all",
+                              "has_restriction",
+                              "gluten-free",
+                              "vegetarian",
+                              "vegan",
+                              "dairy-free",
+                              "nut-free",
+                              "other"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
+                      },
+                      "partyGroup": {
+                        "type": "string"
+                      },
                       "subEventId": {
                         "type": "string"
                       },
@@ -610,6 +3417,9 @@
     },
     "/api/admin/broadcast/retry": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/broadcast/retry",
         "description": "Endpoint for /api/admin/broadcast/retry",
         "security": [
@@ -651,6 +3461,9 @@
     },
     "/api/admin/broadcast/schedule/{id}": {
       "delete": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "DELETE /api/admin/broadcast/schedule/[id]",
         "description": "Endpoint for /api/admin/broadcast/schedule/[id]",
         "security": [
@@ -677,6 +3490,9 @@
     },
     "/api/admin/broadcast/send": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/broadcast/send",
         "description": "Endpoint for /api/admin/broadcast/send",
         "security": [
@@ -726,6 +3542,56 @@
                           "all"
                         ]
                       },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "redeemed",
+                          "unused",
+                          "all"
+                        ]
+                      },
+                      "addressStatus": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
+                      "dietaryCategory": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "all",
+                              "has_restriction",
+                              "gluten-free",
+                              "vegetarian",
+                              "vegan",
+                              "dairy-free",
+                              "nut-free",
+                              "other"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
+                      },
+                      "partyGroup": {
+                        "type": "string"
+                      },
                       "subEventId": {
                         "type": "string"
                       },
@@ -770,6 +3636,9 @@
     },
     "/api/admin/broadcast/test-connection": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/broadcast/test-connection",
         "description": "Endpoint for /api/admin/broadcast/test-connection",
         "security": [
@@ -868,6 +3737,9 @@
     },
     "/api/admin/broadcast/test-send": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/broadcast/test-send",
         "description": "Endpoint for /api/admin/broadcast/test-send",
         "security": [
@@ -917,6 +3789,9 @@
     },
     "/api/admin/features": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/features",
         "description": "Endpoint for /api/admin/features",
         "security": [
@@ -931,6 +3806,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/features",
         "description": "Endpoint for /api/admin/features",
         "security": [
@@ -947,7 +3825,31 @@
                 "properties": {
                   "features": {
                     "type": "array",
-                    "items": {}
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "visible": {
+                          "default": true,
+                          "type": "boolean"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "type"
+                      ]
+                    }
                   }
                 },
                 "required": [
@@ -966,6 +3868,9 @@
     },
     "/api/admin/invitation-codes/batch": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/invitation-codes/batch",
         "description": "Endpoint for /api/admin/invitation-codes/batch",
         "security": [
@@ -979,257 +3884,312 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "records": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "guestName": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ids": {
+                        "minItems": 1,
+                        "maxItems": 5000,
+                        "type": "array",
+                        "items": {
                           "type": "string",
-                          "minLength": 1,
-                          "maxLength": 100
-                        },
-                        "code": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "email": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            },
-                            {
-                              "type": "string",
-                              "nullable": true,
-                              "enum": [
-                                null
-                              ]
-                            },
-                            {}
-                          ]
-                        },
-                        "addressLine1": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 150
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "addressLine2": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 150
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "city": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "state": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "zipCode": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 20
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "country": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "dietaryNotes": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "plusOneAllocations": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        },
-                        "plusOneFirstName": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "plusOneLastName": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "householdName": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "partyGroup": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "maxLength": 100
-                            },
-                            {
-                              "type": "string",
-                              "enum": [
-                                ""
-                              ]
-                            }
-                          ]
-                        },
-                        "partyTags": {
-                          "anyOf": [
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            {
-                              "type": "string"
-                            }
-                          ]
-                        },
-                        "extraFields": {
-                          "nullable": true,
-                          "type": "object",
-                          "additionalProperties": {}
+                          "minLength": 1
                         }
                       },
-                      "required": [
-                        "guestName"
-                      ]
-                    }
+                      "tags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "action": {
+                        "default": "add",
+                        "type": "string",
+                        "enum": [
+                          "add",
+                          "remove",
+                          "replace"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "ids",
+                      "tags"
+                    ]
                   },
-                  "collisionStrategy": {
-                    "default": "skip",
-                    "type": "string",
-                    "enum": [
-                      "skip",
-                      "update",
-                      "reject"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ids": {
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "required": [
+                      "ids"
+                    ],
+                    "additionalProperties": {}
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "records": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "guestName": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "code": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "email": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "enum": [
+                                    null
+                                  ]
+                                }
+                              ]
+                            },
+                            "addressLine1": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 150
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "addressLine2": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 150
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "city": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "state": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "zipCode": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 20
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "country": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "dietaryNotes": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "plusOneAllocations": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "plusOneFirstName": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "plusOneLastName": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "householdName": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "partyGroup": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 100
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    ""
+                                  ]
+                                }
+                              ]
+                            },
+                            "partyTags": {
+                              "anyOf": [
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
+                            },
+                            "extraFields": {
+                              "nullable": true,
+                              "type": "object",
+                              "additionalProperties": {}
+                            }
+                          },
+                          "required": [
+                            "guestName"
+                          ]
+                        }
+                      },
+                      "collisionStrategy": {
+                        "default": "skip",
+                        "type": "string",
+                        "enum": [
+                          "skip",
+                          "update",
+                          "reject"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "records"
                     ]
                   }
-                },
-                "required": [
-                  "records"
                 ]
               }
             }
@@ -1238,10 +4198,16 @@
         "responses": {
           "200": {
             "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
           }
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/invitation-codes/batch",
         "description": "Endpoint for /api/admin/invitation-codes/batch",
         "security": [
@@ -1281,6 +4247,9 @@
         }
       },
       "patch": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PATCH /api/admin/invitation-codes/batch",
         "description": "Endpoint for /api/admin/invitation-codes/batch",
         "security": [
@@ -1320,6 +4289,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "DELETE /api/admin/invitation-codes/batch",
         "description": "Endpoint for /api/admin/invitation-codes/batch",
         "security": [
@@ -1359,6 +4331,9 @@
     },
     "/api/admin/invitation-codes/batch/validate": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/invitation-codes/batch/validate",
         "description": "Endpoint for /api/admin/invitation-codes/batch/validate",
         "security": [
@@ -1414,8 +4389,7 @@
                               "enum": [
                                 null
                               ]
-                            },
-                            {}
+                            }
                           ]
                         },
                         "addressLine1": {
@@ -1637,6 +4611,9 @@
     },
     "/api/admin/invitation-codes/export": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/invitation-codes/export",
         "description": "Endpoint for /api/admin/invitation-codes/export",
         "security": [
@@ -1760,13 +4737,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/admin/invitation-codes/validate": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/invitation-codes/validate",
         "description": "Endpoint for /api/admin/invitation-codes/validate",
         "security": [
@@ -1822,8 +4809,7 @@
                               "enum": [
                                 null
                               ]
-                            },
-                            {}
+                            }
                           ]
                         },
                         "addressLine1": {
@@ -2045,6 +5031,9 @@
     },
     "/api/admin/login": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/login",
         "description": "Endpoint for /api/admin/login",
         "requestBody": {
@@ -2075,6 +5064,9 @@
     },
     "/api/admin/logout": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/logout",
         "description": "Endpoint for /api/admin/logout",
         "security": [
@@ -2097,6 +5089,9 @@
     },
     "/api/admin/maintenance/export": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/maintenance/export",
         "description": "Endpoint for /api/admin/maintenance/export",
         "security": [
@@ -2113,6 +5108,9 @@
     },
     "/api/admin/maintenance/import": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/maintenance/import",
         "description": "Endpoint for /api/admin/maintenance/import",
         "security": [
@@ -2138,7 +5136,10 @@
                       {
                         "type": "string"
                       },
-                      {}
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
                     ]
                   },
                   "appConfig": {
@@ -2151,8 +5152,14 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "partner1Name": {
                           "type": "string"
                         },
@@ -2173,7 +5180,9 @@
                           "maxLength": 255
                         },
                         "weddingDate": {
-                          "description": "Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports."
+                          "description": "Scheduled wedding ceremony date and timestamp used by countdowns and calendar exports.",
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "baseUrl": {
                           "anyOf": [
@@ -2330,7 +5339,34 @@
                           "type": "string",
                           "maxLength": 100
                         },
-                        "features": {},
+                        "features": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "visible": {
+                                "default": true,
+                                "type": "boolean"
+                              },
+                              "content": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "type"
+                            ]
+                          }
+                        },
                         "timezone": {
                           "type": "string"
                         },
@@ -2469,8 +5505,14 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "type": {
                           "type": "string",
                           "minLength": 1,
@@ -2483,7 +5525,10 @@
                             "maxLength": 255
                           }
                         },
-                        "data": {}
+                        "data": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
                       },
                       "required": [
                         "id",
@@ -2518,8 +5563,14 @@
                         "isSample": {
                           "type": "boolean"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -2573,7 +5624,10 @@
                         },
                         "createdAt": {
                           "anyOf": [
-                            {},
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
                             {
                               "type": "string"
                             }
@@ -2581,7 +5635,10 @@
                         },
                         "updatedAt": {
                           "anyOf": [
-                            {},
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
                             {
                               "type": "string"
                             }
@@ -2682,7 +5739,9 @@
                           "type": "boolean"
                         },
                         "usedAt": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "tableId": {
                           "nullable": true,
@@ -2698,8 +5757,14 @@
                         "isSample": {
                           "type": "boolean"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -2718,8 +5783,14 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -2785,8 +5856,14 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -2870,7 +5947,10 @@
                         "cutoffDate": {
                           "nullable": true,
                           "anyOf": [
-                            {},
+                            {
+                              "type": "string",
+                              "format": "date-time"
+                            },
                             {
                               "type": "string"
                             }
@@ -2902,8 +5982,14 @@
                         "id": {
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "name": {
                           "type": "string",
                           "minLength": 1,
@@ -3039,8 +6125,14 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {},
-                        "updatedAt": {},
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -3075,7 +6167,10 @@
                           "type": "number",
                           "minimum": 0
                         },
-                        "date": {},
+                        "date": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "message": {
                           "nullable": true,
                           "type": "string"
@@ -3085,7 +6180,9 @@
                           "maxLength": 100
                         },
                         "thankYouSentAt": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "thankYouNote": {
                           "nullable": true,
@@ -3102,13 +6199,19 @@
                           "maxLength": 255
                         },
                         "transactionTimestamp": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "confirmationEmailSentAt": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "alertEmailSentAt": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "registryItemId": {
                           "nullable": true,
@@ -3149,10 +6252,14 @@
                           "type": "string"
                         },
                         "startTime": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "endTime": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "locationName": {
                           "nullable": true,
@@ -3170,8 +6277,14 @@
                         "isPrivate": {
                           "type": "boolean"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -3201,7 +6314,10 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "createdAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -3244,8 +6360,14 @@
                           "nullable": true,
                           "type": "string"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -3302,13 +6424,23 @@
                           "maximum": 9007199254740991
                         },
                         "scheduledFor": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
                         "sentAt": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -3356,10 +6488,18 @@
                           "type": "string"
                         },
                         "sentAt": {
-                          "nullable": true
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
                         },
-                        "createdAt": {},
-                        "updatedAt": {}
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
                       },
                       "required": [
                         "id",
@@ -3391,8 +6531,14 @@
                           "minLength": 1,
                           "maxLength": 255
                         },
-                        "data": {},
-                        "createdAt": {},
+                        "data": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
                         "author": {
                           "nullable": true,
                           "type": "string",
@@ -3408,7 +6554,11 @@
                       ]
                     }
                   }
-                }
+                },
+                "required": [
+                  "appConfig",
+                  "registryItem"
+                ]
               }
             }
           }
@@ -3422,6 +6572,9 @@
     },
     "/api/admin/me": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/me",
         "description": "Endpoint for /api/admin/me",
         "security": [
@@ -3444,6 +6597,9 @@
     },
     "/api/admin/onboarding-milestones": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/onboarding-milestones",
         "description": "Evaluates administrative onboarding setup milestones using aggregate database counts\nand application configuration checks, excluding sample records (`isSample: true`).",
         "security": [
@@ -3460,6 +6616,9 @@
     },
     "/api/admin/photos/{id}": {
       "patch": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PATCH /api/admin/photos/[id]",
         "description": "Endpoint for /api/admin/photos/[id]",
         "security": [
@@ -3523,6 +6682,9 @@
     },
     "/api/admin/photos/moderation/batch": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/photos/moderation/batch",
         "description": "Endpoint for /api/admin/photos/moderation/batch",
         "security": [
@@ -3586,6 +6748,9 @@
     },
     "/api/admin/photos/moderation": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/photos/moderation",
         "description": "Endpoint for /api/admin/photos/moderation",
         "security": [
@@ -3618,6 +6783,9 @@
         }
       },
       "patch": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PATCH /api/admin/photos/moderation",
         "description": "Endpoint for /api/admin/photos/moderation",
         "security": [
@@ -3631,33 +6799,78 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string"
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "photoIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "nodeIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "approve",
+                          "reject",
+                          "APPROVE",
+                          "REJECT"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "APPROVED",
+                          "REJECTED"
+                        ]
+                      }
+                    },
+                    "additionalProperties": {}
                   },
-                  "nodeId": {
-                    "type": "string"
-                  },
-                  "photoId": {
-                    "type": "string"
-                  },
-                  "action": {
-                    "type": "string",
-                    "enum": [
-                      "approve",
-                      "reject",
-                      "APPROVE",
-                      "REJECT"
-                    ]
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "APPROVED",
-                      "REJECTED"
-                    ]
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "nodeId": {
+                        "type": "string"
+                      },
+                      "photoId": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "approve",
+                          "reject",
+                          "APPROVE",
+                          "REJECT"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "APPROVED",
+                          "REJECTED"
+                        ]
+                      }
+                    }
                   }
-                }
+                ]
               }
             }
           }
@@ -3671,6 +6884,9 @@
     },
     "/api/admin/sample-data": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/sample-data",
         "description": "Endpoint for /api/admin/sample-data",
         "security": [
@@ -3685,6 +6901,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/sample-data",
         "description": "Endpoint for /api/admin/sample-data",
         "security": [
@@ -3726,6 +6945,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "DELETE /api/admin/sample-data",
         "description": "Endpoint for /api/admin/sample-data",
         "security": [
@@ -3742,6 +6964,9 @@
     },
     "/api/admin/seating/assign": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/seating/assign",
         "description": "Endpoint for /api/admin/seating/assign",
         "security": [
@@ -3789,6 +7014,9 @@
     },
     "/api/admin/seating/auto-assign": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/seating/auto-assign",
         "description": "Endpoint for /api/admin/seating/auto-assign",
         "security": [
@@ -3820,6 +7048,9 @@
     },
     "/api/admin/seating/export": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/seating/export",
         "description": "Endpoint for /api/admin/seating/export",
         "security": [
@@ -3839,13 +7070,29 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/admin/settings": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/settings",
         "description": "Endpoint for /api/admin/settings",
         "security": [
@@ -3886,6 +7133,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/settings",
         "description": "Endpoint for /api/admin/settings",
         "security": [
@@ -3931,7 +7181,10 @@
                       {
                         "type": "string"
                       },
-                      {}
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
                     ]
                   },
                   "baseUrl": {
@@ -4558,6 +7811,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/settings",
         "description": "Endpoint for /api/admin/settings",
         "security": [
@@ -4593,7 +7849,10 @@
                       {
                         "type": "string"
                       },
-                      {}
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
                     ]
                   },
                   "baseUrl": {
@@ -5185,29 +8444,12 @@
                   },
                   "timezone": {
                     "type": "string"
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
-                "required": [
-                  "weddingDate",
-                  "baseUrl",
-                  "venueName",
-                  "venueAddress",
-                  "venueCity",
-                  "venueState",
-                  "venueZip",
-                  "latitude",
-                  "longitude",
-                  "storyText",
-                  "venueDescription",
-                  "travelAdvice",
-                  "heroTitle",
-                  "heroSubtitle",
-                  "seoTitle",
-                  "seoDescription",
-                  "faviconUrl",
-                  "ogImageUrl",
-                  "seoKeywords"
-                ],
                 "additionalProperties": {}
               }
             }
@@ -5222,6 +8464,9 @@
     },
     "/api/admin/setup": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/setup",
         "description": "Endpoint for /api/admin/setup",
         "responses": {
@@ -5231,6 +8476,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/setup",
         "description": "Endpoint for /api/admin/setup",
         "requestBody": {
@@ -5440,6 +8688,9 @@
     },
     "/api/admin/sub-events/access/batch": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/sub-events/access/batch",
         "description": "Endpoint for /api/admin/sub-events/access/batch",
         "security": [
@@ -5521,6 +8772,9 @@
     },
     "/api/admin/sub-events/access": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/sub-events/access",
         "description": "Endpoint for /api/admin/sub-events/access",
         "security": [
@@ -5591,6 +8845,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PUT /api/admin/sub-events/access",
         "description": "Endpoint for /api/admin/sub-events/access",
         "security": [
@@ -5633,6 +8890,9 @@
     },
     "/api/admin/thank-you-notes/{id}": {
       "patch": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "PATCH /api/admin/thank-you-notes/[id]",
         "description": "Endpoint for /api/admin/thank-you-notes/[id]",
         "security": [
@@ -5671,7 +8931,10 @@
                       {
                         "type": "string"
                       },
-                      {}
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
                     ]
                   },
                   "thankYouNote": {
@@ -5693,6 +8956,9 @@
     },
     "/api/admin/thank-you-notes/batch": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/thank-you-notes/batch",
         "description": "Endpoint for /api/admin/thank-you-notes/batch",
         "security": [
@@ -5729,7 +8995,10 @@
                       {
                         "type": "string"
                       },
-                      {}
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
                     ]
                   },
                   "thankYouNote": {
@@ -5755,6 +9024,9 @@
     },
     "/api/admin/thank-you-notes/export-labels": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/thank-you-notes/export-labels",
         "description": "Endpoint for /api/admin/thank-you-notes/export-labels",
         "security": [
@@ -5790,13 +9062,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/admin/thank-you-notes/export": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/thank-you-notes/export",
         "description": "Endpoint for /api/admin/thank-you-notes/export",
         "security": [
@@ -5824,13 +9107,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/admin/thank-you-notes": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/thank-you-notes",
         "description": "Endpoint for /api/admin/thank-you-notes",
         "security": [
@@ -5881,6 +9174,9 @@
     },
     "/api/admin/upload": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/upload",
         "description": "Endpoint for /api/admin/upload",
         "security": [
@@ -5916,6 +9212,9 @@
     },
     "/api/admin/versions/{id}/restore": {
       "post": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "POST /api/admin/versions/[id]/restore",
         "description": "Endpoint for /api/admin/versions/[id]/restore",
         "security": [
@@ -5942,6 +9241,9 @@
     },
     "/api/admin/versions": {
       "get": {
+        "tags": [
+          "Admin"
+        ],
         "summary": "GET /api/admin/versions",
         "description": "Endpoint for /api/admin/versions",
         "security": [
@@ -5992,6 +9294,9 @@
     },
     "/api/cron/broadcasts": {
       "get": {
+        "tags": [
+          "Cron"
+        ],
         "summary": "GET /api/cron/broadcasts",
         "description": "Endpoint for /api/cron/broadcasts",
         "security": [
@@ -6006,6 +9311,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Cron"
+        ],
         "summary": "POST /api/cron/broadcasts",
         "description": "Endpoint for /api/cron/broadcasts",
         "security": [
@@ -6022,6 +9330,9 @@
     },
     "/api/guest/address/public": {
       "post": {
+        "tags": [
+          "Guest"
+        ],
         "summary": "POST /api/guest/address/public",
         "description": "Endpoint for /api/guest/address/public",
         "requestBody": {
@@ -6208,6 +9519,9 @@
     },
     "/api/guest/address": {
       "get": {
+        "tags": [
+          "Guest"
+        ],
         "summary": "GET /api/guest/address",
         "description": "Endpoint for /api/guest/address",
         "security": [
@@ -6222,6 +9536,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Guest"
+        ],
         "summary": "PUT /api/guest/address",
         "description": "Endpoint for /api/guest/address",
         "security": [
@@ -6343,6 +9660,9 @@
     },
     "/api/guest/login": {
       "post": {
+        "tags": [
+          "Guest"
+        ],
         "summary": "POST /api/guest/login",
         "description": "Endpoint for /api/guest/login",
         "requestBody": {
@@ -6373,6 +9693,9 @@
     },
     "/api/guest/lookup": {
       "post": {
+        "tags": [
+          "Guest"
+        ],
         "summary": "POST /api/guest/lookup",
         "description": "Endpoint for /api/guest/lookup",
         "security": [
@@ -6416,6 +9739,9 @@
     },
     "/api/guest/photos/upload": {
       "post": {
+        "tags": [
+          "Guest"
+        ],
         "summary": "POST /api/guest/photos/upload",
         "description": "Endpoint for /api/guest/photos/upload",
         "security": [
@@ -6454,14 +9780,17 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "201": {
+            "description": "Created"
           }
         }
       }
     },
     "/api/health": {
       "get": {
+        "tags": [
+          "Health"
+        ],
         "summary": "GET /api/health",
         "description": "Endpoint for /api/health",
         "responses": {
@@ -6473,6 +9802,9 @@
     },
     "/api/media/{id}": {
       "put": {
+        "tags": [
+          "Media"
+        ],
         "summary": "PUT /api/media/[id]",
         "description": "Endpoint for /api/media/[id]",
         "security": [
@@ -6525,6 +9857,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Media"
+        ],
         "summary": "DELETE /api/media/[id]",
         "description": "Endpoint for /api/media/[id]",
         "security": [
@@ -6551,6 +9886,9 @@
     },
     "/api/media/export": {
       "get": {
+        "tags": [
+          "Media"
+        ],
         "summary": "GET /api/media/export",
         "description": "Endpoint for /api/media/export",
         "security": [
@@ -6586,11 +9924,22 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           }
         }
       },
       "post": {
+        "tags": [
+          "Media"
+        ],
         "summary": "POST /api/media/export",
         "description": "Endpoint for /api/media/export",
         "security": [
@@ -6631,13 +9980,24 @@
         },
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/media": {
       "get": {
+        "tags": [
+          "Media"
+        ],
         "summary": "GET /api/media",
         "description": "Endpoint for /api/media",
         "security": [
@@ -6670,6 +10030,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Media"
+        ],
         "summary": "POST /api/media",
         "description": "Endpoint for /api/media",
         "security": [
@@ -6710,14 +10073,17 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "201": {
+            "description": "Created"
           }
         }
       }
     },
     "/api/og": {
       "get": {
+        "tags": [
+          "Open Graph"
+        ],
         "summary": "GET /api/og",
         "description": "Endpoint for /api/og",
         "security": [
@@ -6775,13 +10141,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/photos": {
       "get": {
+        "tags": [
+          "Photos"
+        ],
         "summary": "GET /api/photos",
         "description": "Endpoint for /api/photos",
         "security": [
@@ -6814,6 +10191,9 @@
     },
     "/api/photos/upload": {
       "post": {
+        "tags": [
+          "Photos"
+        ],
         "summary": "POST /api/photos/upload",
         "description": "Endpoint for /api/photos/upload",
         "security": [
@@ -6852,14 +10232,17 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "201": {
+            "description": "Created"
           }
         }
       }
     },
     "/api/ready": {
       "get": {
+        "tags": [
+          "Readiness"
+        ],
         "summary": "GET /api/ready",
         "description": "Endpoint for /api/ready",
         "responses": {
@@ -6871,6 +10254,9 @@
     },
     "/api/registry/capabilities": {
       "get": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "GET /api/registry/capabilities",
         "description": "Endpoint for /api/registry/capabilities",
         "security": [
@@ -6893,6 +10279,9 @@
     },
     "/api/registry/contribute": {
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/contribute",
         "description": "Endpoint for /api/registry/contribute",
         "security": [
@@ -6975,6 +10364,9 @@
     },
     "/api/registry/items/{id}": {
       "get": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "GET /api/registry/items/[id]",
         "description": "Endpoint for /api/registry/items/[id]",
         "security": [
@@ -7005,6 +10397,9 @@
         }
       },
       "put": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "PUT /api/registry/items/[id]",
         "description": "Endpoint for /api/registry/items/[id]",
         "security": [
@@ -7221,7 +10616,10 @@
                       },
                       "createdAt": {
                         "anyOf": [
-                          {},
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
                           {
                             "type": "string"
                           }
@@ -7229,7 +10627,10 @@
                       },
                       "updatedAt": {
                         "anyOf": [
-                          {},
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
                           {
                             "type": "string"
                           }
@@ -7260,6 +10661,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "DELETE /api/registry/items/[id]",
         "description": "Endpoint for /api/registry/items/[id]",
         "security": [
@@ -7286,6 +10690,9 @@
     },
     "/api/registry/items/batch": {
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/items/batch",
         "description": "Adds multiple items to the registry in an atomic transaction.\n\n**Response:**\n*   **`201 Created`** - Returns the list of created items and count.",
         "security": [
@@ -7499,7 +10906,10 @@
                             },
                             "createdAt": {
                               "anyOf": [
-                                {},
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
                                 {
                                   "type": "string"
                                 }
@@ -7507,7 +10917,10 @@
                             },
                             "updatedAt": {
                               "anyOf": [
-                                {},
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                },
                                 {
                                   "type": "string"
                                 }
@@ -7538,14 +10951,17 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "201": {
+            "description": "Created"
           }
         }
       }
     },
     "/api/registry/items": {
       "get": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "GET /api/registry/items",
         "description": "Endpoint for /api/registry/items",
         "security": [
@@ -7640,6 +11056,9 @@
         }
       },
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/items",
         "description": "Adds a new item to the registry.\n\n**Response:**\n*   **`201 Created`** - Returns the newly created `RegistryItem` object.\n    ```json\n    {\n      \"id\": \"clxfa5z...\",\n      \"name\": \"Stand Mixer\",\n      \"description\": \"A powerful stand mixer for all our baking adventures.\",\n      \"category\": \"Kitchen\",\n      \"price\": 299.99,\n      \"image\": \"/images/mixer.jpg\",\n      \"vendorUrl\": \"https://example.com/mixer\",\n      \"quantity\": 1,\n      \"isGroupGift\": false,\n      \"purchased\": false,\n      \"purchaserName\": null,\n      \"amountContributed\": 0,\n      \"contributors\": []\n    }\n    ```",
         "security": [
@@ -7846,7 +11265,10 @@
                       },
                       "createdAt": {
                         "anyOf": [
-                          {},
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
                           {
                             "type": "string"
                           }
@@ -7854,7 +11276,10 @@
                       },
                       "updatedAt": {
                         "anyOf": [
-                          {},
+                          {
+                            "type": "string",
+                            "format": "date-time"
+                          },
                           {
                             "type": "string"
                           }
@@ -7879,14 +11304,17 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response"
+          "201": {
+            "description": "Created"
           }
         }
       }
     },
     "/api/registry/payment-intent": {
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/payment-intent",
         "description": "Endpoint for /api/registry/payment-intent",
         "security": [
@@ -7921,6 +11349,9 @@
                     "type": "boolean"
                   },
                   "paymentIntentId": {
+                    "type": "string"
+                  },
+                  "clientSecret": {
                     "type": "string"
                   },
                   "name": {
@@ -7966,6 +11397,9 @@
     },
     "/api/registry/scrape/batch": {
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/scrape/batch",
         "description": "Scrapes metadata in parallel for batches of up to 20 product URLs with a concurrency limit of 5.\nIndividual URL failures do not abort the overall batch.\nThe entire batch operation times out after 15 seconds.",
         "security": [
@@ -8006,6 +11440,9 @@
     },
     "/api/registry/scrape": {
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/scrape",
         "description": "Endpoint for /api/registry/scrape",
         "security": [
@@ -8042,6 +11479,9 @@
     },
     "/api/registry/session": {
       "get": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "GET /api/registry/session",
         "description": "Endpoint for /api/registry/session",
         "security": [
@@ -8062,6 +11502,9 @@
         }
       },
       "delete": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "DELETE /api/registry/session",
         "description": "Endpoint for /api/registry/session",
         "security": [
@@ -8084,6 +11527,9 @@
     },
     "/api/registry/validate-code": {
       "get": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "GET /api/registry/validate-code",
         "description": "Endpoint for /api/registry/validate-code",
         "parameters": [
@@ -8105,6 +11551,9 @@
     },
     "/api/registry/webhook/stripe": {
       "post": {
+        "tags": [
+          "Registry"
+        ],
         "summary": "POST /api/registry/webhook/stripe",
         "description": "Stripe webhook handler for registry contributions.\nCryptographically verifies signatures using STRIPE_WEBHOOK_SECRET.\nProcesses payment_intent.succeeded events idempotently.",
         "security": [
@@ -8157,6 +11606,9 @@
     },
     "/api/rsvp": {
       "post": {
+        "tags": [
+          "RSVP"
+        ],
         "summary": "POST /api/rsvp",
         "description": "Endpoint for /api/rsvp",
         "security": [
@@ -8170,33 +11622,81 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "subEventId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "attending",
-                      "declined",
-                      "pending"
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "rsvps": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "subEventId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "attending",
+                                "declined",
+                                "pending"
+                              ]
+                            },
+                            "plusOneCount": {
+                              "default": 0,
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 20
+                            },
+                            "dietaryNotes": {
+                              "default": "",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "subEventId",
+                            "status"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "rsvps"
                     ]
                   },
-                  "plusOneCount": {
-                    "default": 0,
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 20
-                  },
-                  "dietaryNotes": {
-                    "default": "",
-                    "type": "string"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "subEventId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "attending",
+                          "declined",
+                          "pending"
+                        ]
+                      },
+                      "plusOneCount": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 20
+                      },
+                      "dietaryNotes": {
+                        "default": "",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "subEventId",
+                      "status"
+                    ]
                   }
-                },
-                "required": [
-                  "subEventId",
-                  "status"
                 ]
               }
             }
@@ -8211,6 +11711,9 @@
     },
     "/api/schedule/{id}/ics": {
       "get": {
+        "tags": [
+          "Schedule"
+        ],
         "summary": "GET /api/schedule/[id]/ics",
         "description": "Endpoint for /api/schedule/[id]/ics",
         "security": [
@@ -8236,13 +11739,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful response"
+            "description": "Successful response",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }
     },
     "/api/schedule": {
       "get": {
+        "tags": [
+          "Schedule"
+        ],
         "summary": "GET /api/schedule",
         "description": "Endpoint for /api/schedule",
         "security": [
@@ -8265,6 +11778,9 @@
     },
     "/api/weather": {
       "get": {
+        "tags": [
+          "Weather"
+        ],
         "summary": "GET /api/weather",
         "description": "Endpoint for /api/weather",
         "security": [

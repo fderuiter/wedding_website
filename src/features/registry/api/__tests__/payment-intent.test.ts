@@ -64,6 +64,10 @@ describe('POST /api/registry/payment-intent', () => {
     mockPaymentIntentsRetrieve.mockResolvedValue({
       id: 'pi_test_existing_456',
       status: 'requires_payment_method',
+      client_secret: 'pi_test_existing_456_secret_def',
+      metadata: {
+        itemId: 'fund-101',
+      },
     });
     mockPaymentIntentsUpdate.mockResolvedValue({
       id: 'pi_test_existing_456',
@@ -140,6 +144,7 @@ describe('POST /api/registry/payment-intent', () => {
         amount: 100,
         coverFee: false,
         paymentIntentId: 'pi_test_existing_456',
+        clientSecret: 'pi_test_existing_456_secret_def',
         name: 'Alex Guest',
         email: '  alex@example.com  ',
       }),
@@ -168,6 +173,7 @@ describe('POST /api/registry/payment-intent', () => {
         amount: 100,
         coverFee: false,
         paymentIntentId: 'pi_test_existing_456',
+        clientSecret: 'pi_test_existing_456_secret_def',
         name: 'Alex Guest',
         email: '',
       }),
@@ -195,6 +201,7 @@ describe('POST /api/registry/payment-intent', () => {
         amount: 100,
         coverFee: true,
         paymentIntentId: 'pi_test_existing_456',
+        clientSecret: 'pi_test_existing_456_secret_def',
         name: 'Alex Guest',
       }),
     });
@@ -274,5 +281,58 @@ describe('POST /api/registry/payment-intent', () => {
     expect(response.status).toBe(400);
     const json = await response.json();
     expect(json.error).toMatch(/Group gifting is currently disabled/i);
+  });
+
+  it('rejects updating an existing PaymentIntent with 403 when clientSecret or metadata.itemId does not match', async () => {
+    // Missing clientSecret
+    const missingSecretRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 50,
+          paymentIntentId: 'pi_test_existing_456',
+        }),
+      })
+    );
+    expect(missingSecretRes.status).toBe(403);
+
+    // Wrong clientSecret
+    const wrongSecretRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 50,
+          paymentIntentId: 'pi_test_existing_456',
+          clientSecret: 'pi_test_existing_456_secret_wrong',
+        }),
+      })
+    );
+    expect(wrongSecretRes.status).toBe(403);
+
+    // Mismatched itemId in existingIntent.metadata
+    mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+      id: 'pi_test_existing_456',
+      status: 'requires_payment_method',
+      client_secret: 'pi_test_existing_456_secret_def',
+      metadata: {
+        itemId: 'fund-other-999',
+      },
+    });
+    const wrongItemRes = await POST(
+      new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-101',
+          amount: 50,
+          paymentIntentId: 'pi_test_existing_456',
+          clientSecret: 'pi_test_existing_456_secret_def',
+        }),
+      })
+    );
+    expect(wrongItemRes.status).toBe(403);
+    expect(mockPaymentIntentsUpdate).not.toHaveBeenCalled();
+    expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
   });
 });

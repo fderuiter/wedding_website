@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const rootPath = path.resolve(__dirname, '..');
 
 const validationUtils = await import('../src/utils/validation.js');
+const adminEntitySchemas = await import('../src/utils/adminEntitySchemas.js');
 const registrySchemas = await import('../src/features/registry/schemas.js');
 const attractionSchemas = await import('../src/features/attractions/schemas.js');
 const weddingPartySchemas = await import('../src/features/wedding-party/schemas.js');
@@ -26,6 +27,7 @@ const { isProtectedRoute } = await import('../src/lib/routes.js');
 
 const ALL_SCHEMAS: Record<string, any> = {
   ...validationUtils,
+  ...adminEntitySchemas,
   ...registrySchemas,
   ...attractionSchemas,
   ...weddingPartySchemas,
@@ -53,10 +55,128 @@ const IGNORED_PARSE_ARGUMENTS = new Set([
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+const EXPORT_MEDIA_SCHEMAS: Record<string, Record<string, string>> = {
+  'text/csv': { type: 'string' },
+  'text/calendar': { type: 'string' },
+  'application/pdf': { type: 'string', format: 'binary' },
+  'application/zip': { type: 'string', format: 'binary' },
+  'image/png': { type: 'string', format: 'binary' },
+};
+
+const OPENAPI_TAGS: Array<{ prefix: string; name: string; description: string }> = [
+  {
+    prefix: '/api/admin',
+    name: 'Admin',
+    description: 'Administrative endpoints for site configuration, content management, invitations, seating, broadcasts, and maintenance',
+  },
+  {
+    prefix: '/api/cron',
+    name: 'Cron',
+    description: 'Scheduled background job endpoints protected by CRON_SECRET bearer authentication',
+  },
+  {
+    prefix: '/api/guest',
+    name: 'Guest',
+    description: 'Guest authentication, invitation lookup, address collection, and guest photo upload endpoints',
+  },
+  {
+    prefix: '/api/health',
+    name: 'Health',
+    description: 'Service liveness health check endpoints',
+  },
+  {
+    prefix: '/api/media',
+    name: 'Media',
+    description: 'Media asset library CRUD and ZIP archive export endpoints',
+  },
+  {
+    prefix: '/api/og',
+    name: 'Open Graph',
+    description: 'Dynamic Open Graph social preview image generation endpoints',
+  },
+  {
+    prefix: '/api/photos',
+    name: 'Photos',
+    description: 'Shared wedding photo gallery and photo upload endpoints',
+  },
+  {
+    prefix: '/api/ready',
+    name: 'Readiness',
+    description: 'Database and dependency readiness probe endpoints',
+  },
+  {
+    prefix: '/api/registry',
+    name: 'Registry',
+    description: 'Gift registry catalog, URL scraping, contributions, PaymentIntents, and Stripe webhook endpoints',
+  },
+  {
+    prefix: '/api/rsvp',
+    name: 'RSVP',
+    description: 'Guest sub-event RSVP submission and availability status endpoints',
+  },
+  {
+    prefix: '/api/schedule',
+    name: 'Schedule',
+    description: 'Event schedule retrieval and iCalendar (.ics) download endpoints',
+  },
+  {
+    prefix: '/api/weather',
+    name: 'Weather',
+    description: 'Venue weather forecast proxy endpoints',
+  },
+];
+
+function resolveOperationTag(routePath: string): string {
+  for (const tagDef of OPENAPI_TAGS) {
+    if (routePath === tagDef.prefix || routePath.startsWith(`${tagDef.prefix}/`)) {
+      return tagDef.name;
+    }
+  }
+  return 'General';
+}
+
 const project = new Project({ tsConfigFilePath: path.join(rootPath, 'tsconfig.json') });
 const routeFiles = project
   .getSourceFiles(['src/app/api/**/route.ts', 'src/app/api/**/route.tsx'])
   .filter((file) => !file.getFilePath().includes('__tests__'));
+
+function extractAdminEntitySlugs(): string[] {
+  const registryPath = path.join(rootPath, 'src/features/admin/registry.ts');
+  const registryFile = project.getSourceFile(registryPath) ?? project.addSourceFileAtPathIfExists(registryPath);
+  if (!registryFile) return [];
+
+  const slugs: string[] = [];
+  const seen = new Set<string>();
+
+  for (const computedProp of registryFile.getDescendantsOfKind(SyntaxKind.ComputedPropertyName)) {
+    const expr = computedProp.getExpression();
+    if (!Node.isPropertyAccessExpression(expr) || expr.getName() !== 'ENTITY_KEY') continue;
+
+    const classExpr = expr.getExpression();
+    const typeSym = classExpr.getType().getSymbol();
+    const directSym = classExpr.getSymbol();
+    const candidateSyms = [typeSym, directSym?.getAliasedSymbol() ?? directSym].filter(Boolean);
+
+    for (const sym of candidateSyms) {
+      for (const decl of sym!.getDeclarations()) {
+        if (!Node.isClassDeclaration(decl)) continue;
+        const staticProp = decl.getStaticProperty('ENTITY_KEY');
+        if (staticProp && Node.isPropertyDeclaration(staticProp)) {
+          const init = staticProp.getInitializer();
+          if (init && (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init))) {
+            const slug = init.getLiteralValue();
+            if (slug && !seen.has(slug)) {
+              seen.add(slug);
+              slugs.push(slug);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return slugs;
+}
 
 function getMiddlewarePublicApiExclusions(): Set<string> {
   const middlewarePath = path.join(rootPath, 'src/middleware.ts');
@@ -70,6 +190,43 @@ function getMiddlewarePublicApiExclusions(): Set<string> {
     }
   }
   return excluded;
+}
+
+function isMethodGuardCondition(condText: string): boolean {
+  const trimmed = condText.trim();
+  return (
+    /^(?:req|request)\.method\s*===\s*['"][A-Z]+['"]$/.test(trimmed) ||
+    /^(?:req|request)\.method\s*!==\s*['"][A-Z]+['"]$/.test(trimmed)
+  );
+}
+
+function isInsideConditionalBranch(targetNode: Node, scopeRoot: Node | undefined): boolean {
+  let current: Node | undefined = targetNode.getParent();
+  let child: Node = targetNode;
+
+  while (current && current !== scopeRoot) {
+    if (Node.isIfStatement(current)) {
+      const condText = current.getExpression().getText();
+      if (!isMethodGuardCondition(condText)) {
+        const thenStmt = current.getThenStatement();
+        const elseStmt = current.getElseStatement();
+        if (child === thenStmt || (elseStmt && child === elseStmt)) {
+          return true;
+        }
+      }
+    } else if (Node.isCaseClause(current) || Node.isDefaultClause(current)) {
+      return true;
+    } else if (Node.isConditionalExpression(current)) {
+      if (child === current.getWhenTrue() || child === current.getWhenFalse()) {
+        return true;
+      }
+    }
+
+    child = current;
+    current = current.getParent();
+  }
+
+  return false;
 }
 
 function collectMethodScopedNodes(root: Node, method: string): Node[] {
@@ -111,12 +268,19 @@ function collectMethodScopedNodes(root: Node, method: string): Node[] {
   return collected;
 }
 
+interface DelegatedHelperGroup {
+  nodes: Node[];
+  invokedConditionally: boolean;
+}
+
 function collectDelegatedHelperRoots(
   sourceNodes: Node[],
   method: string,
-  visitedDecls = new Set<Node>()
-): Node[][] {
-  const groups: Node[][] = [];
+  visitedDecls = new Set<Node>(),
+  parentConditional = false
+): DelegatedHelperGroup[] {
+  const groups: DelegatedHelperGroup[] = [];
+  const scopeRoot = sourceNodes[0];
 
   for (const node of sourceNodes) {
     if (!Node.isIdentifier(node)) continue;
@@ -137,9 +301,13 @@ function collectDelegatedHelperRoots(
         Node.isFunctionExpression(decl)
       ) {
         visitedDecls.add(decl);
+        const invokedConditionally =
+          parentConditional || isInsideConditionalBranch(node, scopeRoot);
         const scoped = collectMethodScopedNodes(decl, method);
-        groups.push(scoped);
-        groups.push(...collectDelegatedHelperRoots(scoped, method, visitedDecls));
+        groups.push({ nodes: scoped, invokedConditionally });
+        groups.push(
+          ...collectDelegatedHelperRoots(scoped, method, visitedDecls, invokedConditionally)
+        );
       }
     }
   }
@@ -147,7 +315,8 @@ function collectDelegatedHelperRoots(
   return groups;
 }
 
-function extractSchemaFromScopedNodes(scopedNodes: Node[]): string | null {
+function extractSchemasFromScopedNodes(scopedNodes: Node[]): string[] {
+  const scopeRoot = scopedNodes[0];
   const calls = scopedNodes.filter((n): n is CallExpression => Node.isCallExpression(n));
 
   for (const c of calls) {
@@ -163,20 +332,22 @@ function extractSchemaFromScopedNodes(scopedNodes: Node[]): string | null {
             if (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) {
               const innerCalls = init.getDescendantsOfKind(SyntaxKind.CallExpression);
               if (innerCalls.length > 0) {
-                return innerCalls[0].getExpression().getText().replace(/.*\./, '');
+                return [innerCalls[0].getExpression().getText().replace(/.*\./, '')];
               }
               const innerIds = init.getDescendantsOfKind(SyntaxKind.Identifier);
               const returnedSchema = innerIds.find((id) => id.getText().includes('Schema'));
-              if (returnedSchema) return returnedSchema.getText().replace(/.*\./, '');
+              if (returnedSchema) return [returnedSchema.getText().replace(/.*\./, '')];
             }
-            return init.getText().replace(/.*\./, '');
+            return [init.getText().replace(/.*\./, '')];
           }
         }
       }
     }
   }
 
-  const candidateSchemas: string[] = [];
+  const branchedSchemas: string[] = [];
+  const unbranchedSchemas: string[] = [];
+
   for (const c of calls) {
     const exprText = c.getExpression().getText();
     if (exprText.includes('.safeParse') || exprText.includes('.parse')) {
@@ -191,28 +362,54 @@ function extractSchemaFromScopedNodes(scopedNodes: Node[]): string | null {
       }
 
       if (ALL_SCHEMAS[schemaName]) {
-        candidateSchemas.push(schemaName);
+        if (isInsideConditionalBranch(c, scopeRoot)) {
+          branchedSchemas.push(schemaName);
+        } else {
+          unbranchedSchemas.push(schemaName);
+        }
       }
     }
   }
 
-  if (candidateSchemas.length > 0) {
-    return candidateSchemas[candidateSchemas.length - 1];
+  const results: string[] = [...branchedSchemas];
+  if (unbranchedSchemas.length > 0) {
+    results.push(unbranchedSchemas[unbranchedSchemas.length - 1]);
   }
 
-  return null;
+  return Array.from(new Set(results));
 }
 
-function extractSchemaName(directNodes: Node[], delegatedGroups: Node[][]): string | null {
-  const directMatch = extractSchemaFromScopedNodes(directNodes);
-  if (directMatch) return directMatch;
+function extractSchemaNames(
+  directNodes: Node[],
+  delegatedGroups: DelegatedHelperGroup[]
+): string[] {
+  const directMatches = extractSchemasFromScopedNodes(directNodes);
+  const conditionalDelegatedMatches: string[] = [];
+  const unconditionalDelegatedMatches: string[] = [];
 
   for (const group of delegatedGroups) {
-    const match = extractSchemaFromScopedNodes(group);
-    if (match) return match;
+    const matches = extractSchemasFromScopedNodes(group.nodes);
+    if (matches.length === 0) continue;
+    if (group.invokedConditionally) {
+      conditionalDelegatedMatches.push(...matches);
+    } else {
+      unconditionalDelegatedMatches.push(...matches);
+    }
   }
 
-  return null;
+  if (directMatches.length > 0) {
+    return Array.from(new Set([...conditionalDelegatedMatches, ...directMatches]));
+  }
+
+  if (conditionalDelegatedMatches.length > 0) {
+    return Array.from(new Set(conditionalDelegatedMatches));
+  }
+
+  if (unconditionalDelegatedMatches.length > 0) {
+    return Array.from(new Set(unconditionalDelegatedMatches));
+  }
+
+  return [];
 }
 
 function detectBodyCapabilities(allNodes: Node[]): {
@@ -243,17 +440,40 @@ function detectBodyCapabilities(allNodes: Node[]): {
   return { acceptsBody, acceptsFormData };
 }
 
+function isObjectJsonSchema(node: any): boolean {
+  if (!node || typeof node !== 'object') return false;
+  if (node.type === 'object') return true;
+  if (Array.isArray(node.anyOf) && node.anyOf.length > 0 && node.anyOf.every(isObjectJsonSchema)) {
+    return true;
+  }
+  if (Array.isArray(node.oneOf) && node.oneOf.length > 0 && node.oneOf.every(isObjectJsonSchema)) {
+    return true;
+  }
+  return false;
+}
+
 function toOpenApiSchema(schemaObj: any, isMultipart: boolean): any {
   const raw = typeof z.toJSONSchema === 'function'
     ? z.toJSONSchema(schemaObj, {
       target: 'openapi-3.0',
       io: 'input',
       unrepresentable: 'any',
+      override: (ctx) => {
+        const def = (ctx.zodSchema as any)?._zod?.def;
+        if (def?.type === 'date') {
+          ctx.jsonSchema.type = 'string';
+          ctx.jsonSchema.format = 'date-time';
+        }
+      },
     })
     : schemaObj;
 
   const cloned = JSON.parse(JSON.stringify(raw));
   delete cloned.$schema;
+
+  if (Array.isArray(cloned?.oneOf) && cloned.oneOf.length > 0 && cloned.oneOf.every(isObjectJsonSchema)) {
+    cloned.type = 'object';
+  }
 
   if (isMultipart && cloned && typeof cloned === 'object' && cloned.properties) {
     for (const [key, propVal] of Object.entries<any>(cloned.properties)) {
@@ -273,6 +493,103 @@ function toOpenApiSchema(schemaObj: any, isMultipart: boolean): any {
   }
 
   return cloned;
+}
+
+function extractStatusFromInitObject(initArg: Node | undefined): number {
+  if (!initArg || !Node.isObjectLiteralExpression(initArg)) return 200;
+  const statusProp = initArg.getProperty('status');
+  if (statusProp && Node.isPropertyAssignment(statusProp)) {
+    const statusInit = statusProp.getInitializer();
+    if (statusInit && Node.isNumericLiteral(statusInit)) {
+      return Number(statusInit.getLiteralValue());
+    }
+  }
+  return 200;
+}
+
+function extractContentTypeFromInitObject(initArg: Node | undefined): string | null {
+  if (!initArg || !Node.isObjectLiteralExpression(initArg)) return null;
+  const headersProp = initArg.getProperty('headers');
+  if (!headersProp || !Node.isPropertyAssignment(headersProp)) return null;
+  const headersInit = headersProp.getInitializer();
+  if (!headersInit || !Node.isObjectLiteralExpression(headersInit)) return null;
+
+  for (const prop of headersInit.getProperties()) {
+    if (!Node.isPropertyAssignment(prop)) continue;
+    const rawName = prop.getName().replace(/^['"]|['"]$/g, '').toLowerCase();
+    if (rawName !== 'content-type') continue;
+    const valInit = prop.getInitializer();
+    if (valInit && (Node.isStringLiteral(valInit) || Node.isNoSubstitutionTemplateLiteral(valInit))) {
+      return valInit.getLiteralValue().split(';')[0].trim().toLowerCase();
+    }
+  }
+
+  return null;
+}
+
+function extractOperationResponses(allNodes: Node[]): Record<string, any> {
+  const mediaTypesByStatus = new Map<number, string[]>();
+
+  function recordStatus(status: number, mediaType?: string | null) {
+    if (status < 200 || status >= 300) return;
+    if (!mediaTypesByStatus.has(status)) {
+      mediaTypesByStatus.set(status, []);
+    }
+    if (mediaType && EXPORT_MEDIA_SCHEMAS[mediaType]) {
+      const existing = mediaTypesByStatus.get(status)!;
+      if (!existing.includes(mediaType)) {
+        existing.push(mediaType);
+      }
+    }
+  }
+
+  for (const n of allNodes) {
+    if (Node.isCallExpression(n)) {
+      const exprText = n.getExpression().getText();
+      if (exprText === 'NextResponse.json' || exprText === 'Response.json') {
+        const status = extractStatusFromInitObject(n.getArguments()[1]);
+        recordStatus(status);
+      }
+    } else if (Node.isNewExpression(n)) {
+      const exprText = n.getExpression().getText();
+      if (exprText === 'ImageResponse') {
+        const status = extractStatusFromInitObject(n.getArguments()[1]);
+        recordStatus(status, 'image/png');
+      } else if (exprText === 'NextResponse' || exprText === 'Response') {
+        const initArg = n.getArguments()[1];
+        const status = extractStatusFromInitObject(initArg);
+        const mediaType = extractContentTypeFromInitObject(initArg);
+        recordStatus(status, mediaType);
+      }
+    }
+  }
+
+  if (mediaTypesByStatus.size === 0) {
+    recordStatus(200);
+  }
+
+  const responses: Record<string, any> = {};
+  const sortedStatuses = Array.from(mediaTypesByStatus.keys()).sort((a, b) => a - b);
+
+  for (const status of sortedStatuses) {
+    const mediaTypes = mediaTypesByStatus.get(status) ?? [];
+    const responseObj: Record<string, any> = {
+      description: status === 201 ? 'Created' : 'Successful response',
+    };
+
+    if (mediaTypes.length > 0) {
+      responseObj.content = {};
+      for (const mt of mediaTypes) {
+        responseObj.content[mt] = {
+          schema: { ...EXPORT_MEDIA_SCHEMAS[mt] },
+        };
+      }
+    }
+
+    responses[String(status)] = responseObj;
+  }
+
+  return responses;
 }
 
 function extractQueryParameters(allNodes: Node[]): Array<{
@@ -448,6 +765,7 @@ function resolveOperationSecurity(
 
 async function run() {
   const publicApiExclusions = getMiddlewarePublicApiExclusions();
+  const entitySlugs = extractAdminEntitySlugs();
 
   const openapi: any = {
     openapi: '3.0.3',
@@ -455,6 +773,7 @@ async function run() {
       title: 'Universal API',
       version: '1.0.0',
     },
+    tags: OPENAPI_TAGS.map(({ name, description }) => ({ name, description })),
     components: {
       securitySchemes: {
         adminCookieAuth: {
@@ -557,11 +876,15 @@ async function run() {
         const directNodes = collectMethodScopedNodes(decl, method);
         const visitedDecls = new Set<Node>([decl]);
         const delegatedGroups = collectDelegatedHelperRoots(directNodes, method, visitedDecls);
-        const allScopedNodes = [...directNodes, ...delegatedGroups.flat()];
+        const allScopedNodes = [
+          ...directNodes,
+          ...delegatedGroups.flatMap((group) => group.nodes),
+        ];
 
-        const schemaName = extractSchemaName(directNodes, delegatedGroups);
+        const schemaNames = extractSchemaNames(directNodes, delegatedGroups);
 
         const operation: any = {
+          tags: [resolveOperationTag(routePath)],
           summary: `${method} ${routePath}`,
           description: description || `Endpoint for ${routePath}`,
         };
@@ -584,12 +907,19 @@ async function run() {
         const pathParams = openapiPath.match(/\{([^}]+)\}/g);
         if (pathParams) {
           parameters.push(
-            ...pathParams.map((param: string) => ({
-              name: param.replace(/[{}]/g, ''),
-              in: 'path',
-              required: true,
-              schema: { type: 'string' },
-            }))
+            ...pathParams.map((param: string) => {
+              const paramName = param.replace(/[{}]/g, '');
+              const paramSchema: Record<string, any> = { type: 'string' };
+              if (paramName === 'entity' && entitySlugs.length > 0) {
+                paramSchema.enum = entitySlugs;
+              }
+              return {
+                name: paramName,
+                in: 'path',
+                required: true,
+                schema: paramSchema,
+              };
+            })
           );
         }
 
@@ -606,21 +936,34 @@ async function run() {
           const { acceptsBody, acceptsFormData } = detectBodyCapabilities(allScopedNodes);
 
           if (acceptsBody) {
-            if (!schemaName) {
+            if (schemaNames.length === 0) {
               console.error(`ERROR: Route ${method} ${routePath} accepts data but lacks a Zod validation schema!`);
               missingSchemaCount++;
               continue;
             }
 
-            const schemaObj = ALL_SCHEMAS[schemaName];
-            if (!schemaObj) {
-              console.error(`ERROR: Could not find schema definition for '${schemaName}' in ALL_SCHEMAS`);
+            const missingDefinitions = schemaNames.filter((name) => !ALL_SCHEMAS[name]);
+            if (missingDefinitions.length > 0) {
+              console.error(
+                `ERROR: Could not find schema definition for '${missingDefinitions.join(', ')}' in ALL_SCHEMAS`
+              );
               missingSchemaCount++;
               continue;
             }
 
             try {
-              const jsonSchema = toOpenApiSchema(schemaObj, acceptsFormData);
+              let jsonSchema: any;
+              if (schemaNames.length === 1) {
+                jsonSchema = toOpenApiSchema(ALL_SCHEMAS[schemaNames[0]], acceptsFormData);
+              } else {
+                const branchSchemas = schemaNames.map((name) =>
+                  toOpenApiSchema(ALL_SCHEMAS[name], acceptsFormData)
+                );
+                jsonSchema = branchSchemas.every(isObjectJsonSchema)
+                  ? { type: 'object', oneOf: branchSchemas }
+                  : { oneOf: branchSchemas };
+              }
+
               const mediaType = acceptsFormData ? 'multipart/form-data' : 'application/json';
               operation.requestBody = {
                 required: true,
@@ -631,16 +974,12 @@ async function run() {
                 },
               };
             } catch (e) {
-              console.error(`ERROR: Failed to parse schema '${schemaName}' for ${method} ${routePath}`, e);
+              console.error(`ERROR: Failed to parse schema '${schemaNames.join(', ')}' for ${method} ${routePath}`, e);
             }
           }
         }
 
-        operation.responses = {
-          '200': {
-            description: 'Successful response',
-          },
-        };
+        operation.responses = extractOperationResponses(allScopedNodes);
 
         openapi.paths[openapiPath][method.toLowerCase()] = operation;
       }

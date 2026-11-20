@@ -225,6 +225,131 @@ describe('BroadcastService', () => {
         expect(res.map((g) => g.id)).toEqual(['invited-1', 'public-1']);
       });
     });
+
+    describe('all seven guest list filters parity', () => {
+      const comprehensiveGuests = [
+        {
+          id: 'match-1',
+          guestName: 'Elena Gilbert',
+          code: 'ELENA1',
+          email: 'elena@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party', 'Out of Town'],
+          plusOneFirstName: 'Stefan',
+          plusOneLastName: 'Salvatore',
+          extraFields: { attendanceStatus: 'pending', phone: '+15552223333' },
+        },
+        {
+          id: 'nonmatch-redeemed',
+          guestName: 'Elena Redeemed',
+          code: 'ELENA2',
+          email: 'elena2@example.com',
+          used: true,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'nonmatch-complete-addr',
+          guestName: 'Elena CompleteAddr',
+          code: 'ELENA3',
+          email: 'elena3@example.com',
+          used: false,
+          addressLine1: '100 Oak Rd',
+          city: 'Mystic Falls',
+          state: 'VA',
+          zipCode: '22901',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'nonmatch-dietary',
+          guestName: 'Elena Vegan',
+          code: 'ELENA4',
+          email: 'elena4@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Vegan',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'nonmatch-group',
+          guestName: 'Elena GroomSide',
+          code: 'ELENA5',
+          email: 'elena5@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Groom',
+          partyTags: ['Bridal Party'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+        {
+          id: 'public-addr-col',
+          guestName: 'Elena Public',
+          code: 'ELENA6',
+          email: 'elena6@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          dietaryNotes: 'Gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party', 'address-collection'],
+          plusOneFirstName: 'Stefan',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+      ];
+
+      it('evaluates status, addressStatus, attendanceStatus, dietaryCategory, partyGroup, partyTags, and searchQuery simultaneously', async () => {
+        (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(comprehensiveGuests);
+
+        const res = await BroadcastService.resolveTargetGuests({
+          searchQuery: 'Stefan',
+          status: 'unused',
+          addressStatus: 'missing',
+          attendanceStatus: 'pending',
+          dietaryCategory: 'gluten-free',
+          partyGroup: 'Bride',
+          partyTags: ['Bridal Party'],
+        });
+
+        expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({
+          where: {
+            partyTags: { hasSome: ['Bridal Party'] },
+            used: false,
+            partyGroup: 'Bride',
+          },
+        });
+        expect(res.map((g) => g.id)).toEqual(['match-1']);
+      });
+    });
   });
 
   describe('renderPreview', () => {
@@ -269,10 +394,10 @@ describe('BroadcastService', () => {
       expect(preview.destination).toBe('pen@example.com');
     });
 
-    it('escapes dynamic placeholders in EMAIL previews, strips CR/LF/<> in subjects, and leaves SMS previews unescaped', async () => {
+    it('returns unescaped preview body strings for both EMAIL and SMS while sanitizing CR/LF/<> in EMAIL subjects', async () => {
       (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
         id: 'canary-1',
-        guestName: '<b data-canary="guest-html-marker">O\'Connor</b>\r\nInjected',
+        guestName: 'Sean O\'Connor\r\nInjected',
         code: 'CANARY1',
         householdName: '<i data-canary="household-html-marker">O\'Connor & Family</i>',
         email: 'oconnor@example.com',
@@ -282,17 +407,17 @@ describe('BroadcastService', () => {
       const emailPreview = await BroadcastService.renderPreview({
         channel: 'EMAIL',
         subject: 'Event update for {{guestName}} ({{householdName}})',
-        body: '<p>Dear {{guestName}} ({{householdName}}), here is your event update.</p>',
+        body: 'Dear {{guestName}} ({{householdName}}), we can\'t wait & hope to see you!',
         sampleGuestId: 'canary-1',
       });
 
       expect(emailPreview.body).toBe(
-        '<p>Dear &lt;b data-canary=&quot;guest-html-marker&quot;&gt;O&#39;Connor&lt;/b&gt;\r\nInjected (&lt;i data-canary=&quot;household-html-marker&quot;&gt;O&#39;Connor &amp; Family&lt;/i&gt;), here is your event update.</p>'
+        'Dear Sean O\'Connor\r\nInjected (<i data-canary="household-html-marker">O\'Connor & Family</i>), we can\'t wait & hope to see you!'
       );
-      expect(emailPreview.body).not.toContain('<b data-canary=');
-      expect(emailPreview.body).not.toContain('<i data-canary=');
+      expect(emailPreview.body).not.toContain('&#39;');
+      expect(emailPreview.body).not.toContain('&amp;');
       expect(emailPreview.subject).toBe(
-        'Event update for b data-canary="guest-html-marker"O\'Connor/bInjected (i data-canary="household-html-marker"O\'Connor & Family/i)'
+        'Event update for Sean O\'ConnorInjected (i data-canary="household-html-marker"O\'Connor & Family/i)'
       );
       expect(emailPreview.subject).not.toMatch(/[\r\n<>]/);
 
@@ -302,6 +427,22 @@ describe('BroadcastService', () => {
         sampleGuestId: 'canary-1',
       });
       expect(smsPreview.body).toBe('Hi <i data-canary="household-html-marker">O\'Connor & Family</i>!');
+    });
+
+    it('includes matchedCount and missingContactCount when targetFilters are provided', async () => {
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+        { id: 'g1', guestName: 'Alice', code: 'A1', email: 'alice@example.com', used: false, extraFields: { phone: '+15551112222' } },
+        { id: 'g2', guestName: 'Bob', code: 'B1', email: null, used: false, extraFields: {} },
+      ]);
+
+      const smsPreview = await BroadcastService.renderPreview({
+        channel: 'SMS',
+        body: 'Reminder for {{guestName}}',
+        targetFilters: { status: 'unused' },
+      });
+
+      expect(smsPreview.matchedCount).toBe(2);
+      expect(smsPreview.missingContactCount).toBe(1);
     });
   });
 
@@ -1288,6 +1429,345 @@ describe('BroadcastService', () => {
       });
 
       sendEmailSpy.mockRestore();
+    });
+
+    it('resolves {{rsvpUrl}} across retryFailedRecipients and falls back to requestOrigin with baseUrlWarning when AppConfig.baseUrl is empty', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        baseUrl: '',
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const recipients = [
+        {
+          id: 'r-rsvp-retry',
+          guestName: 'Jordan Lee',
+          destination: 'jordan@example.com',
+          status: 'FAILED',
+          invitationCode: {
+            code: 'JORDAN 2026',
+            householdName: 'Lee Household',
+          },
+        },
+      ];
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'b-retry-url',
+        channel: 'EMAIL',
+        subject: 'RSVP for {{guestName}}',
+        body: 'Hi {{guestName}}, RSVP here: {{rsvpUrl}}',
+        recipients,
+      });
+
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+
+      (prisma.broadcastRecipient.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.broadcastRecipient.count as jest.Mock)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'b-retry-url',
+        status: 'SENT',
+        sentCount: 1,
+        failedCount: 0,
+      });
+
+      const result = await BroadcastService.retryFailedRecipients(
+        'b-retry-url',
+        undefined,
+        'https://wedding.host.example'
+      );
+
+      expect(sendEmailSpy).toHaveBeenCalledWith({
+        to: 'jordan@example.com',
+        subject: 'RSVP for Jordan Lee',
+        body: 'Hi Jordan Lee, RSVP here: https://wedding.host.example/guest?code=JORDAN%202026',
+      });
+      expect((result as any).baseUrlWarning).toContain('https://wedding.host.example');
+      expect(warnSpy).toHaveBeenCalled();
+
+      sendEmailSpy.mockRestore();
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('sub-event pending invitees, dashboard filter parity, and {{rsvpUrl}} across all context builders', () => {
+    it('matches unresponded invitees (missing SubEventRsvp rows or pending status) for private and public sub-events', async () => {
+      const subEventFindUnique = jest.fn();
+      (prisma as any).subEvent = { findUnique: subEventFindUnique };
+
+      const guests = [
+        {
+          id: 'g-no-row',
+          guestName: 'Unresponded Invitee',
+          code: 'NORESPONSE',
+          subEventAccesses: [{ subEventId: 'rehearsal-private' }],
+          subEventRsvps: [],
+        },
+        {
+          id: 'g-pending-row',
+          guestName: 'Explicit Pending Invitee',
+          code: 'PENDINGROW',
+          subEventAccesses: [{ subEventId: 'rehearsal-private' }],
+          subEventRsvps: [{ subEventId: 'rehearsal-private', status: 'pending' }],
+        },
+        {
+          id: 'g-attending-row',
+          guestName: 'Attending Invitee',
+          code: 'ATTENDING1',
+          subEventAccesses: [{ subEventId: 'rehearsal-private' }],
+          subEventRsvps: [{ subEventId: 'rehearsal-private', status: 'attending' }],
+        },
+        {
+          id: 'g-uninvited',
+          guestName: 'Ceremony Only Guest',
+          code: 'CEREMONY1',
+          subEventAccesses: [],
+          subEventRsvps: [],
+        },
+      ];
+
+      // 1. Private sub-event with pending status
+      subEventFindUnique.mockResolvedValueOnce({ id: 'rehearsal-private', isPrivate: true });
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce(guests);
+
+      const privatePending = await BroadcastService.resolveTargetGuests({
+        subEventId: 'rehearsal-private',
+        subEventRsvpStatus: 'pending',
+      });
+
+      expect(prisma.invitationCode.findMany).toHaveBeenCalledWith({
+        where: {
+          AND: [
+            { subEventAccesses: { some: { subEventId: 'rehearsal-private' } } },
+            {
+              OR: [
+                { subEventRsvps: { none: { subEventId: 'rehearsal-private' } } },
+                {
+                  subEventRsvps: {
+                    some: { subEventId: 'rehearsal-private', status: 'pending' },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      expect(privatePending.map((g) => g.id)).toEqual(['g-no-row', 'g-pending-row']);
+
+      // 2. Public sub-event with pending status (all invited guests have access without SubEventAccess rows)
+      subEventFindUnique.mockResolvedValueOnce({ id: 'welcome-public', isPrivate: false });
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'pub-no-row',
+          guestName: 'Public Unresponded',
+          code: 'PUB1',
+          subEventAccesses: [],
+          subEventRsvps: [],
+        },
+        {
+          id: 'pub-declined',
+          guestName: 'Public Declined',
+          code: 'PUB2',
+          subEventAccesses: [],
+          subEventRsvps: [{ subEventId: 'welcome-public', status: 'declined' }],
+        },
+      ]);
+
+      const publicPending = await BroadcastService.resolveTargetGuests({
+        subEventId: 'welcome-public',
+        subEventRsvpStatus: 'pending',
+      });
+
+      expect(prisma.invitationCode.findMany).toHaveBeenLastCalledWith({
+        where: {
+          AND: [
+            {
+              OR: [
+                { subEventRsvps: { none: { subEventId: 'welcome-public' } } },
+                {
+                  subEventRsvps: {
+                    some: { subEventId: 'welcome-public', status: 'pending' },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      expect(publicPending.map((g) => g.id)).toEqual(['pub-no-row']);
+
+      delete (prisma as any).subEvent;
+    });
+
+    it('filters by partyGroup, status, addressFilter, dietaryFilter, and multi-field searchQuery matching dashboard table', async () => {
+      const records = [
+        {
+          id: 'c1',
+          guestName: 'Maya Lin',
+          code: 'MAYA26',
+          email: 'maya@example.com',
+          plusOneFirstName: 'Alex',
+          plusOneLastName: 'Rivera',
+          partyGroup: 'Bride Side',
+          partyTags: ['bridal-party'],
+          dietaryNotes: 'Gluten-free',
+          addressLine1: '100 Market St',
+          city: 'San Francisco',
+          state: 'CA',
+          zipCode: '94105',
+          used: false,
+        },
+        {
+          id: 'c2',
+          guestName: 'Noah Patel',
+          code: 'NOAH26',
+          email: 'noah@example.com',
+          partyGroup: 'Bride Side',
+          partyTags: ['college'],
+          dietaryNotes: 'Gluten-free',
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          used: false,
+        },
+        {
+          id: 'c3',
+          guestName: 'Liam Chen',
+          code: 'LIAM26',
+          email: 'liam@example.com',
+          partyGroup: 'Groom Side',
+          partyTags: ['bridal-party'],
+          dietaryNotes: 'Vegan',
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          used: true,
+        },
+      ];
+
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue(records);
+
+      const missingAddressMatches = await BroadcastService.resolveTargetGuests({
+        partyGroup: 'Bride Side',
+        status: 'unused',
+        addressFilter: 'missing',
+        dietaryFilter: 'gluten-free',
+      });
+      expect(missingAddressMatches.map((r) => r.id)).toEqual(['c2']);
+
+      const multiFieldPlusOneMatches = await BroadcastService.resolveTargetGuests({
+        searchQuery: 'rivera',
+        addressFilter: 'complete',
+      });
+      expect(multiFieldPlusOneMatches.map((r) => r.id)).toEqual(['c1']);
+    });
+
+    it('renders {{rsvpUrl}} across renderPreview, sendTestBroadcast, and sendBroadcast using AppConfig.baseUrl or requestOrigin fallback', async () => {
+      // 1. Configured AppConfig.baseUrl in renderPreview
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        baseUrl: 'https://celebrate.example.com/',
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+      });
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'g-url-1',
+          guestName: 'Clara Oswald',
+          code: 'CLARA+1',
+          email: 'clara@example.com',
+        },
+      ]);
+
+      const preview = await BroadcastService.renderPreview({
+        channel: 'EMAIL',
+        subject: 'RSVP for {{guestName}}',
+        body: 'Link: {{rsvpUrl}}',
+        targetFilters: { searchQuery: 'Clara' },
+      });
+
+      expect(preview.body).toBe('Link: https://celebrate.example.com/guest?code=CLARA%2B1');
+      expect(preview.recipientCount).toBe(1);
+      expect(preview.baseUrlWarning).toBeUndefined();
+
+      // 2. Empty AppConfig.baseUrl in sendTestBroadcast -> falls back to requestOrigin with warning
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        baseUrl: '   ',
+        contactEmail: 'host@example.com',
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+      });
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+
+      const testRes = await BroadcastService.sendTestBroadcast({
+        channel: 'EMAIL',
+        subject: 'Test for {{guestName}}',
+        body: 'Tap {{rsvpUrl}}',
+        requestOrigin: 'https://selfhosted.wedding.local',
+      });
+
+      expect(testRes.body).toBe('Tap https://selfhosted.wedding.local/guest?code=SAMPLE2026');
+      expect(testRes.baseUrlWarning).toContain('https://selfhosted.wedding.local');
+
+      // 3. Dispatch via sendBroadcast resolves personalized {{rsvpUrl}} per recipient
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        baseUrl: 'https://celebrate.example.com',
+        weddingDate: new Date('2026-10-25'),
+        venueName: 'Grand Hall',
+        emailProvider: 'smtp',
+        broadcastBatchSize: 10,
+        broadcastBatchDelayMs: 0,
+      });
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'g-disp-1',
+          guestName: 'Rory Williams',
+          code: 'RORY2026',
+          email: 'rory@example.com',
+        },
+      ]);
+      (prisma.broadcastMessage.create as jest.Mock).mockResolvedValueOnce({
+        id: 'bm-url-1',
+        status: 'SENDING',
+      });
+      (prisma.broadcastRecipient.create as jest.Mock).mockResolvedValueOnce({
+        id: 'br-url-1',
+      });
+      (prisma.broadcastRecipient.update as jest.Mock).mockResolvedValueOnce({});
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValueOnce({
+        id: 'bm-url-1',
+        status: 'SENT',
+        sentCount: 1,
+        failedCount: 0,
+      });
+
+      await BroadcastService.sendBroadcast({
+        channel: 'EMAIL',
+        subject: 'Reminder for {{guestName}}',
+        body: 'Confirm at {{rsvpUrl}}',
+      });
+
+      expect(sendEmailSpy).toHaveBeenLastCalledWith({
+        to: 'rory@example.com',
+        subject: 'Reminder for Rory Williams',
+        body: 'Confirm at https://celebrate.example.com/guest?code=RORY2026',
+      });
+
+      sendEmailSpy.mockRestore();
+      warnSpy.mockRestore();
     });
   });
 });

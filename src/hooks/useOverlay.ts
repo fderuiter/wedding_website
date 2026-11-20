@@ -19,6 +19,7 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef(onClose);
+  const handledOutsideMouseDownRef = useRef(false);
   const id = useId();
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
   useEffect(() => {
     if (!isOpen) return;
 
+    handledOutsideMouseDownRef.current = false;
     overlayStack.push(id);
 
     // Save previous focus
@@ -66,6 +68,12 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
+        if (!modal.contains(document.activeElement)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+
         if (e.shiftKey) {
           if (document.activeElement === first) {
             e.preventDefault();
@@ -80,22 +88,37 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
       }
     }
 
+    let mouseUpResetTimer: ReturnType<typeof setTimeout> | null = null;
+
     function handleClickOutside(e: MouseEvent) {
       const isTopmost = overlayStack[overlayStack.length - 1] === id;
       if (!isTopmost) return;
 
       if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
+        handledOutsideMouseDownRef.current = true;
         closeRef.current();
       }
     }
 
+    function handleMouseUp() {
+      if (!handledOutsideMouseDownRef.current) return;
+      if (mouseUpResetTimer) clearTimeout(mouseUpResetTimer);
+      mouseUpResetTimer = setTimeout(() => {
+        handledOutsideMouseDownRef.current = false;
+        mouseUpResetTimer = null;
+      }, 0);
+    }
+
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('mousedown', handleClickOutside);
-    
+    document.addEventListener('mouseup', handleMouseUp);
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('mousedown', handleClickOutside);
-      
+      document.removeEventListener('mouseup', handleMouseUp);
+      if (mouseUpResetTimer) clearTimeout(mouseUpResetTimer);
+
       const index = overlayStack.indexOf(id);
       if (index !== -1) {
         overlayStack.splice(index, 1);
@@ -109,6 +132,12 @@ export function useOverlay(isOpen: boolean, onClose: () => void) {
   }, [isOpen, id]);
 
   const handleBackdropClick = (e: React.MouseEvent) => {
+    if (handledOutsideMouseDownRef.current) {
+      handledOutsideMouseDownRef.current = false;
+      return;
+    }
+    const isTopmost = overlayStack[overlayStack.length - 1] === id;
+    if (!isTopmost) return;
     if (e.target === e.currentTarget) {
       closeRef.current();
     }

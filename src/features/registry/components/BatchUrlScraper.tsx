@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import { RegistryPreviewTable, PreviewRegistryItem } from './RegistryPreviewTable';
 import { validateRegistryItemRow } from '../utils/csv';
 
@@ -11,15 +12,49 @@ export interface BatchUrlScraperProps {
   onSuccess?: () => void;
 }
 
+interface BatchUrlScraperDraft {
+  urlInput: string;
+  items: PreviewRegistryItem[];
+}
+
+const INITIAL_BATCH_DRAFT: BatchUrlScraperDraft = {
+  urlInput: '',
+  items: [],
+};
+
 export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) => {
   const router = useRouter();
   const { addToast } = useToast();
 
-  const [urlInput, setUrlInput] = useState('');
+  const [draft, setDraft, clearPersistedState] = useFormPersist<BatchUrlScraperDraft>(
+    'registry_batch_url_draft',
+    INITIAL_BATCH_DRAFT
+  );
+  const { urlInput, items } = draft;
   const [isScraping, setIsScraping] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [items, setItems] = useState<PreviewRegistryItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const setUrlInput = (nextUrlInput: string) => {
+    setDraft((prev) => ({ ...prev, urlInput: nextUrlInput }));
+  };
+
+  const setItems = (
+    updater: PreviewRegistryItem[] | ((_prev: PreviewRegistryItem[]) => PreviewRegistryItem[])
+  ) => {
+    setDraft((prev) => ({
+      ...prev,
+      items: typeof updater === 'function' ? updater(prev.items) : updater,
+    }));
+  };
+
+  const hasDraft = urlInput.trim().length > 0 || items.length > 0;
+
+  const handleResetDraft = () => {
+    setErrorMessage(null);
+    setDraft(INITIAL_BATCH_DRAFT);
+    clearPersistedState();
+  };
 
   // Extract non-empty lines as candidate URLs
   const candidateUrls = urlInput
@@ -160,6 +195,8 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
 
       await apiClient.post('/api/registry/items/batch', payload);
 
+      setDraft(INITIAL_BATCH_DRAFT);
+      clearPersistedState();
       addToast(`Successfully added ${validItems.length} items to your registry!`, 'success');
       if (onSuccess) {
         onSuccess();
@@ -224,7 +261,17 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-3">
+          {hasDraft && (
+            <button
+              type="button"
+              onClick={handleResetDraft}
+              disabled={isScraping || isSubmitting}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-stone-700 dark:text-stone-200 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 hover:bg-stone-50 dark:hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-colors"
+            >
+              Reset Draft
+            </button>
+          )}
           <button
             type="button"
             onClick={handleScrape}

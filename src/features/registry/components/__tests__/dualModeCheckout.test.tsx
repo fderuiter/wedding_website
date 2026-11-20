@@ -624,6 +624,19 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       ).toBeInTheDocument();
     });
 
+    expect(postSpy).toHaveBeenCalledWith(
+      '/api/registry/payment-intent',
+      expect.objectContaining({
+        itemId: 'fund-hybrid-1',
+        amount: 250,
+        coverFee: true,
+        paymentIntentId: 'pi_real_123',
+        clientSecret: 'pi_real_123_secret_abc',
+        name: 'Taylor Donor',
+        email: 'taylor@example.com',
+      })
+    );
+
     // Stale $100 PaymentIntent must NEVER be confirmed
     expect(mockConfirmPayment).not.toHaveBeenCalled();
     expect(mockOnContribute).not.toHaveBeenCalled();

@@ -159,10 +159,11 @@ To protect production database integrity and application availability, the deplo
   1. Navigate to **Settings** > **Environments** in your GitHub repository.
   2. Click **New environment** and name it `staging`.
   3. **Protection Rules**: Leave "Required reviewers" unconfigured to permit unblocked, automated continuous delivery on every merge.
-  4. **Environment Secrets**:
+  4. **Environment Variables** (non-secret public URLs):
+     - `SERVICE_URL`: Public base URL of the staging web service for `/api/health` probes (e.g., `https://staging.wedding.example.com`). Configure `SERVICE_URL` as a GitHub Environment variable (`vars.SERVICE_URL`) so cross-job `service_url` outputs and `$GITHUB_STEP_SUMMARY` diagnostics remain unmasked (`secrets.SERVICE_URL` is supported as a legacy fallback during migration).
+  5. **Environment Secrets**:
      - `DATABASE_URL`: Connection string for the isolated staging PostgreSQL instance (e.g., `postgresql://wedding:staging_pass@staging-db.internal:5432/wedding_staging`).
-     - `SERVICE_URL`: Base URL of the staging web service (e.g., `https://staging.wedding.example.com`).
-     - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` for staging Cloud Run/hosting service). Because `staging` has no required reviewers, automated staging rollbacks can resolve secrets directly from `staging` (or an optional `STAGING_ROLLBACK_ENVIRONMENT`).
+     - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL` for staging Cloud Run/hosting service). Because `staging` has no required reviewers, automated staging rollbacks can resolve variables and secrets directly from `staging` (or an optional `STAGING_ROLLBACK_ENVIRONMENT`).
 
 #### 2. Production Environment (`production`)
 - **Purpose**: Live environment hosting attendee traffic, requiring explicit human reviewer approval before executing schema migrations or container updates.
@@ -174,9 +175,10 @@ To protect production database integrity and application availability, the deplo
      - Specify designated maintainers, release managers, or team leads authorized to approve production releases.
      - Select **Prevent self-review** if team policy mandates dual-control sign-off.
   4. **Deployment Branches**: Restrict deployment to `main` branch or release tags (`v*`).
-  5. **Environment Secrets** (workflow-consumed credentials only):
+  5. **Environment Variables** (non-secret public URLs):
+     - `SERVICE_URL`: Public base URL of the live production web service for `/api/health` probes (e.g., `https://wedding.example.com`). Configure `SERVICE_URL` as a GitHub Environment variable (`vars.SERVICE_URL`) so cross-job `service_url` outputs and `$GITHUB_STEP_SUMMARY` diagnostics remain unmasked (`secrets.SERVICE_URL` is supported as a legacy fallback during migration).
+  6. **Environment Secrets** (workflow-consumed credentials only):
      - `DATABASE_URL`: Direct (non-pooled) connection string for the isolated production PostgreSQL instance used by `db-migrate.yml` (e.g., `postgresql://wedding:prod_pass@prod-db.internal:5432/wedding_prod`).
-     - `SERVICE_URL`: Base URL of the live production web service for `/api/health` probes (e.g., `https://wedding.example.com`).
      - Provider secrets (`GCP_SA_KEY`, `GCP_PROJECT_ID`, or `DEPLOY_WEBHOOK_URL`).
      - *Note*: Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are not read by GitHub Actions workflows and must be configured in your target hosting platform's secret store (such as GCP Secret Manager, Vercel Environment Variables, or VPS `.env`).
 
@@ -185,7 +187,7 @@ To protect production database integrity and application availability, the deplo
 - **Environment Setup**:
   1. Navigate to **Settings** > **Environments** and click **New environment** named `production-rollback`.
   2. **Protection Rules**: Leave **Required reviewers** **unchecked** so emergency rollbacks execute immediately within the 60-second recovery target. Restrict **Deployment branches** to `main` and release tags (`v*`).
-  3. **Environment Secrets**: Copy only the container deployment and probe secrets required by `.github/workflows/rollback.yml` and `.github/workflows/deploy-provider.yml` (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, and `SERVICE_URL` — `DATABASE_URL` is not needed because rollbacks preserve forward-only N-1 compatible schemas).
+  3. **Environment Variables & Secrets**: Set `SERVICE_URL` under **Environment variables** (`vars.SERVICE_URL`, with `secrets.SERVICE_URL` supported as a legacy fallback) and copy only the container deployment secrets required by `.github/workflows/rollback.yml` and `.github/workflows/deploy-provider.yml` (`GCP_SA_KEY`, `GCP_PROJECT_ID`, and `DEPLOY_WEBHOOK_URL` — `DATABASE_URL` is not needed because rollbacks preserve forward-only N-1 compatible schemas).
   4. **Pipeline Binding**: Set repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT=production-rollback` under **Settings** > **Secrets and variables** > **Actions** > **Variables** (or pass `rollback_environment: production-rollback` during `workflow_dispatch`). When `rollback_environment` is omitted, `rollback.yml` falls back to `target_environment`.
 
 #### 4. Strict Separation of Secrets & Database Credentials
@@ -255,7 +257,7 @@ To protect production database integrity and application availability, the deplo
 ### 4. Provider Deployment Adapter (`deploy-provider.yml`)
 - **Triggers**: Release pipeline (`workflow_call`) with `image_digest`, rollback pipeline (`workflow_call`) with `image_digest` / `image_tag` and optional `rollback_environment`, or manual `workflow_dispatch` with an explicit `image_digest` (`sha256:<64-hex>`) or immutable release/commit `image_tag` (unpinned `latest` tags are rejected).
 - **Permissions**: Top-level `contents: read`; deployment job scopes `packages: read` and `attestations: read` for registry inspection and OIDC provenance verification.
-- **Secrets required**: Provider credentials (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, `SERVICE_URL`).
+- **Secrets & Variables**: Provider credentials (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`) in GitHub Environment secrets, and `SERVICE_URL` in GitHub Environment variables (`vars.SERVICE_URL` primary, with `secrets.SERVICE_URL` supported as a legacy fallback).
 - **Inputs**:
   - `environment`: Target deployment environment (`production` or `staging`).
   - `rollback_environment`: Optional unguarded GitHub Environment override for rollback secret resolution.
@@ -466,11 +468,18 @@ Configure the following workflow-consumed secrets in GitHub Settings (**Settings
 | Secret | Description | Required By |
 |---|---|---|
 | `DATABASE_URL` | Direct (non-pooled) production/staging PostgreSQL connection string | `db-migrate.yml` |
-| `SERVICE_URL` | Public base URL of the target web service for `/api/health` probes | `deploy-provider.yml`, `rollback.yml` |
 | `GCP_SA_KEY` | Google Cloud Service Account JSON Key (required when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
 | `GCP_PROJECT_ID` | Google Cloud Project ID (optional override when `provider: google-cloud-run`) | `deploy-provider.yml`, `rollback.yml` |
 | `DEPLOY_WEBHOOK_URL` | Deployment Webhook URL (required when `provider: generic-webhook` or `docker-host`) | `deploy-provider.yml`, `rollback.yml` |
 | `DOCKERHUB_USERNAME` | Docker Hub username (optional secondary registry) | `publish-artifact.yml` |
 | `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |
 
-Optional GitHub Actions **Variables** (`Settings > Secrets and variables > Actions > Variables`): `PRODUCTION_ROLLBACK_ENVIRONMENT` (e.g., `production-rollback`) and `STAGING_ROLLBACK_ENVIRONMENT` for unguarded automated rollback secret resolution in `deploy.yml`. Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are configured directly in the target hosting provider rather than GitHub Actions.
+Configure the following GitHub Environment and repository **Variables** (**Settings > Environments** for environment-scoped `SERVICE_URL`, and **Settings > Secrets and variables > Actions > Variables** for optional rollback environment bindings):
+
+| Variable | Description | Consumed By |
+|---|---|---|
+| `SERVICE_URL` | Public base URL of the target web service for `/api/health` probes (`vars.SERVICE_URL` primary; `secrets.SERVICE_URL` supported as a legacy fallback without cross-job `$GITHUB_OUTPUT` export) | `deploy.yml`, `deploy-provider.yml`, `rollback.yml` |
+| `PRODUCTION_ROLLBACK_ENVIRONMENT` | Optional unguarded GitHub Environment name (e.g., `production-rollback`) for automated production rollback credential resolution | `deploy.yml` |
+| `STAGING_ROLLBACK_ENVIRONMENT` | Optional unguarded GitHub Environment name for automated staging rollback credential resolution | `deploy.yml` |
+
+Application runtime secrets (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `S3_*`, `STRIPE_*`) are configured directly in the target hosting provider rather than GitHub Actions.

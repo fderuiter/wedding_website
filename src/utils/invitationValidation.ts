@@ -8,6 +8,7 @@ export const COUNTRY_MAX_LENGTH = 100;
 export const PLUS_ONE_NAME_MAX_LENGTH = 100;
 export const HOUSEHOLD_NAME_MAX_LENGTH = 100;
 export const PARTY_GROUP_MAX_LENGTH = 100;
+export const PHONE_MAX_LENGTH = 30;
 
 export const INVITATION_COLLISION_STRATEGIES = ['skip', 'update', 'reject'] as const;
 export type InvitationCollisionStrategy = (typeof INVITATION_COLLISION_STRATEGIES)[number];
@@ -79,6 +80,7 @@ const NULLABLE_INVITATION_STRING_FIELDS = [
 ] as const;
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const GUEST_PHONE_PATTERN = /^\+?[\d\s()./-]{7,30}$/;
 
 const LENGTH_FIELD_RULES: ReadonlyArray<{
   key:
@@ -134,6 +136,34 @@ export function normalizeInvitationCode(value: unknown): string {
   if (typeof value !== 'string') return '';
   const trimmed = value.trim();
   return trimmed ? trimmed.toUpperCase() : '';
+}
+
+export function validateGuestPhone(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') {
+    return 'Invalid phone number format.';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > PHONE_MAX_LENGTH) {
+    return `Phone number must be under ${PHONE_MAX_LENGTH} characters.`;
+  }
+  if (!GUEST_PHONE_PATTERN.test(trimmed)) {
+    return 'Invalid phone number format.';
+  }
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) {
+    return 'Invalid phone number format.';
+  }
+  return null;
+}
+
+export function normalizeGuestPhone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/[^\d+]/g, '');
+  return normalized || null;
 }
 
 export function normalizePartyTags(
@@ -319,6 +349,21 @@ export function validateInvitationGuestFieldsWithColumns(
   if (mode === 'service' && record.partyTags !== undefined && record.partyTags !== null) {
     if (!Array.isArray(record.partyTags)) {
       pushError('partyTags', 'Validation Error: Party tags must be an array of strings.');
+    }
+  }
+
+  if (
+    mode === 'service' &&
+    record.extraFields &&
+    typeof record.extraFields === 'object' &&
+    !Array.isArray(record.extraFields)
+  ) {
+    const extraRecord = record.extraFields as Record<string, unknown>;
+    if (extraRecord.phone !== undefined && extraRecord.phone !== null) {
+      const phoneErr = validateGuestPhone(extraRecord.phone);
+      if (phoneErr) {
+        pushError('phone', formatModeMessage(mode, rowNumber, phoneErr));
+      }
     }
   }
 

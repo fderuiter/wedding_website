@@ -52,7 +52,7 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig, toPublicAppConfig, toAdminAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { revalidatePath } from 'next/cache';
-import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
+import { AppConfigSchema, CreateAppConfigProfileSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
@@ -869,5 +869,47 @@ describe('toAppConfigDbPayload mapper', () => {
         rsvpGracePeriodHours: 10,
       })
     ).toThrow(/Grace period must be 0, 12, 24, 48, 72, or 168 hours/i);
+  });
+
+  it('validates minimal profile creation payload via CreateAppConfigProfileSchema in POST /api/admin/settings', async () => {
+    const prevMultisite = process.env.MULTISITE_ENABLED;
+    process.env.MULTISITE_ENABLED = 'true';
+    try {
+      mockIsAdminRequest.mockResolvedValue(true);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce(null);
+      (mockPrisma.appConfig.create as jest.Mock).mockResolvedValueOnce({
+        ...updatedConfig,
+        id: 'profile-custom',
+      });
+
+      const parsedMinimal = CreateAppConfigProfileSchema.parse({ id: 'profile-custom' });
+      expect(parsedMinimal.id).toBe('profile-custom');
+      expect(parsedMinimal.venueName).toBe('TBD Venue');
+      expect(parsedMinimal.partner1Name).toBe('Partner 1');
+      expect(parsedMinimal.partner2Name).toBe('Partner 2');
+
+      const req = new NextRequest('http://localhost/api/admin/settings', {
+        method: 'POST',
+        headers: {
+          cookie: 'admin_auth=valid-token',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ id: 'profile-custom', subdomain: 'custom-site' }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(mockPrisma.appConfig.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: 'profile-custom',
+            subdomain: 'custom-site',
+            venueName: 'TBD Venue',
+          }),
+        })
+      );
+    } finally {
+      process.env.MULTISITE_ENABLED = prevMultisite;
+    }
   });
 });

@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { createAuditSnapshot } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
+import { ApiError } from '@/utils/ApiError';
 import {
   REGISTRY_DEFAULT_PAGE_LIMIT,
   REGISTRY_MAX_CATALOG_LIMIT,
@@ -324,10 +325,16 @@ class RegistryRepository implements IRegistryRepository {
 
       // Check for idempotent duplicate if a Stripe PaymentIntent ID is provided
       if (contribution.stripePaymentIntentId) {
-        const existing = await txClient.contributor.findFirst({
+        const existing = await txClient.contributor?.findFirst?.({
           where: { stripePaymentIntentId: contribution.stripePaymentIntentId },
         });
         if (existing) {
+          if (existing.registryItemId !== itemId) {
+            throw new ApiError(
+              400,
+              'Stripe PaymentIntent has already been used for another registry item.'
+            );
+          }
           const existingItem = await txClient.registryItem.findUnique({
             where: { id: itemId },
             include: { image: true, contributors: true },
@@ -428,7 +435,35 @@ class RegistryRepository implements IRegistryRepository {
       return RegistryItemSchema.parse(updatedItem);
     };
 
-    return executeInTransaction(this.client, runTransaction);
+    try {
+      return await executeInTransaction(this.client, runTransaction);
+    } catch (err: unknown) {
+      const errorCode =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? (err as { code?: unknown }).code
+          : undefined;
+      if (errorCode === 'P2002' && contribution.stripePaymentIntentId) {
+        const existing = await this.client.contributor?.findFirst?.({
+          where: { stripePaymentIntentId: contribution.stripePaymentIntentId },
+        });
+        if (existing) {
+          if (existing.registryItemId !== itemId) {
+            throw new ApiError(
+              400,
+              'Stripe PaymentIntent has already been used for another registry item.'
+            );
+          }
+          const existingItem = await this.client.registryItem.findUnique({
+            where: { id: itemId },
+            include: { image: true, contributors: true },
+          });
+          if (existingItem) {
+            return RegistryItemSchema.parse(existingItem);
+          }
+        }
+      }
+      throw err;
+    }
   }
 
   /**

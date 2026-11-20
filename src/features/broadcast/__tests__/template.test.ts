@@ -1,4 +1,11 @@
-import { escapeHtmlEntities, renderBroadcastTemplate, sanitizeEmailSubject } from '../template';
+import {
+  AVAILABLE_TEMPLATE_PLACEHOLDERS,
+  BROADCAST_STARTER_TEMPLATES,
+  buildGuestRsvpUrl,
+  escapeHtmlEntities,
+  renderBroadcastTemplate,
+  sanitizeEmailSubject,
+} from '../template';
 
 describe('renderBroadcastTemplate', () => {
   const sampleContext = {
@@ -83,5 +90,60 @@ describe('escapeHtmlEntities', () => {
     expect(escapeHtmlEntities('<script>alert("O\'Connor & Co")</script>')).toBe(
       '&lt;script&gt;alert(&quot;O&#39;Connor &amp; Co&quot;)&lt;/script&gt;'
     );
+  });
+});
+
+describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
+  it('builds encoded personalized RSVP URLs and strips trailing slashes', () => {
+    expect(buildGuestRsvpUrl('https://wedding.example.com/', 'ALICE 2026+1')).toBe(
+      'https://wedding.example.com/guest?code=ALICE%202026%2B1'
+    );
+    expect(buildGuestRsvpUrl('', 'ALICE2026')).toBe('/guest?code=ALICE2026');
+  });
+
+  it('registers {{rsvpUrl}} in AVAILABLE_TEMPLATE_PLACEHOLDERS and resolves it in EMAIL and SMS templates', () => {
+    expect(AVAILABLE_TEMPLATE_PLACEHOLDERS).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ placeholder: '{{rsvpUrl}}' }),
+      ])
+    );
+
+    const ctx = {
+      guestName: 'Alice Smith',
+      invitationCode: 'ALICE&2026',
+      baseUrl: 'https://wedding.example.com',
+    };
+
+    const emailBody = renderBroadcastTemplate(
+      '<p>Hi {{guestName}}, RSVP at <a href="{{rsvpUrl}}">{{rsvpUrl}}</a></p>',
+      ctx,
+      { escapeHtml: true }
+    );
+    expect(emailBody).toBe(
+      '<p>Hi Alice Smith, RSVP at <a href="https://wedding.example.com/guest?code=ALICE%262026">https://wedding.example.com/guest?code=ALICE%262026</a></p>'
+    );
+
+    const smsBody = renderBroadcastTemplate('Hi {{guestName}}: {{rsvpUrl}}', ctx);
+    expect(smsBody).toBe(
+      'Hi Alice Smith: https://wedding.example.com/guest?code=ALICE%262026'
+    );
+  });
+
+  it('provides starter templates for RSVP reminders, final RSVP calls, sub-event updates, and mailing address requests with {{guestName}} and {{rsvpUrl}}', () => {
+    const templateIds = BROADCAST_STARTER_TEMPLATES.map((t) => t.id);
+    expect(templateIds).toEqual([
+      'rsvp-reminder',
+      'final-rsvp-call',
+      'sub-event-update',
+      'mailing-address-request',
+    ]);
+
+    for (const tpl of BROADCAST_STARTER_TEMPLATES) {
+      expect(tpl.subject.trim().length).toBeGreaterThan(0);
+      expect(tpl.emailBody).toContain('{{guestName}}');
+      expect(tpl.emailBody).toContain('{{rsvpUrl}}');
+      expect(tpl.smsBody).toContain('{{guestName}}');
+      expect(tpl.smsBody).toContain('{{rsvpUrl}}');
+    }
   });
 });

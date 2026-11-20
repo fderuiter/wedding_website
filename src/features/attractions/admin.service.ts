@@ -1,11 +1,9 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin';
-import { AttractionSchema, AttractionDTO } from './schemas';
+import { AttractionInputSchema, AttractionDTO } from './schemas';
 import { z } from 'zod';
-import { deriveAdminInputSchema } from '@/utils/validation';
 
-const AttractionInputSchema = deriveAdminInputSchema(AttractionSchema);
 export type AttractionInput = z.infer<typeof AttractionInputSchema>;
 
 async function mapAttractionData(data: any, client?: any, author?: string): Promise<any> {

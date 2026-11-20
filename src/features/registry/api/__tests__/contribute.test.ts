@@ -171,6 +171,14 @@ describe('POST /api/registry/contribute', () => {
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_verified_999',
         status: 'succeeded',
+        amount: 5125,
+        amount_received: 5125,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'true',
+        },
         latest_charge: 'ch_verified_999',
         created: 1731763200,
       });
@@ -208,6 +216,9 @@ describe('POST /api/registry/contribute', () => {
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_declined_111',
         status: 'requires_payment_method',
+        amount: 5000,
+        currency: 'usd',
+        metadata: { itemId: 'item-123', coverFee: 'false' },
       });
 
       const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
@@ -246,6 +257,163 @@ describe('POST /api/registry/contribute', () => {
       expect(body.error).toMatch(/Invalid or unresolved Stripe PaymentIntent/i);
       expect(registryService.contributeToItem).not.toHaveBeenCalled();
     });
+
+    it('rejects $1.00 (100-cent) PaymentIntent for item-small-1 when submitted as $5,000 on fund-card-only-5000', async () => {
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        id: 'fund-card-only-5000',
+        name: 'Card Only Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        price: 5000,
+      });
+
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_one_dollar_100',
+        status: 'succeeded',
+        amount: 100,
+        amount_received: 100,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-small-1',
+          baseAmount: '1.00',
+          coverFee: 'false',
+        },
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-card-only-5000',
+          name: 'Tampered Contributor',
+          amount: 5000,
+          coverFee: true,
+          paymentIntentId: 'pi_one_dollar_100',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
+
+    it('rejects PaymentIntent when currency is not usd', async () => {
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_wrong_currency',
+        status: 'succeeded',
+        amount: 5000,
+        amount_received: 5000,
+        currency: 'jpy',
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'false',
+        },
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Wrong Currency Guest',
+          amount: 50,
+          coverFee: false,
+          paymentIntentId: 'pi_wrong_currency',
+        }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toMatch(/currency/i);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
+
+    it('rejects PaymentIntent when amount, amount_received, or coverFee metadata does not match', async () => {
+      // Case 1: Mismatched cent amount on same item
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_underpaid',
+        status: 'succeeded',
+        amount: 100,
+        amount_received: 100,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-123',
+          coverFee: 'false',
+        },
+      });
+
+      const underpaidRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Underpaid Guest',
+            amount: 50,
+            coverFee: false,
+            paymentIntentId: 'pi_underpaid',
+          }),
+        })
+      );
+      expect(underpaidRes.status).toBe(400);
+
+      // Case 2: Partial amount_received < totalChargeCents
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_partial_capture',
+        status: 'succeeded',
+        amount: 5000,
+        amount_received: 2500,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'false',
+        },
+      });
+
+      const partialRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Partial Capture Guest',
+            amount: 50,
+            coverFee: false,
+            paymentIntentId: 'pi_partial_capture',
+          }),
+        })
+      );
+      expect(partialRes.status).toBe(400);
+
+      // Case 3: Mismatched coverFee metadata
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_cover_mismatch',
+        status: 'succeeded',
+        amount: 5125,
+        amount_received: 5125,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-123',
+          baseAmount: '50.00',
+          coverFee: 'false',
+        },
+      });
+
+      const coverMismatchRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Cover Mismatch Guest',
+            amount: 50,
+            coverFee: true,
+            paymentIntentId: 'pi_cover_mismatch',
+          }),
+        })
+      );
+      expect(coverMismatchRes.status).toBe(400);
+
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
   });
 
   describe('Inline Transactional Gift Emails & Provider Resilience', () => {
@@ -275,11 +443,27 @@ describe('POST /api/registry/contribute', () => {
         baseUrl: 'https://couple.wedding.test',
         timezone: 'UTC',
       });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        id: 'fund-honeymoon',
+        name: 'Tokyo Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        price: 1000,
+      });
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_card_gift_777',
         status: 'succeeded',
+        amount: 10250,
+        amount_received: 10250,
+        currency: 'usd',
         latest_charge: 'ch_card_gift_777',
         created: 1731763200,
+        metadata: {
+          itemId: 'fund-honeymoon',
+          baseAmount: '100.00',
+          feeAmount: '2.50',
+          coverFee: 'true',
+        },
       });
       (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
         ...mockItem,
