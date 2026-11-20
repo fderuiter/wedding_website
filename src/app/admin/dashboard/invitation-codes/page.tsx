@@ -690,15 +690,18 @@ export default function InvitationCodesDashboardPage() {
             <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
             <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
             <Button variant="secondary" onClick={() => {
-              setBroadcastModalFilters({
-                searchQuery: searchQuery.trim() || undefined,
-                status: statusFilter !== 'all' ? statusFilter : undefined,
-                addressStatus: addressFilter !== 'all' ? addressFilter : undefined,
-                attendanceStatus: attendanceFilter !== 'all' ? attendanceFilter : undefined,
-                dietaryCategory: dietaryFilter !== 'all' ? dietaryFilter : undefined,
-                partyGroup: partyGroupFilter !== 'all' ? partyGroupFilter : undefined,
-                partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
-              });
+              const nextFilters: Record<string, any> = {};
+              if (searchQuery.trim()) nextFilters.searchQuery = searchQuery.trim();
+              if (statusFilter !== 'all') nextFilters.status = statusFilter;
+              if (addressFilter !== 'all') nextFilters.addressStatus = addressFilter;
+              if (attendanceFilter !== 'all') nextFilters.attendanceStatus = attendanceFilter;
+              if (dietaryFilter !== 'all') nextFilters.dietaryCategory = dietaryFilter;
+              if (partyGroupFilter !== 'all') nextFilters.partyGroup = partyGroupFilter;
+              if (selectedTagFilter) nextFilters.partyTags = [selectedTagFilter];
+
+              setBroadcastModalFilters(
+                Object.keys(nextFilters).length > 0 ? nextFilters : undefined
+              );
               setIsBroadcastModalOpen(true);
             }}>Send Broadcast</Button>
             <Link
@@ -1624,6 +1627,17 @@ export default function InvitationCodesDashboardPage() {
           targetFilters={broadcastModalFilters}
           selectedCount={broadcastModalFilters?.selectedIds?.length}
           guests={codes}
+          initialRecipientCount={
+            broadcastModalFilters?.selectedIds
+              ? broadcastModalFilters.selectedIds.length
+              : filteredCodes.filter(
+                (c) =>
+                  !Array.isArray(c.partyTags) ||
+                  !c.partyTags.some(
+                    (t) => typeof t === 'string' && t.trim().toLowerCase() === 'address-collection'
+                  )
+              ).length
+          }
           subEvents={subEvents}
           onViewDeliveryLogs={() => router.push('/admin/dashboard/history?tab=broadcasts')}
         />

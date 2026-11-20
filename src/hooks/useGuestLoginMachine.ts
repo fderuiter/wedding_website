@@ -48,6 +48,74 @@ export function getSafeCallbackUrl(url: string | null | undefined): string {
   return '/';
 }
 
+export function stripCodeFromCallbackUrl(url: string): string {
+  const hashIdx = url.indexOf('#');
+  const hash = hashIdx !== -1 ? url.slice(hashIdx) : '';
+  const withoutHash = hashIdx !== -1 ? url.slice(0, hashIdx) : url;
+  const queryIdx = withoutHash.indexOf('?');
+  if (queryIdx === -1) {
+    return url;
+  }
+
+  const pathname = withoutHash.slice(0, queryIdx);
+  const params = new URLSearchParams(withoutHash.slice(queryIdx + 1));
+  if (!params.has('code')) {
+    return url;
+  }
+
+  params.delete('code');
+  const nextQuery = params.toString();
+  return `${pathname}${nextQuery ? `?${nextQuery}` : ''}${hash}`;
+}
+
+function stripCodeFromBrowserHistory(): void {
+  if (typeof window === 'undefined' || typeof window.history?.replaceState !== 'function') {
+    return;
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('code')) {
+    return;
+  }
+  params.delete('code');
+  const nextQuery = params.toString();
+  const cleanUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash || ''}`;
+  window.history.replaceState(window.history.state, '', cleanUrl);
+}
+
+function extractInitialCodeFromParams(
+  searchParams: Pick<URLSearchParams, 'get'> | null | undefined,
+  explicitCallbackUrl?: string | null
+): string | null {
+  const directCode = searchParams?.get('code');
+  if (typeof directCode === 'string') {
+    const trimmed = directCode.trim();
+    if (trimmed && !trimmed.startsWith('/')) {
+      return trimmed;
+    }
+  }
+
+  const rawCallback =
+    explicitCallbackUrl !== undefined
+      ? explicitCallbackUrl
+      : searchParams?.get('callbackUrl');
+  if (typeof rawCallback === 'string' && rawCallback.includes('?')) {
+    const queryPart = rawCallback.slice(rawCallback.indexOf('?') + 1).split('#')[0];
+    const embeddedCode = new URLSearchParams(queryPart).get('code')?.trim();
+    if (embeddedCode && !embeddedCode.startsWith('/')) {
+      return embeddedCode;
+    }
+  }
+
+  if (typeof window !== 'undefined' && window.location?.search) {
+    const winCode = new URLSearchParams(window.location.search).get('code')?.trim();
+    if (winCode && !winCode.startsWith('/')) {
+      return winCode;
+    }
+  }
+
+  return null;
+}
+
 export function selectIsLoading(state: GuestLoginMachineState): boolean {
   return state.status === 'logging_in';
 }
@@ -151,8 +219,14 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     optionsRef.current = options;
   }, [options]);
 
+  const initialUrlCode =
+    options?.initialState?.passcode === undefined
+      ? extractInitialCodeFromParams(searchParams, options?.callbackUrl)
+      : null;
+
   const [state, rawDispatch] = useReducer(guestLoginMachineReducer, {
     ...initialGuestLoginMachineState,
+    ...(initialUrlCode ? { passcode: initialUrlCode } : {}),
     ...options?.initialState,
   });
 
@@ -168,6 +242,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
   }, []);
 
   const loginAbortControllerRef = useRef<AbortController | null>(null);
+  const autoSubmittedCodeRef = useRef<string | null>(null);
 
   const cancelInFlightLogin = useCallback(() => {
     if (loginAbortControllerRef.current) {
@@ -187,15 +262,15 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
 
   const getTargetCallbackUrl = useCallback((): string => {
     if (optionsRef.current?.callbackUrl !== undefined) {
-      return getSafeCallbackUrl(optionsRef.current.callbackUrl);
+      return stripCodeFromCallbackUrl(getSafeCallbackUrl(optionsRef.current.callbackUrl));
     }
-    return getSafeCallbackUrl(searchParams?.get('callbackUrl') ?? null);
+    return stripCodeFromCallbackUrl(
+      getSafeCallbackUrl(searchParams?.get('callbackUrl') ?? null)
+    );
   }, [searchParams]);
 
-  const handleLogin = useCallback(
-    async (e?: FormEvent) => {
-      if (e) e.preventDefault();
-
+  const submitPasscode = useCallback(
+    async (passcodeValue: string) => {
       cancelInFlightLogin();
 
       const controller = new AbortController();
@@ -207,7 +282,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
         const res = await fetch('/api/guest/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ passcode: stateRef.current.passcode }),
+          body: JSON.stringify({ passcode: passcodeValue }),
           signal: controller.signal,
         });
 
@@ -223,6 +298,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
             error: toPlainLoginErrorMessage(data.error, res.status),
           });
         } else {
+          stripCodeFromBrowserHistory();
           dispatch({ type: 'LOGIN_SUCCESS' });
           navigateToDestination(getTargetCallbackUrl());
         }
@@ -242,6 +318,34 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     },
     [cancelInFlightLogin, dispatch, navigateToDestination, getTargetCallbackUrl]
   );
+
+  const handleLogin = useCallback(
+    async (e?: FormEvent) => {
+      if (e) e.preventDefault();
+      await submitPasscode(stateRef.current.passcode);
+    },
+    [submitPasscode]
+  );
+
+  useEffect(() => {
+    if (optionsRef.current?.initialState?.passcode !== undefined) {
+      return;
+    }
+
+    const urlCode = extractInitialCodeFromParams(
+      searchParams,
+      optionsRef.current?.callbackUrl
+    );
+    if (!urlCode || autoSubmittedCodeRef.current === urlCode) {
+      return;
+    }
+
+    autoSubmittedCodeRef.current = urlCode;
+    if (stateRef.current.passcode !== urlCode) {
+      dispatch({ type: 'SET_PASSCODE', passcode: urlCode });
+    }
+    void submitPasscode(urlCode);
+  }, [searchParams, dispatch, submitPasscode]);
 
   const setPasscode = useCallback((passcode: string) => {
     dispatch({ type: 'SET_PASSCODE', passcode });
@@ -265,6 +369,9 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
 
   useEffect(() => {
     return () => {
+      if (loginAbortControllerRef.current) {
+        autoSubmittedCodeRef.current = null;
+      }
       cancelInFlightLogin();
     };
   }, [cancelInFlightLogin]);

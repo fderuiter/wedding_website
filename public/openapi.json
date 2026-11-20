@@ -3324,6 +3324,14 @@
                           "all"
                         ]
                       },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
                       "dietaryCategory": {
                         "anyOf": [
                           {
@@ -3343,6 +3351,9 @@
                             "type": "string"
                           }
                         ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
                       },
                       "partyGroup": {
                         "type": "string"
@@ -3523,6 +3534,14 @@
                           "all"
                         ]
                       },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
                       "dietaryCategory": {
                         "anyOf": [
                           {
@@ -3542,6 +3561,9 @@
                             "type": "string"
                           }
                         ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
                       },
                       "partyGroup": {
                         "type": "string"

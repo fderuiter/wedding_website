@@ -112,7 +112,7 @@ export function matchesGuestSearchQuery(item: Record<string, any>, rawQuery: str
 export function filterTargetGuestsInMemory<T extends Record<string, any>>(
   records: T[],
   filters?: BroadcastTargetFilters,
-  options?: { applyDbPredicates?: boolean }
+  options?: { applyDbPredicates?: boolean; isPublicSubEvent?: boolean }
 ): T[] {
   if (!Array.isArray(records)) return records;
 
@@ -147,14 +147,16 @@ export function filterTargetGuestsInMemory<T extends Record<string, any>>(
       if (filters.status === 'redeemed' && !item.used) return false;
       if (filters.status === 'unused' && item.used) return false;
 
-      if (filters.addressStatus && filters.addressStatus !== 'all') {
+      const effectiveAddressStatus = filters.addressStatus ?? filters.addressFilter;
+      if (effectiveAddressStatus && effectiveAddressStatus !== 'all') {
         const complete = isAddressComplete(item);
-        if (filters.addressStatus === 'complete' && !complete) return false;
-        if (filters.addressStatus === 'missing' && complete) return false;
+        if (effectiveAddressStatus === 'complete' && !complete) return false;
+        if (effectiveAddressStatus === 'missing' && complete) return false;
       }
 
-      if (filters.dietaryCategory && filters.dietaryCategory !== 'all') {
-        if (!matchDietaryCategory(item.dietaryNotes, filters.dietaryCategory)) {
+      const effectiveDietary = filters.dietaryCategory ?? filters.dietaryFilter;
+      if (effectiveDietary && effectiveDietary !== 'all') {
+        if (!matchDietaryCategory(item.dietaryNotes, effectiveDietary)) {
           return false;
         }
       }
@@ -179,6 +181,26 @@ export function filterTargetGuestsInMemory<T extends Record<string, any>>(
       if (filters.searchQuery && filters.searchQuery.trim()) {
         if (!matchesGuestSearchQuery(item, filters.searchQuery)) {
           return false;
+        }
+      }
+
+      if (filters.subEventId) {
+        const rsvpStatus = filters.subEventRsvpStatus || 'all';
+        if (!options?.isPublicSubEvent && Array.isArray(item.subEventAccesses)) {
+          const hasAccess = item.subEventAccesses.some(
+            (acc: any) => acc.subEventId === filters.subEventId
+          );
+          if (!hasAccess) return false;
+        }
+        if (Array.isArray(item.subEventRsvps)) {
+          const matchingRsvp = item.subEventRsvps.find(
+            (r: any) => r.subEventId === filters.subEventId
+          );
+          if (rsvpStatus === 'pending') {
+            if (matchingRsvp && matchingRsvp.status !== 'pending') return false;
+          } else if (rsvpStatus !== 'all') {
+            if (!matchingRsvp || matchingRsvp.status !== rsvpStatus) return false;
+          }
         }
       }
     }

@@ -14,12 +14,14 @@ jest.mock('@/components/ui/ToastProvider', () => ({
 const mockSendBroadcast = jest.fn();
 const mockPreviewBroadcast = jest.fn();
 const mockSendTestBroadcast = jest.fn();
+let mockCountRecipients: jest.Mock | undefined = undefined;
 
 jest.mock('@/hooks/admin/useAdminBroadcast', () => ({
   useAdminBroadcast: () => ({
     sendBroadcast: mockSendBroadcast,
     previewBroadcast: mockPreviewBroadcast,
     sendTestBroadcast: mockSendTestBroadcast,
+    ...(mockCountRecipients ? { countRecipients: mockCountRecipients } : {}),
     sending: false,
     previewing: false,
     sendingTest: false,
@@ -34,6 +36,7 @@ describe('BroadcastModal Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCountRecipients = undefined;
   });
 
   it('renders modal title and form elements when open', () => {
@@ -256,6 +259,143 @@ describe('BroadcastModal Component', () => {
       );
       expect(defaultProps.onClose).not.toHaveBeenCalled();
     });
+  });
+
+  it('fills subject and body with {{guestName}} and {{rsvpUrl}} when a starter template is clicked and adapts body when switching channel', () => {
+    render(<BroadcastModal {...defaultProps} />);
+
+    const rsvpReminderBtn = screen.getByRole('button', { name: 'RSVP Reminder' });
+    fireEvent.click(rsvpReminderBtn);
+    expect(rsvpReminderBtn).toHaveAttribute('aria-pressed', 'true');
+
+    const subjectInput = screen.getByLabelText('Subject') as HTMLInputElement;
+    const bodyInput = screen.getByLabelText('Message Body') as HTMLTextAreaElement;
+
+    expect(subjectInput.value).toContain('RSVP Reminder');
+    expect(bodyInput.value).toContain('{{guestName}}');
+    expect(bodyInput.value).toContain('{{rsvpUrl}}');
+
+    // Switching channel from EMAIL to SMS swaps the unmodified starter template body
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'SMS' } });
+    expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{guestName}}');
+    expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{rsvpUrl}}');
+
+    // Test the other three starter templates
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'EMAIL' } });
+    for (const label of ['Final RSVP Call', 'Sub-Event Update', 'Mailing Address Request']) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      expect((screen.getByLabelText('Subject') as HTMLInputElement).value.length).toBeGreaterThan(0);
+      expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{guestName}}');
+      expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{rsvpUrl}}');
+    }
+  });
+
+  it('renders interactive audience controls when manual selection is off, updates live recipient count, and forwards updated filters on send', async () => {
+    mockCountRecipients = jest
+      .fn()
+      .mockResolvedValue({ recipientCount: 2 })
+      .mockResolvedValueOnce({ recipientCount: 12 })
+      .mockResolvedValueOnce({ recipientCount: 5 });
+    mockSendBroadcast.mockResolvedValueOnce({
+      status: 'COMPLETED',
+      sentCount: 2,
+      failedCount: 0,
+    });
+
+    const subEvents = [
+      { id: 'sub-rehearsal', title: 'Rehearsal Dinner', isPrivate: true },
+      { id: 'sub-brunch', title: 'Farewell Brunch', isPrivate: false },
+    ];
+
+    render(<BroadcastModal {...defaultProps} subEvents={subEvents} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('12 matching recipients');
+    });
+
+    // Sub-Event RSVP Status is disabled until a Sub-Event is chosen
+    const subEventStatusSelect = screen.getByLabelText('Sub-Event RSVP Status') as HTMLSelectElement;
+    expect(subEventStatusSelect).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('RSVP Status'), { target: { value: 'pending' } });
+    await waitFor(() => {
+      expect(mockCountRecipients).toHaveBeenLastCalledWith({ attendanceStatus: 'pending' });
+      expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('5 matching recipients');
+    });
+
+    fireEvent.change(screen.getByLabelText('Address Completion'), { target: { value: 'missing' } });
+    fireEvent.change(screen.getByLabelText('Sub-Event'), { target: { value: 'sub-rehearsal' } });
+    expect(subEventStatusSelect).not.toBeDisabled();
+    fireEvent.change(subEventStatusSelect, { target: { value: 'pending' } });
+
+    await waitFor(() => {
+      expect(mockCountRecipients).toHaveBeenLastCalledWith({
+        attendanceStatus: 'pending',
+        addressStatus: 'missing',
+        subEventId: 'sub-rehearsal',
+        subEventRsvpStatus: 'pending',
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'RSVP Reminder' }));
+    fireEvent.click(screen.getByRole('button', { name: /Send Email/i }));
+
+    await waitFor(() => {
+      expect(mockSendBroadcast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: 'EMAIL',
+          targetFilters: {
+            attendanceStatus: 'pending',
+            addressStatus: 'missing',
+            subEventId: 'sub-rehearsal',
+            subEventRsvpStatus: 'pending',
+          },
+        })
+      );
+    });
+  });
+
+  it('hides interactive audience filter dropdowns when manual selection is active and disables send when recipient count is zero', async () => {
+    const { rerender } = render(
+      <BroadcastModal
+        {...defaultProps}
+        selectedCount={3}
+        targetFilters={{ selectedIds: ['g1', 'g2', 'g3'] }}
+      />
+    );
+
+    expect(screen.queryByLabelText('RSVP Status')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Address Completion')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Sub-Event')).not.toBeInTheDocument();
+    expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('3 matching recipients');
+
+    mockCountRecipients = jest.fn().mockResolvedValue({
+      recipientCount: 0,
+      baseUrlWarning: 'AppConfig.baseUrl is not configured; falling back to https://wedding.example.com',
+    });
+
+    rerender(<BroadcastModal {...defaultProps} initialRecipientCount={0} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('0 matching recipients');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'RSVP Reminder' }));
+    expect(screen.getByTestId('broadcast-baseurl-warning')).toHaveTextContent(/AppConfig\.baseUrl is not configured/i);
+    expect(screen.getByRole('button', { name: /Send Email/i })).toBeDisabled();
+  });
+
+  it('passes jest-axe accessibility checks with interactive controls and starter templates', async () => {
+    const { container } = render(
+      <BroadcastModal
+        {...defaultProps}
+        initialRecipientCount={4}
+        subEvents={[{ id: 'sub-1', title: 'Welcome Drinks', isPrivate: false }]}
+      />
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('supports SegmentedTabs ArrowRight, ArrowLeft, Home, and End keyboard navigation and passes jest-axe', async () => {
