@@ -3,8 +3,22 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+import { computeSeatPosition, resolveSeatAssignments } from '../seatLayout';
 
 const EMPTY_SET = new Set<string>();
+const MIN_STAGE_WIDTH = 800;
+const MIN_STAGE_HEIGHT = 650;
+const STAGE_PERIMETER_PADDING = 76;
+
+function extractPointerDetails(e: React.PointerEvent) {
+  const native = e.nativeEvent as Partial<PointerEvent>;
+  return {
+    clientX: typeof e.clientX === 'number' ? e.clientX : (native.clientX ?? 0),
+    clientY: typeof e.clientY === 'number' ? e.clientY : (native.clientY ?? 0),
+    pointerId: typeof e.pointerId === 'number' ? e.pointerId : native.pointerId,
+    button: typeof e.button === 'number' ? e.button : native.button,
+  };
+}
 
 interface ActiveDropTarget {
   type: 'table' | 'seat';
@@ -28,6 +42,8 @@ type ActivePointerGesture =
     pointerStartX: number;
     pointerStartY: number;
     hasMoved: boolean;
+    pointerId?: number;
+    capturedElement?: HTMLElement | null;
   }
   | {
     mode: 'rotate';
@@ -42,6 +58,8 @@ type ActivePointerGesture =
     pointerStartX: number;
     pointerStartY: number;
     hasMoved: boolean;
+    pointerId?: number;
+    capturedElement?: HTMLElement | null;
   };
 
 interface FloorplanCanvasProps {
@@ -79,6 +97,24 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
   const callbacksRef = useRef({ onUpdateTablePosition, onUpdateTableRotation });
   callbacksRef.current = { onUpdateTablePosition, onUpdateTableRotation };
+
+  const stageBounds = useMemo(() => {
+    let maxRight = MIN_STAGE_WIDTH;
+    let maxBottom = MIN_STAGE_HEIGHT;
+    for (const table of tables) {
+      const right = table.x + (table.width || 120) + STAGE_PERIMETER_PADDING;
+      const bottom = table.y + (table.height || 120) + STAGE_PERIMETER_PADDING;
+      if (right > maxRight) maxRight = right;
+      if (bottom > maxBottom) maxBottom = bottom;
+    }
+    return {
+      width: Math.ceil(maxRight),
+      height: Math.ceil(maxBottom),
+    };
+  }, [tables]);
+
+  const stageBoundsRef = useRef(stageBounds);
+  stageBoundsRef.current = stageBounds;
 
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
   const isSearching = normalizedQuery.length > 0;
@@ -168,12 +204,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       const tableWidth = table.width || 120;
       const tableHeight = table.height || 120;
 
-      let canvasWidth = 800;
-      let canvasHeight = 650;
+      let canvasWidth = stageBounds.width;
+      let canvasHeight = stageBounds.height;
       if (canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
-        canvasWidth = rect.width || canvasRef.current.clientWidth || 800;
-        canvasHeight = rect.height || canvasRef.current.clientHeight || 650;
+        const viewportWidth = rect.width || canvasRef.current.clientWidth || 0;
+        const viewportHeight = rect.height || canvasRef.current.clientHeight || 0;
+        canvasWidth = Math.max(stageBounds.width, viewportWidth);
+        canvasHeight = Math.max(stageBounds.height, viewportHeight);
       }
 
       const maxX = Math.max(0, canvasWidth - tableWidth);
@@ -196,15 +234,17 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
 
     const rect = canvasRef.current.getBoundingClientRect();
+    const scrollLeft = canvasRef.current.scrollLeft || 0;
+    const scrollTop = canvasRef.current.scrollTop || 0;
+    const stagePointerX = clientX - rect.left + scrollLeft;
+    const stagePointerY = clientY - rect.top + scrollTop;
 
     if (gesture.mode === 'rotate') {
-      const mouseX = clientX - rect.left;
-      const mouseY = clientY - rect.top;
       const centerX = gesture.x + gesture.width / 2;
       const centerY = gesture.y + gesture.height / 2;
 
-      const dx = mouseX - centerX;
-      const dy = mouseY - centerY;
+      const dx = stagePointerX - centerX;
+      const dy = stagePointerY - centerY;
 
       const deg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
       let normalized = Math.round(((deg % 360) + 360) % 360);
@@ -224,13 +264,15 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       return;
     }
 
-    const canvasWidth = rect.width || canvasRef.current.clientWidth || 800;
-    const canvasHeight = rect.height || canvasRef.current.clientHeight || 650;
+    const viewportWidth = rect.width || canvasRef.current.clientWidth || 0;
+    const viewportHeight = rect.height || canvasRef.current.clientHeight || 0;
+    const canvasWidth = Math.max(stageBoundsRef.current.width, viewportWidth);
+    const canvasHeight = Math.max(stageBoundsRef.current.height, viewportHeight);
     const maxX = Math.max(0, canvasWidth - gesture.width);
     const maxY = Math.max(0, canvasHeight - gesture.height);
 
-    const newX = Math.round(Math.max(0, Math.min(maxX, clientX - rect.left - gesture.offsetX)));
-    const newY = Math.round(Math.max(0, Math.min(maxY, clientY - rect.top - gesture.offsetY)));
+    const newX = Math.round(Math.max(0, Math.min(maxX, stagePointerX - gesture.offsetX)));
+    const newY = Math.round(Math.max(0, Math.min(maxY, stagePointerY - gesture.offsetY)));
 
     if (newX === gesture.previewX && newY === gesture.previewY && gesture.hasMoved) {
       return;
@@ -255,10 +297,22 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
   }, []);
 
+  const releaseGesturePointerCapture = (gesture: ActivePointerGesture) => {
+    if (gesture.pointerId !== undefined && gesture.capturedElement) {
+      try {
+        gesture.capturedElement.releasePointerCapture?.(gesture.pointerId);
+      } catch {
+        // Ignore in synthetic test environments
+      }
+    }
+  };
+
   const cancelActiveGesture = useCallback(() => {
-    if (!activeGestureRef.current) return;
+    const gesture = activeGestureRef.current;
+    if (!gesture) return;
     activeGestureRef.current = null;
     detachWindowListeners();
+    releaseGesturePointerCapture(gesture);
     setActiveGesture(null);
   }, [detachWindowListeners]);
 
@@ -268,6 +322,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
     activeGestureRef.current = null;
     detachWindowListeners();
+    releaseGesturePointerCapture(gesture);
     setActiveGesture(null);
 
     if (gesture.hasMoved) {
@@ -298,6 +353,30 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const attachWindowListeners = useCallback(() => {
     detachWindowListeners();
 
+    const matchesActivePointer = (pointerId?: number) => {
+      const gesture = activeGestureRef.current;
+      if (!gesture) return false;
+      if (gesture.pointerId !== undefined && pointerId !== undefined && gesture.pointerId !== pointerId) {
+        return false;
+      }
+      return true;
+    };
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      if (!matchesActivePointer(event.pointerId)) return;
+      updateGestureFromClientPoint(event.clientX, event.clientY);
+    };
+
+    const handleWindowPointerUp = (event: PointerEvent) => {
+      if (!matchesActivePointer(event.pointerId)) return;
+      commitActiveGesture();
+    };
+
+    const handleWindowPointerCancel = (event: PointerEvent) => {
+      if (!matchesActivePointer(event.pointerId)) return;
+      cancelActiveGesture();
+    };
+
     const handleWindowMouseMove = (event: MouseEvent) => {
       updateGestureFromClientPoint(event.clientX, event.clientY);
     };
@@ -313,11 +392,17 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       }
     };
 
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerCancel);
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', handleWindowMouseUp);
     window.addEventListener('keydown', handleWindowKeyDown);
 
     windowListenersCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerCancel);
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
       window.removeEventListener('keydown', handleWindowKeyDown);
@@ -340,11 +425,13 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
   }, [tables, cancelActiveGesture]);
 
-  // Handle rotation mouse drag start
-  const handleRotationMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
-    e.stopPropagation();
-    e.preventDefault();
-    if (e.button !== 0) return;
+  const startRotationGesture = (
+    table: SeatingTableDTO,
+    clientX: number,
+    clientY: number,
+    pointerId?: number,
+    capturedElement?: HTMLElement | null
+  ) => {
     onSelectTable(table.id);
 
     const startRotation = table.rotation || 0;
@@ -358,29 +445,36 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       y: table.y,
       width: table.width || 120,
       height: table.height || 120,
-      pointerStartX: e.clientX,
-      pointerStartY: e.clientY,
+      pointerStartX: clientX,
+      pointerStartY: clientY,
       hasMoved: false,
+      pointerId,
+      capturedElement,
     };
     activeGestureRef.current = nextGesture;
     setActiveGesture(nextGesture);
     attachWindowListeners();
   };
 
-  // Handle table mouse drag
-  const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
-    e.stopPropagation();
-    if (e.button !== 0) return; // Only primary click
+  const startTableDragGesture = (
+    table: SeatingTableDTO,
+    clientX: number,
+    clientY: number,
+    pointerId?: number,
+    capturedElement?: HTMLElement | null
+  ) => {
     onSelectTable(table.id);
 
     let offsetX = 0;
     let offsetY = 0;
     if (canvasRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      offsetX = mouseX - table.x;
-      offsetY = mouseY - table.y;
+      const scrollLeft = canvasRef.current.scrollLeft || 0;
+      const scrollTop = canvasRef.current.scrollTop || 0;
+      const stageX = clientX - rect.left + scrollLeft;
+      const stageY = clientY - rect.top + scrollTop;
+      offsetX = stageX - table.x;
+      offsetY = stageY - table.y;
     }
 
     const nextGesture: ActivePointerGesture = {
@@ -395,13 +489,89 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       offsetY,
       width: table.width || 120,
       height: table.height || 120,
-      pointerStartX: e.clientX,
-      pointerStartY: e.clientY,
+      pointerStartX: clientX,
+      pointerStartY: clientY,
       hasMoved: false,
+      pointerId,
+      capturedElement,
     };
     activeGestureRef.current = nextGesture;
     setActiveGesture(nextGesture);
     attachWindowListeners();
+  };
+
+  // Handle rotation pointer/mouse drag start
+  const handleRotationPointerDown = (e: React.PointerEvent<HTMLElement>, table: SeatingTableDTO) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const { clientX, clientY, pointerId, button } = extractPointerDetails(e);
+    if (typeof button === 'number' && button !== 0) return;
+    if (pointerId !== undefined) {
+      try {
+        e.currentTarget.setPointerCapture?.(pointerId);
+      } catch {
+        // Ignore NotFoundError on synthetic browser PointerEvents
+      }
+    }
+    startRotationGesture(table, clientX, clientY, pointerId, e.currentTarget);
+  };
+
+  const handleRotationMouseDown = (e: React.MouseEvent<HTMLElement>, table: SeatingTableDTO) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (activeGestureRef.current || e.button !== 0) return;
+    startRotationGesture(table, e.clientX, e.clientY);
+  };
+
+  // Handle table pointer/mouse drag start
+  const handleTablePointerDown = (e: React.PointerEvent<HTMLElement>, table: SeatingTableDTO) => {
+    e.stopPropagation();
+    const { clientX, clientY, pointerId, button } = extractPointerDetails(e);
+    if (typeof button === 'number' && button !== 0) return;
+    if (pointerId !== undefined) {
+      try {
+        e.currentTarget.setPointerCapture?.(pointerId);
+      } catch {
+        // Ignore NotFoundError on synthetic browser PointerEvents
+      }
+    }
+    startTableDragGesture(table, clientX, clientY, pointerId, e.currentTarget);
+  };
+
+  const handleTableMouseDown = (e: React.MouseEvent<HTMLElement>, table: SeatingTableDTO) => {
+    e.stopPropagation();
+    if (activeGestureRef.current || e.button !== 0) return;
+    startTableDragGesture(table, e.clientX, e.clientY);
+  };
+
+  const handleCanvasPointerMove = (e: React.PointerEvent) => {
+    const gesture = activeGestureRef.current;
+    if (!gesture) return;
+    const { clientX, clientY, pointerId } = extractPointerDetails(e);
+    if (gesture.pointerId !== undefined && pointerId !== undefined && gesture.pointerId !== pointerId) {
+      return;
+    }
+    updateGestureFromClientPoint(clientX, clientY);
+  };
+
+  const handleCanvasPointerUp = (e: React.PointerEvent) => {
+    const gesture = activeGestureRef.current;
+    if (!gesture) return;
+    const { pointerId } = extractPointerDetails(e);
+    if (gesture.pointerId !== undefined && pointerId !== undefined && gesture.pointerId !== pointerId) {
+      return;
+    }
+    commitActiveGesture();
+  };
+
+  const handleCanvasPointerCancel = (e: React.PointerEvent) => {
+    const gesture = activeGestureRef.current;
+    if (!gesture) return;
+    const { pointerId } = extractPointerDetails(e);
+    if (gesture.pointerId !== undefined && pointerId !== undefined && gesture.pointerId !== pointerId) {
+      return;
+    }
+    cancelActiveGesture();
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
@@ -507,8 +677,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
     if (
       e.relatedTarget &&
-      (e.currentTarget.parentElement?.contains(e.relatedTarget as Node) ||
-        (e.relatedTarget as HTMLElement).closest?.(`[data-table-id="${tableId}"]`))
+      (e.relatedTarget as HTMLElement).closest?.(`[data-table-id="${tableId}"]`) &&
+      !(e.relatedTarget as HTMLElement).closest?.('[data-seat-number]')
     ) {
       setActiveDropTarget({ type: 'table', tableId });
     } else {
@@ -545,16 +715,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const renderSeats = (table: SeatingTableDTO) => {
     const seats = [];
     const capacity = table.capacity;
-    const assignedGuests = table.invitationCodes || [];
+    const seatMap = resolveSeatAssignments(table.invitationCodes, capacity);
     const isRound = table.shape === 'round';
     const width = table.width || 120;
     const height = table.height || 120;
-    const cx = width / 2;
-    const cy = height / 2;
-    const radius = Math.min(width, height) / 2 + 18;
+    const seatOffset = isRound ? 18 : 16;
 
     for (let i = 1; i <= capacity; i++) {
-      const assignedGuest = assignedGuests.find((g) => g.seatNumber === i) || assignedGuests[i - 1];
+      const assignedGuest = seatMap.get(i);
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =
         activeDropTarget?.tableId === table.id &&
@@ -562,35 +730,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         activeDropTarget?.seatNumber === i;
       const isSeatDropDisabled = isSeatDropTarget && (table.invitationCodes?.length || 0) >= table.capacity;
 
-      let seatX = 0;
-      let seatY = 0;
-
-      if (isRound) {
-        const angle = (i * 2 * Math.PI) / capacity - Math.PI / 2;
-        seatX = cx + radius * Math.cos(angle);
-        seatY = cy + radius * Math.sin(angle);
-      } else {
-        // Rectangular perimeter calculation
-        const perimeterIndex = i - 1;
-        const side = Math.floor((perimeterIndex / capacity) * 4);
-        if (side === 0) {
-          // Top
-          seatX = (width / (capacity / 2 + 1)) * (perimeterIndex + 1);
-          seatY = -16;
-        } else if (side === 1) {
-          // Right
-          seatX = width + 16;
-          seatY = (height / (capacity / 2 + 1)) * (perimeterIndex % (capacity / 2) + 1);
-        } else if (side === 2) {
-          // Bottom
-          seatX = width - (width / (capacity / 2 + 1)) * ((perimeterIndex % (capacity / 2)) + 1);
-          seatY = height + 16;
-        } else {
-          // Left
-          seatX = -16;
-          seatY = height - (height / (capacity / 2 + 1)) * ((perimeterIndex % (capacity / 2)) + 1);
-        }
-      }
+      const { x: seatX, y: seatY } = computeSeatPosition({
+        seatNumber: i,
+        capacity,
+        shape: table.shape,
+        width,
+        height,
+        offset: seatOffset,
+      });
 
       seats.push(
         <button
@@ -598,6 +745,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           type="button"
           tabIndex={0}
           role="button"
+          data-table-id={table.id}
+          data-seat-number={i}
           aria-label={
             assignedGuest
               ? `Seat ${i}: ${assignedGuest.guestName}`
@@ -607,6 +756,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
           onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
+          onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
@@ -628,7 +778,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 : `Seat ${i}: ${assignedGuest.guestName} (Double click or press Enter/Space/Delete to unassign)`
               : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
           }
-          className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
+          className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
             isSeatDropTarget
               ? isSeatDropDisabled
                 ? 'scale-125 bg-red-100 dark:bg-red-950/40 border-red-500 ring-2 ring-red-500 z-30 font-bold shadow-lg cursor-not-allowed'
@@ -666,10 +816,11 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           }
         >
           {assignedGuest ? (
-            <span className="truncate px-0.5 text-[10px]" aria-hidden="true">
-              {assignedGuest.guestName.split(' ')[0][0]}
-              {assignedGuest.guestName.split(' ')[1]?.[0] || ''}
-            </span>
+            <span
+              className="truncate px-0.5 text-[10px] before:content-[attr(data-initials)]"
+              data-initials={`${assignedGuest.guestName.split(' ')[0][0]}${assignedGuest.guestName.split(' ')[1]?.[0] || ''}`}
+              aria-hidden="true"
+            />
           ) : (
             <span aria-hidden="true">{i}</span>
           )}
@@ -738,6 +889,12 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   return (
     <div
       ref={canvasRef}
+      onPointerDown={() => {
+        suppressCanvasClickRef.current = false;
+      }}
+      onPointerMove={handleCanvasPointerMove}
+      onPointerUp={handleCanvasPointerUp}
+      onPointerCancel={handleCanvasPointerCancel}
       onMouseDown={() => {
         suppressCanvasClickRef.current = false;
       }}
@@ -756,7 +913,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         }
         onSelectTable(null);
       }}
-      className="relative w-full h-[650px] rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
+      className="relative w-full h-[650px] rounded-xl overflow-auto shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
       style={{
         backgroundColor: 'var(--canvas-bg, #f8fafc)',
         border: 'var(--canvas-border, 2px dashed #cbd5e1)',
@@ -771,222 +928,259 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         {liveAnnouncement}
       </div>
 
-      {/* Canvas Header Banner */}
+      {/* Scrollable Inner Stage Sized to Table Bounds (>= 800x650px) */}
       <div
-        className="absolute top-3 left-3 backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"
+        data-testid="floorplan-stage"
+        className="relative"
         style={{
-          backgroundColor: 'color-mix(in srgb, var(--floorplan-table-bg, #ffffff) 90%, transparent)',
-          borderColor: 'var(--floorplan-table-border, #e5e7eb)',
-          borderRadius: 'var(--floorplan-table-radius, 0.5rem)',
-          color: 'var(--color-foreground, #374151)',
+          width: `${stageBounds.width}px`,
+          height: `${stageBounds.height}px`,
+          minWidth: '100%',
+          minHeight: '100%',
         }}
       >
-        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-        {isSearching ? (
-          totalSeatedMatches > 0 ? (
-            <span>
-              Searching &ldquo;{searchQuery}&rdquo;: <strong className="text-amber-600 dark:text-amber-400">{totalSeatedMatches} seated match{totalSeatedMatches === 1 ? '' : 'es'}</strong> highlighted on floorplan
-            </span>
+        {/* Canvas Header Banner */}
+        <div
+          className="absolute top-3 left-3 backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"
+          style={{
+            backgroundColor: 'color-mix(in srgb, var(--floorplan-table-bg, #ffffff) 90%, transparent)',
+            borderColor: 'var(--floorplan-table-border, #e5e7eb)',
+            borderRadius: 'var(--floorplan-table-radius, 0.5rem)',
+            color: 'var(--color-foreground, #374151)',
+          }}
+        >
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          {isSearching ? (
+            totalSeatedMatches > 0 ? (
+              <span>
+                Searching &ldquo;{searchQuery}&rdquo;: <strong className="text-amber-600 dark:text-amber-400">{totalSeatedMatches} seated match{totalSeatedMatches === 1 ? '' : 'es'}</strong> highlighted on floorplan
+              </span>
+            ) : (
+              <span>Searching &ldquo;{searchQuery}&rdquo;: No matching seated guests on floorplan.</span>
+            )
           ) : (
-            <span>Searching &ldquo;{searchQuery}&rdquo;: No matching seated guests on floorplan.</span>
-          )
-        ) : (
-          <span>Drag tables to arrange floorplan. Drag guests onto table seats to assign.</span>
-        )}
-      </div>
+            <span>Drag tables to arrange floorplan. Drag guests onto table seats to assign.</span>
+          )}
+        </div>
 
-      {tables.map((table) => {
-        const assignedCount = table.invitationCodes?.length || 0;
-        const isSelected = selectedTableId === table.id;
-        const isOverCapacity = assignedCount > table.capacity;
-        const isFull = assignedCount >= table.capacity;
-        const hasMatchingGuest = isSearching && matchingTableIds.has(table.id);
-        const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
-        const isDropDisabled = isTableDropTarget && isFull;
-        const isDraggingThisTable = activeGesture?.mode === 'drag' && activeGesture.tableId === table.id;
-        const isRotatingThisTable = activeGesture?.mode === 'rotate' && activeGesture.tableId === table.id;
-        const isGestureActiveOnTable = isDraggingThisTable || isRotatingThisTable;
-        const renderedX = isDraggingThisTable ? activeGesture.previewX : table.x;
-        const renderedY = isDraggingThisTable ? activeGesture.previewY : table.y;
-        const renderedRotation = isRotatingThisTable ? activeGesture.previewRotation : (table.rotation || 0);
+        {tables.map((table) => {
+          const assignedCount = table.invitationCodes?.length || 0;
+          const isSelected = selectedTableId === table.id;
+          const isOverCapacity = assignedCount > table.capacity;
+          const isFull = assignedCount >= table.capacity;
+          const hasMatchingGuest = isSearching && matchingTableIds.has(table.id);
+          const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
+          const isDropDisabled = isTableDropTarget && isFull;
+          const isDraggingThisTable = activeGesture?.mode === 'drag' && activeGesture.tableId === table.id;
+          const isRotatingThisTable = activeGesture?.mode === 'rotate' && activeGesture.tableId === table.id;
+          const isGestureActiveOnTable = isDraggingThisTable || isRotatingThisTable;
+          const renderedX = isDraggingThisTable ? activeGesture.previewX : table.x;
+          const renderedY = isDraggingThisTable ? activeGesture.previewY : table.y;
+          const renderedRotation = isRotatingThisTable ? activeGesture.previewRotation : (table.rotation || 0);
 
-        return (
-          <div
-            key={table.id}
-            data-table-id={table.id}
-            data-is-drop-target={isTableDropTarget ? 'true' : undefined}
-            data-drop-disabled={isDropDisabled ? 'true' : undefined}
-            aria-disabled={isDropDisabled ? 'true' : undefined}
-            onMouseDown={(e) => handleTableMouseDown(e, table)}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectTable(table.id);
-            }}
-            onKeyDown={(e) => handleTableKeyDown(e, table)}
-            onDragEnter={(e) => handleTableDragEnter(e, table.id)}
-            onDragOver={(e) => handleTableDragOver(e, table.id)}
-            onDragLeave={(e) => handleTableDragLeave(e, table.id)}
-            onDrop={(e) => handleDropOnTable(e, table.id)}
-            className={`absolute cursor-move ${isGestureActiveOnTable ? 'transition-none' : 'transition-all'} transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
-              isTableDropTarget
-                ? isFull
-                  ? 'ring-4 ring-red-500 border-red-500 shadow-xl shadow-red-500/20 scale-[1.03] z-30 cursor-not-allowed'
-                  : 'ring-4 ring-primary border-primary shadow-xl shadow-primary/20 scale-[1.03] z-30'
-                : isSelected
-                  ? 'ring-4 ring-primary ring-offset-2 z-20'
-                  : 'z-10'
-            } ${
-              hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''
-            }`}
-            style={{
-              left: `${renderedX}px`,
-              top: `${renderedY}px`,
-              width: `${table.width || 120}px`,
-              height: `${table.height || 120}px`,
-              transform: `rotate(${renderedRotation}deg)`,
-            }}
-            tabIndex={0}
-            role="button"
-            aria-label={`${table.name}, shape ${table.shape}, capacity ${table.capacity}, seated ${assignedCount}`}
-          >
-            {/* Table Surface */}
-            <div
-              className={`w-full h-full border-2 flex flex-col items-center justify-center p-2 text-center shadow-md relative transition-colors ${
-                table.shape === 'round' ? 'rounded-full' : ''
-              } ${isTableDropTarget ? (isFull ? 'border-red-500' : 'border-primary') : ''}`}
-              style={{
-                backgroundColor: isOverCapacity || isDropDisabled
-                  ? 'var(--floorplan-status-overcapacity-bg, #fef2f2)'
-                  : 'var(--floorplan-table-bg, #ffffff)',
-                borderColor: isTableDropTarget
-                  ? isFull
-                    ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
-                    : 'var(--color-primary, #B91C1C)'
-                  : isOverCapacity
-                    ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
-                    : 'var(--floorplan-table-border, #d1d5db)',
-                borderRadius: table.shape === 'round'
-                  ? '9999px'
-                  : 'var(--floorplan-table-radius, 0.75rem)',
-                color: isOverCapacity || isDropDisabled
-                  ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
-                  : 'var(--color-foreground, #1f2937)',
-              }}
-            >
-              <span className="font-bold text-xs truncate max-w-[90%]">{table.name}</span>
-              <span
-                className="text-[10px] font-medium"
+          return (
+            <React.Fragment key={table.id}>
+              <div
+                data-table-id={table.id}
+                data-is-drop-target={isTableDropTarget ? 'true' : undefined}
+                data-drop-disabled={isDropDisabled ? 'true' : undefined}
+                aria-disabled={isDropDisabled ? 'true' : undefined}
+                onPointerDown={(e) => handleTablePointerDown(e, table)}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerCancel={handleCanvasPointerCancel}
+                onMouseDown={(e) => handleTableMouseDown(e, table)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectTable(table.id);
+                }}
+                onKeyDown={(e) => handleTableKeyDown(e, table)}
+                onDragEnter={(e) => handleTableDragEnter(e, table.id)}
+                onDragOver={(e) => handleTableDragOver(e, table.id)}
+                onDragLeave={(e) => handleTableDragLeave(e, table.id)}
+                onDrop={(e) => handleDropOnTable(e, table.id)}
+                className={`absolute cursor-move touch-none ${isGestureActiveOnTable ? 'transition-none' : 'transition-all'} transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
+                  isTableDropTarget
+                    ? isFull
+                      ? 'ring-4 ring-red-500 border-red-500 shadow-xl shadow-red-500/20 scale-[1.03] z-30 cursor-not-allowed'
+                      : 'ring-4 ring-primary border-primary shadow-xl shadow-primary/20 scale-[1.03] z-30'
+                    : isSelected
+                      ? 'ring-4 ring-primary ring-offset-2 z-20'
+                      : 'z-10'
+                } ${
+                  hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''
+                }`}
                 style={{
-                  color: isOverCapacity
-                    ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
-                    : 'color-mix(in srgb, var(--color-foreground, #1f2937) 65%, transparent)',
+                  left: `${renderedX}px`,
+                  top: `${renderedY}px`,
+                  width: `${table.width || 120}px`,
+                  height: `${table.height || 120}px`,
+                  transform: `rotate(${renderedRotation}deg)`,
+                }}
+                tabIndex={0}
+                role="button"
+                aria-label={`${table.name}, shape ${table.shape}, capacity ${table.capacity}, seated ${assignedCount}`}
+              >
+                {/* Table Surface */}
+                <div
+                  className={`w-full h-full border-2 flex flex-col items-center justify-center p-2 pb-5 text-center shadow-md relative transition-colors ${
+                    table.shape === 'round' ? 'rounded-full' : ''
+                  } ${isTableDropTarget ? (isFull ? 'border-red-500' : 'border-primary') : ''}`}
+                  style={{
+                    backgroundColor: isOverCapacity || isDropDisabled
+                      ? 'var(--floorplan-status-overcapacity-bg, #fef2f2)'
+                      : 'var(--floorplan-table-bg, #ffffff)',
+                    borderColor: isTableDropTarget
+                      ? isFull
+                        ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
+                        : 'var(--color-primary, #B91C1C)'
+                      : isOverCapacity
+                        ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
+                        : 'var(--floorplan-table-border, #d1d5db)',
+                    borderRadius: table.shape === 'round'
+                      ? '9999px'
+                      : 'var(--floorplan-table-radius, 0.75rem)',
+                    color: isOverCapacity || isDropDisabled
+                      ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
+                      : 'var(--color-foreground, #1f2937)',
+                  }}
+                >
+                  <span className="font-bold text-xs truncate max-w-[90%]">{table.name}</span>
+                </div>
+              </div>
+
+              {/* Sibling Perimeter & Metadata Layer (avoids nested-interactive & WCAG 2.5.3 label-content-name-mismatch) */}
+              <div
+                className={`absolute pointer-events-none ${isGestureActiveOnTable ? 'transition-none' : 'transition-all'} ${
+                  isSelected ? 'z-30' : 'z-20'
+                }`}
+                style={{
+                  left: `${renderedX}px`,
+                  top: `${renderedY}px`,
+                  width: `${table.width || 120}px`,
+                  height: `${table.height || 120}px`,
+                  transform: `rotate(${renderedRotation}deg)`,
                 }}
               >
-                {assignedCount} / {table.capacity} seats
-              </span>
-
-              {/* Over capacity / Full capacity warning badges */}
-              {isOverCapacity ? (
-                <span
-                  data-testid="table-overcapacity-badge"
-                  className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce"
-                  style={{
-                    backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
-                  }}
-                >
-                  Over capacity!
-                </span>
-              ) : isFull ? (
-                <span
-                  data-testid="table-full-badge"
-                  className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md"
-                  style={{
-                    backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
-                  }}
-                >
-                  Full
-                </span>
-              ) : null}
-
-              {/* Search Match Badge */}
-              {hasMatchingGuest && (
-                <span
-                  data-testid="table-search-match-badge"
-                  className="absolute -top-2 -left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 animate-pulse z-30"
-                >
-                  🔍 Match
-                </span>
-              )}
-            </div>
-
-            {/* Individual Seat Circles around table */}
-            {renderSeats(table)}
-
-            {/* Rotation Controls and Handle for Selected Table */}
-            {isSelected && (
-              <>
-                {/* Floating Quick Rotation Controls */}
-                <div
-                  data-testid="rotation-controls"
-                  className="absolute -top-14 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-md px-2 py-1 z-40 text-xs font-semibold select-none"
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      rotateTableBy(table, -45);
+                <div className="w-full h-full flex flex-col items-center justify-center pt-4 text-center relative">
+                  <span
+                    className="text-[10px] font-medium"
+                    style={{
+                      color: isOverCapacity
+                        ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
+                        : 'color-mix(in srgb, var(--color-foreground, #1f2937) 65%, transparent)',
                     }}
-                    className="px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
-                    title="Rotate -45°"
-                    aria-label={`Rotate ${table.name} -45 degrees`}
                   >
-                    -45°
-                  </button>
-                  <span className="px-1 font-mono text-[11px] text-primary" data-testid="table-rotation-display">
-                    {renderedRotation}°
+                    {assignedCount} / {table.capacity} seats
                   </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      rotateTableBy(table, 45);
-                    }}
-                    className="px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
-                    title="Rotate +45°"
-                    aria-label={`Rotate ${table.name} +45 degrees`}
-                  >
-                    +45°
-                  </button>
-                </div>
 
-                {/* Floating Handle Stem and Knob */}
-                <div
-                  data-testid="rotation-handle"
-                  className="absolute -top-7 left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing z-40"
-                  onMouseDown={(e) => handleRotationMouseDown(e, table)}
-                  title={`Rotate ${table.name} (drag mouse or press 'r', Alt+Arrows)`}
-                >
-                  <button
-                    type="button"
-                    tabIndex={0}
-                    aria-label={`Rotate handle for ${table.name}`}
-                    className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
-                    onMouseDown={(e) => handleRotationMouseDown(e, table)}
-                    onKeyDown={(e) => handleTableKeyDown(e, table)}
-                  >
-                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </button>
-                  <div className="w-0.5 h-2 bg-primary" />
+                  {/* Over capacity / Full capacity warning badges */}
+                  {isOverCapacity ? (
+                    <span
+                      data-testid="table-overcapacity-badge"
+                      className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce"
+                      style={{
+                        backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
+                      }}
+                    >
+                      Over capacity!
+                    </span>
+                  ) : isFull ? (
+                    <span
+                      data-testid="table-full-badge"
+                      className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md"
+                      style={{
+                        backgroundColor: 'var(--floorplan-status-overcapacity-border, #dc2626)',
+                      }}
+                    >
+                      Full
+                    </span>
+                  ) : null}
+
+                  {/* Search Match Badge */}
+                  {hasMatchingGuest && (
+                    <span
+                      data-testid="table-search-match-badge"
+                      className="absolute -top-2 -left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 animate-pulse z-30"
+                    >
+                      🔍 Match
+                    </span>
+                  )}
                 </div>
-              </>
-            )}
-          </div>
-        );
-      })}
+                {/* Individual Seat Circles around table */}
+                {renderSeats(table)}
+
+                {/* Rotation Controls and Handle for Selected Table */}
+                {isSelected && (
+                  <>
+                    {/* Floating Quick Rotation Controls */}
+                    <div
+                      data-testid="rotation-controls"
+                      className="absolute pointer-events-auto -top-[104px] left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-md px-2 py-1 z-40 text-xs font-semibold select-none whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rotateTableBy(table, -45);
+                        }}
+                        className="min-w-7 min-h-6 px-1.5 py-0.5 inline-flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                        title="Rotate -45°"
+                        aria-label={`Rotate ${table.name} -45 degrees`}
+                      >
+                        -45°
+                      </button>
+                      <span className="px-1 font-mono text-[11px] text-primary" data-testid="table-rotation-display">
+                        {renderedRotation}°
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rotateTableBy(table, 45);
+                        }}
+                        className="min-w-7 min-h-6 px-1.5 py-0.5 inline-flex items-center justify-center rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                        title="Rotate +45°"
+                        aria-label={`Rotate ${table.name} +45 degrees`}
+                      >
+                        +45°
+                      </button>
+                    </div>
+
+                    {/* Floating Handle Stem and Knob (positioned clear above top-edge seats) */}
+                    <div
+                      data-testid="rotation-handle"
+                      className="absolute pointer-events-none -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center z-40"
+                    >
+                      <button
+                        type="button"
+                        tabIndex={0}
+                        aria-label={`Rotate handle for ${table.name}`}
+                        title={`Rotate ${table.name} (drag pointer or press 'r', Alt+Arrows)`}
+                        className="pointer-events-auto w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:scale-110 cursor-grab active:cursor-grabbing touch-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+                        onPointerDown={(e) => handleRotationPointerDown(e, table)}
+                        onPointerMove={handleCanvasPointerMove}
+                        onPointerUp={handleCanvasPointerUp}
+                        onPointerCancel={handleCanvasPointerCancel}
+                        onMouseDown={(e) => handleRotationMouseDown(e, table)}
+                        onKeyDown={(e) => handleTableKeyDown(e, table)}
+                      >
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </button>
+                      <div className="w-0.5 h-9 bg-primary/70" aria-hidden="true" />
+                    </div>
+                  </>
+                )}
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 });

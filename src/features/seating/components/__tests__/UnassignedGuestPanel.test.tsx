@@ -9,6 +9,20 @@ import { createMockInvitationCode } from '@/testing/factories/registryFactory';
 
 expect.extend(toHaveNoViolations);
 
+if (typeof window !== 'undefined' && typeof window.PointerEvent === 'undefined') {
+  class JSDOMPointerEvent extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+
+    constructor(type: string, params: PointerEventInit = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 0;
+      this.pointerType = params.pointerType ?? '';
+    }
+  }
+  window.PointerEvent = JSDOMPointerEvent as unknown as typeof PointerEvent;
+}
+
 describe('UnassignedGuestPanel quick-assign modal component', () => {
   const mockUnassignedGuests: InvitationCodeDTO[] = [
     createMockInvitationCode({
@@ -265,6 +279,192 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
 
       const results = await axe(container);
       expect(results).toHaveNoViolations();
+    });
+  });
+
+  describe('Cross-panel pointer drag for unassigned guests', () => {
+    const originalElementFromPoint = document.elementFromPoint;
+
+    afterEach(() => {
+      document.elementFromPoint = originalElementFromPoint;
+    });
+
+    test('renders floating drag chip after 8px threshold and assigns guest to target seat via elementFromPoint', () => {
+      const onAssignGuestToTable = jest.fn();
+      const mockSeatTarget = document.createElement('button');
+      mockSeatTarget.setAttribute('data-table-id', 'table-2');
+      mockSeatTarget.setAttribute('data-seat-number', '5');
+      document.body.appendChild(mockSeatTarget);
+      document.elementFromPoint = jest.fn().mockReturnValue(mockSeatTarget);
+
+      try {
+        render(
+          <UnassignedGuestPanel
+            {...defaultProps}
+            onAssignGuestToTable={onAssignGuestToTable}
+          />
+        );
+
+        const guestCards = screen.getAllByRole('listitem');
+        const setPointerCaptureSpy = jest.fn();
+        guestCards[0].setPointerCapture = setPointerCaptureSpy;
+
+        fireEvent.pointerDown(guestCards[0], {
+          pointerId: 3,
+          pointerType: 'touch',
+          button: 0,
+          clientX: 40,
+          clientY: 60,
+        });
+        expect(setPointerCaptureSpy).toHaveBeenCalledWith(3);
+        expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
+
+        // Move past 8px threshold
+        fireEvent.pointerMove(guestCards[0], {
+          pointerId: 3,
+          pointerType: 'touch',
+          clientX: 180,
+          clientY: 220,
+        });
+
+        const dragChip = screen.getByTestId('guest-drag-chip');
+        expect(dragChip).toBeInTheDocument();
+        expect(dragChip).toHaveTextContent('Jane Doe');
+        expect(dragChip.className).toContain('pointer-events-none');
+        expect(dragChip.style.left).toBe('180px');
+        expect(dragChip.style.top).toBe('220px');
+
+        fireEvent.pointerUp(guestCards[0], {
+          pointerId: 3,
+          pointerType: 'touch',
+          clientX: 180,
+          clientY: 220,
+        });
+
+        expect(document.elementFromPoint).toHaveBeenCalledWith(180, 220);
+        expect(onAssignGuestToTable).toHaveBeenCalledWith('guest-1', 'table-2', 5);
+        expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
+      } finally {
+        mockSeatTarget.remove();
+      }
+    });
+
+    test('assigns guest to table without seatNumber when dropped onto a data-table-id surface', () => {
+      const onAssignGuestToTable = jest.fn();
+      const mockTableSurface = document.createElement('div');
+      mockTableSurface.setAttribute('data-table-id', 'table-1');
+      const innerSpan = document.createElement('span');
+      mockTableSurface.appendChild(innerSpan);
+      document.body.appendChild(mockTableSurface);
+      document.elementFromPoint = jest.fn().mockReturnValue(innerSpan);
+
+      try {
+        render(
+          <UnassignedGuestPanel
+            {...defaultProps}
+            onAssignGuestToTable={onAssignGuestToTable}
+          />
+        );
+
+        const guestCards = screen.getAllByRole('listitem');
+        fireEvent.pointerDown(guestCards[1], {
+          pointerId: 4,
+          pointerType: 'touch',
+          button: 0,
+          clientX: 30,
+          clientY: 40,
+        });
+        fireEvent.pointerMove(window, {
+          pointerId: 4,
+          clientX: 250,
+          clientY: 300,
+        });
+        fireEvent.pointerUp(window, {
+          pointerId: 4,
+          clientX: 250,
+          clientY: 300,
+        });
+
+        expect(onAssignGuestToTable).toHaveBeenCalledWith('guest-2', 'table-1');
+      } finally {
+        mockTableSurface.remove();
+      }
+    });
+
+    test('ignores movements below the 8px drag threshold so touch scrolling and taps do not trigger drops', () => {
+      const onAssignGuestToTable = jest.fn();
+      const mockTableSurface = document.createElement('div');
+      mockTableSurface.setAttribute('data-table-id', 'table-1');
+      document.body.appendChild(mockTableSurface);
+      document.elementFromPoint = jest.fn().mockReturnValue(mockTableSurface);
+
+      try {
+        render(
+          <UnassignedGuestPanel
+            {...defaultProps}
+            onAssignGuestToTable={onAssignGuestToTable}
+          />
+        );
+
+        const guestCards = screen.getAllByRole('listitem');
+        fireEvent.pointerDown(guestCards[0], {
+          pointerId: 5,
+          pointerType: 'touch',
+          button: 0,
+          clientX: 50,
+          clientY: 50,
+        });
+        // Move only 5px (< 8px threshold)
+        fireEvent.pointerMove(guestCards[0], {
+          pointerId: 5,
+          pointerType: 'touch',
+          clientX: 53,
+          clientY: 54,
+        });
+        expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
+
+        fireEvent.pointerUp(guestCards[0], {
+          pointerId: 5,
+          pointerType: 'touch',
+          clientX: 53,
+          clientY: 54,
+        });
+        expect(onAssignGuestToTable).not.toHaveBeenCalled();
+      } finally {
+        mockTableSurface.remove();
+      }
+    });
+
+    test('clears floating drag chip on pointerCancel and preserves HTML5 draggable attribute', () => {
+      const onAssignGuestToTable = jest.fn();
+      render(
+        <UnassignedGuestPanel
+          {...defaultProps}
+          onAssignGuestToTable={onAssignGuestToTable}
+        />
+      );
+
+      const guestCards = screen.getAllByRole('listitem');
+      expect(guestCards[0]).toHaveAttribute('draggable', 'true');
+
+      fireEvent.pointerDown(guestCards[0], {
+        pointerId: 6,
+        pointerType: 'touch',
+        button: 0,
+        clientX: 20,
+        clientY: 20,
+      });
+      fireEvent.pointerMove(guestCards[0], {
+        pointerId: 6,
+        pointerType: 'touch',
+        clientX: 120,
+        clientY: 120,
+      });
+      expect(screen.getByTestId('guest-drag-chip')).toBeInTheDocument();
+
+      fireEvent.pointerCancel(guestCards[0], { pointerId: 6, pointerType: 'touch' });
+      expect(screen.queryByTestId('guest-drag-chip')).not.toBeInTheDocument();
+      expect(onAssignGuestToTable).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,11 +1,37 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
+import { resolveSeatAssignments } from '../seatLayout';
+
+const POINTER_DRAG_THRESHOLD_PX = 8;
+
+function extractPointerDetails(e: React.PointerEvent) {
+  const native = e.nativeEvent as Partial<PointerEvent>;
+  return {
+    clientX: typeof e.clientX === 'number' ? e.clientX : (native.clientX ?? 0),
+    clientY: typeof e.clientY === 'number' ? e.clientY : (native.clientY ?? 0),
+    pointerId: typeof e.pointerId === 'number' ? e.pointerId : native.pointerId,
+    pointerType: typeof e.pointerType === 'string' ? e.pointerType : (native.pointerType ?? ''),
+    button: typeof e.button === 'number' ? e.button : native.button,
+  };
+}
+
+interface GuestPointerDragState {
+  guestId: string;
+  guestName: string;
+  pointerId?: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  isDragging: boolean;
+  capturedElement?: HTMLElement | null;
+}
 
 interface UnassignedGuestPanelProps {
   unassignedGuests: InvitationCodeDTO[];
@@ -30,6 +56,12 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
   const [targetSeatNumber, setTargetSeatNumber] = useState<number | undefined>(undefined);
+  const [activePointerDrag, setActivePointerDrag] = useState<GuestPointerDragState | null>(null);
+
+  const pointerDragRef = useRef<GuestPointerDragState | null>(null);
+  const windowDragCleanupRef = useRef<(() => void) | null>(null);
+  const callbacksRef = useRef({ onAssignGuestToTable, tables, toast });
+  callbacksRef.current = { onAssignGuestToTable, tables, toast };
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -53,9 +85,222 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     });
   }, [unassignedGuests, currentSearchQuery]);
 
+  const detachWindowDragListeners = useCallback(() => {
+    if (windowDragCleanupRef.current) {
+      windowDragCleanupRef.current();
+      windowDragCleanupRef.current = null;
+    }
+  }, []);
+
+  const releaseCardPointerCapture = (dragState: GuestPointerDragState) => {
+    if (dragState.pointerId !== undefined && dragState.capturedElement) {
+      try {
+        dragState.capturedElement.releasePointerCapture?.(dragState.pointerId);
+      } catch {
+        // Ignore in JSDOM/synthetic environments
+      }
+    }
+  };
+
+  const cancelPointerDrag = useCallback(() => {
+    const current = pointerDragRef.current;
+    if (!current) return;
+    pointerDragRef.current = null;
+    detachWindowDragListeners();
+    releaseCardPointerCapture(current);
+    setActivePointerDrag(null);
+  }, [detachWindowDragListeners]);
+
+  const updatePointerDragPosition = useCallback((clientX: number, clientY: number, pointerId?: number) => {
+    const current = pointerDragRef.current;
+    if (!current) return;
+    if (current.pointerId !== undefined && pointerId !== undefined && current.pointerId !== pointerId) {
+      return;
+    }
+
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+      return;
+    }
+
+    const distance = Math.hypot(clientX - current.startX, clientY - current.startY);
+    if (!current.isDragging && (!Number.isFinite(distance) || distance < POINTER_DRAG_THRESHOLD_PX)) {
+      return;
+    }
+
+    if (!current.isDragging && current.pointerId !== undefined && current.capturedElement) {
+      try {
+        current.capturedElement.setPointerCapture?.(current.pointerId);
+      } catch {
+        // Ignore in synthetic environments
+      }
+    }
+
+    const next: GuestPointerDragState = {
+      ...current,
+      currentX: clientX,
+      currentY: clientY,
+      isDragging: true,
+    };
+    pointerDragRef.current = next;
+    setActivePointerDrag(next);
+  }, []);
+
+  const commitPointerDrag = useCallback((clientX: number, clientY: number, pointerId?: number) => {
+    const current = pointerDragRef.current;
+    if (!current) return;
+    if (current.pointerId !== undefined && pointerId !== undefined && current.pointerId !== pointerId) {
+      return;
+    }
+
+    pointerDragRef.current = null;
+    detachWindowDragListeners();
+    releaseCardPointerCapture(current);
+    setActivePointerDrag(null);
+
+    if (!current.isDragging) {
+      return;
+    }
+
+    const hitElement =
+      typeof document !== 'undefined' && typeof document.elementFromPoint === 'function'
+        ? document.elementFromPoint(clientX, clientY)
+        : null;
+    if (!hitElement) return;
+
+    const seatElement = hitElement.closest?.('[data-seat-number]') as HTMLElement | null;
+    const tableElement = hitElement.closest?.('[data-table-id]') as HTMLElement | null;
+    const resolvedTableId =
+      seatElement?.getAttribute('data-table-id') ||
+      tableElement?.getAttribute('data-table-id');
+
+    if (!resolvedTableId) return;
+
+    const rawSeat = seatElement?.getAttribute('data-seat-number');
+    const parsedSeat = rawSeat ? parseInt(rawSeat, 10) : undefined;
+    const resolvedSeatNumber =
+      parsedSeat !== undefined && !Number.isNaN(parsedSeat) ? parsedSeat : undefined;
+
+    const { tables: latestTables, onAssignGuestToTable: assignGuest, toast: latestToast } = callbacksRef.current;
+    const targetTable = latestTables.find((t) => t.id === resolvedTableId);
+    if (targetTable) {
+      const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
+      const isAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === current.guestId);
+      if (isFull && !isAlreadyAtTable) {
+        latestToast?.addToast(
+          `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
+          'error'
+        );
+        return;
+      }
+    }
+
+    if (resolvedSeatNumber !== undefined) {
+      assignGuest(current.guestId, resolvedTableId, resolvedSeatNumber);
+    } else {
+      assignGuest(current.guestId, resolvedTableId);
+    }
+  }, [detachWindowDragListeners]);
+
+  const attachWindowDragListeners = useCallback(() => {
+    detachWindowDragListeners();
+
+    const onWindowPointerMove = (event: PointerEvent) => {
+      updatePointerDragPosition(event.clientX, event.clientY, event.pointerId);
+    };
+
+    const onWindowPointerUp = (event: PointerEvent) => {
+      commitPointerDrag(event.clientX, event.clientY, event.pointerId);
+    };
+
+    const onWindowPointerCancel = (event: PointerEvent) => {
+      const current = pointerDragRef.current;
+      if (!current) return;
+      if (current.pointerId !== undefined && event.pointerId !== undefined && current.pointerId !== event.pointerId) {
+        return;
+      }
+      cancelPointerDrag();
+    };
+
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && pointerDragRef.current) {
+        event.preventDefault();
+        cancelPointerDrag();
+      }
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerUp);
+    window.addEventListener('pointercancel', onWindowPointerCancel);
+    window.addEventListener('keydown', onWindowKeyDown);
+
+    windowDragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerCancel);
+      window.removeEventListener('keydown', onWindowKeyDown);
+    };
+  }, [cancelPointerDrag, commitPointerDrag, detachWindowDragListeners, updatePointerDragPosition]);
+
+  useEffect(() => {
+    return () => {
+      detachWindowDragListeners();
+    };
+  }, [detachWindowDragListeners]);
+
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
+    cancelPointerDrag();
     e.dataTransfer.setData('text/plain', guestId);
     e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleCardPointerDown = (e: React.PointerEvent<HTMLDivElement>, guest: InvitationCodeDTO) => {
+    const { clientX, clientY, pointerId, pointerType, button } = extractPointerDetails(e);
+    if (typeof button === 'number' && button !== 0) return;
+    const targetNode = e.target as HTMLElement | null;
+    if (targetNode?.closest?.('button')) {
+      return;
+    }
+
+    if (pointerId !== undefined && pointerType !== 'mouse') {
+      try {
+        e.currentTarget.setPointerCapture?.(pointerId);
+      } catch {
+        // Ignore NotFoundError on synthetic browser PointerEvents
+      }
+    }
+    const initialDrag: GuestPointerDragState = {
+      guestId: guest.id,
+      guestName: guest.guestName,
+      pointerId,
+      startX: clientX,
+      startY: clientY,
+      currentX: clientX,
+      currentY: clientY,
+      isDragging: false,
+      capturedElement: e.currentTarget,
+    };
+    pointerDragRef.current = initialDrag;
+    attachWindowDragListeners();
+  };
+
+  const handleCardPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const { clientX, clientY, pointerId } = extractPointerDetails(e);
+    updatePointerDragPosition(clientX, clientY, pointerId);
+  };
+
+  const handleCardPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const { clientX, clientY, pointerId } = extractPointerDetails(e);
+    commitPointerDrag(clientX, clientY, pointerId);
+  };
+
+  const handleCardPointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    const current = pointerDragRef.current;
+    if (!current) return;
+    const { pointerId } = extractPointerDetails(e);
+    if (current.pointerId !== undefined && pointerId !== undefined && current.pointerId !== pointerId) {
+      return;
+    }
+    cancelPointerDrag();
   };
 
   const handleAutoAssignAll = async () => {
@@ -136,7 +381,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       </div>
 
       {/* Guest Card List */}
-      <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[500px]">
+      <div
+        className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[500px]"
+        role={filteredGuests.length > 0 ? 'list' : undefined}
+        aria-label={filteredGuests.length > 0 ? 'Unassigned guests' : undefined}
+      >
         {filteredGuests.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-muted-text,#4b5563)] text-xs italic">
             {currentSearchQuery.trim()
@@ -149,7 +398,15 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               key={guest.id}
               draggable
               onDragStart={(e) => handleDragStart(e, guest.id)}
-              className="group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing transition-all flex items-center justify-between shadow-xs hover:shadow-sm"
+              onPointerDown={(e) => handleCardPointerDown(e, guest)}
+              onPointerMove={handleCardPointerMove}
+              onPointerUp={handleCardPointerUp}
+              onPointerCancel={handleCardPointerCancel}
+              className={`group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing select-none transition-all flex items-center justify-between shadow-xs hover:shadow-sm ${
+                activePointerDrag?.isDragging && activePointerDrag.guestId === guest.id
+                  ? 'opacity-50 ring-2 ring-primary'
+                  : ''
+              }`}
               role="listitem"
             >
               <div className="min-w-0 pr-2 space-y-0.5">
@@ -182,7 +439,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                   setSelectedGuestForModal(guest);
                   if (tables.length > 0) setTargetTableId(tables[0].id);
                 }}
-                className="text-[11px] font-medium px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-300 rounded transition-colors"
+                className="min-h-6 min-w-6 inline-flex items-center justify-center text-[11px] font-medium px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-300 rounded transition-colors"
                 aria-label={`Assign ${guest.guestName} to table`}
               >
                 Assign
@@ -272,8 +529,9 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               {(() => {
                 const selTable = tables.find((t) => t.id === targetTableId);
                 if (!selTable) return null;
+                const seatMap = resolveSeatAssignments(selTable.invitationCodes, selTable.capacity);
                 return Array.from({ length: selTable.capacity }, (_, idx) => idx + 1).map((seatNum) => {
-                  const occ = selTable.invitationCodes?.find((g) => g.seatNumber === seatNum);
+                  const occ = seatMap.get(seatNum);
                   return (
                     <option key={seatNum} value={seatNum}>
                       Seat {seatNum} {occ ? `(${occ.guestName})` : '(Empty)'}
@@ -306,6 +564,21 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
           </div>
         </form>
       </Dialog>
+
+      {/* Floating Cross-Panel Drag Chip */}
+      {activePointerDrag?.isDragging && (
+        <div
+          data-testid="guest-drag-chip"
+          aria-hidden="true"
+          className="fixed z-50 pointer-events-none -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-semibold shadow-lg flex items-center gap-1.5 whitespace-nowrap"
+          style={{
+            left: `${activePointerDrag.currentX}px`,
+            top: `${activePointerDrag.currentY}px`,
+          }}
+        >
+          <span>{activePointerDrag.guestName}</span>
+        </div>
+      )}
     </div>
   );
 });

@@ -180,7 +180,7 @@ export default function SeatingChartAdminPage() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 font-bold text-xs"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-6 min-h-6 inline-flex items-center justify-center rounded text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100 font-bold text-xs"
                   aria-label="Clear search query"
                 >
                   ×
@@ -254,7 +254,7 @@ export default function SeatingChartAdminPage() {
                 <div>
                   <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                     {selectedTable.name}
-                    <span className="text-xs font-normal text-gray-500">
+                    <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
                       ({selectedTable.shape}, {selectedTable.capacity} capacity, {selectedTable.invitationCodes?.length || 0} seated)
                     </span>
                   </h3>
@@ -277,9 +277,11 @@ export default function SeatingChartAdminPage() {
                             </span>
                           )}
                           <button
+                            type="button"
                             onClick={() => handleUnassignGuest(guest.id)}
-                            className="text-gray-400 hover:text-red-600 font-bold ml-1"
+                            className="min-w-6 min-h-6 inline-flex items-center justify-center rounded text-gray-600 hover:text-red-600 dark:text-gray-200 dark:hover:text-red-400 font-bold ml-1"
                             title="Unassign guest"
+                            aria-label={`Unassign ${guest.guestName}`}
                           >
                             ×
                           </button>
@@ -287,7 +289,7 @@ export default function SeatingChartAdminPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-gray-400 italic">No guests assigned to this table yet.</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-300 italic">No guests assigned to this table yet.</p>
                   )}
                 </div>
 
@@ -300,7 +302,7 @@ export default function SeatingChartAdminPage() {
                         const next = (current - 45 + 360) % 360;
                         handleUpdateTableRotation(selectedTable.id, next);
                       }}
-                      className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                      className="min-w-7 min-h-6 px-2 py-1 inline-flex items-center justify-center text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
                       title="Rotate -45°"
                     >
                       -45°
@@ -315,7 +317,7 @@ export default function SeatingChartAdminPage() {
                         const next = (current + 45) % 360;
                         handleUpdateTableRotation(selectedTable.id, next);
                       }}
-                      className="px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                      className="min-w-7 min-h-6 px-2 py-1 inline-flex items-center justify-center text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
                       title="Rotate +45°"
                     >
                       +45°

@@ -671,4 +671,21 @@ describe('Optimistic Seating Chart State Updates', () => {
     expect(table1Element.style.left).toBe('40px');
     expect(table1Element.style.top).toBe('40px');
   });
+
+  it('renders inspector unassign buttons with type="button", >=24x24px min sizing, and guest-specific aria-label', async () => {
+    render(<SeatingChartAdminPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Table 1, shape/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Table 1, shape/i }));
+
+    const unassignBtn = await screen.findByRole('button', { name: 'Unassign Guest One' });
+    expect(unassignBtn).toHaveAttribute('type', 'button');
+    expect(unassignBtn).toHaveAttribute('title', 'Unassign guest');
+    expect(unassignBtn).toHaveAttribute('aria-label', 'Unassign Guest One');
+    expect(unassignBtn.className).toContain('min-w-6');
+    expect(unassignBtn.className).toContain('min-h-6');
+  });
 });
