@@ -146,7 +146,7 @@ describe('Hybrid Storage Provider', () => {
       expect(provider.getPublicUrl('https://cdn.com/uploads/photo.jpg')).toBe('https://cdn.com/uploads/photo.jpg');
     });
 
-    it('fetches metadata for an existing file and detects webp MIME type', async () => {
+    it('fetches metadata for existing files across supported image extensions and falls back to application/octet-stream', async () => {
       const provider = getStorageProvider();
       (stat as jest.Mock).mockResolvedValueOnce({
         size: 2048,
@@ -168,6 +168,20 @@ describe('Hybrid Storage Provider', () => {
       });
       const webpMeta = await provider.getMetadata('/uploads/photo.webp');
       expect(webpMeta?.mimeType).toBe('image/webp');
+
+      (stat as jest.Mock).mockResolvedValueOnce({
+        size: 512,
+        mtime: new Date('2026-01-03'),
+      });
+      const icoMeta = await provider.getMetadata('/uploads/favicon.ico');
+      expect(icoMeta?.mimeType).toBe('image/x-icon');
+
+      (stat as jest.Mock).mockResolvedValueOnce({
+        size: 768,
+        mtime: new Date('2026-01-04'),
+      });
+      const unknownExtMeta = await provider.getMetadata('/uploads/vector.svg');
+      expect(unknownExtMeta?.mimeType).toBe('application/octet-stream');
     });
 
     it('rejects openReadStream traversal keys outside public/uploads', async () => {
@@ -191,6 +205,11 @@ describe('Hybrid Storage Provider', () => {
   });
 
   describe('S3StorageProvider configuration and urls via getStorageProvider', () => {
+    type S3ProviderInternals = ReturnType<typeof getStorageProvider> & {
+      getBucket(): string;
+      getClient(): S3Client;
+    };
+
     beforeEach(() => {
       process.env.S3_BUCKET = 'test-bucket';
       process.env.S3_REGION = 'us-west-2';
@@ -198,26 +217,29 @@ describe('Hybrid Storage Provider', () => {
       process.env.S3_SECRET_ACCESS_KEY = 'secret';
     });
 
-    it('initializes with correct AWS S3 endpoint and public URL when S3_ENDPOINT and S3_PUBLIC_URL are absent', () => {
-      const provider = getStorageProvider() as any;
+    it('initializes with correct AWS S3 endpoint, virtual-hosted style, and public URL when S3_ENDPOINT and S3_PUBLIC_URL are absent', () => {
+      const provider = getStorageProvider() as S3ProviderInternals;
       expect(provider.getBucket()).toBe('test-bucket');
       expect(provider.getPublicUrl('uploads/test.png')).toBe(
         'https://test-bucket.s3.us-west-2.amazonaws.com/uploads/test.png'
       );
+      expect(provider.getClient().config.forcePathStyle).toBe(false);
     });
 
-    it('initializes with custom endpoint and endpoint-based public URL fallback', () => {
-      process.env.S3_ENDPOINT = 'https://custom.r2.endpoint';
+    it('initializes with custom R2 endpoint, forcePathStyle enabled, and endpoint-based public URL fallback', () => {
+      process.env.S3_ENDPOINT = 'https://custom.r2.endpoint/';
 
-      const provider = getStorageProvider() as any;
+      const provider = getStorageProvider() as S3ProviderInternals;
+      expect(provider.getClient().config.forcePathStyle).toBe(true);
       expect(provider.getPublicUrl('uploads/test.png')).toBe('https://custom.r2.endpoint/test-bucket/uploads/test.png');
     });
 
-    it('initializes with custom endpoint and S3_PUBLIC_URL when both are provided', () => {
+    it('initializes with custom endpoint, forcePathStyle enabled, and S3_PUBLIC_URL override when both are provided', () => {
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint';
-      process.env.S3_PUBLIC_URL = 'https://pub-domain.com';
+      process.env.S3_PUBLIC_URL = 'https://pub-domain.com/';
 
-      const provider = getStorageProvider() as any;
+      const provider = getStorageProvider() as S3ProviderInternals;
+      expect(provider.getClient().config.forcePathStyle).toBe(true);
       expect(provider.getPublicUrl('uploads/test.png')).toBe('https://pub-domain.com/uploads/test.png');
     });
   });
