@@ -87,14 +87,54 @@ describe('verify-doc-sync', () => {
       expect(drifted).toEqual([]);
     });
 
-    it('allows staged documentation updates when working tree matches staged index and flags stale staged files', () => {
+    it('allows staged documentation updates (M ) and additions (A ) when working tree matches staged index', () => {
+      fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "updated": true}');
+      fs.writeFileSync(path.join(tempDir, 'NEW_DOC.md'), '# Newly Generated Doc\n');
+      execSync('git add public/openapi.json NEW_DOC.md', { cwd: tempDir, stdio: 'ignore' });
+
+      const trackedFiles = [...DEFAULT_DOC_FILES, 'NEW_DOC.md'];
+      const porcelain = execSync('git status --porcelain -- public/openapi.json NEW_DOC.md', {
+        cwd: tempDir,
+        encoding: 'utf8',
+      });
+      expect(porcelain).toContain('M  public/openapi.json');
+      expect(porcelain).toContain('A  NEW_DOC.md');
+      expect(checkDocDrift(trackedFiles, tempDir)).toEqual([]);
+    });
+
+    it('detects drift for stale staged edits (MM), staged deletions (D ), and untracked files (??)', () => {
+      // Stale staged edit ('MM'): staged version differs from regenerated file on disk
       fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "updated": true}');
       execSync('git add public/openapi.json', { cwd: tempDir, stdio: 'ignore' });
-      expect(checkDocDrift(DEFAULT_DOC_FILES, tempDir)).toEqual([]);
-
-      // Subsequent generator write that differs from staged index ('MM') is flagged
       fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "updated": false}');
-      expect(checkDocDrift(DEFAULT_DOC_FILES, tempDir)).toEqual(['public/openapi.json']);
+
+      // Staged deletion ('D ')
+      execSync('git rm ARCHITECTURE.md', { cwd: tempDir, stdio: 'ignore' });
+
+      // Untracked documentation file ('??')
+      fs.writeFileSync(path.join(tempDir, 'UNTRACKED_DOC.md'), '# Untracked Doc\n');
+
+      const trackedFiles = [...DEFAULT_DOC_FILES, 'UNTRACKED_DOC.md'];
+      const drifted = checkDocDrift(trackedFiles, tempDir);
+      expect(drifted).toEqual([
+        'ARCHITECTURE.md',
+        'public/openapi.json',
+        'UNTRACKED_DOC.md',
+      ]);
+    });
+
+    it('deduplicates paths when a staged deletion (D ) is recreated as untracked (??) on disk', () => {
+      execSync('git rm ARCHITECTURE.md', { cwd: tempDir, stdio: 'ignore' });
+      fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# System Architecture');
+
+      const porcelain = execSync('git status --porcelain -- "ARCHITECTURE.md"', {
+        cwd: tempDir,
+        encoding: 'utf8',
+      });
+      expect(porcelain).toContain('D  ARCHITECTURE.md');
+      expect(porcelain).toContain('?? ARCHITECTURE.md');
+
+      expect(checkDocDrift(DEFAULT_DOC_FILES, tempDir)).toEqual(['ARCHITECTURE.md']);
     });
   });
 
@@ -217,6 +257,54 @@ describe('verify-doc-sync', () => {
 
       expect(result.success).toBe(true);
       expect(result.driftedFiles).toEqual([]);
+    });
+
+    it('returns success: true when staged updates (M ) and staged additions (A ) match generated docs', () => {
+      fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# Updated Architecture\n');
+      fs.writeFileSync(path.join(tempDir, 'ADDED_DOC.md'), '# Added Documentation\n');
+      execSync('git add ARCHITECTURE.md ADDED_DOC.md', { cwd: tempDir, stdio: 'ignore' });
+
+      const trackedFiles = [...DEFAULT_DOC_FILES, 'ADDED_DOC.md'];
+      const result = verifyDocSync({
+        cwd: tempDir,
+        files: trackedFiles,
+        generateDocs: () => {
+          fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# Updated Architecture\n');
+          fs.writeFileSync(path.join(tempDir, 'ADDED_DOC.md'), '# Added Documentation\n');
+        },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.driftedFiles).toEqual([]);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('detects drift for stale staged edits (MM), staged deletions (D ), and untracked files (??)', () => {
+      // Stage staleopenapi.json ('M '), which becomes 'MM' after generator runs
+      fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "stale": true}');
+      execSync('git add public/openapi.json', { cwd: tempDir, stdio: 'ignore' });
+
+      // Stage deletion of ARCHITECTURE.md ('D '), which also becomes '??' when generator recreates it
+      execSync('git rm ARCHITECTURE.md', { cwd: tempDir, stdio: 'ignore' });
+
+      const trackedFiles = [...DEFAULT_DOC_FILES, 'GENERATED_UNTRACKED.md'];
+      const result = verifyDocSync({
+        cwd: tempDir,
+        files: trackedFiles,
+        generateDocs: () => {
+          fs.writeFileSync(path.join(tempDir, 'public', 'openapi.json'), '{"openapi": "3.0.3", "stale": false}');
+          fs.writeFileSync(path.join(tempDir, 'ARCHITECTURE.md'), '# System Architecture');
+          fs.writeFileSync(path.join(tempDir, 'GENERATED_UNTRACKED.md'), '# Untracked Generated Doc\n');
+        },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.driftedFiles).toEqual([
+        'ARCHITECTURE.md',
+        'public/openapi.json',
+        'GENERATED_UNTRACKED.md',
+      ]);
+      expect(result.error).toBeUndefined();
     });
   });
 

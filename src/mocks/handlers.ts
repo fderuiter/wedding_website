@@ -165,10 +165,18 @@ export const handlers = [
     }
   }),
 
-  // CSV Import Wizard Modal batch execution endpoint
+  // CSV Import Wizard Modal & batch update execution endpoint
   http.post('*/api/admin/invitation-codes/batch', async ({ request }) => {
     try {
       const body = (await request.json()) as any;
+      if (body && Array.isArray(body.ids)) {
+        return HttpResponse.json({
+          success: true,
+          count: body.ids.length,
+          updatedCount: body.ids.length,
+          records: [],
+        });
+      }
       const records = Array.isArray(body?.records) ? body.records : [];
       return HttpResponse.json({
         success: true,

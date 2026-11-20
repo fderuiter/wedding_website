@@ -550,16 +550,22 @@ describe('FloorplanCanvas component', () => {
         toJSON: () => {},
       });
 
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
       const handleBtn = screen.getByRole('button', { name: /Rotate handle for Head Table/i });
-      fireEvent.mouseDown(handleBtn, { button: 0 });
+      fireEvent.mouseDown(handleBtn, { button: 0, clientX: 160, clientY: 90 });
 
       // Mouse at (160, 220): table center is x=100+60=160, y=100+60=160
       // Vector dx = 0, dy = 60 (pointing down, 180 degrees)
       fireEvent.mouseMove(canvasElement, { clientX: 160, clientY: 220 });
+      expect(headTable.style.transform).toBe('rotate(180deg)');
+      expect(screen.getByTestId('table-rotation-display')).toHaveTextContent('180°');
+      expect(onUpdateTableRotation).not.toHaveBeenCalled();
+
+      // Mouse up commits final rotation once and ends gesture
+      fireEvent.mouseUp(canvasElement);
+      expect(onUpdateTableRotation).toHaveBeenCalledTimes(1);
       expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 180);
 
-      // Mouse up ends rotation gesture
-      fireEvent.mouseUp(canvasElement);
       fireEvent.mouseMove(canvasElement, { clientX: 200, clientY: 200 });
       expect(onUpdateTableRotation).toHaveBeenCalledTimes(1);
     });
@@ -585,6 +591,225 @@ describe('FloorplanCanvas component', () => {
       // 350 + 45 = 395 -> normalized to 35
       fireEvent.keyDown(headTable, { key: 'r' });
       expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 35);
+    });
+  });
+
+  describe('Pointer gesture buffering and release commits', () => {
+    const mockCanvasRect = (canvasElement: HTMLElement) => {
+      jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 800,
+        bottom: 650,
+        width: 800,
+        height: 650,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+    };
+
+    it('renders live preview positions across a 120-frame pointer drag without saving until mouseup', () => {
+      const onUpdateTablePosition = jest.fn();
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          onUpdateTablePosition={onUpdateTablePosition}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      mockCanvasRect(canvasElement);
+
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
+      // Initial table position is (100, 100); pointer grabs at (120, 130) -> offset (20, 30)
+      fireEvent.mouseDown(headTable, { button: 0, clientX: 120, clientY: 130 });
+
+      for (let frame = 1; frame <= 120; frame++) {
+        const nextX = 100 + frame * 2;
+        const nextY = 100 + frame;
+        fireEvent.mouseMove(canvasElement, {
+          clientX: nextX + 20,
+          clientY: nextY + 30,
+        });
+        expect(headTable.style.left).toBe(`${nextX}px`);
+        expect(headTable.style.top).toBe(`${nextY}px`);
+      }
+
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      fireEvent.mouseUp(canvasElement);
+      expect(onUpdateTablePosition).toHaveBeenCalledTimes(1);
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-1', 340, 220);
+      expect(screen.getByText('Head Table moved to X 340, Y 220')).toBeInTheDocument();
+    });
+
+    it('renders live preview angles across a 15-frame rotation drag and commits once on mouseup', () => {
+      const onUpdateTableRotation = jest.fn();
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          selectedTableId="table-1"
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      mockCanvasRect(canvasElement);
+
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
+      const handleBtn = screen.getByRole('button', { name: /Rotate handle for Head Table/i });
+      fireEvent.mouseDown(handleBtn, { button: 0, clientX: 160, clientY: 90 });
+
+      // Sweep 15 frames around table center (160, 160), ending directly right (220, 160 -> 90 deg)
+      for (let frame = 1; frame <= 15; frame++) {
+        const angleRad = ((frame * 6) - 90) * (Math.PI / 180);
+        const clientX = 160 + Math.cos(angleRad) * 60;
+        const clientY = 160 + Math.sin(angleRad) * 60;
+        fireEvent.mouseMove(canvasElement, { clientX, clientY });
+      }
+
+      expect(headTable.style.transform).toBe('rotate(90deg)');
+      expect(screen.getByTestId('table-rotation-display')).toHaveTextContent('90°');
+      expect(onUpdateTableRotation).not.toHaveBeenCalled();
+
+      fireEvent.mouseUp(canvasElement);
+      expect(onUpdateTableRotation).toHaveBeenCalledTimes(1);
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('table-1', 90);
+      expect(screen.getByText('Head Table rotated to 90 degrees')).toBeInTheDocument();
+    });
+
+    it('commits clamped placement using table width and height when releasing pointer outside the canvas', () => {
+      const wideTable: SeatingTableDTO = {
+        id: 'table-wide',
+        name: 'Banquet Table',
+        shape: 'rectangular',
+        capacity: 6,
+        x: 100,
+        y: 100,
+        width: 260,
+        height: 100,
+        rotation: 0,
+        isSample: false,
+      };
+      const onUpdateTablePosition = jest.fn();
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[wideTable]}
+          onUpdateTablePosition={onUpdateTablePosition}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      mockCanvasRect(canvasElement);
+
+      const tableElement = screen.getByRole('button', { name: /^Banquet Table, shape/i });
+      fireEvent.mouseDown(tableElement, { button: 0, clientX: 110, clientY: 110 });
+
+      // Move far outside 800x650 canvas; maxX = 800 - 260 = 540, maxY = 650 - 100 = 550
+      fireEvent.mouseMove(window, { clientX: 1200, clientY: 950 });
+      expect(tableElement.style.left).toBe('540px');
+      expect(tableElement.style.top).toBe('550px');
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      // Release outside the canvas on window
+      fireEvent.mouseUp(window);
+      expect(onUpdateTablePosition).toHaveBeenCalledTimes(1);
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-wide', 540, 550);
+    });
+
+    it('cancels active drag and rotation gestures on Escape without saving', () => {
+      const onUpdateTablePosition = jest.fn();
+      const onUpdateTableRotation = jest.fn();
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          selectedTableId="table-1"
+          onUpdateTablePosition={onUpdateTablePosition}
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      mockCanvasRect(canvasElement);
+
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
+
+      // 1. Start drag, move, then press Escape
+      fireEvent.mouseDown(headTable, { button: 0, clientX: 110, clientY: 110 });
+      fireEvent.mouseMove(canvasElement, { clientX: 310, clientY: 260 });
+      expect(headTable.style.left).toBe('300px');
+      expect(headTable.style.top).toBe('250px');
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(headTable.style.left).toBe('100px');
+      expect(headTable.style.top).toBe('100px');
+
+      fireEvent.mouseUp(window);
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      // 2. Start rotation, move, then press Escape
+      const handleBtn = screen.getByRole('button', { name: /Rotate handle for Head Table/i });
+      fireEvent.mouseDown(handleBtn, { button: 0, clientX: 160, clientY: 90 });
+      fireEvent.mouseMove(canvasElement, { clientX: 220, clientY: 160 });
+      expect(headTable.style.transform).toBe('rotate(90deg)');
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(headTable.style.transform).toBe('rotate(0deg)');
+
+      fireEvent.mouseUp(window);
+      expect(onUpdateTableRotation).not.toHaveBeenCalled();
+    });
+
+    it('selects table or activates seat on click without sending position or rotation updates', () => {
+      const onSelectTable = jest.fn();
+      const onUpdateTablePosition = jest.fn();
+      const onUpdateTableRotation = jest.fn();
+      const onOpenSeatAssignModal = jest.fn();
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          selectedTableId="table-1"
+          onSelectTable={onSelectTable}
+          onUpdateTablePosition={onUpdateTablePosition}
+          onUpdateTableRotation={onUpdateTableRotation}
+          onOpenSeatAssignModal={onOpenSeatAssignModal}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      mockCanvasRect(canvasElement);
+
+      // Click table without changing coordinates
+      const headTable = screen.getByRole('button', { name: /^Head Table, shape/i });
+      fireEvent.mouseDown(headTable, { button: 0, clientX: 150, clientY: 150 });
+      fireEvent.mouseUp(headTable, { clientX: 150, clientY: 150 });
+      fireEvent.click(headTable, { clientX: 150, clientY: 150 });
+
+      expect(onSelectTable).toHaveBeenCalledWith('table-1');
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      // Drag table away and back to starting coordinates before release -> no save
+      fireEvent.mouseDown(headTable, { button: 0, clientX: 150, clientY: 150 });
+      fireEvent.mouseMove(canvasElement, { clientX: 250, clientY: 250 });
+      fireEvent.mouseMove(canvasElement, { clientX: 150, clientY: 150 });
+      fireEvent.mouseUp(canvasElement, { clientX: 150, clientY: 150 });
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      // Click empty seat -> opens modal without dragging or saving table
+      onSelectTable.mockClear();
+      const emptySeat = screen.getByLabelText('Seat 2: Empty');
+      fireEvent.mouseDown(emptySeat, { button: 0, clientX: 160, clientY: 238 });
+      fireEvent.mouseMove(canvasElement, { clientX: 165, clientY: 242 });
+      fireEvent.mouseUp(emptySeat, { clientX: 165, clientY: 242 });
+      fireEvent.click(emptySeat, { clientX: 165, clientY: 242 });
+
+      expect(onOpenSeatAssignModal).toHaveBeenCalledWith('table-1', 2);
+      expect(onSelectTable).not.toHaveBeenCalled();
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+      expect(onUpdateTableRotation).not.toHaveBeenCalled();
     });
   });
 });

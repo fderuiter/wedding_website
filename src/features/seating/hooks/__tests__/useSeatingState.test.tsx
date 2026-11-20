@@ -642,5 +642,71 @@ describe('useSeatingState & seatingReducer', () => {
       expect(table1.x).toBe(50);
       expect(table1.y).toBe(50);
     });
+
+    it('shows error toasts via useOptionalToast and reverts position and rotation on PUT failure', async () => {
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockAddToast.mockClear();
+
+      // 1. Position PUT failure shows error toast and reverts coordinates
+      fetchMock.mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+        } as Response)
+      );
+
+      let posOk = true;
+      await act(async () => {
+        posOk = await result.current.updateTablePosition('table-1', 320, 240);
+      });
+
+      expect(posOk).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith('Failed to update table position', 'error');
+      expect(result.current.tables.find((t) => t.id === 'table-1')?.x).toBe(50);
+      expect(result.current.tables.find((t) => t.id === 'table-1')?.y).toBe(50);
+
+      mockAddToast.mockClear();
+
+      // 2. Rotation PUT failure shows error toast and reverts angle
+      fetchMock.mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+        } as Response)
+      );
+
+      let rotOk = true;
+      await act(async () => {
+        rotOk = await result.current.updateTableRotation('table-1', 135);
+      });
+
+      expect(rotOk).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith('Failed to update table rotation', 'error');
+      expect(result.current.tables.find((t) => t.id === 'table-1')?.rotation).toBe(0);
+
+      // 3. Outside ToastProvider, failures revert cleanly without throwing
+      mockUseToastError = new Error('useToast must be used within a ToastProvider');
+      mockAddToast.mockClear();
+
+      const { result: standaloneResult } = renderHook(() => useSeatingState());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      fetchMock
+        .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 } as Response))
+        .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 } as Response));
+
+      await act(async () => {
+        expect(await standaloneResult.current.updateTablePosition('table-1', 200, 200)).toBe(false);
+        expect(await standaloneResult.current.updateTableRotation('table-1', 90)).toBe(false);
+      });
+      expect(mockAddToast).not.toHaveBeenCalled();
+    });
   });
 });

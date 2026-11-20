@@ -530,6 +530,32 @@ export const ContentNodeSchema = z.union([FAQNodeSchema, LogisticsNodeSchema, Sc
 
 export type ContentNodeDTO = z.infer<typeof ContentNodeSchema>;
 
+/**
+ * Evaluates whether a ContentNode record is marked private via `data.isPrivate`.
+ * Treats boolean `true` and case-insensitive `'true'` strings (such as dynamic
+ * string fields serialized by the Admin Content Hub) as private, while keeping
+ * `false`, `'false'`, and missing values public.
+ */
+export function isPrivateContentNode(
+  node: { data?: unknown } | null | undefined
+): boolean {
+  if (!node || typeof node !== 'object') {
+    return false;
+  }
+  const data = node.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return false;
+  }
+  const rawIsPrivate = (data as Record<string, unknown>).isPrivate;
+  if (typeof rawIsPrivate === 'boolean') {
+    return rawIsPrivate;
+  }
+  if (typeof rawIsPrivate === 'string') {
+    return rawIsPrivate.trim().toLowerCase() === 'true';
+  }
+  return false;
+}
+
 const FeatureSchema = z.object({
   id: z.string(),
   type: z.string(),

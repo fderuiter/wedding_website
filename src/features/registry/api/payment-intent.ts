@@ -7,6 +7,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance, calculateContributionAmounts } from '@/lib/stripe';
+import { timingSafeEqualJS } from '@/utils/crypto';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
@@ -21,7 +22,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, amount, coverFee, paymentIntentId, name, email, message, code } = parseResult.data;
+  const { itemId, amount, coverFee, paymentIntentId, clientSecret, name, email, message, code } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
   if (!targetItem) {
@@ -88,9 +89,38 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   };
 
   if (paymentIntentId) {
+    if (!clientSecret) {
+      throw new ApiError(403, 'Valid clientSecret is required to update an existing PaymentIntent.');
+    }
+
+    let existingIntent;
     try {
-      const existingIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-      if (existingIntent && existingIntent.status === 'requires_payment_method') {
+      existingIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    } catch {
+      throw new ApiError(403, 'Unable to verify ownership of the specified PaymentIntent.');
+    }
+
+    if (!existingIntent) {
+      throw new ApiError(403, 'Unable to verify ownership of the specified PaymentIntent.');
+    }
+
+    const encoder = new TextEncoder();
+    const providedSecretBytes = encoder.encode(clientSecret);
+    const expectedSecretBytes =
+      typeof existingIntent.client_secret === 'string' && existingIntent.client_secret.length > 0
+        ? encoder.encode(existingIntent.client_secret)
+        : null;
+    const hasMatchingSecret =
+      expectedSecretBytes !== null &&
+      timingSafeEqualJS(providedSecretBytes, expectedSecretBytes);
+    const hasMatchingItem = existingIntent.metadata?.itemId === targetItem.id;
+
+    if (!hasMatchingSecret || !hasMatchingItem) {
+      throw new ApiError(403, 'Forbidden: PaymentIntent ownership or item binding mismatch.');
+    }
+
+    if (existingIntent.status === 'requires_payment_method') {
+      try {
         const updated = await stripe.paymentIntents.update(paymentIntentId, {
           amount: totalChargeCents,
           metadata,
@@ -105,9 +135,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
           coverFee: Boolean(coverFee),
           netPayout,
         });
+      } catch {
+        // In case update is no longer possible for a verified intent, fall through to create a new PaymentIntent
       }
-    } catch {
-      // In case update is not possible, fall through to create a new PaymentIntent
     }
   }
 
