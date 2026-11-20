@@ -1,4 +1,4 @@
-import { AdminEntityUpdateSchema } from '@/utils/validation';
+import { AdminEntityUpdateSchema } from '@/utils/adminEntitySchemas';
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';

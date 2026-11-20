@@ -2,10 +2,7 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin';
 import { createBatchAuditSnapshots } from '@/lib/audit';
-import { WeddingPartyMemberSchema } from './schemas';
-import { deriveAdminInputSchema } from '@/utils/validation';
-
-const WeddingPartyInputSchema = deriveAdminInputSchema(WeddingPartyMemberSchema, false);
+import { WeddingPartyInputSchema } from './schemas';
 
 export class WeddingPartyAdminService extends BaseService<any> {
   static ENTITY_KEY = 'wedding-party';
