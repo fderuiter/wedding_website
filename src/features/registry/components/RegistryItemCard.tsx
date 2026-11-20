@@ -12,6 +12,7 @@ import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { useShareItem } from '../hooks/useShareItem';
 import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
 import { getPaymentUrl } from '../utils/paymentUrls';
@@ -189,6 +190,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   } = useRegistryContributionMachine({ item, onContribute });
 
   const { handleShare, copied } = useShareItem(item);
+  const toastContext = useOptionalToast();
+  const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
+  const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (receiptCopyTimerRef.current) {
+        clearTimeout(receiptCopyTimerRef.current);
+      }
+    };
+  }, []);
 
   const remainingAmount = item.price - item.amountContributed;
   const isFullyFunded = remainingAmount <= 0;
@@ -576,7 +588,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             payment_method_data: {
               billing_details: {
                 name: contributorName,
-                email: email || undefined,
+                email: email.trim() || undefined,
               },
             },
             return_url:
@@ -609,6 +621,88 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     } catch (err: any) {
       setPhase('error');
       setSubmissionError(err?.message || 'Payment processing failed. Please try again.');
+    }
+  };
+
+  const activeReceiptKey = `${item.id}-${paymentTransactionId || 'recorded'}-${isSuccess ? 'ok' : 'idle'}`;
+  const receiptCopied = copiedReceiptKey === activeReceiptKey;
+
+  const handleCopyReceipt = async () => {
+    const trimmedGuestName = contributorName.trim() || 'Guest';
+    const totalPaid = effectiveCoverFee
+      ? Math.round((baseContributionAmount + estimatedProcessingFee) * 100) / 100
+      : baseContributionAmount;
+
+    let paymentMethodLine = 'Physical Gift Claim';
+    if (paymentTransactionId) {
+      paymentMethodLine = 'Card Checkout';
+    } else if (isFund) {
+      paymentMethodLine = item.paymentHandleType
+        ? `Direct Transfer (${item.paymentHandleType}${hasPaymentHandle ? `: ${item.paymentHandle}` : ''})`
+        : hasPaymentHandle
+          ? `Direct Transfer (${item.paymentHandle})`
+          : 'Direct Transfer';
+    } else if (item.isGroupGift) {
+      paymentMethodLine = 'Group Gift Contribution';
+    }
+
+    const feeCoverageLine = paymentTransactionId
+      ? effectiveCoverFee
+        ? `Covered (+${formatCurrency(estimatedProcessingFee)} fee; ${formatCurrency(totalPaid)} total charged)`
+        : `Not added (${formatCurrency(baseContributionAmount)} total charged)`
+      : 'No processing fee ($0.00)';
+
+    const lines = [
+      `Registry Receipt - ${item.name}`,
+      `Contributor: ${trimmedGuestName}`,
+      `Gift Amount: ${formatCurrency(baseContributionAmount)}`,
+      `Fee Coverage: ${feeCoverageLine}`,
+      `Payment Method: ${paymentMethodLine}`,
+      `Date: ${formatDate(new Date())}`,
+    ];
+    if (paymentTransactionId) {
+      lines.push(`Transaction Reference: ${paymentTransactionId}`);
+    }
+
+    const receiptText = lines.join('\n');
+    let copySucceeded = false;
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(receiptText);
+        copySucceeded = true;
+      } catch {
+        // Fallback to execCommand below
+      }
+    }
+
+    if (!copySucceeded && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = receiptText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copySucceeded = true;
+      } catch {
+        // Fallback failed
+      }
+    }
+
+    if (copySucceeded) {
+      setCopiedReceiptKey(activeReceiptKey);
+      if (receiptCopyTimerRef.current) {
+        clearTimeout(receiptCopyTimerRef.current);
+      }
+      receiptCopyTimerRef.current = setTimeout(() => {
+        setCopiedReceiptKey(null);
+      }, 2500);
+      toastContext?.addToast('Receipt details copied to clipboard!', 'success');
+    } else {
+      toastContext?.addToast('Failed to copy receipt details', 'error');
     }
   };
 
@@ -927,9 +1021,21 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
             </>
           )}
-          <Button variant="primary" onClick={onClose} className="w-full">
-            Done
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCopyReceipt}
+              data-testid="copy-receipt-button"
+              className="w-full inline-flex items-center justify-center gap-1.5"
+            >
+              <Icon name={receiptCopied ? 'Check' : 'Copy'} className="w-4 h-4" />
+              {receiptCopied ? 'Receipt Copied!' : 'Copy Receipt'}
+            </Button>
+            <Button variant="primary" onClick={onClose} className="w-full">
+              Done
+            </Button>
+          </div>
         </div>
       ) : isUnconfiguredFund && !item.purchased && !isSubmitting ? (
         <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">

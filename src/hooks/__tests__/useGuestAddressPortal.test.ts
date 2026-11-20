@@ -575,6 +575,53 @@ describe('useGuestAddressPortal hook', () => {
     expect(result.current.state.guestName).toBe('Recovered Guest');
     expect(result.current.state.error).toBeNull();
   });
+
+  it('auto-validates ?code= on mount and strips code from browser history once authenticated', async () => {
+    window.history.replaceState({}, '', '/guest?code=INVITE77&utm=email');
+    const replaceStateSpy = jest.spyOn(window.history, 'replaceState');
+
+    globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          valid: true,
+          guestName: ' Clara Oswald ',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            guestName: 'Clara Oswald',
+            code: 'INVITE77',
+            addressLine1: '12 Bannerman Rd',
+            city: 'London',
+          },
+        }),
+      });
+
+    const { result } = renderHook(() => useGuestAddressPortal());
+
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(true);
+    });
+
+    const firstFetchArg = globalFetch.mock.calls[0]?.[0] as string | Request | undefined;
+    const firstFetchUrl =
+      typeof firstFetchArg === 'string' ? firstFetchArg : firstFetchArg?.url ?? '';
+    expect(firstFetchUrl).toContain('/api/registry/validate-code?code=INVITE77');
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      '',
+      '/guest?utm=email'
+    );
+
+    replaceStateSpy.mockRestore();
+    window.history.replaceState({}, '', '/');
+  });
 });
 
 describe('Helper error utilities', () => {

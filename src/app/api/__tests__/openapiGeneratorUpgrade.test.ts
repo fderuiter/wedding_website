@@ -120,14 +120,17 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers all 70 route files (.ts and .tsx) and 97 HTTP operations including GET /api/og', () => {
+  it('discovers all 71 route files (.ts and .tsx) and 98 HTTP operations including GET /api/og, GET /api/uploads/{path}, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
 
     const routePaths = Object.keys(openapi.paths);
-    expect(routePaths).toHaveLength(70);
+    expect(routePaths).toHaveLength(71);
 
     const operations = getAllOperations();
-    expect(operations).toHaveLength(97);
+    expect(operations).toHaveLength(98);
+
+    expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
+    expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
 
     const ogRoute = openapi.paths['/api/og'];
     expect(ogRoute).toBeDefined();
@@ -286,6 +289,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       'GET /api/health',
       'GET /api/ready',
       'GET /api/registry/validate-code',
+      'GET /api/uploads/{path}',
       'POST /api/admin/login',
       'POST /api/admin/setup',
       'POST /api/guest/address/public',
@@ -557,13 +561,13 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     }
   });
 
-  it('defines top-level domain tags and assigns declared tags across all 97 operations', () => {
+  it('defines top-level domain tags and assigns declared tags across all 98 operations', () => {
     expect(Array.isArray(openapi.tags)).toBe(true);
     expect((openapi.tags ?? []).length).toBeGreaterThanOrEqual(12);
 
     const declaredTags = new Set((openapi.tags ?? []).map((t) => t.name));
     const operations = getAllOperations();
-    expect(operations).toHaveLength(97);
+    expect(operations).toHaveLength(98);
 
     for (const { operation } of operations) {
       expect(Array.isArray(operation.tags)).toBe(true);

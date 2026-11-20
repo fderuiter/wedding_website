@@ -565,7 +565,7 @@ describe('invitationValidation shared helpers', () => {
           used: false,
           tableId: null,
           seatNumber: null,
-          extraFields: { meal: 'tofu' },
+          extraFields: { meal: 'tofu', attendanceStatus: 'pending' },
         },
         [
           {
@@ -586,7 +586,7 @@ describe('invitationValidation shared helpers', () => {
             usedAt: '2026-06-01T12:00:00.000Z',
             tableId: 'tbl-1',
             seatNumber: 3,
-            extraFields: { phone: '+15551112222', meal: 'chicken' },
+            extraFields: { phone: '+15551112222', meal: 'chicken', attendanceStatus: 'attending' },
           },
         ]
       );
@@ -607,7 +607,7 @@ describe('invitationValidation shared helpers', () => {
         used: true,
         tableId: 'tbl-1',
         seatNumber: 3,
-        extraFields: { phone: '+15551112222', meal: 'tofu' },
+        extraFields: { phone: '+15551112222', meal: 'tofu', attendanceStatus: 'attending' },
       });
     });
 

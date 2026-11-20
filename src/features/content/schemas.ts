@@ -552,6 +552,9 @@ export const PhotoDataSchema = z.object({
   url: z.string().refine(isSafeMediaOrPhotoUrl, { message: 'Invalid photo URL format' }).optional(),
   title: z.string().optional(),
   altText: z.string().optional(),
+  uploaderName: z.string().optional(),
+  caption: z.string().optional(),
+  originalFilename: z.string().optional(),
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional().default('PENDING'),
   isVisible: z.boolean().optional().default(false),
   mediaId: z.string().optional(),
@@ -660,8 +663,8 @@ export function isPrivateContentNode(
 
 export const AppConfigSchema = z.object({
   id: z.string().describe('Unique configuration profile identifier (defaults to "global" in single-site deployments).'),
-  subdomain: z.string().nullable().optional().describe('Optional tenant subdomain slug used when MULTISITE_ENABLED is active.'),
-  multisiteEnabled: z.boolean().optional().describe('Runtime flag resolved from MULTISITE_ENABLED indicating whether multi-profile routing is active.'),
+  subdomain: z.string().nullable().optional().describe('Optional subdomain slug for AppConfig branding/profile routing when MULTISITE_ENABLED is active (the other 14 Prisma tables remain shared).'),
+  multisiteEnabled: z.boolean().optional().describe('Runtime flag resolved from MULTISITE_ENABLED indicating whether subdomain AppConfig profile routing is active (14 other Prisma tables are shared).'),
   partner1Name: z.string().default('').describe('Primary display name for the first partner across headings, metadata, and monograms.'),
   partner2Name: z.string().default('').describe('Primary display name for the second partner across headings, metadata, and monograms.'),
   brideName: z.string().nullable().optional().describe('Legacy optional alias for the first partner name retained for backward compatibility.'),

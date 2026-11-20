@@ -6,6 +6,7 @@ export const BroadcastTargetFiltersSchema = z.object({
   attendanceStatus: z.enum(['attending', 'declined', 'pending', 'all']).optional(),
   status: z.enum(['redeemed', 'unused', 'all']).optional(),
   addressStatus: z.enum(['complete', 'missing', 'all']).optional(),
+  addressFilter: z.enum(['complete', 'missing', 'all']).optional(),
   dietaryCategory: z
     .enum([
       'all',
@@ -19,6 +20,7 @@ export const BroadcastTargetFiltersSchema = z.object({
     ])
     .or(z.string())
     .optional(),
+  dietaryFilter: z.string().optional(),
   partyGroup: z.string().optional(),
   subEventId: z.string().optional(),
   subEventRsvpStatus: z.string().optional(),

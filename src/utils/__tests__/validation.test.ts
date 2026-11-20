@@ -2,7 +2,9 @@ import {
   AdminEntityBatchUpdateSchema,
   AdminLoginSchema,
   GuestPhotoUploadSchema,
+  HEIC_EXTENSIONS,
   ScrapeUrlSchema,
+  isHeicExtension,
   safeUrlSchema,
   sanitizeUrl,
 } from '../validation';
@@ -42,14 +44,64 @@ describe('safeUrlSchema', () => {
 });
 
 describe('GuestPhotoUploadSchema', () => {
-  it('validates valid 10MB JPEG, PNG, and WebP files', () => {
+  it('validates valid 10MB JPEG, PNG, WebP, and HEIC/HEIF files', () => {
     const validPng = { size: 1024, type: 'image/png', name: 'photo.png' };
     const validJpeg = { size: 1024, type: 'image/jpeg', name: 'photo.jpg' };
     const validWebp = { size: 1024, type: 'image/webp', name: 'photo.webp' };
+    const validHeic = { size: 1024, type: 'image/heic', name: 'IMG_1234.HEIC' };
+    const validHeif = { size: 1024, type: 'image/heif', name: 'IMG_1235.heif' };
+    const emptyMimeHeic = { size: 1024, type: '', name: 'IMG_1236.heic' };
+    const octetStreamHeic = { size: 1024, type: 'application/octet-stream', name: 'IMG_1237.HEIF' };
+
+    expect(HEIC_EXTENSIONS).toEqual(['.heic', '.heif']);
+    expect(isHeicExtension('.heic')).toBe(true);
+    expect(isHeicExtension('.jpg')).toBe(false);
 
     expect(GuestPhotoUploadSchema.safeParse({ file: validPng }).success).toBe(true);
     expect(GuestPhotoUploadSchema.safeParse({ file: validJpeg }).success).toBe(true);
     expect(GuestPhotoUploadSchema.safeParse({ file: validWebp }).success).toBe(true);
+    expect(GuestPhotoUploadSchema.safeParse({ file: validHeic }).success).toBe(true);
+    expect(GuestPhotoUploadSchema.safeParse({ file: validHeif }).success).toBe(true);
+    expect(GuestPhotoUploadSchema.safeParse({ file: emptyMimeHeic }).success).toBe(true);
+    expect(GuestPhotoUploadSchema.safeParse({ file: octetStreamHeic }).success).toBe(true);
+  });
+
+  it('trims optional uploaderName and caption and enforces length limits', () => {
+    const validJpeg = { size: 1024, type: 'image/jpeg', name: 'photo.jpg' };
+
+    const parsed = GuestPhotoUploadSchema.safeParse({
+      file: validJpeg,
+      uploaderName: '  Aunt Clara  ',
+      caption: '  Sparkler send-off!  ',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.uploaderName).toBe('Aunt Clara');
+      expect(parsed.data.caption).toBe('Sparkler send-off!');
+    }
+
+    const blankOptional = GuestPhotoUploadSchema.safeParse({
+      file: validJpeg,
+      uploaderName: '   ',
+      caption: '',
+    });
+    expect(blankOptional.success).toBe(true);
+    if (blankOptional.success) {
+      expect(blankOptional.data.uploaderName).toBeUndefined();
+      expect(blankOptional.data.caption).toBeUndefined();
+    }
+
+    const longName = GuestPhotoUploadSchema.safeParse({
+      file: validJpeg,
+      uploaderName: 'a'.repeat(101),
+    });
+    expect(longName.success).toBe(false);
+
+    const longCaption = GuestPhotoUploadSchema.safeParse({
+      file: validJpeg,
+      caption: 'c'.repeat(501),
+    });
+    expect(longCaption.success).toBe(false);
   });
 
   it('validates batch uploads with array of 1 to 10 photos', () => {
@@ -97,7 +149,7 @@ describe('GuestPhotoUploadSchema', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0].message).toBe(
-        'Invalid file format. Only JPEG, PNG, and WebP images are allowed'
+        'Invalid file format. Only JPEG, PNG, WebP, and HEIC images are allowed'
       );
     }
   });

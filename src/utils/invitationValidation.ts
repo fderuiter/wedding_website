@@ -688,6 +688,14 @@ export function computeMergedInvitationPreview(
     if (ef && typeof ef === 'object' && !Array.isArray(ef)) {
       for (const [k, v] of Object.entries(ef)) {
         if (v !== null && v !== undefined && String(v).trim() !== '') {
+          if (
+            k === 'attendanceStatus' &&
+            String(v).trim().toLowerCase() === 'pending' &&
+            typeof mergedExtra.attendanceStatus === 'string' &&
+            mergedExtra.attendanceStatus.trim().toLowerCase() !== 'pending'
+          ) {
+            continue;
+          }
           mergedExtra[k] = v;
         }
       }

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
+import React, { useMemo, useState } from 'react';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
 import type { InvitationCodeDTO } from '@/features/registry';
@@ -88,18 +88,32 @@ function createInitialGuestFormState(guest: InvitationCodeDTO): GuestFormState {
   };
 }
 
+function isGuestFormDirty(current: GuestFormState, initial: GuestFormState): boolean {
+  return (Object.keys(initial) as Array<keyof GuestFormState>).some(
+    (key) => current[key] !== initial[key]
+  );
+}
+
 interface GuestEditorFormProps {
   guest: InvitationCodeDTO;
   onClose: () => void;
   onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+  onDirtyChange: (_isDirty: boolean) => void;
 }
 
-const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSave }) => {
-  const [formState, setFormState] = useState<GuestFormState>(() =>
-    createInitialGuestFormState(guest)
-  );
+const GuestEditorForm: React.FC<GuestEditorFormProps> = ({
+  guest,
+  onClose,
+  onSave,
+  onDirtyChange,
+}) => {
+  const initialFormState = useMemo(() => createInitialGuestFormState(guest), [guest]);
+  const [formState, setFormState] = useState<GuestFormState>(() => initialFormState);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const isDirty = isGuestFormDirty(formState, initialFormState);
+  const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
 
   const originalCodeNormalized = normalizeInvitationCode(guest.code);
   const enteredCodeNormalized = normalizeInvitationCode(formState.code);
@@ -107,7 +121,9 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
     Boolean(originalCodeNormalized) && enteredCodeNormalized !== originalCodeNormalized;
 
   const updateField = <K extends keyof GuestFormState>(field: K, value: GuestFormState[K]) => {
-    setFormState((prev) => ({ ...prev, [field]: value }));
+    const next = { ...formState, [field]: value };
+    setFormState(next);
+    onDirtyChange(isGuestFormDirty(next, initialFormState));
     if (validationError) setValidationError(null);
   };
 
@@ -431,7 +447,7 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
       </div>
 
       <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-zinc-800">
-        <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
+        <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
           Cancel
         </Button>
         <Button type="submit" variant="primary" disabled={isSaving}>
@@ -448,18 +464,32 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
   guest,
   onSave,
 }) => {
+  const [dirtyEntry, setDirtyEntry] = useState<{ guestId: string; isDirty: boolean }>({
+    guestId: '',
+    isDirty: false,
+  });
+
   if (!isOpen || !guest) return null;
+
+  const isDirty = dirtyEntry.guestId === guest.id && dirtyEntry.isDirty;
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
+      isDirty={isDirty}
       title="Edit Guest Details"
       description="Update guest profile, party grouping, dietary notes, or mailing address. Existing seating assignments and RSVP responses are preserved."
       className="max-w-2xl max-h-[90vh] flex flex-col"
       contentClassName="px-6 py-4 overflow-y-auto max-h-[75vh]"
     >
-      <GuestEditorForm key={guest.id} guest={guest} onClose={onClose} onSave={onSave} />
+      <GuestEditorForm
+        key={guest.id}
+        guest={guest}
+        onClose={onClose}
+        onSave={onSave}
+        onDirtyChange={(nextDirty) => setDirtyEntry({ guestId: guest.id, isDirty: nextDirty })}
+      />
     </Dialog>
   );
 };

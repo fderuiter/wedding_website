@@ -706,22 +706,35 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
         ],
       });
 
-      // Contributor gift linked to secondary
+      // Contributor gift linked to secondary (including #1103 transactional email timestamps)
+      const confirmationSentAt = new Date('2026-07-11T10:00:00.000Z');
+      const alertSentAt = new Date('2026-07-11T10:00:05.000Z');
       const gift = await realPrisma.contributor.create({
         data: {
           name: 'Sophia & Lucas',
           amount: 250,
           invitationCodeId: secondary.id,
+          confirmationEmailSentAt: confirmationSentAt,
+          alertEmailSentAt: alertSentAt,
         },
       });
 
-      // BroadcastRecipient linked to secondary
+      // BroadcastRecipient linked to secondary + future SCHEDULED BroadcastMessage targeting secondary
       const broadcast = await realPrisma.broadcastMessage.create({
         data: {
           channel: 'EMAIL',
           subject: 'Save the Date',
           body: 'See you in Miami!',
           status: 'SENT',
+        },
+      });
+      const scheduledBroadcast = await realPrisma.broadcastMessage.create({
+        data: {
+          channel: 'SMS',
+          body: 'Shuttle departs at 4pm!',
+          status: 'SCHEDULED',
+          scheduledFor: new Date('2027-06-01T16:00:00.000Z'),
+          targetFilters: { selectedIds: [secondary.id, primary.id] },
         },
       });
       const recipientLog = await realPrisma.broadcastRecipient.create({
@@ -790,9 +803,17 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
 
       // Child relations transferred without orphaned records or unique violations
       expect(reloadedPrimary!.contributors.map((c: { id: string }) => c.id)).toEqual([gift.id]);
+      expect(reloadedPrimary!.contributors[0].confirmationEmailSentAt).toEqual(confirmationSentAt);
+      expect(reloadedPrimary!.contributors[0].alertEmailSentAt).toEqual(alertSentAt);
       expect(reloadedPrimary!.broadcastRecipients.map((b: { id: string }) => b.id)).toEqual([
         recipientLog.id,
       ]);
+      const reloadedScheduled = await realPrisma.broadcastMessage.findUnique({
+        where: { id: scheduledBroadcast.id },
+      });
+      expect(reloadedScheduled!.targetFilters).toEqual({
+        selectedIds: [primary.id],
+      });
       expect(reloadedPrimary!.subEventAccesses).toHaveLength(2);
       expect(reloadedPrimary!.subEventRsvps).toHaveLength(2);
 

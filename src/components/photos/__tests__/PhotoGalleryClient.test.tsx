@@ -654,4 +654,66 @@ describe('PhotoGalleryClient', () => {
       expect(screen.getByTestId('lightbox-image')).toHaveAttribute('src', '/uploads/orig2.jpg');
     });
   });
+
+  describe('Guest Attribution and PublicPhotoItem Hydration', () => {
+    it('hydrates PublicPhotoItem guest uploads into the Guest Uploads tab and renders caption + uploaderName in grid and lightbox', () => {
+      render(
+        <PhotoGalleryClient
+          initialPhotos={[
+            {
+              id: 'curated-1',
+              url: '/uploads/curated-1.jpg',
+              title: 'Ceremony Vows',
+              isGuestUpload: false,
+            },
+            {
+              id: 'guest-1',
+              mediaId: 'media-guest-1',
+              url: '/uploads/photos/sparklers.jpg',
+              caption: 'Sparkler send-off!',
+              uploaderName: 'Aunt Clara',
+              isGuestUpload: true,
+            },
+          ]}
+        />
+      );
+
+      expect(screen.getByTestId('tab-curated')).toHaveTextContent('1');
+      expect(screen.getByTestId('tab-guest')).toHaveTextContent('1');
+
+      // Switch to Guest Uploads tab
+      fireEvent.click(screen.getByTestId('tab-guest'));
+      expect(screen.getByTestId('guest-photos-grid')).toBeInTheDocument();
+      expect(screen.getByText('Sparkler send-off!')).toBeInTheDocument();
+      expect(screen.getByTestId('guest-photo-uploader-0')).toHaveTextContent('Photo by Aunt Clara');
+
+      // Open lightbox and verify both caption and uploader attribution are shown
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByTestId('lightbox-caption')).toHaveTextContent('Sparkler send-off!');
+      expect(screen.getByTestId('lightbox-uploader')).toHaveTextContent('Photo by Aunt Clara');
+    });
+
+    it('avoids duplicate attribution text when guest photo has uploaderName without a custom caption', () => {
+      render(
+        <PhotoGalleryClient
+          initialPhotos={[
+            {
+              id: 'guest-2',
+              url: '/uploads/photos/toast.jpg',
+              uploaderName: 'Uncle Bob',
+              isGuestUpload: true,
+            },
+          ]}
+        />
+      );
+
+      expect(screen.getByTestId('guest-photos-grid')).toBeInTheDocument();
+      expect(screen.getByText('Photo by Uncle Bob')).toBeInTheDocument();
+      expect(screen.queryByTestId('guest-photo-uploader-0')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('photo-thumbnail-0'));
+      expect(screen.getByTestId('lightbox-caption')).toHaveTextContent('Photo by Uncle Bob');
+      expect(screen.queryByTestId('lightbox-uploader')).not.toBeInTheDocument();
+    });
+  });
 });

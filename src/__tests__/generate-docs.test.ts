@@ -193,20 +193,26 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 70 API route handlers and marks /api/media and /api/media/[id] as Admin-only', () => {
+    it('lists all 71 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **70**');
+      expect(apiSection).toContain('Total API route handlers: **71**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(70);
+      expect(handlerRows).toHaveLength(71);
 
       expect(apiSection).toContain('| `/api/admin/invitation-codes/merge` | `src/app/api/admin/invitation-codes/merge/route.ts` | `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media` | `src/app/api/media/route.ts` | `GET`, `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media/[id]` | `src/app/api/media/[id]/route.ts` | `PUT`, `DELETE` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media/export` | `src/app/api/media/export/route.ts` | `GET`, `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/cron/broadcasts` | `src/app/api/cron/broadcasts/route.ts` | `GET`, `POST` | `Bearer (CRON_SECRET)` |');
+      expect(apiSection).toContain(
+        '| `/api/registry/webhook/stripe` | `src/app/api/registry/webhook/stripe/route.ts` | `POST` | `stripeSignature (STRIPE_WEBHOOK_SECRET)` |'
+      );
+      expect(apiSection).toContain(
+        '| `/api/uploads/[...path]` | `src/app/api/uploads/[...path]/route.ts` | `GET`, `HEAD` | `Public` |'
+      );
     });
 
     it('generates non-empty environment specifications', () => {

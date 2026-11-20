@@ -1254,6 +1254,17 @@ export function CsvImportWizardModal({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
+      if (
+        state.step === 1 &&
+        !state.fileName &&
+        state.rawRows.length === 0 &&
+        state.editableRows.length === 0 &&
+        state.failedRows.length === 0 &&
+        !state.importSummary
+      ) {
+        window.sessionStorage.removeItem('csv_import_wizard_draft');
+        return;
+      }
       const {
         isValidating: _unusedValidating,
         validationSeq: _unusedValidationSeq,

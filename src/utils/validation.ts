@@ -5,6 +5,7 @@ import {
   FeatureSchema,
   GUEST_PHOTO_ACCEPTED_TYPES,
   GUEST_PHOTO_ALLOWED_EXTENSIONS,
+  HEIC_EXTENSIONS,
   MAX_GUEST_PHOTO_SIZE,
   MAX_UPLOAD_SIZE,
   MIME_TO_EXTENSIONS,
@@ -15,6 +16,7 @@ import {
   formatZodError,
   getFileExtension,
   getNormalizedExtension,
+  isHeicExtension,
   isSafeConfigAssetUrl,
   isSafeLocalPathUrl,
   isSafeMediaOrPhotoUrl,
@@ -28,6 +30,7 @@ export {
   ALLOWED_EXTENSIONS,
   GUEST_PHOTO_ACCEPTED_TYPES,
   GUEST_PHOTO_ALLOWED_EXTENSIONS,
+  HEIC_EXTENSIONS,
   MAX_GUEST_PHOTO_SIZE,
   MAX_UPLOAD_SIZE,
   MIME_TO_EXTENSIONS,
@@ -38,6 +41,7 @@ export {
   formatZodError,
   getFileExtension,
   getNormalizedExtension,
+  isHeicExtension,
   isSafeConfigAssetUrl,
   isSafeLocalPathUrl,
   isSafeMediaOrPhotoUrl,
@@ -119,35 +123,74 @@ export const GuestLookupSchema = z.object({
 export const SingleGuestPhotoSchema = z.any()
   .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
   .refine((file) => typeof file === 'object' && typeof file?.size === 'number' && file?.size <= MAX_GUEST_PHOTO_SIZE, { message: 'File size exceeds 10MB limit' })
-  .refine((file) => GUEST_PHOTO_ACCEPTED_TYPES.includes(file?.type), { message: 'Invalid file format. Only JPEG, PNG, and WebP images are allowed' })
+  .refine((file) => {
+    const ext = getFileExtension(file?.name);
+    const mime = typeof file?.type === 'string' ? file.type.toLowerCase() : '';
+    if (isHeicExtension(ext) && (mime === '' || mime === 'application/octet-stream')) {
+      return true;
+    }
+    return GUEST_PHOTO_ACCEPTED_TYPES.includes(mime);
+  }, { message: 'Invalid file format. Only JPEG, PNG, WebP, and HEIC images are allowed' })
   .refine((file) => {
     const ext = getFileExtension(file?.name);
     return GUEST_PHOTO_ALLOWED_EXTENSIONS.includes(ext);
-  }, { message: 'Invalid file extension. Only JPEG, PNG, and WebP images are allowed' })
+  }, { message: 'Invalid file extension. Only JPEG, PNG, WebP, and HEIC images are allowed' })
   .refine((file) => {
     const ext = getFileExtension(file?.name);
-    const allowedExts = MIME_TO_EXTENSIONS[file?.type] || [];
+    const mime = typeof file?.type === 'string' ? file.type.toLowerCase() : '';
+    if (isHeicExtension(ext) && (mime === '' || mime === 'application/octet-stream')) {
+      return true;
+    }
+    const allowedExts = MIME_TO_EXTENSIONS[mime] || [];
     return allowedExts.includes(ext);
   }, { message: 'File extension does not match the declared MIME type' });
+
+function normalizeOptionalGuestText(raw: unknown): unknown {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed === '' ? undefined : trimmed;
+  }
+  return raw;
+}
 
 export const GuestPhotoUploadSchema = z.preprocess(
   (val: any) => {
     if (!val) return { files: [] };
     if (Array.isArray(val)) return { files: val };
     if (typeof val === 'object') {
+      const uploaderName = normalizeOptionalGuestText(val.uploaderName);
+      const caption = normalizeOptionalGuestText(val.caption);
+      const metadata = {
+        ...(uploaderName !== undefined ? { uploaderName } : {}),
+        ...(caption !== undefined ? { caption } : {}),
+      };
       if (val.files !== undefined) {
-        return { files: Array.isArray(val.files) ? val.files : (val.files ? [val.files] : []) };
+        return {
+          files: Array.isArray(val.files) ? val.files : (val.files ? [val.files] : []),
+          ...metadata,
+        };
       }
       if (val.file !== undefined) {
-        return { files: val.file ? [val.file] : [] };
+        return {
+          files: val.file ? [val.file] : [],
+          ...metadata,
+        };
       }
+      return {
+        ...val,
+        uploaderName,
+        caption,
+      };
     }
     return val;
   },
   z.object({
     files: z.array(SingleGuestPhotoSchema)
       .min(1, 'No file provided')
-      .max(10, 'Maximum 10 photos allowed per upload')
+      .max(10, 'Maximum 10 photos allowed per upload'),
+    uploaderName: z.string().trim().max(100, 'Uploader name must be 100 characters or fewer').optional(),
+    caption: z.string().trim().max(500, 'Caption must be 500 characters or fewer').optional(),
   })
 );
 

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
@@ -9,12 +9,16 @@ import { MediaImage } from '@/components/MediaImage';
 import Dropzone from '@/components/Dropzone';
 import EmptyState from '@/components/EmptyState';
 import { Icon } from '@/components/ui/Icon';
+import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 
 interface PendingPhoto {
   id: string;
   mediaId?: string;
   url: string;
   title?: string;
+  uploaderName?: string;
+  caption?: string;
+  originalFilename?: string;
   createdAt: string | Date;
   status?: string;
   data?: any;
@@ -56,6 +60,7 @@ function MediaDashboardContent({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const { confirm } = useToast();
 
   const handleApprove = async (id: string) => {
     try {
@@ -70,6 +75,10 @@ function MediaDashboardContent({
   };
 
   const handleReject = async (id: string) => {
+    const confirmed = await confirm(
+      'Reject this photo? Rejecting permanently deletes the uploaded photo and cannot be undone.'
+    );
+    if (!confirmed) return;
     try {
       await apiClient.patch('/api/admin/photos/moderation', { id, action: 'reject' });
       setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
@@ -97,6 +106,10 @@ function MediaDashboardContent({
 
   const handleBatchReject = async (idsToReject: string[] = selectedPendingIds) => {
     if (idsToReject.length === 0) return;
+    const confirmed = await confirm(
+      `Reject ${idsToReject.length} selected photo(s)? Rejecting permanently deletes the uploaded photos and cannot be undone.`
+    );
+    if (!confirmed) return;
     try {
       await apiClient.post('/api/admin/photos/moderation/batch', { ids: idsToReject, action: 'reject' });
       setPendingPhotos((prev) => prev.filter((p) => !idsToReject.includes(p.id)));
@@ -147,7 +160,8 @@ function MediaDashboardContent({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this media? It may break references.')) return;
+    const confirmed = await confirm('Delete this media? It may break references.');
+    if (!confirmed) return;
     try {
       await apiClient.delete(`/api/media/${id}`);
       setSelectedIds(prev => prev.filter(i => i !== id));
@@ -358,7 +372,14 @@ function MediaDashboardContent({
                 {pendingPhotos.map((photo) => {
                   const photoData = photo.data || {};
                   const imageUrl = photo.url || photoData.url;
-                  const title = photo.title || photoData.title || photoData.altText || 'Guest Photo';
+                  const uploaderName = (photo.uploaderName || photoData.uploaderName)?.trim() || undefined;
+                  const caption = (photo.caption || photoData.caption)?.trim() || undefined;
+                  const title =
+                    caption ||
+                    photo.title ||
+                    photoData.title ||
+                    photoData.altText ||
+                    (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
                   const createdDate = photo.createdAt ? new Date(photo.createdAt).toLocaleString() : 'Recently';
                   const isSelected = selectedPendingIds.includes(photo.id);
 
@@ -392,9 +413,22 @@ function MediaDashboardContent({
                             Pending
                           </span>
                         </div>
-                        <div className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate mb-1" title={title}>
+                        <div
+                          className="text-sm font-semibold text-stone-800 dark:text-stone-200 line-clamp-2 mb-1"
+                          title={title}
+                          data-testid={`pending-photo-title-${photo.id}`}
+                        >
                           {title}
                         </div>
+                        {uploaderName && (
+                          <div
+                            className="text-xs font-medium text-stone-700 dark:text-stone-300 mb-1 flex items-center gap-1"
+                            data-testid={`pending-photo-uploader-${photo.id}`}
+                          >
+                            <Icon name="Users" className="w-3 h-3 text-stone-500 dark:text-stone-400 shrink-0" />
+                            <span className="truncate">Uploaded by {uploaderName}</span>
+                          </div>
+                        )}
                         <div className="text-xs text-stone-500 dark:text-stone-400 mb-4 flex items-center gap-1">
                           <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
                           <span>Submitted {createdDate}</span>
@@ -727,28 +761,33 @@ export default function MediaDashboardPage() {
     await Promise.all([fetchMedia(page), fetchPendingPhotos()]);
   };
 
+  const ToastBoundary =
+    typeof EnsureToastProvider === 'function' ? EnsureToastProvider : Fragment;
+
   return (
-    <AdminViewState
-      isLoading={loading}
-      error={error}
-      onRetry={handleRetry}
-      loadingMessage="Loading media library..."
-    >
-      <MediaDashboardContent
-        media={media}
-        loading={loading}
-        page={page}
-        totalPages={totalPages}
-        total={total}
-        setPage={handleSetPage}
-        pendingPhotos={pendingPhotos}
-        setPendingPhotos={setPendingPhotos}
-        drawerOpen={drawerOpen}
-        setDrawerOpen={setDrawerOpen}
-        a11yNotice={a11yNotice}
-        setA11yNotice={setA11yNotice}
-        fetchMedia={fetchMedia}
-      />
-    </AdminViewState>
+    <ToastBoundary>
+      <AdminViewState
+        isLoading={loading}
+        error={error}
+        onRetry={handleRetry}
+        loadingMessage="Loading media library..."
+      >
+        <MediaDashboardContent
+          media={media}
+          loading={loading}
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          setPage={handleSetPage}
+          pendingPhotos={pendingPhotos}
+          setPendingPhotos={setPendingPhotos}
+          drawerOpen={drawerOpen}
+          setDrawerOpen={setDrawerOpen}
+          a11yNotice={a11yNotice}
+          setA11yNotice={setA11yNotice}
+          fetchMedia={fetchMedia}
+        />
+      </AdminViewState>
+    </ToastBoundary>
   );
 }

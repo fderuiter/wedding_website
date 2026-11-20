@@ -50,6 +50,10 @@
       "description": "Event schedule retrieval and iCalendar (.ics) download endpoints"
     },
     {
+      "name": "Uploads",
+      "description": "Dynamic streaming endpoints for locally stored uploaded media assets in standalone mode"
+    },
+    {
       "name": "Weather",
       "description": "Venue weather forecast proxy endpoints"
     }
@@ -450,6 +454,15 @@
                                 "type": "string"
                               },
                               "altText": {
+                                "type": "string"
+                              },
+                              "uploaderName": {
+                                "type": "string"
+                              },
+                              "caption": {
+                                "type": "string"
+                              },
+                              "originalFilename": {
                                 "type": "string"
                               },
                               "status": {
@@ -1066,6 +1079,30 @@
                               "type": "string"
                             },
                             "transactionTimestamp": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "confirmationEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "alertEmailSentAt": {
                               "nullable": true,
                               "anyOf": [
                                 {
@@ -2204,6 +2241,15 @@
                               "altText": {
                                 "type": "string"
                               },
+                              "uploaderName": {
+                                "type": "string"
+                              },
+                              "caption": {
+                                "type": "string"
+                              },
+                              "originalFilename": {
+                                "type": "string"
+                              },
                               "status": {
                                 "default": "PENDING",
                                 "type": "string",
@@ -3324,6 +3370,14 @@
                           "all"
                         ]
                       },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
                       "dietaryCategory": {
                         "anyOf": [
                           {
@@ -3343,6 +3397,9 @@
                             "type": "string"
                           }
                         ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
                       },
                       "partyGroup": {
                         "type": "string"
@@ -3523,6 +3580,14 @@
                           "all"
                         ]
                       },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
                       "dietaryCategory": {
                         "anyOf": [
                           {
@@ -3542,6 +3607,9 @@
                             "type": "string"
                           }
                         ]
+                      },
+                      "dietaryFilter": {
+                        "type": "string"
                       },
                       "partyGroup": {
                         "type": "string"
@@ -6201,6 +6269,16 @@
                           "maxLength": 255
                         },
                         "transactionTimestamp": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "confirmationEmailSentAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "alertEmailSentAt": {
                           "nullable": true,
                           "type": "string",
                           "format": "date-time"
@@ -9762,6 +9840,14 @@
                       "type": "string",
                       "format": "binary"
                     }
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [
@@ -10214,6 +10300,14 @@
                       "type": "string",
                       "format": "binary"
                     }
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [
@@ -11759,6 +11853,30 @@
           },
           {
             "adminCookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/uploads/{path}": {
+      "get": {
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "GET /api/uploads/[...path]",
+        "description": "Streams locally stored uploaded files dynamically at /uploads/* in standalone server mode.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

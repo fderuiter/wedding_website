@@ -219,6 +219,7 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
           'SITE_PARTNER1_NAME',
           'SITE_CONTACT_EMAIL',
           'E2E_TEST',
+          'HOSTNAME',
           'PORT',
           'STATIC_EXPORT',
           'NEXT_PUBLIC_BASE_PATH',
@@ -349,6 +350,7 @@ describe('AST-Based Environment Documentation Validation Parser', () => {
         '| `DATABASE_URL` | Yes |',
         '| `ADMIN_PASSWORD` | Yes |',
         '| `ALLOWED_HOSTS` | No |',
+        '| `HOSTNAME` | No |',
         '| `PORT` | No |',
       ].join('\n');
       expect(validateEnvDocContent('docs/deployment/docker-vps.md', validWithPort, coreKeys)).toEqual([]);

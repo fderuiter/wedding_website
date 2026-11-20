@@ -977,11 +977,48 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         });
       }
 
-      // 4. Transfer BroadcastRecipient delivery logs
+      // 4. Transfer BroadcastRecipient delivery logs & rewrite scheduled BroadcastMessage selectedIds
       const broadcastResult = await tx.broadcastRecipient.updateMany({
         where: { invitationCodeId: { in: trimmedSecondaries } },
         data: { invitationCodeId: cleanPrimaryId },
       });
+
+      if (typeof tx.broadcastMessage?.findMany === 'function') {
+        const scheduledBroadcasts = await tx.broadcastMessage.findMany({
+          where: { status: { in: ['PENDING', 'SCHEDULED'] } },
+          select: { id: true, targetFilters: true },
+        });
+        const secondaryIdSet = new Set(trimmedSecondaries);
+        for (const bm of scheduledBroadcasts) {
+          const tf = bm.targetFilters;
+          if (tf && typeof tf === 'object' && !Array.isArray(tf)) {
+            const tfRecord = tf as Record<string, unknown>;
+            if (Array.isArray(tfRecord.selectedIds)) {
+              let changed = false;
+              const rewrittenIds: string[] = [];
+              for (const rawId of tfRecord.selectedIds) {
+                if (typeof rawId !== 'string') continue;
+                const mappedId = secondaryIdSet.has(rawId) ? cleanPrimaryId : rawId;
+                if (mappedId !== rawId) changed = true;
+                if (!rewrittenIds.includes(mappedId)) {
+                  rewrittenIds.push(mappedId);
+                }
+              }
+              if (changed) {
+                await tx.broadcastMessage.update({
+                  where: { id: bm.id },
+                  data: {
+                    targetFilters: {
+                      ...tfRecord,
+                      selectedIds: rewrittenIds,
+                    } as Prisma.InputJsonValue,
+                  },
+                });
+              }
+            }
+          }
+        }
+      }
 
       // 5. Consolidate profile & seating fields onto primary InvitationCode
       const updatedPrimary = await tx.invitationCode.update({

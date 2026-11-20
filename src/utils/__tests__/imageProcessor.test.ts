@@ -1,6 +1,12 @@
 import sharp from 'sharp';
 import { sanitizeImage } from '../imageProcessor';
-import { processImageWorkerBuffer } from '../imageProcessorWorker';
+import { isHeicBuffer, processImageWorkerBuffer } from '../imageProcessorWorker';
+
+// Real 16x16 HEIC (ISOBMFF ftyp=heic, HEVC primary frame)
+const VALID_HEIC_BUFFER = Buffer.from(
+  'AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAXxtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAACJpbG9jAAAAAERAAAEAAQAAAAABoAABAAAAAAAAADUAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRtAAAAAAABAAAA/GlwcnAAAADcaXBjbwAAAHVodmNDAQNwAAAAkAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMAAAMAHroCQGEAAQApQgEBA3AAAAMAkAAAAwAAAwAeoCCBBZbqrprm4CGgwIAAAAyAAAADAIRiAAEABkQBwXPBiQAAABNjb2xybmNseAABAA0ABoAAAAAUaXNwZQAAAAAAAABAAAAAQAAAAChjbGFwAAAAEAAAAAEAAAAQAAAAAf///9AAAAAC////0AAAAAIAAAAQcGl4aQAAAAADCAgIAAAAGGlwbWEAAAAAAAAAAQABBYECAwWEAAAAPW1kYXQAAAAxKAGvBPIWZzRxZNLf+Cv///V4+y/SYUEm1Qjs/VLEYCa/deugZMTNE6ls0CgrqKdepg==',
+  'base64'
+);
 
 // Helper to create a File object with polyfilled arrayBuffer() for environments where it is missing (like Jest's JSDOM/Node environment).
 function createTestFile(buffer: Uint8Array, name: string, type: string): File {
@@ -138,6 +144,38 @@ describe('imageProcessor - sanitizeImage', () => {
     const originalFile = createTestFile(corruptBytes, 'photo.jpg', 'image/jpeg');
 
     await expect(sanitizeImage(originalFile)).rejects.toThrow('Image sanitization failed');
+  });
+
+  it('should transcode HEIC files (including empty MIME type) into EXIF-stripped JPEG files with .jpg extension', async () => {
+    expect(isHeicBuffer(VALID_HEIC_BUFFER)).toBe(true);
+    expect(isHeicBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(false);
+
+    const heicFile = createTestFile(new Uint8Array(VALID_HEIC_BUFFER), 'IMG_1234.HEIC', 'image/heic');
+    const sanitizedFile = await sanitizeImage(heicFile);
+
+    expect(sanitizedFile.name).toBe('IMG_1234.jpg');
+    expect(sanitizedFile.type).toBe('image/jpeg');
+
+    const sanitizedBuffer = Buffer.from(await getFileArrayBuffer(sanitizedFile));
+    const sanitizedMeta = await sharp(sanitizedBuffer).metadata();
+    expect(sanitizedMeta.format).toBe('jpeg');
+    expect(sanitizedMeta.width).toBe(16);
+    expect(sanitizedMeta.height).toBe(16);
+    expect(sanitizedMeta.exif).toBeUndefined();
+
+    // Empty MIME type fallback (common on iOS Safari / desktop drag-and-drop)
+    const emptyMimeHeicFile = createTestFile(new Uint8Array(VALID_HEIC_BUFFER), 'IMG_9999.heif', '');
+    const sanitizedEmptyMime = await sanitizeImage(emptyMimeHeicFile);
+    expect(sanitizedEmptyMime.name).toBe('IMG_9999.jpg');
+    expect(sanitizedEmptyMime.type).toBe('image/jpeg');
+  });
+
+  it('should throw an error when a corrupt or spoofed HEIC file is passed', async () => {
+    const spoofedHeic = createTestFile(new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63, 1, 2, 3, 4]), 'corrupt.heic', 'image/heic');
+    await expect(sanitizeImage(spoofedHeic)).rejects.toThrow('Image sanitization failed');
+
+    const nonHeicMagicWithHeicExt = createTestFile(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'spoof.heic', '');
+    await expect(sanitizeImage(nonHeicMagicWithHeicExt)).rejects.toThrow('Image sanitization failed');
   });
 
   describe('imageProcessorWorker module', () => {

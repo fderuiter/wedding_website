@@ -525,6 +525,17 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.headers.get('location')).toContain('callbackUrl=%2F');
     });
 
+    it('preserves code parameter across /guest/login redirects and strips code from callbackUrl', async () => {
+      const req = new NextRequest('http://localhost/schedule?tab=dinner&code=LOVE2026');
+      const res = await middleware(req);
+      expect(res.status).toBe(303);
+      const location = res.headers.get('location')!;
+      const redirectUrl = new URL(location);
+      expect(redirectUrl.pathname).toBe('/guest/login');
+      expect(redirectUrl.searchParams.get('code')).toBe('LOVE2026');
+      expect(redirectUrl.searchParams.get('callbackUrl')).toBe('/schedule?tab=dinner');
+    });
+
     it('returns immediate 401 for unauthenticated API requests instead of redirect', async () => {
       const req = new NextRequest('http://localhost/api/weather');
       const res = await middleware(req);

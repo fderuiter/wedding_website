@@ -889,5 +889,55 @@ describe('InvitationCodeAdminService', () => {
         'Validation Error: Secondary guest record "missing-2" not found.'
       );
     });
+
+    it('rewrites secondary guest IDs inside PENDING/SCHEDULED BroadcastMessage targetFilters.selectedIds', async () => {
+      const broadcastUpdateMock = jest.fn().mockResolvedValue({});
+      const txMock = {
+        ...mockPrismaClient,
+        contributor: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        subEventAccess: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+          updateMany: jest.fn(),
+        },
+        subEventRsvp: {
+          findMany: jest.fn().mockResolvedValue([]),
+          update: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+        broadcastRecipient: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        broadcastMessage: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'bm-1',
+              targetFilters: { selectedIds: ['sec-1', 'pri-1', 'other-9'], partyGroup: 'Bride' },
+            },
+          ]),
+          update: broadcastUpdateMock,
+        },
+        invitationCode: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'pri-1', code: 'PRI1', guestName: 'Alice', partyTags: [] },
+            { id: 'sec-1', code: 'SEC1', guestName: 'Alice S', partyTags: [] },
+          ]),
+          update: jest.fn().mockResolvedValue({ id: 'pri-1', code: 'PRI1', guestName: 'Alice' }),
+          deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        snapshotVersion: { create: jest.fn().mockResolvedValue({}) },
+      };
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(txMock));
+
+      await service.mergeDuplicates('pri-1', ['sec-1'], 'Admin');
+
+      expect(broadcastUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'bm-1' },
+        data: {
+          targetFilters: {
+            selectedIds: ['pri-1', 'other-9'],
+            partyGroup: 'Bride',
+          },
+        },
+      });
+    });
   });
 });
