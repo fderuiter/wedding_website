@@ -6,7 +6,9 @@ import {
   getZodType,
   getZodDescription,
   escapeMarkdownTableCell,
+  encodeRouteMermaidNodeId,
   generateConfigTable,
+  generateRoutesDiagram,
   generateApiRoutesSection,
   generateEnvSpecs,
   generateFeatureMetadataTable,
@@ -216,6 +218,63 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
 
     it('generates non-empty environment specifications', () => {
       expect(generateEnvSpecs()).toContain('**Node.js**: v22.x');
+    });
+
+    it('encodes bracketed, hyphenated, and catch-all route segments into distinct collision-free Mermaid node IDs', () => {
+      const candidates = [
+        'id',
+        '[id]',
+        'export-labels',
+        'exportlabels',
+        'export_labels',
+        'export/labels',
+        'path',
+        '[...path]',
+        '...path',
+        'api/admin/[entity]/[id]',
+        'api/admin/entity/id',
+      ];
+
+      const encodedIds = candidates.map((rel) => encodeRouteMermaidNodeId(rel));
+      expect(new Set(encodedIds).size).toBe(candidates.length);
+      for (const id of encodedIds) {
+        expect(id).toMatch(/^node_[A-Za-z0-9_]+$/);
+      }
+
+      const tmpAppDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routes-diagram-'));
+      try {
+        const routeDirs = [
+          'items/id',
+          'items/[id]',
+          'notes/export-labels',
+          'notes/exportlabels',
+          'uploads/[...path]',
+          'uploads/path',
+        ];
+        for (const rel of routeDirs) {
+          const full = path.join(tmpAppDir, rel);
+          fs.mkdirSync(full, { recursive: true });
+          fs.writeFileSync(path.join(full, 'route.ts'), 'export async function GET() {}\n', 'utf8');
+        }
+
+        const diagram = generateRoutesDiagram(tmpAppDir);
+        const idNodeLines = diagram
+          .split('\n')
+          .filter((line) => line.includes('["id"]') || line.includes('["[id]"]'));
+        expect(idNodeLines).toHaveLength(2);
+
+        const exportLines = diagram
+          .split('\n')
+          .filter((line) => line.includes('["export-labels"]') || line.includes('["exportlabels"]'));
+        expect(exportLines).toHaveLength(2);
+
+        const uploadLines = diagram
+          .split('\n')
+          .filter((line) => line.includes('["[...path]"]') || line.includes('["path"]'));
+        expect(uploadLines).toHaveLength(2);
+      } finally {
+        fs.rmSync(tmpAppDir, { recursive: true, force: true });
+      }
     });
 
     it('escapes both backslashes and pipe characters in Markdown table cells', () => {

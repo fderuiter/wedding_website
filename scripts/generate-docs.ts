@@ -316,8 +316,38 @@ function buildRouteTree(srcPath: string, relativePath: string = ''): RouteNode |
   return null;
 }
 
-export function generateRoutesDiagram(): string {
-  const srcAppPath = path.join(ROOT_DIR, 'src/app');
+const MERMAID_CHAR_TOKENS: Record<string, string> = {
+  '/': '__',
+  '-': '_d_',
+  '_': '_u_',
+  '[': '_lb_',
+  ']': '_rb_',
+  '.': '_p_',
+  '(': '_lp_',
+  ')': '_rp_',
+  '@': '_at_',
+};
+
+export function encodeRouteMermaidNodeId(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!normalized) {
+    return 'App';
+  }
+
+  let encoded = 'node_';
+  for (const ch of normalized) {
+    if (/[A-Za-z0-9]/.test(ch)) {
+      encoded += ch;
+    } else if (Object.prototype.hasOwnProperty.call(MERMAID_CHAR_TOKENS, ch)) {
+      encoded += MERMAID_CHAR_TOKENS[ch];
+    } else {
+      encoded += `_x${ch.codePointAt(0)!.toString(16)}_`;
+    }
+  }
+  return encoded;
+}
+
+export function generateRoutesDiagram(srcAppPath: string = path.join(ROOT_DIR, 'src/app')): string {
   const tree = buildRouteTree(srcAppPath);
 
   let treeMarkdown = '```mermaid\nflowchart LR\n';
@@ -339,7 +369,7 @@ export function generateRoutesDiagram(): string {
       id = 'App';
       displayName = 'src/app';
     } else {
-      id = 'node_' + node.relativePath.replace(/\\/g, '/').split('/').join('_').replace(/\[|\]|\.|-/g, '');
+      id = encodeRouteMermaidNodeId(node.relativePath);
     }
 
     let type: 'page' | 'api' | 'none' = 'none';
