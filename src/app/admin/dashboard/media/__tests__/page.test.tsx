@@ -454,4 +454,41 @@ describe('MediaDashboardPage', () => {
 
     consoleSpy.mockRestore();
   });
+
+  it('displays guest caption and uploader attribution on pending moderation cards', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/admin/photos/moderation')) {
+        return {
+          photos: [
+            {
+              id: 'pending-node-1',
+              createdAt: '2026-06-20T21:15:00.000Z',
+              data: {
+                url: '/uploads/photos/sparklers.jpg',
+                title: 'Sparkler exit!',
+                caption: 'Sparkler exit!',
+                uploaderName: 'Aunt Clara',
+                originalFilename: 'IMG_1234.HEIC',
+                status: 'PENDING',
+              },
+            },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pending-count-badge')).toHaveTextContent('1');
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-moderation-drawer'));
+
+    expect(screen.getByTestId('pending-photo-card-pending-node-1')).toBeInTheDocument();
+    expect(screen.getByTestId('pending-photo-title-pending-node-1')).toHaveTextContent('Sparkler exit!');
+    expect(screen.getByTestId('pending-photo-uploader-pending-node-1')).toHaveTextContent('Uploaded by Aunt Clara');
+    expect(screen.queryByText('IMG_1234.HEIC')).not.toBeInTheDocument();
+  });
 });

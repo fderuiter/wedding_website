@@ -456,6 +456,15 @@
                               "altText": {
                                 "type": "string"
                               },
+                              "uploaderName": {
+                                "type": "string"
+                              },
+                              "caption": {
+                                "type": "string"
+                              },
+                              "originalFilename": {
+                                "type": "string"
+                              },
                               "status": {
                                 "default": "PENDING",
                                 "type": "string",
@@ -2230,6 +2239,15 @@
                                 "type": "string"
                               },
                               "altText": {
+                                "type": "string"
+                              },
+                              "uploaderName": {
+                                "type": "string"
+                              },
+                              "caption": {
+                                "type": "string"
+                              },
+                              "originalFilename": {
                                 "type": "string"
                               },
                               "status": {
@@ -9774,6 +9792,14 @@
                       "type": "string",
                       "format": "binary"
                     }
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [
@@ -10226,6 +10252,14 @@
                       "type": "string",
                       "format": "binary"
                     }
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
                   }
                 },
                 "required": [

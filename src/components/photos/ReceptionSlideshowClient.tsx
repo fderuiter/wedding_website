@@ -10,6 +10,8 @@ export interface SlideshowPhoto {
   url: string;
   title?: string;
   altText?: string;
+  caption?: string;
+  uploaderName?: string;
   isGuestUpload?: boolean;
   createdAt?: string;
 }
@@ -264,8 +266,10 @@ export function ReceptionSlideshowClient({
             .map((p: SlideshowPhoto) => ({
               id: p.id,
               url: p.url,
-              title: p.title || p.altText || 'Reception Photo',
-              altText: p.altText || p.title,
+              title: p.caption || p.title || p.altText || (p.uploaderName ? `Photo by ${p.uploaderName}` : 'Reception Photo'),
+              altText: p.altText || p.caption || p.title,
+              ...(p.caption ? { caption: p.caption } : {}),
+              ...(p.uploaderName ? { uploaderName: p.uploaderName } : {}),
               isGuestUpload: Boolean(p.isGuestUpload),
               createdAt: p.createdAt,
             }));
@@ -369,6 +373,14 @@ export function ReceptionSlideshowClient({
 
   const safeIndex = photos.length > 0 ? currentIndex % photos.length : 0;
   const activePhoto = photos.length > 0 ? (photos[safeIndex] || photos[0]) : null;
+  const activeHeadline =
+    activePhoto?.caption ||
+    activePhoto?.title ||
+    (activePhoto?.uploaderName ? `Photo by ${activePhoto.uploaderName}` : undefined);
+  const activeAttribution =
+    activePhoto?.uploaderName && activeHeadline !== `Photo by ${activePhoto.uploaderName}`
+      ? `Shared by ${activePhoto.uploaderName}`
+      : undefined;
   const shouldShowControls = areControlsVisible || !isPlaying;
 
   return (
@@ -389,7 +401,8 @@ export function ReceptionSlideshowClient({
         aria-atomic="true"
         data-testid="slideshow-live-region"
       >
-        Photo {photos.length > 0 ? safeIndex + 1 : 0} of {photos.length}: {activePhoto?.title || 'Wedding Photo'}
+        Photo {photos.length > 0 ? safeIndex + 1 : 0} of {photos.length}: {activeHeadline || 'Wedding Photo'}
+        {activeAttribution ? ` (${activeAttribution})` : ''}
       </div>
 
       {/* Ambient Blurred Background of Current Photo */}
@@ -460,13 +473,23 @@ export function ReceptionSlideshowClient({
               data-testid="slideshow-image"
               onError={() => handlePhotoError(activePhoto.url)}
             />
-            {activePhoto.title && (
-              <p
-                className="mt-3 px-4 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-sm md:text-base font-medium text-stone-100 drop-shadow text-center"
-                data-testid="slideshow-photo-title"
-              >
-                {activePhoto.title}
-              </p>
+            {activeHeadline && (
+              <div className="mt-3 px-4 py-1.5 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 text-center max-w-2xl">
+                <p
+                  className="text-sm md:text-base font-medium text-stone-100 drop-shadow"
+                  data-testid="slideshow-photo-title"
+                >
+                  {activeHeadline}
+                </p>
+                {activeAttribution && (
+                  <p
+                    className="text-xs md:text-sm text-stone-300 mt-0.5"
+                    data-testid="slideshow-photo-attribution"
+                  >
+                    {activeAttribution}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         ) : (

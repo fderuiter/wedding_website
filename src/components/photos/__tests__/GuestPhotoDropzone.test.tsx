@@ -18,7 +18,9 @@ describe('GuestPhotoDropzone', () => {
     render(<GuestPhotoDropzone />);
 
     expect(screen.getByText('Share Your Wedding Photos')).toBeInTheDocument();
-    expect(screen.getByText(/Supports JPEG, PNG, and WebP/i)).toBeInTheDocument();
+    expect(screen.getByText(/Supports JPEG, PNG, WebP, and HEIC/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Your Name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Caption or Note/i)).toBeInTheDocument();
     expect(screen.getByTestId('guest-photo-dropzone')).toBeInTheDocument();
     const fileInput = screen.getByLabelText('Upload wedding photos');
     expect(fileInput).toBeInTheDocument();
@@ -435,5 +437,57 @@ describe('GuestPhotoDropzone', () => {
     });
 
     abortSpy.mockRestore();
+  });
+
+  it('accepts iPhone HEIC files with empty MIME type and sends trimmed uploaderName and caption in FormData', async () => {
+    let submittedFormData: FormData | undefined;
+    (global.fetch as jest.Mock).mockImplementationOnce(async (_url, options) => {
+      submittedFormData = options?.body as FormData;
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [
+            {
+              id: 'media-heic-1',
+              nodeId: 'node-heic-1',
+              url: '/uploads/photos/IMG_1234.jpg',
+              title: 'Sparkler exit!',
+              uploaderName: 'Aunt Clara',
+              caption: 'Sparkler exit!',
+              status: 'PENDING',
+              isVisible: false,
+            },
+          ],
+        }),
+      };
+    });
+
+    render(<GuestPhotoDropzone />);
+
+    fireEvent.change(screen.getByTestId('guest-photo-uploader-name'), {
+      target: { value: '  Aunt Clara  ' },
+    });
+    fireEvent.change(screen.getByTestId('guest-photo-caption'), {
+      target: { value: '  Sparkler exit!  ' },
+    });
+
+    const heicFile = new File(['heic-bytes'], 'IMG_1234.HEIC', { type: '' });
+    fireEvent.change(screen.getByTestId('guest-photo-file-input'), {
+      target: { files: [heicFile] },
+    });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    expect(submittedFormData).toBeInstanceOf(FormData);
+    expect((submittedFormData?.get('file') as File)?.name).toBe('IMG_1234.HEIC');
+    expect(submittedFormData?.get('uploaderName')).toBe('Aunt Clara');
+    expect(submittedFormData?.get('caption')).toBe('Sparkler exit!');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-pending-notice')).toBeInTheDocument();
+    });
   });
 });
