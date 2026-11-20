@@ -26,6 +26,7 @@ export {
   ContentNodeSchema,
   ContentNodeInputSchema,
   ContentNodeUpdateInputSchema,
+  isPrivateContentNode,
 } from './schemas';
 export { ContentService, contentService } from './service';
 export { ContentRepository, contentRepository } from './repository';

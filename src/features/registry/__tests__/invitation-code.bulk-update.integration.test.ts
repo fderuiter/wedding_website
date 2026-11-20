@@ -331,4 +331,201 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
     expect(reloaded!.contributors).toHaveLength(1);
     expect(reloaded!.contributors[0].amount).toBe(150);
   });
+
+  describe('batchUpdateTags SQL Integration', () => {
+    const cleanPrisma = new PrismaClient({ adapter });
+
+    beforeEach(() => {
+      service.repo.client = cleanPrisma;
+    });
+
+    afterAll(async () => {
+      await cleanPrisma.$disconnect();
+      const { prisma } = await import('@/lib/prisma');
+      await prisma.$disconnect();
+    });
+
+    it('updates partyTags across 120 guests in one SQL UPDATE while preserving other columns and writing per-guest snapshots', async () => {
+      const seedData = Array.from({ length: 120 }, (_, i) => {
+        const idx = String(i + 1).padStart(3, '0');
+        return {
+          code: `BULKTAG${idx}`,
+          guestName: `Bulk Guest ${idx}`,
+          email: `guest${idx}@example.com`,
+          city: 'Seattle',
+          used: i % 3 === 0,
+          partyTags: i % 2 === 0 ? ['Family'] : ['Friends'],
+          extraFields: { seatNote: `note-${idx}` },
+        };
+      });
+      await cleanPrisma.invitationCode.createMany({ data: seedData });
+
+      const seededRows = await cleanPrisma.invitationCode.findMany({
+        orderBy: { code: 'asc' },
+      });
+      expect(seededRows).toHaveLength(120);
+      const allIds = seededRows.map((r: { id: string }) => r.id);
+
+      let executeRawCalls = 0;
+      service.repo.client = new Proxy(cleanPrisma, {
+        get(target, prop, receiver) {
+          if (prop === '$transaction') {
+            return (fn: any, options?: any) =>
+              target.$transaction((tx: any) => {
+                const wrappedTx = new Proxy(tx, {
+                  get(txTarget, txProp, txReceiver) {
+                    if (txProp === '$executeRaw') {
+                      return (...args: any[]) => {
+                        executeRawCalls++;
+                        return txTarget.$executeRaw(...args);
+                      };
+                    }
+                    return Reflect.get(txTarget, txProp, txReceiver);
+                  },
+                });
+                return fn(wrappedTx);
+              }, options);
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      const updatedAdd = await service.batchUpdateTags(
+        [...allIds, allIds[0]],
+        [' VIP ', 'Rehearsal', 'VIP'],
+        'add',
+        'TagAdmin'
+      );
+
+      expect(executeRawCalls).toBe(1);
+      expect(updatedAdd).toHaveLength(120);
+
+      const reloadedAfterAdd = await cleanPrisma.invitationCode.findMany({
+        orderBy: { code: 'asc' },
+      });
+      expect(reloadedAfterAdd[0].partyTags).toEqual(['Family', 'VIP', 'Rehearsal']);
+      expect(reloadedAfterAdd[1].partyTags).toEqual(['Friends', 'VIP', 'Rehearsal']);
+      expect(reloadedAfterAdd[0].email).toBe('guest001@example.com');
+      expect(reloadedAfterAdd[0].city).toBe('Seattle');
+      expect(reloadedAfterAdd[0].used).toBe(true);
+      expect(reloadedAfterAdd[0].extraFields).toEqual({ seatNote: 'note-001' });
+
+      const snapshotsAfterAdd = await cleanPrisma.snapshotVersion.findMany({
+        where: { entityType: 'InvitationCode' },
+      });
+      expect(snapshotsAfterAdd).toHaveLength(120);
+      expect(
+        snapshotsAfterAdd.every((s: { entityId: string }) => s.entityId !== 'batch_update_tags')
+      ).toBe(true);
+
+      // Remove a tag across all 120 guests in a single SQL UPDATE
+      executeRawCalls = 0;
+      await service.batchUpdateTags(allIds, ['Rehearsal'], 'remove', 'TagAdmin');
+      expect(executeRawCalls).toBe(1);
+
+      const sampleAfterRemove = await cleanPrisma.invitationCode.findUnique({
+        where: { code: 'BULKTAG001' },
+      });
+      expect(sampleAfterRemove!.partyTags).toEqual(['Family', 'VIP']);
+
+      // Replace with empty array to clear tags on first 10 guests
+      executeRawCalls = 0;
+      await service.batchUpdateTags(allIds.slice(0, 10), [], 'replace', 'TagAdmin');
+      expect(executeRawCalls).toBe(1);
+
+      const clearedSample = await cleanPrisma.invitationCode.findUnique({
+        where: { code: 'BULKTAG001' },
+      });
+      const untouchedSample = await cleanPrisma.invitationCode.findUnique({
+        where: { code: 'BULKTAG011' },
+      });
+      expect(clearedSample!.partyTags).toEqual([]);
+      expect(untouchedSample!.partyTags).toEqual(['Family', 'VIP']);
+    });
+
+    it('returns empty array and skips SQL UPDATE and snapshots when zero rows match', async () => {
+      let executeRawCalls = 0;
+      service.repo.client = new Proxy(cleanPrisma, {
+        get(target, prop, receiver) {
+          if (prop === '$transaction') {
+            return (fn: any, options?: any) =>
+              target.$transaction((tx: any) => {
+                const wrappedTx = new Proxy(tx, {
+                  get(txTarget, txProp, txReceiver) {
+                    if (txProp === '$executeRaw') {
+                      return (...args: any[]) => {
+                        executeRawCalls++;
+                        return txTarget.$executeRaw(...args);
+                      };
+                    }
+                    return Reflect.get(txTarget, txProp, txReceiver);
+                  },
+                });
+                return fn(wrappedTx);
+              }, options);
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      const result = await service.batchUpdateTags(
+        ['non-existent-id-1', 'non-existent-id-2'],
+        ['VIP'],
+        'add',
+        'TagAdmin'
+      );
+
+      expect(result).toEqual([]);
+      expect(executeRawCalls).toBe(0);
+      const snapshots = await cleanPrisma.snapshotVersion.findMany();
+      expect(snapshots).toHaveLength(0);
+    });
+
+    it('rolls back tag updates when snapshot persistence fails inside transaction', async () => {
+      const guest = await cleanPrisma.invitationCode.create({
+        data: {
+          code: 'ROLLBACKTAG1',
+          guestName: 'Rollback Guest',
+          partyTags: ['Original'],
+        },
+      });
+
+      service.repo.client = new Proxy(cleanPrisma, {
+        get(target, prop, receiver) {
+          if (prop === '$transaction') {
+            return (fn: any, options?: any) =>
+              target.$transaction((tx: any) => {
+                const wrappedTx = new Proxy(tx, {
+                  get(txTarget, txProp, txReceiver) {
+                    if (txProp === 'snapshotVersion') {
+                      return {
+                        ...txTarget.snapshotVersion,
+                        createMany: jest
+                          .fn()
+                          .mockRejectedValue(new Error('Simulated snapshot failure')),
+                      };
+                    }
+                    return Reflect.get(txTarget, txProp, txReceiver);
+                  },
+                });
+                return fn(wrappedTx);
+              }, options);
+          }
+          return Reflect.get(target, prop, receiver);
+        },
+      });
+
+      await expect(
+        service.batchUpdateTags([guest.id], ['VIP'], 'add', 'TagAdmin')
+      ).rejects.toThrow('Simulated snapshot failure');
+
+      const reloaded = await cleanPrisma.invitationCode.findUnique({
+        where: { id: guest.id },
+      });
+      expect(reloaded!.partyTags).toEqual(['Original']);
+
+      const snapshots = await cleanPrisma.snapshotVersion.findMany();
+      expect(snapshots).toHaveLength(0);
+    });
+  });
 });

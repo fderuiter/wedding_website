@@ -614,45 +614,83 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     tags: string[],
     action: 'add' | 'remove' | 'replace' = 'add',
     author: string = 'Admin'
-  ) {
+  ): Promise<InvitationCodeDTO[]> {
     if (!Array.isArray(ids) || ids.length === 0) {
       throw new Error('Validation Error: IDs array cannot be empty.');
     }
-    const cleanTags = normalizePartyTags(tags);
+    if (ids.length > 5000) {
+      throw new Error('Validation Error: Maximum of 5000 invitation code IDs allowed per batch request.');
+    }
+    const trimmedIds: string[] = [];
+    for (const id of ids) {
+      if (typeof id !== 'string' || id.trim() === '') {
+        throw new Error('Validation Error: Invalid ID in array.');
+      }
+      trimmedIds.push(id.trim());
+    }
+    const uniqueIds = Array.from(new Set(trimmedIds));
+
+    if (action !== 'add' && action !== 'remove' && action !== 'replace') {
+      throw new Error('Validation Error: Invalid tag update action.');
+    }
+
+    if (!Array.isArray(tags)) {
+      throw new Error('Validation Error: Party tags must be an array of strings.');
+    }
+    const cleanTags = normalizePartyTags(tags, { dedupe: true });
+    if ((action === 'add' || action === 'remove') && cleanTags.length === 0) {
+      throw new Error(
+        'Validation Error: At least one non-empty tag is required when adding or removing tags.'
+      );
+    }
 
     return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
       const dbRecords = await tx.invitationCode.findMany({
-        where: { id: { in: ids } },
-        select: { id: true, partyTags: true },
+        where: { id: { in: uniqueIds } },
       });
 
-      for (const record of dbRecords) {
-        let updatedTags: string[] = [];
-        const existingTags: string[] = record.partyTags || [];
+      if (dbRecords.length === 0) {
+        return [];
+      }
+
+      const removeSet = action === 'remove' ? new Set(cleanTags) : null;
+      const now = new Date();
+      const updatedRecords: InvitationCodeDTO[] = dbRecords.map((record) => {
+        const existingTags = normalizePartyTags(record.partyTags, { dedupe: true });
+        let updatedTags: string[];
         if (action === 'replace') {
-          updatedTags = Array.from(new Set(cleanTags));
-        } else if (action === 'remove') {
-          const removeSet = new Set(cleanTags);
+          updatedTags = [...cleanTags];
+        } else if (removeSet) {
           updatedTags = existingTags.filter((t) => !removeSet.has(t));
         } else {
           updatedTags = Array.from(new Set([...existingTags, ...cleanTags]));
         }
 
-        await tx.invitationCode.update({
-          where: { id: record.id },
-          data: { partyTags: updatedTags },
-        });
-      }
+        return {
+          ...(record as unknown as InvitationCodeDTO),
+          partyTags: updatedTags,
+          updatedAt: now,
+        };
+      });
 
-      await createAuditSnapshot(
-        'InvitationCode',
-        'batch_update_tags',
-        { count: ids.length, action, tags: cleanTags },
-        author,
-        tx
+      const rows = updatedRecords.map((record) =>
+        Prisma.sql`(${record.id}::text, ${record.partyTags}::text[])`
       );
+      const values = Prisma.join(rows, ', ');
 
-      return { success: true, count: dbRecords.length };
+      const bulkUpdateQuery = Prisma.sql`
+        UPDATE "InvitationCode" AS t
+        SET
+          "partyTags" = v."partyTags",
+          "updatedAt" = NOW()
+        FROM (VALUES ${values}) AS v("id", "partyTags")
+        WHERE t."id" = v."id"
+      `;
+
+      await tx.$executeRaw(bulkUpdateQuery);
+      await this.createBatchSnapshots(updatedRecords, author, tx);
+
+      return updatedRecords;
     });
   }
 

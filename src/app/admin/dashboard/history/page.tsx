@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import * as NextNavigation from 'next/navigation';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
@@ -29,6 +30,27 @@ interface HistoryTimelineContentProps {
   fetchVersions: (_currentPage?: number, _currentLimit?: number, _options?: { background?: boolean }) => Promise<void>;
 }
 
+const useSafeSearchParams: () => { get: (_key: string) => string | null } | null =
+  typeof NextNavigation.useSearchParams === 'function'
+    ? NextNavigation.useSearchParams
+    : () => null;
+
+function resolveInitialHistoryTab(
+  searchParams: { get: (_key: string) => string | null } | null
+): 'timeline' | 'broadcasts' {
+  const paramFromHook = searchParams?.get('tab');
+  if (paramFromHook === 'broadcasts' || paramFromHook === 'timeline') {
+    return paramFromHook;
+  }
+  if (typeof window !== 'undefined') {
+    const paramFromWindow = new URLSearchParams(window.location.search).get('tab');
+    if (paramFromWindow === 'broadcasts' || paramFromWindow === 'timeline') {
+      return paramFromWindow;
+    }
+  }
+  return 'timeline';
+}
+
 function HistoryTimelineContent({
   versions,
   loading,
@@ -38,7 +60,20 @@ function HistoryTimelineContent({
   setPage,
   fetchVersions,
 }: HistoryTimelineContentProps) {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'broadcasts'>('timeline');
+  const searchParams = useSafeSearchParams();
+  const requestedTab = resolveInitialHistoryTab(searchParams);
+  const [tabSelection, setTabSelection] = useState<{
+    sourceTab: 'timeline' | 'broadcasts';
+    value: 'timeline' | 'broadcasts';
+  }>(() => ({
+    sourceTab: requestedTab,
+    value: requestedTab,
+  }));
+  const activeTab =
+    tabSelection.sourceTab === requestedTab ? tabSelection.value : requestedTab;
+  const setActiveTab = (nextTab: 'timeline' | 'broadcasts') => {
+    setTabSelection({ sourceTab: requestedTab, value: nextTab });
+  };
   const [selectedBroadcast, setSelectedBroadcast] = useState<any>(null);
 
   const { addToast, confirm } = useToast();
@@ -446,15 +481,17 @@ export default function HistoryTimelinePage() {
       onRetry={() => fetchVersions(page, limit)}
       loadingMessage="Loading history..."
     >
-      <HistoryTimelineContent
-        versions={versions}
-        loading={loading}
-        page={page}
-        limit={limit}
-        paginationMeta={paginationMeta}
-        setPage={handleSetPage}
-        fetchVersions={fetchVersions}
-      />
+      <Suspense fallback={null}>
+        <HistoryTimelineContent
+          versions={versions}
+          loading={loading}
+          page={page}
+          limit={limit}
+          paginationMeta={paginationMeta}
+          setPage={handleSetPage}
+          fetchVersions={fetchVersions}
+        />
+      </Suspense>
     </AdminViewState>
   );
 }

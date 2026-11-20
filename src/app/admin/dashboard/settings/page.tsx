@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 // eslint-disable-next-line no-restricted-imports
@@ -995,7 +996,14 @@ export default function AdminSettingsPage() {
                       Configure delivery providers (SMTP, Resend, SendGrid, Twilio) and rate limits for guest broadcast communications.
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href="/admin/dashboard/history?tab=broadcasts"
+                      prefetch={false}
+                      className="inline-flex items-center justify-center h-8 px-3 text-xs font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)]"
+                    >
+                      Broadcast Delivery Logs
+                    </Link>
                     <Button
                       type="button"
                       variant="secondary"

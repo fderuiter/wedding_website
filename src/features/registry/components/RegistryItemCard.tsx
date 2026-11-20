@@ -333,13 +333,23 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         syncedPaymentIntentRef.current?.itemId === item.id ? syncedPaymentIntentRef.current : null;
       const existingPaymentIntentId =
         latestSynced && !latestSynced.isMock ? latestSynced.paymentIntentId : undefined;
+      const existingClientSecret =
+        latestSynced && !latestSynced.isMock
+          ? latestSynced.clientSecret ||
+            (paymentIntentData?.itemId === item.id ? paymentIntentData.clientSecret : undefined)
+          : undefined;
 
       try {
         const res = await apiClient.post('/api/registry/payment-intent', {
           itemId: item.id,
           amount: baseContributionAmount,
           coverFee: effectiveCoverFee,
-          ...(existingPaymentIntentId ? { paymentIntentId: existingPaymentIntentId } : {}),
+          ...(existingPaymentIntentId && existingClientSecret
+            ? {
+              paymentIntentId: existingPaymentIntentId,
+              clientSecret: existingClientSecret,
+            }
+            : {}),
         });
         if (active && res && res.clientSecret && res.paymentIntentId) {
           syncedPaymentIntentRef.current = {
@@ -482,12 +492,18 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       // 1. Ensure PaymentIntent is created or synchronized whenever pricing or guest metadata changed
       if (needsIntentSync) {
         try {
+          const syncClientSecret = hasRealSyncedIntent
+            ? currentSynced?.clientSecret ?? activeStateIntent?.clientSecret
+            : undefined;
           const intentRes = await apiClient.post('/api/registry/payment-intent', {
             itemId: item.id,
             amount: baseContributionAmount,
             coverFee: effectiveCoverFee,
-            ...(hasRealSyncedIntent && currentSynced?.paymentIntentId
-              ? { paymentIntentId: currentSynced.paymentIntentId }
+            ...(hasRealSyncedIntent && currentSynced?.paymentIntentId && syncClientSecret
+              ? {
+                paymentIntentId: currentSynced.paymentIntentId,
+                clientSecret: syncClientSecret,
+              }
               : {}),
             name: contributorName,
             email,

@@ -121,6 +121,33 @@ describe('SubEventService', () => {
       expect(events[0].isReadOnly).toBe(true);
     });
 
+    it('filters private ContentNode fallback items with boolean or string "true" while keeping string "false" public', async () => {
+      mockPrisma.subEvent.findMany.mockResolvedValue([]);
+      mockPrisma.contentNode.findMany.mockResolvedValue([
+        {
+          id: 'cn-priv-bool',
+          type: 'Schedule',
+          data: { title: 'Private Bool Event', startTime: '2026-06-19T17:00:00Z', isPrivate: true },
+        },
+        {
+          id: 'cn-priv-str',
+          type: 'Schedule',
+          data: { title: 'Private String Event', startTime: '2026-06-19T18:00:00Z', isPrivate: 'TRUE' },
+        },
+        {
+          id: 'cn-pub-str',
+          type: 'Schedule',
+          data: { title: 'Public String False Event', startTime: '2026-06-20T15:00:00Z', isPrivate: 'false' },
+        },
+      ]);
+
+      const events = await service.getScheduleForGuest();
+
+      expect(events).toHaveLength(1);
+      expect(events[0].id).toBe('cn-pub-str');
+      expect(events[0].title).toBe('Public String False Event');
+    });
+
     it('treats sample invitation code as unauthenticated and returns only public sub-events', async () => {
       mockPrisma.invitationCode.findUnique.mockResolvedValue({
         id: 'sample-inv-1',
@@ -369,6 +396,31 @@ describe('SubEventService', () => {
       await expect(service.getSubEventByIdForGuest('cn-priv')).rejects.toMatchObject({
         statusCode: 403,
       });
+    });
+
+    it('enforces 403 for case-insensitive string "true" and allows string "false" on ContentNode fallback', async () => {
+      mockPrisma.subEvent.findUnique.mockResolvedValue(null);
+      mockPrisma.contentNode.findUnique = jest
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'cn-priv-str',
+          type: 'Schedule',
+          data: { title: 'String Private Party', isPrivate: 'True' },
+        })
+        .mockResolvedValueOnce({
+          id: 'cn-pub-str',
+          type: 'Schedule',
+          data: { title: 'String Public Brunch', isPrivate: 'false' },
+        });
+
+      await expect(service.getSubEventByIdForGuest('cn-priv-str')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+
+      const pubEvent = await service.getSubEventByIdForGuest('cn-pub-str');
+      expect(pubEvent.id).toBe('cn-pub-str');
+      expect(pubEvent.title).toBe('String Public Brunch');
+      expect(pubEvent.isPrivate).toBe(false);
     });
   });
 

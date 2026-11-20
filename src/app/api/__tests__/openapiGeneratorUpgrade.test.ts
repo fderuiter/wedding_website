@@ -444,9 +444,16 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const inviteBatchSchema = inviteBatchPost.requestBody?.content['application/json']?.schema as {
       oneOf?: Array<{ properties?: Record<string, unknown> }>;
     };
-    expect(inviteBatchSchema.oneOf).toHaveLength(2);
+    expect(inviteBatchSchema.oneOf).toHaveLength(3);
     expect(
-      inviteBatchSchema.oneOf?.some((branch) => Boolean(branch.properties?.ids))
+      inviteBatchSchema.oneOf?.some(
+        (branch) => Boolean(branch.properties?.ids && !branch.properties?.tags)
+      )
+    ).toBe(true);
+    expect(
+      inviteBatchSchema.oneOf?.some(
+        (branch) => Boolean(branch.properties?.ids && branch.properties?.tags && branch.properties?.action)
+      )
     ).toBe(true);
     expect(
       inviteBatchSchema.oneOf?.some((branch) => Boolean(branch.properties?.records))
