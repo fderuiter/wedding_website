@@ -109,6 +109,75 @@ describe('MediaDashboardPage', () => {
     });
   });
 
+  it('submits publishToGallery=true when saving a local upload marked for gallery display', async () => {
+    let saved = false;
+    mockGet.mockImplementation(async (url) => {
+      if (url.startsWith('/api/admin/photos/moderation')) {
+        return { data: [], counts: { PENDING: 0, APPROVED: 0, REJECTED: 0 } };
+      }
+      if (saved) {
+        return [
+          {
+            id: 'media-pub-1',
+            url: '/uploads/gallery-vows.jpg',
+            altText: 'Ceremony Vows',
+            isDecorative: false,
+            publishToGallery: true,
+          },
+        ];
+      }
+      return [];
+    });
+    mockPost.mockImplementation(async (url) => {
+      if (url === '/api/admin/upload') {
+        return { url: '/uploads/gallery-vows.jpg' };
+      }
+      saved = true;
+      return {
+        id: 'media-pub-1',
+        url: '/uploads/gallery-vows.jpg',
+        altText: 'Ceremony Vows',
+        isDecorative: false,
+        publishToGallery: true,
+      };
+    });
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No items found')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add Media' })[0]);
+
+    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const file = new File(['image bytes'], 'gallery-vows.jpg', { type: 'image/jpeg' });
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('Image URL') as HTMLInputElement).value).toBe('/uploads/gallery-vows.jpg');
+    });
+
+    fireEvent.change(screen.getByLabelText('Alternative Text'), {
+      target: { value: 'Ceremony Vows' },
+    });
+    fireEvent.click(screen.getByTestId('publish-to-gallery-checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/media', {
+        url: '/uploads/gallery-vows.jpg',
+        altText: 'Ceremony Vows',
+        isDecorative: false,
+        publishToGallery: true,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('gallery-published-badge-media-pub-1')).toBeInTheDocument();
+    });
+  });
+
   it('displays inline error message when dropping oversized file in Dropzone', async () => {
     mockGet.mockResolvedValueOnce([]);
 

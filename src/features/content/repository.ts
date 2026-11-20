@@ -146,6 +146,26 @@ export class ContentRepository implements IContentRepository {
     return nodes.map((n: any) => parseStoredContentNode(n));
   }
 
+  async getEntityBoundMediaIds(mediaIds: string[]): Promise<Set<string>> {
+    if (!mediaIds.length || !this.client.media?.findMany) {
+      return new Set();
+    }
+
+    const boundMedia = await this.client.media.findMany({
+      where: {
+        id: { in: mediaIds },
+        OR: [
+          { weddingPartyMembers: { some: {} } },
+          { attractions: { some: {} } },
+          { registryItems: { some: {} } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return new Set(boundMedia.map((m: { id: string }) => m.id));
+  }
+
   async createNode(data: { type: string; tags?: string[]; data: any }, author: string = 'System'): Promise<ContentNodeDTO> {
     return executeInTransaction(this.client, async (tx) => {
       const node = await tx.contentNode.create({

@@ -32,6 +32,7 @@ model AppConfig {
   seoTitle         String   @default("")
   seoDescription   String   @default("")
   contactEmail     String   @default("")
+  photoAlbumUrl    String   @default("")
   faviconUrl       String   @default("/assets/favicon.png")
   ogImageUrl       String   @default("/images/sunset-embrace.jpg")
   brandMonogram    String?

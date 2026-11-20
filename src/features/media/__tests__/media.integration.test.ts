@@ -6,6 +6,7 @@ import { MediaRepository } from '../repository';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { MediaSchema } from '../schemas';
+import { ContentRepository, ContentService } from '@/features/content';
 
 // Unmock @prisma/client for this test file so we can interact with the real PostgreSQL container
 jest.unmock('@prisma/client');
@@ -22,13 +23,17 @@ const realPrisma = new PrismaClient({ adapter });
 
 // Instantiate MediaRepository with the real PrismaClient
 const realRepository = new MediaRepository(realPrisma);
+const realContentRepository = new ContentRepository(realPrisma);
+const realContentService = new ContentService(realContentRepository);
 
 describe('Media Repository & Rollback Database Integration', () => {
   beforeEach(async () => {
     // Clean up database tables before each test
     await realPrisma.snapshotVersion.deleteMany();
+    await realPrisma.contentNode.deleteMany();
     await realPrisma.weddingPartyMember.deleteMany();
     await realPrisma.attraction.deleteMany();
+    await realPrisma.contributor.deleteMany();
     await realPrisma.registryItem.deleteMany();
     await realPrisma.media.deleteMany();
   });
@@ -36,8 +41,10 @@ describe('Media Repository & Rollback Database Integration', () => {
   afterAll(async () => {
     // Perform final cleanup and close connections
     await realPrisma.snapshotVersion.deleteMany();
+    await realPrisma.contentNode.deleteMany();
     await realPrisma.weddingPartyMember.deleteMany();
     await realPrisma.attraction.deleteMany();
+    await realPrisma.contributor.deleteMany();
     await realPrisma.registryItem.deleteMany();
     await realPrisma.media.deleteMany();
     await realPrisma.$disconnect();
@@ -215,5 +222,97 @@ describe('Media Repository & Rollback Database Integration', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(latestSnapshot!.author).toBe('Admin (Rollback)');
+  });
+
+  test('synchronizes Photo ContentNode across create, update, unpublish, and delete inside transactions', async () => {
+    const created = await realRepository.createMedia(
+      {
+        url: '/uploads/local-ceremony.jpg',
+        altText: 'Ceremony Entrance',
+        isDecorative: false,
+        publishToGallery: true,
+      },
+      'CoupleAdmin'
+    );
+
+    expect(created.publishToGallery).toBe(true);
+
+    let publicPhotos = await realContentService.getPublicPhotos();
+    expect(publicPhotos).toHaveLength(1);
+    expect((publicPhotos[0].data as any).url).toBe('/uploads/local-ceremony.jpg');
+    expect((publicPhotos[0].data as any).title).toBe('Ceremony Entrance');
+    expect((publicPhotos[0].data as any).mediaId).toBe(created.id);
+
+    // Updating Media altText/URL updates the linked Photo ContentNode
+    await realRepository.updateMedia(
+      created.id,
+      {
+        url: '/uploads/local-ceremony-edited.jpg',
+        altText: 'Updated Ceremony Entrance',
+      },
+      'CoupleAdmin'
+    );
+
+    publicPhotos = await realContentService.getPublicPhotos();
+    expect(publicPhotos).toHaveLength(1);
+    expect((publicPhotos[0].data as any).url).toBe('/uploads/local-ceremony-edited.jpg');
+    expect((publicPhotos[0].data as any).title).toBe('Updated Ceremony Entrance');
+
+    // Unpublishing removes linked Photo ContentNode, and re-publishing restores it
+    await realRepository.updateMedia(created.id, { publishToGallery: false }, 'CoupleAdmin');
+    expect(await realContentService.getPublicPhotos()).toHaveLength(0);
+
+    await realRepository.updateMedia(created.id, { publishToGallery: true }, 'CoupleAdmin');
+    expect(await realContentService.getPublicPhotos()).toHaveLength(1);
+
+    // Deleting Media record deletes its linked Photo ContentNode
+    await realRepository.deleteMedia(created.id, 'CoupleAdmin');
+    expect(await realContentService.getPublicPhotos()).toHaveLength(0);
+  });
+
+  test('excludes registry item images from getPublicPhotos unless publishToGallery is enabled', async () => {
+    const registryMedia = await realRepository.createMedia(
+      {
+        url: '/uploads/registry-kettle.jpg',
+        altText: 'Electric Kettle',
+        isDecorative: false,
+      },
+      'Admin'
+    );
+
+    await realPrisma.registryItem.create({
+      data: {
+        name: 'Electric Kettle',
+        description: 'Matte black gooseneck kettle',
+        price: 85,
+        quantity: 1,
+        category: 'Kitchen',
+        vendorUrl: 'https://store.example.com/kettle',
+        imageId: registryMedia.id,
+      },
+    });
+
+    // Even if a legacy Photo ContentNode points to registryMedia without publishToGallery, it is excluded
+    await realPrisma.contentNode.create({
+      data: {
+        type: 'Photo',
+        tags: ['gallery'],
+        data: {
+          url: registryMedia.url,
+          title: 'Electric Kettle',
+          status: 'APPROVED',
+          isVisible: true,
+          mediaId: registryMedia.id,
+        },
+      },
+    });
+
+    expect(await realContentService.getPublicPhotos()).toHaveLength(0);
+
+    // Enabling gallery publishing makes it appear in getPublicPhotos
+    await realRepository.updateMedia(registryMedia.id, { publishToGallery: true }, 'Admin');
+    const published = await realContentService.getPublicPhotos();
+    expect(published).toHaveLength(1);
+    expect((published[0].data as any).mediaId).toBe(registryMedia.id);
   });
 });

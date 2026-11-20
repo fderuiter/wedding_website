@@ -5,6 +5,8 @@ import path from 'path';
 const PROHIBITED_IDENTIFIERS = [
   'abbifred.com',
   'abbifred',
+  'photos.app.goo.gl',
+  'lh3.googleusercontent.com/pw/',
 ];
 
 // Explicitly allowlisted file paths (relative to repo root) or directory prefixes

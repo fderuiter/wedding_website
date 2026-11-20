@@ -444,16 +444,32 @@ function MediaDashboardContent({
             </FormGroup>
             <FormGroup>
               <Label>Image URL</Label>
-              <Input type="url" value={currentMedia.url || ''} onChange={e => setCurrentMedia({...currentMedia, url: e.target.value})} />
+              <Input
+                type="text"
+                placeholder="https://... or /uploads/..."
+                value={currentMedia.url || ''}
+                onChange={e => setCurrentMedia({...currentMedia, url: e.target.value})}
+              />
             </FormGroup>
             <FormGroup>
               <Label>Alternative Text</Label>
               <Input type="text" value={currentMedia.altText || ''} onChange={e => setCurrentMedia({...currentMedia, altText: e.target.value})} disabled={currentMedia.isDecorative} />
             </FormGroup>
             <FormGroup className="md:col-span-2">
-              <div className="flex items-center">
-                <Checkbox checked={currentMedia.isDecorative || false} onChange={e => setCurrentMedia({...currentMedia, isDecorative: e.target.checked})} className="mr-2" />
-                <Label className="mb-0">Decorative (no alt text)</Label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="flex items-center">
+                  <Checkbox checked={currentMedia.isDecorative || false} onChange={e => setCurrentMedia({...currentMedia, isDecorative: e.target.checked})} className="mr-2" />
+                  <Label className="mb-0">Decorative (no alt text)</Label>
+                </div>
+                <div className="flex items-center">
+                  <Checkbox
+                    checked={Boolean(currentMedia.publishToGallery)}
+                    onChange={e => setCurrentMedia({...currentMedia, publishToGallery: e.target.checked})}
+                    className="mr-2"
+                    data-testid="publish-to-gallery-checkbox"
+                  />
+                  <Label className="mb-0">Publish to Photo Gallery</Label>
+                </div>
               </div>
             </FormGroup>
           </div>
@@ -516,6 +532,14 @@ function MediaDashboardContent({
 
                   <div className="relative h-32 w-full mb-4">
                     <MediaImage media={m} fallbackUrl="/images/placeholder.png" fallbackAlt="Unlabelled media asset" className="object-cover w-full h-full rounded" />
+                    {m.publishToGallery && (
+                      <span
+                        data-testid={`gallery-published-badge-${m.id}`}
+                        className="absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-emerald-600 text-white shadow"
+                      >
+                        In Gallery
+                      </span>
+                    )}
                   </div>
                   <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
                   <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>

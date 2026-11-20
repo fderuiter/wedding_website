@@ -176,6 +176,41 @@ describe('Media API Routes Integration Tests', () => {
       expect(body).toEqual({ success: true, data: createdRecord });
       expect(mockMediaRepository.createMedia).toHaveBeenCalledWith(payload);
     });
+
+    test('accepts safe relative /uploads/ path and publishToGallery flag', async () => {
+      const payload = {
+        url: '/uploads/ceremony-arch.jpg',
+        altText: 'Ceremony Arch',
+        isDecorative: false,
+        publishToGallery: true,
+      };
+      const createdRecord = createMockMedia({
+        id: 'local-1',
+        ...payload,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      mockMediaRepository.createMedia.mockResolvedValue(createdRecord);
+
+      const req = new NextRequest('http://localhost/api/media', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(201);
+      expect(mockMediaRepository.createMedia).toHaveBeenCalledWith(payload);
+    });
+
+    test('rejects unsafe path traversal in relative upload URLs', async () => {
+      const req = new NextRequest('http://localhost/api/media', {
+        method: 'POST',
+        body: JSON.stringify({ url: '/uploads/../etc/passwd', altText: 'Traversal' }),
+      });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('PUT /api/media/[id]', () => {

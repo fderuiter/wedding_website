@@ -19,27 +19,9 @@ interface ReceptionSlideshowClientProps {
   uploadUrl?: string;
 }
 
-export const DEFAULT_FALLBACK_PHOTOS: SlideshowPhoto[] = [
-  {
-    id: 'fallback-1',
-    url: 'https://lh3.googleusercontent.com/pw/AP1GczNPp0Rk6pvvMtymS3RUx7F6cAyOkFaovF20N5_FkaDupk3QkgjNWfTiMxZbgtnyO-Ny0tH3JPkT6Vld35Pg8xFq1AAcZcxnHdTQ3DfHKsNLKpA59mEw=w1920-h1080',
-    title: 'Wedding Celebration',
-  },
-  {
-    id: 'fallback-2',
-    url: 'https://lh3.googleusercontent.com/pw/AP1GczODgnqdtUHWdCR_PDvAcDDm-RlYv0HE_oJtRCDTKF9nCREFVhZRl_020THVphEdxLAjgYfUdz0KYgCBw1sqmaF1GC7RBh0u3CZmUgBtwD7Z-bEkPm5A=w1920-h1080',
-    title: 'Happy Memories',
-  },
-  {
-    id: 'fallback-3',
-    url: 'https://lh3.googleusercontent.com/pw/AP1GczPzyrWDTfT2ofwHN6_wBKO8luOfDy2xpvoQNOiOw1cSoO1yUaLPW3mPbTBCUFGoCqI1hB0udanXyfM55PXEMYtmkkTSqQhoUVqQnBmz5qnYUYU_NnhB=w1920-h1080',
-    title: 'Reception Moments',
-  },
-];
-
 function normalizePhotos(items?: (SlideshowPhoto | string)[]): SlideshowPhoto[] {
   if (!items || items.length === 0) {
-    return DEFAULT_FALLBACK_PHOTOS;
+    return [];
   }
   return items
     .map((item, idx) => {
@@ -133,7 +115,7 @@ export function ReceptionSlideshowClient({
     return false;
   }, []);
 
-  // Handle broken image URLs by skipping immediately and falling back to default photos if all fail
+  // Handle broken image URLs by skipping immediately and clearing to empty state if all fail
   const handlePhotoError = useCallback((failedUrl: string) => {
     failedUrlsRef.current.add(failedUrl);
     setFailedUrls((prev) => {
@@ -142,27 +124,7 @@ export function ReceptionSlideshowClient({
       return next;
     });
 
-    setPhotos((currentList) => {
-      const remaining = currentList.filter((p) => p.url !== failedUrl);
-
-      if (remaining.length > 0) {
-        return remaining;
-      }
-
-      // All photos in current list failed: recover with default fallback photos that haven't failed.
-      // Guard against infinite loops if fallback photos also fail.
-      const availableFallbacks = DEFAULT_FALLBACK_PHOTOS.filter(
-        (p) => p.url !== failedUrl && !failedUrlsRef.current.has(p.url)
-      );
-
-      if (availableFallbacks.length > 0) {
-        return availableFallbacks.length === DEFAULT_FALLBACK_PHOTOS.length
-          ? DEFAULT_FALLBACK_PHOTOS
-          : availableFallbacks;
-      }
-
-      return [];
-    });
+    setPhotos((currentList) => currentList.filter((p) => p.url !== failedUrl));
   }, []);
 
   // Activity detection for auto-hiding controls & cursor
@@ -488,7 +450,7 @@ export function ReceptionSlideshowClient({
         className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 md:p-8"
         data-testid="slideshow-stage"
       >
-        {activePhoto && (
+        {activePhoto ? (
           <div className="relative max-w-full max-h-full flex flex-col items-center justify-center">
             <img
               key={activePhoto.url}
@@ -506,6 +468,16 @@ export function ReceptionSlideshowClient({
                 {activePhoto.title}
               </p>
             )}
+          </div>
+        ) : (
+          <div
+            data-testid="slideshow-empty-state"
+            className="max-w-md rounded-2xl border border-white/15 bg-stone-900/80 backdrop-blur-md p-8 text-center space-y-3 shadow-2xl"
+          >
+            <h2 className="text-xl font-bold text-white">No photos published yet</h2>
+            <p className="text-sm text-stone-300">
+              Approved guest uploads and published gallery photos will appear here automatically.
+            </p>
           </div>
         )}
       </main>

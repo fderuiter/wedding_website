@@ -729,6 +729,7 @@ Import and export formats include versioning metadata (`schemaVersion: "1.0"`) t
 | `seoTitle` | `string` | `Prisma` | `Public` | HTML document title and social preview title for search engines and link cards. |
 | `seoDescription` | `string` | `Prisma` | `Public` | Meta description summarizing the wedding website for search engines and Open Graph previews. |
 | `contactEmail` | `string` | `Prisma` | `Public` | Public host contact email address displayed for guest inquiries. |
+| `photoAlbumUrl` | `string` | `Prisma` | `Public` | Optional external shared photo album URL displayed on the public gallery page. |
 | `faviconUrl` | `string` | `Prisma` | `Public` | Asset path or safe URL for the browser tab favicon icon. |
 | `ogImageUrl` | `string` | `Prisma` | `Public` | Default Open Graph social sharing preview image URL or asset path. |
 | `brandMonogram` | `string` | `Prisma` | `Public` | Custom monogram text overriding initials derived from partner names. |

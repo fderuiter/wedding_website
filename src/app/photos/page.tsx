@@ -8,8 +8,9 @@ import { withPageQuery } from '@/lib/query-wrapper';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { isAdminRequest } from '@/core/auth/auth.server';
 
-import { PhotoGalleryClient } from '@/components/photos/PhotoGalleryClient';
+import { PhotoGalleryClient, PhotoItem } from '@/components/photos/PhotoGalleryClient';
 
 export const metadata: Metadata = {
   title: 'Photos',
@@ -23,43 +24,45 @@ export const metadata: Metadata = {
  * @description A page that displays a gallery of wedding photos and guest uploads.
  *
  * This component renders a native, tabbed photo gallery client displaying curated
- * couple photos and guest shared pictures with responsive lightbox viewing and export.
- * If live content nodes fail, it falls back to curated default photo assets and shows
- * an explicit state indicator.
+ * couple photos and moderated guest shared pictures with responsive lightbox viewing
+ * and administrator archive exports.
  *
- * @returns {JSX.Element} The rendered photos page.
+ * @returns {Promise<JSX.Element>} The rendered photos page.
  */
 export default async function PhotosPage() {
-  const config = await getAppConfig();
+  const [config, isAdmin] = await Promise.all([
+    getAppConfig(),
+    isAdminRequest(),
+  ]);
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();
   }
-  const defaultUrls = [
-    'https://lh3.googleusercontent.com/pw/AP1GczNPp0Rk6pvvMtymS3RUx7F6cAyOkFaovF20N5_FkaDupk3QkgjNWfTiMxZbgtnyO-Ny0tH3JPkT6Vld35Pg8xFq1AAcZcxnHdTQ3DfHKsNLKpA59mEw=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczODgnqdtUHWdCR_PDvAcDDm-RlYv0HE_oJtRCDTKF9nCREFVhZRl_020THVphEdxLAjgYfUdz0KYgCBw1sqmaF1GC7RBh0u3CZmUgBtwD7Z-bEkPm5A=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczPzyrWDTfT2ofwHN6_wBKO8luOfDy2xpvoQNOiOw1cSoO1yUaLPW3mPbTBCUFGoCqI1hB0udanXyfM55PXEMYtmkkTSqQhoUVqQnBmz5qnYUYU_NnhB=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczPeRWHDkvouhncUEhhHHOAo5u-uPM3S7a6EXZTH8qO3BsG2Yo-f_y7XpK8TqALxpm4_OeA14gzpGOiiTBj6b2JP27xNQ39P159CbZn8BML4cRrcrSYw=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczP2x9gDf6MmKoAhEBg3cUOCg42Mk-l0uPPOuhBp77b-KrlgnPN_1yqUT2F_tc3ffa4BIvQBVcONVuV3_AXp_1T6l0PugHstYE0IDKKqikjy16ZNpiu7=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczMfm0jygX3akWEN6XZXxKi72qPDtykQtA30g2hU3aWsP_bqtDMSuJAfDJUUABiO6XSrpoaOATGSw1HN6ZX91dOiXvha6GGqYkakGL24hgUXUSek_EHM=w1920-h11080',
-    'https://lh3.googleusercontent.com/pw/AP1GczPkTva_2XGwF8d1eVuuWinGtR_bfqpJHHhDEshfYUKDcwzXn0-egIBsf8TbYbmAcuowf-p72HDytwpK3ORDcD5AOtbXG7Lup_wS2yZYSDzqXqrH3iNc=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczNUft5lyjyIoYX99dNeQPQ8zigcrsu5Xf95bxH3i0Z_7ZzKjvBRnk_4cTe3uQWUZjhl3v5CDMD0u07JQBG_t6drLdZR5kzVVChZlugJX_d_gAd1Y5Bz=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczPAb-RVFteLsC0rmMLph7OmF-22p7srgSKCYCCp_x7STlBmGhIj-0ucp7SZy8olIyMlaA9tWYK5z9hHT-z6KNVc1Yb-s7cKqa3AYmGd9YxTB91hQJTw=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczPPZHlCTkGM1yZR63AVtTVhTDjWagWvSeCoh3cmJi8d3hZDhk6h5G8IiK_9yBLyF9IS8OE_dCcLPAZdk5hFmLniUk97_ODB3OWIB8Gibs-KwsyktxtN=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczO-H7ch_7xST7jlftlKYRsQTNG46MSbuIrMLDHNY8BlUBJ9zpo496U59dCEWXd2c9Kimb0ZU8hQZYmUJmRYIT7deRF2Wl4uvNzqB47TRMsKFlFm_4uA=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczNMI2xVAzbQx1Eu0IzVn3dwAHAjZm6sqrQ-4tAlkvTaNHzjxWbKEYfWOgCq9y7Gr9RMjdFAYdNMDhtz-vPkwTkEPRo2CBWtoJT4NZnpBmKRSiPuDYDE=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczOOO4SaHAKCF4i4rHj35WTLX0PZgxipVR5jkvXryv-bEFVnDwwux1E9vxh_tqfxi1Pta-WBNXMnPH3CpF_iAowxVQOwlEEamaTT5mjqt2zNht9Z9hPs=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczN1MHrsHHPmCj9hHjtOY--ncNSNhUWJM00PFszgfS8KZQ5d4eeIN2rpgRLj_jIQ9w1ctCixA9c9lDntx0slIbkEjjGCmEGZCtHlPhQLzyqL50_uolRq=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczO9WEPEVNJaHIdBRO23QrdPcNiHhxjZQEyFX6BpzjPfC93m4Yo3iH6hDxdCavtGHpJz8AkxHrZi-bhlbmOEpfcbHDPvZBFtF3Magrjjy4VI-H8LGInP=w1920-h1080',
-    'https://lh3.googleusercontent.com/pw/AP1GczNRCQSC2TVH8_X2AzVvddlrHTfto9aLCYtVUVT1VpLItwZSRwAsT7bhag2TeCy4RGxRDjQ3SzKfgLuB4NUdDkOcPB5OYrjhaVLAbwzdspw_EoTL5HdO=w1920-h1080'
-  ];
 
   const photoNodes = await withPageQuery(
     () => contentService.getPublicPhotos(),
     [] as ContentNodeDTO[]
   );
 
-  const isUsingFallback = photoNodes.length === 0;
-  const urls = !isUsingFallback ? photoNodes.map(n => n.data?.url).filter(Boolean) : defaultUrls;
+  const initialPhotos: PhotoItem[] = photoNodes
+    .map((n): PhotoItem | null => {
+      const data = n.data as { url?: string; title?: string; altText?: string } | undefined;
+      if (!data?.url) {
+        return null;
+      }
+      const isGuestUpload = Boolean(n.tags?.includes('guest-upload'));
+      return {
+        id: n.id,
+        url: data.url,
+        title: data.title || data.altText || undefined,
+        isGuestUpload,
+        category: isGuestUpload ? 'guest' : 'curated',
+      };
+    })
+    .filter((item): item is PhotoItem => item !== null);
+
+  const hasCuratedPhotos = initialPhotos.some((p) => p.category === 'curated');
+  const defaultTab = hasCuratedPhotos || initialPhotos.length === 0 ? 'curated' : 'guest';
+  const albumUrl = config.photoAlbumUrl?.trim() || '';
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -67,38 +70,32 @@ export default async function PhotosPage() {
         Our Wedding Photos
       </h1>
       <p className="text-center text-lg mb-8">
-        Here is a small selection of photos from our special day. You can view the full album on Google Photos or upload your own photos below.
+        {albumUrl
+          ? 'Browse photos from our celebration below, visit our shared photo album, or upload your own favorite moments.'
+          : 'Browse photos from our celebration below or upload your own favorite moments to share with us.'}
       </p>
 
       <ErrorBoundary title="Gallery Error" message="Could not render photo gallery.">
         <div className="mb-10">
-          <PhotoGalleryClient initialPhotos={urls} />
+          <PhotoGalleryClient
+            initialPhotos={initialPhotos}
+            defaultTab={defaultTab}
+            isAdmin={isAdmin}
+          />
         </div>
       </ErrorBoundary>
 
-      {isUsingFallback && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="max-w-2xl mx-auto mb-8 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-center flex items-center justify-center gap-2 shadow-sm"
-          data-testid="photos-fallback-indicator"
-        >
-          <Icon name="Info" className="w-5 h-5 text-amber-500 shrink-0" />
-          <span className="text-sm font-medium">
-            Displaying curated photo gallery (live album feeds currently unavailable).
-          </span>
+      {albumUrl && (
+        <div className="flex justify-center mt-12">
+          <AccessibleExternalLink
+            href={albumUrl}
+            className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+          >
+            View Full Album
+            <Icon name="Camera" className="w-5 h-5" />
+          </AccessibleExternalLink>
         </div>
       )}
-
-      <div className="flex justify-center mt-12">
-        <AccessibleExternalLink
-          href="https://photos.app.goo.gl/v1Rw81HSoyLVNEDx5"
-          className="group inline-flex items-center gap-2 rounded-full bg-primary bg-gradient-to-r from-primary to-secondary px-8 py-3 text-white shadow-lg transition hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-        >
-          View Full Album
-          <Icon name="Camera" className="w-5 h-5" />
-        </AccessibleExternalLink>
-      </div>
     </div>
   );
 }
