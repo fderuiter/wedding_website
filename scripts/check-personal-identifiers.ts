@@ -27,6 +27,15 @@ const ALLOWLIST_PREFIXES = [
   'test-results/',
   'build/',
   'dist/',
+  'docs-portal/.vitepress/dist/',
+  'docs-portal/.vitepress/cache/',
+  'docs-portal/.vitepress/.temp/',
+  'docs-portal/architecture/',
+  'docs-portal/deployment/',
+  'docs-portal/development/',
+  'docs-portal/features/',
+  'docs-portal/security/',
+  'docs-portal/guides/',
 ];
 
 // Focus directories for scanning (or scan all files not excluded)

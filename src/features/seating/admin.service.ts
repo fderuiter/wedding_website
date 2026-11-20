@@ -3,6 +3,12 @@ import { BaseRepository } from '@/core/infrastructure/repository';
 import { SeatingTableDTO, AutoAssignResultDTO } from './schemas';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
+import {
+  getGuestAttendanceStatus,
+  isGuestEligibleForSeating,
+} from './utils/seatingHelpers';
+
+const VALID_TABLE_SHAPES = ['round', 'rectangular', 'square', 'head', 'sweetheart'] as const;
 
 export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
   static ENTITY_KEY = 'seating-tables';
@@ -31,8 +37,10 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       }
     }
     if (data.shape !== undefined) {
-      if (!['round', 'rectangular', 'square'].includes(data.shape)) {
-        throw new Error('Validation Error: Shape must be round, rectangular, or square.');
+      if (!(VALID_TABLE_SHAPES as readonly string[]).includes(data.shape)) {
+        throw new Error(
+          'Validation Error: Shape must be round, rectangular, square, head, or sweetheart.'
+        );
       }
     }
   }
@@ -142,7 +150,337 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
     });
   }
 
-  async autoAssignSeats(author: string = 'Admin'): Promise<AutoAssignResultDTO> {
+  async assignSeatsBatch(
+    invitationCodeIds: string[],
+    tableId: string | null,
+    options?: {
+      action?: 'assignBatch' | 'clearTable' | 'undo';
+      author?: string;
+    }
+  ) {
+    const uniqueIds = Array.from(
+      new Set((invitationCodeIds || []).map((id) => id?.trim()).filter(Boolean))
+    );
+    if (uniqueIds.length === 0) {
+      throw new Error('Validation Error: At least one invitation code ID is required.');
+    }
+
+    const author = options?.author?.trim() || 'Admin';
+    const actionLabel = options?.action || (tableId ? 'assignBatch' : 'clearTable');
+
+    return this.repo.transaction(async (txRepo) => {
+      const client = txRepo.client;
+
+      const targetGuests = await client.invitationCode.findMany({
+        where: { id: { in: uniqueIds } },
+      });
+
+      if (!targetGuests || targetGuests.length !== uniqueIds.length) {
+        throw new Error('Validation Error: One or more guests not found.');
+      }
+
+      const guestById = new Map<string, any>(targetGuests.map((g: any) => [g.id, g]));
+      const targetIdSet = new Set<string>(uniqueIds);
+
+      interface PlannedBatchUpdate {
+        guestId: string;
+        tableId: string | null;
+        seatNumber: number | null;
+      }
+
+      const plannedUpdates: PlannedBatchUpdate[] = [];
+
+      if (tableId) {
+        for (const guest of targetGuests) {
+          if (!isGuestEligibleForSeating(guest)) {
+            throw new Error(
+              'Validation Error: Declined RSVPs and address-collection entries cannot be assigned to tables.'
+            );
+          }
+        }
+
+        const table = await client.seatingTable.findUnique({
+          where: { id: tableId },
+          include: { invitationCodes: true },
+        });
+
+        if (!table) {
+          throw new Error('Validation Error: Table not found.');
+        }
+
+        const existingOtherOccupants = (table.invitationCodes || []).filter(
+          (ic: { id: string }) => !targetIdSet.has(ic.id)
+        );
+        if (existingOtherOccupants.length + uniqueIds.length > table.capacity) {
+          throw new Error(
+            `Validation Error: Table "${table.name}" has reached its maximum capacity of ${table.capacity}.`
+          );
+        }
+
+        const usedSeats = new Set<number>(
+          existingOtherOccupants
+            .map((ic: any) => ic.seatNumber)
+            .filter((s: any): s is number => typeof s === 'number' && s > 0)
+        );
+
+        const nextSeat = () => {
+          for (let i = 1; i <= table.capacity; i++) {
+            if (!usedSeats.has(i)) {
+              usedSeats.add(i);
+              return i;
+            }
+          }
+          return null;
+        };
+
+        for (const guestId of uniqueIds) {
+          const existing = guestById.get(guestId);
+          let assignedSeat: number | null = null;
+          if (
+            existing?.tableId === tableId &&
+            typeof existing.seatNumber === 'number' &&
+            existing.seatNumber >= 1 &&
+            existing.seatNumber <= table.capacity &&
+            !usedSeats.has(existing.seatNumber)
+          ) {
+            usedSeats.add(existing.seatNumber);
+            assignedSeat = existing.seatNumber;
+          } else {
+            assignedSeat = nextSeat();
+          }
+
+          plannedUpdates.push({
+            guestId,
+            tableId,
+            seatNumber: assignedSeat,
+          });
+        }
+      } else {
+        for (const guestId of uniqueIds) {
+          plannedUpdates.push({
+            guestId,
+            tableId: null,
+            seatNumber: null,
+          });
+        }
+      }
+
+      const rows = plannedUpdates.map((item) => {
+        return Prisma.sql`(${item.guestId}::text, ${item.tableId}::text, ${item.seatNumber}::integer)`;
+      });
+      const values = Prisma.join(rows, ', ');
+
+      const bulkUpdateQuery = Prisma.sql`
+        UPDATE "InvitationCode" AS t
+        SET
+          "tableId" = v."tableId",
+          "seatNumber" = v."seatNumber",
+          "updatedAt" = NOW()
+        FROM (VALUES ${values}) AS v(
+          "id",
+          "tableId",
+          "seatNumber"
+        )
+        WHERE t."id" = v."id"
+      `;
+
+      await client.$executeRaw(bulkUpdateQuery);
+
+      const auditRecords = plannedUpdates.map((item) => ({
+        entityId: item.guestId,
+        data: {
+          tableId: item.tableId,
+          seatNumber: item.seatNumber,
+          action: actionLabel,
+        },
+      }));
+
+      await createBatchAuditSnapshots('InvitationCode', auditRecords, author, client);
+
+      const updatedGuests = plannedUpdates.map((item) => ({
+        ...(guestById.get(item.guestId) || {}),
+        id: item.guestId,
+        tableId: item.tableId,
+        seatNumber: item.seatNumber,
+      }));
+
+      return {
+        updatedGuests,
+      };
+    });
+  }
+
+  async restoreSeatAssignments(
+    assignments: Array<{
+      invitationCodeId: string;
+      tableId: string | null;
+      seatNumber?: number | null;
+    }>,
+    options?: {
+      action?: 'assignBatch' | 'clearTable' | 'undo';
+      author?: string;
+    }
+  ) {
+    if (!assignments || assignments.length === 0) {
+      throw new Error('Validation Error: At least one assignment is required.');
+    }
+
+    const dedupedMap = new Map<
+      string,
+      { invitationCodeId: string; tableId: string | null; seatNumber: number | null }
+    >();
+    for (const entry of assignments) {
+      const id = entry.invitationCodeId?.trim();
+      if (!id) continue;
+      const normalizedTableId = entry.tableId || null;
+      dedupedMap.set(id, {
+        invitationCodeId: id,
+        tableId: normalizedTableId,
+        seatNumber: normalizedTableId ? (entry.seatNumber ?? null) : null,
+      });
+    }
+
+    const normalizedEntries = Array.from(dedupedMap.values());
+    if (normalizedEntries.length === 0) {
+      throw new Error('Validation Error: At least one assignment is required.');
+    }
+
+    const author = options?.author?.trim() || 'Admin';
+    const actionLabel = options?.action || 'undo';
+    const uniqueIds = normalizedEntries.map((e) => e.invitationCodeId);
+    const batchIdSet = new Set(uniqueIds);
+
+    return this.repo.transaction(async (txRepo) => {
+      const client = txRepo.client;
+
+      const targetGuests = await client.invitationCode.findMany({
+        where: { id: { in: uniqueIds } },
+      });
+
+      if (!targetGuests || targetGuests.length !== uniqueIds.length) {
+        throw new Error('Validation Error: One or more guests not found.');
+      }
+
+      const guestById = new Map<string, any>(targetGuests.map((g: any) => [g.id, g]));
+
+      const targetTableIds = Array.from(
+        new Set(
+          normalizedEntries
+            .map((e) => e.tableId)
+            .filter((tid): tid is string => Boolean(tid))
+        )
+      );
+
+      const displacedSeatUpdates: Array<{
+        guestId: string;
+        tableId: string | null;
+        seatNumber: number | null;
+      }> = [];
+
+      if (targetTableIds.length > 0) {
+        const tables = await client.seatingTable.findMany({
+          where: { id: { in: targetTableIds } },
+          include: { invitationCodes: true },
+        });
+
+        const tableMap = new Map<string, any>((tables || []).map((t: any) => [t.id, t]));
+
+        for (const tid of targetTableIds) {
+          const table = tableMap.get(tid);
+          if (!table) {
+            throw new Error('Validation Error: Table not found.');
+          }
+
+          const incomingForTable = normalizedEntries.filter((e) => e.tableId === tid);
+          const otherOccupants = (table.invitationCodes || []).filter(
+            (ic: { id: string }) => !batchIdSet.has(ic.id)
+          );
+
+          if (otherOccupants.length + incomingForTable.length > table.capacity) {
+            throw new Error(
+              `Validation Error: Table "${table.name}" has reached its maximum capacity of ${table.capacity}.`
+            );
+          }
+
+          const incomingSeats = new Set<number>(
+            incomingForTable
+              .map((e) => e.seatNumber)
+              .filter((s): s is number => typeof s === 'number' && s > 0)
+          );
+
+          for (const occ of otherOccupants) {
+            if (typeof occ.seatNumber === 'number' && incomingSeats.has(occ.seatNumber)) {
+              displacedSeatUpdates.push({
+                guestId: occ.id,
+                tableId: tid,
+                seatNumber: null,
+              });
+              guestById.set(occ.id, occ);
+            }
+          }
+        }
+      }
+
+      const allUpdates = [
+        ...displacedSeatUpdates,
+        ...normalizedEntries.map((e) => ({
+          guestId: e.invitationCodeId,
+          tableId: e.tableId,
+          seatNumber: e.seatNumber,
+        })),
+      ];
+
+      const rows = allUpdates.map((item) => {
+        return Prisma.sql`(${item.guestId}::text, ${item.tableId}::text, ${item.seatNumber}::integer)`;
+      });
+      const values = Prisma.join(rows, ', ');
+
+      const bulkUpdateQuery = Prisma.sql`
+        UPDATE "InvitationCode" AS t
+        SET
+          "tableId" = v."tableId",
+          "seatNumber" = v."seatNumber",
+          "updatedAt" = NOW()
+        FROM (VALUES ${values}) AS v(
+          "id",
+          "tableId",
+          "seatNumber"
+        )
+        WHERE t."id" = v."id"
+      `;
+
+      await client.$executeRaw(bulkUpdateQuery);
+
+      const auditRecords = allUpdates.map((item) => ({
+        entityId: item.guestId,
+        data: {
+          tableId: item.tableId,
+          seatNumber: item.seatNumber,
+          action: actionLabel,
+        },
+      }));
+
+      await createBatchAuditSnapshots('InvitationCode', auditRecords, author, client);
+
+      const updatedGuests = allUpdates.map((item) => ({
+        ...(guestById.get(item.guestId) || {}),
+        id: item.guestId,
+        tableId: item.tableId,
+        seatNumber: item.seatNumber,
+      }));
+
+      return {
+        updatedGuests,
+      };
+    });
+  }
+
+  async autoAssignSeats(
+    author: string = 'Admin',
+    options?: { includePending?: boolean }
+  ): Promise<AutoAssignResultDTO> {
+    const includePending = options?.includePending ?? true;
+
     return this.repo.transaction(async (txRepo) => {
       const client = txRepo.client;
 
@@ -156,13 +494,23 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         orderBy: { name: 'asc' },
       });
 
-      // 2. Query all unassigned invitation codes
-      const unassignedGuests = await client.invitationCode.findMany({
+      // 2. Query all unassigned invitation codes and filter out declined & address-collection entries
+      const rawUnassignedGuests = await client.invitationCode.findMany({
         where: { tableId: null },
         orderBy: [
           { householdName: 'asc' },
           { guestName: 'asc' },
         ],
+      });
+
+      const unassignedGuests = (rawUnassignedGuests || []).filter((guest: any) => {
+        if (!isGuestEligibleForSeating(guest)) {
+          return false;
+        }
+        if (!includePending && getGuestAttendanceStatus(guest) !== 'attending') {
+          return false;
+        }
+        return true;
       });
 
       if (!unassignedGuests || unassignedGuests.length === 0) {

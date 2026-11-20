@@ -708,5 +708,134 @@ describe('useSeatingState & seatingReducer', () => {
       });
       expect(mockAddToast).not.toHaveBeenCalled();
     });
+
+    it('excludes declined RSVPs and address-collection records from unassignedGuests', async () => {
+      fetchMock.mockImplementation((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockTable1]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                { ...mockGuest1, used: true, extraFields: { attending: true } },
+                { ...mockGuest2, used: true, extraFields: { attending: false } },
+                { ...mockGuest3, used: false, partyTags: ['address-collection'] },
+              ]),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.allGuests).toHaveLength(3);
+      expect(result.current.unassignedGuests).toHaveLength(1);
+      expect(result.current.unassignedGuests[0].id).toBe('g-1');
+    });
+
+    it('supports assignGuestsToTable, clearTableSeats, and undoLastBatchAction snapshots', async () => {
+      fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockTable1, mockTable2]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockGuest1, mockGuest2, mockGuest3]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating/assign') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string);
+          if (body.invitationCodeIds) {
+            const updatedGuests = body.invitationCodeIds.map((id: string, idx: number) => ({
+              id,
+              tableId: body.tableId,
+              seatNumber: body.tableId ? idx + 1 : null,
+            }));
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({ success: true, data: { updatedGuests } }),
+            } as Response);
+          }
+          if (body.assignments) {
+            const updatedGuests = body.assignments.map((a: any) => ({
+              id: a.invitationCodeId,
+              tableId: a.tableId,
+              seatNumber: a.seatNumber,
+            }));
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({ success: true, data: { updatedGuests } }),
+            } as Response);
+          }
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.canUndo).toBe(false);
+
+      // 1. Batch-assign household [g-1, g-2] to Table 2
+      let batchOk = false;
+      await act(async () => {
+        batchOk = await result.current.assignGuestsToTable(['g-1', 'g-2'], 'table-2');
+      });
+
+      expect(batchOk).toBe(true);
+      expect(result.current.tables.find((t) => t.id === 'table-2')?.invitationCodes).toHaveLength(2);
+      expect(result.current.unassignedGuests).toHaveLength(1);
+      expect(result.current.canUndo).toBe(true);
+
+      // 2. Clear Seats on Table 2 (table remains, guests become unassigned)
+      let clearOk = false;
+      await act(async () => {
+        clearOk = await result.current.clearTableSeats('table-2');
+      });
+
+      expect(clearOk).toBe(true);
+      expect(result.current.tables.find((t) => t.id === 'table-2')).toBeDefined();
+      expect(result.current.tables.find((t) => t.id === 'table-2')?.invitationCodes).toHaveLength(0);
+      expect(result.current.unassignedGuests).toHaveLength(3);
+      expect(result.current.canUndo).toBe(true);
+
+      // 3. Undo Clear Seats -> [g-1, g-2] return to Table 2
+      let undoClearOk = false;
+      await act(async () => {
+        undoClearOk = await result.current.undoLastBatchAction();
+      });
+
+      expect(undoClearOk).toBe(true);
+      expect(result.current.tables.find((t) => t.id === 'table-2')?.invitationCodes).toHaveLength(2);
+      expect(result.current.unassignedGuests).toHaveLength(1);
+
+      // 4. Undo household batch assignment -> all 3 return to unassigned
+      let undoHouseholdOk = false;
+      await act(async () => {
+        undoHouseholdOk = await result.current.undoLastBatchAction();
+      });
+
+      expect(undoHouseholdOk).toBe(true);
+      expect(result.current.unassignedGuests).toHaveLength(3);
+      expect(result.current.canUndo).toBe(false);
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AppConfigSchema, FeatureSchema, PhotoDataSchema, RawUpdateAppConfigSchema } from '@/features/content';
+import { ModuleConfigSchema, resolveModuleConfig } from '@/lib/modules';
 import { isSafeMediaOrPhotoUrl } from '@/utils/validationPrimitives';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party';
 import { AttractionSchema } from '@/features/attractions';
@@ -115,6 +116,9 @@ const BackupAppConfigSchema = z.object({
   layoutCardPadding: z.string().max(100).optional(),
   layoutBorderRadius: z.string().max(100).optional(),
   features: z.array(FeatureSchema).optional(),
+  modules: ModuleConfigSchema.partial()
+    .optional()
+    .transform((val) => (val === undefined ? undefined : resolveModuleConfig(val))),
   timezone: RawUpdateAppConfigSchema.shape.timezone.optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),

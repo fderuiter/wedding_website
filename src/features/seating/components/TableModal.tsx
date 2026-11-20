@@ -13,9 +13,11 @@ interface TableModalProps {
   onDelete?: (tableId: string) => void;
 }
 
+type TableShapeValue = SeatingTableDTO['shape'];
+
 interface TableFormSnapshot {
   name: string;
-  shape: 'round' | 'rectangular' | 'square';
+  shape: TableShapeValue;
   capacity: number;
   width: number;
   height: number;
@@ -27,7 +29,7 @@ interface TableFormSnapshot {
 function createInitialTableSnapshot(table: SeatingTableDTO | null): TableFormSnapshot {
   return {
     name: table?.name ?? '',
-    shape: (table?.shape as 'round' | 'rectangular' | 'square') || 'round',
+    shape: (table?.shape as TableShapeValue) || 'round',
     capacity: table ? table.capacity : 8,
     width: table?.width || 120,
     height: table?.height || 120,
@@ -61,7 +63,7 @@ function TableModalForm({
   const { confirm } = useToast();
   const initialSnapshot = useMemo(() => createInitialTableSnapshot(table), [table]);
   const [name, setName] = useState(initialSnapshot.name);
-  const [shape, setShape] = useState<'round' | 'rectangular' | 'square'>(initialSnapshot.shape);
+  const [shape, setShape] = useState<TableShapeValue>(initialSnapshot.shape);
   const [capacity, setCapacity] = useState(initialSnapshot.capacity);
   const [width, setWidth] = useState(initialSnapshot.width);
   const [height, setHeight] = useState(initialSnapshot.height);
@@ -149,7 +151,7 @@ function TableModalForm({
             id="table-shape"
             value={shape}
             onChange={(e) => {
-              const val = e.target.value as 'round' | 'rectangular' | 'square';
+              const val = e.target.value as TableShapeValue;
               setShape(val);
               updateSnapshotField('shape', val);
             }}
@@ -158,6 +160,8 @@ function TableModalForm({
             <option value="round">Round</option>
             <option value="rectangular">Rectangular</option>
             <option value="square">Square</option>
+            <option value="head">Head Table (1-Sided)</option>
+            <option value="sweetheart">Sweetheart (1-Sided)</option>
           </select>
         </div>
 

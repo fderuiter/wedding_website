@@ -132,6 +132,47 @@ function parseCheckStaticSubscripts(checkStaticCommand: string): string[] {
   return subscripts;
 }
 
+function parseDefaultDocFiles(verifyDocSyncContent: string): string[] {
+  const arrMatch = verifyDocSyncContent.match(
+    /DEFAULT_DOC_FILES\s*(?::[^=]*)?=\s*\[([\s\S]*?)\]/
+  );
+  if (!arrMatch) {
+    return [];
+  }
+  const files: string[] = [];
+  const strRegex = /['"]([^'"]+)['"]/g;
+  let match: RegExpExecArray | null;
+  while ((match = strRegex.exec(arrMatch[1])) !== null) {
+    files.push(match[1]);
+  }
+  return files;
+}
+
+function extractDocSyncBulletLines(markdown: string): string {
+  return markdown
+    .split(/\r?\n/)
+    .filter((line) => /^\s*-\s+`npm run check:doc-sync`/.test(line))
+    .join('\n');
+}
+
+const NUMBER_WORDS: Record<number, string> = {
+  1: 'one',
+  2: 'two',
+  3: 'three',
+  4: 'four',
+  5: 'five',
+  6: 'six',
+  7: 'seven',
+  8: 'eight',
+  9: 'nine',
+  10: 'ten',
+  11: 'eleven',
+  12: 'twelve',
+  13: 'thirteen',
+  14: 'fourteen',
+  15: 'fifteen',
+};
+
 function parseQualityStepCommands(checkQualityContent: string): string[] {
   const commands: string[] = [];
   const stepsSection = checkQualityContent.split('export function main')[0] ?? checkQualityContent;
@@ -185,9 +226,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'tsconfig.json',
     'docker-compose.yml',
     'eslint.config.mjs',
+    'playwright.config.ts',
     '.githooks/pre-commit',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
+    'scripts/a11y-report.mjs',
+    'scripts/seed.ts',
+    'scripts/verify-doc-sync.ts',
     'scripts/test-standalone.mjs',
     'scripts/test-container.mjs',
     'README.md',
@@ -213,8 +258,15 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
   const tsconfigRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
+  const a11yReportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/a11y-report.mjs'), 'utf8');
+  const seedRaw = fs.readFileSync(path.join(repoRoot, 'scripts/seed.ts'), 'utf8');
+  const verifyDocSyncRaw = fs.readFileSync(
+    path.join(repoRoot, 'scripts/verify-doc-sync.ts'),
+    'utf8'
+  );
   const readmeRaw = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const devSetupRaw = fs.readFileSync(path.join(repoRoot, 'docs/developer-setup.md'), 'utf8');
   const contributingRaw = fs.readFileSync(path.join(repoRoot, '.github/CONTRIBUTING.md'), 'utf8');
@@ -284,10 +336,102 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('package.json: "check:static" must include "npm run check:setup-guides"');
   }
 
-  // 2. Hook & check-quality.ts registration checks
+  const pretestCmd = scripts['pretest'] ?? '';
+  if (!pretestCmd.includes('scripts/pretest.mjs')) {
+    errors.push('package.json: "pretest" must invoke "scripts/pretest.mjs"');
+  }
+  for (const [scriptName, scriptCmd] of Object.entries(scripts)) {
+    if (scriptName.startsWith('test') && /\bjest\b/.test(scriptCmd)) {
+      const expectedHook = `pre${scriptName}`;
+      const hookCmd = scripts[expectedHook] ?? '';
+      if (!/scripts\/pretest\.mjs|\bnpm\s+run\s+pretest\b/.test(hookCmd)) {
+        errors.push(
+          `package.json: Jest script "${scriptName}" requires lifecycle hook "${expectedHook}" invoking "scripts/pretest.mjs" or "npm run pretest"`
+        );
+      }
+    }
+  }
+  const testingRunSection = extractMarkdownSection(
+    testingRaw,
+    /^##\s+How to Run Tests\b/,
+    /^##\s+/
+  );
+  const prescribedTestCmdRegex = /\bnpm\s+run\s+(test:[a-zA-Z0-9:_-]+)/g;
+  let prescribedMatch: RegExpExecArray | null;
+  while ((prescribedMatch = prescribedTestCmdRegex.exec(testingRunSection)) !== null) {
+    const testScriptName = prescribedMatch[1];
+    if (!scripts[testScriptName]) {
+      errors.push(`.github/TESTING.md: Prescribes missing package.json script "${testScriptName}"`);
+    } else if (/\bjest\b/.test(scripts[testScriptName])) {
+      const hookName = `pre${testScriptName}`;
+      if (!/scripts\/pretest\.mjs|\bnpm\s+run\s+pretest\b/.test(scripts[hookName] ?? '')) {
+        errors.push(
+          `package.json: Missing "${hookName}" pretest hook for "${testScriptName}" prescribed in .github/TESTING.md`
+        );
+      }
+    }
+  }
+
+  // 2. Hook, check:static parity, E2E runner, & check-quality.ts registration checks
   const preCommitScripts = parsePreCommitScripts(preCommitRaw);
   if (!preCommitScripts.includes('check:setup-guides')) {
     errors.push('.githooks/pre-commit: Must run "check:setup-guides"');
+  }
+  for (const staticSubscript of checkStaticSubscripts) {
+    if (!preCommitScripts.includes(staticSubscript)) {
+      errors.push(
+        `.githooks/pre-commit: Must enforce check:static sub-script "${staticSubscript}"`
+      );
+    }
+  }
+  for (const heavyBuildScript of ['docs:build', 'build-storybook', 'build']) {
+    if (preCommitScripts.includes(heavyBuildScript)) {
+      errors.push(
+        `.githooks/pre-commit: Must exclude heavy build step "${heavyBuildScript}" so local commits stay fast`
+      );
+    }
+  }
+
+  if (/\bupdate\s*:\s*\{\s*\}/.test(seedRaw)) {
+    errors.push(
+      'scripts/seed.ts: appConfig.upsert must populate update fields rather than using an empty "update: {}" object'
+    );
+  }
+
+  const a11yJestIdx = a11yReportRaw.search(/['"]npm['"]\s*,\s*\[\s*['"]test['"]\s*\]/);
+  const a11ySeedIdx = a11yReportRaw.indexOf('scripts/seed.ts');
+  const a11yPlaywrightIdx = a11yReportRaw.search(
+    /['"]npx['"]\s*,\s*\[\s*['"]playwright['"]\s*,\s*['"]test['"]\s*\]/
+  );
+  if (
+    a11yJestIdx === -1 ||
+    a11ySeedIdx === -1 ||
+    a11yPlaywrightIdx === -1 ||
+    !(a11yJestIdx < a11ySeedIdx && a11ySeedIdx < a11yPlaywrightIdx)
+  ) {
+    errors.push(
+      'scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts" after "npm test" and before "npx playwright test"'
+    );
+  }
+
+  if (
+    /reuseExistingServer\s*:\s*true\b/.test(playwrightConfigRaw) ||
+    /reuseExistingServer\s*:\s*!process\.env\.CI\s*[,}]/.test(playwrightConfigRaw) ||
+    !playwrightConfigRaw.includes('PLAYWRIGHT_REUSE_SERVER')
+  ) {
+    errors.push(
+      'playwright.config.ts: Must disable automatic server reuse by default and allow reuse only via explicit PLAYWRIGHT_REUSE_SERVER opt-in outside CI'
+    );
+  }
+  if (
+    !playwrightConfigRaw.includes('prisma db push') ||
+    !playwrightConfigRaw.includes('scripts/seed.ts') ||
+    !playwrightConfigRaw.includes('node .next/standalone/server.js') ||
+    !playwrightConfigRaw.includes('TEST_CONTAINER')
+  ) {
+    errors.push(
+      'playwright.config.ts: Must initialize and seed wedding_test before npm run dev when CI and TEST_CONTAINER are unset while preserving CI standalone execution'
+    );
   }
 
   const qualityCommands = parseQualityStepCommands(checkQualityRaw);
@@ -404,6 +548,69 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       );
     }
   }
+  const countMatch = contributingCommitSection.match(
+    /\bruns\s+([a-z0-9]+)\s+sequential\s+workspace\s+checks\b/i
+  );
+  const expectedCountWord = NUMBER_WORDS[preCommitScripts.length];
+  const expectedCountNum = String(preCommitScripts.length);
+  if (
+    countMatch &&
+    countMatch[1].toLowerCase() !== expectedCountWord &&
+    countMatch[1] !== expectedCountNum
+  ) {
+    errors.push(
+      `.github/CONTRIBUTING.md: Commit Your Changes claims "${countMatch[1]}" sequential workspace checks, expected "${expectedCountWord ?? expectedCountNum}" (${preCommitScripts.length})`
+    );
+  }
+
+  const defaultDocFiles = parseDefaultDocFiles(verifyDocSyncRaw);
+  if (defaultDocFiles.length === 0) {
+    errors.push('scripts/verify-doc-sync.ts: DEFAULT_DOC_FILES must not be empty');
+  }
+  for (const [docLabel, content] of [
+    ['.github/CONTRIBUTING.md', contributingRaw],
+    ['.github/TESTING.md', testingRaw],
+    ['AGENTS.md', agentsRaw],
+  ] as const) {
+    const docSyncLines = extractDocSyncBulletLines(content);
+    for (const docFile of defaultDocFiles) {
+      if (!docSyncLines.includes(docFile)) {
+        errors.push(
+          `${docLabel}: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "${docFile}"`
+        );
+      }
+    }
+    for (const subscript of checkStaticSubscripts) {
+      if (!content.includes(subscript)) {
+        errors.push(`${docLabel}: Missing check:static sub-script "${subscript}"`);
+      }
+    }
+    if (
+      !content.includes('PLAYWRIGHT_REUSE_SERVER') ||
+      !content.includes('wedding_test') ||
+      !content.includes('GUEST_SESSION_SECRET')
+    ) {
+      errors.push(
+        `${docLabel}: Must document PLAYWRIGHT_REUSE_SERVER opt-in, wedding_test isolation, and GUEST_SESSION_SECRET alignment for Playwright E2E workflows`
+      );
+    }
+  }
+
+  const agentsA11ySection = extractMarkdownSection(
+    agentsRaw,
+    /^###\s+Accessibility Quality Gate\b/,
+    /^###\s+/
+  );
+  if (/\bdb:seed\b[\s\S]*\btest:a11y\b/.test(agentsA11ySection)) {
+    errors.push(
+      'AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y" (integration teardowns wipe AppConfig)'
+    );
+  }
+  if (!agentsA11ySection.includes('scripts/seed.ts') || !agentsA11ySection.includes('SetupWizard')) {
+    errors.push(
+      'AGENTS.md: Accessibility Quality Gate must document post-Jest reseeding via "scripts/seed.ts" to skip SetupWizard'
+    );
+  }
 
   // 5. .github/TESTING.md & AGENTS.md contract checks
   const envTest = parseEnvAssignments(envTestRaw);
@@ -456,12 +663,6 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       errors.push(
         `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs in running "docker compose down -v"`
       );
-    }
-
-    for (const subscript of checkStaticSubscripts) {
-      if (!content.includes(subscript)) {
-        errors.push(`${docLabel}: Missing check:static sub-script "${subscript}"`);
-      }
     }
   }
 

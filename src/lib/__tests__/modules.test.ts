@@ -9,12 +9,11 @@ import { getNavLinks } from '../routes';
 
 describe('Feature / Module Configuration Model', () => {
   describe('ModuleConfigSchema & Defaults', () => {
-    it('defaults all 10 features to true', () => {
+    it('defaults all 9 features to true', () => {
       const parsed = ModuleConfigSchema.parse({});
       expect(parsed).toEqual(DEFAULT_MODULE_CONFIG);
       expect(parsed.registry).toBe(true);
       expect(parsed.groupGifting).toBe(true);
-      expect(parsed.guestPasscode).toBe(true);
       expect(parsed.weather).toBe(true);
       expect(parsed.weddingParty).toBe(true);
       expect(parsed.attractions).toBe(true);
@@ -22,30 +21,39 @@ describe('Feature / Module Configuration Model', () => {
       expect(parsed.countdown).toBe(true);
       expect(parsed.addToCalendar).toBe(true);
       expect(parsed.interactive3D).toBe(true);
+      expect('guestPasscode' in parsed).toBe(false);
     });
 
-    it('enumerates metadata for all 10 supported features', () => {
+    it('enumerates metadata for all 9 supported features without guestPasscode', () => {
       expect(FEATURE_METADATA.groupGifting.dependencies).toEqual(['registry']);
       const featureKeys = Object.keys(FEATURE_METADATA);
-      expect(featureKeys).toHaveLength(10);
-      expect(featureKeys).toEqual(
-        expect.arrayContaining([
-          'registry',
-          'groupGifting',
-          'guestPasscode',
-          'weather',
-          'weddingParty',
-          'attractions',
-          'gallery',
-          'countdown',
-          'addToCalendar',
-          'interactive3D',
-        ])
-      );
+      expect(featureKeys).toHaveLength(9);
+      expect(featureKeys).toEqual([
+        'registry',
+        'groupGifting',
+        'weather',
+        'weddingParty',
+        'attractions',
+        'gallery',
+        'countdown',
+        'addToCalendar',
+        'interactive3D',
+      ]);
+      expect(featureKeys).not.toContain('guestPasscode');
     });
   });
 
   describe('resolveModuleConfig & Dependency Rules', () => {
+    it('strips legacy guestPasscode keys without failing validation', () => {
+      const resolved = resolveModuleConfig({
+        guestPasscode: false,
+        weather: false,
+      });
+
+      expect('guestPasscode' in resolved).toBe(false);
+      expect(resolved.weather).toBe(false);
+      expect(resolved.registry).toBe(true);
+    });
     it('enforces groupGifting dependency on registry', () => {
       const resolved = resolveModuleConfig({
         registry: false,

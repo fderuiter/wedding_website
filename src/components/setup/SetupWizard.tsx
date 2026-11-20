@@ -142,11 +142,6 @@ function SetupWizardContent() {
   const [themePreset, setThemePreset] = useState<ThemePreset>('classic');
   const [colorPrimary, setColorPrimary] = useState('#4A5568');
   const [colorSecondary, setColorSecondary] = useState('#2D3748');
-  const [layoutContainerMaxWidth, setLayoutContainerMaxWidth] = useState('64rem');
-  const [layoutGridGap, setLayoutGridGap] = useState('1.5rem');
-  const [layoutCardPadding, setLayoutCardPadding] = useState('2rem');
-  const [layoutBorderRadius, setLayoutBorderRadius] = useState('1rem');
-  const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
   const [step2ErrorField, setStep2ErrorField] = useState<Step2ErrorField>('siteUrl');
   const partner1InputRef = useRef<HTMLInputElement>(null);
   const partner2InputRef = useRef<HTMLInputElement>(null);
@@ -181,13 +176,6 @@ function SetupWizardContent() {
     if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
     if (fields.colorPrimary !== undefined) setColorPrimary(fields.colorPrimary);
     if (fields.colorSecondary !== undefined) setColorSecondary(fields.colorSecondary);
-    if (fields.layoutContainerMaxWidth !== undefined) setLayoutContainerMaxWidth(fields.layoutContainerMaxWidth);
-    if (fields.layoutGridGap !== undefined) setLayoutGridGap(fields.layoutGridGap);
-    if (fields.layoutCardPadding !== undefined) setLayoutCardPadding(fields.layoutCardPadding);
-    if (fields.layoutBorderRadius !== undefined) setLayoutBorderRadius(fields.layoutBorderRadius);
-    if (fields.themeTokens !== undefined) {
-      setThemeTokens((prev) => ({ ...prev, ...fields.themeTokens }));
-    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -295,11 +283,6 @@ function SetupWizardContent() {
           themePreset,
           colorPrimary,
           colorSecondary,
-          layoutContainerMaxWidth,
-          layoutGridGap,
-          layoutCardPadding,
-          layoutBorderRadius,
-          themeTokens,
         }),
       });
       if (res.ok) {
@@ -472,15 +455,11 @@ function SetupWizardContent() {
 
               <div className="pt-4 border-t border-gray-200 dark:border-zinc-700">
                 <ThemeConfigurationPanel
+                  mode="essentials"
                   values={{
                     themePreset,
                     colorPrimary,
                     colorSecondary,
-                    layoutContainerMaxWidth,
-                    layoutGridGap,
-                    layoutCardPadding,
-                    layoutBorderRadius,
-                    themeTokens,
                   }}
                   onChange={handleThemeChange}
                 />

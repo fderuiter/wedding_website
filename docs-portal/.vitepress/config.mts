@@ -1,11 +1,16 @@
 import { defineConfig } from 'vitepress';
 import { withMermaid } from 'vitepress-plugin-mermaid';
 
+export function normalizeBasePath(rawBase?: string): string {
+  const normalized = (rawBase ?? '').trim().replace(/\/+/g, '/').replace(/^\/+|\/+$/g, '');
+  return normalized ? `/${normalized}/` : '/';
+}
+
 export default withMermaid(
   defineConfig({
     title: 'Wedding Platform Docs',
     description: 'Architectural specifications, deployment topologies, security models, and API reference',
-    base: process.env.VITEPRESS_BASE || '/',
+    base: normalizeBasePath(process.env.VITEPRESS_BASE),
     ignoreDeadLinks: false,
     markdown: {
       languageAlias: {
@@ -55,6 +60,7 @@ export default withMermaid(
           text: 'Development',
           collapsed: false,
           items: [
+            { text: 'Project Overview', link: '/development/readme' },
             { text: 'Local Environment Setup', link: '/development/developer-setup' },
             { text: 'Testing Strategy', link: '/development/testing' },
             { text: 'Contribution Guidelines', link: '/development/contributing' },
@@ -84,7 +90,8 @@ export default withMermaid(
           collapsed: false,
           items: [
             { text: 'Upgrading Guide', link: '/guides/upgrading' },
-            { text: 'Versioning Policy', link: '/guides/versioning' }
+            { text: 'Versioning Policy', link: '/guides/versioning' },
+            { text: 'Changelog', link: '/guides/changelog' }
           ]
         },
         {

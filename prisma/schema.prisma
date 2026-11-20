@@ -54,6 +54,7 @@ model AppConfig {
   layoutCardPadding       String @default("2rem")
   layoutBorderRadius      String @default("1rem")
   features         Json     @default("[]")
+  modules          Json     @default("{}")
   timezone         String   @default("America/Chicago")
   showCountdown    Boolean  @default(true)
   showAddToCalendar Boolean  @default(true)
