@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
@@ -7,6 +8,7 @@ import type {
   SendTestBroadcastInput,
   TestConnectionInput,
   BroadcastHistoryItem,
+  BroadcastTargetFilters,
 } from '@/features/broadcast';
 
 export function useAdminBroadcast() {
@@ -45,6 +47,26 @@ export function useAdminBroadcast() {
     },
   });
 
+  const countRecipients = useCallback(
+    async (
+      targetFilters?: BroadcastTargetFilters
+    ): Promise<{ recipientCount: number; baseUrlWarning?: string }> => {
+      const res = await apiClient.post<{
+        recipientCount?: number;
+        baseUrlWarning?: string;
+      }>('/api/admin/broadcast/preview', {
+        channel: 'EMAIL',
+        body: '{{guestName}}',
+        targetFilters,
+      });
+      return {
+        recipientCount: typeof res?.recipientCount === 'number' ? res.recipientCount : 0,
+        baseUrlWarning: res?.baseUrlWarning,
+      };
+    },
+    []
+  );
+
   const { mutateAsync: retryBroadcast, isPending: retrying } = useMutation({
     mutationFn: async (payload: { broadcastId: string; recipientIds?: string[] }) => {
       return apiClient.post('/api/admin/broadcast/retry', payload);
@@ -79,6 +101,7 @@ export function useAdminBroadcast() {
     sendingTest,
     previewBroadcast,
     previewing,
+    countRecipients,
     retryBroadcast,
     retrying,
     testConnection,

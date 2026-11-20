@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { formatZodError } from '@/utils/validation';
-import { SendTestBroadcastSchema } from '@/features/broadcast';
-import { BroadcastService } from '@/features/broadcast';
+import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
+import { SendTestBroadcastSchema, BroadcastService } from '@/features/broadcast';
 
 export const POST = withApiMiddleware(
   async (req: NextRequest) => {
@@ -14,8 +14,20 @@ export const POST = withApiMiddleware(
       throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
     }
 
+    const hostHeader =
+      req.headers.get('x-forwarded-host')?.split(',')[0]?.trim() || req.headers.get('host');
+    const protoHeader = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+    const safeLocalFallback =
+      req.nextUrl.hostname === 'localhost' || req.nextUrl.hostname === '127.0.0.1'
+        ? req.nextUrl.origin
+        : undefined;
+    const requestOrigin = getValidatedCanonicalUrl(hostHeader, protoHeader, safeLocalFallback);
+
     try {
-      const result = await BroadcastService.sendTestBroadcast(parseResult.data);
+      const result = await BroadcastService.sendTestBroadcast({
+        ...parseResult.data,
+        requestOrigin,
+      });
       return NextResponse.json(result);
     } catch (error: any) {
       throw new ApiError(500, error.message || 'Failed to dispatch test broadcast message.');

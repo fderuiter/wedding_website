@@ -563,7 +563,29 @@
                           "type": "string"
                         }
                       },
+                      "partyGroup": {
+                        "type": "string"
+                      },
                       "householdName": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "redeemed",
+                          "unused"
+                        ]
+                      },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "complete",
+                          "missing"
+                        ]
+                      },
+                      "dietaryFilter": {
                         "type": "string"
                       },
                       "attendanceStatus": {
@@ -714,7 +736,29 @@
                           "type": "string"
                         }
                       },
+                      "partyGroup": {
+                        "type": "string"
+                      },
                       "householdName": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "redeemed",
+                          "unused"
+                        ]
+                      },
+                      "addressFilter": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "complete",
+                          "missing"
+                        ]
+                      },
+                      "dietaryFilter": {
                         "type": "string"
                       },
                       "attendanceStatus": {

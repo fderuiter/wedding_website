@@ -2,7 +2,11 @@ export type BroadcastChannel = 'EMAIL' | 'SMS';
 
 export interface BroadcastTargetFilters {
   partyTags?: string[];
+  partyGroup?: string;
   householdName?: string;
+  status?: 'all' | 'redeemed' | 'unused';
+  addressFilter?: 'all' | 'complete' | 'missing';
+  dietaryFilter?: string;
   attendanceStatus?: 'attending' | 'declined' | 'pending' | 'all';
   subEventId?: string;
   subEventRsvpStatus?: string;
@@ -13,6 +17,8 @@ export interface BroadcastTargetFilters {
 export interface BroadcastTemplateContext {
   guestName: string;
   invitationCode: string;
+  rsvpUrl?: string;
+  baseUrl?: string;
   householdName?: string;
   weddingDate?: string;
   venueName?: string;
@@ -26,6 +32,7 @@ export interface SendBroadcastInput {
   targetFilters?: BroadcastTargetFilters;
   customRecipientIds?: string[];
   scheduledFor?: string;
+  requestOrigin?: string;
 }
 
 export interface PreviewBroadcastInput {
@@ -34,6 +41,7 @@ export interface PreviewBroadcastInput {
   body: string;
   sampleGuestId?: string;
   targetFilters?: BroadcastTargetFilters;
+  requestOrigin?: string;
 }
 
 export interface SendTestBroadcastInput {
@@ -41,6 +49,7 @@ export interface SendTestBroadcastInput {
   subject?: string;
   body: string;
   destination?: string;
+  requestOrigin?: string;
 }
 
 export interface TestConnectionInput {

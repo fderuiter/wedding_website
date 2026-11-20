@@ -1477,5 +1477,157 @@ describe('InvitationCodesDashboardPage', () => {
       const results = await axe(container);
       expect(results).toHaveNoViolations();
     });
+
+    it('forwards searchQuery, partyGroup, status, addressFilter, dietaryFilter, attendanceStatus, and partyTags into BroadcastModal when Send Broadcast is clicked', async () => {
+      const originalFetch = global.fetch;
+      const previewBodies: Array<Record<string, unknown>> = [];
+      const fetchSpy = jest.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        if (url.includes('/api/admin/broadcast/preview')) {
+          const rawBody =
+            typeof init?.body === 'string'
+              ? init.body
+              : input instanceof Request
+                ? await input.clone().text()
+                : '';
+          if (rawBody) {
+            previewBodies.push(JSON.parse(rawBody) as Record<string, unknown>);
+          }
+          return new Response(
+            JSON.stringify({
+              subject: '',
+              body: '',
+              sampleGuestName: 'Alice Smith',
+              destination: 'alice@example.com',
+              recipientCount: 1,
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            }
+          );
+        }
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      global.fetch = fetchSpy as typeof fetch;
+
+      try {
+        const richCodes = [
+          {
+            id: 'c1',
+            guestName: 'Alice Smith',
+            householdName: 'The Smith Household',
+            partyGroup: 'Bride',
+            partyTags: ['VIP'],
+            code: 'ALICE1',
+            email: 'alice@example.com',
+            dietaryNotes: 'Vegan',
+            used: false,
+            extraFields: { attendanceStatus: 'pending' },
+          },
+          {
+            id: 'c2',
+            guestName: 'Bob Jones',
+            householdName: 'The Jones Household',
+            partyGroup: 'Groom',
+            partyTags: ['Friends'],
+            code: 'BOB2',
+            email: 'bob@example.com',
+            dietaryNotes: 'Gluten Free',
+            used: true,
+            addressLine1: '100 Main St',
+            city: 'Chicago',
+            state: 'IL',
+            zipCode: '60601',
+            country: 'USA',
+            extraFields: { attendanceStatus: 'attending' },
+          },
+        ];
+
+        (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+          data: richCodes,
+          isLoading: false,
+          error: null,
+          create: mockCreate,
+          update: mockUpdate,
+          remove: mockRemove,
+          removeBatch: mockRemoveBatch,
+          updateBatch: mockUpdateBatch,
+          fetchAll: mockFetchAll,
+        });
+
+        renderComponent();
+
+        // Activate all 7 dashboard filters
+        fireEvent.change(screen.getByRole('textbox', { name: 'Search invitation codes' }), {
+          target: { value: 'alice@example.com' },
+        });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Filter by party side or group' }), {
+          target: { value: 'Bride' },
+        });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Filter by dietary category' }), {
+          target: { value: 'vegan' },
+        });
+
+        const tagsGroup = screen.getByRole('group', { name: /Party Tags/i });
+        fireEvent.click(within(tagsGroup).getByRole('button', { name: '#VIP' }));
+
+        fireEvent.click(screen.getByRole('tab', { name: /Unused/i }));
+
+        const addressGroup = screen.getByRole('group', { name: /Address/i });
+        fireEvent.click(within(addressGroup).getByRole('button', { name: /Address Missing/i }));
+
+        const attendanceGroup = screen.getByRole('group', { name: /Attendance/i });
+        fireEvent.click(within(attendanceGroup).getByRole('button', { name: /Pending/i }));
+
+        // Open BroadcastModal
+        fireEvent.click(screen.getByRole('button', { name: 'Send Broadcast' }));
+
+        const dialog = await screen.findByRole('dialog', { name: 'Compose Multi-Channel Broadcast' });
+        expect(dialog).toBeInTheDocument();
+
+        // Target Audience summary reflects all 7 forwarded filters and does NOT map searchQuery onto Household
+        expect(within(dialog).getByText(/Search: "alice@example\.com"/i)).toBeInTheDocument();
+        expect(within(dialog).getByText(/Group: "Bride"/i)).toBeInTheDocument();
+        expect(within(dialog).getByText(/Tags: \[VIP\]/i)).toBeInTheDocument();
+        expect(within(dialog).getByText(/Code Status: unused/i)).toBeInTheDocument();
+        expect(within(dialog).getByText(/RSVP: pending/i)).toBeInTheDocument();
+        expect(within(dialog).getByText(/Address: missing/i)).toBeInTheDocument();
+        expect(within(dialog).getByText(/Dietary: vegan/i)).toBeInTheDocument();
+        expect(within(dialog).queryByText(/Household:/i)).not.toBeInTheDocument();
+
+        await waitFor(() => {
+          expect(within(dialog).getByTestId('broadcast-recipient-count')).toHaveTextContent(
+            '1 matching recipient'
+          );
+          expect(previewBodies.length).toBeGreaterThan(0);
+        });
+
+        const latestPreviewBody = previewBodies[previewBodies.length - 1] as {
+          targetFilters?: Record<string, unknown>;
+        };
+        expect(latestPreviewBody.targetFilters).toEqual({
+          searchQuery: 'alice@example.com',
+          partyGroup: 'Bride',
+          status: 'unused',
+          addressFilter: 'missing',
+          dietaryFilter: 'vegan',
+          attendanceStatus: 'pending',
+          partyTags: ['VIP'],
+        });
+        expect(latestPreviewBody.targetFilters?.householdName).toBeUndefined();
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
   });
 });
+

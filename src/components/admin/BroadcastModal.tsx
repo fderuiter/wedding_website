@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Select } from '@/components/ui/forms';
@@ -10,7 +10,9 @@ import { useTheme } from '@/components/ThemeProvider';
 import {
   BroadcastChannel,
   BroadcastTargetFilters,
+  BroadcastStarterTemplate,
   AVAILABLE_TEMPLATE_PLACEHOLDERS,
+  BROADCAST_STARTER_TEMPLATES,
 } from '@/features/broadcast';
 
 export interface BroadcastModalProps {
@@ -19,9 +21,53 @@ export interface BroadcastModalProps {
   initialChannel?: BroadcastChannel;
   targetFilters?: BroadcastTargetFilters;
   selectedCount?: number;
+  initialRecipientCount?: number;
   subEvents?: any[];
   adminEmail?: string;
   adminPhone?: string;
+}
+
+function buildEffectiveTargetFilters(
+  filters?: BroadcastTargetFilters
+): BroadcastTargetFilters | undefined {
+  if (!filters) return undefined;
+  const normalized: BroadcastTargetFilters = {};
+
+  if (filters.selectedIds && filters.selectedIds.length > 0) {
+    normalized.selectedIds = filters.selectedIds;
+  }
+  if (filters.partyTags && filters.partyTags.length > 0) {
+    normalized.partyTags = filters.partyTags;
+  }
+  if (filters.partyGroup && filters.partyGroup !== 'all') {
+    normalized.partyGroup = filters.partyGroup;
+  }
+  if (filters.householdName && filters.householdName.trim()) {
+    normalized.householdName = filters.householdName.trim();
+  }
+  if (filters.status && filters.status !== 'all') {
+    normalized.status = filters.status;
+  }
+  if (filters.addressFilter && filters.addressFilter !== 'all') {
+    normalized.addressFilter = filters.addressFilter;
+  }
+  if (filters.dietaryFilter && filters.dietaryFilter !== 'all') {
+    normalized.dietaryFilter = filters.dietaryFilter;
+  }
+  if (filters.attendanceStatus && filters.attendanceStatus !== 'all') {
+    normalized.attendanceStatus = filters.attendanceStatus;
+  }
+  if (filters.subEventId && filters.subEventId.trim()) {
+    normalized.subEventId = filters.subEventId.trim();
+    if (filters.subEventRsvpStatus && filters.subEventRsvpStatus !== 'all') {
+      normalized.subEventRsvpStatus = filters.subEventRsvpStatus;
+    }
+  }
+  if (filters.searchQuery && filters.searchQuery.trim()) {
+    normalized.searchQuery = filters.searchQuery.trim();
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
@@ -29,6 +75,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   initialChannel = 'EMAIL',
   targetFilters,
   selectedCount,
+  initialRecipientCount,
   subEvents = [],
   adminEmail,
   adminPhone,
@@ -40,12 +87,26 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     sendBroadcast,
     previewBroadcast,
     sendTestBroadcast,
+    countRecipients,
     sending,
     previewing,
     sendingTest,
   } = useAdminBroadcast();
 
+  const isManualSelection = Boolean(
+    (selectedCount !== undefined && selectedCount > 0) ||
+      (targetFilters?.selectedIds && targetFilters.selectedIds.length > 0)
+  );
+  const manualSelectionCount =
+    selectedCount !== undefined && selectedCount > 0
+      ? selectedCount
+      : targetFilters?.selectedIds?.length;
+
   const [channel, setChannel] = useState<BroadcastChannel>(initialChannel);
+  const [localFilters, setLocalFilters] = useState<BroadcastTargetFilters>(
+    () => targetFilters ?? {}
+  );
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [testDestination, setTestDestination] = useState('');
@@ -53,8 +114,80 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const [previewResult, setPreviewResult] = useState<any>(null);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
+  const [recipientCount, setRecipientCount] = useState<number | null>(
+    manualSelectionCount ?? initialRecipientCount ?? null
+  );
+  const [resolvedCountKey, setResolvedCountKey] = useState<string | null>(null);
+  const [baseUrlWarning, setBaseUrlWarning] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const effectiveTargetFilters = useMemo(
+    () => buildEffectiveTargetFilters(localFilters),
+    [localFilters]
+  );
+
+  const filtersKey = useMemo(
+    () => JSON.stringify(effectiveTargetFilters ?? null),
+    [effectiveTargetFilters]
+  );
+
+  const countingRecipients =
+    typeof countRecipients === 'function' && resolvedCountKey !== filtersKey;
+
+  useEffect(() => {
+    if (typeof countRecipients !== 'function') {
+      return;
+    }
+
+    let cancelled = false;
+
+    countRecipients(effectiveTargetFilters)
+      .then((res) => {
+        if (cancelled) return;
+        if (typeof res?.recipientCount === 'number') {
+          setRecipientCount(res.recipientCount);
+        }
+        setBaseUrlWarning(res?.baseUrlWarning ?? null);
+      })
+      .catch(() => {
+        // Preserve existing fallback count if live count request fails
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setResolvedCountKey(filtersKey);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [countRecipients, filtersKey, effectiveTargetFilters]);
+
+  const handleChannelChange = (nextChannel: BroadcastChannel) => {
+    if (selectedTemplateId) {
+      const matchedTemplate = BROADCAST_STARTER_TEMPLATES.find(
+        (t) => t.id === selectedTemplateId
+      );
+      if (matchedTemplate) {
+        const currentChannelBody =
+          channel === 'EMAIL' ? matchedTemplate.emailBody : matchedTemplate.smsBody;
+        if (body === currentChannelBody) {
+          setBody(
+            nextChannel === 'EMAIL' ? matchedTemplate.emailBody : matchedTemplate.smsBody
+          );
+        }
+      }
+    }
+    setChannel(nextChannel);
+  };
+
+  const handleApplyStarterTemplate = (template: BroadcastStarterTemplate) => {
+    setSelectedTemplateId(template.id);
+    setSubject(template.subject);
+    setBody(channel === 'EMAIL' ? template.emailBody : template.smsBody);
+    setPreviewResult(null);
+  };
 
   const insertPlaceholder = (ph: string) => {
     if (!textareaRef.current) {
@@ -81,13 +214,19 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       return;
     }
     try {
-      const res = await previewBroadcast({
+      const res: any = await previewBroadcast({
         channel,
         subject: channel === 'EMAIL' ? subject : undefined,
         body,
-        targetFilters,
+        targetFilters: effectiveTargetFilters,
       });
       setPreviewResult(res);
+      if (typeof res?.recipientCount === 'number') {
+        setRecipientCount(res.recipientCount);
+      }
+      if (res?.baseUrlWarning) {
+        setBaseUrlWarning(res.baseUrlWarning);
+      }
       setActiveTab('preview');
     } catch (err: any) {
       addToast(err.message || 'Failed to generate preview', 'error');
@@ -111,6 +250,10 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         body,
         destination: testDestination.trim() || undefined,
       });
+
+      if (result?.baseUrlWarning) {
+        setBaseUrlWarning(result.baseUrlWarning);
+      }
 
       const recipient = result?.destination || testDestination.trim() || 'configured administrator contact';
       addToast(
@@ -148,9 +291,13 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         channel,
         subject: channel === 'EMAIL' ? subject : undefined,
         body,
-        targetFilters,
+        targetFilters: effectiveTargetFilters,
         scheduledFor: scheduledIso,
       });
+
+      if (result?.baseUrlWarning && (body.includes('{{rsvpUrl}}') || subject.includes('{{rsvpUrl}}'))) {
+        addToast(result.baseUrlWarning, 'info');
+      }
 
       if (result.status === 'SCHEDULED') {
         addToast(
@@ -171,28 +318,53 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 
   const getTargetSummary = () => {
     const parts: string[] = [];
-    if (selectedCount !== undefined && selectedCount > 0) {
-      parts.push(`${selectedCount} selected guest(s)`);
+    if (isManualSelection) {
+      parts.push(`${manualSelectionCount ?? 0} selected guest(s)`);
     } else {
       parts.push('All matching guests');
     }
 
-    if (targetFilters?.partyTags && targetFilters.partyTags.length > 0) {
-      parts.push(`Tags: [${targetFilters.partyTags.join(', ')}]`);
+    if (effectiveTargetFilters?.searchQuery) {
+      parts.push(`Search: "${effectiveTargetFilters.searchQuery}"`);
     }
-    if (targetFilters?.householdName) {
-      parts.push(`Household: "${targetFilters.householdName}"`);
+    if (effectiveTargetFilters?.partyGroup) {
+      parts.push(`Group: "${effectiveTargetFilters.partyGroup}"`);
     }
-    if (targetFilters?.attendanceStatus && targetFilters.attendanceStatus !== 'all') {
-      parts.push(`Status: ${targetFilters.attendanceStatus}`);
+    if (effectiveTargetFilters?.partyTags && effectiveTargetFilters.partyTags.length > 0) {
+      parts.push(`Tags: [${effectiveTargetFilters.partyTags.join(', ')}]`);
     }
-    if (targetFilters?.subEventId) {
-      const foundSub = subEvents.find((s) => s.id === targetFilters.subEventId);
-      parts.push(`Sub-Event: "${foundSub?.title || targetFilters.subEventId}"`);
+    if (effectiveTargetFilters?.householdName) {
+      parts.push(`Household: "${effectiveTargetFilters.householdName}"`);
+    }
+    if (effectiveTargetFilters?.status) {
+      parts.push(`Code Status: ${effectiveTargetFilters.status}`);
+    }
+    if (effectiveTargetFilters?.attendanceStatus) {
+      parts.push(`RSVP: ${effectiveTargetFilters.attendanceStatus}`);
+    }
+    if (effectiveTargetFilters?.addressFilter) {
+      parts.push(`Address: ${effectiveTargetFilters.addressFilter}`);
+    }
+    if (effectiveTargetFilters?.dietaryFilter) {
+      parts.push(`Dietary: ${effectiveTargetFilters.dietaryFilter}`);
+    }
+    if (effectiveTargetFilters?.subEventId) {
+      const foundSub = subEvents.find((s) => s.id === effectiveTargetFilters.subEventId);
+      const subLabel = foundSub?.title || effectiveTargetFilters.subEventId;
+      const subStatus = effectiveTargetFilters.subEventRsvpStatus || 'all';
+      parts.push(
+        subStatus !== 'all'
+          ? `Sub-Event: "${subLabel}" (${subStatus})`
+          : `Sub-Event: "${subLabel}"`
+      );
     }
 
     return parts.join(' • ');
   };
+
+  const activeWarning = previewResult?.baseUrlWarning || baseUrlWarning;
+  const usesRsvpUrl = body.includes('{{rsvpUrl}}') || subject.includes('{{rsvpUrl}}');
+  const showBaseUrlWarning = Boolean(activeWarning && (usesRsvpUrl || activeTab === 'preview'));
 
   return (
     <div className="space-y-4">
@@ -234,10 +406,144 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         </button>
       </div>
 
-      {/* Target Summary Banner */}
-      <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary">
-        <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
+      {/* Target Summary & Live Recipient Count Banner */}
+      <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
+          </div>
+          <div className="flex items-center gap-2">
+            {(countingRecipients || recipientCount !== null) && (
+              <span
+                data-testid="broadcast-recipient-count"
+                aria-live="polite"
+                className="inline-flex items-center px-2.5 py-0.5 rounded-full font-semibold bg-white dark:bg-zinc-900 border border-primary/30 text-primary"
+              >
+                {countingRecipients
+                  ? 'Counting recipients...'
+                  : `${recipientCount} matching ${recipientCount === 1 ? 'recipient' : 'recipients'}`}
+              </span>
+            )}
+            {!isManualSelection && effectiveTargetFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLocalFilters({});
+                  setPreviewResult(null);
+                }}
+                className="underline font-medium hover:opacity-80"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+
+        {!isManualSelection && activeTab === 'compose' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-primary/15 text-gray-800 dark:text-zinc-200">
+            <FormGroup>
+              <Label htmlFor="broadcast-filter-rsvp">RSVP Status</Label>
+              <Select
+                id="broadcast-filter-rsvp"
+                value={localFilters.attendanceStatus || 'all'}
+                onChange={(e) => {
+                  const val = e.target.value as BroadcastTargetFilters['attendanceStatus'];
+                  setLocalFilters((prev) => ({
+                    ...prev,
+                    attendanceStatus: val === 'all' ? undefined : val,
+                  }));
+                  setPreviewResult(null);
+                }}
+                className="w-full"
+              >
+                <option value="all">All RSVP Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="attending">Attending</option>
+                <option value="declined">Declined</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup>
+              <Label htmlFor="broadcast-filter-address">Address Completion</Label>
+              <Select
+                id="broadcast-filter-address"
+                value={localFilters.addressFilter || 'all'}
+                onChange={(e) => {
+                  const val = e.target.value as BroadcastTargetFilters['addressFilter'];
+                  setLocalFilters((prev) => ({
+                    ...prev,
+                    addressFilter: val === 'all' ? undefined : val,
+                  }));
+                  setPreviewResult(null);
+                }}
+                className="w-full"
+              >
+                <option value="all">All Addresses</option>
+                <option value="missing">Missing Address</option>
+                <option value="complete">Complete Address</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup>
+              <Label htmlFor="broadcast-filter-subevent">Sub-Event</Label>
+              <Select
+                id="broadcast-filter-subevent"
+                value={localFilters.subEventId || ''}
+                onChange={(e) => {
+                  const nextSubId = e.target.value;
+                  setLocalFilters((prev) => ({
+                    ...prev,
+                    subEventId: nextSubId || undefined,
+                    subEventRsvpStatus: nextSubId ? prev.subEventRsvpStatus : undefined,
+                  }));
+                  setPreviewResult(null);
+                }}
+                className="w-full"
+              >
+                <option value="">All Invited Guests</option>
+                {subEvents.map((evt) => (
+                  <option key={evt.id} value={evt.id}>
+                    {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
+                  </option>
+                ))}
+              </Select>
+            </FormGroup>
+
+            <FormGroup>
+              <Label htmlFor="broadcast-filter-subevent-status">Sub-Event RSVP Status</Label>
+              <Select
+                id="broadcast-filter-subevent-status"
+                value={localFilters.subEventRsvpStatus || 'all'}
+                disabled={!localFilters.subEventId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLocalFilters((prev) => ({
+                    ...prev,
+                    subEventRsvpStatus: val === 'all' ? undefined : val,
+                  }));
+                  setPreviewResult(null);
+                }}
+                className="w-full disabled:opacity-50"
+              >
+                <option value="all">All Sub-Event Invitees</option>
+                <option value="pending">Pending (No Response Yet)</option>
+                <option value="attending">Attending Sub-Event</option>
+                <option value="declined">Declined Sub-Event</option>
+              </Select>
+            </FormGroup>
+          </div>
+        )}
       </div>
+
+      {showBaseUrlWarning && (
+        <div
+          role="status"
+          data-testid="broadcast-baseurl-warning"
+          className="p-3 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-700 text-xs text-amber-900 dark:text-amber-200"
+        >
+          <span className="font-semibold">Admin Warning:</span> {activeWarning}
+        </div>
+      )}
 
       {activeTab === 'compose' ? (
         <div
@@ -251,13 +557,45 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
             <Select
               id="broadcast-channel"
               value={channel}
-              onChange={(e) => setChannel(e.target.value as BroadcastChannel)}
+              onChange={(e) => handleChannelChange(e.target.value as BroadcastChannel)}
               className="w-full"
             >
               <option value="EMAIL">Email Broadcast</option>
               <option value="SMS">SMS Alert / Text Message</option>
             </Select>
           </FormGroup>
+
+          {/* Starter Templates */}
+          <div>
+            <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1.5 block">
+              Starter Templates:
+            </span>
+            <div
+              role="group"
+              aria-label="Starter templates"
+              className="flex flex-wrap gap-1.5"
+            >
+              {BROADCAST_STARTER_TEMPLATES.map((tpl) => {
+                const isSelected = selectedTemplateId === tpl.id;
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    aria-pressed={isSelected}
+                    title={tpl.description}
+                    onClick={() => handleApplyStarterTemplate(tpl)}
+                    className={`inline-flex items-center px-2.5 py-1 text-xs font-medium rounded border transition-colors ${
+                      isSelected
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-white hover:bg-gray-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-200 border-gray-300 dark:border-zinc-600'
+                    }`}
+                  >
+                    {tpl.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {channel === 'EMAIL' && (
             <FormGroup>
@@ -398,7 +736,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
       )}
 
       {/* Modal Actions */}
-      <div className="flex justify-end space-x-3 pt-3 border-t border-gray-200 dark:border-zinc-800">
+      <div className="sticky bottom-0 bg-white dark:bg-zinc-900 flex justify-end space-x-3 pt-3 pb-1 border-t border-gray-200 dark:border-zinc-800">
         <Button variant="secondary" onClick={onClose} disabled={sending || sendingTest}>
           Cancel
         </Button>
@@ -417,7 +755,13 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         </Button>
         <Button
           onClick={handleSend}
-          disabled={sending || sendingTest || !body.trim() || (channel === 'EMAIL' && !subject.trim())}
+          disabled={
+            sending ||
+            sendingTest ||
+            !body.trim() ||
+            (channel === 'EMAIL' && !subject.trim()) ||
+            recipientCount === 0
+          }
         >
           {sending
             ? (isScheduled ? 'Scheduling Broadcast...' : 'Sending Broadcast...')
@@ -430,7 +774,8 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 };
 
 export const BroadcastModal: React.FC<BroadcastModalProps> = (props) => {
-  const { isOpen, onClose, initialChannel = 'EMAIL' } = props;
+  const { isOpen, onClose, initialChannel = 'EMAIL', targetFilters } = props;
+  const serializedInitialFilters = JSON.stringify(targetFilters ?? null);
 
   return (
     <Dialog
@@ -438,9 +783,10 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = (props) => {
       onClose={onClose}
       title="Compose Multi-Channel Broadcast"
       className="max-w-2xl"
+      contentClassName="px-6 py-4 max-h-[82vh] overflow-y-auto"
     >
       <BroadcastModalForm
-        key={`${isOpen ? 'open' : 'closed'}-${initialChannel}`}
+        key={`${isOpen ? 'open' : 'closed'}-${initialChannel}-${serializedInitialFilters}`}
         {...props}
         initialChannel={initialChannel}
       />

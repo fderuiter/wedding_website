@@ -2,7 +2,11 @@ import { z } from 'zod';
 
 export const BroadcastTargetFiltersSchema = z.object({
   partyTags: z.array(z.string()).optional(),
+  partyGroup: z.string().optional(),
   householdName: z.string().optional(),
+  status: z.enum(['all', 'redeemed', 'unused']).optional(),
+  addressFilter: z.enum(['all', 'complete', 'missing']).optional(),
+  dietaryFilter: z.string().optional(),
   attendanceStatus: z.enum(['attending', 'declined', 'pending', 'all']).optional(),
   subEventId: z.string().optional(),
   subEventRsvpStatus: z.string().optional(),

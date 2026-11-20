@@ -687,11 +687,18 @@ export default function InvitationCodesDashboardPage() {
             <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
             <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
             <Button variant="secondary" onClick={() => {
-              setBroadcastModalFilters({
-                partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
-                householdName: searchQuery || undefined,
-                attendanceStatus: attendanceFilter !== 'all' ? attendanceFilter : undefined,
-              });
+              const nextFilters: Record<string, any> = {};
+              if (searchQuery.trim()) nextFilters.searchQuery = searchQuery.trim();
+              if (partyGroupFilter !== 'all') nextFilters.partyGroup = partyGroupFilter;
+              if (statusFilter !== 'all') nextFilters.status = statusFilter;
+              if (addressFilter !== 'all') nextFilters.addressFilter = addressFilter;
+              if (dietaryFilter !== 'all') nextFilters.dietaryFilter = dietaryFilter;
+              if (attendanceFilter !== 'all') nextFilters.attendanceStatus = attendanceFilter;
+              if (selectedTagFilter) nextFilters.partyTags = [selectedTagFilter];
+
+              setBroadcastModalFilters(
+                Object.keys(nextFilters).length > 0 ? nextFilters : undefined
+              );
               setIsBroadcastModalOpen(true);
             }}>Send Broadcast</Button>
             <Button onClick={() => {
@@ -1598,6 +1605,17 @@ export default function InvitationCodesDashboardPage() {
           onClose={() => setIsBroadcastModalOpen(false)}
           targetFilters={broadcastModalFilters}
           selectedCount={broadcastModalFilters?.selectedIds?.length}
+          initialRecipientCount={
+            broadcastModalFilters?.selectedIds
+              ? broadcastModalFilters.selectedIds.length
+              : filteredCodes.filter(
+                (c) =>
+                  !Array.isArray(c.partyTags) ||
+                  !c.partyTags.some(
+                    (t) => typeof t === 'string' && t.trim().toLowerCase() === 'address-collection'
+                  )
+              ).length
+          }
           subEvents={subEvents}
         />
 

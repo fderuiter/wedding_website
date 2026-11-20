@@ -309,4 +309,94 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
       expect(mockPush).toHaveBeenCalledWith('/rsvp');
     });
   });
+
+  it('prefills and auto-submits a valid code query parameter on load and strips code from browser history', async () => {
+    window.history.replaceState({}, '', '/guest/login?callbackUrl=%2Fschedule&code=VALID2026');
+    const replaceStateSpy = jest.spyOn(window.history, 'replaceState');
+    mockGetParam.mockImplementation((key: string) => {
+      if (key === 'code') return 'VALID2026';
+      if (key === 'callbackUrl') return '/schedule';
+      return null;
+    });
+
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, sessionType: 'invitation', guestName: 'Jordan Lee' }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    render(<GuestLoginPage />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/guest/login',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'VALID2026' }),
+        })
+      );
+      expect(mockPush).toHaveBeenCalledWith('/schedule');
+    });
+
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      '',
+      '/guest/login?callbackUrl=%2Fschedule'
+    );
+
+    replaceStateSpy.mockRestore();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('shows an inline error and keeps the input prefilled and editable when an invalid or sample code is supplied on /guest/login', async () => {
+    mockGetParam.mockImplementation((key: string) => {
+      if (key === 'code') return 'SAMPLE2026';
+      return null;
+    });
+
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          success: false,
+          error: 'Incorrect passcode or invitation code. Please check your invitation and try again.',
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, sessionType: 'invitation', guestName: 'Real Guest' }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    render(<GuestLoginPage />);
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(errorAlert).toHaveTextContent(/incorrect passcode or invitation code/i);
+
+    const input = screen.getByPlaceholderText('Enter passcode or invitation code') as HTMLInputElement;
+    expect(input).not.toBeDisabled();
+    expect(input.value).toBe('SAMPLE2026');
+
+    fireEvent.change(input, { target: { value: 'REALCODE26' } });
+    expect(input.value).toBe('REALCODE26');
+
+    fireEvent.click(screen.getByRole('button', { name: /access portal/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        '/api/guest/login',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ passcode: 'REALCODE26' }),
+        })
+      );
+      expect(mockPush).toHaveBeenCalledWith('/');
+    });
+  });
 });

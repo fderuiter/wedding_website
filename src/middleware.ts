@@ -100,7 +100,19 @@ export async function middleware(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
       const loginUrl = new URL('/guest/login', request.url);
-      loginUrl.searchParams.set('callbackUrl', pathname + request.nextUrl.search);
+      const incomingParams = new URLSearchParams(request.nextUrl.search);
+      const incomingCode = incomingParams.get('code')?.trim();
+      if (incomingParams.has('code')) {
+        incomingParams.delete('code');
+      }
+      const cleanSearch = incomingParams.toString();
+      loginUrl.searchParams.set(
+        'callbackUrl',
+        cleanSearch ? `${pathname}?${cleanSearch}` : pathname
+      );
+      if (incomingCode) {
+        loginUrl.searchParams.set('code', incomingCode);
+      }
       return NextResponse.redirect(loginUrl, { status: 303 });
     }
   }
