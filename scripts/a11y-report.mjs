@@ -75,11 +75,16 @@ export function generateReport(options = {}) {
   };
 }
 
-function defaultRunStep(command, args, cwd) {
+const DEFAULT_TEST_DATABASE_URL =
+  'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+const DEFAULT_TEST_ADMIN_PASSWORD = 'scrypt:c2FsdA==:aGFzaA==';
+
+function defaultRunStep(command, args, cwd, envOverrides) {
   const result = childProcess.spawnSync(command, args, {
     cwd,
     stdio: 'inherit',
     shell: process.platform === 'win32',
+    env: envOverrides ? { ...process.env, ...envOverrides } : process.env,
   });
   if (result.error) {
     return 1;
@@ -94,11 +99,18 @@ export function runA11ySuite(options = {}) {
   fs.rmSync(path.join(cwd, 'test-results'), { recursive: true, force: true });
 
   const jestStatus = runStep('npm', ['test'], cwd);
+  const seedStatus = runStep('npx', ['tsx', 'scripts/seed.ts'], cwd, {
+    DATABASE_URL: process.env.DATABASE_URL || DEFAULT_TEST_DATABASE_URL,
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || DEFAULT_TEST_ADMIN_PASSWORD,
+  });
   const playwrightStatus = runStep('npx', ['playwright', 'test'], cwd);
   const { totalViolations } = generateReport({ cwd });
 
   if (jestStatus !== 0) {
     return jestStatus;
+  }
+  if (seedStatus !== 0) {
+    return seedStatus;
   }
   if (playwrightStatus !== 0) {
     return playwrightStatus;

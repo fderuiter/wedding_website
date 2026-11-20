@@ -61,6 +61,9 @@ npx tsc --noEmit -p tsconfig.scripts.json
   - [`playwright.config.ts`](playwright.config.ts), [`docker-compose.yml`](docker-compose.yml), [`.env.test`](.env.test), and [`e2e/helpers/auth.ts`](e2e/helpers/auth.ts) all default `GUEST_SESSION_SECRET` to `playwright-e2e-session-secret-32-chars-min`.
   - For `GUEST_PASSCODE`, `playwright.config.ts`, `docker-compose.yml`, and `e2e/helpers/auth.ts` default to `playwright-e2e-guest-passcode` (so `npx playwright test` and `TEST_CONTAINER=true npx playwright test` authenticate out of the box), whereas `.env.test` (loaded by [`scripts/pretest.mjs`](scripts/pretest.mjs) during Jest runs) sets `GUEST_PASSCODE="build-fallback-guest-passcode"`.
   - When overriding `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD` in shell or CI environments, pass identical values to both the Next.js server/container and the Playwright test process.
+- **Isolated Database Bootstrap & Explicit Server Reuse (`playwright.config.ts`)**:
+  - When `CI` and `TEST_CONTAINER` are unset, [`playwright.config.ts`](playwright.config.ts) automatically starts PostgreSQL via `docker compose up -d db` (when Docker is running), pushes the Prisma schema (`npx prisma db push --accept-data-loss`), and seeds `AppConfig` (`npx tsx scripts/seed.ts`) in the isolated `wedding_test` database before starting `npm run dev` and probing `/api/ready`.
+  - Automatic server reuse is disabled by default (`reuseExistingServer` is `false` unless `PLAYWRIGHT_REUSE_SERVER=true` is explicitly set outside `CI`) so Playwright never reuses an incompatible `npm run dev` server bound to `.env` (`wedding` development database and mismatched `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, or `ADMIN_PASSWORD`). Stop any running `npm run dev` server on port `3000` before running `npx playwright test`, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server explicitly targets `wedding_test` with aligned E2E secrets.
 - **Loopback Origin Seeding & Pathname Assertions**:
   - Seed E2E cookies across both `http://127.0.0.1:3000` and `http://localhost:3000` via `seedGuestAuthCookies` or `seedAdminAndGuestAuthCookies`.
   - Guest and accessibility specs should assert `new URL(page.url()).pathname` after `page.goto(...)` so unexpected redirects to `/guest/login` or `/admin/login` fail immediately.
@@ -119,7 +122,6 @@ To run against the production standalone Next.js build (matching CI behavior in 
 
 ```bash
 npm run build
-DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public" npm run db:seed
 CI=true npm run test:a11y
 ```
 
@@ -127,8 +129,9 @@ This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](s
 
 1. Clears stale `test-results/` data.
 2. Runs `npm test` (which invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) to initialize `test-results/jest-a11y-violations.json` and records any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js)).
-3. Runs `npx playwright test` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
-4. Always writes `test-results/a11y-summary.md` first, then exits non-zero if Jest failed, Playwright failed, or `totalViolations > 0`.
+3. Reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([`scripts/seed.ts`](scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns so [`src/app/layout.tsx`](src/app/layout.tsx) skips `<SetupWizard />`.
+4. Runs `npx playwright test` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
+5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if Jest failed, seeding failed, Playwright failed, or `totalViolations > 0`.
 
 To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (as done in CI after downloading artifacts):
 
@@ -145,7 +148,7 @@ node scripts/a11y-report.mjs
   - `npm run check:action-pins` — Validate strict YAML 1.2 syntax across `.github/workflows/*.yml` and verify every external GitHub Action is pinned to a full 40-character commit SHA ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
   - `npm run check:links` — Verify all relative Markdown links resolve to existing repository files ([`scripts/check-doc-links.ts`](scripts/check-doc-links.ts)).
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
-  - `npm run check:doc-sync` — Verify [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`public/openapi.json`](public/openapi.json) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
+  - `npm run check:doc-sync` — Verify [`public/openapi.json`](public/openapi.json), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`FEATURE_MODULES.md`](FEATURE_MODULES.md) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
   - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
@@ -154,7 +157,7 @@ node scripts/a11y-report.mjs
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
 - **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs)). **Warning:** Both smoke test scripts run `docker compose down -v`, which deletes local Docker Compose PostgreSQL volumes (`db_data`).
-- **End-to-End Browser Tests:** `npx playwright test`
+- **End-to-End Browser Tests:** `npx playwright test` (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
 
 ## 6. Repository Conventions & Guardrails
 
