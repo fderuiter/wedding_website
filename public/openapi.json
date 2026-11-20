@@ -575,6 +575,45 @@
                           "all"
                         ]
                       },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "redeemed",
+                          "unused",
+                          "all"
+                        ]
+                      },
+                      "addressStatus": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
+                      "dietaryCategory": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "all",
+                              "has_restriction",
+                              "gluten-free",
+                              "vegetarian",
+                              "vegan",
+                              "dairy-free",
+                              "nut-free",
+                              "other"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "partyGroup": {
+                        "type": "string"
+                      },
                       "subEventId": {
                         "type": "string"
                       },
@@ -725,6 +764,45 @@
                           "pending",
                           "all"
                         ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "redeemed",
+                          "unused",
+                          "all"
+                        ]
+                      },
+                      "addressStatus": {
+                        "type": "string",
+                        "enum": [
+                          "complete",
+                          "missing",
+                          "all"
+                        ]
+                      },
+                      "dietaryCategory": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "all",
+                              "has_restriction",
+                              "gluten-free",
+                              "vegetarian",
+                              "vegan",
+                              "dairy-free",
+                              "nut-free",
+                              "other"
+                            ]
+                          },
+                          {
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "partyGroup": {
+                        "type": "string"
                       },
                       "subEventId": {
                         "type": "string"
@@ -7915,6 +7993,9 @@
                     "type": "boolean"
                   },
                   "paymentIntentId": {
+                    "type": "string"
+                  },
+                  "clientSecret": {
                     "type": "string"
                   },
                   "name": {

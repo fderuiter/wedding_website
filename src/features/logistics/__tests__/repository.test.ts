@@ -148,4 +148,169 @@ describe('LogisticsRepository Chronological Sorting', () => {
     expect(nodes[1].id).toBe('se-public-tbd');
     expect(nodes[1].type).toBe('Schedule');
   });
+
+  it('excludes private Schedule and Logistics ContentNodes when SubEvent table is empty while keeping false/"false" public nodes', async () => {
+    const mockContentFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'priv-sched-bool',
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Private Rehearsal Dinner',
+          startTime: '2026-06-19T18:00:00.000Z',
+          isPrivate: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'priv-log-str',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Private VIP Shuttle',
+          description: 'VIP shuttle pickup instructions',
+          isPrivate: 'true',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'pub-sched-str-false',
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Public Welcome Drinks',
+          startTime: '2026-06-19T20:00:00.000Z',
+          isPrivate: 'false',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'pub-log',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Guest Parking',
+          description: 'Complimentary valet at the main entrance.',
+          isPrivate: false,
+        },
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ]);
+
+    const customRepo = new LogisticsRepository({
+      contentNode: { findMany: mockContentFindMany },
+      subEvent: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+    const customService = new LogisticsService(customRepo);
+
+    const nodes = await customService.getHomepageLogistics();
+
+    expect(nodes.map((n) => n.id)).toEqual(['pub-sched-str-false', 'pub-log']);
+    expect((nodes[0].data as any).isReadOnly).toBe(true);
+  });
+
+  it('excludes private Logistics and Schedule ContentNodes when public SubEvents exist', async () => {
+    const mockContentFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'priv-log-vip',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'VIP Green Room',
+          description: 'Private suite code 9999',
+          isPrivate: 'TRUE',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'priv-sched',
+        type: 'Schedule',
+        tags: ['Homepage', 'Schedule'],
+        data: {
+          title: 'Private Rehearsal',
+          startTime: '2026-06-19T17:00:00.000Z',
+          isPrivate: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'pub-log-hotel',
+        type: 'Logistics',
+        tags: ['Homepage', 'Logistics'],
+        data: {
+          title: 'Accommodations',
+          description: 'Room block at The Grand Hotel',
+          isPrivate: 'false',
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const mockSubEventFindMany = jest.fn().mockResolvedValue([
+      {
+        id: 'se-pub-ceremony',
+        title: 'Main Ceremony',
+        description: 'All guests welcome',
+        startTime: new Date('2026-06-20T16:00:00.000Z'),
+        endTime: new Date('2026-06-20T17:00:00.000Z'),
+        locationName: 'Main Lawn',
+        category: 'Ceremony',
+        isPrivate: false,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const customRepo = new LogisticsRepository({
+      contentNode: { findMany: mockContentFindMany },
+      subEvent: { findMany: mockSubEventFindMany },
+    });
+
+    const nodes = await customRepo.getLogisticsNodes();
+
+    expect(nodes.map((n) => n.id)).toEqual(['se-pub-ceremony', 'pub-log-hotel']);
+  });
+
+  it('returns an empty array when all Schedule ContentNodes are private and SubEvent is empty', async () => {
+    const customRepo = new LogisticsRepository({
+      contentNode: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'only-priv-1',
+            type: 'Schedule',
+            tags: ['Schedule'],
+            data: {
+              title: 'Hidden Rehearsal',
+              startTime: '2026-06-19T18:00:00.000Z',
+              isPrivate: true,
+            },
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+          {
+            id: 'only-priv-2',
+            type: 'Schedule',
+            tags: ['Schedule'],
+            data: {
+              title: 'Hidden Brunch',
+              startTime: '2026-06-21T10:00:00.000Z',
+              isPrivate: 'true',
+            },
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ]),
+      },
+      subEvent: { findMany: jest.fn().mockResolvedValue([]) },
+    });
+
+    await expect(customRepo.getLogisticsNodes()).resolves.toEqual([]);
+  });
 });

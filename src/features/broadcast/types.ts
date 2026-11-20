@@ -4,6 +4,10 @@ export interface BroadcastTargetFilters {
   partyTags?: string[];
   householdName?: string;
   attendanceStatus?: 'attending' | 'declined' | 'pending' | 'all';
+  status?: 'redeemed' | 'unused' | 'all';
+  addressStatus?: 'complete' | 'missing' | 'all';
+  dietaryCategory?: string;
+  partyGroup?: string;
   subEventId?: string;
   subEventRsvpStatus?: string;
   selectedIds?: string[];

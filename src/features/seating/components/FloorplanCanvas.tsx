@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 
@@ -11,6 +11,38 @@ interface ActiveDropTarget {
   tableId: string;
   seatNumber?: number;
 }
+
+type ActivePointerGesture =
+  | {
+    mode: 'drag';
+    tableId: string;
+    tableName: string;
+    startX: number;
+    startY: number;
+    previewX: number;
+    previewY: number;
+    offsetX: number;
+    offsetY: number;
+    width: number;
+    height: number;
+    pointerStartX: number;
+    pointerStartY: number;
+    hasMoved: boolean;
+  }
+  | {
+    mode: 'rotate';
+    tableId: string;
+    tableName: string;
+    startRotation: number;
+    previewRotation: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    pointerStartX: number;
+    pointerStartY: number;
+    hasMoved: boolean;
+  };
 
 interface FloorplanCanvasProps {
   tables: SeatingTableDTO[];
@@ -38,11 +70,15 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   onAddTable,
 }: FloorplanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
-  const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
-  const [rotatingTableId, setRotatingTableId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [activeGesture, setActiveGesture] = useState<ActivePointerGesture | null>(null);
+  const activeGestureRef = useRef<ActivePointerGesture | null>(null);
+  const suppressCanvasClickRef = useRef(false);
+  const suppressClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
+
+  const callbacksRef = useRef({ onUpdateTablePosition, onUpdateTableRotation });
+  callbacksRef.current = { onUpdateTablePosition, onUpdateTableRotation };
 
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
   const isSearching = normalizedQuery.length > 0;
@@ -151,68 +187,229 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
   };
 
+  const updateGestureFromClientPoint = useCallback((clientX: number, clientY: number) => {
+    const gesture = activeGestureRef.current;
+    if (!gesture || !canvasRef.current) return;
+
+    if (!gesture.hasMoved && clientX === gesture.pointerStartX && clientY === gesture.pointerStartY) {
+      return;
+    }
+
+    const rect = canvasRef.current.getBoundingClientRect();
+
+    if (gesture.mode === 'rotate') {
+      const mouseX = clientX - rect.left;
+      const mouseY = clientY - rect.top;
+      const centerX = gesture.x + gesture.width / 2;
+      const centerY = gesture.y + gesture.height / 2;
+
+      const dx = mouseX - centerX;
+      const dy = mouseY - centerY;
+
+      const deg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      let normalized = Math.round(((deg % 360) + 360) % 360);
+      if (normalized === 360) normalized = 0;
+
+      if (normalized === gesture.previewRotation && gesture.hasMoved) {
+        return;
+      }
+
+      const nextGesture: ActivePointerGesture = {
+        ...gesture,
+        previewRotation: normalized,
+        hasMoved: true,
+      };
+      activeGestureRef.current = nextGesture;
+      setActiveGesture(nextGesture);
+      return;
+    }
+
+    const canvasWidth = rect.width || canvasRef.current.clientWidth || 800;
+    const canvasHeight = rect.height || canvasRef.current.clientHeight || 650;
+    const maxX = Math.max(0, canvasWidth - gesture.width);
+    const maxY = Math.max(0, canvasHeight - gesture.height);
+
+    const newX = Math.round(Math.max(0, Math.min(maxX, clientX - rect.left - gesture.offsetX)));
+    const newY = Math.round(Math.max(0, Math.min(maxY, clientY - rect.top - gesture.offsetY)));
+
+    if (newX === gesture.previewX && newY === gesture.previewY && gesture.hasMoved) {
+      return;
+    }
+
+    const nextGesture: ActivePointerGesture = {
+      ...gesture,
+      previewX: newX,
+      previewY: newY,
+      hasMoved: true,
+    };
+    activeGestureRef.current = nextGesture;
+    setActiveGesture(nextGesture);
+  }, []);
+
+  const windowListenersCleanupRef = useRef<(() => void) | null>(null);
+
+  const detachWindowListeners = useCallback(() => {
+    if (windowListenersCleanupRef.current) {
+      windowListenersCleanupRef.current();
+      windowListenersCleanupRef.current = null;
+    }
+  }, []);
+
+  const cancelActiveGesture = useCallback(() => {
+    if (!activeGestureRef.current) return;
+    activeGestureRef.current = null;
+    detachWindowListeners();
+    setActiveGesture(null);
+  }, [detachWindowListeners]);
+
+  const commitActiveGesture = useCallback(() => {
+    const gesture = activeGestureRef.current;
+    if (!gesture) return;
+
+    activeGestureRef.current = null;
+    detachWindowListeners();
+    setActiveGesture(null);
+
+    if (gesture.hasMoved) {
+      suppressCanvasClickRef.current = true;
+      if (suppressClickTimeoutRef.current) {
+        clearTimeout(suppressClickTimeoutRef.current);
+      }
+      suppressClickTimeoutRef.current = setTimeout(() => {
+        suppressCanvasClickRef.current = false;
+        suppressClickTimeoutRef.current = null;
+      }, 0);
+    }
+
+    if (gesture.mode === 'rotate') {
+      if (gesture.previewRotation !== gesture.startRotation) {
+        callbacksRef.current.onUpdateTableRotation?.(gesture.tableId, gesture.previewRotation);
+        setLiveAnnouncement(`${gesture.tableName} rotated to ${gesture.previewRotation} degrees`);
+      }
+      return;
+    }
+
+    if (gesture.previewX !== gesture.startX || gesture.previewY !== gesture.startY) {
+      callbacksRef.current.onUpdateTablePosition(gesture.tableId, gesture.previewX, gesture.previewY);
+      setLiveAnnouncement(`${gesture.tableName} moved to X ${gesture.previewX}, Y ${gesture.previewY}`);
+    }
+  }, [detachWindowListeners]);
+
+  const attachWindowListeners = useCallback(() => {
+    detachWindowListeners();
+
+    const handleWindowMouseMove = (event: MouseEvent) => {
+      updateGestureFromClientPoint(event.clientX, event.clientY);
+    };
+
+    const handleWindowMouseUp = () => {
+      commitActiveGesture();
+    };
+
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && activeGestureRef.current) {
+        event.preventDefault();
+        cancelActiveGesture();
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('keydown', handleWindowKeyDown);
+
+    windowListenersCleanupRef.current = () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [cancelActiveGesture, commitActiveGesture, detachWindowListeners, updateGestureFromClientPoint]);
+
+  useEffect(() => {
+    return () => {
+      detachWindowListeners();
+      if (suppressClickTimeoutRef.current) {
+        clearTimeout(suppressClickTimeoutRef.current);
+      }
+    };
+  }, [detachWindowListeners]);
+
+  useEffect(() => {
+    const gesture = activeGestureRef.current;
+    if (gesture && !tables.some((t) => t.id === gesture.tableId)) {
+      cancelActiveGesture();
+    }
+  }, [tables, cancelActiveGesture]);
+
   // Handle rotation mouse drag start
   const handleRotationMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
     e.stopPropagation();
     e.preventDefault();
     if (e.button !== 0) return;
-    setRotatingTableId(table.id);
     onSelectTable(table.id);
+
+    const startRotation = table.rotation || 0;
+    const nextGesture: ActivePointerGesture = {
+      mode: 'rotate',
+      tableId: table.id,
+      tableName: table.name,
+      startRotation,
+      previewRotation: startRotation,
+      x: table.x,
+      y: table.y,
+      width: table.width || 120,
+      height: table.height || 120,
+      pointerStartX: e.clientX,
+      pointerStartY: e.clientY,
+      hasMoved: false,
+    };
+    activeGestureRef.current = nextGesture;
+    setActiveGesture(nextGesture);
+    attachWindowListeners();
   };
 
   // Handle table mouse drag
   const handleTableMouseDown = (e: React.MouseEvent, table: SeatingTableDTO) => {
     e.stopPropagation();
     if (e.button !== 0) return; // Only primary click
-    setDraggingTableId(table.id);
     onSelectTable(table.id);
 
+    let offsetX = 0;
+    let offsetY = 0;
     if (canvasRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      setDragOffset({
-        x: mouseX - table.x,
-        y: mouseY - table.y,
-      });
+      offsetX = mouseX - table.x;
+      offsetY = mouseY - table.y;
     }
+
+    const nextGesture: ActivePointerGesture = {
+      mode: 'drag',
+      tableId: table.id,
+      tableName: table.name,
+      startX: table.x,
+      startY: table.y,
+      previewX: table.x,
+      previewY: table.y,
+      offsetX,
+      offsetY,
+      width: table.width || 120,
+      height: table.height || 120,
+      pointerStartX: e.clientX,
+      pointerStartY: e.clientY,
+      hasMoved: false,
+    };
+    activeGestureRef.current = nextGesture;
+    setActiveGesture(nextGesture);
+    attachWindowListeners();
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (rotatingTableId && canvasRef.current) {
-      const table = tables.find((t) => t.id === rotatingTableId);
-      if (table) {
-        const rect = canvasRef.current.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        const tableWidth = table.width || 120;
-        const tableHeight = table.height || 120;
-        const centerX = table.x + tableWidth / 2;
-        const centerY = table.y + tableHeight / 2;
-
-        const dx = mouseX - centerX;
-        const dy = mouseY - centerY;
-
-        const deg = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
-        let normalized = Math.round((deg % 360 + 360) % 360);
-        if (normalized === 360) normalized = 0;
-
-        onUpdateTableRotation?.(table.id, normalized);
-        setLiveAnnouncement(`${table.name} rotated to ${normalized} degrees`);
-      }
-      return;
-    }
-
-    if (!draggingTableId || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const newX = Math.max(0, Math.min(rect.width - 120, e.clientX - rect.left - dragOffset.x));
-    const newY = Math.max(0, Math.min(rect.height - 120, e.clientY - rect.top - dragOffset.y));
-    onUpdateTablePosition(draggingTableId, Math.round(newX), Math.round(newY));
+    updateGestureFromClientPoint(e.clientX, e.clientY);
   };
 
   const handleCanvasMouseUp = () => {
-    setDraggingTableId(null);
-    setRotatingTableId(null);
+    commitActiveGesture();
   };
 
   // Seat circle keyboard events
@@ -410,6 +607,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
           onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
           onDrop={(e) => handleDropOnTable(e, table.id, i)}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             if (assignedGuest) {
@@ -540,6 +738,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   return (
     <div
       ref={canvasRef}
+      onMouseDown={() => {
+        suppressCanvasClickRef.current = false;
+      }}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
       onDragLeave={(e) => {
@@ -548,7 +749,13 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         }
       }}
       onDragEnd={() => setActiveDropTarget(null)}
-      onClick={() => onSelectTable(null)}
+      onClick={() => {
+        if (suppressCanvasClickRef.current) {
+          suppressCanvasClickRef.current = false;
+          return;
+        }
+        onSelectTable(null);
+      }}
       className="relative w-full h-[650px] rounded-xl overflow-hidden shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
       style={{
         backgroundColor: 'var(--canvas-bg, #f8fafc)',
@@ -596,6 +803,12 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         const hasMatchingGuest = isSearching && matchingTableIds.has(table.id);
         const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
         const isDropDisabled = isTableDropTarget && isFull;
+        const isDraggingThisTable = activeGesture?.mode === 'drag' && activeGesture.tableId === table.id;
+        const isRotatingThisTable = activeGesture?.mode === 'rotate' && activeGesture.tableId === table.id;
+        const isGestureActiveOnTable = isDraggingThisTable || isRotatingThisTable;
+        const renderedX = isDraggingThisTable ? activeGesture.previewX : table.x;
+        const renderedY = isDraggingThisTable ? activeGesture.previewY : table.y;
+        const renderedRotation = isRotatingThisTable ? activeGesture.previewRotation : (table.rotation || 0);
 
         return (
           <div
@@ -614,7 +827,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             onDragOver={(e) => handleTableDragOver(e, table.id)}
             onDragLeave={(e) => handleTableDragLeave(e, table.id)}
             onDrop={(e) => handleDropOnTable(e, table.id)}
-            className={`absolute cursor-move transition-all transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
+            className={`absolute cursor-move ${isGestureActiveOnTable ? 'transition-none' : 'transition-all'} transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
               isTableDropTarget
                 ? isFull
                   ? 'ring-4 ring-red-500 border-red-500 shadow-xl shadow-red-500/20 scale-[1.03] z-30 cursor-not-allowed'
@@ -626,11 +839,11 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
               hasMatchingGuest ? 'ring-4 ring-amber-400 shadow-lg shadow-amber-300/50 dark:shadow-amber-900/50 rounded-2xl z-20' : ''
             }`}
             style={{
-              left: `${table.x}px`,
-              top: `${table.y}px`,
+              left: `${renderedX}px`,
+              top: `${renderedY}px`,
               width: `${table.width || 120}px`,
               height: `${table.height || 120}px`,
-              transform: `rotate(${table.rotation || 0}deg)`,
+              transform: `rotate(${renderedRotation}deg)`,
             }}
             tabIndex={0}
             role="button"
@@ -732,7 +945,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                     -45°
                   </button>
                   <span className="px-1 font-mono text-[11px] text-primary" data-testid="table-rotation-display">
-                    {table.rotation || 0}°
+                    {renderedRotation}°
                   </span>
                   <button
                     type="button"

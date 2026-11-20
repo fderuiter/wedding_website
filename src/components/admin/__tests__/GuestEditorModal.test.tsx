@@ -139,7 +139,9 @@ describe('GuestEditorModal', () => {
     // Outside mousedown also prompts and Cancel keeps draft
     fireEvent.mouseDown(document.body);
     const outsideAlert = await screen.findByRole('alertdialog');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' }).find((btn) => outsideAlert.contains(btn))!);
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Cancel' }).find((btn) => outsideAlert.contains(btn))!
+    );
     await waitFor(() => {
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     });
@@ -151,6 +153,53 @@ describe('GuestEditorModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => {
       expect(cancelAlert).not.toBeInTheDocument();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('validates phone format and saves extraFields.phone while preserving custom CSV and RSVP extraFields keys', async () => {
+    const onSave = jest.fn().mockResolvedValue({});
+    const onClose = jest.fn();
+    const guestWithExtra: InvitationCodeDTO = {
+      ...sampleGuest,
+      extraFields: {
+        attendanceStatus: 'attending',
+        mealChoice: 'salmon',
+        csvSourceColumn: 'vip_import',
+      },
+    };
+
+    render(
+      <GuestEditorModal
+        isOpen={true}
+        onClose={onClose}
+        guest={guestWithExtra}
+        onSave={onSave}
+      />
+    );
+
+    const phoneInput = screen.getByLabelText('Phone');
+    fireEvent.change(phoneInput, { target: { value: 'invalid-phone!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid phone number format.');
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(phoneInput, { target: { value: '+1 (555) 234-5678' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        'guest-1',
+        expect.objectContaining({
+          extraFields: {
+            attendanceStatus: 'attending',
+            mealChoice: 'salmon',
+            csvSourceColumn: 'vip_import',
+            phone: '+15552345678',
+          },
+        })
+      );
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });

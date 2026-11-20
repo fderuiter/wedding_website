@@ -526,7 +526,7 @@ Total API route handlers: **69** across **12** route groups.
 | `/api/registry/scrape/batch` | `src/app/api/registry/scrape/batch/route.ts` | `POST` | `Admin-only` |
 | `/api/registry/session` | `src/app/api/registry/session/route.ts` | `GET`, `DELETE` | `Guest / Admin` |
 | `/api/registry/validate-code` | `src/app/api/registry/validate-code/route.ts` | `GET` | `Public` |
-| `/api/registry/webhook/stripe` | `src/app/api/registry/webhook/stripe/route.ts` | `POST` | `Guest / Admin` |
+| `/api/registry/webhook/stripe` | `src/app/api/registry/webhook/stripe/route.ts` | `POST` | `Public` |
 
 #### RSVP Routes (`/api/rsvp` — 1 handler)
 

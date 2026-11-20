@@ -180,7 +180,7 @@ model Contributor {
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
   thankYouNote   String?
-  stripePaymentIntentId String?
+  stripePaymentIntentId String? @unique
   stripeChargeId        String?
   transactionTimestamp  DateTime?
   registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)

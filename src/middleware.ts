@@ -65,6 +65,7 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/api/guest/address' ||
     normalizedPath === '/api/guest/address/public' ||
     normalizedPath === '/api/registry/validate-code' ||
+    (normalizedPath === '/api/registry/webhook/stripe' && method === 'POST') ||
     normalizedPath === '/admin/login' ||
     normalizedPath === '/api/admin/login' ||
     normalizedPath === '/api/admin/setup' ||

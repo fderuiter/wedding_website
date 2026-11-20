@@ -757,6 +757,17 @@ describe('AdminSettingsPage RSVP Deadline & Access Control', () => {
     expect(savedPayload.rsvpGracePeriodHours).toBe(48);
     expect(savedPayload.rsvpClosedMessage).toBe('RSVPs closed — contact hosts@example.com');
   });
+
+  it('renders a direct link to Broadcast Delivery Logs in Messaging & Broadcast Settings', async () => {
+    render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    const logsLink = screen.getByRole('link', { name: /Broadcast Delivery Logs/i });
+    expect(logsLink).toHaveAttribute('href', '/admin/dashboard/history?tab=broadcasts');
+  });
 });
 
 describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => {
@@ -818,6 +829,16 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
     });
     expect((profileSelect as HTMLSelectElement).value).toBe('global');
     expect(heroTitleInput.value).toBe('Unsaved Hero Draft');
+
+    // Dirty Broadcast Delivery Logs link click also prompts; Cancel stays on settings
+    fireEvent.click(screen.getByRole('link', { name: /Broadcast Delivery Logs/i }));
+    const logsDialog = await screen.findByRole('alertdialog');
+    expect(mockPush).not.toHaveBeenCalled();
+    fireEvent.click(within(logsDialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockPush).not.toHaveBeenCalled();
 
     // Dirty Back to Dashboard prompts; Cancel stays on settings, Confirm navigates
     fireEvent.click(screen.getByRole('button', { name: /Back to Dashboard/i }));

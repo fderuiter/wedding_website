@@ -289,6 +289,100 @@ describe('useAdminEntityOrchestration', () => {
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/admin/invitation-codes');
     });
 
+    it('useAdminInvitationCodes.batchUpdateTags applies one optimistic update, rolls back on error, and suppresses global MutationCache toasts', async () => {
+      const onSuccessToastSpy = jest.fn();
+      const onErrorToastSpy = jest.fn();
+      const customQueryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+        mutationCache: new (await import('@tanstack/react-query')).MutationCache({
+          onSuccess: (_data, _vars, _ctx, mutation) => {
+            if (mutation.meta?.successMessage || mutation.meta?.showSuccessToast !== false) {
+              onSuccessToastSpy();
+            }
+          },
+          onError: (_err, _vars, _ctx, mutation) => {
+            if (mutation.meta?.errorMessage || mutation.meta?.showErrorToast !== false) {
+              onErrorToastSpy();
+            }
+          },
+        }),
+      });
+
+      const initialGuests = [
+        { id: 'inv-1', code: 'C1', guestName: 'Alice', partyTags: ['Family'], used: false },
+        { id: 'inv-2', code: 'C2', guestName: 'Bob', partyTags: [], used: false },
+        { id: 'inv-3', code: 'C3', guestName: 'Cara', partyTags: ['Friends'], used: false },
+      ];
+      mockApiClient.get.mockResolvedValueOnce(initialGuests);
+
+      let resolvePost!: (_val: unknown) => void;
+      mockApiClient.post.mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolvePost = res;
+          })
+      );
+
+      const { result } = renderHook(() => useAdminInvitationCodes(), {
+        wrapper: createWrapper(customQueryClient),
+      });
+      await waitFor(() => expect(result.current.data).toHaveLength(3));
+
+      let mutationPromise!: Promise<unknown>;
+      act(() => {
+        mutationPromise = result.current.batchUpdateTags(['inv-1', 'inv-2'], ['VIP'], 'add');
+      });
+
+      // Verify optimistic update applied before server resolves
+      await waitFor(() => {
+        const cached = customQueryClient.getQueryData<typeof initialGuests>([
+          'admin-invitation-codes',
+        ]);
+        expect(cached?.[0].partyTags).toEqual(['Family', 'VIP']);
+        expect(cached?.[1].partyTags).toEqual(['VIP']);
+        expect(cached?.[2].partyTags).toEqual(['Friends']);
+      });
+
+      await act(async () => {
+        resolvePost({
+          success: true,
+          count: 2,
+          updatedCount: 2,
+          records: [
+            { ...initialGuests[0], partyTags: ['Family', 'VIP'] },
+            { ...initialGuests[1], partyTags: ['VIP'] },
+          ],
+        });
+        await mutationPromise;
+      });
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith('/api/admin/invitation-codes/batch', {
+        ids: ['inv-1', 'inv-2'],
+        tags: ['VIP'],
+        action: 'add',
+      });
+      expect(onSuccessToastSpy).not.toHaveBeenCalled();
+
+      // Verify rollback on failure and error toast suppression
+      mockApiClient.post.mockRejectedValueOnce(new Error('Network failure'));
+      await act(async () => {
+        await expect(
+          result.current.batchUpdateTags(['inv-1', 'inv-2'], ['VIP'], 'remove')
+        ).rejects.toThrow('Network failure');
+      });
+
+      const rolledBack = customQueryClient.getQueryData<typeof initialGuests>([
+        'admin-invitation-codes',
+      ]);
+      expect(rolledBack?.[0].partyTags).toEqual(['Family', 'VIP']);
+      expect(rolledBack?.[1].partyTags).toEqual(['VIP']);
+      expect(onErrorToastSpy).not.toHaveBeenCalled();
+    });
+
     it('supports disabled option in wrapper hooks', async () => {
       const { result } = renderHook(() => useAdminSubEvents({ enabled: false }), {
         wrapper: createWrapper(queryClient),

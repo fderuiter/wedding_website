@@ -13,12 +13,15 @@ import {
   HOUSEHOLD_NAME_MAX_LENGTH,
   INVITATION_CODE_MAX_LENGTH,
   PARTY_GROUP_MAX_LENGTH,
+  PHONE_MAX_LENGTH,
   PLUS_ONE_NAME_MAX_LENGTH,
   STATE_MAX_LENGTH,
   ZIP_CODE_MAX_LENGTH,
+  normalizeGuestPhone,
   normalizeInvitationCode,
   normalizeNullableString,
   normalizePartyTags,
+  validateGuestPhone,
   validateInvitationGuestFields,
 } from '@/utils/invitationValidation';
 
@@ -33,6 +36,7 @@ interface GuestFormState {
   guestName: string;
   code: string;
   email: string;
+  phone: string;
   householdName: string;
   partyGroup: string;
   partyTags: string;
@@ -48,11 +52,26 @@ interface GuestFormState {
   country: string;
 }
 
+function getInitialExtraFieldsObject(extraFields: unknown): Record<string, unknown> {
+  if (!extraFields) return {};
+  if (typeof extraFields === 'object' && !Array.isArray(extraFields)) {
+    return { ...(extraFields as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function getInitialGuestPhone(guest: InvitationCodeDTO): string {
+  const extra = getInitialExtraFieldsObject(guest.extraFields);
+  const rawPhone = extra.phone ?? extra.mobile;
+  return typeof rawPhone === 'string' ? rawPhone : '';
+}
+
 function createInitialGuestFormState(guest: InvitationCodeDTO): GuestFormState {
   return {
     guestName: guest.guestName ?? '',
     code: guest.code ?? '',
     email: guest.email ?? '',
+    phone: getInitialGuestPhone(guest),
     householdName: guest.householdName ?? '',
     partyGroup: guest.partyGroup ?? '',
     partyTags: Array.isArray(guest.partyTags) ? guest.partyTags.join(', ') : '',
@@ -138,6 +157,15 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({
       return;
     }
 
+    const phoneError = validateGuestPhone(formState.phone);
+    if (phoneError) {
+      setValidationError(phoneError);
+      return;
+    }
+
+    const normalizedPhone = normalizeGuestPhone(formState.phone);
+    const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
+
     const payload: Partial<InvitationCodeDTO> = {
       guestName: trimmedName,
       code: trimmedCode,
@@ -156,6 +184,17 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({
       zipCode: normalizeNullableString(formState.zipCode),
       country: normalizeNullableString(formState.country),
     };
+
+    if (normalizedPhone !== originalPhone) {
+      const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
+      if (normalizedPhone) {
+        nextExtraFields.phone = normalizedPhone;
+      } else {
+        delete nextExtraFields.phone;
+        delete nextExtraFields.mobile;
+      }
+      payload.extraFields = nextExtraFields;
+    }
 
     const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
     if (fieldErrors.length > 0) {
@@ -240,6 +279,17 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({
           </FormGroup>
 
           <FormGroup>
+            <Label>Phone</Label>
+            <Input
+              type="tel"
+              maxLength={PHONE_MAX_LENGTH}
+              value={formState.phone}
+              onChange={(e) => updateField('phone', e.target.value)}
+              placeholder="e.g. +15551234567"
+            />
+          </FormGroup>
+
+          <FormGroup className="sm:col-span-2">
             <Label>Plus-One Allocations</Label>
             <Input
               type="number"

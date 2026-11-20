@@ -230,6 +230,103 @@ describe('Scheduled Broadcast Dispatch Suite', () => {
       const processed = await BroadcastService.processScheduledBroadcasts();
       expect(processed).toHaveLength(0);
     });
+
+    it('re-evaluates saved targetFilters at dispatch time so updated guest responses and addresses take effect', async () => {
+      const pastTime = new Date(Date.now() - 60000);
+
+      (prisma.broadcastMessage.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'msg-dynamic-filters',
+          channel: 'EMAIL',
+          subject: 'Address & RSVP Reminder',
+          body: 'Hi {{guestName}}, please submit your RSVP and mailing address!',
+          status: 'SCHEDULED',
+          scheduledFor: pastTime,
+          targetFilters: {
+            status: 'unused',
+            addressStatus: 'missing',
+            attendanceStatus: 'pending',
+            partyGroup: 'Bride',
+          },
+        },
+      ]);
+
+      (prisma.broadcastMessage.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      // Between schedule time and dispatch time, Alice completed her address & RSVP, while Clara still matches
+      (prisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+        {
+          id: 'guest-updated',
+          guestName: 'Alice Completed',
+          code: 'A1',
+          email: 'alice@example.com',
+          used: false,
+          addressLine1: '10 Main St',
+          city: 'Seattle',
+          state: 'WA',
+          zipCode: '98101',
+          partyGroup: 'Bride',
+          extraFields: { attendanceStatus: 'attending' },
+        },
+        {
+          id: 'guest-still-pending',
+          guestName: 'Clara Pending',
+          code: 'C1',
+          email: 'clara@example.com',
+          used: false,
+          addressLine1: '',
+          city: '',
+          state: '',
+          zipCode: '',
+          partyGroup: 'Bride',
+          extraFields: { attendanceStatus: 'pending' },
+        },
+      ]);
+
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValue({
+        id: 'msg-dynamic-filters',
+        channel: 'EMAIL',
+        subject: 'Address & RSVP Reminder',
+        body: 'Hi {{guestName}}, please submit your RSVP and mailing address!',
+        status: 'SENDING',
+      });
+
+      (prisma.broadcastRecipient.create as jest.Mock).mockResolvedValue({
+        id: 'rec-clara',
+        broadcastId: 'msg-dynamic-filters',
+        destination: 'clara@example.com',
+        status: 'PENDING',
+      });
+
+      (prisma.broadcastMessage.update as jest.Mock).mockResolvedValue({
+        id: 'msg-dynamic-filters',
+        status: 'SENT',
+        sentCount: 1,
+        failedCount: 0,
+        totalRecipients: 1,
+      });
+
+      const processed = await BroadcastService.processScheduledBroadcasts();
+
+      expect(processed).toHaveLength(1);
+      expect(prisma.broadcastRecipient.create).toHaveBeenCalledTimes(1);
+      expect(prisma.broadcastRecipient.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            guestName: 'Clara Pending',
+            destination: 'clara@example.com',
+          }),
+        })
+      );
+      expect(prisma.broadcastMessage.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            totalRecipients: 1,
+            sentCount: 1,
+          }),
+        })
+      );
+    });
   });
 
   describe('BroadcastService.cancelScheduledBroadcast', () => {
