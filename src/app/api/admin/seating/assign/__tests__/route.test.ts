@@ -84,4 +84,68 @@ describe('POST /api/admin/seating/assign', () => {
     expect(body.success).toBe(false);
     expect(body.error).toContain('Invalid payload');
   });
+
+  it('should assign a batch of household guest IDs atomically', async () => {
+    const mockAssignSeatsBatch = jest.fn().mockResolvedValue({
+      updatedGuests: [
+        { id: 'guest-1', tableId: 'table-1', seatNumber: 1 },
+        { id: 'guest-2', tableId: 'table-1', seatNumber: 2 },
+      ],
+    });
+    (SeatingTableAdminService as jest.MockedClass<typeof SeatingTableAdminService>).prototype.assignSeatsBatch =
+      mockAssignSeatsBatch;
+
+    const req = new NextRequest('http://localhost/api/admin/seating/assign', {
+      method: 'POST',
+      body: JSON.stringify({
+        invitationCodeIds: ['guest-1', 'guest-2'],
+        tableId: 'table-1',
+        action: 'assignBatch',
+      }),
+    });
+
+    const res = await POST(req, {});
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.updatedGuests).toHaveLength(2);
+    expect(mockAssignSeatsBatch).toHaveBeenCalledWith(
+      ['guest-1', 'guest-2'],
+      'table-1',
+      { action: 'assignBatch' }
+    );
+  });
+
+  it('should restore previous seat assignments for undo', async () => {
+    const mockRestore = jest.fn().mockResolvedValue({
+      updatedGuests: [
+        { id: 'guest-1', tableId: 'table-1', seatNumber: 1 },
+        { id: 'guest-2', tableId: null, seatNumber: null },
+      ],
+    });
+    (SeatingTableAdminService as jest.MockedClass<typeof SeatingTableAdminService>).prototype.restoreSeatAssignments =
+      mockRestore;
+
+    const req = new NextRequest('http://localhost/api/admin/seating/assign', {
+      method: 'POST',
+      body: JSON.stringify({
+        assignments: [
+          { invitationCodeId: 'guest-1', tableId: 'table-1', seatNumber: 1 },
+          { invitationCodeId: 'guest-2', tableId: null, seatNumber: null },
+        ],
+        action: 'undo',
+      }),
+    });
+
+    const res = await POST(req, {});
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.updatedGuests).toHaveLength(2);
+    expect(mockRestore).toHaveBeenCalledWith(
+      [
+        { invitationCodeId: 'guest-1', tableId: 'table-1', seatNumber: 1 },
+        { invitationCodeId: 'guest-2', tableId: null, seatNumber: null },
+      ],
+      { action: 'undo' }
+    );
+  });
 });

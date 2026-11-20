@@ -26,8 +26,8 @@ function TableModalForm({
   onDelete,
 }: TableModalFormProps) {
   const [name, setName] = useState(table?.name ?? '');
-  const [shape, setShape] = useState<'round' | 'rectangular' | 'square'>(
-    (table?.shape as 'round' | 'rectangular' | 'square') || 'round'
+  const [shape, setShape] = useState<'round' | 'rectangular' | 'square' | 'head' | 'sweetheart'>(
+    (table?.shape as 'round' | 'rectangular' | 'square' | 'head' | 'sweetheart') || 'round'
   );
   const [capacity, setCapacity] = useState(table ? table.capacity : 8);
   const [width, setWidth] = useState(table?.width || 120);
@@ -93,6 +93,8 @@ function TableModalForm({
             <option value="round">Round</option>
             <option value="rectangular">Rectangular</option>
             <option value="square">Square</option>
+            <option value="head">Head Table (1-Sided)</option>
+            <option value="sweetheart">Sweetheart (1-Sided)</option>
           </select>
         </div>
 

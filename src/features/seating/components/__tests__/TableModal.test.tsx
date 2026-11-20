@@ -150,4 +150,25 @@ describe('TableModal component', () => {
     expect(defaultProps.onDelete).toHaveBeenCalledWith('table-1');
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
+
+  test('supports selecting 1-sided head and sweetheart table shapes', () => {
+    render(<TableModal {...defaultProps} />);
+
+    const nameInput = screen.getByLabelText(/table name/i);
+    fireEvent.change(nameInput, { target: { value: 'Sweetheart Table' } });
+
+    const shapeSelect = screen.getByLabelText(/shape/i);
+    expect(screen.getByRole('option', { name: /Head Table \(1-Sided\)/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Sweetheart \(1-Sided\)/i })).toBeInTheDocument();
+
+    fireEvent.change(shapeSelect, { target: { value: 'sweetheart' } });
+    fireEvent.click(screen.getByRole('button', { name: /create table/i }));
+
+    expect(defaultProps.onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Sweetheart Table',
+        shape: 'sweetheart',
+      })
+    );
+  });
 });

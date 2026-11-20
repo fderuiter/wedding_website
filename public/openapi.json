@@ -1399,7 +1399,9 @@
                         "enum": [
                           "round",
                           "rectangular",
-                          "square"
+                          "square",
+                          "head",
+                          "sweetheart"
                         ]
                       },
                       "capacity": {
@@ -3057,7 +3059,9 @@
                         "enum": [
                           "round",
                           "rectangular",
-                          "square"
+                          "square",
+                          "head",
+                          "sweetheart"
                         ]
                       },
                       "capacity": {
@@ -6923,27 +6927,104 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "invitationCodeId": {
-                    "type": "string",
-                    "minLength": 1
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "invitationCodeId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "tableId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "seatNumber": {
+                        "nullable": true,
+                        "type": "integer",
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "invitationCodeId",
+                      "tableId"
+                    ]
                   },
-                  "tableId": {
-                    "nullable": true,
-                    "type": "string"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "invitationCodeIds": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "tableId": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "assignBatch",
+                          "clearTable",
+                          "undo"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "invitationCodeIds",
+                      "tableId"
+                    ]
                   },
-                  "seatNumber": {
-                    "nullable": true,
-                    "type": "integer",
-                    "minimum": 0,
-                    "exclusiveMinimum": true,
-                    "maximum": 9007199254740991
+                  {
+                    "type": "object",
+                    "properties": {
+                      "assignments": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "invitationCodeId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "tableId": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "seatNumber": {
+                              "nullable": true,
+                              "type": "integer",
+                              "minimum": 0,
+                              "exclusiveMinimum": true,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "invitationCodeId",
+                            "tableId"
+                          ]
+                        }
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "assignBatch",
+                          "clearTable",
+                          "undo"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "assignments"
+                    ]
                   }
-                },
-                "required": [
-                  "invitationCodeId",
-                  "tableId"
                 ]
               }
             }
@@ -6977,6 +7058,9 @@
                 "properties": {
                   "author": {
                     "type": "string"
+                  },
+                  "includePending": {
+                    "type": "boolean"
                   }
                 }
               }
