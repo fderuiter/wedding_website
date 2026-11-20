@@ -46,6 +46,16 @@ const nextConfig: NextConfig = {
   output: isStaticExport ? 'export' : 'standalone',
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   ...(isStaticExport ? {} : {
+    async rewrites() {
+      return {
+        beforeFiles: [
+          {
+            source: '/uploads/:path*',
+            destination: '/api/uploads/:path*',
+          },
+        ],
+      };
+    },
     async headers() {
       return [
         {

@@ -660,8 +660,8 @@ export function isPrivateContentNode(
 
 export const AppConfigSchema = z.object({
   id: z.string().describe('Unique configuration profile identifier (defaults to "global" in single-site deployments).'),
-  subdomain: z.string().nullable().optional().describe('Optional tenant subdomain slug used when MULTISITE_ENABLED is active.'),
-  multisiteEnabled: z.boolean().optional().describe('Runtime flag resolved from MULTISITE_ENABLED indicating whether multi-profile routing is active.'),
+  subdomain: z.string().nullable().optional().describe('Optional subdomain slug for AppConfig branding/profile routing when MULTISITE_ENABLED is active (the other 14 Prisma tables remain shared).'),
+  multisiteEnabled: z.boolean().optional().describe('Runtime flag resolved from MULTISITE_ENABLED indicating whether subdomain AppConfig profile routing is active (14 other Prisma tables are shared).'),
   partner1Name: z.string().default('').describe('Primary display name for the first partner across headings, metadata, and monograms.'),
   partner2Name: z.string().default('').describe('Primary display name for the second partner across headings, metadata, and monograms.'),
   brideName: z.string().nullable().optional().describe('Legacy optional alias for the first partner name retained for backward compatibility.'),

@@ -76,26 +76,40 @@ jobs:
 
           RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
 
-          if [ -z "$RAW_INPUT_TAG" ]; then
-            TAG_NAME="${RESOLVED_SHA}"
-          else
+          if [ -n "$RAW_INPUT_TAG" ]; then
             if [[ ! "$RAW_INPUT_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
               echo "::error::Invalid image tag '${RAW_INPUT_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
               exit 1
             fi
             TAG_NAME="$RAW_INPUT_TAG"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ]; then
+            if [[ ! "${GITHUB_REF_NAME}" =~ ^v[a-zA-Z0-9_.-]*$ ]]; then
+              echo "::error::Invalid release tag '${GITHUB_REF_NAME}'. Must start with 'v' and only contain alphanumeric characters, underscores, periods, and hyphens."
+              exit 1
+            fi
+            TAG_NAME="${GITHUB_REF_NAME}"
+          else
+            TAG_NAME="${RESOLVED_SHA}"
           fi
 
           REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           GHCR_PRIMARY="ghcr.io/${REPO_LOWER}:${TAG_NAME}"
           TAGS="${GHCR_PRIMARY}"
 
+          if [ -n "${RESOLVED_SHA}" ] && [ "${TAG_NAME}" != "${RESOLVED_SHA}" ]; then
+            TAGS="${TAGS},ghcr.io/${REPO_LOWER}:${RESOLVED_SHA}"
+          fi
+
           if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
             TAGS="${TAGS},ghcr.io/${REPO_LOWER}:latest"
           fi
 
           if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
-            TAGS="${TAGS},${DOCKERHUB_USERNAME}/wedding-website:${TAG_NAME},${DOCKERHUB_USERNAME}/wedding-website:latest"
+            TAGS="${TAGS},${DOCKERHUB_USERNAME}/wedding-website:${TAG_NAME}"
+            if [ -n "${RESOLVED_SHA}" ] && [ "${TAG_NAME}" != "${RESOLVED_SHA}" ]; then
+              TAGS="${TAGS},${DOCKERHUB_USERNAME}/wedding-website:${RESOLVED_SHA}"
+            fi
+            TAGS="${TAGS},${DOCKERHUB_USERNAME}/wedding-website:latest"
           fi
 
           echo "image_repository=ghcr.io/${REPO_LOWER}" >> "$GITHUB_OUTPUT"

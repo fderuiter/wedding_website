@@ -364,20 +364,41 @@ jest.mock('next/server', () => {
       return Promise.resolve(typeof this.bodyContent === 'string' ? JSON.parse(this.bodyContent) : this.bodyContent);
     }
 
-    text() {
-      if (Buffer.isBuffer(this.bodyContent) || this.bodyContent instanceof Uint8Array) {
-        return Promise.resolve(Buffer.from(this.bodyContent).toString('utf-8'));
+    async text() {
+      if (this.bodyContent === null || this.bodyContent === undefined) {
+        return '';
       }
-      return Promise.resolve(typeof this.bodyContent === 'string' ? this.bodyContent : JSON.stringify(this.bodyContent));
+      if (this.bodyContent && typeof this.bodyContent.getReader === 'function') {
+        const ab = await this.arrayBuffer();
+        return Buffer.from(ab).toString('utf-8');
+      }
+      if (Buffer.isBuffer(this.bodyContent) || this.bodyContent instanceof Uint8Array) {
+        return Buffer.from(this.bodyContent).toString('utf-8');
+      }
+      return typeof this.bodyContent === 'string' ? this.bodyContent : JSON.stringify(this.bodyContent);
     }
 
-    arrayBuffer() {
+    async arrayBuffer() {
+      if (this.bodyContent === null || this.bodyContent === undefined) {
+        return new ArrayBuffer(0);
+      }
+      if (this.bodyContent && typeof this.bodyContent.getReader === 'function') {
+        const reader = this.bodyContent.getReader();
+        const chunks = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(Buffer.from(value));
+        }
+        const combined = Buffer.concat(chunks);
+        return combined.buffer.slice(combined.byteOffset, combined.byteOffset + combined.byteLength);
+      }
       if (Buffer.isBuffer(this.bodyContent) || this.bodyContent instanceof Uint8Array) {
         const buf = Buffer.from(this.bodyContent);
-        return Promise.resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+        return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
       }
       const buf = Buffer.from(typeof this.bodyContent === 'string' ? this.bodyContent : JSON.stringify(this.bodyContent));
-      return Promise.resolve(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     }
   }
 

@@ -19,9 +19,9 @@ This document defines the authoritative, provider-neutral runtime contract for t
 
 ## 2. Network Interface, Listening Port & Host Binding
 
-- **Listening Port**:
-  - Configured via the `PORT` environment variable (defaults to `3000`).
-  - The standalone server binds to all available network interfaces (`0.0.0.0`).
+- **Listening Port & Host Interface**:
+  - Listening port is configured via the `PORT` environment variable (defaults to `3000`).
+  - Host interface binding is configured via the `HOSTNAME` environment variable (`ENV HOSTNAME="0.0.0.0"` in `Dockerfile` and `HOSTNAME: "0.0.0.0"` in `docker-compose.yml`), ensuring the standalone `server.js` binds to all available network interfaces (`0.0.0.0`) rather than a container-internal hostname.
 - **Protocol**: HTTP/1.1 or HTTP/2 unencrypted traffic internally, expecting TLS termination at the ingress/reverse-proxy layer.
 
 ---
@@ -60,7 +60,7 @@ These variables provide convenience defaults for local `development` and `test` 
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in `Dockerfile` runner environments. |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
-| `MULTISITE_ENABLED` | `false` | Enable multi-tenant / multi-profile subdomain site routing. |
+| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; the other 14 tables in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`npx -y prisma migrate deploy`) during container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
@@ -94,6 +94,7 @@ These variables configure container port binding, static HTML export builds, Vit
 | Variable | Default Value | Scope | Description |
 |---|---|---|---|
 | `PORT` | `3000` | Container / Standalone Server | HTTP listening port (`ENV PORT=3000` in `Dockerfile`; `127.0.0.1:${PORT:-3000}:3000` in `docker-compose.yml`). |
+| `HOSTNAME` | `0.0.0.0` | Container / Standalone Server | Network interface address bound by standalone `server.js` (`ENV HOSTNAME="0.0.0.0"` in `Dockerfile`; `HOSTNAME: "0.0.0.0"` in `docker-compose.yml`). |
 | `STATIC_EXPORT` | *None* | Build (`next.config.ts`, `scripts/build-export.mjs`, `src/`) | Switches Next.js to static HTML export (`output: 'export'`) and `STATIC_MOCK_CONFIG` data when set to `'true'` or `'1'`. |
 | `NEXT_PUBLIC_BASE_PATH` | *None* | Static Export Build (`next.config.ts`) | Optional URL subpath prefix (`basePath` and `assetPrefix`) applied when `STATIC_EXPORT` is enabled and value is not `'/'`. |
 | `VITEPRESS_BASE` | `/` | Docs Portal (`docs-portal/.vitepress/config.mts`) | Base URL path for building and serving the VitePress documentation portal. |
@@ -145,10 +146,10 @@ These variables configure container port binding, static HTML export builds, Vit
 ## 5. Statelessness & Filesystem Expectations
 
 - **Stateless Application Layer**: The application process is fully stateless and ephemeral.
-- **Local Filesystem**: Any write operations to local disk (e.g., `/tmp` or `.next`) are temporary and must not be relied upon for state persistence across container restarts or horizontal scaling.
+- **Local Filesystem**: Scratch write operations to `/tmp` or `.next` are temporary and must not be relied upon across container restarts or horizontal scaling.
 - **Data & Media Persistence**:
-  - Application state, registry items, contributors, and content configurations are stored in PostgreSQL.
-  - Uploaded media files are stored in S3-compatible object storage when configured.
+  - Application state, registry items, contributors, and content configurations are stored in PostgreSQL (`prisma/schema.prisma`).
+  - Uploaded media files are stored in S3-compatible object storage when `S3_*` credentials are configured, or written to `/app/public/uploads` via `LocalStorageProvider` (`src/utils/storage.ts`) when backed by a persistent volume/disk (such as `uploads_data:/app/public/uploads` in `docker-compose.yml` or a Render Persistent Disk) and streamed dynamically at `/uploads/*` in standalone mode (`next.config.ts` server `rewrites()` + `src/app/api/uploads/[...path]/route.ts` with `X-Content-Type-Options: nosniff`).
 
 ---
 
@@ -158,7 +159,9 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 
 - **Host Header Forwarding**:
   - Proxies must pass the original requested host via the `Host` or `X-Forwarded-Host` header.
-  - `middleware.ts` validates `X-Forwarded-Host` (first IP/host if comma-separated) or `Host` against `ALLOWED_HOSTS`. Requests with invalid or unapproved host headers are rejected with `HTTP 400 Bad Request`.
+  - Both `src/middleware.ts` and `getSubdomainFromHeaders()` in `src/lib/config.ts` inspect `X-Forwarded-Host` (first host if comma-separated) before `Host` and validate the resolved host against `ALLOWED_HOSTS`. Requests with invalid or unapproved host headers are rejected with `HTTP 400 Bad Request`.
+- **Perimeter Session Exclusions**:
+  - All perimeter-exempt paths (`/api/health`, `/api/ready`, `/api/registry/webhook/stripe`, `/api/cron/*`, and `/uploads/*`) still enforce `ALLOWED_HOSTS` validation in `src/middleware.ts` before bypassing guest/admin session cookies in favor of route-specific controls (`stripe-signature` verification via `STRIPE_WEBHOOK_SECRET`, `Authorization: Bearer <CRON_SECRET>`, or path-contained `nosniff` media streaming).
 - **Protocol Header Forwarding**:
   - Proxies should forward `X-Forwarded-Proto` (`https` or `http`) to enable accurate canonical URL generation.
 - **Client IP Header Forwarding (`TRUST_PROXY`)**:

@@ -462,7 +462,8 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
   }
   try {
     const headersList = await headers();
-    const host = headersList.get('host');
+    const forwardedHost = headersList.get('x-forwarded-host')?.split(',')[0]?.trim();
+    const host = forwardedHost || headersList.get('host');
     if (!host || !isHostAllowed(host)) return null;
     
     const cleanHost = host.split(':')[0];

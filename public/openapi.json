@@ -50,6 +50,10 @@
       "description": "Event schedule retrieval and iCalendar (.ics) download endpoints"
     },
     {
+      "name": "Uploads",
+      "description": "Dynamic streaming endpoints for locally stored uploaded media assets in standalone mode"
+    },
+    {
       "name": "Weather",
       "description": "Venue weather forecast proxy endpoints"
     }
@@ -11733,6 +11737,30 @@
           },
           {
             "adminCookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/uploads/{path}": {
+      "get": {
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "GET /api/uploads/[...path]",
+        "description": "Streams locally stored uploaded files dynamically at /uploads/* in standalone server mode.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

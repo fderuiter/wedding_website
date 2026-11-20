@@ -496,9 +496,9 @@ fi
       expect(validRes.outputs.effective_tag).toBe(validSha);
     });
 
-    it('polls /api/health to verify HTTP 200 with status=="ok" and database=="connected"', async () => {
+    it('polls /api/health to verify HTTP 200 with .data.status=="ok" and .data.database=="connected"', async () => {
       let attempt = 0;
-      let mode: 'recover' | 'degraded' = 'recover';
+      let mode: 'recover' | 'degraded' | 'unwrapped' = 'recover';
 
       const server = http.createServer((req, res) => {
         if (req.url !== '/api/health') {
@@ -510,14 +510,27 @@ fi
         if (mode === 'recover') {
           if (attempt === 1) {
             res.writeHead(503, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'degraded', database: 'disconnected' }));
+            res.end(JSON.stringify({ success: false, error: 'Database unreachable' }));
           } else {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+            res.end(
+              JSON.stringify({
+                success: true,
+                data: { status: 'ok', timestamp: '2026-11-20T00:00:00.000Z', database: 'connected' },
+              })
+            );
           }
+        } else if (mode === 'unwrapped') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'degraded', database: 'disconnected' }));
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'degraded', database: 'disconnected' },
+            })
+          );
         }
       });
 
@@ -538,6 +551,18 @@ fi
         expect(okRes.outputs.health_status).toBe('healthy');
         expect(attempt).toBeGreaterThanOrEqual(2);
 
+        mode = 'unwrapped';
+        attempt = 0;
+        const unwrappedRes = await runBashStepAsync(fastProbeScript, {
+          ENV_SERVICE_URL: `http://127.0.0.1:${port}`,
+          PROVIDER_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(unwrappedRes.status).toBe(1);
+        expect(unwrappedRes.outputs.health_status).toBe('unhealthy');
+
         mode = 'degraded';
         attempt = 0;
         const failRes = await runBashStepAsync(fastProbeScript, {
@@ -552,13 +577,18 @@ fi
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
-    });
+    }, 15000);
 
     it('prefers vars.SERVICE_URL ahead of secrets.SERVICE_URL and needs.redeploy.outputs.service_url and exports unmasked service_url into $GITHUB_STEP_SUMMARY', async () => {
       const server = http.createServer((req, res) => {
         if (req.url === '/api/health') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'ok', database: 'connected' },
+            })
+          );
           return;
         }
         res.writeHead(404);
