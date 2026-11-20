@@ -1,6 +1,8 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 import { BatchScrapeUrlsSchema } from '../schemas';
 import { scrapeProductUrl, ScrapedProductData } from './scrape';
 
@@ -42,6 +44,11 @@ async function runWithConcurrency<T, R>(
  * The entire batch operation times out after 15 seconds.
  */
 export const POST = withApiMiddleware(async (request: NextRequest) => {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('registry', config.modules)) {
+    throw new ApiError(404, "Feature 'registry' is disabled");
+  }
+
   const body = await request.json();
   const parseResult = BatchScrapeUrlsSchema.safeParse(body);
 

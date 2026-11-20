@@ -2,6 +2,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useAdminMaintenance } from '../useAdminMaintenance';
 import { apiClient } from '@/features/admin';
 import { useQueryClient } from '@tanstack/react-query';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
 jest.mock('@/features/admin/apiClient', () => ({
   apiClient: {
@@ -272,7 +273,7 @@ describe('useAdminMaintenance Hook Unit Tests', () => {
     const postedPayload = (apiClient.post as jest.Mock).mock.calls[0][1];
     expect(postedPayload.appConfig[0].multisiteEnabled).toBeUndefined();
     expect(postedPayload.appConfig[0].typographyScale).toBeUndefined();
-    expect(postedPayload.appConfig[0].modules).toBeUndefined();
+    expect(postedPayload.appConfig[0].modules).toEqual(DEFAULT_MODULE_CONFIG);
     expect(mockInvalidateQueries).toHaveBeenCalled();
   });
 });

@@ -167,7 +167,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 71 Prisma columns, 16 virtual DTO fields, 69 public fields, 14 admin-only fields, and 4 masked secrets', () => {
+    it('distinguishes 72 Prisma columns, 15 virtual DTO fields, 69 public fields, 14 admin-only fields, and 4 masked secrets', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
 
@@ -183,8 +183,8 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
 
-      expect(prismaRows).toHaveLength(71);
-      expect(virtualRows).toHaveLength(16);
+      expect(prismaRows).toHaveLength(72);
+      expect(virtualRows).toHaveLength(15);
       expect(publicRows).toHaveLength(69);
       expect(adminOnlyRows).toHaveLength(14);
       expect(maskedSecretRows).toHaveLength(4);
@@ -294,10 +294,11 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('FEATURE_MODULES.md Automated Table Generation', () => {
-    it('generates all 10 presentation feature toggles with dependencies, persistence, and HTTP 400 groupGifting coverage', () => {
+    it('generates all 9 presentation feature toggles with dependencies, Prisma persistence, and HTTP 400 groupGifting coverage', () => {
       const table = generateFeatureMetadataTable();
       const rows = table.trim().split('\n').slice(2);
-      expect(rows).toHaveLength(10);
+      expect(rows).toHaveLength(9);
+      expect(table).not.toContain('`guestPasscode`');
 
       for (const key of Object.keys(FEATURE_METADATA)) {
         expect(table).toContain(`| \`${key}\` |`);
@@ -306,8 +307,8 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('Requires `registry`');
       expect(table).toContain('HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent`');
       expect(table).toContain('`/registry/edit-item/[id]`');
-      expect(table).toContain('`Virtual DTO` + `Prisma` (`showCountdown`)');
-      expect(table).toContain('`Virtual DTO` + `Prisma` (`showAddToCalendar`)');
+      expect(table).toContain('`Prisma` (`modules` + `showCountdown`)');
+      expect(table).toContain('`Prisma` (`modules` + `showAddToCalendar`)');
     });
 
     it('generates all 7 exact plural ENTITY_KEY slugs from src/features/admin/registry.ts', () => {

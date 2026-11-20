@@ -799,7 +799,7 @@ Import and export formats include versioning metadata (`schemaVersion: "1.0"`) t
 | `twilioFromNumber` | `string` | `Prisma` | `Admin-only` | Twilio E.164 sender phone number or messaging source for SMS broadcasts. |
 | `broadcastBatchSize` | `number` | `Prisma` | `Admin-only` | Maximum number of broadcast recipients processed per delivery batch. |
 | `broadcastBatchDelayMs` | `number` | `Prisma` | `Admin-only` | Delay in milliseconds between consecutive outbound broadcast batches. |
-| `modules` | `object` | `Virtual DTO` | `Public` | Virtual DTO feature module enablement map validated against ModuleConfigSchema with dependency resolution. |
+| `modules` | `object` | `Prisma` | `Public` | Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution. |
 | `features` | `object[]` | `Prisma` | `Public` | Ordered homepage content section definitions controlling section titles, visibility, and copy. |
 | `createdAt` | `date` | `Prisma` | `Public` | Timestamp recording when the configuration record was initially created. |
 | `updatedAt` | `date` | `Prisma` | `Public` | Timestamp recording when the configuration record was last modified. |

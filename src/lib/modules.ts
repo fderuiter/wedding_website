@@ -3,7 +3,6 @@ import { z } from 'zod';
 const FeatureIdSchema = z.enum([
   'registry',
   'groupGifting',
-  'guestPasscode',
   'weather',
   'weddingParty',
   'attractions',
@@ -36,12 +35,6 @@ export const FEATURE_METADATA: Record<FeatureId, FeatureMetadata> = {
     description: 'Allows guests to make partial monetary contributions towards high-value registry items.',
     category: 'core',
     dependencies: ['registry'],
-  },
-  guestPasscode: {
-    id: 'guestPasscode',
-    title: 'Guest Passcode Access Gate',
-    description: 'Protects the wedding website behind a guest passcode login requirement.',
-    category: 'core',
   },
   weather: {
     id: 'weather',
@@ -94,7 +87,6 @@ const FEATURE_DEPENDENCIES: Partial<Record<FeatureId, FeatureId[]>> = {
 export const ModuleConfigSchema = z.object({
   registry: z.boolean().default(true),
   groupGifting: z.boolean().default(true),
-  guestPasscode: z.boolean().default(true),
   weather: z.boolean().default(true),
   weddingParty: z.boolean().default(true),
   attractions: z.boolean().default(true),
@@ -109,7 +101,6 @@ export type ModuleConfig = z.infer<typeof ModuleConfigSchema>;
 export const DEFAULT_MODULE_CONFIG: ModuleConfig = {
   registry: true,
   groupGifting: true,
-  guestPasscode: true,
   weather: true,
   weddingParty: true,
   attractions: true,

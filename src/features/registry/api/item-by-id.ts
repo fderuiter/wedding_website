@@ -5,9 +5,19 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { createValidatedRoute } from '@/utils/createValidatedRoute';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getAppConfig } from '@/lib/config';
+import { isFeatureEnabled } from '@/lib/modules';
 import { sanitizeRegistryItem } from '../lib/masking';
 
+async function assertRegistryEnabled(): Promise<void> {
+  const config = await getAppConfig();
+  if (!isFeatureEnabled('registry', config.modules)) {
+    throw new ApiError(404, "Feature 'registry' is disabled");
+  }
+}
+
 export const GET = withApiMiddleware(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  await assertRegistryEnabled();
   const { id } = await params;
   const isAdmin = await isAdminRequest(request);
   const item = await registryService.getItemById(id, { includeContributors: isAdmin });
@@ -22,7 +32,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, { params }: { 
   return NextResponse.json(sanitizeRegistryItem(item));
 });
 
-export const PUT = createValidatedRoute({
+const validatedPutHandler = createValidatedRoute({
   schema: RegistryItemBaseSchema,
   handler: async (_request: NextRequest, { params, body }: { params: { id: string }, body: any }) => {
     const { id } = params;
@@ -38,7 +48,13 @@ export const PUT = createValidatedRoute({
   }
 });
 
+export const PUT = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ id: string }> | { id: string } }) => {
+  await assertRegistryEnabled();
+  return validatedPutHandler(request, context);
+});
+
 export const DELETE = withApiMiddleware(async (_request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  await assertRegistryEnabled();
   const { id } = await params;
   await registryService.deleteItem(id);
   return NextResponse.json({ message: 'Item deleted successfully' });
