@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import type { ILogisticsRepository } from './types';
-import { ContentNodeSchema, ContentNodeDTO } from '../content/schemas';
+import { ContentNodeSchema, isPrivateContentNode, type ContentNodeDTO } from '@/features/content';
 
 const STATIC_MOCK_LOGISTICS_NODES: ContentNodeDTO[] = [
   {
@@ -77,7 +77,9 @@ export class LogisticsRepository implements ILogisticsRepository {
         : Promise.resolve([]),
     ]);
 
-    const parsed: ContentNodeDTO[] = nodes.map((n: any) => ContentNodeSchema.parse(n));
+    const parsed: ContentNodeDTO[] = nodes
+      .map((n: any) => ContentNodeSchema.parse(n))
+      .filter((n: ContentNodeDTO) => !isPrivateContentNode(n));
 
     if (Array.isArray(publicSubEvents) && publicSubEvents.length > 0) {
       const nonScheduleNodes = parsed.filter((n: ContentNodeDTO) => {
