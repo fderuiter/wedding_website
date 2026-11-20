@@ -1,5 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { BroadcastModal } from '../BroadcastModal';
+
+expect.extend(toHaveNoViolations);
 
 const mockAddToast = jest.fn();
 jest.mock('@/components/ui/ToastProvider', () => ({
@@ -253,5 +256,185 @@ describe('BroadcastModal Component', () => {
       );
       expect(defaultProps.onClose).not.toHaveBeenCalled();
     });
+  });
+
+  it('supports SegmentedTabs ArrowRight, ArrowLeft, Home, and End keyboard navigation and passes jest-axe', async () => {
+    const { baseElement } = render(<BroadcastModal {...defaultProps} />);
+
+    const composeTab = screen.getByRole('tab', { name: /Compose Message/i });
+    const previewTab = screen.getByRole('tab', { name: /Live Preview/i });
+
+    expect(composeTab).toHaveAttribute('tabIndex', '0');
+    expect(previewTab).toHaveAttribute('tabIndex', '-1');
+
+    composeTab.focus();
+    fireEvent.keyDown(composeTab, { key: 'ArrowRight' });
+    expect(previewTab).toHaveFocus();
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+    expect(previewTab).toHaveAttribute('tabIndex', '0');
+
+    fireEvent.keyDown(previewTab, { key: 'ArrowLeft' });
+    expect(composeTab).toHaveFocus();
+    expect(composeTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(composeTab, { key: 'End' });
+    expect(previewTab).toHaveFocus();
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(previewTab, { key: 'Home' });
+    expect(composeTab).toHaveFocus();
+    expect(composeTab).toHaveAttribute('aria-selected', 'true');
+
+    expect(await axe(baseElement)).toHaveNoViolations();
+  });
+
+  it('auto-renders unescaped preview on tab switch, re-renders when stale, and supports manual Refresh Preview', async () => {
+    mockPreviewBroadcast
+      .mockResolvedValueOnce({
+        subject: "Update for Sean O'Connor & Family",
+        body: "Hi Sean O'Connor & Family, we can't wait!",
+        sampleGuestName: "Sean O'Connor",
+        destination: 'sean@example.com',
+      })
+      .mockResolvedValueOnce({
+        subject: "Update for Sean O'Connor & Family",
+        body: "Revised: St. Mary's & Main Hall at 5 PM!",
+        sampleGuestName: "Sean O'Connor",
+        destination: 'sean@example.com',
+      })
+      .mockResolvedValueOnce({
+        subject: "Update for Sean O'Connor & Family",
+        body: "Refreshed: St. Mary's & Main Hall at 5 PM!",
+        sampleGuestName: "Sean O'Connor",
+        destination: 'sean@example.com',
+      });
+
+    const { baseElement } = render(<BroadcastModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText('Subject'), {
+      target: { value: 'Update for {{householdName}}' },
+    });
+    fireEvent.change(screen.getByLabelText('Message Body'), {
+      target: { value: "Hi {{householdName}}, we can't wait!" },
+    });
+
+    // Switching to Live Preview tab automatically triggers previewBroadcast
+    fireEvent.click(screen.getByRole('tab', { name: /Live Preview/i }));
+
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Hi Sean O'Connor & Family, we can't wait!")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/&#39;|&amp;/)).not.toBeInTheDocument();
+    expect(await axe(baseElement)).toHaveNoViolations();
+
+    // Switch back to Compose, edit message body (making preview stale), and switch to Live Preview again
+    fireEvent.click(screen.getByRole('tab', { name: /Compose Message/i }));
+    fireEvent.change(screen.getByLabelText('Message Body'), {
+      target: { value: "Revised: St. Mary's & Main Hall at 5 PM!" },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /Live Preview/i }));
+
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Revised: St. Mary's & Main Hall at 5 PM!")).toBeInTheDocument();
+    });
+
+    // Manual Refresh Preview control triggers fresh preview even without further edits
+    fireEvent.click(screen.getByRole('button', { name: /Refresh Preview/i }));
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledTimes(3);
+      expect(screen.getByText("Refreshed: St. Mary's & Main Hall at 5 PM!")).toBeInTheDocument();
+    });
+  });
+
+  it('shows live matched and missing-contact counts per channel and attaches View Delivery Logs toast action on send', async () => {
+    const onViewDeliveryLogs = jest.fn();
+    mockSendBroadcast.mockResolvedValueOnce({
+      status: 'PARTIALLY_SENT',
+      sentCount: 1,
+      failedCount: 1,
+    });
+
+    const sampleGuests = [
+      {
+        id: 'g1',
+        guestName: 'Alice EmailOnly',
+        email: 'alice@example.com',
+        used: false,
+        partyGroup: 'Bride',
+        extraFields: { attendanceStatus: 'pending' },
+      },
+      {
+        id: 'g2',
+        guestName: 'Bob PhoneOnly',
+        email: null,
+        used: false,
+        partyGroup: 'Bride',
+        extraFields: { attendanceStatus: 'pending', phone: '+15551234567' },
+      },
+      {
+        id: 'g3',
+        guestName: 'Charlie GroomGroup',
+        email: 'charlie@example.com',
+        used: false,
+        partyGroup: 'Groom',
+        extraFields: { attendanceStatus: 'pending', phone: '+15559876543' },
+      },
+      {
+        id: 'g-public',
+        guestName: 'Public Collector',
+        email: 'pub@example.com',
+        used: false,
+        partyGroup: 'Bride',
+        partyTags: ['address-collection'],
+        extraFields: { attendanceStatus: 'pending' },
+      },
+    ];
+
+    render(
+      <BroadcastModal
+        {...defaultProps}
+        guests={sampleGuests}
+        targetFilters={{ partyGroup: 'Bride', attendanceStatus: 'pending' }}
+        onViewDeliveryLogs={onViewDeliveryLogs}
+      />
+    );
+
+    // EMAIL channel: 2 matched guests (g1, g2; g-public excluded), 1 missing email (g2)
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('2 matched guests');
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('1 missing email');
+
+    // Switch channel to SMS: 2 matched guests, 1 missing phone (g1)
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'SMS' } });
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('2 matched guests');
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('1 missing phone');
+
+    // Dispatch SMS and verify toast includes View Delivery Logs action
+    fireEvent.change(screen.getByLabelText('Message Body'), {
+      target: { value: 'Shuttle leaves in 10 minutes!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send SMS' }));
+
+    await waitFor(() => {
+      expect(mockSendBroadcast).toHaveBeenCalledWith({
+        channel: 'SMS',
+        subject: undefined,
+        body: 'Shuttle leaves in 10 minutes!',
+        targetFilters: { partyGroup: 'Bride', attendanceStatus: 'pending' },
+        scheduledFor: undefined,
+      });
+      expect(mockAddToast).toHaveBeenCalledWith(
+        expect.stringContaining('Broadcast dispatched!'),
+        'info',
+        undefined,
+        undefined,
+        expect.objectContaining({ label: 'View Delivery Logs' })
+      );
+    });
+
+    const toastAction = mockAddToast.mock.calls[0][4];
+    toastAction.onClick();
+    expect(onViewDeliveryLogs).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
+import Link from 'next/link';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
+import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { FormGroup, Label, Input, Textarea, Select } from '@/components/ui/forms';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
@@ -11,6 +13,7 @@ import {
   BroadcastChannel,
   BroadcastTargetFilters,
   AVAILABLE_TEMPLATE_PLACEHOLDERS,
+  summarizeBroadcastAudience,
 } from '@/features/broadcast';
 
 export interface BroadcastModalProps {
@@ -19,9 +22,11 @@ export interface BroadcastModalProps {
   initialChannel?: BroadcastChannel;
   targetFilters?: BroadcastTargetFilters;
   selectedCount?: number;
+  guests?: Array<Record<string, any>>;
   subEvents?: any[];
   adminEmail?: string;
   adminPhone?: string;
+  onViewDeliveryLogs?: () => void;
 }
 
 const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
@@ -29,9 +34,11 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   initialChannel = 'EMAIL',
   targetFilters,
   selectedCount,
+  guests,
   subEvents = [],
   adminEmail,
   adminPhone,
+  onViewDeliveryLogs,
 }) => {
   const { addToast } = useToast();
   const { contactEmail } = useTheme();
@@ -51,10 +58,48 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const [testDestination, setTestDestination] = useState('');
   const [activeTab, setActiveTab] = useState<'compose' | 'preview'>('compose');
   const [previewResult, setPreviewResult] = useState<any>(null);
+  const [lastPreviewSignature, setLastPreviewSignature] = useState<string | null>(null);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledFor, setScheduledFor] = useState('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const currentPreviewSignature = useMemo(
+    () =>
+      JSON.stringify({
+        channel,
+        subject: channel === 'EMAIL' ? subject : undefined,
+        body,
+        targetFilters,
+      }),
+    [channel, subject, body, targetFilters]
+  );
+
+  const audienceStats = useMemo(() => {
+    if (Array.isArray(guests)) {
+      return summarizeBroadcastAudience(guests, targetFilters, channel);
+    }
+    if (
+      previewResult &&
+      typeof previewResult.matchedCount === 'number' &&
+      typeof previewResult.missingContactCount === 'number'
+    ) {
+      return {
+        matchedCount: previewResult.matchedCount,
+        missingContactCount: previewResult.missingContactCount,
+        reachableCount: previewResult.matchedCount - previewResult.missingContactCount,
+      };
+    }
+    return null;
+  }, [guests, targetFilters, channel, previewResult]);
+
+  const navigateToDeliveryLogs = () => {
+    if (onViewDeliveryLogs) {
+      onViewDeliveryLogs();
+    } else if (typeof window !== 'undefined') {
+      window.location.assign('/admin/dashboard/history?tab=broadcasts');
+    }
+  };
 
   const insertPlaceholder = (ph: string) => {
     if (!textareaRef.current) {
@@ -75,11 +120,22 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     }, 0);
   };
 
-  const handleGeneratePreview = async () => {
+  const runPreviewRequest = async (options?: {
+    silentEmpty?: boolean;
+    switchToPreview?: boolean;
+  }) => {
     if (!body.trim()) {
-      addToast('Please enter a message body before previewing.', 'error');
+      if (!options?.silentEmpty) {
+        addToast('Please enter a message body before previewing.', 'error');
+      }
       return;
     }
+    const requestSignature = JSON.stringify({
+      channel,
+      subject: channel === 'EMAIL' ? subject : undefined,
+      body,
+      targetFilters,
+    });
     try {
       const res = await previewBroadcast({
         channel,
@@ -88,9 +144,31 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         targetFilters,
       });
       setPreviewResult(res);
-      setActiveTab('preview');
+      setLastPreviewSignature(requestSignature);
+      if (options?.switchToPreview) {
+        setActiveTab('preview');
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to generate preview', 'error');
+    }
+  };
+
+  const handleGeneratePreview = async () => {
+    await runPreviewRequest({ switchToPreview: true });
+  };
+
+  const handleRefreshPreview = async () => {
+    await runPreviewRequest({ switchToPreview: false });
+  };
+
+  const handleTabChange = (nextTab: 'compose' | 'preview') => {
+    setActiveTab(nextTab);
+    if (
+      nextTab === 'preview' &&
+      body.trim() &&
+      lastPreviewSignature !== currentPreviewSignature
+    ) {
+      void runPreviewRequest({ silentEmpty: true });
     }
   };
 
@@ -152,15 +230,26 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         scheduledFor: scheduledIso,
       });
 
+      const deliveryLogsAction = {
+        label: 'View Delivery Logs',
+        onClick: navigateToDeliveryLogs,
+      };
+
       if (result.status === 'SCHEDULED') {
         addToast(
           `Broadcast scheduled for ${new Date(result.scheduledFor || scheduledFor).toLocaleString()}!`,
-          'success'
+          'success',
+          undefined,
+          undefined,
+          deliveryLogsAction
         );
       } else {
         addToast(
           `Broadcast dispatched! Sent: ${result.sentCount || 0}, Failed: ${result.failedCount || 0}`,
-          (result.failedCount || 0) === 0 ? 'success' : 'info'
+          (result.failedCount || 0) === 0 ? 'success' : 'info',
+          undefined,
+          undefined,
+          deliveryLogsAction
         );
       }
       onClose();
@@ -171,20 +260,40 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 
   const getTargetSummary = () => {
     const parts: string[] = [];
-    if (selectedCount !== undefined && selectedCount > 0) {
-      parts.push(`${selectedCount} selected guest(s)`);
+    const resolvedSelectedCount =
+      selectedCount !== undefined && selectedCount > 0
+        ? selectedCount
+        : targetFilters?.selectedIds?.length || 0;
+
+    if (resolvedSelectedCount > 0) {
+      parts.push(`${resolvedSelectedCount} selected guest(s)`);
     } else {
       parts.push('All matching guests');
     }
 
+    if (targetFilters?.searchQuery) {
+      parts.push(`Search: "${targetFilters.searchQuery}"`);
+    }
+    if (targetFilters?.status && targetFilters.status !== 'all') {
+      parts.push(`Redemption: ${targetFilters.status}`);
+    }
+    if (targetFilters?.addressStatus && targetFilters.addressStatus !== 'all') {
+      parts.push(`Address: ${targetFilters.addressStatus}`);
+    }
+    if (targetFilters?.attendanceStatus && targetFilters.attendanceStatus !== 'all') {
+      parts.push(`Status: ${targetFilters.attendanceStatus}`);
+    }
+    if (targetFilters?.dietaryCategory && targetFilters.dietaryCategory !== 'all') {
+      parts.push(`Dietary: ${targetFilters.dietaryCategory}`);
+    }
+    if (targetFilters?.partyGroup && targetFilters.partyGroup !== 'all') {
+      parts.push(`Group: ${targetFilters.partyGroup}`);
+    }
     if (targetFilters?.partyTags && targetFilters.partyTags.length > 0) {
       parts.push(`Tags: [${targetFilters.partyTags.join(', ')}]`);
     }
     if (targetFilters?.householdName) {
       parts.push(`Household: "${targetFilters.householdName}"`);
-    }
-    if (targetFilters?.attendanceStatus && targetFilters.attendanceStatus !== 'all') {
-      parts.push(`Status: ${targetFilters.attendanceStatus}`);
     }
     if (targetFilters?.subEventId) {
       const foundSub = subEvents.find((s) => s.id === targetFilters.subEventId);
@@ -194,56 +303,74 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     return parts.join(' • ');
   };
 
+  const missingContactLabel = channel === 'EMAIL' ? 'email' : 'phone';
+
   return (
     <div className="space-y-4">
       {/* Navigation Tabs */}
-      <div
-        role="tablist"
-        aria-label="Broadcast navigation tabs"
-        className="flex border-b border-gray-200 dark:border-zinc-700"
-      >
-        <button
-          type="button"
-          role="tab"
-          id="broadcast-tab-compose"
-          aria-selected={activeTab === 'compose'}
-          aria-controls="broadcast-tabpanel-compose"
-          onClick={() => setActiveTab('compose')}
-          className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'compose'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
-          }`}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SegmentedTabs
+          aria-label="Broadcast navigation tabs"
+          value={activeTab}
+          onChange={handleTabChange}
+          tabs={[
+            {
+              value: 'compose',
+              label: 'Compose Message',
+              id: 'broadcast-tab-compose',
+              panelId: 'broadcast-tabpanel-compose',
+            },
+            {
+              value: 'preview',
+              label: 'Live Preview',
+              id: 'broadcast-tab-preview',
+              panelId: 'broadcast-tabpanel-preview',
+            },
+          ]}
+        />
+        <Link
+          href="/admin/dashboard/history?tab=broadcasts"
+          prefetch={false}
+          className="text-xs font-semibold text-primary dark:text-zinc-200 underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded px-1 py-0.5"
         >
-          Compose Message
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="broadcast-tab-preview"
-          aria-selected={activeTab === 'preview'}
-          aria-controls="broadcast-tabpanel-preview"
-          onClick={() => setActiveTab('preview')}
-          className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-            activeTab === 'preview'
-              ? 'border-primary text-primary font-semibold'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-zinc-400'
-          }`}
-        >
-          Live Preview
-        </button>
+          Delivery Logs
+        </Link>
       </div>
 
       {/* Target Summary Banner */}
-      <div className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-primary">
-        <span className="font-semibold">Target Audience:</span> {getTargetSummary()}
+      <div
+        data-testid="broadcast-audience-banner"
+        className="p-3 bg-primary/10 rounded-md border border-primary/20 text-xs text-gray-900 dark:text-zinc-100 space-y-1.5"
+      >
+        <div>
+          <span className="font-semibold text-primary dark:text-zinc-100">Target Audience:</span>{' '}
+          <span>{getTargetSummary()}</span>
+        </div>
+        {audienceStats !== null && (
+          <div
+            data-testid="broadcast-audience-counts"
+            className="flex flex-wrap items-center gap-2 pt-0.5"
+          >
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-600 font-semibold text-gray-800 dark:text-zinc-100">
+              {audienceStats.matchedCount} matched {audienceStats.matchedCount === 1 ? 'guest' : 'guests'}
+            </span>
+            <span
+              className={
+                audienceStats.missingContactCount > 0
+                  ? 'inline-flex items-center px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 border border-amber-400 dark:border-amber-700 font-semibold text-amber-900 dark:text-amber-200'
+                  : 'inline-flex items-center px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 font-semibold text-emerald-900 dark:text-emerald-200'
+              }
+            >
+              {audienceStats.missingContactCount} missing {missingContactLabel}
+            </span>
+          </div>
+        )}
       </div>
 
       {activeTab === 'compose' ? (
-        <div
-          role="tabpanel"
+        <SegmentedTabPanel
           id="broadcast-tabpanel-compose"
-          aria-labelledby="broadcast-tab-compose"
+          tabId="broadcast-tab-compose"
           className="space-y-4"
         >
           <FormGroup>
@@ -275,7 +402,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 
           {/* Template Variables Quick Insert Toolbar */}
           <div>
-            <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 mb-1.5 block">
+            <span className="text-xs font-semibold text-gray-600 dark:text-zinc-300 mb-1.5 block">
               Insert Dynamic Placeholders:
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -285,7 +412,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
                   type="button"
                   onClick={() => insertPlaceholder(item.placeholder)}
                   title={item.description}
-                  className="inline-flex items-center px-2 py-1 text-xs font-mono bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 rounded border border-gray-300 dark:border-zinc-600 transition-colors"
+                  className="inline-flex items-center px-2 py-1 text-xs font-mono bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-800 dark:text-zinc-200 rounded border border-gray-300 dark:border-zinc-600 transition-colors"
                 >
                   + {item.placeholder}
                 </button>
@@ -325,7 +452,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
               onChange={(e) => setTestDestination(e.target.value)}
               className="w-full"
             />
-            <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+            <span className="text-xs text-gray-600 dark:text-zinc-300 mt-1 block">
               Leave blank to deliver to configured host {channel === 'EMAIL' ? 'contact email' : 'phone number'}.
             </span>
           </FormGroup>
@@ -353,48 +480,64 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
                   onChange={(e) => setScheduledFor(e.target.value)}
                   className="w-full"
                 />
-                <span className="text-xs text-gray-500 dark:text-zinc-400 mt-1 block">
+                <span className="text-xs text-gray-600 dark:text-zinc-300 mt-1 block">
                   The background cron worker will automatically dispatch this message when the scheduled time arrives.
                 </span>
               </FormGroup>
             )}
           </div>
-        </div>
+        </SegmentedTabPanel>
       ) : (
-      /* Preview Tab Content */
-        <div
-          role="tabpanel"
+        /* Preview Tab Content */
+        <SegmentedTabPanel
           id="broadcast-tabpanel-preview"
-          aria-labelledby="broadcast-tab-preview"
+          tabId="broadcast-tab-preview"
           className="space-y-4"
         >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-600 dark:text-zinc-300">
+              Personalized sample output ({channel === 'EMAIL' ? 'Email' : 'SMS'})
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={handleRefreshPreview}
+              disabled={previewing || !body.trim()}
+            >
+              {previewing ? 'Refreshing...' : 'Refresh Preview'}
+            </Button>
+          </div>
+
           {previewResult ? (
             <div className="border border-gray-200 dark:border-zinc-700 rounded-md p-4 bg-gray-50 dark:bg-zinc-900/50 space-y-3">
-              <div className="text-xs text-gray-500 dark:text-zinc-400 flex justify-between border-b pb-2 dark:border-zinc-700">
+              <div className="text-xs text-gray-600 dark:text-zinc-300 flex justify-between border-b pb-2 dark:border-zinc-700">
                 <span>Sample Recipient: <strong>{previewResult.sampleGuestName}</strong></span>
                 <span>Destination: <strong>{previewResult.destination}</strong></span>
               </div>
 
               {previewResult.subject && (
                 <div>
-                  <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold">Subject:</span>
+                  <span className="text-xs text-gray-600 dark:text-zinc-300 uppercase tracking-wider block font-semibold">Subject:</span>
                   <h3 className="text-base font-semibold text-gray-900 dark:text-zinc-100">{previewResult.subject}</h3>
                 </div>
               )}
 
               <div>
-                <span className="text-xs text-gray-400 dark:text-zinc-500 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
+                <span className="text-xs text-gray-600 dark:text-zinc-300 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
                 <div className="bg-white dark:bg-zinc-800 p-3 rounded border border-gray-200 dark:border-zinc-700 whitespace-pre-wrap text-sm text-gray-800 dark:text-zinc-200">
                   {previewResult.body}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="p-6 text-center text-sm text-gray-500 dark:text-zinc-400">
-              Click "Live Preview" or switch tabs to render dynamic variables.
+            <div className="p-6 text-center text-sm text-gray-600 dark:text-zinc-300">
+              {previewing
+                ? 'Rendering dynamic variables...'
+                : 'Enter a message body in Compose Message or click Refresh Preview to render dynamic variables.'}
             </div>
           )}
-        </div>
+        </SegmentedTabPanel>
       )}
 
       {/* Modal Actions */}
