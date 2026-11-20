@@ -2,11 +2,13 @@
 node_modules
 **/node_modules
 
-# 2. Next.js / Turbopack build compilation cache and intermediate output
+# 2. Next.js / Turbopack / Storybook / Portal build compilation caches and outputs
 .turbo
 .next
+.api-backup-export
 out
 build
+storybook-static
 
 # 3. Local environment configurations & sensitive credentials
 .env
@@ -26,6 +28,7 @@ build
 .git
 .gitattributes
 .github
+.githooks
 .gitignore
 .dockerignore
 .husky
@@ -34,8 +37,44 @@ build
 .vercel
 .jules
 .Jules
+docker-compose*.yml
+vercel.json
 
-# 5. Local testing logs, directories, and build artifacts
+# 5. Documentation, Storybook, Playwright E2E, Linter Rules, and Test Suites
+docs
+docs-portal
+.storybook
+e2e
+eslint-rules
+eslint.config.mjs
+knip.json
+playwright.config.ts
+jest.config.mjs
+jest.polyfills.js
+jest.setup.js
+jsdom-env.cjs
+tsconfig.test.json
+tsconfig.e2e.json
+tsconfig.scripts.json
+*.md
+src/__tests__
+src/**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.test.js
+**/*.test.mjs
+**/*.spec.ts
+**/*.spec.tsx
+**/*.stories.ts
+**/*.stories.tsx
+**/*.stories.mdx
+src/mocks
+src/testing
+public/mockServiceWorker.js
+scripts/*
+!scripts/generate-password-hash.mjs
+
+# 6. Local testing logs, directories, and build artifacts
 test-results
 playwright-report
 coverage
@@ -47,9 +86,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# 6. OS-specific files
+# 7. OS-specific files
 .DS_Store
 ._*
 
-# 7. TypeScript build caches
+# 8. TypeScript build caches
 tsconfig.tsbuildinfo
