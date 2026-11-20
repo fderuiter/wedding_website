@@ -10,6 +10,7 @@ import { ApiError } from '@/utils/ApiError';
 import { pruneSnapshotsBulk } from '@/lib/audit';
 import { logger } from '@/lib/logger';
 import { APP_CONFIG_SECRET_KEYS, sanitizeAppConfigForBackup } from '@/lib/config';
+import { resolveModuleConfig } from '@/lib/modules';
 
 function hasNonEmptySecret(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -203,6 +204,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       const {
         themeTokens,
         features,
+        modules,
         smtpPass,
         resendApiKey,
         sendgridApiKey,
@@ -222,12 +224,29 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         }
       }
 
+      const resolvedImportModules =
+        modules !== undefined
+          ? resolveModuleConfig(modules)
+          : rest.showCountdown !== undefined || rest.showAddToCalendar !== undefined
+            ? resolveModuleConfig({
+              ...(rest.showCountdown !== undefined ? { countdown: rest.showCountdown } : {}),
+              ...(rest.showAddToCalendar !== undefined ? { addToCalendar: rest.showAddToCalendar } : {}),
+            })
+            : undefined;
+
       return {
         ...rest,
+        ...(modules !== undefined
+          ? {
+            showCountdown: resolvedImportModules!.countdown,
+            showAddToCalendar: resolvedImportModules!.addToCalendar,
+          }
+          : {}),
         ...(themeTokens !== undefined && themeTokens !== null
           ? { themeTokens: serializeDatesForJson(themeTokens) }
           : {}),
         ...(features !== undefined ? { features: serializeDatesForJson(features) } : {}),
+        ...(resolvedImportModules !== undefined ? { modules: serializeDatesForJson(resolvedImportModules) } : {}),
         ...mergedSecrets,
       };
     });

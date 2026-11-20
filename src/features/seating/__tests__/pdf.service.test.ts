@@ -161,4 +161,55 @@ describe('pdf.service - generateSeatingChartPdf', () => {
     expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
     expect(duration).toBeLessThan(5000); // Should execute quickly in linear time
   });
+
+  it('renders 1-sided head and sweetheart tables with dietary restriction indicators', async () => {
+    const oneSidedTables: SeatingTableDTO[] = [
+      {
+        id: 'tbl-head',
+        name: 'Head Table',
+        shape: 'head',
+        capacity: 6,
+        x: 80,
+        y: 60,
+        width: 240,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g1',
+            guestName: 'Taylor Morgan',
+            code: 'BRIDE1',
+            seatNumber: 1,
+            dietaryNotes: 'Gluten-Free, Dairy-Free',
+          } as InvitationCodeDTO,
+        ],
+      },
+      {
+        id: 'tbl-sweet',
+        name: 'Sweetheart Table',
+        shape: 'sweetheart',
+        capacity: 2,
+        x: 360,
+        y: 60,
+        width: 140,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g2',
+            guestName: 'Jordan Lee',
+            code: 'GROOM1',
+            seatNumber: 1,
+          } as InvitationCodeDTO,
+        ],
+      },
+    ];
+
+    const pdfBuffer = await generateSeatingChartPdf(oneSidedTables, []);
+    expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+    expect(pdfBuffer.length).toBeGreaterThan(600);
+  });
 });

@@ -12,9 +12,25 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const seatingService = new SeatingTableAdminService();
-  const { invitationCodeId, tableId, seatNumber } = parsed.data;
 
   try {
+    if ('invitationCodeIds' in parsed.data) {
+      const { invitationCodeIds, tableId, action } = parsed.data;
+      const result = await seatingService.assignSeatsBatch(invitationCodeIds, tableId, {
+        action,
+      });
+      return NextResponse.json(result);
+    }
+
+    if ('assignments' in parsed.data) {
+      const { assignments, action } = parsed.data;
+      const result = await seatingService.restoreSeatAssignments(assignments, {
+        action,
+      });
+      return NextResponse.json(result);
+    }
+
+    const { invitationCodeId, tableId, seatNumber } = parsed.data;
     const result = await seatingService.assignSeat(invitationCodeId, tableId, seatNumber);
     return NextResponse.json(result);
   } catch (error: any) {

@@ -66,12 +66,11 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   const isWebsiteUrlSafe = safeWebsiteUrl && isSafeUrl(safeWebsiteUrl);
 
   const hasHotelBlock = Boolean(
-    attraction.promoCode ||
-    attraction.roomRate ||
-    attraction.cutoffDate ||
-    isBookingUrlSafe ||
-    attraction.shuttleInfo ||
-    attraction.category === 'hotel'
+    attraction.promoCode?.trim() ||
+    attraction.roomRate?.trim() ||
+    attraction.cutoffDate?.trim() ||
+    (isBookingUrlSafe && safeBookingUrl) ||
+    attraction.shuttleInfo?.trim()
   );
 
   return (
@@ -79,7 +78,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
       <div className="relative h-48 w-full">
         <MediaImage
           media={attraction.image}
-          fallbackUrl="/images/placeholder.png"
+          fallbackUrl={attraction.imageUrl || '/images/placeholder.png'}
           fallbackAlt={attraction.name}
           className="object-cover w-full h-full transition-transform duration-[var(--motion-duration-normal)] group-hover:scale-110"
         />
@@ -108,7 +107,11 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
                 <button
                   type="button"
                   onClick={handleCopyCode}
-                  aria-label={copied ? 'Promo code copied' : `Copy promo code ${attraction.promoCode}`}
+                  aria-label={
+                    copied
+                      ? `Copied! Promo code ${attraction.promoCode} copied`
+                      : `Copy Code: copy promo code ${attraction.promoCode}`
+                  }
                   className="px-2.5 py-1 text-xs font-semibold rounded bg-primary text-white hover:bg-primary/90 transition-colors shrink-0"
                 >
                   {copied ? 'Copied!' : 'Copy Code'}

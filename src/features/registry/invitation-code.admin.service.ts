@@ -238,7 +238,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
       }
 
       const existingDbRecords = await tx.invitationCode.findMany({
-        select: { id: true, code: true, guestName: true, email: true, householdName: true },
+        select: {
+          id: true,
+          code: true,
+          guestName: true,
+          email: true,
+          householdName: true,
+          partyTags: true,
+        },
       });
       const normalizedRows = records.map((r) => normalizeBatchInvitationRecord(r));
       const { dbCodeMap, matches } = resolveBatchGuestMatches(normalizedRows, existingDbRecords);
@@ -486,7 +493,14 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     }
 
     const existingDbRecords = await this.repo.client.invitationCode.findMany({
-      select: { id: true, code: true, guestName: true, email: true, householdName: true },
+      select: {
+        id: true,
+        code: true,
+        guestName: true,
+        email: true,
+        householdName: true,
+        partyTags: true,
+      },
     });
 
     const normalizedRows = records.map((r) => normalizeBatchInvitationRecord(r));
@@ -1020,7 +1034,12 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         }
       }
 
-      // 5. Consolidate profile & seating fields onto primary InvitationCode
+      // 5. Delete secondary InvitationCode records before consolidating seating onto primary
+      await tx.invitationCode.deleteMany({
+        where: { id: { in: trimmedSecondaries } },
+      });
+
+      // 6. Consolidate profile & seating fields onto primary InvitationCode
       const updatedPrimary = await tx.invitationCode.update({
         where: { id: cleanPrimaryId },
         data: {
@@ -1048,11 +1067,6 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           tableId: merged.tableId,
           seatNumber: merged.seatNumber,
         },
-      });
-
-      // 6. Delete secondary InvitationCode records
-      await tx.invitationCode.deleteMany({
-        where: { id: { in: trimmedSecondaries } },
       });
 
       const transferredCounts = {

@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { createAuditSnapshot, pruneSnapshotsBulk } from '@/lib/audit';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
 jest.mock('next/server', () => {
   class MockNextResponse {
@@ -329,7 +330,7 @@ describe('Maintenance API Routes Integration Tests', () => {
       expect(data.appConfig[0].broadcastBatchDelayMs).toBe(750);
       expect(data.appConfig[0].multisiteEnabled).toBeUndefined();
       expect(data.appConfig[0].typographyScale).toBeUndefined();
-      expect(data.appConfig[0].modules).toBeUndefined();
+      expect(data.appConfig[0].modules).toEqual(DEFAULT_MODULE_CONFIG);
       expect(data.appConfig[0].adminPassword).toBeUndefined();
       expect(data.appConfig[0].databaseUrl).toBeUndefined();
       expect(data.appConfig[0].smtpPass).toBeUndefined();
@@ -982,6 +983,9 @@ describe('Maintenance API Routes Integration Tests', () => {
             id: 'global',
             partner1Name: 'Alex',
             partner2Name: 'Taylor',
+            modules: DEFAULT_MODULE_CONFIG,
+            showCountdown: true,
+            showAddToCalendar: true,
             smtpPass: 'existing-smtp-pass',
             resendApiKey: 'existing-resend-key',
             twilioAuthToken: 'existing-twilio-token',

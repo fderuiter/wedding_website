@@ -383,6 +383,26 @@ interface ExistingGuestMatchCandidate {
   guestName: string;
   email?: string | null;
   householdName?: string | null;
+  partyTags?: string[] | null;
+}
+
+const ADDRESS_COLLECTION_PARTY_TAG = 'address-collection';
+
+function hasAddressCollectionPartyTag(tags: unknown): boolean {
+  return (
+    Array.isArray(tags) &&
+    tags.some(
+      (t) => typeof t === 'string' && t.trim().toLowerCase() === ADDRESS_COLLECTION_PARTY_TAG
+    )
+  );
+}
+
+function disambiguateInvitedCandidate(
+  candidates: ReadonlyArray<ExistingGuestMatchCandidate>
+): ExistingGuestMatchCandidate | null {
+  if (candidates.length <= 1) return candidates[0] ?? null;
+  const invitedOnly = candidates.filter((c) => !hasAddressCollectionPartyTag(c.partyTags));
+  return invitedOnly.length === 1 ? invitedOnly[0] : null;
 }
 
 type CompositeMatchSource = 'code' | 'email' | 'name_household' | 'unique_name';
@@ -432,6 +452,7 @@ export function resolveBatchGuestMatches(
       guestName: rawRec.guestName || '',
       email: rawRec.email ?? null,
       householdName: rawRec.householdName ?? null,
+      ...(rawRec.partyTags !== undefined ? { partyTags: rawRec.partyTags } : {}),
     };
     dbCodeMap.set(upperCode, rec);
 
@@ -493,7 +514,7 @@ export function resolveBatchGuestMatches(
         continue;
       }
 
-      // Disambiguate shared email by name + household, then name
+      // Disambiguate shared email by name + household, then name, then invited vs address-collection
       let narrowed =
         nameKey && householdKey
           ? emailCandidates.filter(
@@ -505,10 +526,13 @@ export function resolveBatchGuestMatches(
       if (narrowed.length !== 1 && nameKey) {
         narrowed = emailCandidates.filter((c) => normalizeMatchText(c.guestName) === nameKey);
       }
-      if (narrowed.length === 1) {
-        const hit = narrowed[0];
-        matches[i] = { matchedRecord: hit, matchedBy: 'email', ambiguityWarning: null };
-        claimedDbIds.add(hit.id);
+      const resolvedEmailHit =
+        narrowed.length === 1
+          ? narrowed[0]
+          : disambiguateInvitedCandidate(narrowed.length > 1 ? narrowed : emailCandidates);
+      if (resolvedEmailHit) {
+        matches[i] = { matchedRecord: resolvedEmailHit, matchedBy: 'email', ambiguityWarning: null };
+        claimedDbIds.add(resolvedEmailHit.id);
         continue;
       }
 
@@ -524,13 +548,18 @@ export function resolveBatchGuestMatches(
     if (nameKey && householdKey) {
       const nhKey = `${nameKey}||${householdKey}`;
       const nhCandidates = nameHouseholdMap.get(nhKey);
-      if (nhCandidates && nhCandidates.length === 1) {
-        const hit = nhCandidates[0];
-        matches[i] = { matchedRecord: hit, matchedBy: 'name_household', ambiguityWarning: null };
-        claimedDbIds.add(hit.id);
-        continue;
-      }
-      if (nhCandidates && nhCandidates.length > 1) {
+      if (nhCandidates && nhCandidates.length > 0) {
+        const resolvedNhHit =
+          nhCandidates.length === 1 ? nhCandidates[0] : disambiguateInvitedCandidate(nhCandidates);
+        if (resolvedNhHit) {
+          matches[i] = {
+            matchedRecord: resolvedNhHit,
+            matchedBy: 'name_household',
+            ambiguityWarning: null,
+          };
+          claimedDbIds.add(resolvedNhHit.id);
+          continue;
+        }
         matches[i] = {
           matchedRecord: null,
           matchedBy: null,
@@ -555,7 +584,12 @@ export function resolveBatchGuestMatches(
       continue;
     }
 
-    if (nameCandidates.length >= 2) {
+    const singleCandidate =
+      nameCandidates.length === 1
+        ? nameCandidates[0]
+        : disambiguateInvitedCandidate(nameCandidates);
+
+    if (!singleCandidate) {
       matches[idx] = {
         matchedRecord: null,
         matchedBy: null,
@@ -564,7 +598,6 @@ export function resolveBatchGuestMatches(
       continue;
     }
 
-    const singleCandidate = nameCandidates[0];
     if (claimedDbIds.has(singleCandidate.id)) {
       matches[idx] = {
         matchedRecord: null,
@@ -675,9 +708,12 @@ export function computeMergedInvitationPreview(
     return count > max ? count : max;
   }, 0);
 
+  const hasInvitedRecord = all.some((rec) => !hasAddressCollectionPartyTag(rec.partyTags));
   const mergedTags = normalizePartyTags(
     all.flatMap((rec) => (Array.isArray(rec.partyTags) ? rec.partyTags : [])),
     { dedupe: true }
+  ).filter(
+    (tag) => !hasInvitedRecord || tag.trim().toLowerCase() !== ADDRESS_COLLECTION_PARTY_TAG
   );
 
   const mergedDietary = mergeDietaryNotes(all.map((rec) => rec.dietaryNotes));
@@ -706,20 +742,30 @@ export function computeMergedInvitationPreview(
   const usedAtSource = all.find((rec) => rec.usedAt !== null && rec.usedAt !== undefined);
   const usedAt = usedAtSource?.usedAt ?? null;
 
-  let tableId: string | null = primary.tableId ?? null;
-  let seatNumber: number | null = primary.seatNumber ?? null;
-  if (!tableId) {
-    const seatedSecondary = secondaries.find((rec) => Boolean(rec.tableId));
-    if (seatedSecondary) {
-      tableId = seatedSecondary.tableId ?? null;
-      seatNumber = seatedSecondary.seatNumber ?? null;
-    }
-  } else if (seatNumber === null || seatNumber === undefined) {
-    const matchingTableSecondary = secondaries.find(
-      (rec) => rec.tableId === tableId && typeof rec.seatNumber === 'number'
-    );
-    if (matchingTableSecondary) {
-      seatNumber = matchingTableSecondary.seatNumber ?? null;
+  const resolvedAttendance =
+    typeof mergedExtra.attendanceStatus === 'string'
+      ? mergedExtra.attendanceStatus.trim().toLowerCase()
+      : null;
+  const isEligibleForSeating = hasInvitedRecord && resolvedAttendance !== 'declined';
+
+  let tableId: string | null = null;
+  let seatNumber: number | null = null;
+  if (isEligibleForSeating) {
+    tableId = primary.tableId ?? null;
+    seatNumber = primary.seatNumber ?? null;
+    if (!tableId) {
+      const seatedSecondary = secondaries.find((rec) => Boolean(rec.tableId));
+      if (seatedSecondary) {
+        tableId = seatedSecondary.tableId ?? null;
+        seatNumber = seatedSecondary.seatNumber ?? null;
+      }
+    } else if (seatNumber === null || seatNumber === undefined) {
+      const matchingTableSecondary = secondaries.find(
+        (rec) => rec.tableId === tableId && typeof rec.seatNumber === 'number'
+      );
+      if (matchingTableSecondary) {
+        seatNumber = matchingTableSecondary.seatNumber ?? null;
+      }
     }
   }
 

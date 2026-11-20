@@ -831,5 +831,69 @@ describe('InvitationCodeAdminService Bulk SQL Update Integration', () => {
       expect(snapshots).toHaveLength(1);
       expect(snapshots[0].author).toBe('MergeAdmin');
     });
+
+    it('strips public address-collection tag when merging into an invited guest on a head table and clears seating when merging a declined RSVP', async () => {
+      const headTable = await realPrisma.seatingTable.create({
+        data: { name: 'Head Table', shape: 'head', capacity: 6 },
+      });
+
+      const invitedGuest = await realPrisma.invitationCode.create({
+        data: {
+          code: 'HEADINV1',
+          guestName: 'Jordan Lee',
+          partyTags: ['Wedding Party'],
+          tableId: headTable.id,
+          seatNumber: 1,
+        },
+      });
+      const addressSubmission = await realPrisma.invitationCode.create({
+        data: {
+          code: 'ADDRCOL1',
+          guestName: 'Jordan Lee',
+          email: 'jordan@example.com',
+          addressLine1: '500 Palm Way',
+          city: 'Austin',
+          partyTags: ['address-collection'],
+        },
+      });
+
+      const mergedInvited = await service.mergeDuplicates(
+        invitedGuest.id,
+        [addressSubmission.id],
+        'MergeAdmin'
+      );
+      expect(mergedInvited.record.partyTags).toEqual(['Wedding Party']);
+      expect(mergedInvited.record.addressLine1).toBe('500 Palm Way');
+      expect(mergedInvited.record.tableId).toBe(headTable.id);
+      expect(mergedInvited.record.seatNumber).toBe(1);
+
+      const seatedPending = await realPrisma.invitationCode.create({
+        data: {
+          code: 'PENDSEAT',
+          guestName: 'Casey Morgan',
+          partyTags: ['Friends'],
+          tableId: headTable.id,
+          seatNumber: 2,
+          extraFields: { attendanceStatus: 'pending' },
+        },
+      });
+      const declinedDuplicate = await realPrisma.invitationCode.create({
+        data: {
+          code: 'DECLDUP1',
+          guestName: 'Casey Morgan',
+          used: true,
+          extraFields: { attendanceStatus: 'declined' },
+        },
+      });
+
+      const mergedDeclined = await service.mergeDuplicates(
+        seatedPending.id,
+        [declinedDuplicate.id],
+        'MergeAdmin'
+      );
+      expect(mergedDeclined.record.tableId).toBeNull();
+      expect(mergedDeclined.record.seatNumber).toBeNull();
+      expect(mergedDeclined.record.extraFields).toEqual({ attendanceStatus: 'declined' });
+    });
   });
 });
