@@ -554,6 +554,98 @@ fi
       }
     });
 
+    it('prefers vars.SERVICE_URL ahead of secrets.SERVICE_URL and needs.redeploy.outputs.service_url and exports unmasked service_url into $GITHUB_STEP_SUMMARY', async () => {
+      const server = http.createServer((req, res) => {
+        if (req.url === '/api/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const varsUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        // vars.SERVICE_URL defined without secrets.SERVICE_URL -> unmasked service_url exported to report summary
+        const varsProbeRes = await runBashStepAsync(healthProbeScript, {
+          VAR_SERVICE_URL: `${varsUrl}/`,
+          ENV_SERVICE_URL: '',
+          PROVIDER_SERVICE_URL: 'http://127.0.0.1:9',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(varsProbeRes.status).toBe(0);
+        expect(varsProbeRes.outputs.health_status).toBe('healthy');
+        expect(varsProbeRes.outputs.service_url).toBe(varsUrl);
+
+        const reportRes = runBashStep(reportScript, {
+          TARGET_ENV: 'production',
+          ROLLBACK_ENV: 'production-rollback',
+          PREVIOUS_TAG: 'v1.2.2',
+          PROVIDER: 'google-cloud-run',
+          REASON: 'Health probe failed',
+          PREFLIGHT_RESULT: 'success',
+          PREFLIGHT_FAILED_STAGE: '',
+          DB_COMPAT_STATUS: 'verified',
+          REDEPLOY_RESULT: 'success',
+          VERIFY_RESULT: 'success',
+          VERIFY_URL: varsProbeRes.outputs.service_url,
+          VERIFY_HTTP_STATUS: varsProbeRes.outputs.http_status,
+        });
+        expect(reportRes.status).toBe(0);
+        expect(reportRes.summary).toContain(`(URL: \`${varsUrl}\`)`);
+
+        // vars.SERVICE_URL also takes precedence over a stale secrets.SERVICE_URL
+        const overrideProbeRes = await runBashStepAsync(healthProbeScript, {
+          VAR_SERVICE_URL: varsUrl,
+          ENV_SERVICE_URL: 'http://127.0.0.1:9',
+          PROVIDER_SERVICE_URL: 'http://127.0.0.1:9',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(overrideProbeRes.status).toBe(0);
+        expect(overrideProbeRes.outputs.service_url).toBe(varsUrl);
+
+        // Secret-only fallback succeeds without leaking secret value to outputs.service_url
+        const legacySecretProbeRes = await runBashStepAsync(healthProbeScript, {
+          VAR_SERVICE_URL: '',
+          ENV_SERVICE_URL: varsUrl,
+          PROVIDER_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(legacySecretProbeRes.status).toBe(0);
+        expect(legacySecretProbeRes.outputs.health_status).toBe('healthy');
+        expect(legacySecretProbeRes.outputs.service_url).toBe('');
+      } finally {
+        await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+
+      // Dry-run validation passes when SERVICE_URL is omitted
+      const fastDryProbeScript = healthProbeScript
+        .replace('DELAY=2', 'DELAY=1')
+        .replace('ELAPSED -ge 2', 'ELAPSED -ge 0');
+      const dryProbeRes = await runBashStepAsync(fastDryProbeScript, {
+        VAR_SERVICE_URL: '',
+        ENV_SERVICE_URL: '',
+        PROVIDER_SERVICE_URL: '',
+        IS_DRY_RUN: 'true',
+        TARGET_ENV: 'staging',
+        RESTORED_TAG: 'latest',
+      });
+      expect(dryProbeRes.status).toBe(0);
+      expect(dryProbeRes.outputs.health_status).toBe('healthy');
+      expect(dryProbeRes.outputs.service_url).toBe('http://127.0.0.1:3000');
+    });
+
     it('gates $GITHUB_STEP_SUMMARY reporting on upstream outcomes so failures log FAILED and exit non-zero', () => {
       const successReport = runBashStep(reportScript, {
         TARGET_ENV: 'production',

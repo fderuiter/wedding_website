@@ -442,23 +442,39 @@ jobs:
         id: resolve-url
         if: always()
         env:
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
+          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
           INPUT_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
-          DEFAULT_SERVICE_URL: ${{ secrets.SERVICE_URL || 'http://127.0.0.1:3000' }}
         run: |
-          URL="$CLOUDRUN_URL"
           IS_DRY_RUN="false"
-          if [ "$INPUT_DRY_RUN" = "true" ] || { [ -z "$GCP_SA_KEY" ] && [ -z "$DEPLOY_WEBHOOK_URL" ]; }; then
+          if [ "${INPUT_DRY_RUN:-false}" = "true" ] || { [ -z "${GCP_SA_KEY:-}" ] && [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; }; then
             IS_DRY_RUN="true"
           fi
-          if [ -z "$URL" ]; then
-            URL="$DEFAULT_SERVICE_URL"
+
+          URL=""
+          USED_SECRET_FALLBACK="false"
+          if [ -n "${VAR_SERVICE_URL:-}" ]; then
+            URL="$VAR_SERVICE_URL"
+          elif [ -n "${CLOUDRUN_URL:-}" ]; then
+            URL="$CLOUDRUN_URL"
+          elif [ -n "${SECRET_SERVICE_URL:-}" ]; then
+            URL="$SECRET_SERVICE_URL"
+            USED_SECRET_FALLBACK="true"
+          elif [ "$IS_DRY_RUN" = "true" ]; then
+            URL="http://127.0.0.1:3000"
           fi
-          echo "service_url=${URL}" >> "$GITHUB_OUTPUT"
+
           echo "is_dry_run=${IS_DRY_RUN}" >> "$GITHUB_OUTPUT"
-          echo "Resolved deployment service URL: ${URL} (is_dry_run=${IS_DRY_RUN})"
+          if [ "$USED_SECRET_FALLBACK" = "true" ]; then
+            echo "service_url=" >> "$GITHUB_OUTPUT"
+            echo "::notice::Resolved deployment service URL from legacy secrets.SERVICE_URL; omitting secret-only value from job outputs to prevent runner redaction. Configure vars.SERVICE_URL in the GitHub Environment."
+          else
+            echo "service_url=${URL}" >> "$GITHUB_OUTPUT"
+            echo "Resolved deployment service URL: ${URL:-unconfigured} (is_dry_run=${IS_DRY_RUN})"
+          fi
 
       - name: Deployment Summary
         env:
@@ -481,4 +497,4 @@ jobs:
           if [ -n "${PREVIOUS_DIGEST:-}" ]; then
             echo "- **Previous Image Digest:** \`${PREVIOUS_DIGEST}\`" >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "- **Service URL:** \`${SERVICE_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Service URL:** \`${SERVICE_URL:-none}\`" >> "$GITHUB_STEP_SUMMARY"

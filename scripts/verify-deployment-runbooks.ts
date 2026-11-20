@@ -355,6 +355,7 @@ function parseCiWorkflowJobIds(ciWorkflowContent: string): string[] {
 function parseWorkflowFilesAndSecrets(workflowsDir: string): {
   workflowFiles: string[];
   workflowSecrets: Set<string>;
+  workflowVars: Set<string>;
   workflowYamlErrors: string[];
 } {
   const entries = fs
@@ -363,8 +364,10 @@ function parseWorkflowFilesAndSecrets(workflowsDir: string): {
     .sort();
 
   const workflowSecrets = new Set<string>();
+  const workflowVars = new Set<string>();
   const workflowYamlErrors: string[] = [];
   const secretRegex = /\bsecrets\.([A-Z0-9_]+)\b/g;
+  const varRegex = /\bvars\.([A-Z0-9_]+)\b/g;
 
   for (const file of entries) {
     const content = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
@@ -393,9 +396,12 @@ function parseWorkflowFilesAndSecrets(workflowsDir: string): {
         workflowSecrets.add(secretName);
       }
     }
+    while ((match = varRegex.exec(content)) !== null) {
+      workflowVars.add(match[1]);
+    }
   }
 
-  return { workflowFiles: entries, workflowSecrets, workflowYamlErrors };
+  return { workflowFiles: entries, workflowSecrets, workflowVars, workflowYamlErrors };
 }
 
 function extractSectionSlice(markdown: string, headingPattern: RegExp, stopHeadingPrefix: string): string {
@@ -721,7 +727,8 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
 
   // 4. GitHub Workflows, Secrets, Approval Gate, CI Jobs, & Static Export Contract
   const workflowsDir = path.join(repoRoot, '.github/workflows');
-  const { workflowFiles, workflowSecrets, workflowYamlErrors } = parseWorkflowFilesAndSecrets(workflowsDir);
+  const { workflowFiles, workflowSecrets, workflowVars, workflowYamlErrors } =
+    parseWorkflowFilesAndSecrets(workflowsDir);
   errors.push(...workflowYamlErrors);
   const ciWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'ci.yml'), 'utf8');
   const deployWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy.yml'), 'utf8');
@@ -758,16 +765,39 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
-  // Validate DEPLOYMENT.md "## 🔑 Setup and Secrets" table matches exact workflow-used secrets
+  // Validate DEPLOYMENT.md "## 🔑 Setup and Secrets" tables match exact workflow-used secrets and variables
   const setupSecretsSection = extractSectionSlice(deploymentMd, /^##\s+.*Setup and Secrets\b/, '## ');
   if (!setupSecretsSection) {
     errors.push('DEPLOYMENT.md: Missing "Setup and Secrets" section');
   } else {
     const documentedTableSecrets = new Set<string>();
+    const documentedTableVars = new Set<string>();
+    let currentTableKind: 'secrets' | 'vars' | null = null;
+
     for (const line of setupSecretsSection.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|')) {
+        currentTableKind = null;
+        continue;
+      }
+      if (/^\|\s*Secret\s*\|/i.test(trimmed)) {
+        currentTableKind = 'secrets';
+        continue;
+      }
+      if (/^\|\s*Variable\s*\|/i.test(trimmed)) {
+        currentTableKind = 'vars';
+        continue;
+      }
+      if (/^[\s|:-]+$/.test(trimmed)) {
+        continue;
+      }
       const rowMatch = line.match(/^\s*\|\s*`([A-Z0-9_]+)`\s*\|/);
       if (rowMatch) {
-        documentedTableSecrets.add(rowMatch[1]);
+        if (currentTableKind === 'vars') {
+          documentedTableVars.add(rowMatch[1]);
+        } else {
+          documentedTableSecrets.add(rowMatch[1]);
+        }
       }
     }
 
@@ -777,30 +807,106 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           `DEPLOYMENT.md: Secret "${docSecret}" in Setup and Secrets table is not referenced via secrets.* in any .github/workflows/*.yml file`
         );
       }
+      if (workflowVars.has(docSecret)) {
+        errors.push(
+          `DEPLOYMENT.md: "${docSecret}" must be documented as a primary GitHub Actions Variable (vars.${docSecret}) rather than a primary Secret in Setup and Secrets table`
+        );
+      }
     }
     for (const wfSecret of workflowSecrets) {
-      if (!documentedTableSecrets.has(wfSecret)) {
+      const migratedToVarWithLegacyFallback =
+        workflowVars.has(wfSecret) &&
+        documentedTableVars.has(wfSecret) &&
+        setupSecretsSection.includes(`vars.${wfSecret}`) &&
+        setupSecretsSection.includes(`secrets.${wfSecret}`);
+      if (!documentedTableSecrets.has(wfSecret) && !migratedToVarWithLegacyFallback) {
         errors.push(
           `DEPLOYMENT.md: Workflow secret "${wfSecret}" used in .github/workflows/*.yml is missing from Setup and Secrets table`
         );
       }
     }
+
+    for (const docVar of documentedTableVars) {
+      if (!workflowVars.has(docVar)) {
+        errors.push(
+          `DEPLOYMENT.md: Variable "${docVar}" in Setup and Secrets table is not referenced via vars.* in any .github/workflows/*.yml file`
+        );
+      }
+    }
+    for (const wfVar of workflowVars) {
+      if (!documentedTableVars.has(wfVar)) {
+        errors.push(
+          `DEPLOYMENT.md: Workflow variable "${wfVar}" used in .github/workflows/*.yml is missing from Setup and Secrets Variables table`
+        );
+      }
+    }
   }
 
-  // Validate GitHub Environment subsections do not list runtime-only non-workflow secrets
+  // Validate GitHub Environment subsections do not list runtime-only non-workflow entries and classify SERVICE_URL as a variable
   const githubEnvSection = extractSectionSlice(
     deploymentMd,
     /^###\s+.*GitHub Environment Setup\b/,
     '### '
   );
   if (githubEnvSection) {
+    let inEnvSecretsList = false;
     for (const line of githubEnvSection.split(/\r?\n/)) {
-      const bulletSecretMatch = line.match(/^\s*-\s+`([A-Z0-9_]+)`\s*:/);
-      if (bulletSecretMatch) {
-        const envSecret = bulletSecretMatch[1];
-        if (!workflowSecrets.has(envSecret)) {
+      if (/^\s*\d+\.\s+\*\*Environment Secrets\*\*/i.test(line)) {
+        inEnvSecretsList = true;
+        continue;
+      }
+      if (/^\s*(?:\d+\.\s+\*\*|####\s+)/.test(line)) {
+        inEnvSecretsList = false;
+      }
+      const bulletEntryMatch = line.match(/^\s*-\s+`([A-Z0-9_]+)`\s*:/);
+      if (bulletEntryMatch) {
+        const entryName = bulletEntryMatch[1];
+        if (!workflowSecrets.has(entryName) && !workflowVars.has(entryName)) {
           errors.push(
-            `DEPLOYMENT.md: GitHub Environment secret "${envSecret}" is not consumed by any GitHub Actions workflow`
+            `DEPLOYMENT.md: GitHub Environment secret "${entryName}" is not consumed by any GitHub Actions workflow`
+          );
+        }
+        if (inEnvSecretsList && entryName === 'SERVICE_URL' && workflowVars.has('SERVICE_URL')) {
+          errors.push(
+            'DEPLOYMENT.md: GitHub Environment Setup lists SERVICE_URL under Environment Secrets instead of Environment Variables (vars.SERVICE_URL)'
+          );
+        }
+      }
+    }
+
+    if (workflowVars.has('SERVICE_URL')) {
+      if (!githubEnvSection.includes('vars.SERVICE_URL') || !githubEnvSection.includes('secrets.SERVICE_URL')) {
+        errors.push(
+          'DEPLOYMENT.md: GitHub Environment Setup must document vars.SERVICE_URL as primary and secrets.SERVICE_URL as legacy fallback'
+        );
+      }
+    }
+  }
+
+  if (workflowVars.has('SERVICE_URL')) {
+    if (!gcpMd.includes('vars.SERVICE_URL') || !gcpMd.includes('secrets.SERVICE_URL')) {
+      errors.push(
+        'docs/deployment/gcp-cloud-run.md: Must document vars.SERVICE_URL as primary and secrets.SERVICE_URL as legacy fallback'
+      );
+    }
+    const gcpAutomatedSection = extractSectionSlice(
+      gcpMd,
+      /^###\s+Automated Deployment via GitHub Actions\b/,
+      '### '
+    );
+    if (gcpAutomatedSection) {
+      let inGcpSecretsBullets = false;
+      for (const line of gcpAutomatedSection.split(/\r?\n/)) {
+        if (/^\*\s+\*\*GitHub Environment Secrets\*\*/i.test(line.trim())) {
+          inGcpSecretsBullets = true;
+          continue;
+        }
+        if (/^\*\s+\*\*/.test(line.trim())) {
+          inGcpSecretsBullets = false;
+        }
+        if (inGcpSecretsBullets && /^\s*\*\s+`SERVICE_URL`\s*:/.test(line)) {
+          errors.push(
+            'docs/deployment/gcp-cloud-run.md: Lists SERVICE_URL under GitHub Environment Secrets instead of GitHub Environment Variables (vars.SERVICE_URL)'
           );
         }
       }

@@ -333,11 +333,38 @@ jobs:
       - name: Execute Staging Health Probe Verification
         id: health-probe
         env:
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           SERVICE_URL: ${{ needs.staging-deploy-provider.outputs.service_url }}
+          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           IS_DRY_RUN: ${{ needs.staging-deploy-provider.outputs.is_dry_run }}
         run: |
-          TARGET_URL="${SERVICE_URL:-http://127.0.0.1:3000}"
+          RESOLVED_URL="${VAR_SERVICE_URL:-}"
+          if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
+            RESOLVED_URL="$SERVICE_URL"
+          fi
+          if [ -z "$RESOLVED_URL" ]; then
+            RESOLVED_URL="${SECRET_SERVICE_URL:-}"
+          fi
+
+          if [ "${IS_DRY_RUN:-false}" = "true" ]; then
+            TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
+          else
+            TARGET_URL="$RESOLVED_URL"
+          fi
           TARGET_URL="${TARGET_URL%/}"
+
+          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
+            echo "::error::Missing or invalid SERVICE_URL for staging health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the 'staging' GitHub Environment."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 Staging Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`staging\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL:-unconfigured}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
           HEALTH_ENDPOINT="${TARGET_URL}/api/health"
 
           echo "=================================================="
@@ -402,23 +429,23 @@ jobs:
           done
 
           if [ "$SUCCESS" = "true" ]; then
-            echo "health_status=healthy" >> $GITHUB_OUTPUT
-            echo "### 🟢 Staging Post-Deployment Health Verification Passed" >> $GITHUB_STEP_SUMMARY
-            echo "- **Environment:** \`staging\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Health Endpoint:** \`/api/health\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Verification Outcome:** \`HEALTHY\`" >> $GITHUB_STEP_SUMMARY
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "### 🟢 Staging Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`staging\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           else
-            echo "health_status=unhealthy" >> $GITHUB_OUTPUT
-            echo "### 🔴 Staging Post-Deployment Health Verification Failed" >> $GITHUB_STEP_SUMMARY
-            echo "- **Environment:** \`staging\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Health Endpoint:** \`/api/health\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> $GITHUB_STEP_SUMMARY
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 Staging Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`staging\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
@@ -530,11 +557,39 @@ jobs:
       - name: Execute Production Health Probe Verification
         id: health-probe
         env:
+          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           SERVICE_URL: ${{ needs.production-deploy-provider.outputs.service_url }}
+          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           IS_DRY_RUN: ${{ needs.production-deploy-provider.outputs.is_dry_run }}
         run: |
-          TARGET_URL="${SERVICE_URL:-http://127.0.0.1:3000}"
+          RESOLVED_URL="${VAR_SERVICE_URL:-}"
+          if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
+            RESOLVED_URL="$SERVICE_URL"
+          fi
+          if [ -z "$RESOLVED_URL" ]; then
+            RESOLVED_URL="${SECRET_SERVICE_URL:-}"
+          fi
+
+          if [ "${IS_DRY_RUN:-false}" = "true" ]; then
+            TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
+          else
+            TARGET_URL="$RESOLVED_URL"
+          fi
           TARGET_URL="${TARGET_URL%/}"
+
+          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
+            echo "::error::Missing or invalid SERVICE_URL for production health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the 'production' GitHub Environment."
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 Production Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`production\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL:-unconfigured}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
           HEALTH_ENDPOINT="${TARGET_URL}/api/health"
 
           echo "=================================================="
@@ -599,24 +654,24 @@ jobs:
           done
 
           if [ "$SUCCESS" = "true" ]; then
-            echo "health_status=healthy" >> $GITHUB_OUTPUT
-            echo "### 🟢 Production Post-Deployment Health Verification Passed" >> $GITHUB_STEP_SUMMARY
-            echo "- **Environment:** \`production\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Health Endpoint:** \`/api/health\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Verification Outcome:** \`HEALTHY\`" >> $GITHUB_STEP_SUMMARY
+            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
+            echo "### 🟢 Production Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`production\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           else
-            echo "health_status=unhealthy" >> $GITHUB_OUTPUT
-            echo "### 🔴 Production Post-Deployment Health Verification Failed" >> $GITHUB_STEP_SUMMARY
-            echo "- **Environment:** \`production\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Health Endpoint:** \`/api/health\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> $GITHUB_STEP_SUMMARY
-            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> $GITHUB_STEP_SUMMARY
+            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
+            echo "### 🔴 Production Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Environment:** \`production\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
