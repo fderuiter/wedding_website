@@ -11,6 +11,9 @@ export interface UploadedPhoto {
   url: string;
   altText?: string | null;
   createdAt?: string | Date;
+  nodeId?: string;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  isVisible?: boolean;
 }
 
 export interface UploadStatus {
@@ -121,16 +124,32 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       }
 
       if (onUploadSuccess && json.data) {
+        const isApprovedUpload = (photo: UploadedPhoto | null | undefined): photo is UploadedPhoto =>
+          Boolean(photo && photo.status === 'APPROVED' && photo.isVisible !== false);
+
         if (Array.isArray(json.data)) {
           json.data.forEach((photo: UploadedPhoto) => {
-            if (photo) onUploadSuccess(photo);
+            if (isApprovedUpload(photo)) {
+              onUploadSuccess({
+                id: photo.nodeId || photo.id,
+                url: photo.url,
+                altText: photo.altText,
+                createdAt: photo.createdAt,
+                nodeId: photo.nodeId,
+                status: photo.status,
+                isVisible: photo.isVisible,
+              });
+            }
           });
-        } else {
+        } else if (isApprovedUpload(json.data)) {
           onUploadSuccess({
-            id: json.data.id,
+            id: json.data.nodeId || json.data.id,
             url: json.data.url,
             altText: json.data.altText,
             createdAt: json.data.createdAt,
+            nodeId: json.data.nodeId,
+            status: json.data.status,
+            isVisible: json.data.isVisible,
           });
         }
       }

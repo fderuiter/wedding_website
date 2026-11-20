@@ -118,6 +118,18 @@ export const RawUpdateAppConfigSchema = z.object({
   seoTitle: z.string(),
   seoDescription: z.string(),
   contactEmail: z.string().refine(val => !val || val === '' || z.email().safeParse(val).success, { message: 'Invalid email address format' }).optional(),
+  photoAlbumUrl: z.string().refine(
+    (val) => {
+      if (!val || val === '') return true;
+      try {
+        const parsed = new URL(val);
+        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && Boolean(parsed.hostname);
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Invalid URL format' }
+  ).optional(),
   faviconUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
   ogImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
   brandMonogram: z.string().nullable().optional(),
@@ -269,6 +281,7 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     seoTitle: data.seoTitle,
     seoDescription: data.seoDescription,
     contactEmail: data.contactEmail,
+    photoAlbumUrl: data.photoAlbumUrl ?? '',
     faviconUrl: data.faviconUrl,
     ogImageUrl: data.ogImageUrl,
     brandMonogram: data.brandMonogram,
@@ -458,6 +471,7 @@ export const PhotoDataSchema = z.object({
   status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional().default('PENDING'),
   isVisible: z.boolean().optional().default(false),
   mediaId: z.string().optional(),
+  publishToGallery: z.boolean().optional(),
 }).loose();
 
 export const PhotoModerationSchema = z.object({
@@ -549,6 +563,7 @@ export const AppConfigSchema = z.object({
   seoTitle: z.string().describe('HTML document title and social preview title for search engines and link cards.'),
   seoDescription: z.string().describe('Meta description summarizing the wedding website for search engines and Open Graph previews.'),
   contactEmail: z.string().default('').describe('Public host contact email address displayed for guest inquiries.'),
+  photoAlbumUrl: z.string().default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
   faviconUrl: z.string().describe('Asset path or safe URL for the browser tab favicon icon.'),
   ogImageUrl: z.string().describe('Default Open Graph social sharing preview image URL or asset path.'),
   brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),
@@ -659,6 +674,7 @@ export const PublicAppConfigSchema = z.object({
   seoTitle: z.string(),
   seoDescription: z.string(),
   contactEmail: z.string().default(''),
+  photoAlbumUrl: z.string().default(''),
   faviconUrl: z.string(),
   ogImageUrl: z.string(),
   brandMonogram: z.string().nullable().optional(),

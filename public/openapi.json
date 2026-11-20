@@ -2248,6 +2248,9 @@
                         "contactEmail": {
                           "type": "string"
                         },
+                        "photoAlbumUrl": {
+                          "type": "string"
+                        },
                         "faviconUrl": {
                           "type": "string"
                         },
@@ -3998,6 +4001,9 @@
                   "contactEmail": {
                     "type": "string"
                   },
+                  "photoAlbumUrl": {
+                    "type": "string"
+                  },
                   "faviconUrl": {
                     "type": "string"
                   },
@@ -4655,6 +4661,9 @@
                     "type": "string"
                   },
                   "contactEmail": {
+                    "type": "string"
+                  },
+                  "photoAlbumUrl": {
                     "type": "string"
                   },
                   "faviconUrl": {
@@ -6484,7 +6493,8 @@
                 "properties": {
                   "url": {
                     "type": "string",
-                    "format": "uri"
+                    "minLength": 1,
+                    "maxLength": 2000
                   },
                   "altText": {
                     "nullable": true,
@@ -6492,6 +6502,9 @@
                   },
                   "isDecorative": {
                     "default": false,
+                    "type": "boolean"
+                  },
+                  "publishToGallery": {
                     "type": "boolean"
                   }
                 }
@@ -6667,7 +6680,8 @@
                 "properties": {
                   "url": {
                     "type": "string",
-                    "format": "uri"
+                    "minLength": 1,
+                    "maxLength": 2000
                   },
                   "altText": {
                     "nullable": true,
@@ -6675,6 +6689,9 @@
                   },
                   "isDecorative": {
                     "default": false,
+                    "type": "boolean"
+                  },
+                  "publishToGallery": {
                     "type": "boolean"
                   }
                 },
@@ -7193,6 +7210,9 @@
                         "default": false,
                         "type": "boolean"
                       },
+                      "publishToGallery": {
+                        "type": "boolean"
+                      },
                       "createdAt": {
                         "anyOf": [
                           {},
@@ -7466,6 +7486,9 @@
                             },
                             "isSample": {
                               "default": false,
+                              "type": "boolean"
+                            },
+                            "publishToGallery": {
                               "type": "boolean"
                             },
                             "createdAt": {
@@ -7810,6 +7833,9 @@
                       },
                       "isSample": {
                         "default": false,
+                        "type": "boolean"
+                      },
+                      "publishToGallery": {
                         "type": "boolean"
                       },
                       "createdAt": {

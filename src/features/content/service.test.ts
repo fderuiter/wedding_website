@@ -112,5 +112,45 @@ describe('ContentService', () => {
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('2');
     });
+
+    it('excludes registry, party, and attraction images unless publishToGallery is enabled', async () => {
+      const now = new Date('2026-06-20T18:30:00.000Z');
+      (mockRepo as IContentRepository).getEntityBoundMediaIds = jest
+        .fn()
+        .mockResolvedValue(new Set(['registry-media-1', 'party-media-2']));
+
+      jest.spyOn(mockRepo, 'getNodesByType').mockResolvedValue([
+        {
+          id: 'n-registry-hidden',
+          type: 'Photo',
+          tags: ['gallery'],
+          data: {
+            url: '/uploads/mixer.jpg',
+            status: 'APPROVED',
+            isVisible: true,
+            mediaId: 'registry-media-1',
+          },
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'n-party-published',
+          type: 'Photo',
+          tags: ['gallery', 'curated'],
+          data: {
+            url: '/uploads/bridesmaid.jpg',
+            status: 'APPROVED',
+            isVisible: true,
+            mediaId: 'party-media-2',
+            publishToGallery: true,
+          },
+          createdAt: now,
+          updatedAt: now,
+        },
+      ] as any);
+
+      const result = await service.getPublicPhotos();
+      expect(result.map((r) => r.id)).toEqual(['n-party-published']);
+    });
   });
 });

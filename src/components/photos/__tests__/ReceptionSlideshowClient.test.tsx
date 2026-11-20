@@ -1,7 +1,7 @@
 import { render, screen, act, fireEvent, createEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
-import { ReceptionSlideshowClient, DEFAULT_FALLBACK_PHOTOS } from '../ReceptionSlideshowClient';
+import { ReceptionSlideshowClient } from '../ReceptionSlideshowClient';
 
 expect.extend(toHaveNoViolations);
 
@@ -526,7 +526,20 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('recovers queue with default fallback photos when all active photos fail to load', () => {
+  it('renders empty state when initialPhotos is empty instead of third-party sample images', () => {
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={[]}
+        uploadUrl="https://wedding.example.com/photos"
+      />
+    );
+
+    expect(screen.getByTestId('slideshow-empty-state')).toBeInTheDocument();
+    expect(screen.getByText('No photos published yet')).toBeInTheDocument();
+    expect(screen.queryByTestId('slideshow-image')).not.toBeInTheDocument();
+  });
+
+  it('transitions cleanly to empty state when all active photos fail to load without infinite loops', () => {
     const brokenPhotos = [
       { id: 'b1', url: 'https://broken.example.com/1.jpg', title: 'Broken Photo 1' },
       { id: 'b2', url: 'https://broken.example.com/2.jpg', title: 'Broken Photo 2' },
@@ -539,56 +552,21 @@ describe('ReceptionSlideshowClient', () => {
       />
     );
 
-    // Initial image is broken photo 1
     expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
       'src',
       'https://broken.example.com/1.jpg'
     );
 
-    // Error on photo 1 -> advances immediately to broken photo 2
     fireEvent.error(screen.getByTestId('slideshow-image'));
     expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
       'src',
       'https://broken.example.com/2.jpg'
     );
 
-    // Error on photo 2 -> all photos in active queue have failed
     fireEvent.error(screen.getByTestId('slideshow-image'));
 
-    // Resets photo queue to DEFAULT_FALLBACK_PHOTOS
-    const fallbackImg = screen.getByTestId('slideshow-image');
-    expect(fallbackImg).toHaveAttribute('src', DEFAULT_FALLBACK_PHOTOS[0].url);
-    expect(screen.getByText(DEFAULT_FALLBACK_PHOTOS[0].title!)).toBeInTheDocument();
-    expect(screen.getByText(String(DEFAULT_FALLBACK_PHOTOS.length))).toBeInTheDocument();
-  });
-
-  it('safely handles edge case where all photos including fallback photos fail without entering an infinite loop', () => {
-    const singleBroken = [{ id: 'b1', url: 'https://broken.example.com/only.jpg', title: 'Only' }];
-
-    render(
-      <ReceptionSlideshowClient
-        initialPhotos={singleBroken}
-        uploadUrl="https://wedding.example.com/photos"
-      />
-    );
-
-    // Fail initial photo -> queue recovers with default fallback photos
-    fireEvent.error(screen.getByTestId('slideshow-image'));
-    expect(screen.getByTestId('slideshow-image')).toHaveAttribute(
-      'src',
-      DEFAULT_FALLBACK_PHOTOS[0].url
-    );
-
-    // Fail all recovered fallback photos one by one
-    for (let i = 0; i < DEFAULT_FALLBACK_PHOTOS.length; i++) {
-      const currentImg = screen.queryByTestId('slideshow-image');
-      if (currentImg) {
-        fireEvent.error(currentImg);
-      }
-    }
-
-    // Component terminates gracefully without infinite loop or crash
     expect(screen.queryByTestId('slideshow-image')).not.toBeInTheDocument();
+    expect(screen.getByTestId('slideshow-empty-state')).toBeInTheDocument();
   });
 
   it('ignores broken photo URLs during periodic polling so failed photos are not re-added', async () => {

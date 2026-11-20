@@ -156,6 +156,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     seoTitle: data.seoTitle ?? '',
     seoDescription: data.seoDescription ?? '',
     contactEmail: data.contactEmail ?? '',
+    photoAlbumUrl: data.photoAlbumUrl ?? '',
     faviconUrl: data.faviconUrl ?? '/assets/favicon.png',
     ogImageUrl: data.ogImageUrl ?? '/images/placeholder.png',
     brandMonogram: data.brandMonogram,

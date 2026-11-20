@@ -91,6 +91,7 @@ const BackupAppConfigSchema = z.object({
   seoTitle: AppConfigSchema.shape.seoTitle.optional(),
   seoDescription: AppConfigSchema.shape.seoDescription.optional(),
   contactEmail: RawUpdateAppConfigSchema.shape.contactEmail.optional(),
+  photoAlbumUrl: RawUpdateAppConfigSchema.shape.photoAlbumUrl.optional(),
   faviconUrl: RawUpdateAppConfigSchema.shape.faviconUrl.optional(),
   ogImageUrl: RawUpdateAppConfigSchema.shape.ogImageUrl.optional(),
   brandMonogram: z.string().nullable().optional(),
