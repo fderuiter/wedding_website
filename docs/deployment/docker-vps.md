@@ -16,8 +16,8 @@ The generic Docker/VPS deployment path serves as the **canonical portable baseli
 ### Provisioning
 You can run PostgreSQL either alongside the application via Docker Compose or connect to an external managed database (such as AWS RDS, DigitalOcean Managed Database, Neon, or Supabase).
 
-*   **Docker Compose Co-location**: Uses the official `postgres:15-alpine` image (`db` service) with persistent volume mounting (`db_data:/var/lib/postgresql/data`) and a `pg_isready` healthcheck. Both `migration` and `app` construct `DATABASE_URL` automatically from `DB_USER`, `DB_PASSWORD`, and `DB_NAME` (`postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}`). Note that `docker-compose.yml` publishes `${DB_PORT:-5432}:5432`; on public VPS hosts, firewall port `5432` or restrict `DB_PORT` to loopback (`127.0.0.1:5432`).
-*   **External PostgreSQL**: Ensure PostgreSQL v15+ is running and accessible over port `5432` with SSL/TLS enabled if remote, and override `DATABASE_URL` on `migration` and `app` via `docker-compose.override.yml` (see `.env` interpolation limits below).
+*   **Docker Compose Co-location**: Uses the official `postgres:15-alpine` image (`db` service) with persistent volume mounting (`db_data:/var/lib/postgresql/data`), loopback host port binding (`127.0.0.1:${DB_PORT:-5432}:5432`), and a `pg_isready` healthcheck. Both `migration` and `app` construct `DATABASE_URL` automatically from `DB_USER`, mandatory `DB_PASSWORD`, and `DB_NAME` (`postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}`) whenever an explicit `DATABASE_URL` is not provided in `.env`.
+*   **External PostgreSQL**: Ensure PostgreSQL v15+ is running and accessible over port `5432` with SSL/TLS enabled if remote, and set `DATABASE_URL` directly in `.env` (`migration` and `app` honor explicit `DATABASE_URL` overrides automatically).
 
 ### Connection String Format
 Configure `DATABASE_URL` as a standard PostgreSQL URI (`datasource.url` in `prisma.config.ts`, used by both the Next.js runtime and `npx prisma migrate deploy`):
@@ -40,8 +40,8 @@ The application validates the following runtime environment variables via `src/e
 | `NODE_ENV` | Yes | `production` | Application execution environment (`production`). |
 | `DATABASE_URL` | Yes | — | Connection string for PostgreSQL database (`datasource.url` in `prisma.config.ts`, used by runtime and `prisma migrate deploy`). |
 | `POSTGRES_URL_NON_POOLING` | No | — | Shadow database connection string (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
-| `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[saltBase64]:[keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
-| `ALLOWED_HOSTS` | Yes | — | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost`). |
+| `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
+| `ALLOWED_HOSTS` | Yes | `localhost,127.0.0.1,*.localhost` | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost,127.0.0.1`). |
 | `MULTISITE_ENABLED` | No | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | No | `false` | Set to `true` (or a positive hop count) when behind Caddy/Nginx so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
@@ -61,16 +61,14 @@ The application validates the following runtime environment variables via `src/e
 | `PORT` | No | `3000` | Host/container HTTP port (`ENV PORT=3000` in `Dockerfile`; `127.0.0.1:${PORT:-3000}:3000` in `docker-compose.yml`). |
 | `HOSTNAME` | No | `0.0.0.0` | Network interface bound by standalone `server.js` (`ENV HOSTNAME="0.0.0.0"` in `Dockerfile` and `HOSTNAME: "0.0.0.0"` in `docker-compose.yml`). |
 
-### Limits on `.env` Interpolation in `docker-compose.yml`
-`docker-compose.yml` does **not** set `env_file: .env` on the `app` or `migration` services; Docker Compose only reads `.env` to substitute `${VAR:-default}` expressions declared inside `docker-compose.yml`:
-*   **Interpolated from `.env` by `docker-compose.yml`**: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_PORT`, `PORT`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, and `E2E_TEST`.
-*   **Ignored if placed only in `.env`**:
-    1. `DATABASE_URL` in `.env` is ignored because `migration` and `app` explicitly set `DATABASE_URL: postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}`.
-    2. Optional runtime variables (`TRUST_PROXY`, `MULTISITE_ENABLED`, `HISTORY_VERSION_LIMIT`, `CRON_SECRET`, `S3_*`, `STRIPE_*`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `POSTGRES_URL_NON_POOLING`) are **not** forwarded into `app` unless you declare them in a `docker-compose.override.yml` (via `env_file: .env` or `environment:` mappings).
+### `.env` Interpolation & Secret Requirements in `docker-compose.yml`
+`docker-compose.yml` substitutes environment variables directly from `.env` without hardcoding production fallback secrets:
+*   **Mandatory Operator Secrets (`:?` required)**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` have no default values in `docker-compose.yml`. Running `docker compose config` or `docker compose up -d` without setting them fails immediately. In addition, `src/env.ts` rejects non-64-byte scrypt hashes and repository placeholder/E2E fallback secrets in `NODE_ENV=production`.
+*   **Full 21-Variable Runtime Forwarding**: `app` forwards all 21 runtime keys from `.env.example` (`NODE_ENV`, `DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`, `MULTISITE_ENABLED`, `RUN_MIGRATIONS`, `TRUST_PROXY`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `HISTORY_VERSION_LIMIT`, `CRON_SECRET`, `S3_*`, `STRIPE_*`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`), and both `migration` and `app` honor explicit `DATABASE_URL` overrides without requiring a manual `docker-compose.override.yml` file (use `docker-compose.override.yml` only if customizing mounts or `SITE_*` Layer 1 overrides; automated CI smoke tests layer `docker-compose.ci.yml` separately).
 *   If any secret in `.env` contains a literal `$`, escape it as `$$` for Docker Compose interpolation.
 
 ### Production Onboarding & `E2E_TEST=false`
-`docker-compose.yml` sets `E2E_TEST: ${E2E_TEST:-true}` on `app` so automated CI container smoke tests bypass initial setup. In `src/lib/config.ts`, `isSiteInitialized()` immediately returns `true` when `E2E_TEST === 'true'`, skipping the `<SetupWizard />` onboarding screen even on an empty database. For real VPS deployments, explicitly set `E2E_TEST=false` in `.env` so initial onboarding runs until couple names and `baseUrl` are configured.
+`docker-compose.yml` defaults `E2E_TEST` to `false` (`E2E_TEST: ${E2E_TEST:-false}`) so fresh VPS deployments render the `<SetupWizard />` onboarding flow until couple names and `baseUrl` are saved (`docker-compose.ci.yml` isolates `E2E_TEST=true` strictly to automated CI smoke tests). Keep `E2E_TEST=false` (or unset) in `.env` for production onboarding.
 
 ---
 
@@ -78,9 +76,9 @@ The application validates the following runtime environment variables via `src/e
 
 ### Primary Path: Dedicated `migration` Service in `docker-compose.yml`
 `docker-compose.yml` decouples schema migrations from application container boot:
-1. `db` starts `postgres:15-alpine` and waits until its `pg_isready` healthcheck reports `service_healthy`.
-2. `migration` runs `npx prisma migrate deploy` (`restart: "no"`) against `DATABASE_URL` (`postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}`).
-3. `app` sets `RUN_MIGRATIONS: "false"` and waits on `migration` (`condition: service_completed_successfully`) before executing `node server.js`.
+1. `db` starts `postgres:15-alpine` bound to `127.0.0.1:${DB_PORT:-5432}:5432` and waits until its `pg_isready` healthcheck reports `service_healthy`.
+2. `migration` runs `npx prisma migrate deploy` (`restart: "no"`) against `DATABASE_URL` (`${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}`).
+3. `app` defaults `RUN_MIGRATIONS` to `false` (`${RUN_MIGRATIONS:-false}`) and waits on `migration` (`condition: service_completed_successfully`) before executing `node server.js`.
 
 To run migrations on demand via Docker Compose:
 ```bash
@@ -159,29 +157,23 @@ sudo certbot --nginx -d wedding.mydomain.com
 git clone https://github.com/fderuiter/wedding_website.git /opt/wedding_website
 cd /opt/wedding_website
 
-# Configure Compose interpolation variables in .env
-cat <<'EOF' > .env
+# Generate a 16-byte salt / 64-byte scrypt hash for your admin password
+ADMIN_HASH=$(node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")
+GUEST_SECRET=$(openssl rand -hex 32)
+DB_SECRET=$(openssl rand -hex 24)
+
+# Configure required secrets and optional runtime settings in .env
+cat <<EOF > .env
 DB_USER=wedding
-DB_PASSWORD=replace-with-strong-db-password
+DB_PASSWORD=${DB_SECRET}
 DB_NAME=wedding
 PORT=3000
-ADMIN_PASSWORD=scrypt:c2FsdA==:aGFzaA==
+ADMIN_PASSWORD=${ADMIN_HASH}
 ALLOWED_HOSTS=wedding.mydomain.com,localhost,127.0.0.1
-GUEST_PASSCODE=replace-with-unique-guest-passcode
-GUEST_SESSION_SECRET=replace-with-random-secret-at-least-32-characters
+GUEST_PASSCODE=choose-a-unique-celebration-passcode
+GUEST_SESSION_SECRET=${GUEST_SECRET}
+TRUST_PROXY=true
 E2E_TEST=false
-EOF
-
-# Optional: create docker-compose.override.yml if forwarding TRUST_PROXY, CRON_SECRET, S3_*, STRIPE_*, or an external DATABASE_URL
-cat <<'EOF' > docker-compose.override.yml
-services:
-  app:
-    environment:
-      TRUST_PROXY: "true"
-      CRON_SECRET: "replace-with-random-cron-secret"
-      STRIPE_SECRET_KEY: "sk_live_..."
-      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_live_..."
-      STRIPE_WEBHOOK_SECRET: "whsec_..."
 EOF
 
 # Build images, run the migration service, and start app in detached mode
@@ -257,12 +249,12 @@ Verify live container health status with `docker compose ps`. The `/api/health` 
 ## 9. Webhooks & Scheduled Background Jobs
 
 ### Stripe `payment_intent.succeeded` Webhook
-1. Forward `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` into the `app` service via `docker-compose.override.yml`.
+1. Set `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` in `.env` (`docker-compose.yml` forwards all three variables directly into `app`).
 2. In the **Stripe Dashboard > Developers > Webhooks**, create an endpoint pointing to `https://wedding.mydomain.com/api/registry/webhook/stripe` (ensure `wedding.mydomain.com` is in `ALLOWED_HOSTS`) and subscribe to **`payment_intent.succeeded`**.
 3. Ensure Caddy or Nginx forwards the raw request body and `Stripe-Signature` header untouched (default behavior in both reverse proxy configs above). `src/middleware.ts` exempts `/api/registry/webhook/stripe` from session cookies while verifying `ALLOWED_HOSTS`, and the webhook handler validates `stripe-signature` using `STRIPE_WEBHOOK_SECRET`.
 
 ### Scheduled Broadcast Cron (`CRON_SECRET`)
-1. Forward `CRON_SECRET` into `app` via `docker-compose.override.yml`.
+1. Set `CRON_SECRET` in `.env` (`docker-compose.yml` forwards `CRON_SECRET` directly into `app`).
 2. Add a host `crontab` entry (`crontab -e`) or systemd timer that triggers `/api/cron/broadcasts` every 5 minutes over loopback with an allowed `Host` header and `Authorization: Bearer <CRON_SECRET>`:
    ```cron
    */5 * * * * curl -fsS -X POST http://127.0.0.1:3000/api/cron/broadcasts -H "Host: localhost" -H "Authorization: Bearer replace-with-random-cron-secret" >/dev/null

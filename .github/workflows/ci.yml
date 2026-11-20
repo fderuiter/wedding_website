@@ -375,13 +375,14 @@ jobs:
       - name: Migrate & Seed Test Database
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
-          ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
         run: |
           npx prisma migrate deploy
           npm run db:seed
       - name: Run e2e tests
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
           GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: npx playwright test
@@ -460,12 +461,17 @@ jobs:
       - name: Start local test database and application container
         timeout-minutes: 10
         env:
+          DB_USER: wedding
+          DB_PASSWORD: wedding123
+          DB_NAME: wedding
           DB_PORT: "5433"
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
           GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
+          E2E_TEST: "true"
         run: |
           lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-          docker compose up -d app
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
 
       - name: Wait for application container to be ready
         timeout-minutes: 2
@@ -478,7 +484,7 @@ jobs:
         timeout-minutes: 1
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5433/wedding
-          ADMIN_PASSWORD: scrypt:c2FsdA==:aGFzaA==
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
         run: |
           npm run db:seed
 
@@ -486,21 +492,32 @@ jobs:
         timeout-minutes: 3
         env:
           TEST_CONTAINER: "true"
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
           GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: npx playwright test
 
       - name: Print container logs on failure
         if: failure()
+        env:
+          DB_PASSWORD: wedding123
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
+          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: |
           echo "=== App Container Logs ==="
-          docker compose logs app || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app || true
           echo "=== DB Container Logs ==="
-          docker compose logs db || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs db || true
 
       - name: Clean up containers
         if: always()
-        run: docker compose down -v || true
+        env:
+          DB_PASSWORD: wedding123
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
+          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v || true
 
   deploy-docs:
     needs: verify

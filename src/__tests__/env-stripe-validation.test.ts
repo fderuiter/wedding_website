@@ -16,7 +16,8 @@ jest.mock('@stripe/stripe-js', () => ({
 
 describe('Stripe Startup Environment Validation & Runtime Capability Detection', () => {
   const rootDir = path.resolve(__dirname, '../..');
-  const validAdminPassword = 'scrypt:c2FsdA==:aGFzaA==';
+  const validAdminPassword =
+    'scrypt:dW5pdC10ZXN0LXNhbHQxNg==:PxxxlLtwOUqVGvw72ACcfwWGGFau07MUM+msUoc1D7VCuwBRorFQiYrVmcl29ZeTYQoAfO/azRoQ1cQKvm9Tmw==';
   const validDatabaseUrl = 'postgresql://wedding:wedding123@localhost:5432/wedding';
   const validGuestSessionSecret = 'a-secure-guest-session-secret-32-chars-minimum!';
   const validGuestPasscode = 'custom-production-guest-passcode-2026';
