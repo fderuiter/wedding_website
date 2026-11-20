@@ -91,4 +91,50 @@ describe('SubEventEditorModal & SubEventDeleteConfirmModal', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('guards dirty modal dismissal and dirty sub-event switching with ToastProvider.confirm', async () => {
+    const onClose = jest.fn();
+    const onSelectEdit = jest.fn();
+
+    render(
+      <ToastProvider>
+        <SubEventEditorModal
+          isOpen={true}
+          onClose={onClose}
+          editingEvent={sampleEvents[0]}
+          existingSubEvents={sampleEvents}
+          onSelectEdit={onSelectEdit}
+          onSave={jest.fn().mockResolvedValue({})}
+        />
+      </ToastProvider>
+    );
+
+    const titleInput = screen.getByLabelText(/Title \*/i) as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: 'Updated Rehearsal Dinner' } });
+
+    // Switching to Create New while dirty prompts first
+    fireEvent.click(screen.getByRole('button', { name: '+ Switch to Create New' }));
+    const switchAlert = await screen.findByRole('alertdialog');
+    expect(onSelectEdit).not.toHaveBeenCalled();
+
+    // Cancel keeps unsaved edit
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Cancel' }).find((btn) => switchAlert.contains(btn))!
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(titleInput.value).toBe('Updated Rehearsal Dinner');
+    expect(onSelectEdit).not.toHaveBeenCalled();
+
+    // Escape on dirty modal prompts; confirming closes
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await screen.findByRole('alertdialog');
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -6,21 +6,15 @@ import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { WeddingPartyEditorForm, WeddingPartyCard } from '@/components/admin/WeddingPartyEditor';
-import { useToast } from '@/components/ui/ToastProvider';
+import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 
 interface WeddingPartyManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManagerModalProps) {
-  let toastConfirm: ((_msg: string) => Promise<boolean>) | null = null;
-  try {
-    const toast = useToast();
-    toastConfirm = toast.confirm;
-  } catch {
-    // Fallback if rendered outside ToastProvider
-  }
+function WeddingPartyManagerModalContent({ isOpen, onClose }: WeddingPartyManagerModalProps) {
+  const { confirm } = useToast();
 
   const {
     data: members,
@@ -63,10 +57,7 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
   };
 
   const handleDelete = async (id: string) => {
-    const isConfirmed = toastConfirm
-      ? await toastConfirm('Are you sure you want to delete this wedding party member?')
-      : window.confirm('Are you sure you want to delete this wedding party member?');
-
+    const isConfirmed = await confirm('Are you sure you want to delete this wedding party member?');
     if (!isConfirmed) return;
     try {
       await remove(id);
@@ -147,5 +138,15 @@ export function WeddingPartyManagerModal({ isOpen, onClose }: WeddingPartyManage
         </div>
       </div>
     </Dialog>
+  );
+}
+
+export function WeddingPartyManagerModal(props: WeddingPartyManagerModalProps) {
+  const ToastBoundary =
+    typeof EnsureToastProvider === 'function' ? EnsureToastProvider : React.Fragment;
+  return (
+    <ToastBoundary>
+      <WeddingPartyManagerModalContent {...props} />
+    </ToastBoundary>
   );
 }

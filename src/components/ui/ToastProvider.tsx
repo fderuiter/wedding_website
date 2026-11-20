@@ -27,7 +27,7 @@ export interface ToastContextValue {
   confirm: (message: string) => Promise<boolean>;
 }
 
-const ToastContext = createContext<ToastContextValue | null>(null);
+export const ToastContext = createContext<ToastContextValue | null>(null);
 
 interface ToastItemProps {
   toast: Toast;
@@ -181,12 +181,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     return new Promise((resolve) => {
       const id = generateSecureUUID();
       const onConfirm = () => {
-        resolve(true);
         removeToast(id);
+        resolve(true);
       };
       const onCancel = () => {
-        resolve(false);
         removeToast(id);
+        resolve(false);
       };
       setToasts((prev) => [...prev, { id, message, type: 'confirm', onConfirm, onCancel }]);
     });
@@ -256,4 +256,12 @@ export const useToast = () => {
 
 export const useOptionalToast = (): ToastContextValue | null => {
   return useContext(ToastContext);
+};
+
+export const EnsureToastProvider = ({ children }: { children: ReactNode }) => {
+  const existing = useContext(ToastContext);
+  if (existing) {
+    return <>{children}</>;
+  }
+  return <ToastProvider>{children}</ToastProvider>;
 };

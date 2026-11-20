@@ -15,6 +15,7 @@ jest.mock('@/lib/apiClient', () => ({
     get: jest.fn(),
     post: jest.fn(),
     put: jest.fn(),
+    patch: jest.fn(),
     delete: jest.fn(),
   },
 }));
@@ -23,6 +24,7 @@ describe('MediaDashboardPage', () => {
   const mockGet = apiClient.get as jest.MockedFunction<typeof apiClient.get>;
   const mockPost = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
   const mockPut = apiClient.put as jest.MockedFunction<typeof apiClient.put>;
+  const mockPatch = apiClient.patch as jest.MockedFunction<typeof apiClient.patch>;
   const mockDelete = apiClient.delete as jest.MockedFunction<typeof apiClient.delete>;
 
   beforeEach(() => {
@@ -239,14 +241,14 @@ describe('MediaDashboardPage', () => {
     });
   });
 
-  it('handles media deletion', async () => {
+  it('handles media deletion via accessible confirmation alertdialog without native confirm', async () => {
     const existingMedia = [
       { id: '1', url: '/uploads/ring.jpg', altText: 'Wedding Ring', isDecorative: false },
     ];
     mockGet.mockResolvedValueOnce(existingMedia);
     mockDelete.mockResolvedValueOnce({});
 
-    window.confirm = jest.fn().mockReturnValue(true);
+    const confirmSpy = jest.spyOn(window, 'confirm');
 
     render(<MediaDashboardPage />);
 
@@ -257,9 +259,106 @@ describe('MediaDashboardPage', () => {
     const deleteButton = screen.getByRole('button', { name: 'Delete media: Wedding Ring' });
     fireEvent.click(deleteButton);
 
+    const alertDialog = await screen.findByRole('alertdialog');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+
+    // Cancel keeps item without calling delete
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(alertDialog).not.toBeInTheDocument();
+    });
+    expect(mockDelete).not.toHaveBeenCalled();
+
+    // Trigger again and confirm
+    fireEvent.click(deleteButton);
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
     await waitFor(() => {
       expect(mockDelete).toHaveBeenCalledWith('/api/media/1');
     });
+
+    confirmSpy.mockRestore();
+  });
+
+  it('requires confirmation warning of permanent deletion before single or batch photo rejection', async () => {
+    const pendingItems = [
+      { id: 'p1', url: '/uploads/guest1.jpg', title: 'First Dance', createdAt: '2026-06-20T20:00:00Z' },
+      { id: 'p2', url: '/uploads/guest2.jpg', title: 'Cake Cutting', createdAt: '2026-06-20T21:00:00Z' },
+    ];
+    mockGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/admin/photos/moderation')) {
+        return { data: pendingItems, counts: { PENDING: 2, APPROVED: 0, REJECTED: 0 } };
+      }
+      return [];
+    });
+    mockPatch.mockResolvedValue({ ok: true });
+    mockPost.mockResolvedValue({ ok: true });
+
+    const confirmSpy = jest.spyOn(window, 'confirm');
+
+    render(<MediaDashboardPage />);
+
+    const drawerBtn = await screen.findByTestId('toggle-moderation-drawer');
+    await waitFor(() => {
+      expect(screen.getByTestId('pending-count-badge')).toHaveTextContent('2');
+    });
+    fireEvent.click(drawerBtn);
+
+    // Single photo reject: Cancel aborts API call
+    fireEvent.click(screen.getByTestId('reject-photo-p1'));
+    const singleDialog = await screen.findByRole('alertdialog');
+    expect(singleDialog).toHaveTextContent(/permanently delete/i);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockPatch).not.toHaveBeenCalled();
+
+    // Single photo reject: Confirm calls moderation endpoint
+    fireEvent.click(screen.getByTestId('reject-photo-p1'));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith('/api/admin/photos/moderation', {
+        id: 'p1',
+        action: 'reject',
+      });
+    });
+
+    mockPost.mockClear();
+
+    // Batch photo reject: select remaining photo(s), verify Cancel aborts and Confirm executes
+    fireEvent.click(screen.getByTestId('select-all-pending-btn'));
+    fireEvent.click(screen.getByTestId('batch-reject-btn'));
+
+    const batchDialog = await screen.findByRole('alertdialog');
+    expect(batchDialog).toHaveTextContent(/permanently delete/i);
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockPost).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('batch-reject-btn'));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/admin/photos/moderation/batch', {
+        ids: ['p2'],
+        action: 'reject',
+      });
+    });
+
+    confirmSpy.mockRestore();
   });
 
   it('allows multi-selection and triggering bulk zip export', async () => {
