@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
 import { useAdminSettings } from '@/hooks/admin/useAdminSettings';
-import { Dialog } from '@/components/ui/Dialog';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
@@ -236,9 +236,48 @@ function validateThemeOverrideRow(row: ThemeOverrideRow): string {
   return '';
 }
 
+function normalizeComparableConfigValue(config: Record<string, any>, key: string): unknown {
+  if (key === 'partner1Name' || key === 'brideName') {
+    return config.partner1Name ?? config.brideName ?? '';
+  }
+  if (key === 'partner2Name' || key === 'groomName') {
+    return config.partner2Name ?? config.groomName ?? '';
+  }
+  const val = config[key];
+  return val === undefined || val === null ? '' : val;
+}
+
+function hasSettingsDraftChanges(
+  currentConfig: Record<string, any> | null,
+  baseConfig: Record<string, any> | null,
+  currentRows: ThemeOverrideRow[],
+  baseRows: ThemeOverrideRow[]
+): boolean {
+  if (!currentConfig || !baseConfig) return false;
+  if (currentRows.length !== baseRows.length) return true;
+  for (let i = 0; i < currentRows.length; i += 1) {
+    if (
+      currentRows[i].key !== baseRows[i].key ||
+      currentRows[i].value !== baseRows[i].value
+    ) {
+      return true;
+    }
+  }
+  if (currentConfig === baseConfig) return false;
+  const keys = new Set([...Object.keys(baseConfig), ...Object.keys(currentConfig)]);
+  for (const key of keys) {
+    const currVal = normalizeComparableConfigValue(currentConfig, key);
+    const baseVal = normalizeComparableConfigValue(baseConfig, key);
+    if (JSON.stringify(currVal) !== JSON.stringify(baseVal)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export default function AdminSettingsPage() {
   const router = useRouter();
-  const { addToast } = useToast();
+  const { addToast, confirm } = useToast();
   const [selectedProfileId, setSelectedProfileId] = useState<string>('global');
 
   const {
@@ -258,6 +297,11 @@ export default function AdminSettingsPage() {
 
   const [configOverride, setConfigOverride] = useState<{ base: any; value: any } | null>(null);
   const [overrideRowsState, setOverrideRowsState] = useState<{ base: any; rows: ThemeOverrideRow[] } | null>(null);
+  const [savedBaselineState, setSavedBaselineState] = useState<{
+    base: any;
+    config: any;
+    rows: ThemeOverrideRow[];
+  } | null>(null);
   const [themeTokensError, setThemeTokensError] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
@@ -266,9 +310,63 @@ export default function AdminSettingsPage() {
   const localConfig = configOverride && configOverride.base === initialConfig
     ? configOverride.value
     : (initialConfig ?? null);
-  const themeOverrideRows = overrideRowsState && overrideRowsState.base === initialConfig
-    ? overrideRowsState.rows
-    : extractThemeOverrideRows(initialConfig);
+  const themeOverrideRows = useMemo(
+    () =>
+      overrideRowsState && overrideRowsState.base === initialConfig
+        ? overrideRowsState.rows
+        : extractThemeOverrideRows(initialConfig),
+    [overrideRowsState, initialConfig]
+  );
+  const baselineConfig = savedBaselineState && savedBaselineState.base === initialConfig
+    ? savedBaselineState.config
+    : (initialConfig ?? null);
+  const baselineRows = useMemo(
+    () =>
+      savedBaselineState && savedBaselineState.base === initialConfig
+        ? savedBaselineState.rows
+        : extractThemeOverrideRows(initialConfig),
+    [savedBaselineState, initialConfig]
+  );
+
+  const isDirty = useMemo(
+    () => hasSettingsDraftChanges(localConfig, baselineConfig, themeOverrideRows, baselineRows),
+    [localConfig, baselineConfig, themeOverrideRows, baselineRows]
+  );
+
+  const isCreateProfileDirty = Boolean(
+    newProfileData.partner1Name.trim() ||
+      newProfileData.partner2Name.trim() ||
+      newProfileData.subdomain.trim()
+  );
+
+  const closeCreateProfileDialog = useCallback(() => {
+    setIsCreateOpen(false);
+    setCreateError('');
+    setNewProfileData({ partner1Name: '', partner2Name: '', subdomain: '' });
+  }, []);
+
+  const handleRequestCloseCreateProfile = useDirtyConfirmClose(
+    isCreateProfileDirty,
+    closeCreateProfileDialog
+  );
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  const confirmDiscardChanges = useCallback(async () => {
+    if (!isDirty) return true;
+    if (typeof confirm === 'function') {
+      return confirm('You have unsaved changes. Are you sure you want to discard them?');
+    }
+    return true;
+  }, [isDirty, confirm]);
 
   const setLocalConfig = useCallback((updater: any) => {
     setConfigOverride((prev) => {
@@ -378,17 +476,24 @@ export default function AdminSettingsPage() {
     }
     try {
       const saved: any = await saveSettings(localConfig);
-      if (saved && typeof saved === 'object') {
-        setLocalConfig((prev: any) => ({
-          ...prev,
-          ...saved,
-          weddingDate: saved.weddingDate ? String(saved.weddingDate).split('T')[0] : prev?.weddingDate,
-          smtpPass: '',
-          resendApiKey: '',
-          sendgridApiKey: '',
-          twilioAuthToken: '',
-        }));
-      }
+      const nextSavedConfig = {
+        ...localConfig,
+        ...(saved && typeof saved === 'object' ? saved : {}),
+        weddingDate:
+          saved && typeof saved === 'object' && saved.weddingDate
+            ? String(saved.weddingDate).split('T')[0]
+            : localConfig?.weddingDate,
+        smtpPass: '',
+        resendApiKey: '',
+        sendgridApiKey: '',
+        twilioAuthToken: '',
+      };
+      setLocalConfig(nextSavedConfig);
+      setSavedBaselineState({
+        base: initialConfig,
+        config: nextSavedConfig,
+        rows: themeOverrideRows,
+      });
       addToast('Branding profile saved successfully.', 'success');
     } catch (err: any) {
       addToast(err.message || 'Failed to save profile', 'error');
@@ -404,6 +509,9 @@ export default function AdminSettingsPage() {
       setIsCreateOpen(false);
       setNewProfileData({ partner1Name: '', partner2Name: '', subdomain: '' });
       if (created && created.id) {
+        setConfigOverride(null);
+        setOverrideRowsState(null);
+        setSavedBaselineState(null);
         setSelectedProfileId(created.id);
         setLocalConfig(null);
       }
@@ -451,6 +559,22 @@ export default function AdminSettingsPage() {
     });
   };
 
+  const handleBackToDashboard = async () => {
+    if (!(await confirmDiscardChanges())) return;
+    router.push('/admin/dashboard');
+  };
+
+  const handleProfileSwitch = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextProfileId = e.target.value;
+    if (nextProfileId === selectedProfileId) return;
+    if (!(await confirmDiscardChanges())) return;
+    setConfigOverride(null);
+    setOverrideRowsState(null);
+    setSavedBaselineState(null);
+    setSelectedProfileId(nextProfileId);
+    setLocalConfig(null);
+  };
+
   const isMultisite = Boolean(localConfig?.multisiteEnabled);
 
   return (
@@ -474,14 +598,16 @@ export default function AdminSettingsPage() {
           }}
           entityId={selectedProfileId}
           onRestore={() => {
-            setLocalConfig(initialConfig);
+            setConfigOverride(null);
+            setOverrideRowsState(null);
+            setSavedBaselineState(null);
             fetchAll();
           }}
         >
           <div className="mx-auto max-w-4xl p-6">
             <div className="flex justify-between items-center mb-8">
               <h1 className="text-3xl font-bold">Site Settings</h1>
-              <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>Back to Dashboard</Button>
+              <Button variant="ghost" onClick={() => void handleBackToDashboard()}>Back to Dashboard</Button>
             </div>
 
             {/* Profile Switcher & Creator Section (Visible when MULTISITE_ENABLED=true) */}
@@ -501,10 +627,7 @@ export default function AdminSettingsPage() {
                     <Select
                       id="brandingProfileSelect"
                       value={selectedProfileId}
-                      onChange={(e) => {
-                        setSelectedProfileId(e.target.value);
-                        setLocalConfig(null);
-                      }}
+                      onChange={(e) => void handleProfileSwitch(e)}
                       className="w-auto"
                     >
                       {Array.isArray(profiles) ? (
@@ -1474,7 +1597,8 @@ export default function AdminSettingsPage() {
 
           <Dialog
             isOpen={isCreateOpen}
-            onClose={() => setIsCreateOpen(false)}
+            onClose={closeCreateProfileDialog}
+            isDirty={isCreateProfileDirty}
             title="Create Staging Profile"
             description="Create a new staging profile assigned to a unique testing subdomain."
           >
@@ -1516,7 +1640,7 @@ export default function AdminSettingsPage() {
                 <FormMessage>Only lowercase alphanumeric characters and hyphens. Aligned to subdomain routing.</FormMessage>
               </FormGroup>
               <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>
+                <Button type="button" variant="ghost" onClick={handleRequestCloseCreateProfile}>
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" disabled={creating}>

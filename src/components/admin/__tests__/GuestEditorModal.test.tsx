@@ -97,4 +97,61 @@ describe('GuestEditorModal', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('closes immediately when clean and prompts via alertdialog before discarding dirty edits', async () => {
+    const onClose = jest.fn();
+
+    render(
+      <GuestEditorModal
+        isOpen={true}
+        onClose={onClose}
+        guest={sampleGuest}
+        onSave={jest.fn().mockResolvedValue({})}
+      />
+    );
+
+    // Clean Escape closes immediately without confirmation
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    onClose.mockClear();
+
+    // Make dirty edit
+    const nameInput = screen.getByLabelText('Guest Name *') as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Clara Oswald-Pink' } });
+
+    // Escape on dirty modal opens confirmation alertdialog
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const escapeAlert = await screen.findByRole('alertdialog');
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Cancel keeps modal open and preserves draft
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Cancel' }).find((btn) => escapeAlert.contains(btn))!
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(nameInput.value).toBe('Clara Oswald-Pink');
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Outside mousedown also prompts and Cancel keeps draft
+    fireEvent.mouseDown(document.body);
+    const outsideAlert = await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cancel' }).find((btn) => outsideAlert.contains(btn))!);
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Clicking modal Cancel button prompts and Confirm closes modal
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const cancelAlert = await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(cancelAlert).not.toBeInTheDocument();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
 });

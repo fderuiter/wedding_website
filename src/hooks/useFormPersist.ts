@@ -58,25 +58,29 @@ export function useFormPersist<T>(
   const { enabled = true, debounceMs = 0 } = options;
 
   // Initialize state from sessionStorage if available, falling back to initialValues
-  const [entry, setEntry] = useState<{ key: string; value: T }>(() => ({
+  const [entry, setEntry] = useState<{ key: string; value: T; skipPersist?: boolean }>(() => ({
     key,
     value: readPersistedValue(key, initialValues, enabled, initialValues, false),
+    skipPersist: false,
   }));
 
   if (entry.key !== key) {
     setEntry({
       key,
       value: readPersistedValue(key, initialValues, enabled, entry.value, true),
+      skipPersist: false,
     });
   }
 
   const state = entry.value;
+  const skipPersist = Boolean(entry.skipPersist);
 
   const setState: React.Dispatch<React.SetStateAction<T>> = useCallback(
     (action) => {
       setEntry((prev) => ({
         key,
         value: typeof action === 'function' ? (action as (_prevState: T) => T)(prev.value) : action,
+        skipPersist: false,
       }));
     },
     [key]
@@ -90,7 +94,7 @@ export function useFormPersist<T>(
 
     const handler = () => {
       try {
-        if (state === undefined || state === null) {
+        if (skipPersist || state === undefined || state === null) {
           window.sessionStorage.removeItem(key);
         } else {
           window.sessionStorage.setItem(key, JSON.stringify(state));
@@ -106,10 +110,11 @@ export function useFormPersist<T>(
     } else {
       handler();
     }
-  }, [key, state, enabled, debounceMs]);
+  }, [key, state, skipPersist, enabled, debounceMs]);
 
   // Method to clear persisted state from sessionStorage
   const clearPersistedState = useCallback(() => {
+    setEntry((prev) => ({ ...prev, skipPersist: true }));
     if (typeof window === 'undefined') {
       return;
     }

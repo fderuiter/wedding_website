@@ -759,3 +759,143 @@ describe('AdminSettingsPage RSVP Deadline & Access Control', () => {
   });
 });
 
+describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+    mockPush.mockClear();
+  });
+
+  it('guards dirty profile switches and Back to Dashboard via ToastProvider.confirm while allowing clean navigation immediately', async () => {
+    const primaryProfile = { ...mockConfig, id: 'global', siteSlug: 'main', multisiteEnabled: true };
+    const secondaryProfile = {
+      ...mockConfig,
+      id: 'secondary',
+      siteSlug: 'secondary-site',
+      heroTitle: 'Secondary Welcome',
+      multisiteEnabled: true,
+    };
+
+    mockFetch.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [primaryProfile, secondaryProfile] });
+        }
+        if (url.includes('siteId=secondary')) {
+          return Promise.resolve({ ok: true, json: async () => secondaryProfile });
+        }
+        return Promise.resolve({ ok: true, json: async () => primaryProfile });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    // Clean Back to Dashboard navigates immediately without alertdialog
+    fireEvent.click(screen.getByRole('button', { name: /Back to Dashboard/i }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
+    });
+    mockPush.mockClear();
+
+    // Dirty edit on Hero Title
+    const heroTitleInput = document.querySelector('input[name="heroTitle"]') as HTMLInputElement;
+    fireEvent.change(heroTitleInput, { target: { name: 'heroTitle', value: 'Unsaved Hero Draft' } });
+
+    // Dirty profile switch prompts first; Cancel keeps current profile & draft
+    const profileSelect = await screen.findByLabelText(/Active Branding Profile/i);
+    fireEvent.change(profileSelect, { target: { value: 'secondary' } });
+
+    const profileDialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(profileDialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect((profileSelect as HTMLSelectElement).value).toBe('global');
+    expect(heroTitleInput.value).toBe('Unsaved Hero Draft');
+
+    // Dirty Back to Dashboard prompts; Cancel stays on settings, Confirm navigates
+    fireEvent.click(screen.getByRole('button', { name: /Back to Dashboard/i }));
+    const navDialog = await screen.findByRole('alertdialog');
+    expect(mockPush).not.toHaveBeenCalled();
+
+    fireEvent.click(within(navDialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Dashboard/i }));
+    const confirmNavDialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(confirmNavDialog).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
+    });
+  });
+
+  it('never writes secret credential inputs (smtpPass, resendApiKey, sendgridApiKey, twilioAuthToken) to browser storage', async () => {
+    const sessionSetSpy = jest.spyOn(Storage.prototype, 'setItem');
+
+    render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    // 1. SMTP password
+    fireEvent.change(screen.getByLabelText(/SMTP Password/i), {
+      target: { name: 'smtpPass', value: 'super-secret-smtp-pass' },
+    });
+
+    // 2. Resend API key
+    fireEvent.change(screen.getByLabelText(/Email Delivery Provider/i), {
+      target: { name: 'emailProvider', value: 'resend' },
+    });
+    fireEvent.change(screen.getByLabelText(/Resend API Key/i), {
+      target: { name: 'resendApiKey', value: 're_super_secret_key' },
+    });
+
+    // 3. SendGrid API key
+    fireEvent.change(screen.getByLabelText(/Email Delivery Provider/i), {
+      target: { name: 'emailProvider', value: 'sendgrid' },
+    });
+    fireEvent.change(screen.getByLabelText(/SendGrid API Key/i), {
+      target: { name: 'sendgridApiKey', value: 'SG.super_secret_key' },
+    });
+
+    // 4. Twilio Auth Token
+    fireEvent.change(screen.getByLabelText(/SMS Gateway Provider/i), {
+      target: { name: 'smsProvider', value: 'twilio' },
+    });
+    fireEvent.change(screen.getByLabelText(/Auth Token/i), {
+      target: { name: 'twilioAuthToken', value: 'twilio_super_secret_token' },
+    });
+
+    const serializedStorage = JSON.stringify({
+      session: { ...window.sessionStorage },
+      local: { ...window.localStorage },
+      calls: sessionSetSpy.mock.calls,
+    });
+
+    expect(serializedStorage).not.toContain('super-secret-smtp-pass');
+    expect(serializedStorage).not.toContain('re_super_secret_key');
+    expect(serializedStorage).not.toContain('SG.super_secret_key');
+    expect(serializedStorage).not.toContain('twilio_super_secret_token');
+    expect(serializedStorage).not.toContain('smtpPass');
+    expect(serializedStorage).not.toContain('resendApiKey');
+    expect(serializedStorage).not.toContain('sendgridApiKey');
+    expect(serializedStorage).not.toContain('twilioAuthToken');
+
+    // Secret edits still trigger the in-memory dirty navigation prompt
+    fireEvent.click(screen.getByRole('button', { name: /Back to Dashboard/i }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+
+    sessionSetSpy.mockRestore();
+  });
+});
+

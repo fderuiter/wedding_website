@@ -283,4 +283,55 @@ describe('SetupWizard In-Modal Content Overlays', () => {
     expect(screen.getByLabelText(/Partner 1/i)).toHaveValue('Taylor');
     expect(screen.getByLabelText(/Partner 2/i)).toHaveValue('Jordan');
   });
+
+  test('deletes wedding party member and attraction via accessible alertdialog without native window.confirm', async () => {
+    mockMembers.push({ id: 'm-del-1', name: 'Alex Morgan', role: 'Bridesmaid' });
+    mockAttractions.push({ id: 'a-del-1', name: 'Navy Pier', category: 'sightseeing', isVisible: true });
+
+    const confirmSpy = jest.spyOn(window, 'confirm');
+
+    await navigateToStep2Content();
+
+    // 1. Delete wedding party member via alertdialog
+    fireEvent.click(screen.getByRole('button', { name: /Manage Wedding Party/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete wedding party member: Alex Morgan' }));
+
+    await screen.findByRole('alertdialog');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(mockRemoveMember).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockRemoveMember).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete wedding party member: Alex Morgan' }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => {
+      expect(mockRemoveMember).toHaveBeenCalledWith('m-del-1');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // 2. Delete attraction via alertdialog
+    fireEvent.click(screen.getByRole('button', { name: /Manage Attractions/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete attraction: Navy Pier' }));
+
+    await screen.findByRole('alertdialog');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(mockRemoveAttraction).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(mockRemoveAttraction).toHaveBeenCalledWith('a-del-1');
+    });
+
+    confirmSpy.mockRestore();
+  });
 });

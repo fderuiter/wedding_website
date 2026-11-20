@@ -93,49 +93,57 @@ export default function AdminPreviewLayout({
           </button>
         </div>
 
-        {showVersions ? (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold mb-4">Version History</h2>
-            <div className="space-y-4">
-              {versions.length === 0 && <p className="text-gray-500 dark:text-gray-400">No versions found.</p>}
-              {versions.map((v) => (
-                <div key={v.id} className="p-4 border rounded bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-                  <div>
-                    <p className="font-semibold">{formatDate(v.createdAt, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">By {v.author}</p>
-                  </div>
-                  <div className="space-x-2">
-                    <button 
-                      onClick={() => {
-                        // send this historical data to the iframe
-                        if (iframeRef.current && iframeRef.current.contentWindow) {
-                          iframeRef.current.contentWindow.postMessage({
-                            type: 'DRAFT_UPDATE',
-                            draftType,
-                            draftData: v.data
-                          }, '*');
-                        }
-                      }}
-                      className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
-                    >
-                      Preview
-                    </button>
-                    <button 
-                      onClick={() => handleRestore(v.id)}
-                      className="px-3 py-1 bg-primary text-white rounded text-sm"
-                    >
-                      Restore
-                    </button>
-                  </div>
+        <div
+          data-testid="studio-history-pane"
+          className={showVersions ? 'p-6' : 'hidden'}
+          hidden={!showVersions}
+          aria-hidden={!showVersions}
+        >
+          <h2 className="text-2xl font-bold mb-4">Version History</h2>
+          <div className="space-y-4">
+            {versions.length === 0 && <p className="text-gray-500 dark:text-gray-400">No versions found.</p>}
+            {versions.map((v) => (
+              <div key={v.id} className="p-4 border rounded bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
+                <div>
+                  <p className="font-semibold">{formatDate(v.createdAt, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">By {v.author}</p>
                 </div>
-              ))}
-            </div>
+                <div className="space-x-2">
+                  <button
+                    onClick={() => {
+                      // send this historical data to the iframe
+                      if (iframeRef.current && iframeRef.current.contentWindow) {
+                        iframeRef.current.contentWindow.postMessage({
+                          type: 'DRAFT_UPDATE',
+                          draftType,
+                          draftData: v.data
+                        }, '*');
+                      }
+                    }}
+                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    onClick={() => handleRestore(v.id)}
+                    className="px-3 py-1 bg-primary text-white rounded text-sm"
+                  >
+                    Restore
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
-        ) : (
-          <div className="h-full">
-            {children}
-          </div>
-        )}
+        </div>
+
+        <div
+          data-testid="studio-editor-pane"
+          className={showVersions ? 'hidden' : 'h-full'}
+          hidden={showVersions}
+          aria-hidden={showVersions}
+        >
+          {children}
+        </div>
       </div>
 
       {/* Preview Pane */}
