@@ -703,59 +703,53 @@ interface FeatureRuntimeEnforcement {
 
 const FEATURE_RUNTIME_ENFORCEMENT: Record<FeatureId, FeatureRuntimeEnforcement> = {
   registry: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
-      'Nav hidden; `/registry`, `/registry/add-item`, `/registry/edit-item/[id]` skip server `isFeatureEnabled`',
+      'Nav hidden; `/registry`, `/registry/add-item`, `/registry/edit-item/[id]` return HTTP 404 (`/admin/dashboard/registry` skips `isFeatureEnabled`)',
     apiCoverage:
-      'HTTP 404 on `/api/registry/{items,items/batch,capabilities,contribute,payment-intent}`; skipped on `items/[id]`, `scrape`, `scrape/batch`, `session`, `validate-code`, `webhook/stripe`, `/api/admin/[entity]`',
+      'HTTP 404 on `/api/registry/{items,items/[id],items/batch,capabilities,contribute,payment-intent,scrape/batch}`; skipped on `scrape`, `session`, `validate-code`, `webhook/stripe`, `/api/admin/[entity]`',
   },
   groupGifting: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage: '`/registry` (group gift contribution UI)',
     apiCoverage: 'HTTP 400 on `POST /api/registry/contribute` & `POST /api/registry/payment-intent`',
   },
-  guestPasscode: {
-    persistence: '`Virtual DTO`',
-    uiCoverage:
-      'Unchecked (`/guest/login`, `/guest`, `/guest/collect`, and `src/middleware.ts` skip `isFeatureEnabled`)',
-    apiCoverage: 'Unchecked (`POST /api/guest/login` skips `isFeatureEnabled`)',
-  },
   weather: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage: 'Nav hidden; `/weather` returns HTTP 404',
     apiCoverage: 'HTTP 404 on `GET /api/weather`',
   },
   weddingParty: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
       'Nav hidden; `/wedding-party` returns HTTP 404 (`/admin/dashboard/wedding-party` skips `isFeatureEnabled`)',
     apiCoverage: 'Unchecked (`/api/admin/[entity]` with `wedding-party` skips `isFeatureEnabled`)',
   },
   attractions: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
       'Nav hidden; `/things-to-do` returns HTTP 404 (`/admin/dashboard/attractions` skips `isFeatureEnabled`)',
     apiCoverage: 'Unchecked (`/api/admin/[entity]` with `attractions` skips `isFeatureEnabled`)',
   },
   gallery: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage:
       'Nav + `/` link hidden; `/photos` & `/photos/slideshow` return HTTP 404 (`/admin/dashboard/media` skips `isFeatureEnabled`)',
     apiCoverage:
       'HTTP 404 on `/api/photos`, `/api/photos/upload`, `/api/guest/photos/upload`, `/api/media/*`, `/api/admin/photos/*`',
   },
   countdown: {
-    persistence: '`Virtual DTO` + `Prisma` (`showCountdown`)',
+    persistence: '`Prisma` (`modules` + `showCountdown`)',
     uiCoverage: 'Homepage (`/`) widget (`config.showCountdown && isFeatureEnabled`)',
     apiCoverage: 'N/A',
   },
   addToCalendar: {
-    persistence: '`Virtual DTO` + `Prisma` (`showAddToCalendar`)',
+    persistence: '`Prisma` (`modules` + `showAddToCalendar`)',
     uiCoverage: 'Homepage (`/`) widget (`config.showAddToCalendar && isFeatureEnabled`)',
     apiCoverage: 'N/A (`GET /api/schedule/[id]/ics` skips `isFeatureEnabled`)',
   },
   interactive3D: {
-    persistence: '`Virtual DTO`',
+    persistence: '`Prisma` (`modules`)',
     uiCoverage: 'Homepage (`/`) section hidden; `/heart` returns HTTP 404',
     apiCoverage: 'N/A',
   },

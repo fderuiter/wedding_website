@@ -7,7 +7,7 @@ import { isHostAllowed } from '../utils/hostValidation';
 import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDeadline';
 import { headers } from 'next/headers';
 
-import { DEFAULT_MODULE_CONFIG } from './modules';
+import { DEFAULT_MODULE_CONFIG, resolveModuleConfig } from './modules';
 import { getPresetTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
@@ -374,6 +374,7 @@ const APP_CONFIG_BACKUP_KEYS = [
   'layoutCardPadding',
   'layoutBorderRadius',
   'features',
+  'modules',
   'timezone',
   'showCountdown',
   'showAddToCalendar',
@@ -413,7 +414,23 @@ export function sanitizeAppConfigForBackup(
   const sanitized: Record<string, unknown> = {};
   for (const key of APP_CONFIG_BACKUP_KEYS) {
     if (key in config && config[key] !== undefined) {
-      sanitized[key] = config[key];
+      if (key === 'modules') {
+        const rawModules =
+          config.modules && typeof config.modules === 'object' && !Array.isArray(config.modules)
+            ? (config.modules as Record<string, unknown>)
+            : {};
+        sanitized.modules = resolveModuleConfig({
+          ...(typeof config.showCountdown === 'boolean' && rawModules.countdown === undefined
+            ? { countdown: config.showCountdown }
+            : {}),
+          ...(typeof config.showAddToCalendar === 'boolean' && rawModules.addToCalendar === undefined
+            ? { addToCalendar: config.showAddToCalendar }
+            : {}),
+          ...rawModules,
+        });
+      } else {
+        sanitized[key] = config[key];
+      }
     }
   }
   return sanitized;
@@ -567,6 +584,7 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
             colorSecondary: '#B45309',
             themePreset: 'classic',
             themeTokens: {},
+            modules: DEFAULT_MODULE_CONFIG,
             timezone: 'UTC',
             showCountdown: true,
             showAddToCalendar: true,
@@ -577,7 +595,20 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
           },
         }));
       } else {
-        dbConfig = AppConfigSchema.parse(rawDbConfig);
+        const rawModules =
+          typeof (rawDbConfig as Record<string, unknown>).modules === 'object' &&
+          (rawDbConfig as Record<string, unknown>).modules !== null &&
+          !Array.isArray((rawDbConfig as Record<string, unknown>).modules)
+            ? ((rawDbConfig as Record<string, unknown>).modules as Record<string, unknown>)
+            : {};
+        dbConfig = AppConfigSchema.parse({
+          ...rawDbConfig,
+          modules: {
+            ...(typeof rawDbConfig.showCountdown === 'boolean' ? { countdown: rawDbConfig.showCountdown } : {}),
+            ...(typeof rawDbConfig.showAddToCalendar === 'boolean' ? { addToCalendar: rawDbConfig.showAddToCalendar } : {}),
+            ...rawModules,
+          },
+        });
       }
 
     } catch (error) {
@@ -604,10 +635,17 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   delete (mergedThemeTokens as any).serverExportTokens;
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
+  const baseModules = resolveModuleConfig((dbConfig as any)?.modules ?? APP_DEFAULTS.modules);
+  const syncedEnvModules = {
+    ...baseModules,
+    ...(envOverrides.showCountdown !== undefined ? { countdown: envOverrides.showCountdown } : {}),
+    ...(envOverrides.showAddToCalendar !== undefined ? { addToCalendar: envOverrides.showAddToCalendar } : {}),
+  };
   const mergedConfig = {
     ...APP_DEFAULTS,
     ...(dbConfig || {}),
     ...envOverrides,
+    modules: syncedEnvModules,
     themeTokens: mergedThemeTokens,
   };
 

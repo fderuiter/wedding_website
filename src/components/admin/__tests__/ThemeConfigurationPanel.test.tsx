@@ -129,42 +129,88 @@ describe('ThemeConfigurationPanel Component', () => {
     );
   });
 
-  test('applies externalErrors across Typography, Layout, Border, and Brand Dimension controls and passes jest-axe', async () => {
+  test('does not render any unpersisted typography, spacing, border, or brand dimension inputs', () => {
+    const handleChange = jest.fn();
+    render(<ThemeConfigurationPanel values={defaultValues} onChange={handleChange} />);
+
+    const unpersistedLabels = [
+      /Base Font Size/i,
+      /Large Font Size/i,
+      /Normal Font Weight/i,
+      /Medium Spacing/i,
+      /Thin Border Width/i,
+      /^Border Style$/i,
+      /Logo Width/i,
+      /Logo Height/i,
+      /Hero Background Height/i,
+      /Watermark Width/i,
+      /Watermark Opacity/i,
+      /Badge Size/i,
+    ];
+
+    for (const label of unpersistedLabels) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+  });
+
+  test('renders only preset and color controls in essentials mode and passes jest-axe', async () => {
+    const handleChange = jest.fn();
+    const { container } = render(
+      <ThemeConfigurationPanel mode="essentials" values={defaultValues} onChange={handleChange} />
+    );
+
+    expect(screen.getByLabelText(/Select Theme Preset/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Primary Color Code/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Secondary Color Code/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Container Max Width/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Grid Gap/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Card Padding/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Card Border Radius/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Print Background Color Code/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Layout spacing, card rounding, and print styling colors can be customized anytime in Site Settings/i)
+    ).toBeInTheDocument();
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+  });
+
+  test('applies externalErrors across persisted Layout & Spacing controls and passes jest-axe', async () => {
     const handleChange = jest.fn();
     const { container } = render(
       <ThemeConfigurationPanel
         values={defaultValues}
         onChange={handleChange}
         errors={{
-          fontSizeBase: 'Invalid base font size.',
+          layoutContainerMaxWidth: 'Server rejected max width.',
           layoutGridGap: 'Server rejected grid gap.',
+          layoutCardPadding: 'Server rejected card padding.',
           layoutBorderRadius: 'Server rejected border radius.',
-          brandHeroHeight: 'Server rejected hero height.',
         }}
       />
     );
 
-    const fontBaseInput = screen.getByLabelText(/Base Font Size/i);
+    const maxWidthInput = screen.getByLabelText(/Container Max Width/i);
     const gridGapInput = screen.getByLabelText(/Grid Gap/i);
-    const borderRadiusInput = screen.getByLabelText(/Border Radius/i);
-    const heroHeightInput = screen.getByLabelText(/Hero Background Height/i);
+    const cardPaddingInput = screen.getByLabelText(/Card Padding/i);
+    const borderRadiusInput = screen.getByLabelText(/Card Border Radius/i);
 
-    expect(fontBaseInput).toHaveAttribute('aria-invalid', 'true');
-    expect(document.getElementById(fontBaseInput.getAttribute('aria-describedby') || '')).toHaveTextContent(
-      'Invalid base font size.'
+    expect(maxWidthInput).toHaveAttribute('aria-invalid', 'true');
+    expect(maxWidthInput).toHaveAttribute('aria-describedby', 'layoutContainerMaxWidth-error');
+    expect(document.getElementById('layoutContainerMaxWidth-error')).toHaveTextContent(
+      'Server rejected max width.'
     );
 
     expect(gridGapInput).toHaveAttribute('aria-invalid', 'true');
     expect(gridGapInput).toHaveAttribute('aria-describedby', 'layoutGridGap-error');
     expect(document.getElementById('layoutGridGap-error')).toHaveTextContent('Server rejected grid gap.');
 
+    expect(cardPaddingInput).toHaveAttribute('aria-invalid', 'true');
+    expect(cardPaddingInput).toHaveAttribute('aria-describedby', 'layoutCardPadding-error');
+    expect(document.getElementById('layoutCardPadding-error')).toHaveTextContent('Server rejected card padding.');
+
     expect(borderRadiusInput).toHaveAttribute('aria-invalid', 'true');
     expect(borderRadiusInput).toHaveAttribute('aria-describedby', 'layoutBorderRadius-error');
-
-    expect(heroHeightInput).toHaveAttribute('aria-invalid', 'true');
-    expect(document.getElementById(heroHeightInput.getAttribute('aria-describedby') || '')).toHaveTextContent(
-      'Server rejected hero height.'
-    );
 
     const axeResults = await axe(container);
     expect(axeResults).toHaveNoViolations();

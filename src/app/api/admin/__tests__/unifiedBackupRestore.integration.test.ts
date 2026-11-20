@@ -11,6 +11,7 @@ import { GET as exportBackup } from '../maintenance/export/route';
 import { POST as importBackup } from '../maintenance/import/route';
 import { POST as restoreVersion } from '../versions/[id]/restore/route';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
@@ -102,6 +103,7 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
         layoutGridGap: '2rem',
         layoutCardPadding: '2.25rem',
         layoutBorderRadius: '0.75rem',
+        modules: { ...DEFAULT_MODULE_CONFIG, weather: false, gallery: false },
         timezone: 'America/Chicago',
         showCountdown: true,
         showAddToCalendar: true,
@@ -330,7 +332,11 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     const exportedCfg = exportedJson.appConfig[0];
     expect(exportedCfg.multisiteEnabled).toBeUndefined();
     expect(exportedCfg.typographyScale).toBeUndefined();
-    expect(exportedCfg.modules).toBeUndefined();
+    expect(exportedCfg.modules).toEqual({
+      ...DEFAULT_MODULE_CONFIG,
+      weather: false,
+      gallery: false,
+    });
     expect(exportedCfg.smtpPass).toBeUndefined();
     expect(exportedCfg.resendApiKey).toBeUndefined();
     expect(exportedCfg.sendgridApiKey).toBeUndefined();
@@ -394,6 +400,11 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     expect(restoredCfg.twilioAuthToken).toBe('preserved-live-twilio-token');
     expect(restoredCfg.smtpHost).toBe('smtp.example.com');
     expect(restoredCfg.layoutContainerMaxWidth).toBe('72rem');
+    expect(restoredCfg.modules).toEqual({
+      ...DEFAULT_MODULE_CONFIG,
+      weather: false,
+      gallery: false,
+    });
 
     // Wait briefly for background Admin/BulkImport snapshots to settle before cleanup
     await new Promise((resolve) => setTimeout(resolve, 60));
