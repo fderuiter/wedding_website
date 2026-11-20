@@ -4,6 +4,24 @@ export const BroadcastTargetFiltersSchema = z.object({
   partyTags: z.array(z.string()).optional(),
   householdName: z.string().optional(),
   attendanceStatus: z.enum(['attending', 'declined', 'pending', 'all']).optional(),
+  status: z.enum(['redeemed', 'unused', 'all']).optional(),
+  addressStatus: z.enum(['complete', 'missing', 'all']).optional(),
+  addressFilter: z.enum(['complete', 'missing', 'all']).optional(),
+  dietaryCategory: z
+    .enum([
+      'all',
+      'has_restriction',
+      'gluten-free',
+      'vegetarian',
+      'vegan',
+      'dairy-free',
+      'nut-free',
+      'other',
+    ])
+    .or(z.string())
+    .optional(),
+  dietaryFilter: z.string().optional(),
+  partyGroup: z.string().optional(),
   subEventId: z.string().optional(),
   subEventRsvpStatus: z.string().optional(),
   selectedIds: z.array(z.string()).optional(),

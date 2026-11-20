@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useFormPersist } from '@/hooks/useFormPersist';
 import { RegistryPreviewTable, PreviewRegistryItem } from './RegistryPreviewTable';
 import {
   parseRegistryCsv,
@@ -15,18 +16,60 @@ export interface CsvRegistryImportProps {
   onSuccess?: () => void;
 }
 
+interface CsvRegistryImportDraft {
+  fileName: string | null;
+  fileSize: number | null;
+  items: PreviewRegistryItem[];
+}
+
+const INITIAL_CSV_DRAFT: CsvRegistryImportDraft = {
+  fileName: null,
+  fileSize: null,
+  items: [],
+};
+
 export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess }) => {
   const router = useRouter();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [fileSize, setFileSize] = useState<number | null>(null);
+  const [draft, setDraft, clearPersistedState] = useFormPersist<CsvRegistryImportDraft>(
+    'registry_csv_import_draft',
+    INITIAL_CSV_DRAFT
+  );
+  const { fileName, fileSize, items } = draft;
   const [isParsing, setIsParsing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [items, setItems] = useState<PreviewRegistryItem[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  const setFileName = (nextFileName: string | null) => {
+    setDraft((prev) => ({ ...prev, fileName: nextFileName }));
+  };
+
+  const setFileSize = (nextFileSize: number | null) => {
+    setDraft((prev) => ({ ...prev, fileSize: nextFileSize }));
+  };
+
+  const setItems = (
+    updater: PreviewRegistryItem[] | ((_prev: PreviewRegistryItem[]) => PreviewRegistryItem[])
+  ) => {
+    setDraft((prev) => ({
+      ...prev,
+      items: typeof updater === 'function' ? updater(prev.items) : updater,
+    }));
+  };
+
+  const hasDraft = Boolean(fileName) || items.length > 0;
+
+  const handleResetDraft = () => {
+    setErrorMessage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setDraft(INITIAL_CSV_DRAFT);
+    clearPersistedState();
+  };
 
   const processFile = (file: File) => {
     setErrorMessage(null);
@@ -155,6 +198,11 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
 
       await apiClient.post('/api/registry/items/batch', payload);
 
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setDraft(INITIAL_CSV_DRAFT);
+      clearPersistedState();
       addToast(`Successfully imported ${validItems.length} items to your registry!`, 'success');
       if (onSuccess) {
         onSuccess();
@@ -182,16 +230,28 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleDownloadTemplate}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors shrink-0"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download Sample CSV Template
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {hasDraft && (
+              <button
+                type="button"
+                onClick={handleResetDraft}
+                disabled={isParsing || isSubmitting}
+                className="inline-flex items-center px-3 py-1.5 text-xs font-medium text-stone-700 dark:text-stone-200 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded-md hover:bg-stone-50 dark:hover:bg-stone-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Reset Draft
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors shrink-0"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Download Sample CSV Template
+            </button>
+          </div>
         </div>
 
         {/* Drop zone */}

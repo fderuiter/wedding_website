@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports
 import { createMediaAssociationSchema } from '@/features/media/schemas';
-import { createLaxUrlSchema } from '@/utils/validation';
+import { createLaxUrlSchema, deriveAdminInputSchema } from '@/utils/validationPrimitives';
 import {
   INVITATION_CODE_MAX_LENGTH,
   GUEST_NAME_MAX_LENGTH,
@@ -142,6 +142,7 @@ export const PaymentIntentRequestSchema = z.object({
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
   coverFee: z.boolean().optional().default(false),
   paymentIntentId: z.string().trim().optional(),
+  clientSecret: z.string().trim().optional(),
   name: z.string().trim().optional(),
   email: optionalNullableEmailField,
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
@@ -183,6 +184,9 @@ export const RegistryItemSchema = RegistryItemBaseSchema.extend({
 });
 
 export type RegistryItemDTO = z.infer<typeof RegistryItemSchema>;
+
+export const RegistryItemCreateInputSchema = deriveAdminInputSchema(RegistryItemBaseSchema, false);
+export const RegistryItemInputSchema = deriveAdminInputSchema(RegistryItemSchema, true);
 
 
 export function translateSnapshotToActive(snapshotData: any) {
@@ -237,6 +241,11 @@ export const InvitationCodeSchema = z.object({
 
 export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
 
+export const InvitationCodeInputSchema = deriveAdminInputSchema(InvitationCodeSchema, false).extend({
+  code: InvitationCodeSchema.shape.code.optional().or(z.literal('')),
+});
+export const InvitationCodeUpdateInputSchema = deriveAdminInputSchema(InvitationCodeSchema, true);
+
 const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(GUEST_NAME_MAX_LENGTH, `Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`),
   code: z.string().trim().optional().or(z.literal('')),
@@ -244,7 +253,6 @@ const BatchImportInvitationCodeItemSchema = z.object({
     trimmedEmailPipe,
     z.literal(''),
     z.null(),
-    z.undefined()
   ]).optional(),
   ...optionalAddressFields,
   dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),
@@ -265,6 +273,30 @@ export const BatchDeleteInvitationCodesSchema = z.object({
 });
 
 export type BatchDeleteInvitationCodesDTO = z.infer<typeof BatchDeleteInvitationCodesSchema>;
+
+export const BatchUpdateInvitationTagsSchema = z
+  .object({
+    ids: z
+      .array(z.string().trim().min(1, 'ID cannot be empty.'))
+      .min(1, 'At least one invitation code ID is required.')
+      .max(5000, 'Maximum of 5000 invitation code IDs allowed per batch request.')
+      .transform((ids) => Array.from(new Set(ids))),
+    tags: z
+      .array(z.string())
+      .transform((tags) => normalizePartyTags(tags, { dedupe: true })),
+    action: z.enum(['add', 'remove', 'replace']).default('add'),
+  })
+  .superRefine((data, ctx) => {
+    if ((data.action === 'add' || data.action === 'remove') && data.tags.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['tags'],
+        message: 'At least one non-empty tag is required when adding or removing tags.',
+      });
+    }
+  });
+
+export type BatchUpdateInvitationTagsDTO = z.infer<typeof BatchUpdateInvitationTagsSchema>;
 
 export const BatchImportInvitationCodesSchema = z.object({
   records: z.array(BatchImportInvitationCodeItemSchema).min(1, 'At least one record is required for batch import.'),

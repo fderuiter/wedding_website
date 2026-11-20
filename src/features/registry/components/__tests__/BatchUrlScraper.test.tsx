@@ -25,6 +25,7 @@ const mockApiClientPost = apiClient.post as jest.Mock;
 
 describe('BatchUrlScraper', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     jest.clearAllMocks();
   });
 
@@ -156,5 +157,60 @@ describe('BatchUrlScraper', () => {
       });
       expect(onSuccess).toHaveBeenCalled();
     });
+    expect(window.sessionStorage.getItem('registry_batch_url_draft')).toBeNull();
+  });
+
+  it('preserves URLs and edited preview rows across remounts and clears draft when Reset Draft is clicked', async () => {
+    mockApiClientPost.mockResolvedValueOnce({
+      success: true,
+      results: [
+        {
+          url: 'https://retailer.com/kettle',
+          success: true,
+          data: {
+            name: 'Electric Kettle',
+            price: 79.0,
+            imageUrl: 'https://retailer.com/kettle.jpg',
+            description: 'Gooseneck kettle',
+            vendorUrl: 'https://retailer.com/kettle',
+            quantity: 1,
+          },
+        },
+      ],
+      total: 1,
+      successful: 1,
+      failed: 0,
+    });
+
+    const { unmount } = render(<BatchUrlScraper />);
+
+    fireEvent.change(screen.getByLabelText(/Product URLs textarea/i), {
+      target: { value: 'https://retailer.com/kettle' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Scrape Product URLs/i }));
+
+    expect(await screen.findByText('Electric Kettle')).toBeInTheDocument();
+
+    // Edit the preview row before unmounting (simulating tab switch or refresh)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Electric Kettle' }));
+    const rowNameInput = screen.getByPlaceholderText('Product name');
+    fireEvent.change(rowNameInput, { target: { value: 'Matte Black Electric Kettle' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Done editing Matte Black Electric Kettle' }));
+    expect(screen.getByText('Matte Black Electric Kettle')).toBeInTheDocument();
+
+    unmount();
+
+    // Remount and verify both URL input and edited preview row are restored
+    render(<BatchUrlScraper />);
+    expect(screen.getByLabelText(/Product URLs textarea/i)).toHaveValue(
+      'https://retailer.com/kettle'
+    );
+    expect(screen.getByText('Matte Black Electric Kettle')).toBeInTheDocument();
+
+    // Click Reset Draft to wipe saved preview draft
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Draft' }));
+    expect(screen.getByLabelText(/Product URLs textarea/i)).toHaveValue('');
+    expect(screen.queryByText('Matte Black Electric Kettle')).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem('registry_batch_url_draft')).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
@@ -29,6 +30,11 @@ import {
   type InvitationCodeDTO,
 } from '@/features/registry';
 import type { SubEventDTO } from '@/features/sub-events';
+import {
+  PHONE_MAX_LENGTH,
+  normalizeGuestPhone,
+  validateGuestPhone,
+} from '@/utils/invitationValidation';
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
@@ -44,6 +50,7 @@ export default function InvitationCodesDashboardPage() {
     remove,
     removeBatch,
     updateBatch,
+    batchUpdateTags,
     fetchAll,
   } = useAdminInvitationCodes();
 
@@ -66,6 +73,7 @@ export default function InvitationCodesDashboardPage() {
     guestName: '',
     code: '',
     email: '',
+    phone: '',
     plusOneFirstName: '',
     plusOneLastName: '',
     addressLine1: '',
@@ -549,20 +557,7 @@ export default function InvitationCodesDashboardPage() {
     if (selectedIds.length === 0 || !bulkTagInput.trim()) return;
     const tagToProcess = bulkTagInput.trim();
     try {
-      const selectedCodes = codes.filter((c) => selectedIdsSet.has(c.id));
-      await Promise.all(
-        selectedCodes.map((c) => {
-          let currentTags = c.partyTags || [];
-          if (bulkTagAction === 'add') {
-            if (!currentTags.includes(tagToProcess)) {
-              currentTags = [...currentTags, tagToProcess];
-            }
-          } else {
-            currentTags = currentTags.filter((t) => t !== tagToProcess);
-          }
-          return updateBatch([c.id], { partyTags: currentTags } as any);
-        })
-      );
+      await batchUpdateTags(selectedIds, [tagToProcess], bulkTagAction);
       addToast(`Updated tags for ${selectedIds.length} code(s).`, 'success');
       setBulkTagModalOpen(false);
       setBulkTagInput('');
@@ -577,6 +572,12 @@ export default function InvitationCodesDashboardPage() {
       addToast('Guest name is required.', 'error');
       return;
     }
+    const phoneError = validateGuestPhone(newCode.phone);
+    if (phoneError) {
+      addToast(phoneError, 'error');
+      return;
+    }
+    const normalizedPhone = normalizeGuestPhone(newCode.phone);
     try {
       const payload: any = {
         guestName: newCode.guestName.trim(),
@@ -589,6 +590,7 @@ export default function InvitationCodesDashboardPage() {
         used: false,
       };
       if (newCode.email.trim()) payload.email = newCode.email.trim();
+      if (normalizedPhone) payload.extraFields = { phone: normalizedPhone };
       if (newCode.addressLine1.trim()) payload.addressLine1 = newCode.addressLine1.trim();
       if (newCode.addressLine2.trim()) payload.addressLine2 = newCode.addressLine2.trim();
       if (newCode.city.trim()) payload.city = newCode.city.trim();
@@ -601,6 +603,7 @@ export default function InvitationCodesDashboardPage() {
         guestName: '',
         code: '',
         email: '',
+        phone: '',
         plusOneFirstName: '',
         plusOneLastName: '',
         addressLine1: '',
@@ -687,18 +690,33 @@ export default function InvitationCodesDashboardPage() {
             <Button variant="secondary" onClick={handleExportCsv}>Export CSV</Button>
             <Button variant="secondary" onClick={handlePrintGlobalLabels}>Print QR Labels</Button>
             <Button variant="secondary" onClick={() => {
-              setBroadcastModalFilters({
-                partyTags: selectedTagFilter ? [selectedTagFilter] : undefined,
-                householdName: searchQuery || undefined,
-                attendanceStatus: attendanceFilter !== 'all' ? attendanceFilter : undefined,
-              });
+              const nextFilters: Record<string, any> = {};
+              if (searchQuery.trim()) nextFilters.searchQuery = searchQuery.trim();
+              if (statusFilter !== 'all') nextFilters.status = statusFilter;
+              if (addressFilter !== 'all') nextFilters.addressStatus = addressFilter;
+              if (attendanceFilter !== 'all') nextFilters.attendanceStatus = attendanceFilter;
+              if (dietaryFilter !== 'all') nextFilters.dietaryCategory = dietaryFilter;
+              if (partyGroupFilter !== 'all') nextFilters.partyGroup = partyGroupFilter;
+              if (selectedTagFilter) nextFilters.partyTags = [selectedTagFilter];
+
+              setBroadcastModalFilters(
+                Object.keys(nextFilters).length > 0 ? nextFilters : undefined
+              );
               setIsBroadcastModalOpen(true);
             }}>Send Broadcast</Button>
+            <Link
+              href="/admin/dashboard/history?tab=broadcasts"
+              prefetch={false}
+              className="inline-flex items-center justify-center h-10 py-2 px-4 text-sm font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-[var(--btn-secondary-bg,var(--color-secondary,#B45309))] text-[var(--btn-secondary-text,#ffffff)] hover:bg-[var(--btn-secondary-hover-bg,var(--color-secondary,#B45309))] border border-[var(--btn-secondary-border,transparent)]"
+            >
+              Broadcast Delivery Logs
+            </Link>
             <Button onClick={() => {
               setNewCode({
                 guestName: '',
                 code: '',
                 email: '',
+                phone: '',
                 plusOneFirstName: '',
                 plusOneLastName: '',
                 addressLine1: '',
@@ -752,6 +770,16 @@ export default function InvitationCodesDashboardPage() {
                   placeholder="guest@example.com"
                   value={newCode.email}
                   onChange={e => setNewCode({ ...newCode, email: e.target.value })}
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Phone (Optional)</Label>
+                <Input
+                  type="tel"
+                  maxLength={PHONE_MAX_LENGTH}
+                  placeholder="e.g. +15551234567"
+                  value={newCode.phone}
+                  onChange={e => setNewCode({ ...newCode, phone: e.target.value })}
                 />
               </FormGroup>
               <FormGroup>
@@ -1598,7 +1626,20 @@ export default function InvitationCodesDashboardPage() {
           onClose={() => setIsBroadcastModalOpen(false)}
           targetFilters={broadcastModalFilters}
           selectedCount={broadcastModalFilters?.selectedIds?.length}
+          guests={codes}
+          initialRecipientCount={
+            broadcastModalFilters?.selectedIds
+              ? broadcastModalFilters.selectedIds.length
+              : filteredCodes.filter(
+                (c) =>
+                  !Array.isArray(c.partyTags) ||
+                  !c.partyTags.some(
+                    (t) => typeof t === 'string' && t.trim().toLowerCase() === 'address-collection'
+                  )
+              ).length
+          }
           subEvents={subEvents}
+          onViewDeliveryLogs={() => router.push('/admin/dashboard/history?tab=broadcasts')}
         />
 
         <InvitationQRPreviewModal

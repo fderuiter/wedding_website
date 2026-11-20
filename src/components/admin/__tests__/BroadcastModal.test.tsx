@@ -1,5 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { BroadcastModal } from '../BroadcastModal';
+
+expect.extend(toHaveNoViolations);
 
 const mockAddToast = jest.fn();
 jest.mock('@/components/ui/ToastProvider', () => ({
@@ -11,12 +14,14 @@ jest.mock('@/components/ui/ToastProvider', () => ({
 const mockSendBroadcast = jest.fn();
 const mockPreviewBroadcast = jest.fn();
 const mockSendTestBroadcast = jest.fn();
+let mockCountRecipients: jest.Mock | undefined = undefined;
 
 jest.mock('@/hooks/admin/useAdminBroadcast', () => ({
   useAdminBroadcast: () => ({
     sendBroadcast: mockSendBroadcast,
     previewBroadcast: mockPreviewBroadcast,
     sendTestBroadcast: mockSendTestBroadcast,
+    ...(mockCountRecipients ? { countRecipients: mockCountRecipients } : {}),
     sending: false,
     previewing: false,
     sendingTest: false,
@@ -31,6 +36,7 @@ describe('BroadcastModal Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCountRecipients = undefined;
   });
 
   it('renders modal title and form elements when open', () => {
@@ -253,5 +259,322 @@ describe('BroadcastModal Component', () => {
       );
       expect(defaultProps.onClose).not.toHaveBeenCalled();
     });
+  });
+
+  it('fills subject and body with {{guestName}} and {{rsvpUrl}} when a starter template is clicked and adapts body when switching channel', () => {
+    render(<BroadcastModal {...defaultProps} />);
+
+    const rsvpReminderBtn = screen.getByRole('button', { name: 'RSVP Reminder' });
+    fireEvent.click(rsvpReminderBtn);
+    expect(rsvpReminderBtn).toHaveAttribute('aria-pressed', 'true');
+
+    const subjectInput = screen.getByLabelText('Subject') as HTMLInputElement;
+    const bodyInput = screen.getByLabelText('Message Body') as HTMLTextAreaElement;
+
+    expect(subjectInput.value).toContain('RSVP Reminder');
+    expect(bodyInput.value).toContain('{{guestName}}');
+    expect(bodyInput.value).toContain('{{rsvpUrl}}');
+
+    // Switching channel from EMAIL to SMS swaps the unmodified starter template body
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'SMS' } });
+    expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{guestName}}');
+    expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{rsvpUrl}}');
+
+    // Test the other three starter templates
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'EMAIL' } });
+    for (const label of ['Final RSVP Call', 'Sub-Event Update', 'Mailing Address Request']) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      expect((screen.getByLabelText('Subject') as HTMLInputElement).value.length).toBeGreaterThan(0);
+      expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{guestName}}');
+      expect((screen.getByLabelText('Message Body') as HTMLTextAreaElement).value).toContain('{{rsvpUrl}}');
+    }
+  });
+
+  it('renders interactive audience controls when manual selection is off, updates live recipient count, and forwards updated filters on send', async () => {
+    mockCountRecipients = jest
+      .fn()
+      .mockResolvedValue({ recipientCount: 2 })
+      .mockResolvedValueOnce({ recipientCount: 12 })
+      .mockResolvedValueOnce({ recipientCount: 5 });
+    mockSendBroadcast.mockResolvedValueOnce({
+      status: 'COMPLETED',
+      sentCount: 2,
+      failedCount: 0,
+    });
+
+    const subEvents = [
+      { id: 'sub-rehearsal', title: 'Rehearsal Dinner', isPrivate: true },
+      { id: 'sub-brunch', title: 'Farewell Brunch', isPrivate: false },
+    ];
+
+    render(<BroadcastModal {...defaultProps} subEvents={subEvents} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('12 matching recipients');
+    });
+
+    // Sub-Event RSVP Status is disabled until a Sub-Event is chosen
+    const subEventStatusSelect = screen.getByLabelText('Sub-Event RSVP Status') as HTMLSelectElement;
+    expect(subEventStatusSelect).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('RSVP Status'), { target: { value: 'pending' } });
+    await waitFor(() => {
+      expect(mockCountRecipients).toHaveBeenLastCalledWith({ attendanceStatus: 'pending' });
+      expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('5 matching recipients');
+    });
+
+    fireEvent.change(screen.getByLabelText('Address Completion'), { target: { value: 'missing' } });
+    fireEvent.change(screen.getByLabelText('Sub-Event'), { target: { value: 'sub-rehearsal' } });
+    expect(subEventStatusSelect).not.toBeDisabled();
+    fireEvent.change(subEventStatusSelect, { target: { value: 'pending' } });
+
+    await waitFor(() => {
+      expect(mockCountRecipients).toHaveBeenLastCalledWith({
+        attendanceStatus: 'pending',
+        addressStatus: 'missing',
+        subEventId: 'sub-rehearsal',
+        subEventRsvpStatus: 'pending',
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'RSVP Reminder' }));
+    fireEvent.click(screen.getByRole('button', { name: /Send Email/i }));
+
+    await waitFor(() => {
+      expect(mockSendBroadcast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: 'EMAIL',
+          targetFilters: {
+            attendanceStatus: 'pending',
+            addressStatus: 'missing',
+            subEventId: 'sub-rehearsal',
+            subEventRsvpStatus: 'pending',
+          },
+        })
+      );
+    });
+  });
+
+  it('hides interactive audience filter dropdowns when manual selection is active and disables send when recipient count is zero', async () => {
+    const { rerender } = render(
+      <BroadcastModal
+        {...defaultProps}
+        selectedCount={3}
+        targetFilters={{ selectedIds: ['g1', 'g2', 'g3'] }}
+      />
+    );
+
+    expect(screen.queryByLabelText('RSVP Status')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Address Completion')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Sub-Event')).not.toBeInTheDocument();
+    expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('3 matching recipients');
+
+    mockCountRecipients = jest.fn().mockResolvedValue({
+      recipientCount: 0,
+      baseUrlWarning: 'AppConfig.baseUrl is not configured; falling back to https://wedding.example.com',
+    });
+
+    rerender(<BroadcastModal {...defaultProps} initialRecipientCount={0} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('broadcast-recipient-count')).toHaveTextContent('0 matching recipients');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'RSVP Reminder' }));
+    expect(screen.getByTestId('broadcast-baseurl-warning')).toHaveTextContent(/AppConfig\.baseUrl is not configured/i);
+    expect(screen.getByRole('button', { name: /Send Email/i })).toBeDisabled();
+  });
+
+  it('passes jest-axe accessibility checks with interactive controls and starter templates', async () => {
+    const { container } = render(
+      <BroadcastModal
+        {...defaultProps}
+        initialRecipientCount={4}
+        subEvents={[{ id: 'sub-1', title: 'Welcome Drinks', isPrivate: false }]}
+      />
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('supports SegmentedTabs ArrowRight, ArrowLeft, Home, and End keyboard navigation and passes jest-axe', async () => {
+    const { baseElement } = render(<BroadcastModal {...defaultProps} />);
+
+    const composeTab = screen.getByRole('tab', { name: /Compose Message/i });
+    const previewTab = screen.getByRole('tab', { name: /Live Preview/i });
+
+    expect(composeTab).toHaveAttribute('tabIndex', '0');
+    expect(previewTab).toHaveAttribute('tabIndex', '-1');
+
+    composeTab.focus();
+    fireEvent.keyDown(composeTab, { key: 'ArrowRight' });
+    expect(previewTab).toHaveFocus();
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+    expect(previewTab).toHaveAttribute('tabIndex', '0');
+
+    fireEvent.keyDown(previewTab, { key: 'ArrowLeft' });
+    expect(composeTab).toHaveFocus();
+    expect(composeTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(composeTab, { key: 'End' });
+    expect(previewTab).toHaveFocus();
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(previewTab, { key: 'Home' });
+    expect(composeTab).toHaveFocus();
+    expect(composeTab).toHaveAttribute('aria-selected', 'true');
+
+    expect(await axe(baseElement)).toHaveNoViolations();
+  });
+
+  it('auto-renders unescaped preview on tab switch, re-renders when stale, and supports manual Refresh Preview', async () => {
+    mockPreviewBroadcast
+      .mockResolvedValueOnce({
+        subject: "Update for Sean O'Connor & Family",
+        body: "Hi Sean O'Connor & Family, we can't wait!",
+        sampleGuestName: "Sean O'Connor",
+        destination: 'sean@example.com',
+      })
+      .mockResolvedValueOnce({
+        subject: "Update for Sean O'Connor & Family",
+        body: "Revised: St. Mary's & Main Hall at 5 PM!",
+        sampleGuestName: "Sean O'Connor",
+        destination: 'sean@example.com',
+      })
+      .mockResolvedValueOnce({
+        subject: "Update for Sean O'Connor & Family",
+        body: "Refreshed: St. Mary's & Main Hall at 5 PM!",
+        sampleGuestName: "Sean O'Connor",
+        destination: 'sean@example.com',
+      });
+
+    const { baseElement } = render(<BroadcastModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText('Subject'), {
+      target: { value: 'Update for {{householdName}}' },
+    });
+    fireEvent.change(screen.getByLabelText('Message Body'), {
+      target: { value: "Hi {{householdName}}, we can't wait!" },
+    });
+
+    // Switching to Live Preview tab automatically triggers previewBroadcast
+    fireEvent.click(screen.getByRole('tab', { name: /Live Preview/i }));
+
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Hi Sean O'Connor & Family, we can't wait!")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/&#39;|&amp;/)).not.toBeInTheDocument();
+    expect(await axe(baseElement)).toHaveNoViolations();
+
+    // Switch back to Compose, edit message body (making preview stale), and switch to Live Preview again
+    fireEvent.click(screen.getByRole('tab', { name: /Compose Message/i }));
+    fireEvent.change(screen.getByLabelText('Message Body'), {
+      target: { value: "Revised: St. Mary's & Main Hall at 5 PM!" },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /Live Preview/i }));
+
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Revised: St. Mary's & Main Hall at 5 PM!")).toBeInTheDocument();
+    });
+
+    // Manual Refresh Preview control triggers fresh preview even without further edits
+    fireEvent.click(screen.getByRole('button', { name: /Refresh Preview/i }));
+    await waitFor(() => {
+      expect(mockPreviewBroadcast).toHaveBeenCalledTimes(3);
+      expect(screen.getByText("Refreshed: St. Mary's & Main Hall at 5 PM!")).toBeInTheDocument();
+    });
+  });
+
+  it('shows live matched and missing-contact counts per channel and attaches View Delivery Logs toast action on send', async () => {
+    const onViewDeliveryLogs = jest.fn();
+    mockSendBroadcast.mockResolvedValueOnce({
+      status: 'PARTIALLY_SENT',
+      sentCount: 1,
+      failedCount: 1,
+    });
+
+    const sampleGuests = [
+      {
+        id: 'g1',
+        guestName: 'Alice EmailOnly',
+        email: 'alice@example.com',
+        used: false,
+        partyGroup: 'Bride',
+        extraFields: { attendanceStatus: 'pending' },
+      },
+      {
+        id: 'g2',
+        guestName: 'Bob PhoneOnly',
+        email: null,
+        used: false,
+        partyGroup: 'Bride',
+        extraFields: { attendanceStatus: 'pending', phone: '+15551234567' },
+      },
+      {
+        id: 'g3',
+        guestName: 'Charlie GroomGroup',
+        email: 'charlie@example.com',
+        used: false,
+        partyGroup: 'Groom',
+        extraFields: { attendanceStatus: 'pending', phone: '+15559876543' },
+      },
+      {
+        id: 'g-public',
+        guestName: 'Public Collector',
+        email: 'pub@example.com',
+        used: false,
+        partyGroup: 'Bride',
+        partyTags: ['address-collection'],
+        extraFields: { attendanceStatus: 'pending' },
+      },
+    ];
+
+    render(
+      <BroadcastModal
+        {...defaultProps}
+        guests={sampleGuests}
+        targetFilters={{ partyGroup: 'Bride', attendanceStatus: 'pending' }}
+        onViewDeliveryLogs={onViewDeliveryLogs}
+      />
+    );
+
+    // EMAIL channel: 2 matched guests (g1, g2; g-public excluded), 1 missing email (g2)
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('2 matched guests');
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('1 missing email');
+
+    // Switch channel to SMS: 2 matched guests, 1 missing phone (g1)
+    fireEvent.change(screen.getByLabelText('Channel'), { target: { value: 'SMS' } });
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('2 matched guests');
+    expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('1 missing phone');
+
+    // Dispatch SMS and verify toast includes View Delivery Logs action
+    fireEvent.change(screen.getByLabelText('Message Body'), {
+      target: { value: 'Shuttle leaves in 10 minutes!' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send SMS' }));
+
+    await waitFor(() => {
+      expect(mockSendBroadcast).toHaveBeenCalledWith({
+        channel: 'SMS',
+        subject: undefined,
+        body: 'Shuttle leaves in 10 minutes!',
+        targetFilters: { partyGroup: 'Bride', attendanceStatus: 'pending' },
+        scheduledFor: undefined,
+      });
+      expect(mockAddToast).toHaveBeenCalledWith(
+        expect.stringContaining('Broadcast dispatched!'),
+        'info',
+        undefined,
+        undefined,
+        expect.objectContaining({ label: 'View Delivery Logs' })
+      );
+    });
+
+    const toastAction = mockAddToast.mock.calls[0][4];
+    toastAction.onClick();
+    expect(onViewDeliveryLogs).toHaveBeenCalledTimes(1);
   });
 });

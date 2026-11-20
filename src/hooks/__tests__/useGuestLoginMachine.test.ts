@@ -5,6 +5,7 @@ import {
   initialGuestLoginMachineState,
   isAbortError,
   getSafeCallbackUrl,
+  stripCodeFromCallbackUrl,
   selectIsLoading,
   selectIsBusy,
   selectIsLoginDisabled,
@@ -115,6 +116,14 @@ describe('Selectors and Helper Utilities', () => {
     expect(getSafeCallbackUrl('//malicious.com')).toBe('/');
     expect(getSafeCallbackUrl('/\\malicious.com')).toBe('/');
     expect(getSafeCallbackUrl('https://malicious.com')).toBe('/');
+  });
+
+  it('strips code query parameters from callbackUrl while preserving other query parameters and hashes', () => {
+    expect(stripCodeFromCallbackUrl('/guest?code=ALICE2026')).toBe('/guest');
+    expect(stripCodeFromCallbackUrl('/guest?tab=rsvp&code=ALICE2026&view=full#details')).toBe(
+      '/guest?tab=rsvp&view=full#details'
+    );
+    expect(stripCodeFromCallbackUrl('/rsvp')).toBe('/rsvp');
   });
 
   it('identifies AbortError objects correctly', () => {
@@ -329,5 +338,44 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
       result.current.setShowHelp(true);
     });
     expect(result.current.showHelp).toBe(true);
+  });
+
+  it('prefills and auto-submits a code query parameter on mount, strips code from history and callbackUrl on success', async () => {
+    window.history.pushState({}, '', '/guest/login?callbackUrl=%2Fguest%3Fcode%3DALICE2026&code=ALICE2026');
+    const replaceStateSpy = jest.spyOn(window.history, 'replaceState');
+
+    mockGetParam.mockImplementation((key: string) => {
+      if (key === 'code') return 'ALICE2026';
+      if (key === 'callbackUrl') return '/guest?code=ALICE2026';
+      return null;
+    });
+
+    const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    const { result } = renderHook(() => useGuestLoginMachine());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/guest/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: 'ALICE2026' }),
+      signal: expect.any(AbortSignal),
+    });
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(replaceStateSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      '',
+      '/guest/login?callbackUrl=%2Fguest%3Fcode%3DALICE2026'
+    );
+    expect(mockPush).toHaveBeenCalledWith('/guest');
   });
 });

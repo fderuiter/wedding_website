@@ -650,15 +650,24 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         });
         if (!res.ok) throw new Error('Failed to update table position');
         return true;
-      } catch {
+      } catch (err: unknown) {
         dispatch({
           type: 'REVERT_TABLE_POSITION',
           payload: { tableId, x: prevX, y: prevY },
         });
+        const message =
+          err &&
+          typeof err === 'object' &&
+          'message' in err &&
+          typeof (err as { message: unknown }).message === 'string' &&
+          (err as { message: string }).message
+            ? (err as { message: string }).message
+            : 'Error updating table position';
+        toast?.addToast(message, 'error');
         return false;
       }
     },
-    [state.tables]
+    [state.tables, toast]
   );
 
   const updateTableRotation = useCallback(
@@ -679,15 +688,24 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         });
         if (!res.ok) throw new Error('Failed to update table rotation');
         return true;
-      } catch {
+      } catch (err: unknown) {
         dispatch({
           type: 'REVERT_TABLE_ROTATION',
           payload: { tableId, rotation: prevRotation },
         });
+        const message =
+          err &&
+          typeof err === 'object' &&
+          'message' in err &&
+          typeof (err as { message: unknown }).message === 'string' &&
+          (err as { message: string }).message
+            ? (err as { message: string }).message
+            : 'Error updating table rotation';
+        toast?.addToast(message, 'error');
         return false;
       }
     },
-    [state.tables]
+    [state.tables, toast]
   );
 
   return {

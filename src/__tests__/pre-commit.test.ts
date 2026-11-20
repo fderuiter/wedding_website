@@ -193,4 +193,90 @@ process.exit(0);
     expect(status).toContain(' M notes.txt');
     expect(status).toContain(' M ARCHITECTURE.md');
   });
+
+  it('accepts staged synchronized documentation updates and cleanly restores stashed unstaged edits', () => {
+    // Update schema and stage synchronized regenerated documentation files
+    fs.writeFileSync(path.join(tempDir, 'schema.json'), JSON.stringify({ version: '2.0.0' }) + '\n');
+    fs.writeFileSync(
+      path.join(tempDir, 'public', 'openapi.json'),
+      JSON.stringify({ openapi: '3.0.3', version: '2.0.0' }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'ARCHITECTURE.md'),
+      '# Architecture\n\nSchema version: 2.0.0\n'
+    );
+    execSync('git add schema.json public/openapi.json ARCHITECTURE.md', {
+      cwd: tempDir,
+      stdio: 'ignore',
+    });
+
+    // Leave unstaged work-in-progress changes that should be stashed and restored
+    fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'unstaged work during doc sync commit\n');
+
+    const result = runPreCommit();
+    const combinedOutput = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Stashing unstaged changes...');
+    expect(result.stdout).toContain('Running Documentation synchronization check...');
+    expect(result.stdout).toContain('Restoring unstaged changes...');
+    expect(result.stdout).toContain('All pre-commit checks passed.');
+    expect(combinedOutput).not.toContain('Failed to restore unstaged changes from stash');
+
+    expect(fs.readFileSync(path.join(tempDir, 'notes.txt'), 'utf-8')).toBe(
+      'unstaged work during doc sync commit\n'
+    );
+
+    const stashList = execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim();
+    expect(stashList).toBe('');
+
+    const status = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+    expect(status).toContain('M  schema.json');
+    expect(status).toContain('M  public/openapi.json');
+    expect(status).toContain('M  ARCHITECTURE.md');
+    expect(status).toContain(' M notes.txt');
+  });
+
+  it('rejects commit when staged documentation files contain stale content', () => {
+    // Stage schema update to 2.0.0 alongside stale 1.5.0 documentation files
+    fs.writeFileSync(path.join(tempDir, 'schema.json'), JSON.stringify({ version: '2.0.0' }) + '\n');
+    fs.writeFileSync(
+      path.join(tempDir, 'public', 'openapi.json'),
+      JSON.stringify({ openapi: '3.0.3', version: '1.5.0' }, null, 2) + '\n'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'ARCHITECTURE.md'),
+      '# Architecture\n\nSchema version: 1.5.0\n'
+    );
+    execSync('git add schema.json public/openapi.json ARCHITECTURE.md', {
+      cwd: tempDir,
+      stdio: 'ignore',
+    });
+
+    // Also include an unstaged edit to ensure stash restoration remains clean
+    fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'unstaged edit with stale staged docs\n');
+
+    const result = runPreCommit();
+    const combinedOutput = `${result.stdout}\n${result.stderr}`;
+
+    expect(result.status).not.toBe(0);
+    expect(combinedOutput).toContain('Documentation Drift Detected!');
+    expect(combinedOutput).toContain('public/openapi.json');
+    expect(combinedOutput).toContain('ARCHITECTURE.md');
+    expect(combinedOutput).toContain('Pre-commit check failed: Documentation synchronization check failed.');
+    expect(combinedOutput).not.toContain('Failed to restore unstaged changes from stash');
+
+    expect(fs.readFileSync(path.join(tempDir, 'notes.txt'), 'utf-8')).toBe(
+      'unstaged edit with stale staged docs\n'
+    );
+
+    const stashList = execSync('git stash list', { cwd: tempDir, encoding: 'utf-8' }).trim();
+    expect(stashList).toBe('');
+
+    const status = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf-8' });
+    expect(status).toContain('M  schema.json');
+    expect(status).toContain('M  public/openapi.json');
+    expect(status).toContain('M  ARCHITECTURE.md');
+    expect(status).toContain(' M notes.txt');
+  });
 });

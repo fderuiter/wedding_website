@@ -386,6 +386,16 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         }
 
         // Validate code succeeded, now retrieve full address details
+        if (typeof window !== 'undefined' && typeof window.history?.replaceState === 'function') {
+          const params = new URLSearchParams(window.location.search);
+          if (params.has('code')) {
+            params.delete('code');
+            const nextQuery = params.toString();
+            const cleanUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash || ''}`;
+            window.history.replaceState(window.history.state, '', cleanUrl);
+          }
+        }
+
         const addrResult = await fetchAddressData(signal);
         if (signal.aborted) return;
 

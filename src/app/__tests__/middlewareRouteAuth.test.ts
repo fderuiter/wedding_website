@@ -258,5 +258,35 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       expect(publicImgRes.status).toBe(200);
       expect(publicImgRes.headers.get('location')).toBeNull();
     });
+
+    it('allows unauthenticated POST /api/registry/webhook/stripe without cookies while blocking non-POST methods', async () => {
+      const postWebhookReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: {
+          host: 'localhost:3000',
+          'stripe-signature': 't=12345,v1=test_sig',
+        },
+      });
+      const postWebhookRes = await middleware(postWebhookReq);
+      expect(postWebhookRes.status).toBe(200);
+      expect(postWebhookRes.headers.get('location')).toBeNull();
+
+      const trailingSlashPostReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe/', {
+        method: 'POST',
+        headers: {
+          host: 'localhost:3000',
+          'stripe-signature': 't=12345,v1=test_sig',
+        },
+      });
+      const trailingSlashPostRes = await middleware(trailingSlashPostReq);
+      expect(trailingSlashPostRes.status).toBe(200);
+
+      const getWebhookReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'GET',
+        headers: { host: 'localhost:3000' },
+      });
+      const getWebhookRes = await middleware(getWebhookReq);
+      expect(getWebhookRes.status).toBe(401);
+    });
   });
 });

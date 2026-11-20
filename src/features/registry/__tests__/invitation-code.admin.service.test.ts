@@ -635,4 +635,119 @@ describe('InvitationCodeAdminService', () => {
       expect(mockPrismaClient.invitationCode.updateMany).not.toHaveBeenCalled();
     });
   });
+
+  describe('batchUpdateTags', () => {
+    beforeEach(() => {
+      mockPrismaClient.$transaction = jest.fn(
+        (cb: (_tx: typeof mockPrismaClient) => unknown) => cb(mockPrismaClient)
+      );
+      mockPrismaClient.$executeRaw = jest.fn().mockResolvedValue(120);
+    });
+
+    it('updates 120 guests in a single executeRaw UPDATE ... FROM (VALUES ...) query and records batch snapshots', async () => {
+      const dbRecords = Array.from({ length: 120 }, (_, i) => ({
+        id: `inv-${i + 1}`,
+        code: `CODE${i + 1}`,
+        guestName: `Guest ${i + 1}`,
+        partyTags: i % 2 === 0 ? ['Existing', ' VIP '] : [],
+        used: false,
+      }));
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue(dbRecords);
+
+      const inputIds = [
+        ...dbRecords.map((r) => r.id),
+        'inv-1',
+        '  inv-2  ',
+      ];
+
+      const updated = await service.batchUpdateTags(
+        inputIds,
+        ['  VIP  ', 'Wedding Party', '', 'VIP'],
+        'add',
+        'TestAdmin'
+      );
+
+      expect(updated).toHaveLength(120);
+      expect(updated[0].partyTags).toEqual(['Existing', 'VIP', 'Wedding Party']);
+      expect(updated[1].partyTags).toEqual(['VIP', 'Wedding Party']);
+
+      expect(mockPrismaClient.invitationCode.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.invitationCode.findMany).toHaveBeenCalledWith({
+        where: { id: { in: dbRecords.map((r) => r.id) } },
+      });
+
+      expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(mockPrismaClient.invitationCode.update).not.toHaveBeenCalled();
+
+      const sqlArg = mockPrismaClient.$executeRaw.mock.calls[0][0];
+      const sqlText = Array.isArray(sqlArg?.strings) ? sqlArg.strings.join('?') : String(sqlArg);
+      expect(sqlText).toContain('UPDATE "InvitationCode" AS t');
+      expect(sqlText).toContain('FROM (VALUES');
+
+      expect(mockPrismaClient.snapshotVersion.createMany).toHaveBeenCalledTimes(1);
+      const snapshotData = mockPrismaClient.snapshotVersion.createMany.mock.calls[0][0].data;
+      expect(snapshotData).toHaveLength(120);
+      expect(snapshotData[0]).toMatchObject({
+        entityType: 'InvitationCode',
+        entityId: 'inv-1',
+        author: 'TestAdmin',
+      });
+      expect(mockPrismaClient.snapshotVersion.create).not.toHaveBeenCalled();
+    });
+
+    it('supports remove and replace actions including clearing all tags on replace', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: 'inv-1', code: 'C1', guestName: 'G1', partyTags: ['VIP', 'Family', 'Friends'] },
+        { id: 'inv-2', code: 'C2', guestName: 'G2', partyTags: ['Friends'] },
+      ]);
+
+      const afterRemove = await service.batchUpdateTags(
+        ['inv-1', 'inv-2'],
+        [' Friends ', ''],
+        'remove'
+      );
+      expect(afterRemove[0].partyTags).toEqual(['VIP', 'Family']);
+      expect(afterRemove[1].partyTags).toEqual([]);
+
+      const afterClear = await service.batchUpdateTags(['inv-1', 'inv-2'], ['   '], 'replace');
+      expect(afterClear[0].partyTags).toEqual([]);
+      expect(afterClear[1].partyTags).toEqual([]);
+    });
+
+    it('skips executeRaw and createBatchSnapshots when zero rows match ids', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([]);
+
+      const result = await service.batchUpdateTags(['missing-1', 'missing-2'], ['VIP'], 'add');
+
+      expect(result).toEqual([]);
+      expect(mockPrismaClient.$executeRaw).not.toHaveBeenCalled();
+      expect(mockPrismaClient.snapshotVersion.createMany).not.toHaveBeenCalled();
+      expect(mockPrismaClient.snapshotVersion.create).not.toHaveBeenCalled();
+    });
+
+    it('validates ids and rejects empty normalized tags on add or remove', async () => {
+      await expect(service.batchUpdateTags([], ['VIP'], 'add')).rejects.toThrow(
+        'Validation Error: IDs array cannot be empty.'
+      );
+
+      const tooManyIds = Array.from({ length: 5001 }, (_, i) => `inv-${i}`);
+      await expect(service.batchUpdateTags(tooManyIds, ['VIP'], 'add')).rejects.toThrow(
+        'Validation Error: Maximum of 5000 invitation code IDs allowed per batch request.'
+      );
+
+      await expect(service.batchUpdateTags(['inv-1', '   '], ['VIP'], 'add')).rejects.toThrow(
+        'Validation Error: Invalid ID in array.'
+      );
+
+      await expect(service.batchUpdateTags(['inv-1'], ['   ', ''], 'add')).rejects.toThrow(
+        'Validation Error: At least one non-empty tag is required when adding or removing tags.'
+      );
+
+      await expect(service.batchUpdateTags(['inv-1'], [], 'remove')).rejects.toThrow(
+        'Validation Error: At least one non-empty tag is required when adding or removing tags.'
+      );
+
+      expect(mockPrismaClient.$executeRaw).not.toHaveBeenCalled();
+    });
+  });
 });

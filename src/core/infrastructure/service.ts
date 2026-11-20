@@ -1,7 +1,7 @@
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { BaseRepository } from './repository';
 import { z } from 'zod';
-import { formatZodError } from '@/utils/validation';
+import { formatZodError } from '@/utils/validationPrimitives';
 
 export class BaseService<T extends { id: string }> {
   protected defaultQueryArgs?: any;

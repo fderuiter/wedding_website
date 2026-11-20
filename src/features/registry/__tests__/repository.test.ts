@@ -774,5 +774,84 @@ describe('RegistryRepository', () => {
         },
       });
     });
+
+    it('rejects cross-item stripePaymentIntentId reuse and keeps same-item retries idempotent including on P2002 races', async () => {
+      const existingSameItem = {
+        id: 'contrib-1',
+        registryItemId: '1',
+        stripePaymentIntentId: 'pi_same_1',
+      };
+      const txSame = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue(existingSameItem),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 50 }),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txSame));
+
+      const sameRes = await registryRepository.contributeToItem('1', {
+        name: 'Retry Guest',
+        amount: 50,
+        stripePaymentIntentId: 'pi_same_1',
+      });
+      expect(sameRes.amountContributed).toBe(50);
+      expect(txSame.registryItem.update).not.toHaveBeenCalled();
+
+      // Cross-item reuse inside transaction
+      const txDiff = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue(existingSameItem),
+        },
+        registryItem: {
+          findUnique: jest.fn(),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txDiff));
+
+      await expect(
+        registryRepository.contributeToItem('other-item-2', {
+          name: 'Cross Item Attacker',
+          amount: 50,
+          stripePaymentIntentId: 'pi_same_1',
+        })
+      ).rejects.toThrow('Stripe PaymentIntent has already been used for another registry item.');
+
+      // Concurrent P2002 race outside aborted transaction: same item stays idempotent
+      const p2002Error = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      const mockFindFirst = jest.fn().mockResolvedValue(existingSameItem);
+      (prisma.$transaction as jest.Mock).mockRejectedValueOnce(p2002Error);
+      (prisma as unknown as { contributor: { findFirst: jest.Mock } }).contributor = {
+        findFirst: mockFindFirst,
+      };
+      (prisma.registryItem.findUnique as jest.Mock).mockResolvedValueOnce({
+        ...mockRegistryItem,
+        amountContributed: 50,
+      });
+
+      const raceIdempotent = await registryRepository.contributeToItem('1', {
+        name: 'Concurrent Webhook',
+        amount: 50,
+        stripePaymentIntentId: 'pi_same_1',
+      });
+      expect(raceIdempotent.amountContributed).toBe(50);
+
+      // Concurrent P2002 race for a different item throws ApiError(400)
+      (prisma.$transaction as jest.Mock).mockRejectedValueOnce(p2002Error);
+      mockFindFirst.mockResolvedValueOnce(existingSameItem);
+
+      await expect(
+        registryRepository.contributeToItem('other-item-2', {
+          name: 'Concurrent Cross Item',
+          amount: 50,
+          stripePaymentIntentId: 'pi_same_1',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+      });
+    });
   });
 });

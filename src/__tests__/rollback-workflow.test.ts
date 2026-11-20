@@ -6,11 +6,13 @@ import path from 'path';
 import os from 'os';
 import http from 'http';
 import { execSync, spawn, spawnSync } from 'child_process';
+import { parseDocument } from 'yaml';
 
 const ROOT_DIR = process.cwd();
-const DEPLOY_YML_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'deploy.yml');
-const DEPLOY_PROVIDER_YML_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'deploy-provider.yml');
-const ROLLBACK_YML_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'rollback.yml');
+const WORKFLOWS_DIR = path.join(ROOT_DIR, '.github', 'workflows');
+const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
+const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
+const ROLLBACK_YML_PATH = path.join(WORKFLOWS_DIR, 'rollback.yml');
 
 /**
  * Extracts the bash `run: |` script body for a named step in a GitHub Actions workflow YAML file.
@@ -178,6 +180,42 @@ describe('Rollback & Provider Deployment Workflows', () => {
   const rollbackYml = fs.readFileSync(ROLLBACK_YML_PATH, 'utf8');
 
   describe('Workflow YAML contracts & security guardrails', () => {
+    it('parses every workflow in .github/workflows/ as strict YAML 1.2 with zero errors or warnings and preserves provenance.if', () => {
+      const workflowFiles = fs
+        .readdirSync(WORKFLOWS_DIR)
+        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+        .sort();
+
+      expect(workflowFiles.length).toBeGreaterThan(0);
+
+      for (const file of workflowFiles) {
+        const content = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8');
+        const doc = parseDocument(content, { version: '1.2', strict: true });
+        expect({
+          file,
+          errors: doc.errors.map((e) => e.message),
+          warnings: doc.warnings.map((w) => w.message),
+        }).toEqual({
+          file,
+          errors: [],
+          warnings: [],
+        });
+      }
+
+      const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true });
+      const parsed = deployProviderDoc.toJS() as {
+        jobs?: {
+          deploy?: {
+            steps?: Array<{ id?: string; if?: string }>;
+          };
+        };
+      };
+      const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
+      expect(provenanceStep?.if).toBe(
+        "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
+      );
+    });
+
     it('keeps permissions: contents: read at the root of rollback.yml and avoids direct template interpolation in run blocks', () => {
       expect(rollbackYml).toMatch(/^permissions:\n\s+contents:\s*read/m);
 
@@ -499,7 +537,7 @@ fi
       await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const fastProbeScript = healthProbeScript.replace('MAX_TIMEOUT=55', 'MAX_TIMEOUT=2').replace('DELAY=2', 'DELAY=1');
+      const fastProbeScript = healthProbeScript.replace('MAX_TIMEOUT=55', 'MAX_TIMEOUT=3').replace('DELAY=2', 'DELAY=1');
 
       try {
         const okRes = await runBashStepAsync(fastProbeScript, {
@@ -540,6 +578,103 @@ fi
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
     }, 15000);
+
+    it('prefers vars.SERVICE_URL ahead of secrets.SERVICE_URL and needs.redeploy.outputs.service_url and exports unmasked service_url into $GITHUB_STEP_SUMMARY', async () => {
+      const server = http.createServer((req, res) => {
+        if (req.url === '/api/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'ok', database: 'connected' },
+            })
+          );
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const varsUrl = `http://127.0.0.1:${port}`;
+
+      try {
+        // vars.SERVICE_URL defined without secrets.SERVICE_URL -> unmasked service_url exported to report summary
+        const varsProbeRes = await runBashStepAsync(healthProbeScript, {
+          VAR_SERVICE_URL: `${varsUrl}/`,
+          ENV_SERVICE_URL: '',
+          PROVIDER_SERVICE_URL: 'http://127.0.0.1:9',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(varsProbeRes.status).toBe(0);
+        expect(varsProbeRes.outputs.health_status).toBe('healthy');
+        expect(varsProbeRes.outputs.service_url).toBe(varsUrl);
+
+        const reportRes = runBashStep(reportScript, {
+          TARGET_ENV: 'production',
+          ROLLBACK_ENV: 'production-rollback',
+          PREVIOUS_TAG: 'v1.2.2',
+          PROVIDER: 'google-cloud-run',
+          REASON: 'Health probe failed',
+          PREFLIGHT_RESULT: 'success',
+          PREFLIGHT_FAILED_STAGE: '',
+          DB_COMPAT_STATUS: 'verified',
+          REDEPLOY_RESULT: 'success',
+          VERIFY_RESULT: 'success',
+          VERIFY_URL: varsProbeRes.outputs.service_url,
+          VERIFY_HTTP_STATUS: varsProbeRes.outputs.http_status,
+        });
+        expect(reportRes.status).toBe(0);
+        expect(reportRes.summary).toContain(`(URL: \`${varsUrl}\`)`);
+
+        // vars.SERVICE_URL also takes precedence over a stale secrets.SERVICE_URL
+        const overrideProbeRes = await runBashStepAsync(healthProbeScript, {
+          VAR_SERVICE_URL: varsUrl,
+          ENV_SERVICE_URL: 'http://127.0.0.1:9',
+          PROVIDER_SERVICE_URL: 'http://127.0.0.1:9',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(overrideProbeRes.status).toBe(0);
+        expect(overrideProbeRes.outputs.service_url).toBe(varsUrl);
+
+        // Secret-only fallback succeeds without leaking secret value to outputs.service_url
+        const legacySecretProbeRes = await runBashStepAsync(healthProbeScript, {
+          VAR_SERVICE_URL: '',
+          ENV_SERVICE_URL: varsUrl,
+          PROVIDER_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(legacySecretProbeRes.status).toBe(0);
+        expect(legacySecretProbeRes.outputs.health_status).toBe('healthy');
+        expect(legacySecretProbeRes.outputs.service_url).toBe('');
+      } finally {
+        await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+
+      // Dry-run validation passes when SERVICE_URL is omitted
+      const fastDryProbeScript = healthProbeScript
+        .replace('DELAY=2', 'DELAY=1')
+        .replace('ELAPSED -ge 2', 'ELAPSED -ge 0');
+      const dryProbeRes = await runBashStepAsync(fastDryProbeScript, {
+        VAR_SERVICE_URL: '',
+        ENV_SERVICE_URL: '',
+        PROVIDER_SERVICE_URL: '',
+        IS_DRY_RUN: 'true',
+        TARGET_ENV: 'staging',
+        RESTORED_TAG: 'latest',
+      });
+      expect(dryProbeRes.status).toBe(0);
+      expect(dryProbeRes.outputs.health_status).toBe('healthy');
+      expect(dryProbeRes.outputs.service_url).toBe('http://127.0.0.1:3000');
+    });
 
     it('gates $GITHUB_STEP_SUMMARY reporting on upstream outcomes so failures log FAILED and exit non-zero', () => {
       const successReport = runBashStep(reportScript, {

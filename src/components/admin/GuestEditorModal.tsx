@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Dialog } from '@/components/ui/Dialog';
+import React, { useMemo, useState } from 'react';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea } from '@/components/ui/forms';
 import type { InvitationCodeDTO } from '@/features/registry';
@@ -13,12 +13,15 @@ import {
   HOUSEHOLD_NAME_MAX_LENGTH,
   INVITATION_CODE_MAX_LENGTH,
   PARTY_GROUP_MAX_LENGTH,
+  PHONE_MAX_LENGTH,
   PLUS_ONE_NAME_MAX_LENGTH,
   STATE_MAX_LENGTH,
   ZIP_CODE_MAX_LENGTH,
+  normalizeGuestPhone,
   normalizeInvitationCode,
   normalizeNullableString,
   normalizePartyTags,
+  validateGuestPhone,
   validateInvitationGuestFields,
 } from '@/utils/invitationValidation';
 
@@ -33,6 +36,7 @@ interface GuestFormState {
   guestName: string;
   code: string;
   email: string;
+  phone: string;
   householdName: string;
   partyGroup: string;
   partyTags: string;
@@ -48,11 +52,26 @@ interface GuestFormState {
   country: string;
 }
 
+function getInitialExtraFieldsObject(extraFields: unknown): Record<string, unknown> {
+  if (!extraFields) return {};
+  if (typeof extraFields === 'object' && !Array.isArray(extraFields)) {
+    return { ...(extraFields as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function getInitialGuestPhone(guest: InvitationCodeDTO): string {
+  const extra = getInitialExtraFieldsObject(guest.extraFields);
+  const rawPhone = extra.phone ?? extra.mobile;
+  return typeof rawPhone === 'string' ? rawPhone : '';
+}
+
 function createInitialGuestFormState(guest: InvitationCodeDTO): GuestFormState {
   return {
     guestName: guest.guestName ?? '',
     code: guest.code ?? '',
     email: guest.email ?? '',
+    phone: getInitialGuestPhone(guest),
     householdName: guest.householdName ?? '',
     partyGroup: guest.partyGroup ?? '',
     partyTags: Array.isArray(guest.partyTags) ? guest.partyTags.join(', ') : '',
@@ -69,18 +88,32 @@ function createInitialGuestFormState(guest: InvitationCodeDTO): GuestFormState {
   };
 }
 
+function isGuestFormDirty(current: GuestFormState, initial: GuestFormState): boolean {
+  return (Object.keys(initial) as Array<keyof GuestFormState>).some(
+    (key) => current[key] !== initial[key]
+  );
+}
+
 interface GuestEditorFormProps {
   guest: InvitationCodeDTO;
   onClose: () => void;
   onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
+  onDirtyChange: (_isDirty: boolean) => void;
 }
 
-const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSave }) => {
-  const [formState, setFormState] = useState<GuestFormState>(() =>
-    createInitialGuestFormState(guest)
-  );
+const GuestEditorForm: React.FC<GuestEditorFormProps> = ({
+  guest,
+  onClose,
+  onSave,
+  onDirtyChange,
+}) => {
+  const initialFormState = useMemo(() => createInitialGuestFormState(guest), [guest]);
+  const [formState, setFormState] = useState<GuestFormState>(() => initialFormState);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const isDirty = isGuestFormDirty(formState, initialFormState);
+  const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
 
   const originalCodeNormalized = normalizeInvitationCode(guest.code);
   const enteredCodeNormalized = normalizeInvitationCode(formState.code);
@@ -88,7 +121,9 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
     Boolean(originalCodeNormalized) && enteredCodeNormalized !== originalCodeNormalized;
 
   const updateField = <K extends keyof GuestFormState>(field: K, value: GuestFormState[K]) => {
-    setFormState((prev) => ({ ...prev, [field]: value }));
+    const next = { ...formState, [field]: value };
+    setFormState(next);
+    onDirtyChange(isGuestFormDirty(next, initialFormState));
     if (validationError) setValidationError(null);
   };
 
@@ -122,6 +157,15 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
       return;
     }
 
+    const phoneError = validateGuestPhone(formState.phone);
+    if (phoneError) {
+      setValidationError(phoneError);
+      return;
+    }
+
+    const normalizedPhone = normalizeGuestPhone(formState.phone);
+    const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
+
     const payload: Partial<InvitationCodeDTO> = {
       guestName: trimmedName,
       code: trimmedCode,
@@ -140,6 +184,17 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
       zipCode: normalizeNullableString(formState.zipCode),
       country: normalizeNullableString(formState.country),
     };
+
+    if (normalizedPhone !== originalPhone) {
+      const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
+      if (normalizedPhone) {
+        nextExtraFields.phone = normalizedPhone;
+      } else {
+        delete nextExtraFields.phone;
+        delete nextExtraFields.mobile;
+      }
+      payload.extraFields = nextExtraFields;
+    }
 
     const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
     if (fieldErrors.length > 0) {
@@ -224,6 +279,17 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
           </FormGroup>
 
           <FormGroup>
+            <Label>Phone</Label>
+            <Input
+              type="tel"
+              maxLength={PHONE_MAX_LENGTH}
+              value={formState.phone}
+              onChange={(e) => updateField('phone', e.target.value)}
+              placeholder="e.g. +15551234567"
+            />
+          </FormGroup>
+
+          <FormGroup className="sm:col-span-2">
             <Label>Plus-One Allocations</Label>
             <Input
               type="number"
@@ -381,7 +447,7 @@ const GuestEditorForm: React.FC<GuestEditorFormProps> = ({ guest, onClose, onSav
       </div>
 
       <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-zinc-800">
-        <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
+        <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
           Cancel
         </Button>
         <Button type="submit" variant="primary" disabled={isSaving}>
@@ -398,18 +464,32 @@ export const GuestEditorModal: React.FC<GuestEditorModalProps> = ({
   guest,
   onSave,
 }) => {
+  const [dirtyEntry, setDirtyEntry] = useState<{ guestId: string; isDirty: boolean }>({
+    guestId: '',
+    isDirty: false,
+  });
+
   if (!isOpen || !guest) return null;
+
+  const isDirty = dirtyEntry.guestId === guest.id && dirtyEntry.isDirty;
 
   return (
     <Dialog
       isOpen={isOpen}
       onClose={onClose}
+      isDirty={isDirty}
       title="Edit Guest Details"
       description="Update guest profile, party grouping, dietary notes, or mailing address. Existing seating assignments and RSVP responses are preserved."
       className="max-w-2xl max-h-[90vh] flex flex-col"
       contentClassName="px-6 py-4 overflow-y-auto max-h-[75vh]"
     >
-      <GuestEditorForm key={guest.id} guest={guest} onClose={onClose} onSave={onSave} />
+      <GuestEditorForm
+        key={guest.id}
+        guest={guest}
+        onClose={onClose}
+        onSave={onSave}
+        onDirtyChange={(nextDirty) => setDirtyEntry({ guestId: guest.id, isDirty: nextDirty })}
+      />
     </Dialog>
   );
 };

@@ -1,10 +1,14 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
+import Stripe from 'stripe';
 import { GET as getCapabilities } from '../capabilities';
 import { POST as createPaymentIntent } from '../payment-intent';
 import { POST as contributeToRegistry } from '../contribute';
+import { POST as stripeWebhookPOST } from '../webhook';
+import { middleware } from '@/middleware';
 import { registryService } from '../../service';
+import { createRegistryRepository } from '../../repository';
 import { getAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { getStripeInstance } from '@/lib/stripe';
@@ -30,6 +34,10 @@ jest.mock('@/core/auth/guestInviteSession', () => ({
 
 const mockPaymentIntentsCreate = jest.fn();
 const mockPaymentIntentsRetrieve = jest.fn();
+const mockPaymentIntentsUpdate = jest.fn();
+const realStripeWebhooks = new Stripe('sk_test_unit_environment_only', {
+  apiVersion: '2025-02-24.acacia' as any,
+}).webhooks;
 
 jest.mock('@/lib/stripe', () => {
   const actual = jest.requireActual('@/lib/stripe');
@@ -39,8 +47,9 @@ jest.mock('@/lib/stripe', () => {
       paymentIntents: {
         create: mockPaymentIntentsCreate,
         retrieve: mockPaymentIntentsRetrieve,
-        update: jest.fn(),
+        update: mockPaymentIntentsUpdate,
       },
+      webhooks: realStripeWebhooks,
     })),
   };
 });
@@ -229,6 +238,14 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       mockPaymentIntentsRetrieve.mockResolvedValueOnce({
         id: 'pi_dual_succeeded_1',
         status: 'succeeded',
+        amount: 10250,
+        amount_received: 10250,
+        currency: 'usd',
+        metadata: {
+          itemId: 'fund-dual-1',
+          baseAmount: '100.00',
+          coverFee: 'true',
+        },
         latest_charge: 'ch_dual_1',
         created: 1731763200,
       });
@@ -275,6 +292,316 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       const body = await res.json();
       expect(body.error).toMatch(/no payment handle is configured/i);
       expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Security Invariants & Signed Webhook Perimeter Regression Suite', () => {
+    it('1. allows signed POST /api/registry/webhook/stripe without guest cookies (200, not 401) and rejects tampered webhook amounts', async () => {
+      process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1';
+      process.env.STRIPE_WEBHOOK_SECRET = 'whsec_regression_test_secret';
+
+      const webhookPayload = JSON.stringify({
+        id: 'evt_signed_valid_1',
+        type: 'payment_intent.succeeded',
+        data: {
+          object: {
+            id: 'pi_signed_webhook_1',
+            status: 'succeeded',
+            amount: 10250,
+            amount_received: 10250,
+            currency: 'usd',
+            latest_charge: 'ch_signed_webhook_1',
+            created: 1731763200,
+            metadata: {
+              itemId: 'fund-dual-1',
+              contributorName: 'Signed Webhook Guest',
+              baseAmount: '100.00',
+              coverFee: 'true',
+            },
+          },
+        },
+      });
+
+      const sigHeader = realStripeWebhooks.generateTestHeaderString({
+        payload: webhookPayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET,
+      });
+
+      const webhookReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+        method: 'POST',
+        headers: {
+          host: 'localhost:3000',
+          'content-type': 'application/json',
+          'stripe-signature': sigHeader,
+        },
+        body: webhookPayload,
+      });
+
+      // Perimeter middleware must allow unauthenticated POST webhook without guest cookies
+      const middlewareRes = await middleware(webhookReq);
+      expect(middlewareRes.status).toBe(200);
+
+      // Route handler verifies Stripe signature and records verified contribution
+      const webhookRes = await stripeWebhookPOST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'stripe-signature': sigHeader,
+          },
+          body: webhookPayload,
+        })
+      );
+      expect(webhookRes.status).toBe(200);
+      expect(registryService.contributeToItem).toHaveBeenCalledWith(
+        'fund-dual-1',
+        expect.objectContaining({
+          name: 'Signed Webhook Guest',
+          amount: 100,
+          coverFee: true,
+          stripePaymentIntentId: 'pi_signed_webhook_1',
+        })
+      );
+
+      // Signed webhook with tampered baseAmount vs cent amount must be rejected with 400
+      (registryService.contributeToItem as jest.Mock).mockClear();
+      const tamperedPayload = JSON.stringify({
+        id: 'evt_signed_tampered_1',
+        type: 'payment_intent.succeeded',
+        data: {
+          object: {
+            id: 'pi_signed_tampered_1',
+            status: 'succeeded',
+            amount: 100,
+            amount_received: 100,
+            currency: 'usd',
+            metadata: {
+              itemId: 'fund-dual-1',
+              contributorName: 'Tampered Webhook',
+              baseAmount: '5000.00',
+              coverFee: 'true',
+            },
+          },
+        },
+      });
+      const tamperedSig = realStripeWebhooks.generateTestHeaderString({
+        payload: tamperedPayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET,
+      });
+      const tamperedWebhookRes = await stripeWebhookPOST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'stripe-signature': tamperedSig,
+          },
+          body: tamperedPayload,
+        })
+      );
+      expect(tamperedWebhookRes.status).toBe(400);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
+
+    it('2. rejects $1.00 (100-cent) PaymentIntent for item-small-1 with 400 when submitted as $5,000 on fund-card-only-5000', async () => {
+      const cardOnly5000Fund = {
+        ...unconfiguredFund,
+        id: 'fund-card-only-5000',
+        name: 'Luxury Honeymoon Fund',
+        price: 5000,
+        amountContributed: 0,
+      };
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce(cardOnly5000Fund);
+
+      const oneDollarPiId = 'pi_one_dollar_small_item';
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: oneDollarPiId,
+        status: 'succeeded',
+        amount: 100,
+        amount_received: 100,
+        currency: 'usd',
+        metadata: {
+          itemId: 'item-small-1',
+          baseAmount: '1.00',
+          coverFee: 'false',
+        },
+      });
+
+      const tamperRes = await contributeToRegistry(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            itemId: 'fund-card-only-5000',
+            name: 'Tampered Contributor',
+            amount: 5000,
+            coverFee: true,
+            paymentIntentId: oneDollarPiId,
+          }),
+        })
+      );
+
+      expect(tamperRes.status).toBe(400);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+    });
+
+    it('3. rejects updating another guest pending PaymentIntent without matching clientSecret and itemId with 403', async () => {
+      mockPaymentIntentsRetrieve.mockResolvedValue({
+        id: 'pi_victim_pending_1',
+        status: 'requires_payment_method',
+        client_secret: 'pi_victim_pending_1_secret_real_token',
+        amount: 10000,
+        currency: 'usd',
+        metadata: {
+          itemId: 'fund-dual-1',
+          baseAmount: '100.00',
+          coverFee: 'false',
+        },
+      });
+
+      // Missing clientSecret -> 403
+      const missingSecretRes = await createPaymentIntent(
+        new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-dual-1',
+            amount: 25,
+            coverFee: false,
+            paymentIntentId: 'pi_victim_pending_1',
+          }),
+        })
+      );
+      expect(missingSecretRes.status).toBe(403);
+
+      // Wrong clientSecret -> 403
+      const wrongSecretRes = await createPaymentIntent(
+        new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-dual-1',
+            amount: 25,
+            coverFee: false,
+            paymentIntentId: 'pi_victim_pending_1',
+            clientSecret: 'pi_victim_pending_1_secret_guessed_wrong',
+          }),
+        })
+      );
+      expect(wrongSecretRes.status).toBe(403);
+
+      // Matching clientSecret but different target itemId -> 403
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce({
+        ...dualModeFund,
+        id: 'fund-different-2',
+      });
+      const wrongItemRes = await createPaymentIntent(
+        new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-different-2',
+            amount: 25,
+            coverFee: false,
+            paymentIntentId: 'pi_victim_pending_1',
+            clientSecret: 'pi_victim_pending_1_secret_real_token',
+          }),
+        })
+      );
+      expect(wrongItemRes.status).toBe(403);
+
+      expect(mockPaymentIntentsUpdate).not.toHaveBeenCalled();
+      expect(mockPaymentIntentsCreate).not.toHaveBeenCalled();
+
+      // Matching clientSecret AND matching itemId -> 200 update succeeds
+      mockPaymentIntentsUpdate.mockResolvedValueOnce({
+        id: 'pi_victim_pending_1',
+        client_secret: 'pi_victim_pending_1_secret_real_token',
+        amount: 2500,
+        currency: 'usd',
+      });
+      const validUpdateRes = await createPaymentIntent(
+        new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-dual-1',
+            amount: 25,
+            coverFee: false,
+            paymentIntentId: 'pi_victim_pending_1',
+            clientSecret: 'pi_victim_pending_1_secret_real_token',
+          }),
+        })
+      );
+      expect(validUpdateRes.status).toBe(200);
+      expect(mockPaymentIntentsUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('4. rejects cross-item stripePaymentIntentId reuse while keeping same-item retries idempotent', async () => {
+      const existingContributor = {
+        id: 'c-existing',
+        registryItemId: 'fund-dual-1',
+        stripePaymentIntentId: 'pi_unique_123',
+      };
+      const repoItem = {
+        id: 'fund-dual-1',
+        itemType: 'CASH_FUND',
+        paymentHandleType: 'Venmo',
+        paymentHandle: '@happy-couple',
+        name: 'Honeymoon Adventure Fund',
+        description: 'Fund',
+        category: 'Honeymoon',
+        price: 1000,
+        imageId: 'img-1',
+        image: {
+          id: 'img-1',
+          url: '/images/placeholder.png',
+          altText: null,
+          isDecorative: false,
+          isSample: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        vendorUrl: null,
+        quantity: 1,
+        isGroupGift: true,
+        isMostWanted: false,
+        displayOrder: 0,
+        purchased: false,
+        purchaserName: null,
+        amountContributed: 100,
+        isSample: false,
+        contributors: [],
+      };
+      const txMock = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue(existingContributor),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(repoItem),
+          update: jest.fn(),
+        },
+      };
+      const repo = createRegistryRepository({
+        $transaction: (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      });
+
+      // Same-item retry stays idempotent without mutating amountContributed
+      const idempotentResult = await repo.contributeToItem('fund-dual-1', {
+        name: 'Casey Card',
+        amount: 100,
+        coverFee: true,
+        stripePaymentIntentId: 'pi_unique_123',
+      });
+      expect(idempotentResult.id).toBe('fund-dual-1');
+      expect(txMock.registryItem.update).not.toHaveBeenCalled();
+
+      // Cross-item reuse throws 400 ApiError
+      await expect(
+        repo.contributeToItem('fund-other-999', {
+          name: 'Replay Attacker',
+          amount: 100,
+          coverFee: true,
+          stripePaymentIntentId: 'pi_unique_123',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+      });
     });
   });
 });

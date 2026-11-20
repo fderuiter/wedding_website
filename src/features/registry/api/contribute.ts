@@ -8,7 +8,7 @@ import { maskRegistryItem, sanitizeRegistryItem } from '../lib/masking';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { getStripeInstance } from '@/lib/stripe';
+import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
@@ -55,6 +55,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
+  const effectiveCoverFee = isFund && !paymentIntentId ? false : Boolean(coverFee);
+
   let stripePaymentIntentId: string | null = null;
   let stripeChargeId: string | null = null;
   let transactionTimestamp: Date | null = null;
@@ -80,8 +82,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       throw new ApiError(400, `Invalid or unresolved Stripe PaymentIntent: ${err.message}`);
     }
 
-    if (paymentIntent.status !== 'succeeded') {
-      throw new ApiError(400, `PaymentIntent status is '${paymentIntent.status}'. Payment must be succeeded before recording contribution.`);
+    const invariantCheck = validatePaymentIntentInvariants(paymentIntent, {
+      itemId,
+      baseAmount: amount,
+      coverFee: effectiveCoverFee,
+    });
+    if (!invariantCheck.valid) {
+      throw new ApiError(400, invariantCheck.error || 'Invalid Stripe PaymentIntent.');
     }
 
     stripePaymentIntentId = paymentIntent.id;
@@ -90,8 +97,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       : (paymentIntent.latest_charge as any)?.id || null;
     transactionTimestamp = paymentIntent.created ? new Date(paymentIntent.created * 1000) : new Date();
   }
-
-  const effectiveCoverFee = isFund && !stripePaymentIntentId ? false : Boolean(coverFee);
 
   const updatedItem = await registryService.contributeToItem(itemId, {
     name,
