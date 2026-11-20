@@ -211,11 +211,106 @@ describe('Batch Update on /api/admin/invitation-codes/batch (POST, PUT, PATCH)',
     mockIsAdminRequest.mockResolvedValue(true);
     mockServiceInstance = {
       updateBatch: jest.fn(),
+      batchUpdateTags: jest.fn(),
       importBatch: jest.fn(),
       batchDelete: jest.fn(),
     };
     MockInvitationCodeAdminService.mockImplementation(() => mockServiceInstance);
     mockGetEntityService.mockResolvedValue({ service: mockServiceInstance });
+  });
+
+  test('dispatches POST tag updates for >100 IDs to batchUpdateTags and returns 200', async () => {
+    const ids = Array.from({ length: 120 }, (_, i) => `code-${i + 1}`);
+    const updatedRecords = ids.map((id, i) => ({
+      id,
+      code: `CODE${i + 1}`,
+      guestName: `Guest ${i + 1}`,
+      partyTags: ['VIP'],
+    }));
+    mockServiceInstance.batchUpdateTags.mockResolvedValue(updatedRecords);
+
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        ids: [...ids, 'code-1', '  code-2  '],
+        tags: ['  VIP  ', '', 'VIP'],
+        action: 'add',
+      }),
+    });
+
+    const res = await POST(req, {});
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      success: true,
+      count: 120,
+      updatedCount: 120,
+      records: updatedRecords,
+    });
+    expect(mockServiceInstance.batchUpdateTags).toHaveBeenCalledWith(
+      ids,
+      ['VIP'],
+      'add',
+      'Admin'
+    );
+    expect(mockGetEntityService).not.toHaveBeenCalled();
+    expect(mockServiceInstance.updateBatch).not.toHaveBeenCalled();
+  });
+
+  test('rejects empty normalized tags on add or remove with 400 and allows empty tags on replace', async () => {
+    for (const action of ['add', 'remove'] as const) {
+      const badReq = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          ids: ['code-1'],
+          tags: ['   ', ''],
+          action,
+        }),
+      });
+      const badRes = await POST(badReq, {});
+      expect(badRes.status).toBe(400);
+      const badBody = await badRes.json();
+      expect(badBody.error).toContain('At least one non-empty tag is required');
+    }
+    expect(mockServiceInstance.batchUpdateTags).not.toHaveBeenCalled();
+
+    mockServiceInstance.batchUpdateTags.mockResolvedValue([
+      { id: 'code-1', code: 'CODE1', guestName: 'Guest 1', partyTags: [] },
+    ]);
+    const replaceReq = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        ids: ['code-1'],
+        tags: [],
+        action: 'replace',
+      }),
+    });
+    const replaceRes = await POST(replaceReq, {});
+    expect(replaceRes.status).toBe(200);
+    expect(mockServiceInstance.batchUpdateTags).toHaveBeenCalledWith(
+      ['code-1'],
+      [],
+      'replace',
+      'Admin'
+    );
+  });
+
+  test('rejects batch tag updates exceeding 5000 IDs with 400', async () => {
+    const ids = Array.from({ length: 5001 }, (_, i) => `code-${i}`);
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        ids,
+        tags: ['VIP'],
+        action: 'add',
+      }),
+    });
+
+    const res = await POST(req, {});
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain('Maximum of 5000 invitation code IDs allowed per batch request');
+    expect(mockServiceInstance.batchUpdateTags).not.toHaveBeenCalled();
   });
 
   test('successfully executes batch update via POST and returns 200 with count', async () => {

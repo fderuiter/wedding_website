@@ -221,7 +221,7 @@ jobs:
 
       - name: Verify Artifact Provenance Attestation
         id: provenance
-        if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')
+        if: "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}

@@ -24,6 +24,7 @@ export {
   PhotoNodeSchema,
   GenericNodeSchema,
   ContentNodeSchema,
+  isPrivateContentNode,
 } from './schemas';
 export { ContentNodeAdminService } from './admin.service';
 export type {

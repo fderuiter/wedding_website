@@ -525,4 +525,150 @@ describe('Optimistic Seating Chart State Updates', () => {
     expect(screen.getByTitle(/Seat 1: Guest Two/i)).toBeInTheDocument();
     expect(screen.getByTitle(/Seat 2: Guest Three/i)).toBeInTheDocument();
   });
+
+  it('commits a 120-frame table drag and 15-frame rotation drag with 1 PUT each on pointer release', async () => {
+    render(
+      <ToastProvider>
+        <SeatingChartAdminPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Table 1, shape/i })).toBeInTheDocument();
+    });
+
+    const canvasElement = screen.getByRole('region', {
+      name: /Interactive 2D Reception Floorplan Canvas/i,
+    });
+    jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 650,
+      width: 800,
+      height: 650,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    fetchMock.mockClear();
+
+    const table1Element = screen.getByRole('button', { name: /^Table 1, shape/i });
+    // Table 1 starts at (40, 40)
+    fireEvent.mouseDown(table1Element, { button: 0, clientX: 60, clientY: 60 });
+
+    for (let i = 1; i <= 120; i++) {
+      fireEvent.mouseMove(canvasElement, { clientX: 60 + i * 2, clientY: 60 + i });
+    }
+
+    // Zero PUT requests sent during 120 pointer move frames
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(table1Element.style.left).toBe('280px');
+    expect(table1Element.style.top).toBe('160px');
+
+    fireEvent.mouseUp(canvasElement);
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter(
+        (call) => call[1]?.method === 'PUT' && call[0].toString().endsWith('/api/admin/seating-tables/table-1')
+      );
+      expect(putCalls).toHaveLength(1);
+      expect(JSON.parse(putCalls[0][1].body as string)).toEqual({ x: 280, y: 160 });
+    });
+
+    fetchMock.mockClear();
+
+    // Now rotate Table 1 across 15 frames around new center (280+60=340, 160+60=220)
+    const handleBtn = screen.getByRole('button', { name: /Rotate handle for Table 1/i });
+    fireEvent.mouseDown(handleBtn, { button: 0, clientX: 340, clientY: 150 });
+
+    for (let i = 1; i <= 15; i++) {
+      const angleRad = ((i * 12) - 90) * (Math.PI / 180);
+      fireEvent.mouseMove(canvasElement, {
+        clientX: 340 + Math.cos(angleRad) * 60,
+        clientY: 220 + Math.sin(angleRad) * 60,
+      });
+    }
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(table1Element.style.transform).toBe('rotate(180deg)');
+
+    fireEvent.mouseUp(canvasElement);
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter(
+        (call) => call[1]?.method === 'PUT' && call[0].toString().endsWith('/api/admin/seating-tables/table-1')
+      );
+      expect(putCalls).toHaveLength(1);
+      expect(JSON.parse(putCalls[0][1].body as string)).toEqual({ rotation: 180 });
+    });
+  });
+
+  it('reverts table placement to pre-gesture coordinates and shows error toast when PUT fails on release', async () => {
+    fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.endsWith('/api/admin/seating-tables') && (!init || !init.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
+        } as Response);
+      }
+      if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
+        } as Response);
+      }
+      if (urlStr.includes('/api/admin/seating-tables/') && init?.method === 'PUT') {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: 'Database unavailable' }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+    });
+
+    render(
+      <ToastProvider>
+        <SeatingChartAdminPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Table 1, shape/i })).toBeInTheDocument();
+    });
+
+    const canvasElement = screen.getByRole('region', {
+      name: /Interactive 2D Reception Floorplan Canvas/i,
+    });
+    jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 800,
+      bottom: 650,
+      width: 800,
+      height: 650,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    });
+
+    const table1Element = screen.getByRole('button', { name: /^Table 1, shape/i });
+    fireEvent.mouseDown(table1Element, { button: 0, clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(canvasElement, { clientX: 310, clientY: 260 });
+    expect(table1Element.style.left).toBe('300px');
+    expect(table1Element.style.top).toBe('250px');
+
+    fireEvent.mouseUp(canvasElement);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Failed to update table position');
+    });
+
+    // Reverted to pre-drag coordinates (40, 40)
+    expect(table1Element.style.left).toBe('40px');
+    expect(table1Element.style.top).toBe('40px');
+  });
 });

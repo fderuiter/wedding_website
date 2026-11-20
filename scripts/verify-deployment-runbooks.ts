@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
+import { parseDocument } from 'yaml';
 
 interface ExtractedMigrateCommand {
   file: string;
@@ -355,6 +356,7 @@ function parseWorkflowFilesAndSecrets(workflowsDir: string): {
   workflowFiles: string[];
   workflowSecrets: Set<string>;
   workflowVars: Set<string>;
+  workflowYamlErrors: string[];
 } {
   const entries = fs
     .readdirSync(workflowsDir)
@@ -363,11 +365,30 @@ function parseWorkflowFilesAndSecrets(workflowsDir: string): {
 
   const workflowSecrets = new Set<string>();
   const workflowVars = new Set<string>();
+  const workflowYamlErrors: string[] = [];
   const secretRegex = /\bsecrets\.([A-Z0-9_]+)\b/g;
   const varRegex = /\bvars\.([A-Z0-9_]+)\b/g;
 
   for (const file of entries) {
     const content = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+    const doc = parseDocument(content, { version: '1.2', strict: true });
+
+    for (const err of doc.errors) {
+      const line = err.linePos?.[0]?.line ?? 1;
+      const summary = err.message.split(/\r?\n/)[0].trim();
+      workflowYamlErrors.push(
+        `.github/workflows/${file}:${line}: Invalid YAML 1.2 syntax (${err.code}): ${summary}`
+      );
+    }
+
+    for (const warn of doc.warnings) {
+      const line = warn.linePos?.[0]?.line ?? 1;
+      const summary = warn.message.split(/\r?\n/)[0].trim();
+      workflowYamlErrors.push(
+        `.github/workflows/${file}:${line}: Invalid YAML 1.2 tag/warning (${warn.code}): ${summary}`
+      );
+    }
+
     let match: RegExpExecArray | null;
     while ((match = secretRegex.exec(content)) !== null) {
       const secretName = match[1];
@@ -380,7 +401,7 @@ function parseWorkflowFilesAndSecrets(workflowsDir: string): {
     }
   }
 
-  return { workflowFiles: entries, workflowSecrets, workflowVars };
+  return { workflowFiles: entries, workflowSecrets, workflowVars, workflowYamlErrors };
 }
 
 function extractSectionSlice(markdown: string, headingPattern: RegExp, stopHeadingPrefix: string): string {
@@ -706,7 +727,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
 
   // 4. GitHub Workflows, Secrets, Approval Gate, CI Jobs, & Static Export Contract
   const workflowsDir = path.join(repoRoot, '.github/workflows');
-  const { workflowFiles, workflowSecrets, workflowVars } = parseWorkflowFilesAndSecrets(workflowsDir);
+  const { workflowFiles, workflowSecrets, workflowVars, workflowYamlErrors } =
+    parseWorkflowFilesAndSecrets(workflowsDir);
+  errors.push(...workflowYamlErrors);
   const ciWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'ci.yml'), 'utf8');
   const deployWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy.yml'), 'utf8');
   const ciJobIds = parseCiWorkflowJobIds(ciWorkflowRaw);

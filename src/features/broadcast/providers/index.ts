@@ -1,5 +1,34 @@
 import { DispatchResult, TestConnectionInput } from '../types';
 
+const HTML_ENTITY_OR_SPECIAL_REGEX = /&(?:amp|lt|gt|quot|#39|#x27);|[&<>"']/g;
+
+const HTML_CHAR_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/**
+ * Escapes unsafe HTML characters without double-escaping existing standard entities,
+ * then converts blank lines into `<p>...</p>` blocks and single line breaks into `<br />` tags.
+ */
+export function formatEmailHtmlBody(body: string): string {
+  if (!body) return '';
+
+  const escaped = body.replace(HTML_ENTITY_OR_SPECIAL_REGEX, (match) =>
+    match.length === 1 ? (HTML_CHAR_MAP[match] ?? match) : match
+  );
+
+  const normalized = escaped.replace(/\r\n?/g, '\n');
+  const paragraphs = normalized.split(/\n{2,}/);
+
+  return paragraphs
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br />')}</p>`)
+    .join('');
+}
+
 export interface EmailMessagePayload {
   to: string;
   from?: string;
@@ -86,7 +115,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
         from: payload.from,
         to: payload.to,
         subject: payload.subject,
-        html: payload.body,
+        html: formatEmailHtmlBody(payload.body),
       }),
     });
 
@@ -114,7 +143,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
         personalizations: [{ to: [{ email: payload.to }] }],
         from: { email: payload.from },
         subject: payload.subject,
-        content: [{ type: 'text/html', value: payload.body }],
+        content: [{ type: 'text/html', value: formatEmailHtmlBody(payload.body) }],
       }),
     });
 

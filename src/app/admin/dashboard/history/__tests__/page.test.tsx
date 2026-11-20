@@ -115,4 +115,26 @@ describe('HistoryTimelinePage SegmentedTabs accessibility', () => {
 
     expect(await axe(container)).toHaveNoViolations();
   });
+
+  it('opens directly on Broadcast Delivery Logs tab when ?tab=broadcasts is in the URL', async () => {
+    window.history.pushState({}, '', '/admin/dashboard/history?tab=broadcasts');
+
+    try {
+      const { container } = render(<HistoryTimelinePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('System & Activity History')).toBeInTheDocument();
+      });
+
+      const broadcastsTab = screen.getByRole('tab', { name: 'Broadcast Delivery Logs' });
+      const snapshotsTab = screen.getByRole('tab', { name: 'Content Snapshots' });
+
+      expect(broadcastsTab).toHaveAttribute('aria-selected', 'true');
+      expect(snapshotsTab).toHaveAttribute('aria-selected', 'false');
+      expect(screen.getByText('Schedule Update')).toBeInTheDocument();
+      expect(await axe(container)).toHaveNoViolations();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
 });

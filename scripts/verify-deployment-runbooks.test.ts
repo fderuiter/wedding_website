@@ -204,4 +204,24 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('rejects unquoted leading ! tags and invalid YAML 1.2 syntax in .github/workflows/', () => {
+    const deployProviderPath = path.join(tempDir, '.github/workflows/deploy-provider.yml');
+    const brokenWorkflow = fs
+      .readFileSync(deployProviderPath, 'utf8')
+      .replace(
+        'if: "!(inputs.dry_run && inputs.image_digest == \'\' && inputs.image_tag == \'latest\')"',
+        "if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
+      );
+    fs.writeFileSync(deployProviderPath, brokenWorkflow);
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          '.github/workflows/deploy-provider.yml:224: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
+        ),
+      ])
+    );
+  });
 });

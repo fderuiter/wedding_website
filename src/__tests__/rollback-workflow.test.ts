@@ -6,11 +6,13 @@ import path from 'path';
 import os from 'os';
 import http from 'http';
 import { execSync, spawn, spawnSync } from 'child_process';
+import { parseDocument } from 'yaml';
 
 const ROOT_DIR = process.cwd();
-const DEPLOY_YML_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'deploy.yml');
-const DEPLOY_PROVIDER_YML_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'deploy-provider.yml');
-const ROLLBACK_YML_PATH = path.join(ROOT_DIR, '.github', 'workflows', 'rollback.yml');
+const WORKFLOWS_DIR = path.join(ROOT_DIR, '.github', 'workflows');
+const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
+const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
+const ROLLBACK_YML_PATH = path.join(WORKFLOWS_DIR, 'rollback.yml');
 
 /**
  * Extracts the bash `run: |` script body for a named step in a GitHub Actions workflow YAML file.
@@ -178,6 +180,42 @@ describe('Rollback & Provider Deployment Workflows', () => {
   const rollbackYml = fs.readFileSync(ROLLBACK_YML_PATH, 'utf8');
 
   describe('Workflow YAML contracts & security guardrails', () => {
+    it('parses every workflow in .github/workflows/ as strict YAML 1.2 with zero errors or warnings and preserves provenance.if', () => {
+      const workflowFiles = fs
+        .readdirSync(WORKFLOWS_DIR)
+        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+        .sort();
+
+      expect(workflowFiles.length).toBeGreaterThan(0);
+
+      for (const file of workflowFiles) {
+        const content = fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8');
+        const doc = parseDocument(content, { version: '1.2', strict: true });
+        expect({
+          file,
+          errors: doc.errors.map((e) => e.message),
+          warnings: doc.warnings.map((w) => w.message),
+        }).toEqual({
+          file,
+          errors: [],
+          warnings: [],
+        });
+      }
+
+      const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true });
+      const parsed = deployProviderDoc.toJS() as {
+        jobs?: {
+          deploy?: {
+            steps?: Array<{ id?: string; if?: string }>;
+          };
+        };
+      };
+      const provenanceStep = parsed.jobs?.deploy?.steps?.find((step) => step.id === 'provenance');
+      expect(provenanceStep?.if).toBe(
+        "!(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
+      );
+    });
+
     it('keeps permissions: contents: read at the root of rollback.yml and avoids direct template interpolation in run blocks', () => {
       expect(rollbackYml).toMatch(/^permissions:\n\s+contents:\s*read/m);
 
