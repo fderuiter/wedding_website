@@ -44,6 +44,7 @@ export default function InvitationCodesDashboardPage() {
     remove,
     removeBatch,
     updateBatch,
+    batchUpdateTags,
     fetchAll,
   } = useAdminInvitationCodes();
 
@@ -549,20 +550,7 @@ export default function InvitationCodesDashboardPage() {
     if (selectedIds.length === 0 || !bulkTagInput.trim()) return;
     const tagToProcess = bulkTagInput.trim();
     try {
-      const selectedCodes = codes.filter((c) => selectedIdsSet.has(c.id));
-      await Promise.all(
-        selectedCodes.map((c) => {
-          let currentTags = c.partyTags || [];
-          if (bulkTagAction === 'add') {
-            if (!currentTags.includes(tagToProcess)) {
-              currentTags = [...currentTags, tagToProcess];
-            }
-          } else {
-            currentTags = currentTags.filter((t) => t !== tagToProcess);
-          }
-          return updateBatch([c.id], { partyTags: currentTags } as any);
-        })
-      );
+      await batchUpdateTags(selectedIds, [tagToProcess], bulkTagAction);
       addToast(`Updated tags for ${selectedIds.length} code(s).`, 'success');
       setBulkTagModalOpen(false);
       setBulkTagInput('');
