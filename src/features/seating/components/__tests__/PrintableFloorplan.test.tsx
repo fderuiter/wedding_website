@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { PrintableFloorplan } from '../PrintableFloorplan';
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+import { createMockInvitationCode } from '@/testing/factories/registryFactory';
 
 describe('PrintableFloorplan component', () => {
   const mockTables: SeatingTableDTO[] = [
@@ -155,5 +156,60 @@ describe('PrintableFloorplan component', () => {
 
     const headerElement = rootContainer.querySelector('div.border-b-2') as HTMLElement;
     expect(headerElement.style.borderColor).toBe('var(--print-header-border)');
+  });
+
+  it('excludes declined RSVPs and address-collection rows and renders dietary badges', () => {
+    const tablesWithMixedRsvp: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-ok',
+            code: 'OK1',
+            guestName: 'Confirmed Guest',
+            seatNumber: 1,
+            used: true,
+            extraFields: { attending: true },
+            dietaryNotes: 'Dairy-Free',
+          }),
+          createMockInvitationCode({
+            id: 'g-declined',
+            code: 'DEC1',
+            guestName: 'Declined Seated Guest',
+            seatNumber: 2,
+            used: true,
+            extraFields: { attending: false },
+          }),
+        ],
+      },
+    ];
+
+    const unassignedMixed: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'u-ok',
+        code: 'UOK1',
+        guestName: 'Unassigned Vegan',
+        used: false,
+        dietaryNotes: 'Vegan',
+      }),
+      createMockInvitationCode({
+        id: 'u-addr',
+        code: 'ADDR1',
+        guestName: 'Address Collector',
+        used: false,
+        partyTags: ['address-collection'],
+      }),
+    ];
+
+    render(<PrintableFloorplan tables={tablesWithMixedRsvp} unassignedGuests={unassignedMixed} />);
+
+    expect(screen.getByText(/Confirmed Guest/)).toBeInTheDocument();
+    expect(screen.getByText('Unassigned Vegan')).toBeInTheDocument();
+    expect(screen.queryByText(/Declined Seated Guest/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Address Collector/)).not.toBeInTheDocument();
+
+    const badges = screen.getAllByTestId('printable-dietary-badge');
+    expect(badges.map((b) => b.textContent).join(' ')).toContain('Dairy-Free');
+    expect(badges.map((b) => b.textContent).join(' ')).toContain('VG');
   });
 });

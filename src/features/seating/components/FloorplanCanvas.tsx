@@ -3,6 +3,7 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+import { getDietaryBadges, isOneSidedTableShape } from '../utils/seatingHelpers';
 
 const EMPTY_SET = new Set<string>();
 
@@ -51,6 +52,7 @@ interface FloorplanCanvasProps {
   onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
   onUpdateTableRotation?: (tableId: string, rotation: number) => void;
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
+  onDropGuestsOnTable?: (guestIds: string[], tableId: string) => void;
   onUnassignGuest: (guestId: string) => void;
   searchQuery?: string;
   onOpenSeatAssignModal?: (tableId: string, seatNumber: number) => void;
@@ -64,6 +66,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   onUpdateTablePosition,
   onUpdateTableRotation,
   onDropGuestOnTable,
+  onDropGuestsOnTable,
   onUnassignGuest,
   searchQuery,
   onOpenSeatAssignModal,
@@ -522,10 +525,40 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     setActiveDropTarget(null);
-    const guestId = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
-    if (!guestId) return;
+    const rawData = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
+    if (!rawData) return;
 
     const targetTable = tables.find((t) => t.id === tableId);
+
+    if (rawData.startsWith('household:')) {
+      const guestIds = rawData
+        .slice('household:'.length)
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (guestIds.length === 0) return;
+
+      if (targetTable) {
+        const currentSeatedIds = new Set((targetTable.invitationCodes || []).map((g) => g.id));
+        const incomingCount = guestIds.filter((id) => !currentSeatedIds.has(id)).length;
+        const availableSeats = targetTable.capacity - currentSeatedIds.size;
+        if (incomingCount > availableSeats) {
+          setLiveAnnouncement(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${guestIds.length} household members.`
+          );
+          return;
+        }
+      }
+
+      if (onDropGuestsOnTable) {
+        onDropGuestsOnTable(guestIds, tableId);
+      } else {
+        guestIds.forEach((id) => onDropGuestOnTable(id, tableId));
+      }
+      return;
+    }
+
+    const guestId = rawData;
     if (targetTable) {
       const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
       const isGuestAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === guestId);
@@ -547,6 +580,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     const capacity = table.capacity;
     const assignedGuests = table.invitationCodes || [];
     const isRound = table.shape === 'round';
+    const isOneSided = isOneSidedTableShape(table.shape);
     const width = table.width || 120;
     const height = table.height || 120;
     const cx = width / 2;
@@ -555,6 +589,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
     for (let i = 1; i <= capacity; i++) {
       const assignedGuest = assignedGuests.find((g) => g.seatNumber === i) || assignedGuests[i - 1];
+      const dietaryBadges = assignedGuest ? getDietaryBadges(assignedGuest.dietaryNotes) : [];
+      const dietarySummary = dietaryBadges.map((b) => b.label).join(', ');
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =
         activeDropTarget?.tableId === table.id &&
@@ -569,6 +605,10 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         const angle = (i * 2 * Math.PI) / capacity - Math.PI / 2;
         seatX = cx + radius * Math.cos(angle);
         seatY = cy + radius * Math.sin(angle);
+      } else if (isOneSided) {
+        // 1-sided head / sweetheart table: place all seats evenly along the top edge
+        seatX = (width / (capacity + 1)) * i;
+        seatY = -18;
       } else {
         // Rectangular perimeter calculation
         const perimeterIndex = i - 1;
@@ -600,7 +640,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           role="button"
           aria-label={
             assignedGuest
-              ? `Seat ${i}: ${assignedGuest.guestName}`
+              ? dietarySummary
+                ? `Seat ${i}: ${assignedGuest.guestName}, Dietary: ${dietarySummary}`
+                : `Seat ${i}: ${assignedGuest.guestName}`
               : `Seat ${i}: Empty`
           }
           onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
@@ -619,13 +661,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           }}
           onKeyDown={(e) => handleSeatKeyDown(e, table, i, assignedGuest)}
           data-testid={isMatch ? 'matching-seat' : undefined}
+          data-seat-side={isOneSided ? 'single' : undefined}
           data-is-search-match={isMatch ? 'true' : 'false'}
           data-is-drop-target={isSeatDropTarget ? 'true' : undefined}
           title={
             assignedGuest
               ? isMatch
-                ? `Seat ${i}: ${assignedGuest.guestName} (Search Match! Double click to unassign)`
-                : `Seat ${i}: ${assignedGuest.guestName} (Double click or press Enter/Space/Delete to unassign)`
+                ? `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
+                : `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
               : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
           }
           className={`absolute transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
@@ -666,10 +709,21 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           }
         >
           {assignedGuest ? (
-            <span className="truncate px-0.5 text-[10px]" aria-hidden="true">
-              {assignedGuest.guestName.split(' ')[0][0]}
-              {assignedGuest.guestName.split(' ')[1]?.[0] || ''}
-            </span>
+            <>
+              <span className="truncate px-0.5 text-[10px]" aria-hidden="true">
+                {assignedGuest.guestName.split(' ')[0][0]}
+                {assignedGuest.guestName.split(' ')[1]?.[0] || ''}
+              </span>
+              {dietaryBadges.length > 0 && (
+                <span
+                  data-testid="seat-dietary-badge"
+                  aria-hidden="true"
+                  className="absolute -bottom-1 -right-1 px-1 min-w-[14px] h-[14px] rounded-full bg-emerald-700 text-white text-[8px] leading-[14px] font-bold border border-white shadow-2xs"
+                >
+                  {dietaryBadges[0].shortLabel}
+                </span>
+              )}
+            </>
           ) : (
             <span aria-hidden="true">{i}</span>
           )}
@@ -938,7 +992,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                       e.stopPropagation();
                       rotateTableBy(table, -45);
                     }}
-                    className="px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="min-w-[28px] min-h-[24px] px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
                     title="Rotate -45°"
                     aria-label={`Rotate ${table.name} -45 degrees`}
                   >
@@ -953,7 +1007,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                       e.stopPropagation();
                       rotateTableBy(table, 45);
                     }}
-                    className="px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="min-w-[28px] min-h-[24px] px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
                     title="Rotate +45°"
                     aria-label={`Rotate ${table.name} +45 degrees`}
                   >
@@ -972,7 +1026,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                     type="button"
                     tabIndex={0}
                     aria-label={`Rotate handle for ${table.name}`}
-                    className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+                    className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
                     onMouseDown={(e) => handleRotationMouseDown(e, table)}
                     onKeyDown={(e) => handleTableKeyDown(e, table)}
                   >
