@@ -4,6 +4,7 @@ import { useReducer, useEffect, useCallback, useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 import { useToast } from '@/components/ui/ToastProvider';
+import { isGuestEligibleForSeating } from '../utils/seatingHelpers';
 
 function useOptionalToast() {
   try {
@@ -13,11 +14,23 @@ function useOptionalToast() {
   }
 }
 
+export interface GuestSeatSnapshot {
+  invitationCodeId: string;
+  tableId: string | null;
+  seatNumber: number | null;
+}
+
+export interface SeatingUndoSnapshot {
+  label: string;
+  assignments: GuestSeatSnapshot[];
+}
+
 export interface SeatingState {
   tables: SeatingTableDTO[];
   guests: InvitationCodeDTO[];
   isLoading: boolean;
   error: string | null;
+  undoStack?: SeatingUndoSnapshot[];
 }
 
 export type SeatingAction =
@@ -55,6 +68,36 @@ export type SeatingAction =
         [key: string]: any;
       }>;
     };
+  }
+  | {
+    type: 'ASSIGN_BATCH_OPTIMISTIC';
+    payload: {
+      updates: GuestSeatSnapshot[];
+      snapshotLabel: string;
+      pushUndo?: boolean;
+    };
+  }
+  | {
+    type: 'CONFIRM_BATCH_ASSIGN';
+    payload: {
+      updatedGuests: Array<{
+        id: string;
+        tableId?: string | null;
+        seatNumber?: number | null;
+        [key: string]: any;
+      }>;
+    };
+  }
+  | {
+    type: 'REVERT_BATCH_ASSIGN';
+    payload: {
+      previousAssignments: GuestSeatSnapshot[];
+      popUndo?: boolean;
+      restoreUndoSnapshot?: SeatingUndoSnapshot | null;
+    };
+  }
+  | {
+    type: 'APPLY_UNDO_OPTIMISTIC';
   }
   | { type: 'CREATE_TABLE'; payload: SeatingTableDTO }
   | { type: 'UPDATE_TABLE'; payload: SeatingTableDTO }
@@ -109,6 +152,7 @@ export const initialSeatingState: SeatingState = {
   guests: [],
   isLoading: true,
   error: null,
+  undoStack: [],
 };
 
 /**
@@ -203,6 +247,17 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         }
       }
 
+      const previousAssignments: GuestSeatSnapshot[] = [];
+      for (const guest of state.guests) {
+        if (assignedMap.has(guest.id)) {
+          previousAssignments.push({
+            invitationCodeId: guest.id,
+            tableId: guest.tableId ?? null,
+            seatNumber: guest.seatNumber ?? null,
+          });
+        }
+      }
+
       const nextGuests = state.guests.map((guest) => {
         const update = assignedMap.get(guest.id);
         if (update) {
@@ -216,10 +271,175 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         return guest;
       });
 
+      const currentStack = state.undoStack || [];
+      const nextUndoStack =
+        previousAssignments.length > 0
+          ? [...currentStack, { label: 'Auto-Assign', assignments: previousAssignments }]
+          : currentStack;
+
       return {
         ...state,
         guests: nextGuests,
         tables: syncTablesWithGuests(state.tables, nextGuests),
+        undoStack: nextUndoStack,
+      };
+    }
+
+    case 'ASSIGN_BATCH_OPTIMISTIC': {
+      const { updates, snapshotLabel, pushUndo = true } = action.payload;
+      const updateMap = new Map<string, GuestSeatSnapshot>();
+      for (const u of updates) {
+        updateMap.set(u.invitationCodeId, u);
+      }
+
+      const previousAssignments: GuestSeatSnapshot[] = [];
+      for (const guest of state.guests) {
+        if (updateMap.has(guest.id)) {
+          previousAssignments.push({
+            invitationCodeId: guest.id,
+            tableId: guest.tableId ?? null,
+            seatNumber: guest.seatNumber ?? null,
+          });
+        }
+      }
+
+      const nextGuests = state.guests.map((guest) => {
+        const upd = updateMap.get(guest.id);
+        if (upd) {
+          return {
+            ...guest,
+            tableId: upd.tableId,
+            seatNumber: upd.seatNumber,
+          };
+        }
+        return guest;
+      });
+
+      const currentStack = state.undoStack || [];
+      const nextUndoStack =
+        pushUndo && previousAssignments.length > 0
+          ? [...currentStack, { label: snapshotLabel, assignments: previousAssignments }]
+          : currentStack;
+
+      return {
+        ...state,
+        guests: nextGuests,
+        tables: syncTablesWithGuests(state.tables, nextGuests),
+        undoStack: nextUndoStack,
+      };
+    }
+
+    case 'CONFIRM_BATCH_ASSIGN': {
+      const updatedMap = new Map<string, any>();
+      for (const item of action.payload.updatedGuests) {
+        if (item && item.id) {
+          updatedMap.set(item.id, item);
+        }
+      }
+      const nextGuests = state.guests.map((guest) => {
+        const upd = updatedMap.get(guest.id);
+        if (upd) {
+          return {
+            ...guest,
+            ...upd,
+            tableId: upd.tableId !== undefined ? upd.tableId : guest.tableId,
+            seatNumber: upd.seatNumber !== undefined ? upd.seatNumber : guest.seatNumber,
+          };
+        }
+        return guest;
+      });
+
+      return {
+        ...state,
+        guests: nextGuests,
+        tables: syncTablesWithGuests(state.tables, nextGuests),
+      };
+    }
+
+    case 'REVERT_BATCH_ASSIGN': {
+      const { previousAssignments, popUndo, restoreUndoSnapshot } = action.payload;
+      const prevMap = new Map<string, GuestSeatSnapshot>(
+        previousAssignments.map((p) => [p.invitationCodeId, p])
+      );
+
+      const nextGuests = state.guests.map((guest) => {
+        const prev = prevMap.get(guest.id);
+        if (prev) {
+          return {
+            ...guest,
+            tableId: prev.tableId,
+            seatNumber: prev.seatNumber,
+          };
+        }
+        return guest;
+      });
+
+      let nextUndoStack = state.undoStack || [];
+      if (popUndo && nextUndoStack.length > 0) {
+        nextUndoStack = nextUndoStack.slice(0, -1);
+      }
+      if (restoreUndoSnapshot) {
+        nextUndoStack = [...nextUndoStack, restoreUndoSnapshot];
+      }
+
+      return {
+        ...state,
+        guests: nextGuests,
+        tables: syncTablesWithGuests(state.tables, nextGuests),
+        undoStack: nextUndoStack,
+      };
+    }
+
+    case 'APPLY_UNDO_OPTIMISTIC': {
+      const currentStack = state.undoStack || [];
+      if (currentStack.length === 0) {
+        return state;
+      }
+
+      const snapshot = currentStack[currentStack.length - 1];
+      const nextUndoStack = currentStack.slice(0, -1);
+      const restoreMap = new Map<string, GuestSeatSnapshot>(
+        snapshot.assignments.map((a) => [a.invitationCodeId, a])
+      );
+
+      // Track restored seats per table so any non-restored occupant on that seat gets displaced cleanly
+      const claimedSeatsByTable = new Map<string, Set<number>>();
+      for (const a of snapshot.assignments) {
+        if (a.tableId && typeof a.seatNumber === 'number') {
+          if (!claimedSeatsByTable.has(a.tableId)) {
+            claimedSeatsByTable.set(a.tableId, new Set());
+          }
+          claimedSeatsByTable.get(a.tableId)!.add(a.seatNumber);
+        }
+      }
+
+      const nextGuests = state.guests.map((guest) => {
+        const restored = restoreMap.get(guest.id);
+        if (restored) {
+          return {
+            ...guest,
+            tableId: restored.tableId,
+            seatNumber: restored.seatNumber,
+          };
+        }
+        if (
+          guest.tableId &&
+          typeof guest.seatNumber === 'number' &&
+          claimedSeatsByTable.get(guest.tableId)?.has(guest.seatNumber)
+        ) {
+          return {
+            ...guest,
+            seatNumber: null,
+          };
+        }
+        return guest;
+      });
+
+      return {
+        ...state,
+        guests: nextGuests,
+        tables: syncTablesWithGuests(state.tables, nextGuests),
+        undoStack: nextUndoStack,
       };
     }
 
@@ -332,6 +552,15 @@ export interface UseSeatingStateReturn {
     tableId: string | null,
     seatNumber?: number | null
   ) => Promise<boolean>;
+  assignGuestsToTable: (
+    guestIds: string[],
+    tableId: string | null,
+    snapshotLabel?: string
+  ) => Promise<boolean>;
+  clearTableSeats: (tableId: string) => Promise<boolean>;
+  undoLastBatchAction: () => Promise<boolean>;
+  canUndo: boolean;
+  undoLabel: string | null;
   unassignGuest: (guestId: string) => Promise<boolean>;
   applyAutoAssignResult: (payload: {
     assignedGuests: Array<{
@@ -354,9 +583,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
   const [state, dispatch] = useReducer(seatingReducer, initialSeatingState);
   const toast = useOptionalToast();
 
-  // Derived synchronous unassigned guests collection
+  // Derived synchronous unassigned guests collection (excludes declined RSVPs and address-collection rows)
   const unassignedGuests = useMemo(() => {
-    return state.guests.filter((g) => !g.tableId);
+    return state.guests.filter((g) => !g.tableId && isGuestEligibleForSeating(g));
   }, [state.guests]);
 
   // Fetch tables and invitation codes
@@ -540,6 +769,272 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     [assignGuestToTable]
   );
 
+  // Atomic batch assignment for households and Clear Seats, with undo snapshot and rollback
+  const assignGuestsToTable = useCallback(
+    async (
+      guestIds: string[],
+      tableId: string | null,
+      snapshotLabel?: string
+    ): Promise<boolean> => {
+      const uniqueIds = Array.from(new Set((guestIds || []).filter(Boolean)));
+      if (uniqueIds.length === 0) {
+        return false;
+      }
+
+      const targetTableId = tableId || null;
+      const batchIdSet = new Set(uniqueIds);
+
+      if (targetTableId) {
+        const targetTable = state.tables.find((t) => t.id === targetTableId);
+        if (targetTable) {
+          const existingOtherCount = state.guests.filter(
+            (g) => g.tableId === targetTableId && !batchIdSet.has(g.id)
+          ).length;
+          if (existingOtherCount + uniqueIds.length > targetTable.capacity) {
+            toast?.addToast(
+              `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
+              'error'
+            );
+            return false;
+          }
+        }
+      }
+
+      const affectedGuests = state.guests.filter((g) => batchIdSet.has(g.id));
+      if (affectedGuests.length === 0) {
+        return false;
+      }
+
+      const previousAssignments: GuestSeatSnapshot[] = affectedGuests.map((g) => ({
+        invitationCodeId: g.id,
+        tableId: g.tableId ?? null,
+        seatNumber: g.seatNumber ?? null,
+      }));
+
+      const plannedUpdates: GuestSeatSnapshot[] = [];
+      if (targetTableId) {
+        const targetTable = state.tables.find((t) => t.id === targetTableId);
+        const cap = targetTable?.capacity ?? 50;
+        const usedSeats = new Set<number>(
+          state.guests
+            .filter(
+              (g) =>
+                g.tableId === targetTableId &&
+                !batchIdSet.has(g.id) &&
+                typeof g.seatNumber === 'number' &&
+                g.seatNumber > 0
+            )
+            .map((g) => g.seatNumber as number)
+        );
+        const nextSeat = () => {
+          for (let i = 1; i <= cap; i++) {
+            if (!usedSeats.has(i)) {
+              usedSeats.add(i);
+              return i;
+            }
+          }
+          return null;
+        };
+
+        for (const id of uniqueIds) {
+          const existing = state.guests.find((g) => g.id === id);
+          if (!existing) continue;
+          let seat: number | null = null;
+          if (
+            existing.tableId === targetTableId &&
+            typeof existing.seatNumber === 'number' &&
+            existing.seatNumber >= 1 &&
+            existing.seatNumber <= cap &&
+            !usedSeats.has(existing.seatNumber)
+          ) {
+            usedSeats.add(existing.seatNumber);
+            seat = existing.seatNumber;
+          } else {
+            seat = nextSeat();
+          }
+          plannedUpdates.push({
+            invitationCodeId: id,
+            tableId: targetTableId,
+            seatNumber: seat,
+          });
+        }
+      } else {
+        for (const id of uniqueIds) {
+          if (!state.guests.some((g) => g.id === id)) continue;
+          plannedUpdates.push({
+            invitationCodeId: id,
+            tableId: null,
+            seatNumber: null,
+          });
+        }
+      }
+
+      const resolvedLabel =
+        snapshotLabel || (targetTableId ? 'Household Assignment' : 'Clear Seats');
+
+      dispatch({
+        type: 'ASSIGN_BATCH_OPTIMISTIC',
+        payload: {
+          updates: plannedUpdates,
+          snapshotLabel: resolvedLabel,
+          pushUndo: true,
+        },
+      });
+
+      try {
+        const res = await fetch('/api/admin/seating/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invitationCodeIds: uniqueIds,
+            tableId: targetTableId,
+            action: targetTableId ? 'assignBatch' : 'clearTable',
+          }),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          if (errorData.error && res.status === 400) {
+            throw new Error(errorData.error);
+          }
+          throw new Error(
+            targetTableId ? 'Failed to assign household seats' : 'Failed to clear table seats'
+          );
+        }
+
+        const json = await res.json().catch(() => ({}));
+        const payload = json?.data ?? json;
+        if (Array.isArray(payload?.updatedGuests)) {
+          dispatch({
+            type: 'CONFIRM_BATCH_ASSIGN',
+            payload: {
+              updatedGuests: payload.updatedGuests,
+            },
+          });
+        }
+        return true;
+      } catch (err: unknown) {
+        dispatch({
+          type: 'REVERT_BATCH_ASSIGN',
+          payload: {
+            previousAssignments,
+            popUndo: true,
+          },
+        });
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'Error updating seat assignments';
+        toast?.addToast(message, 'error');
+        return false;
+      }
+    },
+    [state.tables, state.guests, toast]
+  );
+
+  const clearTableSeats = useCallback(
+    async (tableId: string): Promise<boolean> => {
+      const targetTable = state.tables.find((t) => t.id === tableId);
+      const seatedGuestIds = state.guests
+        .filter((g) => g.tableId === tableId)
+        .map((g) => g.id);
+      if (seatedGuestIds.length === 0) {
+        return true;
+      }
+      return assignGuestsToTable(
+        seatedGuestIds,
+        null,
+        targetTable ? `Clear ${targetTable.name}` : 'Clear Seats'
+      );
+    },
+    [state.tables, state.guests, assignGuestsToTable]
+  );
+
+  const undoLastBatchAction = useCallback(async (): Promise<boolean> => {
+    const currentStack = state.undoStack || [];
+    if (currentStack.length === 0) {
+      return false;
+    }
+
+    const snapshot = currentStack[currentStack.length - 1];
+    const restoreIds = new Set(snapshot.assignments.map((a) => a.invitationCodeId));
+
+    // Capture current assignments before applying undo so we can revert if network fails
+    const claimedSeatsByTable = new Map<string, Set<number>>();
+    for (const a of snapshot.assignments) {
+      if (a.tableId && typeof a.seatNumber === 'number') {
+        if (!claimedSeatsByTable.has(a.tableId)) {
+          claimedSeatsByTable.set(a.tableId, new Set());
+        }
+        claimedSeatsByTable.get(a.tableId)!.add(a.seatNumber);
+      }
+    }
+
+    const preUndoAssignments: GuestSeatSnapshot[] = state.guests
+      .filter(
+        (g) =>
+          restoreIds.has(g.id) ||
+          Boolean(
+            g.tableId &&
+              typeof g.seatNumber === 'number' &&
+              claimedSeatsByTable.get(g.tableId)?.has(g.seatNumber)
+          )
+      )
+      .map((g) => ({
+        invitationCodeId: g.id,
+        tableId: g.tableId ?? null,
+        seatNumber: g.seatNumber ?? null,
+      }));
+
+    dispatch({ type: 'APPLY_UNDO_OPTIMISTIC' });
+
+    try {
+      const res = await fetch('/api/admin/seating/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assignments: snapshot.assignments,
+          action: 'undo',
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (errorData.error && res.status === 400) {
+          throw new Error(errorData.error);
+        }
+        throw new Error('Failed to undo seat assignments');
+      }
+
+      const json = await res.json().catch(() => ({}));
+      const payload = json?.data ?? json;
+      if (Array.isArray(payload?.updatedGuests)) {
+        dispatch({
+          type: 'CONFIRM_BATCH_ASSIGN',
+          payload: {
+            updatedGuests: payload.updatedGuests,
+          },
+        });
+      }
+      toast?.addToast(`Restored seats prior to ${snapshot.label}.`, 'success');
+      return true;
+    } catch (err: unknown) {
+      dispatch({
+        type: 'REVERT_BATCH_ASSIGN',
+        payload: {
+          previousAssignments: preUndoAssignments,
+          restoreUndoSnapshot: snapshot,
+        },
+      });
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Error undoing seat assignments';
+      toast?.addToast(message, 'error');
+      return false;
+    }
+  }, [state.undoStack, state.guests, toast]);
+
   // Table CRUD handlers
   const saveTable = useCallback(
     async (tableData: Partial<SeatingTableDTO>): Promise<boolean> => {
@@ -708,6 +1203,10 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     [state.tables, toast]
   );
 
+  const undoStack = state.undoStack || [];
+  const canUndo = undoStack.length > 0;
+  const undoLabel = canUndo ? undoStack[undoStack.length - 1].label : null;
+
   return {
     tables: state.tables,
     allGuests: state.guests,
@@ -717,6 +1216,11 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     dispatch,
     fetchData,
     assignGuestToTable,
+    assignGuestsToTable,
+    clearTableSeats,
+    undoLastBatchAction,
+    canUndo,
+    undoLabel,
     unassignGuest,
     applyAutoAssignResult,
     saveTable,

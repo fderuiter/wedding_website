@@ -7,6 +7,12 @@ import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
 import { resolveSeatAssignments } from '../seatLayout';
+import {
+  ADDRESS_COLLECTION_TAG,
+  getDietaryBadges,
+  getGuestAttendanceStatus,
+  isGuestEligibleForSeating,
+} from '../utils/seatingHelpers';
 
 const POINTER_DRAG_THRESHOLD_PX = 8;
 
@@ -33,10 +39,28 @@ interface GuestPointerDragState {
   capturedElement?: HTMLElement | null;
 }
 
+type RsvpFilterValue = 'all' | 'attending' | 'pending';
+
+interface HouseholdGroupItem {
+  kind: 'household';
+  key: string;
+  householdName: string;
+  members: InvitationCodeDTO[];
+}
+
+interface SoloGuestItem {
+  kind: 'solo';
+  key: string;
+  guest: InvitationCodeDTO;
+}
+
+type PanelDisplayItem = HouseholdGroupItem | SoloGuestItem;
+
 interface UnassignedGuestPanelProps {
   unassignedGuests: InvitationCodeDTO[];
   tables: SeatingTableDTO[];
   onAssignGuestToTable: (guestId: string, tableId: string, seatNumber?: number) => void;
+  onAssignGuestsToTable?: (guestIds: string[], tableId: string) => void | Promise<boolean>;
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
   onAutoAssignComplete?: (result: { assignedCount: number; unassignedCount: number; assignedGuests: any[] }) => void;
@@ -46,13 +70,19 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   unassignedGuests,
   tables,
   onAssignGuestToTable,
+  onAssignGuestsToTable,
   searchQuery,
   onSearchQueryChange,
   onAutoAssignComplete,
 }: UnassignedGuestPanelProps) {
   const toast = useOptionalToast();
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
+  const [includePending, setIncludePending] = useState(true);
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
+  const [rsvpFilter, setRsvpFilter] = useState<RsvpFilterValue>('all');
+  const [partyGroupFilter, setPartyGroupFilter] = useState<string>('all');
+  const [partyTagFilter, setPartyTagFilter] = useState<string>('all');
+
   const [selectedGuestForModal, setSelectedGuestForModal] = useState<InvitationCodeDTO | null>(null);
   const [targetTableId, setTargetTableId] = useState<string>('');
   const [targetSeatNumber, setTargetSeatNumber] = useState<number | undefined>(undefined);
@@ -62,6 +92,9 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const windowDragCleanupRef = useRef<(() => void) | null>(null);
   const callbacksRef = useRef({ onAssignGuestToTable, tables, toast });
   callbacksRef.current = { onAssignGuestToTable, tables, toast };
+
+  const [selectedHouseholdForModal, setSelectedHouseholdForModal] = useState<HouseholdGroupItem | null>(null);
+  const [targetHouseholdTableId, setTargetHouseholdTableId] = useState<string>('');
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -73,17 +106,114 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     }
   };
 
+  // Always exclude declined RSVPs and public address-collection rows from the seating pool
+  const eligibleGuests = useMemo(
+    () => unassignedGuests.filter((guest) => isGuestEligibleForSeating(guest)),
+    [unassignedGuests]
+  );
+
+  const partyGroupOptions = useMemo(() => {
+    const groups = new Set<string>();
+    for (const guest of eligibleGuests) {
+      const trimmed = guest.partyGroup?.trim();
+      if (trimmed) {
+        groups.add(trimmed);
+      }
+    }
+    return Array.from(groups).sort((a, b) => a.localeCompare(b));
+  }, [eligibleGuests]);
+
+  const partyTagOptions = useMemo(() => {
+    const tags = new Set<string>();
+    for (const guest of eligibleGuests) {
+      if (Array.isArray(guest.partyTags)) {
+        for (const rawTag of guest.partyTags) {
+          const trimmed = rawTag.trim();
+          if (trimmed && trimmed.toLowerCase() !== ADDRESS_COLLECTION_TAG) {
+            tags.add(trimmed);
+          }
+        }
+      }
+    }
+    return Array.from(tags).sort((a, b) => a.localeCompare(b));
+  }, [eligibleGuests]);
+
   const filteredGuests = useMemo(() => {
     const term = currentSearchQuery.trim().toLowerCase();
-    if (!term) return unassignedGuests;
-    return unassignedGuests.filter((guest) => {
+
+    return eligibleGuests.filter((guest) => {
+      if (rsvpFilter !== 'all') {
+        const status = getGuestAttendanceStatus(guest);
+        if (status !== rsvpFilter) return false;
+      }
+
+      if (partyGroupFilter !== 'all') {
+        if ((guest.partyGroup?.trim() || '') !== partyGroupFilter) return false;
+      }
+
+      if (partyTagFilter !== 'all') {
+        if (!Array.isArray(guest.partyTags) || !guest.partyTags.some((t) => t.trim() === partyTagFilter)) {
+          return false;
+        }
+      }
+
+      if (!term) return true;
+
       const matchesName = guest.guestName.toLowerCase().includes(term);
       const matchesCode = guest.code ? guest.code.toLowerCase().includes(term) : false;
       const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
+      const matchesGroup = guest.partyGroup ? guest.partyGroup.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
-      return matchesName || matchesCode || matchesHousehold || matchesTags;
+      const matchesDiet = guest.dietaryNotes ? guest.dietaryNotes.toLowerCase().includes(term) : false;
+      return matchesName || matchesCode || matchesHousehold || matchesGroup || matchesTags || matchesDiet;
     });
-  }, [unassignedGuests, currentSearchQuery]);
+  }, [eligibleGuests, rsvpFilter, partyGroupFilter, partyTagFilter, currentSearchQuery]);
+
+  // Group filtered guests sharing a non-empty householdName (2+ members) while preserving first-seen order
+  const displayItems = useMemo<PanelDisplayItem[]>(() => {
+    const householdBuckets = new Map<string, { displayName: string; members: InvitationCodeDTO[] }>();
+    for (const guest of filteredGuests) {
+      const hh = guest.householdName?.trim();
+      if (!hh) continue;
+      const key = hh.toLowerCase();
+      const existing = householdBuckets.get(key);
+      if (existing) {
+        existing.members.push(guest);
+      } else {
+        householdBuckets.set(key, { displayName: hh, members: [guest] });
+      }
+    }
+
+    const emittedHouseholds = new Set<string>();
+    const items: PanelDisplayItem[] = [];
+
+    for (const guest of filteredGuests) {
+      const hh = guest.householdName?.trim();
+      if (hh) {
+        const key = hh.toLowerCase();
+        const bucket = householdBuckets.get(key);
+        if (bucket && bucket.members.length >= 2) {
+          if (!emittedHouseholds.has(key)) {
+            emittedHouseholds.add(key);
+            items.push({
+              kind: 'household',
+              key: `household-${key}`,
+              householdName: bucket.displayName,
+              members: bucket.members,
+            });
+          }
+          continue;
+        }
+      }
+      items.push({
+        kind: 'solo',
+        key: guest.id,
+        guest,
+      });
+    }
+
+    return items;
+  }, [filteredGuests]);
 
   const detachWindowDragListeners = useCallback(() => {
     if (windowDragCleanupRef.current) {
@@ -249,7 +379,14 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
     cancelPointerDrag();
+    e.stopPropagation();
     e.dataTransfer.setData('text/plain', guestId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleHouseholdDragStart = (e: React.DragEvent, memberIds: string[]) => {
+    cancelPointerDrag();
+    e.dataTransfer.setData('text/plain', `household:${memberIds.join(',')}`);
     e.dataTransfer.effectAllowed = 'move';
   };
 
@@ -261,6 +398,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       return;
     }
 
+    e.stopPropagation();
     if (pointerId !== undefined && pointerType !== 'mouse') {
       try {
         e.currentTarget.setPointerCapture?.(pointerId);
@@ -306,10 +444,15 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const handleAutoAssignAll = async () => {
     setIsAutoAssigning(true);
     try {
-      const res = await fetch('/api/admin/seating/auto-assign', {
+      const fetchInit: RequestInit = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-      });
+      };
+      if (!includePending) {
+        fetchInit.body = JSON.stringify({ includePending: false });
+      }
+
+      const res = await fetch('/api/admin/seating/auto-assign', fetchInit);
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -351,22 +494,103 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     }
   };
 
+  const openHouseholdModal = (group: HouseholdGroupItem) => {
+    setSelectedHouseholdForModal(group);
+    const needed = group.members.length;
+    const firstFittingTable = tables.find(
+      (t) => t.capacity - (t.invitationCodes?.length || 0) >= needed
+    );
+    setTargetHouseholdTableId(firstFittingTable ? firstFittingTable.id : '');
+  };
+
+  const handleHouseholdAssignSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedHouseholdForModal || !targetHouseholdTableId) return;
+
+    const guestIds = selectedHouseholdForModal.members.map((m) => m.id);
+    if (onAssignGuestsToTable) {
+      await onAssignGuestsToTable(guestIds, targetHouseholdTableId);
+    } else {
+      for (const guestId of guestIds) {
+        onAssignGuestToTable(guestId, targetHouseholdTableId);
+      }
+    }
+
+    setSelectedHouseholdForModal(null);
+    setTargetHouseholdTableId('');
+  };
+
+  const renderGuestBadges = (guest: InvitationCodeDTO) => {
+    const status = getGuestAttendanceStatus(guest);
+    const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+
+    return (
+      <div className="flex flex-wrap gap-1 pt-0.5">
+        <span
+          data-testid="guest-rsvp-badge"
+          className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
+            status === 'attending'
+              ? 'bg-green-50 text-green-800 border-green-300 dark:bg-green-950/70 dark:text-green-200 dark:border-green-800'
+              : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-800'
+          }`}
+        >
+          {status === 'attending' ? 'Attending' : 'Pending'}
+        </span>
+
+        {guest.partyGroup && (
+          <span
+            data-testid="guest-party-group-badge"
+            className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+          >
+            {guest.partyGroup}
+          </span>
+        )}
+
+        {dietaryBadges.map((badge) => (
+          <span
+            key={badge.category}
+            data-testid="guest-dietary-badge"
+            title={`${badge.label}: ${guest.dietaryNotes}`}
+            className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
+          >
+            🍽️ {badge.shortLabel}
+          </span>
+        ))}
+
+        {guest.partyTags &&
+          guest.partyTags
+            .filter((tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG)
+            .map((tag) => (
+              <span
+                key={tag}
+                className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+              >
+                #{tag}
+              </span>
+            ))}
+      </div>
+    );
+  };
+
+  const hasActiveFilters =
+    rsvpFilter !== 'all' || partyGroupFilter !== 'all' || partyTagFilter !== 'all';
+
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm flex flex-col h-full">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Unassigned Guests</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {unassignedGuests.length} guest{unassignedGuests.length === 1 ? '' : 's'} waiting for seating
+          <p className="text-xs text-gray-600 dark:text-gray-300">
+            {eligibleGuests.length} guest{eligibleGuests.length === 1 ? '' : 's'} waiting for seating
           </p>
         </div>
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary">
-          {unassignedGuests.length} unassigned
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-200 border border-red-200 dark:border-red-800">
+          {eligibleGuests.length} unassigned
         </span>
       </div>
 
       {/* Search Filter Input */}
-      <div className="mb-3">
+      <div className="mb-2.5">
         <label htmlFor="unassigned-search" className="sr-only">
           Search unassigned guests
         </label>
@@ -376,82 +600,249 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
           value={currentSearchQuery}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Filter by guest name or code..."
-          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+          className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
         />
       </div>
 
-      {/* Guest Card List */}
+      {/* RSVP, Party Group, and Party Tags Filters */}
+      <div className="grid grid-cols-1 gap-2 mb-3">
+        <div>
+          <label
+            htmlFor="unassigned-rsvp-filter"
+            className="block text-[11px] font-medium text-gray-700 dark:text-gray-200 mb-0.5"
+          >
+            RSVP Status
+          </label>
+          <select
+            id="unassigned-rsvp-filter"
+            value={rsvpFilter}
+            onChange={(e) => setRsvpFilter(e.target.value as RsvpFilterValue)}
+            className="w-full min-h-[30px] px-2.5 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary outline-none"
+          >
+            <option value="all">All Eligible</option>
+            <option value="attending">Attending</option>
+            <option value="pending">Pending</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label
+              htmlFor="unassigned-party-group-filter"
+              className="block text-[11px] font-medium text-gray-700 dark:text-gray-200 mb-0.5"
+            >
+              Party Group
+            </label>
+            <select
+              id="unassigned-party-group-filter"
+              value={partyGroupFilter}
+              onChange={(e) => setPartyGroupFilter(e.target.value)}
+              className="w-full min-h-[30px] px-2 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary outline-none"
+            >
+              <option value="all">All Groups</option>
+              {partyGroupOptions.map((group) => (
+                <option key={group} value={group}>
+                  {group}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="unassigned-party-tag-filter"
+              className="block text-[11px] font-medium text-gray-700 dark:text-gray-200 mb-0.5"
+            >
+              Party Tag
+            </label>
+            <select
+              id="unassigned-party-tag-filter"
+              value={partyTagFilter}
+              onChange={(e) => setPartyTagFilter(e.target.value)}
+              className="w-full min-h-[30px] px-2 py-1 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary outline-none"
+            >
+              <option value="all">All Tags</option>
+              {partyTagOptions.map((tag) => (
+                <option key={tag} value={tag}>
+                  #{tag}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Guest & Household Card List */}
       <div
+        role={displayItems.length > 0 ? 'list' : undefined}
+        aria-label={displayItems.length > 0 ? 'Unassigned guests' : undefined}
         className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[500px]"
-        role={filteredGuests.length > 0 ? 'list' : undefined}
-        aria-label={filteredGuests.length > 0 ? 'Unassigned guests' : undefined}
       >
-        {filteredGuests.length === 0 ? (
+        {displayItems.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-muted-text,#4b5563)] text-xs italic">
             {currentSearchQuery.trim()
               ? `No unassigned guests match "${currentSearchQuery.trim()}".`
-              : 'All guests have been assigned to tables!'}
+              : hasActiveFilters && eligibleGuests.length > 0
+                ? 'No unassigned guests match the selected filters.'
+                : 'All guests have been assigned to tables!'}
           </div>
         ) : (
-          filteredGuests.map((guest) => (
-            <div
-              key={guest.id}
-              draggable
-              onDragStart={(e) => handleDragStart(e, guest.id)}
-              onPointerDown={(e) => handleCardPointerDown(e, guest)}
-              onPointerMove={handleCardPointerMove}
-              onPointerUp={handleCardPointerUp}
-              onPointerCancel={handleCardPointerCancel}
-              className={`group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing select-none transition-all flex items-center justify-between shadow-xs hover:shadow-sm ${
-                activePointerDrag?.isDragging && activePointerDrag.guestId === guest.id
-                  ? 'opacity-50 ring-2 ring-primary'
-                  : ''
-              }`}
-              role="listitem"
-            >
-              <div className="min-w-0 pr-2 space-y-0.5">
-                <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1.5 flex-wrap">
-                  <span>{guest.guestName}</span>
-                  {guest.householdName && (
-                    <span className="text-[10px] px-1.5 py-0.2 font-normal rounded bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-200" data-testid="unassigned-household-badge">
-                      🏠 {guest.householdName}
-                    </span>
-                  )}
-                </p>
-                <p className="text-[10px] font-mono text-gray-500 dark:text-gray-400">
-                  Code: {guest.code}
-                </p>
-                {guest.partyTags && guest.partyTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-0.5">
-                    {guest.partyTags.map((tag) => (
-                      <span key={tag} className="text-[9px] px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium">
-                        #{tag}
+          displayItems.map((item) => {
+            if (item.kind === 'household') {
+              const memberIds = item.members.map((m) => m.id);
+              return (
+                <div
+                  key={item.key}
+                  role="listitem"
+                  data-testid="household-group-card"
+                  className="p-2.5 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg space-y-2 shadow-xs"
+                >
+                  <div
+                    draggable
+                    onDragStart={(e) => handleHouseholdDragStart(e, memberIds)}
+                    className="flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing"
+                  >
+                    <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                      <span
+                        data-testid="unassigned-household-badge"
+                        className="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-900 dark:bg-purple-900/70 dark:text-purple-100"
+                      >
+                        🏠 {item.householdName}
                       </span>
+                      <span className="text-[11px] font-medium text-purple-800 dark:text-purple-200">
+                        ({item.members.length} guests)
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openHouseholdModal(item)}
+                      className="min-h-[28px] px-2.5 py-1 text-[11px] font-semibold bg-purple-700 hover:bg-purple-800 text-white rounded transition-colors shrink-0"
+                      aria-label={`Seat ${item.householdName} household (${item.members.length} guests)`}
+                    >
+                      Seat Household
+                    </button>
+                  </div>
+
+                  <div
+                    role="list"
+                    aria-label={`${item.householdName} household members`}
+                    className="space-y-1.5 pl-2 border-l-2 border-purple-200 dark:border-purple-700"
+                  >
+                    {item.members.map((guest) => (
+                      <div
+                        key={guest.id}
+                        role="listitem"
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, guest.id)}
+                        onPointerDown={(e) => handleCardPointerDown(e, guest)}
+                        onPointerMove={handleCardPointerMove}
+                        onPointerUp={handleCardPointerUp}
+                        onPointerCancel={handleCardPointerCancel}
+                        className={`p-2 bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 rounded-md cursor-grab active:cursor-grabbing select-none flex items-center justify-between gap-2 ${
+                          activePointerDrag?.isDragging && activePointerDrag.guestId === guest.id
+                            ? 'opacity-50 ring-2 ring-primary'
+                            : ''
+                        }`}
+                      >
+                        <div className="min-w-0 pr-1 space-y-0.5">
+                          <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">
+                            {guest.guestName}
+                          </p>
+                          <p className="text-[10px] font-mono text-gray-600 dark:text-gray-300">
+                            Code: {guest.code}
+                          </p>
+                          {renderGuestBadges(guest)}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedGuestForModal(guest);
+                            if (tables.length > 0) setTargetTableId(tables[0].id);
+                          }}
+                          className="min-h-[28px] min-w-6 text-[11px] font-medium px-2.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-200 rounded transition-colors shrink-0"
+                          aria-label={`Assign ${guest.guestName} to table`}
+                        >
+                          Assign
+                        </button>
+                      </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              );
+            }
 
-              {/* Assign button for quick/accessible assignment */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedGuestForModal(guest);
-                  if (tables.length > 0) setTargetTableId(tables[0].id);
-                }}
-                className="min-h-6 min-w-6 inline-flex items-center justify-center text-[11px] font-medium px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-300 rounded transition-colors"
-                aria-label={`Assign ${guest.guestName} to table`}
+            const { guest } = item;
+            return (
+              <div
+                key={guest.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, guest.id)}
+                onPointerDown={(e) => handleCardPointerDown(e, guest)}
+                onPointerMove={handleCardPointerMove}
+                onPointerUp={handleCardPointerUp}
+                onPointerCancel={handleCardPointerCancel}
+                className={`group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing select-none transition-all flex items-center justify-between shadow-xs hover:shadow-sm ${
+                  activePointerDrag?.isDragging && activePointerDrag.guestId === guest.id
+                    ? 'opacity-50 ring-2 ring-primary'
+                    : ''
+                }`}
+                role="listitem"
               >
-                Assign
-              </button>
-            </div>
-          ))
+                <div className="min-w-0 pr-2 space-y-0.5">
+                  <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate flex items-center gap-1.5 flex-wrap">
+                    <span>{guest.guestName}</span>
+                    {guest.householdName && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 font-normal rounded bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-200"
+                        data-testid="unassigned-household-badge"
+                      >
+                        🏠 {guest.householdName}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[10px] font-mono text-gray-600 dark:text-gray-300">
+                    Code: {guest.code}
+                  </p>
+                  {renderGuestBadges(guest)}
+                </div>
+
+                {/* Assign button for quick/accessible assignment */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGuestForModal(guest);
+                    if (tables.length > 0) setTargetTableId(tables[0].id);
+                  }}
+                  className="min-h-[28px] text-[11px] font-medium px-2.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-200 rounded transition-colors shrink-0"
+                  aria-label={`Assign ${guest.guestName} to table`}
+                >
+                  Assign
+                </button>
+              </div>
+            );
+          })
         )}
       </div>
 
-      {/* Auto-Assign All Action Button */}
-      {unassignedGuests.length > 0 && (
+      {/* Auto-Assign All Action Section */}
+      {eligibleGuests.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+          <label
+            htmlFor="auto-assign-include-pending"
+            className="flex items-center gap-2 min-h-[28px] mb-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
+          >
+            <input
+              id="auto-assign-include-pending"
+              type="checkbox"
+              checked={includePending}
+              onChange={(e) => setIncludePending(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
+            />
+            <span>Include pending RSVPs in auto-assign</span>
+          </label>
+
           <Button
             type="button"
             variant="primary"
@@ -478,8 +869,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         </div>
       )}
 
-      {/* Accessible Click-to-Assign Dialog */}
-      {/* Accessible Click-to-Assign Dialog */}
+      {/* Accessible Click-to-Assign Individual Dialog */}
       <Dialog
         isOpen={Boolean(selectedGuestForModal)}
         onClose={() => {
@@ -502,7 +892,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                 setTargetTableId(e.target.value);
                 setTargetSeatNumber(undefined);
               }}
-              className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               {tables.map((t) => {
                 const isFull = (t.invitationCodes?.length || 0) >= t.capacity;
@@ -523,7 +913,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               id="unassigned-seat-select"
               value={targetSeatNumber ?? ''}
               onChange={(e) => setTargetSeatNumber(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-              className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
               <option value="">Any available seat</option>
               {(() => {
@@ -550,19 +940,97 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                 setTargetTableId('');
                 setTargetSeatNumber(undefined);
               }}
-              className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!targetTableId}
-              className="px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               Confirm Assignment
             </button>
           </div>
         </form>
+      </Dialog>
+
+      {/* Accessible Household Batch Assignment Dialog */}
+      <Dialog
+        isOpen={Boolean(selectedHouseholdForModal)}
+        onClose={() => {
+          setSelectedHouseholdForModal(null);
+          setTargetHouseholdTableId('');
+        }}
+        title={
+          selectedHouseholdForModal
+            ? `Seat ${selectedHouseholdForModal.householdName} Household (${selectedHouseholdForModal.members.length} guests)`
+            : undefined
+        }
+        className="max-w-sm w-full"
+      >
+        {selectedHouseholdForModal && (
+          <form onSubmit={handleHouseholdAssignSubmit} className="space-y-3">
+            <p className="text-xs text-gray-600 dark:text-gray-300">
+              Members: {selectedHouseholdForModal.members.map((m) => m.guestName).join(', ')}
+            </p>
+
+            <div>
+              <label
+                htmlFor="household-assign-table-select"
+                className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+              >
+                Select Table with {selectedHouseholdForModal.members.length}+ Open Seats
+              </label>
+              <select
+                id="household-assign-table-select"
+                value={targetHouseholdTableId}
+                onChange={(e) => setTargetHouseholdTableId(e.target.value)}
+                className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+              >
+                <option value="" disabled>
+                  Select a table...
+                </option>
+                {tables.map((t) => {
+                  const seated = t.invitationCodes?.length || 0;
+                  const openSeats = t.capacity - seated;
+                  const fits = openSeats >= selectedHouseholdForModal.members.length;
+                  return (
+                    <option key={t.id} value={t.id} disabled={!fits}>
+                      {t.name} ({openSeats} open of {t.capacity}{fits ? '' : ' - insufficient space'})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {!targetHouseholdTableId && (
+              <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded p-2">
+                No single table currently has {selectedHouseholdForModal.members.length} open seats.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedHouseholdForModal(null);
+                  setTargetHouseholdTableId('');
+                }}
+                className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!targetHouseholdTableId}
+                className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              >
+                Confirm Household Seating
+              </button>
+            </div>
+          </form>
+        )}
       </Dialog>
 
       {/* Floating Cross-Panel Drag Chip */}

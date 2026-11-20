@@ -4,6 +4,7 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 import { computeSeatPosition, resolveSeatAssignments } from '../seatLayout';
+import { getDietaryBadges, isOneSidedTableShape } from '../utils/seatingHelpers';
 
 const EMPTY_SET = new Set<string>();
 const MIN_STAGE_WIDTH = 800;
@@ -69,6 +70,7 @@ interface FloorplanCanvasProps {
   onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
   onUpdateTableRotation?: (tableId: string, rotation: number) => void;
   onDropGuestOnTable: (guestId: string, tableId: string, seatNumber?: number) => void;
+  onDropGuestsOnTable?: (guestIds: string[], tableId: string) => void;
   onUnassignGuest: (guestId: string) => void;
   searchQuery?: string;
   onOpenSeatAssignModal?: (tableId: string, seatNumber: number) => void;
@@ -82,6 +84,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   onUpdateTablePosition,
   onUpdateTableRotation,
   onDropGuestOnTable,
+  onDropGuestsOnTable,
   onUnassignGuest,
   searchQuery,
   onOpenSeatAssignModal,
@@ -692,10 +695,40 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     setActiveDropTarget(null);
-    const guestId = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
-    if (!guestId) return;
+    const rawData = e.dataTransfer ? e.dataTransfer.getData('text/plain') : '';
+    if (!rawData) return;
 
     const targetTable = tables.find((t) => t.id === tableId);
+
+    if (rawData.startsWith('household:')) {
+      const guestIds = rawData
+        .slice('household:'.length)
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (guestIds.length === 0) return;
+
+      if (targetTable) {
+        const currentSeatedIds = new Set((targetTable.invitationCodes || []).map((g) => g.id));
+        const incomingCount = guestIds.filter((id) => !currentSeatedIds.has(id)).length;
+        const availableSeats = targetTable.capacity - currentSeatedIds.size;
+        if (incomingCount > availableSeats) {
+          setLiveAnnouncement(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${guestIds.length} household members.`
+          );
+          return;
+        }
+      }
+
+      if (onDropGuestsOnTable) {
+        onDropGuestsOnTable(guestIds, tableId);
+      } else {
+        guestIds.forEach((id) => onDropGuestOnTable(id, tableId));
+      }
+      return;
+    }
+
+    const guestId = rawData;
     if (targetTable) {
       const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
       const isGuestAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === guestId);
@@ -717,12 +750,15 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     const capacity = table.capacity;
     const seatMap = resolveSeatAssignments(table.invitationCodes, capacity);
     const isRound = table.shape === 'round';
+    const isOneSided = isOneSidedTableShape(table.shape);
     const width = table.width || 120;
     const height = table.height || 120;
-    const seatOffset = isRound ? 18 : 16;
+    const seatOffset = isRound || isOneSided ? 18 : 16;
 
     for (let i = 1; i <= capacity; i++) {
       const assignedGuest = seatMap.get(i);
+      const dietaryBadges = assignedGuest ? getDietaryBadges(assignedGuest.dietaryNotes) : [];
+      const dietarySummary = dietaryBadges.map((b) => b.label).join(', ');
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =
         activeDropTarget?.tableId === table.id &&
@@ -740,91 +776,108 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       });
 
       seats.push(
-        <button
-          key={i}
-          type="button"
-          tabIndex={0}
-          role="button"
-          data-table-id={table.id}
-          data-seat-number={i}
-          aria-label={
-            assignedGuest
-              ? `Seat ${i}: ${assignedGuest.guestName}`
-              : `Seat ${i}: Empty`
-          }
-          onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
-          onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
-          onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
-          onDrop={(e) => handleDropOnTable(e, table.id, i)}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (assignedGuest) {
-              onUnassignGuest(assignedGuest.id);
-              setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
-            } else {
-              onOpenSeatAssignModal?.(table.id, i);
+        <React.Fragment key={i}>
+          <button
+            type="button"
+            tabIndex={0}
+            role="button"
+            data-table-id={table.id}
+            data-seat-number={i}
+            aria-label={
+              assignedGuest
+                ? dietarySummary
+                  ? `Seat ${i}: ${assignedGuest.guestName}, Dietary: ${dietarySummary}`
+                  : `Seat ${i}: ${assignedGuest.guestName}`
+                : `Seat ${i}: Empty`
             }
-          }}
-          onKeyDown={(e) => handleSeatKeyDown(e, table, i, assignedGuest)}
-          data-testid={isMatch ? 'matching-seat' : undefined}
-          data-is-search-match={isMatch ? 'true' : 'false'}
-          data-is-drop-target={isSeatDropTarget ? 'true' : undefined}
-          title={
-            assignedGuest
-              ? isMatch
-                ? `Seat ${i}: ${assignedGuest.guestName} (Search Match! Double click to unassign)`
-                : `Seat ${i}: ${assignedGuest.guestName} (Double click or press Enter/Space/Delete to unassign)`
-              : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
-          }
-          className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
-            isSeatDropTarget
-              ? isSeatDropDisabled
-                ? 'scale-125 bg-red-100 dark:bg-red-950/40 border-red-500 ring-2 ring-red-500 z-30 font-bold shadow-lg cursor-not-allowed'
-                : 'scale-125 bg-primary/20 border-primary ring-2 ring-primary z-30 font-bold shadow-lg'
-              : assignedGuest
+            onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
+            onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
+            onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
+            onDrop={(e) => handleDropOnTable(e, table.id, i)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (assignedGuest) {
+                onUnassignGuest(assignedGuest.id);
+                setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
+              } else {
+                onOpenSeatAssignModal?.(table.id, i);
+              }
+            }}
+            onKeyDown={(e) => handleSeatKeyDown(e, table, i, assignedGuest)}
+            data-testid={isMatch ? 'matching-seat' : undefined}
+            data-seat-side={isOneSided ? 'single' : undefined}
+            data-is-search-match={isMatch ? 'true' : 'false'}
+            data-is-drop-target={isSeatDropTarget ? 'true' : undefined}
+            title={
+              assignedGuest
                 ? isMatch
-                  ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
-                  : isSearching
-                    ? 'opacity-60 shadow-sm'
-                    : 'shadow-sm hover:scale-110'
-                : 'hover:border-primary hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]'
-          }`}
-          style={
-            assignedGuest
-              ? isMatch
-                ? {
-                  left: `${seatX}px`,
-                  top: `${seatY}px`,
-                }
+                  ? `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
+                  : `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
+                : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
+            }
+            className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
+              isSeatDropTarget
+                ? isSeatDropDisabled
+                  ? 'scale-125 bg-red-100 dark:bg-red-950/40 border-red-500 ring-2 ring-red-500 z-30 font-bold shadow-lg cursor-not-allowed'
+                  : 'scale-125 bg-primary/20 border-primary ring-2 ring-primary z-30 font-bold shadow-lg'
+                : assignedGuest
+                  ? isMatch
+                    ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
+                    : isSearching
+                      ? 'opacity-60 shadow-sm'
+                      : 'shadow-sm hover:scale-110'
+                  : 'hover:border-primary hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]'
+            }`}
+            style={
+              assignedGuest
+                ? isMatch
+                  ? {
+                    left: `${seatX}px`,
+                    top: `${seatY}px`,
+                  }
+                  : {
+                    left: `${seatX}px`,
+                    top: `${seatY}px`,
+                    backgroundColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                    color: 'var(--floorplan-seat-assigned-text, #ffffff)',
+                    borderColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                  }
                 : {
                   left: `${seatX}px`,
                   top: `${seatY}px`,
-                  backgroundColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
-                  color: 'var(--floorplan-seat-assigned-text, #ffffff)',
-                  borderColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                  backgroundColor: 'var(--floorplan-table-bg, #ffffff)',
+                  color: 'color-mix(in srgb, var(--color-foreground, #1f2937) 75%, transparent)',
+                  borderColor: 'var(--floorplan-table-border, #9ca3af)',
+                  borderStyle: 'dashed',
                 }
-              : {
-                left: `${seatX}px`,
-                top: `${seatY}px`,
-                backgroundColor: 'var(--floorplan-table-bg, #ffffff)',
-                color: 'color-mix(in srgb, var(--color-foreground, #1f2937) 75%, transparent)',
-                borderColor: 'var(--floorplan-table-border, #9ca3af)',
-                borderStyle: 'dashed',
-              }
-          }
-        >
-          {assignedGuest ? (
+            }
+          >
+            {assignedGuest ? (
+              <span
+                className="truncate px-0.5 text-[10px] before:content-[attr(data-initials)]"
+                data-initials={`${assignedGuest.guestName.split(' ')[0][0]}${assignedGuest.guestName.split(' ')[1]?.[0] || ''}`}
+                aria-hidden="true"
+              />
+            ) : (
+              <span aria-hidden="true">{i}</span>
+            )}
+          </button>
+          {assignedGuest && dietaryBadges.length > 0 && (
             <span
-              className="truncate px-0.5 text-[10px] before:content-[attr(data-initials)]"
-              data-initials={`${assignedGuest.guestName.split(' ')[0][0]}${assignedGuest.guestName.split(' ')[1]?.[0] || ''}`}
+              data-testid="seat-dietary-badge"
               aria-hidden="true"
-            />
-          ) : (
-            <span aria-hidden="true">{i}</span>
+              className="absolute pointer-events-none px-1 min-w-[14px] h-[14px] rounded-full bg-emerald-800 text-white text-[8px] leading-[14px] font-bold border border-white shadow-2xs z-30"
+              style={{
+                left: `${seatX + 4}px`,
+                top: `${seatY + 4}px`,
+              }}
+            >
+              {dietaryBadges[0].shortLabel}
+            </span>
           )}
-        </button>
+        </React.Fragment>
       );
     }
     return seats;
@@ -1046,6 +1099,15 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   }}
                 >
                   <span className="font-bold text-xs truncate max-w-[90%]">{table.name}</span>
+                  {isOneSidedTableShape(table.shape) &&
+                    Array.from({ length: table.capacity }, (_, idx) => (
+                      <span
+                        key={idx}
+                        aria-hidden="true"
+                        data-seat-side="single"
+                        className="hidden pointer-events-none"
+                      />
+                    ))}
                 </div>
               </div>
 

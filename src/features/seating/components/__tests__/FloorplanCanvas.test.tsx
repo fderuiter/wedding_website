@@ -830,6 +830,124 @@ describe('FloorplanCanvas component', () => {
     });
   });
 
+  describe('1-sided head/sweetheart tables, dietary badges, and household batch drops', () => {
+    it('places all seats along one side (top edge) for head and sweetheart tables', () => {
+      const headTable: SeatingTableDTO = {
+        id: 'tbl-head',
+        name: 'Bridal Party Head Table',
+        shape: 'head',
+        capacity: 4,
+        x: 100,
+        y: 100,
+        width: 250,
+        height: 90,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      render(<FloorplanCanvas {...defaultProps} tables={[headTable]} />);
+
+      const seats = [1, 2, 3, 4].map((n) => screen.getByLabelText(`Seat ${n}: Empty`));
+      const tops = seats.map((s) => s.style.top);
+      const lefts = seats.map((s) => parseFloat(s.style.left));
+
+      // Every seat sits along the same single edge (top: -18px) with monotonically increasing X
+      expect(tops).toEqual(['-18px', '-18px', '-18px', '-18px']);
+      expect(lefts[0]).toBeLessThan(lefts[1]);
+      expect(lefts[1]).toBeLessThan(lefts[2]);
+      expect(lefts[2]).toBeLessThan(lefts[3]);
+      seats.forEach((s) => expect(s).toHaveAttribute('data-seat-side', 'single'));
+    });
+
+    it('renders seat dietary badge indicator and accessible dietary label on FloorplanCanvas', async () => {
+      const sweetheartTable: SeatingTableDTO = {
+        id: 'tbl-sweet',
+        name: 'Sweetheart Table',
+        shape: 'sweetheart',
+        capacity: 2,
+        x: 120,
+        y: 120,
+        width: 140,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-diet',
+            code: 'BRIDE1',
+            guestName: 'Taylor Morgan',
+            seatNumber: 1,
+            dietaryNotes: 'Gluten-Free',
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      const { container } = render(<FloorplanCanvas {...defaultProps} tables={[sweetheartTable]} />);
+
+      const seat = screen.getByLabelText('Seat 1: Taylor Morgan, Dietary: Gluten-Free');
+      expect(seat).toBeInTheDocument();
+      const badge = screen.getByTestId('seat-dietary-badge');
+      expect(badge).toHaveTextContent('GF');
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+    });
+
+    it('invokes onDropGuestsOnTable for household drops when capacity permits and announces if capacity is insufficient', () => {
+      const onDropGuestsOnTable = jest.fn();
+      const smallTable: SeatingTableDTO = {
+        id: 'tbl-small',
+        name: 'Small Table',
+        shape: 'round',
+        capacity: 2,
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [{ id: 'g-existing', guestName: 'Seated Guest', seatNumber: 1 } as InvitationCodeDTO],
+      };
+
+      const { rerender } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[smallTable]}
+          onDropGuestsOnTable={onDropGuestsOnTable}
+        />
+      );
+
+      const tableEl = screen.getByRole('button', { name: /Small Table/i });
+
+      // 2-member household dropped onto table with only 1 open seat -> rejected with announcement
+      fireEvent.drop(tableEl, {
+        dataTransfer: {
+          getData: (fmt: string) => (fmt === 'text/plain' ? 'household:g-h1,g-h2' : ''),
+        },
+      });
+      expect(onDropGuestsOnTable).not.toHaveBeenCalled();
+      expect(
+        screen.getByText('Table "Small Table" only has 1 open seat for 2 household members.')
+      ).toBeInTheDocument();
+
+      // Increase capacity to 4 -> household drop succeeds
+      rerender(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[{ ...smallTable, capacity: 4 }]}
+          onDropGuestsOnTable={onDropGuestsOnTable}
+        />
+      );
+      fireEvent.drop(screen.getByRole('button', { name: /Small Table/i }), {
+        dataTransfer: {
+          getData: (fmt: string) => (fmt === 'text/plain' ? 'household:g-h1,g-h2' : ''),
+        },
+      });
+      expect(onDropGuestsOnTable).toHaveBeenCalledWith(['g-h1', 'g-h2'], 'tbl-small');
+    });
+  });
+
   describe('Unified sparse seat resolution and four-edge rectangular geometry', () => {
     it('leaves Seat 1 empty on sparse presets (Seats 2 and 3 occupied) and opens assign modal instead of unassigning Seat 2', () => {
       const onUnassignGuest = jest.fn();

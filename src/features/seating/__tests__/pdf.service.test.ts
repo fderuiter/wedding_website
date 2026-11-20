@@ -226,8 +226,8 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       const pdfBuffer = await generateSeatingChartPdf([sparseRectTable], []);
       expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
 
-      // First 8 circle calls belong to the 8 rectangular table seats (legend adds 2 smaller 4pt circles afterward)
-      expect(circleCalls.length).toBe(10);
+      // First 8 circle calls belong to the 8 rectangular table seats (legend adds 3 smaller 4pt circles afterward)
+      expect(circleCalls.length).toBe(11);
       const seatCircles = circleCalls.slice(0, 8);
 
       // Verify Top (0,1), Right (2,3), Bottom (4,5), and Left (6,7) edge symmetry
@@ -262,6 +262,17 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       expect(topFirst).toEqual({ x: 80, y: -10 });
       expect(topSecond).toEqual({ x: 160, y: -10 });
 
+      // Verify 1-sided head/sweetheart helper geometry places seats along single top edge
+      const headSeatOne = computeSeatPosition({
+        seatNumber: 1,
+        capacity: 3,
+        shape: 'head',
+        width: 240,
+        height: 80,
+        offset: 10,
+      });
+      expect(headSeatOne).toEqual({ x: 60, y: -10 });
+
       // Verify exactly 2 schematic seats are styled occupied (#0284c7) + 1 legend circle = 3 total #0284c7 fills
       const occupiedSeatFills = fillAndStrokeCalls.filter((c) => c.fillColor === '#0284c7');
       expect(occupiedSeatFills).toHaveLength(3);
@@ -290,5 +301,56 @@ describe('pdf.service - generateSeatingChartPdf', () => {
     expect(pageSource).toContain('min-w-6 min-h-6');
     expect(pageSource).toContain('title="Unassign guest"');
     expect(pageSource).toContain('aria-label={`Unassign ${guest.guestName}`}');
+  });
+
+  it('renders 1-sided head and sweetheart tables with dietary restriction indicators', async () => {
+    const oneSidedTables: SeatingTableDTO[] = [
+      {
+        id: 'tbl-head',
+        name: 'Head Table',
+        shape: 'head',
+        capacity: 6,
+        x: 80,
+        y: 60,
+        width: 240,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g1',
+            guestName: 'Taylor Morgan',
+            code: 'BRIDE1',
+            seatNumber: 1,
+            dietaryNotes: 'Gluten-Free, Dairy-Free',
+          } as InvitationCodeDTO,
+        ],
+      },
+      {
+        id: 'tbl-sweet',
+        name: 'Sweetheart Table',
+        shape: 'sweetheart',
+        capacity: 2,
+        x: 360,
+        y: 60,
+        width: 140,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g2',
+            guestName: 'Jordan Lee',
+            code: 'GROOM1',
+            seatNumber: 1,
+          } as InvitationCodeDTO,
+        ],
+      },
+    ];
+
+    const pdfBuffer = await generateSeatingChartPdf(oneSidedTables, []);
+    expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    expect(pdfBuffer.slice(0, 5).toString('ascii')).toBe('%PDF-');
+    expect(pdfBuffer.length).toBeGreaterThan(600);
   });
 });

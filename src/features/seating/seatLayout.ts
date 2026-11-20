@@ -1,4 +1,5 @@
 import { InvitationCodeDTO } from '@/features/registry';
+import { isOneSidedTableShape } from './utils/seatingHelpers';
 
 interface SeatPositionOptions {
   seatNumber: number;
@@ -71,7 +72,9 @@ export function resolveSeatAssignments(
 }
 
 /**
- * Computes seat center coordinates around a round or four-edged (rectangular/square) table.
+ * Computes seat center coordinates around a round, 1-sided (head/sweetheart),
+ * or four-edged (rectangular/square) table.
+ * For 1-sided tables, places all seats evenly along the single top edge.
  * For rectangular/square tables, distributes `capacity` seats clockwise across the 4 edges
  * (Top, Right, Bottom, Left) and spaces seats evenly along each edge using
  * `(edgeIndex + 1) / (edgeSeatCount + 1)`.
@@ -97,6 +100,13 @@ export function computeSeatPosition({
     return {
       x: cx + radius * Math.cos(angle),
       y: cy + radius * Math.sin(angle),
+    };
+  }
+
+  if (isOneSidedTableShape(shape)) {
+    return {
+      x: originX + (width / (safeCapacity + 1)) * seatNumber,
+      y: originY - offset,
     };
   }
 

@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
+  ARCHITECTURAL_DOCS,
   checkDocLinks,
+  type DocMapping,
   findInlineCodeEnd,
   MarkdownHeading,
   resolveVitePressHeadingSlug,
@@ -18,147 +20,21 @@ import {
   generateOpenApiSpec,
 } from './generate-docs';
 
+export { ARCHITECTURAL_DOCS, type DocMapping };
+
 const scriptDir = typeof __dirname !== 'undefined'
   ? __dirname
   : path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(scriptDir, '..');
 const PORTAL_DIR = path.join(ROOT_DIR, 'docs-portal');
 
-export interface DocMapping {
-  src: string;
-  dest: string;
-  category: 'Architecture' | 'Deployment' | 'Features' | 'Security' | 'Guides' | 'Development';
-  title: string;
-}
-
-export const ARCHITECTURAL_DOCS: DocMapping[] = [
-  // Development
-  {
-    src: 'docs/developer-setup.md',
-    dest: 'development/developer-setup.md',
-    category: 'Development',
-    title: 'Local Environment Setup',
-  },
-  {
-    src: '.github/TESTING.md',
-    dest: 'development/testing.md',
-    category: 'Development',
-    title: 'Testing Strategy',
-  },
-  {
-    src: '.github/CONTRIBUTING.md',
-    dest: 'development/contributing.md',
-    category: 'Development',
-    title: 'Contribution Guidelines',
-  },
-  {
-    src: 'AGENTS.md',
-    dest: 'development/agents.md',
-    category: 'Development',
-    title: 'Agent & Contributor Guidelines',
-  },
-  // Architecture
-  {
-    src: 'ARCHITECTURE.md',
-    dest: 'architecture/architecture.md',
-    category: 'Architecture',
-    title: 'System Architecture',
-  },
-  {
-    src: 'docs/runtime-contract.md',
-    dest: 'architecture/runtime-contract.md',
-    category: 'Architecture',
-    title: 'Runtime Contract',
-  },
-  // Deployment
-  {
-    src: 'DEPLOYMENT.md',
-    dest: 'deployment/deployment.md',
-    category: 'Deployment',
-    title: 'Deployment Strategy',
-  },
-  {
-    src: 'docs/deployment/README.md',
-    dest: 'deployment/recipes.md',
-    category: 'Deployment',
-    title: 'Deployment Recipes Overview',
-  },
-  {
-    src: 'docs/deployment/docker-vps.md',
-    dest: 'deployment/docker-vps.md',
-    category: 'Deployment',
-    title: 'Generic Docker / VPS',
-  },
-  {
-    src: 'docs/deployment/gcp-cloud-run.md',
-    dest: 'deployment/gcp-cloud-run.md',
-    category: 'Deployment',
-    title: 'Google Cloud Run',
-  },
-  {
-    src: 'docs/deployment/railway-render.md',
-    dest: 'deployment/railway-render.md',
-    category: 'Deployment',
-    title: 'Railway & Render',
-  },
-  {
-    src: 'docs/deployment/vercel.md',
-    dest: 'deployment/vercel.md',
-    category: 'Deployment',
-    title: 'Vercel',
-  },
-  // Features
-  {
-    src: 'FEATURE_MODULES.md',
-    dest: 'features/feature-modules.md',
-    category: 'Features',
-    title: 'Feature Modules',
-  },
-  {
-    src: 'docs/ASSET_STORAGE.md',
-    dest: 'features/asset-storage.md',
-    category: 'Features',
-    title: 'Asset Storage',
-  },
-  {
-    src: 'docs/3D_TECHNICAL_GUIDE.md',
-    dest: 'features/3d-technical-guide.md',
-    category: 'Features',
-    title: '3D Technical Guide',
-  },
-  {
-    src: 'SCRAPER.md',
-    dest: 'features/scraper.md',
-    category: 'Features',
-    title: 'Web Scraper Pipeline',
-  },
-  // Security
-  {
-    src: 'SECURITY.md',
-    dest: 'security/security.md',
-    category: 'Security',
-    title: 'Security Policy',
-  },
-  {
-    src: 'docs/THREAT_MODEL.md',
-    dest: 'security/threat-model.md',
-    category: 'Security',
-    title: 'Threat Model',
-  },
-  // Guides
-  {
-    src: 'docs/upgrading.md',
-    dest: 'guides/upgrading.md',
-    category: 'Guides',
-    title: 'Upgrading Guide',
-  },
-  {
-    src: 'docs/versioning.md',
-    dest: 'guides/versioning.md',
-    category: 'Guides',
-    title: 'Versioning Policy',
-  },
-];
+const PRESERVED_PORTAL_ENTRIES = new Set([
+  '.vitepress',
+  'api',
+  'public',
+  'index.md',
+  'postcss.config.mjs',
+]);
 
 const DOC_LOOKUP = new Map<string, DocMapping>();
 for (const doc of ARCHITECTURAL_DOCS) {
@@ -387,9 +263,49 @@ export function escapeVueMustache(content: string): string {
     .join('');
 }
 
+export function cleanStagedPortalDocs(portalDir: string = PORTAL_DIR): number {
+  if (!fs.existsSync(portalDir)) {
+    return 0;
+  }
+
+  let removedCount = 0;
+
+  function cleanSubdir(dirPath: string) {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        cleanSubdir(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        fs.unlinkSync(fullPath);
+        removedCount++;
+      }
+    }
+    if (fs.readdirSync(dirPath).length === 0) {
+      fs.rmdirSync(dirPath);
+    }
+  }
+
+  const topEntries = fs.readdirSync(portalDir, { withFileTypes: true });
+  for (const entry of topEntries) {
+    if (PRESERVED_PORTAL_ENTRIES.has(entry.name)) {
+      continue;
+    }
+    const fullPath = path.join(portalDir, entry.name);
+    if (entry.isDirectory()) {
+      cleanSubdir(fullPath);
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      fs.unlinkSync(fullPath);
+      removedCount++;
+    }
+  }
+
+  return removedCount;
+}
+
 export async function generatePortal() {
   console.log('--- Step 1: Validating documentation cross-links ---');
-  const linkCheckResult = checkDocLinks();
+  const linkCheckResult = await checkDocLinks();
   if (!linkCheckResult.passed) {
     console.error(`❌ Link validation failed with ${linkCheckResult.errors.length} broken links!`);
     linkCheckResult.errors.forEach(err => {
@@ -414,6 +330,10 @@ export async function generatePortal() {
   await generateOpenApiSpec();
 
   console.log(`\n--- Step 3: Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
+  const removedStale = cleanStagedPortalDocs(PORTAL_DIR);
+  if (removedStale > 0) {
+    console.log(`🧹 Cleaned ${removedStale} previously staged Markdown file(s).`);
+  }
   let stagedCount = 0;
 
   for (const doc of ARCHITECTURAL_DOCS) {
