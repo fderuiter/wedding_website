@@ -27,6 +27,14 @@ describe('rsvpDeadline utility', () => {
       expect(sanitizeRsvpClosedMessage('Please email <couple@example.com>')).toBe(
         'Please email couple@example.com'
       );
+      expect(
+        sanitizeRsvpClosedMessage('<scr<script>ipt>alert(1)</scr</script>ipt>Contact hosts')
+      ).toBe('alert(1)Contact hosts');
+      expect(
+        sanitizeRsvpClosedMessage(
+          'java<script>script:javascript:alert(1) da\u0000ta:text/html,hi (metadata: ok)'
+        )
+      ).toBe('alert(1) text/html,hi (metadata: ok)');
       expect(sanitizeRsvpClosedMessage(null)).toBe('');
       expect(sanitizeRsvpClosedMessage(undefined)).toBe('');
     });

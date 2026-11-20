@@ -8,17 +8,29 @@ export const DEFAULT_RSVP_CLOSED_MESSAGE =
 const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
- * Sanitizes custom RSVP closing messages by stripping control characters,
- * HTML tags, angle brackets, and dangerous URI schemes (`javascript:`, `data:`, `vbscript:`).
+ * Sanitizes custom RSVP closing messages by iteratively stripping control characters,
+ * HTML tags, dangerous URI schemes (`javascript:`, `data:`, `vbscript:`), and angle brackets.
  */
 export function sanitizeRsvpClosedMessage(value?: string | null, maxLength = 500): string {
   if (!value || typeof value !== 'string') return '';
-  return value
+
+  let sanitized = value
     .replace(/[\r\n]+/g, ' ')
-    .replace(/[\u0000-\u001F\u007F]/g, '')
-    .replace(/<\/?[a-zA-Z!?][^>@]*>/g, '')
+    .replace(/[\u0000-\u001F\u007F]/g, '');
+
+  let previous: string;
+  do {
+    previous = sanitized;
+    sanitized = sanitized.replace(/<\/?[a-zA-Z!?][^<>@]*>/g, '');
+  } while (sanitized !== previous);
+
+  do {
+    previous = sanitized;
+    sanitized = sanitized.replace(/\b(?:javascript|data|vbscript)\s*:/gi, '');
+  } while (sanitized !== previous);
+
+  return sanitized
     .replace(/[<>]/g, '')
-    .replace(/\b(?:javascript|data|vbscript)\s*:/gi, '')
     .trim()
     .slice(0, maxLength);
 }
