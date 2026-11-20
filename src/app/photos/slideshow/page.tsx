@@ -35,19 +35,31 @@ export default async function PhotosSlideshowPage() {
   );
 
   const initialPhotos: SlideshowPhoto[] = photoNodes
-    .map((n) => {
-      const data = n.data as { url?: string; title?: string; altText?: string } | undefined;
+    .map((n): SlideshowPhoto | null => {
+      const data = n.data as
+        | {
+          url?: string;
+          title?: string;
+          altText?: string;
+          caption?: string;
+          uploaderName?: string;
+        }
+        | undefined;
       if (!data?.url) return null;
+      const caption = data.caption?.trim() || undefined;
+      const uploaderName = data.uploaderName?.trim() || undefined;
       return {
         id: n.id,
         url: data.url,
-        title: data.title || data.altText || 'Reception Photo',
-        altText: data.altText || data.title,
+        title: caption || data.title || data.altText || (uploaderName ? `Photo by ${uploaderName}` : 'Reception Photo'),
+        altText: data.altText || caption || data.title,
+        ...(caption ? { caption } : {}),
+        ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: Boolean(n.tags?.includes('guest-upload')),
         createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : undefined,
       };
     })
-    .filter(Boolean) as SlideshowPhoto[];
+    .filter((item): item is SlideshowPhoto => item !== null);
 
   const uploadUrl = config.baseUrl ? `${config.baseUrl.replace(/\/$/, '')}/photos` : undefined;
 

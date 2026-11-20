@@ -151,4 +151,48 @@ describe('PhotosPage', () => {
       undefined
     );
   });
+
+  it('maps mediaId, caption, and uploaderName onto PublicPhotoItem objects and defaults to guest tab when only guest photos exist', async () => {
+    (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        type: 'Photo',
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          mediaId: '44444444-4444-4444-8444-444444444444',
+          url: '/uploads/photos/sparklers.jpg',
+          title: 'Sparkler exit!',
+          caption: 'Sparkler exit!',
+          uploaderName: 'Aunt Clara',
+          originalFilename: 'IMG_1234.HEIC',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    const pageElement = await PhotosPage();
+    render(pageElement);
+
+    expect(PhotoGalleryClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultTab: 'guest',
+        initialPhotos: [
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            mediaId: '44444444-4444-4444-8444-444444444444',
+            url: '/uploads/photos/sparklers.jpg',
+            title: 'Sparkler exit!',
+            caption: 'Sparkler exit!',
+            uploaderName: 'Aunt Clara',
+            isGuestUpload: true,
+            category: 'guest',
+          },
+        ],
+      }),
+      undefined
+    );
+  });
 });

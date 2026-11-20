@@ -11,7 +11,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
 
-import { PhotoGalleryClient, PhotoItem } from '@/components/photos/PhotoGalleryClient';
+import { PhotoGalleryClient, PublicPhotoItem } from '@/components/photos/PhotoGalleryClient';
 
 export const metadata: Metadata = {
   title: 'Photos',
@@ -49,22 +49,36 @@ export default async function PhotosPage() {
     [] as ContentNodeDTO[]
   );
 
-  const initialPhotos: PhotoItem[] = photoNodes
-    .map((n): PhotoItem | null => {
-      const data = n.data as { url?: string; title?: string; altText?: string } | undefined;
+  const initialPhotos: PublicPhotoItem[] = photoNodes
+    .map((n): PublicPhotoItem | null => {
+      const data = n.data as
+        | {
+          url?: string;
+          title?: string;
+          altText?: string;
+          mediaId?: string;
+          caption?: string;
+          uploaderName?: string;
+        }
+        | undefined;
       if (!data?.url) {
         return null;
       }
       const isGuestUpload = Boolean(n.tags?.includes('guest-upload'));
+      const caption = data.caption?.trim() || undefined;
+      const uploaderName = data.uploaderName?.trim() || undefined;
       return {
         id: n.id,
+        ...(data.mediaId ? { mediaId: data.mediaId } : {}),
         url: data.url,
-        title: data.title || data.altText || undefined,
+        title: caption || data.title || data.altText || (uploaderName ? `Photo by ${uploaderName}` : undefined),
+        ...(caption ? { caption } : {}),
+        ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload,
         category: isGuestUpload ? 'guest' : 'curated',
       };
     })
-    .filter((item): item is PhotoItem => item !== null);
+    .filter((item): item is PublicPhotoItem => item !== null);
 
   const hasCuratedPhotos = initialPhotos.some((p) => p.category === 'curated');
   const defaultTab = hasCuratedPhotos || initialPhotos.length === 0 ? 'curated' : 'guest';

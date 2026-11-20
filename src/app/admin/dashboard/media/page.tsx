@@ -15,6 +15,9 @@ interface PendingPhoto {
   mediaId?: string;
   url: string;
   title?: string;
+  uploaderName?: string;
+  caption?: string;
+  originalFilename?: string;
   createdAt: string | Date;
   status?: string;
   data?: any;
@@ -358,7 +361,14 @@ function MediaDashboardContent({
                 {pendingPhotos.map((photo) => {
                   const photoData = photo.data || {};
                   const imageUrl = photo.url || photoData.url;
-                  const title = photo.title || photoData.title || photoData.altText || 'Guest Photo';
+                  const uploaderName = (photo.uploaderName || photoData.uploaderName)?.trim() || undefined;
+                  const caption = (photo.caption || photoData.caption)?.trim() || undefined;
+                  const title =
+                    caption ||
+                    photo.title ||
+                    photoData.title ||
+                    photoData.altText ||
+                    (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
                   const createdDate = photo.createdAt ? new Date(photo.createdAt).toLocaleString() : 'Recently';
                   const isSelected = selectedPendingIds.includes(photo.id);
 
@@ -392,9 +402,22 @@ function MediaDashboardContent({
                             Pending
                           </span>
                         </div>
-                        <div className="text-sm font-semibold text-stone-800 dark:text-stone-200 truncate mb-1" title={title}>
+                        <div
+                          className="text-sm font-semibold text-stone-800 dark:text-stone-200 line-clamp-2 mb-1"
+                          title={title}
+                          data-testid={`pending-photo-title-${photo.id}`}
+                        >
                           {title}
                         </div>
+                        {uploaderName && (
+                          <div
+                            className="text-xs font-medium text-stone-700 dark:text-stone-300 mb-1 flex items-center gap-1"
+                            data-testid={`pending-photo-uploader-${photo.id}`}
+                          >
+                            <Icon name="Users" className="w-3 h-3 text-stone-500 dark:text-stone-400 shrink-0" />
+                            <span className="truncate">Uploaded by {uploaderName}</span>
+                          </div>
+                        )}
                         <div className="text-xs text-stone-500 dark:text-stone-400 mb-4 flex items-center gap-1">
                           <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
                           <span>Submitted {createdDate}</span>

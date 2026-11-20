@@ -9,23 +9,30 @@ import { useOptionalToast } from '@/components/ui/ToastProvider';
 
 export type PhotoCategory = 'curated' | 'guest';
 
-export interface PhotoItem {
+export interface PublicPhotoItem {
   id?: string;
+  mediaId?: string;
   url: string;
   title?: string;
+  caption?: string;
+  uploaderName?: string;
   isGuestUpload?: boolean;
+  category?: PhotoCategory;
+}
+
+interface NormalizedPhotoItem extends PublicPhotoItem {
   category: PhotoCategory;
 }
 
 export interface PhotoGalleryClientProps {
-  initialPhotos: (PhotoItem | string)[];
+  initialPhotos: (PublicPhotoItem | string)[];
   defaultTab?: PhotoCategory;
   isAdmin?: boolean;
 }
 
-function normalizeInitialPhotos(items: (PhotoItem | string)[]): PhotoItem[] {
+function normalizeInitialPhotos(items: (PublicPhotoItem | string)[]): NormalizedPhotoItem[] {
   return items
-    .map((item, index): PhotoItem | null => {
+    .map((item, index): NormalizedPhotoItem | null => {
       if (typeof item === 'string') {
         if (!item) return null;
         return {
@@ -37,15 +44,25 @@ function normalizeInitialPhotos(items: (PhotoItem | string)[]): PhotoItem[] {
       }
       if (!item?.url) return null;
       const isGuest = Boolean(item.isGuestUpload || item.category === 'guest');
+      const caption = item.caption?.trim() || undefined;
+      const uploaderName = item.uploaderName?.trim() || undefined;
+      const resolvedTitle =
+        caption ||
+        item.title ||
+        (uploaderName ? `Photo by ${uploaderName}` : undefined) ||
+        (isGuest ? 'Guest Photo' : `Wedding photo ${index + 1}`);
       return {
         id: item.id,
+        ...(item.mediaId ? { mediaId: item.mediaId } : {}),
         url: item.url,
-        title: item.title || (isGuest ? 'Guest Photo' : `Wedding photo ${index + 1}`),
+        title: resolvedTitle,
+        ...(caption ? { caption } : {}),
+        ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: isGuest,
         category: isGuest ? 'guest' : 'curated',
       };
     })
-    .filter((p): p is PhotoItem => p !== null);
+    .filter((p): p is NormalizedPhotoItem => p !== null);
 }
 
 const emptySubscribe = () => () => {};
@@ -58,7 +75,7 @@ export function PhotoGalleryClient({
   isAdmin = false,
 }: PhotoGalleryClientProps) {
   const toast = useOptionalToast();
-  const [photos, setPhotos] = useState<PhotoItem[]>(() => normalizeInitialPhotos(initialPhotos));
+  const [photos, setPhotos] = useState<NormalizedPhotoItem[]>(() => normalizeInitialPhotos(initialPhotos));
 
   const [activeTab, setActiveTab] = useState<PhotoCategory>(() => {
     if (defaultTab) return defaultTab;
@@ -103,11 +120,20 @@ export function PhotoGalleryClient({
     if (uploaded.status !== 'APPROVED' || uploaded.isVisible === false) {
       return;
     }
+    const caption = uploaded.caption?.trim() || undefined;
+    const uploaderName = uploaded.uploaderName?.trim() || undefined;
+    const resolvedTitle =
+      caption ||
+      uploaded.title ||
+      uploaded.altText ||
+      (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
     setPhotos((prev) => [
       {
         id: uploaded.nodeId || uploaded.id,
         url: uploaded.url,
-        title: uploaded.altText || 'Guest Photo',
+        title: resolvedTitle,
+        ...(caption ? { caption } : {}),
+        ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: true,
         category: 'guest',
       },
@@ -599,6 +625,12 @@ export function PhotoGalleryClient({
               >
                 {guestPhotos.map((photo, index) => {
                   const isSelected = selectedUrls.has(photo.url);
+                  const primaryLabel = photo.caption || photo.title || 'Guest Photo';
+                  const uploaderLabel =
+                    photo.uploaderName && primaryLabel !== `Photo by ${photo.uploaderName}`
+                      ? `Photo by ${photo.uploaderName}`
+                      : undefined;
+                  const hasCustomAttribution = Boolean(photo.caption || photo.uploaderName);
                   return (
                     <div
                       key={photo.id || index}
@@ -645,12 +677,27 @@ export function PhotoGalleryClient({
                           alt={photo.title || `Guest photo ${index + 1}`}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
-                          <span className="text-xs font-medium text-white truncate">
-                            {photo.title || 'Guest Photo'}
-                          </span>
-                        </div>
                       </button>
+
+                      <div
+                        className={`absolute inset-x-0 bottom-0 z-10 bg-stone-950/90 px-3 py-2 pointer-events-none transition-opacity ${
+                          hasCustomAttribution
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                        }`}
+                      >
+                        <p className="text-xs font-medium text-white truncate">
+                          {primaryLabel}
+                        </p>
+                        {uploaderLabel && (
+                          <p
+                            className="text-[11px] text-stone-200 truncate"
+                            data-testid={`guest-photo-uploader-${index}`}
+                          >
+                            {uploaderLabel}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -746,12 +793,23 @@ export function PhotoGalleryClient({
               data-testid="lightbox-image"
             />
 
-            {currentPhoto.title && (
+            {(currentPhoto.caption || currentPhoto.title) && (
               <div
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center text-white/90 text-sm font-medium bg-black/50 px-3 py-1 rounded-full truncate max-w-md pointer-events-none"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-stone-950/90 border border-white/10 px-4 py-2 rounded-2xl max-w-md pointer-events-none shadow-lg"
                 data-testid="lightbox-caption"
               >
-                {currentPhoto.title}
+                <p className="text-white text-sm font-medium truncate">
+                  {currentPhoto.caption || currentPhoto.title}
+                </p>
+                {currentPhoto.uploaderName &&
+                  (currentPhoto.caption || currentPhoto.title) !== `Photo by ${currentPhoto.uploaderName}` && (
+                  <p
+                    className="text-stone-200 text-xs mt-0.5 truncate"
+                    data-testid="lightbox-uploader"
+                  >
+                    Photo by {currentPhoto.uploaderName}
+                  </p>
+                )}
               </div>
             )}
           </div>

@@ -37,14 +37,30 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 
   const photos = nodes
     .map((node) => {
-      const data = node.data as { url?: string; title?: string; altText?: string; mediaId?: string } | undefined;
+      const data = node.data as
+        | {
+          url?: string;
+          title?: string;
+          altText?: string;
+          caption?: string;
+          uploaderName?: string;
+          mediaId?: string;
+        }
+        | undefined;
       const url = data?.url;
       if (!url) return null;
+      const caption = data?.caption?.trim() || undefined;
+      const uploaderName = data?.uploaderName?.trim() || undefined;
+      const fallbackLabel = caption || (uploaderName ? `Photo by ${uploaderName}` : undefined);
+      const isGuestUpload = Boolean(node.tags?.includes('guest-upload'));
       return {
         id: node.id,
         url,
-        title: data?.title || data?.altText || 'Reception Photo',
-        altText: data?.altText || data?.title || 'Reception Photo',
+        title: caption || data?.title || data?.altText || fallbackLabel || 'Reception Photo',
+        altText: data?.altText || caption || data?.title || fallbackLabel || 'Reception Photo',
+        ...(caption ? { caption } : {}),
+        ...(uploaderName ? { uploaderName } : {}),
+        ...(isGuestUpload ? { isGuestUpload: true } : {}),
         createdAt: node.createdAt ? new Date(node.createdAt).toISOString() : undefined,
       };
     })
