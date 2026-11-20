@@ -173,6 +173,38 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
+  it('rejects documenting SERVICE_URL as a primary GitHub Environment secret instead of vars.SERVICE_URL', () => {
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    const brokenDeployment = fs
+      .readFileSync(deploymentPath, 'utf8')
+      .replace(
+        '| `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |',
+        '| `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |\n| `SERVICE_URL` | Legacy secret placement | `deploy.yml` |'
+      );
+    fs.writeFileSync(deploymentPath, brokenDeployment);
+
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    const brokenGcp = fs
+      .readFileSync(gcpPath, 'utf8')
+      .replace(
+        '*   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):',
+        '*   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):\n    *   `SERVICE_URL`: Stale secret placement.'
+      );
+    fs.writeFileSync(gcpPath, brokenGcp);
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          '"SERVICE_URL" must be documented as a primary GitHub Actions Variable (vars.SERVICE_URL)'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Lists SERVICE_URL under GitHub Environment Secrets instead of GitHub Environment Variables'
+        ),
+      ])
+    );
+  });
+
   it('rejects unquoted leading ! tags and invalid YAML 1.2 syntax in .github/workflows/', () => {
     const deployProviderPath = path.join(tempDir, '.github/workflows/deploy-provider.yml');
     const brokenWorkflow = fs

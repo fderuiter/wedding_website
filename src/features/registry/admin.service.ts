@@ -1,11 +1,9 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
-import { RegistryItemSchema, RegistryItemDTO } from './schemas';
-import { deriveAdminInputSchema } from '@/utils/validation';
+import { RegistryItemInputSchema, RegistryItemDTO } from './schemas';
 import { handleMediaFields } from '@/features/admin';
 import { z } from 'zod';
 
-const RegistryItemInputSchema = deriveAdminInputSchema(RegistryItemSchema);
 export type RegistryItemInput = z.infer<typeof RegistryItemInputSchema>;
 
 export class RegistryItemAdminService extends BaseService<RegistryItemDTO> {

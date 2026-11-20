@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports
 import { createMediaAssociationSchema } from '@/features/media/schemas';
-import { createLaxUrlSchema } from '@/utils/validation';
+import { createLaxUrlSchema, deriveAdminInputSchema } from '@/utils/validationPrimitives';
 import {
   INVITATION_CODE_MAX_LENGTH,
   GUEST_NAME_MAX_LENGTH,
@@ -185,6 +185,9 @@ export const RegistryItemSchema = RegistryItemBaseSchema.extend({
 
 export type RegistryItemDTO = z.infer<typeof RegistryItemSchema>;
 
+export const RegistryItemCreateInputSchema = deriveAdminInputSchema(RegistryItemBaseSchema, false);
+export const RegistryItemInputSchema = deriveAdminInputSchema(RegistryItemSchema, true);
+
 
 export function translateSnapshotToActive(snapshotData: any) {
   if (!snapshotData) return null;
@@ -238,6 +241,11 @@ export const InvitationCodeSchema = z.object({
 
 export type InvitationCodeDTO = z.infer<typeof InvitationCodeSchema>;
 
+export const InvitationCodeInputSchema = deriveAdminInputSchema(InvitationCodeSchema, false).extend({
+  code: InvitationCodeSchema.shape.code.optional().or(z.literal('')),
+});
+export const InvitationCodeUpdateInputSchema = deriveAdminInputSchema(InvitationCodeSchema, true);
+
 const BatchImportInvitationCodeItemSchema = z.object({
   guestName: z.string({ message: 'Guest name is required.' }).trim().min(1, 'Guest name is required.').max(GUEST_NAME_MAX_LENGTH, `Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`),
   code: z.string().trim().optional().or(z.literal('')),
@@ -245,7 +253,6 @@ const BatchImportInvitationCodeItemSchema = z.object({
     trimmedEmailPipe,
     z.literal(''),
     z.null(),
-    z.undefined()
   ]).optional(),
   ...optionalAddressFields,
   dietaryNotes: z.string().trim().optional().or(z.literal('')).nullable(),

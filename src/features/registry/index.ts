@@ -1,3 +1,26 @@
+export {
+  RegistryItemSchema,
+  RegistryItemBaseSchema,
+  RegistryItemCreateInputSchema,
+  RegistryItemInputSchema,
+  ContributorSchema,
+  UpdateThankYouNoteSchema,
+  BatchUpdateThankYouNotesSchema,
+  InvitationCodeSchema,
+  InvitationCodeInputSchema,
+  InvitationCodeUpdateInputSchema,
+  GuestAddressUpdateSchema,
+  ItemTypeEnum,
+  BatchImportInvitationCodesSchema,
+  BatchDeleteInvitationCodesSchema,
+  BatchUpdateInvitationTagsSchema,
+  DryRunValidateBatchSchema,
+  PaymentIntentRequestSchema,
+  BatchScrapeUrlsSchema,
+  BatchCreateRegistryItemsSchema,
+  translateSnapshotToActive,
+  PublicAddressCollectSchema,
+} from './schemas';
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
 export type { ProgressMetrics, PaginationMeta, ThankYouNotesFilterOptions } from './thank-you.service';
@@ -12,25 +35,6 @@ export {
   DEFAULT_THANK_YOU_TEMPLATES,
   substituteThankYouTemplateTokens,
 } from './types';
-export {
-  RegistryItemSchema,
-  RegistryItemBaseSchema,
-  ContributorSchema,
-  UpdateThankYouNoteSchema,
-  BatchUpdateThankYouNotesSchema,
-  InvitationCodeSchema,
-  GuestAddressUpdateSchema,
-  ItemTypeEnum,
-  BatchImportInvitationCodesSchema,
-  BatchDeleteInvitationCodesSchema,
-  BatchUpdateInvitationTagsSchema,
-  DryRunValidateBatchSchema,
-  PaymentIntentRequestSchema,
-  BatchScrapeUrlsSchema,
-  BatchCreateRegistryItemsSchema,
-  translateSnapshotToActive,
-  PublicAddressCollectSchema,
-} from './schemas';
 export type {
   InvitationCodeDTO,
   BatchImportInvitationCodesDTO,

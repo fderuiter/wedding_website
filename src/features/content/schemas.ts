@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { coordinateSchema, isSafeConfigAssetUrl, isSafeMediaOrPhotoUrl } from '@/utils/validation';
+import {
+  FeatureSchema,
+  coordinateSchema,
+  isSafeConfigAssetUrl,
+  isSafeMediaOrPhotoUrl,
+} from '@/utils/validationPrimitives';
 import { ModuleConfigSchema, resolveModuleConfig, DEFAULT_MODULE_CONFIG } from '@/lib/modules';
 import {
   isValidRsvpDeadlineDate,
@@ -90,7 +95,21 @@ export const BrandDimensionsSchema = z.object({
 
 export type BrandDimensionsDTO = z.infer<typeof BrandDimensionsSchema>;
 
-export const RawUpdateAppConfigSchema = z.object({
+function validateHexColorFields(val: Record<string, unknown>, ctx: z.RefinementCtx) {
+  for (const [key, value] of Object.entries(val)) {
+    if (typeof key === 'string' && key.toLowerCase().includes('color') && typeof value === 'string' && value !== '') {
+      if (!hexColorRegex.test(value)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message: `Invalid hex color format for ${key}. Must be a valid hex code (e.g. #RRGGBB).`,
+        });
+      }
+    }
+  }
+}
+
+const rawUpdateAppConfigBaseSchema = z.object({
   partner1Name: z.string().optional(),
   partner2Name: z.string().optional(),
   brideName: z.string().optional(),
@@ -221,19 +240,84 @@ export const RawUpdateAppConfigSchema = z.object({
     },
     { message: 'Invalid standard IANA timezone identifier.' }
   ).optional(),
-}).catchall(z.any()).superRefine((val, ctx) => {
-  for (const [key, value] of Object.entries(val)) {
-    if (typeof key === 'string' && key.toLowerCase().includes('color') && typeof value === 'string' && value !== '') {
-      if (!hexColorRegex.test(value)) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [key],
-          message: `Invalid hex color format for ${key}. Must be a valid hex code (e.g. #RRGGBB).`,
-        });
-      }
-    }
-  }
 });
+
+export const RawUpdateAppConfigSchema = rawUpdateAppConfigBaseSchema
+  .catchall(z.any())
+  .superRefine(validateHexColorFields);
+
+export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
+  .partial()
+  .extend({
+    id: z.string().min(1).optional(),
+  })
+  .catchall(z.any())
+  .superRefine(validateHexColorFields)
+  .transform((data) => {
+    const partner1Name = data.partner1Name || data.brideName || 'Partner 1';
+    const partner2Name = data.partner2Name || data.groomName || 'Partner 2';
+    return {
+      ...data,
+      partner1Name,
+      partner2Name,
+      brideName: partner1Name,
+      groomName: partner2Name,
+      weddingDate: data.weddingDate ?? new Date(),
+      baseUrl: data.baseUrl ?? '',
+      venueName: data.venueName ?? 'TBD Venue',
+      venueAddress: data.venueAddress ?? '',
+      venueCity: data.venueCity ?? '',
+      venueState: data.venueState ?? '',
+      venueZip: data.venueZip ?? '',
+      latitude: data.latitude ?? 0,
+      longitude: data.longitude ?? 0,
+      storyText: data.storyText ?? '',
+      venueDescription: data.venueDescription ?? '',
+      travelAdvice: data.travelAdvice ?? '',
+      heroTitle: data.heroTitle ?? '',
+      heroSubtitle: data.heroSubtitle ?? '',
+      seoTitle: data.seoTitle ?? '',
+      seoDescription: data.seoDescription ?? '',
+      contactEmail: data.contactEmail ?? '',
+      photoAlbumUrl: data.photoAlbumUrl ?? '',
+      faviconUrl: data.faviconUrl ?? '/assets/favicon.png',
+      ogImageUrl: data.ogImageUrl ?? '/images/placeholder.png',
+      seoKeywords: data.seoKeywords ?? '',
+      colorPrimary: data.colorPrimary ?? '#B91C1C',
+      colorSecondary: data.colorSecondary ?? '#B45309',
+      themePreset: data.themePreset ?? 'classic',
+      themeTokens: data.themeTokens ?? {},
+      typographyScale: data.typographyScale ?? TypographyScaleSchema.parse({}),
+      spacingScale: data.spacingScale ?? SpacingScaleSchema.parse({}),
+      borderTreatment: data.borderTreatment ?? BorderTreatmentSchema.parse({}),
+      brandDimensions: data.brandDimensions ?? BrandDimensionsSchema.parse({}),
+      layoutContainerMaxWidth: !data.layoutContainerMaxWidth || data.layoutContainerMaxWidth === '' ? '64rem' : data.layoutContainerMaxWidth,
+      layoutGridGap: !data.layoutGridGap || data.layoutGridGap === '' ? '1.5rem' : data.layoutGridGap,
+      layoutCardPadding: !data.layoutCardPadding || data.layoutCardPadding === '' ? '2rem' : data.layoutCardPadding,
+      layoutBorderRadius: !data.layoutBorderRadius || data.layoutBorderRadius === '' ? '1rem' : data.layoutBorderRadius,
+      timezone: data.timezone ?? 'UTC',
+      showCountdown: data.showCountdown ?? true,
+      showAddToCalendar: data.showAddToCalendar ?? true,
+      emailProvider: data.emailProvider ?? 'smtp',
+      smtpHost: data.smtpHost ?? '',
+      smtpPort: data.smtpPort ?? 587,
+      smtpUser: data.smtpUser ?? '',
+      smtpPass: data.smtpPass ?? '',
+      smtpFrom: data.smtpFrom ?? '',
+      smtpSecure: data.smtpSecure ?? false,
+      resendApiKey: data.resendApiKey ?? '',
+      resendFrom: data.resendFrom ?? '',
+      sendgridApiKey: data.sendgridApiKey ?? '',
+      sendgridFrom: data.sendgridFrom ?? '',
+      smsProvider: data.smsProvider ?? 'none',
+      twilioAccountSid: data.twilioAccountSid ?? '',
+      twilioAuthToken: data.twilioAuthToken ?? '',
+      twilioFromNumber: data.twilioFromNumber ?? '',
+      broadcastBatchSize: data.broadcastBatchSize ?? 50,
+      broadcastBatchDelayMs: data.broadcastBatchDelayMs ?? 500,
+      subdomain: data.subdomain || null,
+    };
+  });
 
 export const UpdateAppConfigSchema = RawUpdateAppConfigSchema.transform((data) => {
   const partner1Name = data.partner1Name || data.brideName || '';
@@ -523,12 +607,30 @@ export const GenericNodeSchema = BaseContentNode.extend({
   type: z.string().refine((val) => !TYPED_CONTENT_NODE_TYPES.has(val), {
     message: 'Known content node types must conform to their specific schema.',
   }),
-  data: z.any(),
+  data: z.record(z.string(), z.unknown()),
 });
 
 export const ContentNodeSchema = z.union([FAQNodeSchema, LogisticsNodeSchema, ScheduleNodeSchema, PhotoNodeSchema, GenericNodeSchema]);
 
+export const ContentNodeInputSchema = z.union([
+  FAQNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }),
+  LogisticsNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }),
+  ScheduleNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }),
+  PhotoNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }),
+  GenericNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }),
+]);
+
+export const ContentNodeUpdateInputSchema = z.union([
+  FAQNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial(),
+  LogisticsNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial(),
+  ScheduleNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial(),
+  PhotoNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial(),
+  GenericNodeSchema.omit({ id: true, createdAt: true, updatedAt: true }).partial(),
+]);
+
 export type ContentNodeDTO = z.infer<typeof ContentNodeSchema>;
+
+export { FeatureSchema };
 
 /**
  * Evaluates whether a ContentNode record is marked private via `data.isPrivate`.
@@ -555,14 +657,6 @@ export function isPrivateContentNode(
   }
   return false;
 }
-
-const FeatureSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  title: z.string().optional(),
-  visible: z.boolean().default(true),
-  content: z.string().optional(),
-});
 
 export const AppConfigSchema = z.object({
   id: z.string().describe('Unique configuration profile identifier (defaults to "global" in single-site deployments).'),

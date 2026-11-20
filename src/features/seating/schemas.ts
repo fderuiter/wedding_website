@@ -21,6 +21,14 @@ export const SeatingTableSchema = z.object({
 
 export type SeatingTableDTO = z.infer<typeof SeatingTableSchema>;
 
+export const SeatingTableInputSchema = SeatingTableSchema.omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  invitationCodes: true,
+});
+export const SeatingTableUpdateInputSchema = SeatingTableInputSchema.partial();
+
 export const AssignSeatSchema = z.object({
   invitationCodeId: z.string().min(1, 'Invitation code ID is required.'),
   tableId: z.string().nullable(),

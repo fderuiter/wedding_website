@@ -3,6 +3,8 @@ export {
   AutoAssignResultSchema,
   AutoAssignSchema,
   SeatingTableSchema,
+  SeatingTableInputSchema,
+  SeatingTableUpdateInputSchema,
 } from './schemas';
 export type {
   AutoAssignResultDTO,

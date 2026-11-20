@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { deriveAdminInputSchema } from '@/utils/validationPrimitives';
 
 export const SubEventSchema = z.object({
   id: z.string(),
@@ -15,6 +16,9 @@ export const SubEventSchema = z.object({
 });
 
 export type SubEventDTO = z.infer<typeof SubEventSchema>;
+
+export const SubEventInputSchema = deriveAdminInputSchema(SubEventSchema, false);
+export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, true);
 
 export const MAX_RSVP_PLUS_ONE_COUNT = 20;
 

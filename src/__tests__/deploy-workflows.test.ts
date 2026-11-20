@@ -1,5 +1,6 @@
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
+import http from 'http';
 import os from 'os';
 import path from 'path';
 import { parseDocument } from 'yaml';
@@ -369,5 +370,262 @@ process.exit(1);
     );
     expect(cloudRunDoc).toContain('attestations: read');
     expect(cloudRunDoc).toContain('gh attestation verify');
+    expect(deploymentDoc).toContain('vars.SERVICE_URL');
+    expect(deploymentDoc).toContain('secrets.SERVICE_URL');
+    expect(cloudRunDoc).toContain('vars.SERVICE_URL');
+    expect(cloudRunDoc).toContain('secrets.SERVICE_URL');
+  });
+
+  it('resolves vars.SERVICE_URL, cloudrun url, and secrets.SERVICE_URL in order without exporting secret-only fallback to $GITHUB_OUTPUT', () => {
+    const resolveUrlScript = extractStepRunScript(deployProviderYml, 'Resolve Service URL Output');
+    const summaryScript = extractStepRunScript(deployProviderYml, 'Deployment Summary');
+
+    const parseOutputs = () => {
+      const map: Record<string, string> = {};
+      for (const line of fs.readFileSync(outputFile, 'utf8').split(/\r?\n/)) {
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+          map[line.slice(0, idx)] = line.slice(idx + 1);
+        }
+      }
+      return map;
+    };
+
+    // 1. vars.SERVICE_URL set without secrets.SERVICE_URL -> unmasked output and summary
+    fs.writeFileSync(outputFile, '');
+    fs.writeFileSync(summaryFile, '');
+    const varsRes = runBashStep(resolveUrlScript, {
+      VAR_SERVICE_URL: 'https://staging.wedding.example.com',
+      CLOUDRUN_URL: 'https://wedding-website-xyz.a.run.app',
+      SECRET_SERVICE_URL: '',
+      GCP_SA_KEY: '{"project_id":"demo"}',
+      DEPLOY_WEBHOOK_URL: '',
+      INPUT_DRY_RUN: 'false',
+    });
+    expect(varsRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      is_dry_run: 'false',
+      service_url: 'https://staging.wedding.example.com',
+    });
+
+    const summaryRes = runBashStep(summaryScript, {
+      TARGET_ENV: 'staging',
+      PROVIDER: 'google-cloud-run',
+      IMAGE_DIGEST: VALID_DIGEST,
+      IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+      ATTESTATION_STATUS: 'verified',
+      SERVICE_URL: parseOutputs().service_url,
+    });
+    expect(summaryRes.status).toBe(0);
+    expect(fs.readFileSync(summaryFile, 'utf8')).toContain(
+      '- **Service URL:** `https://staging.wedding.example.com`'
+    );
+
+    // 2. Cloud Run URL used when vars.SERVICE_URL is empty
+    fs.writeFileSync(outputFile, '');
+    const cloudRunRes = runBashStep(resolveUrlScript, {
+      VAR_SERVICE_URL: '',
+      CLOUDRUN_URL: 'https://wedding-website-xyz.a.run.app',
+      SECRET_SERVICE_URL: 'https://legacy-secret.example.com',
+      GCP_SA_KEY: '{"project_id":"demo"}',
+      DEPLOY_WEBHOOK_URL: '',
+      INPUT_DRY_RUN: 'false',
+    });
+    expect(cloudRunRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      is_dry_run: 'false',
+      service_url: 'https://wedding-website-xyz.a.run.app',
+    });
+
+    // 3. Secret-only fallback omitted from $GITHUB_OUTPUT (both live and dry-run)
+    fs.writeFileSync(outputFile, '');
+    const secretLiveRes = runBashStep(resolveUrlScript, {
+      VAR_SERVICE_URL: '',
+      CLOUDRUN_URL: '',
+      SECRET_SERVICE_URL: 'https://legacy-secret.example.com',
+      GCP_SA_KEY: '',
+      DEPLOY_WEBHOOK_URL: 'https://webhook.example.com/deploy',
+      INPUT_DRY_RUN: 'false',
+    });
+    expect(secretLiveRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      is_dry_run: 'false',
+      service_url: '',
+    });
+    expect(fs.readFileSync(outputFile, 'utf8')).not.toContain('legacy-secret.example.com');
+
+    fs.writeFileSync(outputFile, '');
+    const secretDryRes = runBashStep(resolveUrlScript, {
+      VAR_SERVICE_URL: '',
+      CLOUDRUN_URL: '',
+      SECRET_SERVICE_URL: 'https://legacy-secret.example.com',
+      GCP_SA_KEY: '',
+      DEPLOY_WEBHOOK_URL: '',
+      INPUT_DRY_RUN: 'true',
+    });
+    expect(secretDryRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      is_dry_run: 'true',
+      service_url: '',
+    });
+
+    // 4. Missing URL in live mode outputs empty string (not 127.0.0.1:3000), while dry-run outputs 127.0.0.1:3000
+    fs.writeFileSync(outputFile, '');
+    const emptyLiveRes = runBashStep(resolveUrlScript, {
+      VAR_SERVICE_URL: '',
+      CLOUDRUN_URL: '',
+      SECRET_SERVICE_URL: '',
+      GCP_SA_KEY: '',
+      DEPLOY_WEBHOOK_URL: 'https://webhook.example.com/deploy',
+      INPUT_DRY_RUN: 'false',
+    });
+    expect(emptyLiveRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      is_dry_run: 'false',
+      service_url: '',
+    });
+
+    fs.writeFileSync(outputFile, '');
+    const emptyDryRes = runBashStep(resolveUrlScript, {
+      VAR_SERVICE_URL: '',
+      CLOUDRUN_URL: '',
+      SECRET_SERVICE_URL: '',
+      GCP_SA_KEY: '',
+      DEPLOY_WEBHOOK_URL: '',
+      INPUT_DRY_RUN: 'true',
+    });
+    expect(emptyDryRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      is_dry_run: 'true',
+      service_url: 'http://127.0.0.1:3000',
+    });
+  });
+
+  it('verifies deploy.yml health probes succeed under simulated runner secret output redaction with vars.SERVICE_URL or legacy secrets.SERVICE_URL', async () => {
+    const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');
+    const prodProbeScript = extractStepRunScript(deployYml, 'Execute Production Health Probe Verification');
+
+    const server = http.createServer((req, res) => {
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const addr = server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+    const liveUrl = `http://127.0.0.1:${port}`;
+
+    const runAsync = (script: string, envOverrides: Record<string, string>) =>
+      new Promise<{ status: number | null; outputs: string; summary: string }>((resolve, reject) => {
+        const stepOut = path.join(tempDir, `out-${Math.random().toString(36).slice(2)}.txt`);
+        const stepSum = path.join(tempDir, `sum-${Math.random().toString(36).slice(2)}.md`);
+        fs.writeFileSync(stepOut, '');
+        fs.writeFileSync(stepSum, '');
+        const child = spawn('bash', ['-eo', 'pipefail', '-c', script], {
+          cwd: tempDir,
+          env: {
+            ...process.env,
+            GITHUB_OUTPUT: stepOut,
+            GITHUB_STEP_SUMMARY: stepSum,
+            ...envOverrides,
+          },
+        });
+        child.on('error', reject);
+        child.on('close', (code) => {
+          resolve({
+            status: code,
+            outputs: fs.readFileSync(stepOut, 'utf8'),
+            summary: fs.readFileSync(stepSum, 'utf8'),
+          });
+        });
+      });
+
+    try {
+      // Simulated runner redaction (empty string and masked '***') with vars.SERVICE_URL set
+      const stagingVarsRes = await runAsync(stagingProbeScript, {
+        VAR_SERVICE_URL: `${liveUrl}/`,
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+      });
+      expect(stagingVarsRes.status).toBe(0);
+      expect(stagingVarsRes.outputs).toContain('health_status=healthy');
+      expect(stagingVarsRes.summary).toContain(`- **Target Service URL:** \`${liveUrl}\``);
+
+      // Simulated runner redaction (empty string and '***') with legacy secrets.SERVICE_URL set
+      const stagingSecretRes = await runAsync(stagingProbeScript, {
+        VAR_SERVICE_URL: '',
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: liveUrl,
+        IS_DRY_RUN: 'false',
+      });
+      expect(stagingSecretRes.status).toBe(0);
+      expect(stagingSecretRes.outputs).toContain('health_status=healthy');
+
+      const prodSecretMaskedRes = await runAsync(prodProbeScript, {
+        VAR_SERVICE_URL: '',
+        SERVICE_URL: '***',
+        SECRET_SERVICE_URL: liveUrl,
+        IS_DRY_RUN: 'false',
+      });
+      expect(prodSecretMaskedRes.status).toBe(0);
+      expect(prodSecretMaskedRes.outputs).toContain('health_status=healthy');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('fails fast in deploy.yml without polling 127.0.0.1:3000 when is_dry_run is false and SERVICE_URL is omitted, and passes dry-run when omitted', () => {
+    const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');
+    const prodProbeScript = extractStepRunScript(deployYml, 'Execute Production Health Probe Verification');
+
+    // Shim curl to fail test if invoked during fail-fast checks
+    const curlShim = path.join(binDir, 'curl');
+    fs.writeFileSync(
+      curlShim,
+      `#!/usr/bin/env node
+const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(callLogFile)}, 'curl ' + process.argv.slice(2).join(' ') + '\\n');
+process.stdout.write('\\nHTTP_STATUS_CODE:000');
+process.exit(0);
+`
+    );
+    fs.chmodSync(curlShim, 0o755);
+
+    for (const script of [stagingProbeScript, prodProbeScript]) {
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(summaryFile, '');
+      const failRes = runBashStep(script, {
+        VAR_SERVICE_URL: '',
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+      });
+      expect(failRes.status).toBe(1);
+      expect(failRes.stdout + failRes.stderr).toContain('Missing or invalid SERVICE_URL');
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=unhealthy');
+    }
+
+    // Zero polling calls to curl / 127.0.0.1:3000 when is_dry_run is false
+    expect(fs.readFileSync(callLogFile, 'utf8')).toBe('');
+
+    // Dry-run mode with omitted SERVICE_URL still passes
+    for (const script of [stagingProbeScript, prodProbeScript]) {
+      const fastDryScript = script.replace('DELAY=2', 'DELAY=1').replace('ELAPSED -ge 6', 'ELAPSED -ge 0');
+      fs.writeFileSync(outputFile, '');
+      const dryRes = runBashStep(fastDryScript, {
+        VAR_SERVICE_URL: '',
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'true',
+      });
+      expect(dryRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=healthy');
+    }
   });
 });
