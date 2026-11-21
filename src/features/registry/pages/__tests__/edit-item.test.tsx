@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import EditRegistryItemPage from '../edit-item';
@@ -178,5 +178,40 @@ describe('EditRegistryItemPage', () => {
 
     expect(await screen.findByText(/Error: Database write conflict/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/item name/i)).toHaveValue('Dual-Boiler Espresso Machine');
+  });
+
+  it('redirects to /admin/dashboard/registry after saving item changes', async () => {
+    mockParamId = 'gift-35';
+    (global.fetch as jest.Mock) = jest.fn((url: RequestInfo, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr === '/api/registry/items/gift-35' && (!init || !init.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: { ...mockItem, id: 'gift-35', name: 'Espresso Machine' } }),
+        });
+      }
+      if (urlStr === '/api/registry/items/gift-35' && init?.method === 'PUT') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: { ...mockItem, id: 'gift-35', name: 'Espresso Machine' } }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${urlStr}`));
+    }) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    await screen.findByLabelText(/item name/i);
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
+    });
   });
 });

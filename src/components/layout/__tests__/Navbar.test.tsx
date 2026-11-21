@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
+import { axe } from 'jest-axe';
 import Navbar from '../Navbar';
 import React from 'react';
 
@@ -26,6 +27,7 @@ const mockConfig = {
     { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
     { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
     { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
+    { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
   ],
 } as any;
 
@@ -137,7 +139,8 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     );
 
     const homeLink = screen.getByRole('link', { name: 'Home' });
-    const detailsLink = screen.getByRole('link', { name: 'Wedding Day Details' });
+    fireEvent.click(screen.getByRole('button', { name: /event guide/i }));
+    const detailsLink = screen.getByRole('menuitem', { name: 'Wedding Day Details' });
 
     expect(homeLink).toHaveAttribute('aria-current', 'page');
     expect(detailsLink).not.toHaveAttribute('aria-current');
@@ -156,7 +159,8 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     );
 
     const homeLink = screen.getByRole('link', { name: 'Home' });
-    const detailsLink = screen.getByRole('link', { name: 'Wedding Day Details' });
+    fireEvent.click(screen.getByRole('button', { name: /event guide/i }));
+    const detailsLink = screen.getByRole('menuitem', { name: 'Wedding Day Details' });
 
     expect(homeLink).not.toHaveAttribute('aria-current');
     expect(detailsLink).toHaveAttribute('aria-current', 'page');
@@ -173,7 +177,9 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     );
 
     const homeLink = screen.getByRole('link', { name: 'Home' });
-    const detailsLink = screen.getByRole('link', { name: 'Wedding Day Details' });
+    const guideTrigger = screen.getByRole('button', { name: /event guide/i });
+    fireEvent.click(guideTrigger);
+    const detailsLink = screen.getByRole('menuitem', { name: 'Wedding Day Details' });
 
     expect(homeLink).toHaveAttribute('aria-current', 'page');
     expect(detailsLink).not.toHaveAttribute('aria-current');
@@ -183,7 +189,13 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     });
 
     expect(homeLink).not.toHaveAttribute('aria-current');
-    expect(detailsLink).toHaveAttribute('aria-current', 'page');
+
+    // Re-open menu to verify updated aria-current on section item
+    fireEvent.click(guideTrigger);
+    expect(screen.getByRole('menuitem', { name: 'Wedding Day Details' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
   });
 
   it('sets aria-current="page" on matching route link on non-home pages', () => {
@@ -205,7 +217,141 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     expect(homeLink).not.toHaveAttribute('aria-current');
   });
 
-  it('correctly manages aria-current on mobile menu links', () => {
+  it('keeps top-level links consistent across / and subpages, closes menu on route transitions, and omits /archive and /admin/login', () => {
+    currentPathname = '/';
+    const { rerender } = render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    const desktopNav = screen.getByRole('navigation', { name: 'Global Navigation' });
+    const homeTopLevelLabels = within(desktopNav)
+      .getAllByRole('link')
+      .map((el) => el.textContent);
+    expect(homeTopLevelLabels).toEqual(['Home', 'Guest Portal', 'Registry', 'Photos']);
+    expect(within(desktopNav).getByRole('button', { name: /event guide/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /archive/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^admin$/i })).not.toBeInTheDocument();
+
+    // Open Event Guide and simulate a pathname transition
+    fireEvent.click(within(desktopNav).getByRole('button', { name: /event guide/i }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    currentPathname = '/photos';
+    rerender(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    const subpageTopLevelLabels = within(desktopNav)
+      .getAllByRole('link')
+      .map((el) => el.textContent);
+    expect(subpageTopLevelLabels).toEqual(['Home', 'Guest Portal', 'Registry', 'Photos']);
+
+    // Event Guide still provides homepage section links and guide pages on subpages
+    fireEvent.click(within(desktopNav).getByRole('button', { name: /event guide/i }));
+    expect(screen.getByRole('menuitem', { name: 'Wedding Day Details' })).toHaveAttribute(
+      'href',
+      '/#details'
+    );
+    expect(screen.getByRole('menuitem', { name: 'Things to Do' })).toHaveAttribute(
+      'href',
+      '/things-to-do'
+    );
+  });
+
+  it('deduplicates /#travel when /things-to-do is enabled and falls back to /#travel when attractions is disabled', () => {
+    const { unmount } = render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /event guide/i }));
+    expect(screen.getByRole('menuitem', { name: 'Things to Do' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Travel & Things to Do' })).not.toBeInTheDocument();
+
+    unmount();
+
+    render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={{
+          ...mockConfig,
+          modules: { attractions: false },
+          features: [
+            ...mockConfig.features,
+            { id: 'travel', type: 'travel', title: 'Duplicate Travel', visible: true },
+          ],
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /event guide/i }));
+    expect(screen.queryByRole('menuitem', { name: 'Things to Do' })).not.toBeInTheDocument();
+    const travelItems = screen.getAllByRole('menuitem', { name: /travel/i });
+    expect(travelItems).toHaveLength(1);
+    expect(travelItems[0]).toHaveAttribute('href', '/#travel');
+  });
+
+  it('supports keyboard navigation (ArrowDown, ArrowUp, Home, End) and Escape focus restoration on the grouped Event Guide menu and passes axe', async () => {
+    const { container } = render(
+      <Navbar
+        isAdmin={false}
+        handleLogout={jest.fn()}
+        headerRef={headerRef}
+        config={mockConfig}
+      />
+    );
+
+    const guideTrigger = screen.getByRole('button', { name: /event guide/i });
+    guideTrigger.focus();
+
+    fireEvent.keyDown(guideTrigger, { key: 'ArrowDown' });
+    const menuItems = screen.getAllByRole('menuitem');
+    expect(menuItems.length).toBeGreaterThan(2);
+    expect(menuItems[0]).toHaveFocus();
+
+    fireEvent.keyDown(menuItems[0], { key: 'ArrowDown' });
+    expect(menuItems[1]).toHaveFocus();
+
+    fireEvent.keyDown(menuItems[1], { key: 'End' });
+    expect(menuItems[menuItems.length - 1]).toHaveFocus();
+
+    fireEvent.keyDown(menuItems[menuItems.length - 1], { key: 'Home' });
+    expect(menuItems[0]).toHaveFocus();
+
+    fireEvent.keyDown(menuItems[0], { key: 'ArrowUp' });
+    expect(menuItems[menuItems.length - 1]).toHaveFocus();
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(guideTrigger).toHaveFocus();
+
+    // Pressing ArrowUp on the closed trigger opens the menu and focuses the last menuitem
+    fireEvent.keyDown(guideTrigger, { key: 'ArrowUp' });
+    const reopenedItems = screen.getAllByRole('menuitem');
+    expect(reopenedItems[reopenedItems.length - 1]).toHaveFocus();
+  });
+
+  it('correctly manages aria-current and vertical scrolling classes on mobile menu links', () => {
     window.location.hash = '#accommodations';
 
     render(
@@ -220,12 +366,18 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     const toggleButton = screen.getByRole('button', { name: /open main menu/i });
     fireEvent.click(toggleButton);
 
-    const accommodationsMobileLinks = screen.getAllByRole('link', { name: 'Accommodations' });
+    const mobileOverlay = document.getElementById('mobile-menu');
+    expect(mobileOverlay).toHaveClass('bottom-0');
 
-    // Both desktop and mobile navigation links matching active section have aria-current="page"
-    accommodationsMobileLinks.forEach((link) => {
-      expect(link).toHaveAttribute('aria-current', 'page');
+    const mobileNav = screen.getByRole('navigation', { name: 'Mobile Navigation' });
+    const mobilePanel = mobileNav.parentElement;
+    expect(mobilePanel).toHaveClass('overflow-y-auto');
+    expect(mobilePanel).toHaveClass('max-h-full');
+    expect(mobilePanel).toHaveClass('overscroll-contain');
+    const accommodationsMobileLink = within(mobileNav).getByRole('link', {
+      name: 'Accommodations',
     });
+    expect(accommodationsMobileLink).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders persistent Help button in navigation bar, opens contextual dietary help on schedule view, and restores focus on Escape', async () => {

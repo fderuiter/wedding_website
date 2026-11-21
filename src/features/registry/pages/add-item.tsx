@@ -37,7 +37,7 @@ export default function AddRegistryItemPage() {
     try {
       await create(values);
       addToast('Item added successfully!', 'success');
-      router.push('/admin/dashboard');
+      router.push('/admin/dashboard/registry');
     } catch (error) {
       addToast(`Failed to add item: ${error instanceof Error ? error.message : String(error)}`, 'error');
     } finally {
@@ -146,7 +146,7 @@ export default function AddRegistryItemPage() {
           aria-labelledby="tab-batch"
           tabIndex={0}
         >
-          <BatchUrlScraper onSuccess={() => router.push('/admin/dashboard')} />
+          <BatchUrlScraper onSuccess={() => router.push('/admin/dashboard/registry')} />
         </div>
       )}
 
@@ -157,7 +157,7 @@ export default function AddRegistryItemPage() {
           aria-labelledby="tab-csv"
           tabIndex={0}
         >
-          <CsvRegistryImport onSuccess={() => router.push('/admin/dashboard')} />
+          <CsvRegistryImport onSuccess={() => router.push('/admin/dashboard/registry')} />
         </div>
       )}
     </AdminEditorContainer>

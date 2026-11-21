@@ -1,5 +1,6 @@
 'use client';
 import { Fragment, useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
@@ -244,6 +245,15 @@ function MediaDashboardContent({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/photos/slideshow"
+            data-testid="admin-launch-slideshow-link"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          >
+            <Icon name="Monitor" className="w-4 h-4" />
+            <span>Live Slideshow</span>
+          </Link>
+
           {selectedIds.length > 0 && (
             <Button
               onClick={() => handleExportZip(selectedIds)}
