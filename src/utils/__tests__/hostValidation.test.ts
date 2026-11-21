@@ -1,6 +1,7 @@
 import {
   isHostAllowed,
   getValidatedCanonicalUrl,
+  resolveRequestOrigin,
 } from '../hostValidation';
 
 describe('Host Validation Utility', () => {
@@ -98,6 +99,50 @@ describe('Host Validation Utility', () => {
       const fallback = 'https://wedding.example';
       const url = getValidatedCanonicalUrl('evil.com', 'https', fallback);
       expect(url).toBe(fallback);
+    });
+  });
+
+  describe('resolveRequestOrigin', () => {
+    const originalAllowedHosts = process.env.ALLOWED_HOSTS;
+
+    afterEach(() => {
+      if (originalAllowedHosts === undefined) {
+        delete process.env.ALLOWED_HOSTS;
+      } else {
+        process.env.ALLOWED_HOSTS = originalAllowedHosts;
+      }
+    });
+
+    it('reads first x-forwarded-host and x-forwarded-proto values when allowed', () => {
+      process.env.ALLOWED_HOSTS = 'wedding.example,localhost';
+      const headers = new Headers({
+        'x-forwarded-host': 'wedding.example, proxy.internal',
+        'x-forwarded-proto': 'https, http',
+        host: 'localhost:3000',
+      });
+      const origin = resolveRequestOrigin({
+        headers,
+        nextUrl: new URL('http://localhost:3000/api/admin/broadcast/send'),
+      });
+      expect(origin).toBe('https://wedding.example');
+    });
+
+    it('preserves local nextUrl.origin fallback on localhost and 127.0.0.1 when host is unapproved', () => {
+      process.env.ALLOWED_HOSTS = 'wedding.example';
+      const localReq = {
+        headers: new Headers({ 'x-forwarded-host': 'evil.com' }),
+        nextUrl: new URL('http://127.0.0.1:4123/api/cron/broadcasts'),
+      };
+      expect(resolveRequestOrigin(localReq)).toBe('http://127.0.0.1:4123');
+    });
+
+    it('uses default localhost:3000 fallback when host is unapproved and nextUrl is non-local', () => {
+      process.env.ALLOWED_HOSTS = 'wedding.example';
+      const nonLocalReq = {
+        headers: new Headers({ host: 'evil.com' }),
+        nextUrl: new URL('https://evil.com/api/admin/broadcast/preview'),
+      };
+      expect(resolveRequestOrigin(nonLocalReq)).toBe('http://localhost:3000');
     });
   });
 });

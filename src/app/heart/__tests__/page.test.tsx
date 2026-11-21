@@ -68,7 +68,7 @@ jest.mock('@react-three/rapier', () => {
         if (typeof ref === 'function') {
           ref(targetApi);
         } else {
-          (ref as React.MutableRefObject<unknown>).current = targetApi;
+          ref.current = targetApi;
         }
       }
       if (onContactForce && userData?.id === 'main') {

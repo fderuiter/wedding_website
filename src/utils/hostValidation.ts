@@ -160,3 +160,28 @@ export function getValidatedCanonicalUrl(
 
   return fallbackBaseUrl;
 }
+
+interface OriginAwareRequest {
+  headers: {
+    get(_name: string): string | null;
+  };
+  nextUrl?: {
+    hostname: string;
+    origin: string;
+  };
+}
+
+/**
+ * Resolves a validated canonical request origin from forwarded and host headers,
+ * preserving local loopback origins (`localhost` or `127.0.0.1`) as fallback.
+ */
+export function resolveRequestOrigin(req: OriginAwareRequest): string {
+  const hostHeader =
+    req.headers.get('x-forwarded-host')?.split(',')[0]?.trim() || req.headers.get('host');
+  const protoHeader = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const safeLocalFallback =
+    req.nextUrl?.hostname === 'localhost' || req.nextUrl?.hostname === '127.0.0.1'
+      ? req.nextUrl.origin
+      : undefined;
+  return getValidatedCanonicalUrl(hostHeader, protoHeader, safeLocalFallback);
+}

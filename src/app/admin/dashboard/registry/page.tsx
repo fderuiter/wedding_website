@@ -19,7 +19,7 @@ function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallba
       if (typeof ref === 'function') {
         ref(node);
       } else {
-        (ref as React.MutableRefObject<T | null>).current = node;
+        ref.current = node;
       }
     }
   };
