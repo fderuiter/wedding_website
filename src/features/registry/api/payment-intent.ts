@@ -43,13 +43,23 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  const priceCents = Math.round(targetItem.price * 100);
+  const isFund =
+    targetItem.itemType === 'CASH_FUND' || targetItem.itemType === 'EXPERIENCE_FUND';
+  const quantity = isFund ? 1 : Math.max(1, Math.floor(targetItem.quantity || 1));
+  const unitPriceCents = Math.round(targetItem.price * 100);
+  const totalTargetCents = unitPriceCents * quantity;
   const contributedCents = Math.round(targetItem.amountContributed * 100);
-  const remainingCents = priceCents - contributedCents;
+  const remainingCents = totalTargetCents - contributedCents;
   const contributionCents = Math.round(amount * 100);
 
   if (contributionCents > remainingCents) {
     throw new ApiError(400, 'Contribution cannot be greater than the remaining amount.');
+  }
+
+  if (!isFund && !targetItem.isGroupGift && unitPriceCents > 0) {
+    if (contributionCents < unitPriceCents || contributionCents % unitPriceCents !== 0) {
+      throw new ApiError(400, 'Contribution amount must match a whole number of available units.');
+    }
   }
 
   let finalCode = code;

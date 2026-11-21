@@ -6,7 +6,7 @@ import { formatCurrency } from '@/utils/intl';
 import { registryRepository } from './repository';
 import { registryService } from './service';
 import type { IRegistryRepository } from './types';
-import { getPaymentUrl } from './utils/paymentUrls';
+import { getPaymentUrl, resolveEffectivePaymentHandle } from './utils/paymentUrls';
 
 const VALID_EMAIL_SCHEMA = z.email();
 const ACTIVE_EMAIL_PROVIDERS = new Set(['smtp', 'resend', 'sendgrid']);
@@ -23,6 +23,9 @@ interface ContributorCandidate {
   date?: Date | string;
   stripePaymentIntentId?: string | null;
   transactionTimestamp?: Date | string | null;
+  retailerOrderNumber?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
 }
 
 interface ItemSnapshot {
@@ -47,6 +50,9 @@ interface DispatchContributionNotificationsParams {
     coverFee?: boolean;
     stripePaymentIntentId?: string | null;
     transactionTimestamp?: Date | string | null;
+    retailerOrderNumber?: string | null;
+    carrier?: string | null;
+    trackingNumber?: string | null;
   };
   config?: Record<string, any> | null;
   requestUrl?: string;
@@ -241,7 +247,7 @@ async function claimSendTimestamp(
 function buildGuestConfirmationEmail(options: {
   contributorName: string;
   itemName: string;
-  isFund: boolean;
+  isPayableGroupGift: boolean;
   paymentHandle: string;
   paymentHandleType: string;
   baseAmount: number;
@@ -258,7 +264,7 @@ function buildGuestConfirmationEmail(options: {
   const {
     contributorName,
     itemName,
-    isFund,
+    isPayableGroupGift,
     paymentHandle,
     paymentHandleType,
     baseAmount,
@@ -273,7 +279,8 @@ function buildGuestConfirmationEmail(options: {
     sanitizeEmailSubject,
   } = options;
 
-  const isSelfReportedFundTransfer = isFund && !stripePaymentIntentId;
+  const isSelfReportedFundTransfer =
+    isPayableGroupGift && !stripePaymentIntentId && Boolean(paymentHandle);
   const subject = sanitizeEmailSubject(
     isSelfReportedFundTransfer
       ? `Gift Transfer Recorded: ${itemName}`
@@ -379,6 +386,9 @@ function buildCoupleAlertEmail(options: {
   feeAmount: number;
   paymentTypeLabel: string;
   guestMessage: string | null;
+  retailerOrderNumber?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
   dashboardUrl: string;
   escapeHtmlEntities: (text: string) => string;
   sanitizeEmailSubject: (subject: string) => string;
@@ -391,6 +401,9 @@ function buildCoupleAlertEmail(options: {
     feeAmount,
     paymentTypeLabel,
     guestMessage,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
     dashboardUrl,
     escapeHtmlEntities,
     sanitizeEmailSubject,
@@ -404,6 +417,40 @@ function buildCoupleAlertEmail(options: {
     ? escapeHtmlEntities(guestMessage.trim())
     : 'No personal note included.';
   const safeDashboardUrl = escapeHtmlEntities(dashboardUrl);
+
+  const safeOrderNumber =
+    retailerOrderNumber && retailerOrderNumber.trim()
+      ? escapeHtmlEntities(retailerOrderNumber.trim())
+      : '';
+  const safeCarrier =
+    carrier && carrier.trim() ? escapeHtmlEntities(carrier.trim()) : '';
+  const safeTrackingNumber =
+    trackingNumber && trackingNumber.trim()
+      ? escapeHtmlEntities(trackingNumber.trim())
+      : '';
+
+  const orderTrackingRows = [
+    safeOrderNumber
+      ? `<tr>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">Retailer Order #</td>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-family:monospace;">${safeOrderNumber}</td>
+          </tr>`
+      : '',
+    safeCarrier
+      ? `<tr>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">Shipping Carrier</td>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${safeCarrier}</td>
+          </tr>`
+      : '',
+    safeTrackingNumber
+      ? `<tr>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">Tracking Number</td>
+            <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-family:monospace;">${safeTrackingNumber}</td>
+          </tr>`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n          ');
 
   const amountSummary =
     coverFee && feeAmount > 0
@@ -434,6 +481,7 @@ function buildCoupleAlertEmail(options: {
             <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;">Payment Type</td>
             <td style="padding:10px 14px;border-bottom:1px solid #e5e7eb;">${safePaymentType}</td>
           </tr>
+          ${orderTrackingRows}
           <tr>
             <td style="padding:10px 14px;font-weight:600;">Guest Note</td>
             <td style="padding:10px 14px;">${safeNote}</td>
@@ -505,10 +553,16 @@ export async function dispatchContributionNotifications(
     const itemType = resolvedItem?.itemType || targetItem?.itemType || 'PHYSICAL';
     const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
     const isGroupGift = Boolean(resolvedItem?.isGroupGift ?? targetItem?.isGroupGift);
-    const paymentHandle =
-      (resolvedItem?.paymentHandle ?? targetItem?.paymentHandle ?? '')?.trim() || '';
-    const paymentHandleType =
-      (resolvedItem?.paymentHandleType ?? targetItem?.paymentHandleType ?? '')?.trim() || '';
+    const isPayableGroupGift = Boolean(isFund || isGroupGift);
+    const effectiveHandle = resolveEffectivePaymentHandle(
+      {
+        paymentHandle: resolvedItem?.paymentHandle ?? targetItem?.paymentHandle,
+        paymentHandleType: resolvedItem?.paymentHandleType ?? targetItem?.paymentHandleType,
+      },
+      activeConfig
+    );
+    const paymentHandle = effectiveHandle.paymentHandle || '';
+    const paymentHandleType = effectiveHandle.paymentHandleType || '';
 
     const baseAmount =
       typeof savedContributor.amount === 'number' ? savedContributor.amount : contribution.amount;
@@ -523,6 +577,11 @@ export async function dispatchContributionNotifications(
         : 0;
     const totalCharged = Math.round((baseAmount + feeAmount) * 100) / 100;
     const guestMessage = savedContributor.message ?? contribution.message ?? null;
+    const retailerOrderNumber =
+      savedContributor.retailerOrderNumber ?? contribution.retailerOrderNumber ?? null;
+    const carrier = savedContributor.carrier ?? contribution.carrier ?? null;
+    const trackingNumber =
+      savedContributor.trackingNumber ?? contribution.trackingNumber ?? null;
     const rawDate =
       savedContributor.transactionTimestamp ||
       savedContributor.date ||
@@ -535,7 +594,15 @@ export async function dispatchContributionNotifications(
     const registryUrl = `${baseUrl}/registry`;
     const dashboardUrl = `${baseUrl}/admin/dashboard/thank-you-notes`;
 
-    const sensitiveLiterals = [guestEmailRaw, coupleEmailRaw, contributorName, guestMessage];
+    const sensitiveLiterals = [
+      guestEmailRaw,
+      coupleEmailRaw,
+      contributorName,
+      guestMessage,
+      retailerOrderNumber,
+      carrier,
+      trackingNumber,
+    ];
     const {
       MultiChannelMessagingProvider,
       escapeHtmlEntities,
@@ -555,7 +622,7 @@ export async function dispatchContributionNotifications(
           const { subject, body } = buildGuestConfirmationEmail({
             contributorName,
             itemName,
-            isFund,
+            isPayableGroupGift,
             paymentHandle,
             paymentHandleType,
             baseAmount,
@@ -607,7 +674,7 @@ export async function dispatchContributionNotifications(
           let paymentTypeLabel = 'Physical Gift Claim';
           if (stripePaymentIntentId) {
             paymentTypeLabel = 'Card Checkout';
-          } else if (isFund) {
+          } else if (isPayableGroupGift && paymentHandle) {
             paymentTypeLabel = paymentHandleType
               ? `Direct Transfer (${paymentHandleType})`
               : 'Direct Transfer';
@@ -623,6 +690,9 @@ export async function dispatchContributionNotifications(
             feeAmount,
             paymentTypeLabel,
             guestMessage,
+            retailerOrderNumber,
+            carrier,
+            trackingNumber,
             dashboardUrl,
             escapeHtmlEntities,
             sanitizeEmailSubject,

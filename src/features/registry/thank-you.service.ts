@@ -350,6 +350,9 @@ export class ThankYouService {
             'Thank-You Status',
             'Sent Date',
             'Note Draft',
+            'Retailer Order Number',
+            'Carrier',
+            'Tracking Number',
           ];
           const headerRow = headers.map(escapeCsvCell).join(',') + '\n';
           controller.enqueue(encoder.encode(headerRow));
@@ -372,6 +375,9 @@ export class ThankYouService {
                 thankYouStatus: true,
                 thankYouSentAt: true,
                 thankYouNote: true,
+                retailerOrderNumber: true,
+                carrier: true,
+                trackingNumber: true,
                 registryItem: {
                   select: {
                     name: true,
@@ -405,6 +411,9 @@ export class ThankYouService {
                 escapeCsvCell(item.thankYouStatus || 'Unsent'),
                 escapeCsvCell(formattedSentAt),
                 escapeCsvCell(item.thankYouNote || ''),
+                escapeCsvCell(item.retailerOrderNumber || ''),
+                escapeCsvCell(item.carrier || ''),
+                escapeCsvCell(item.trackingNumber || ''),
               ].join(',') + '\n';
 
               chunkCsv += row;

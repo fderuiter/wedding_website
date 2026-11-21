@@ -15,6 +15,8 @@ export interface ParsedRegistryItemRow {
   quantity: number;
   isGroupGift: boolean;
   isMostWanted: boolean;
+  paymentHandleType?: string;
+  paymentHandle?: string;
   isValid: boolean;
   errors: string[];
 }
@@ -132,7 +134,33 @@ export function parseRegistryCsv(text: string): RegistryCsvParseResult {
 
   const nameCol = findCol(['product name', 'item name', 'name', 'title', 'product']);
   const priceCol = findCol(['price', 'cost', 'amount', 'unit price']);
-  const categoryCol = findCol(['category', 'department', 'group', 'type']);
+  const paymentHandleTypeCol = findCol([
+    'payment handle type',
+    'payment service',
+    'handle type',
+    'transfer service',
+  ]);
+  const paymentHandleCol = findCol([
+    'payment handle',
+    'venmo handle',
+    'transfer handle',
+    'cash app handle',
+    'paypal handle',
+    'zelle handle',
+  ]);
+  // Exclude paymentHandleTypeCol from matching generic 'type' alias in categoryCol
+  const categoryCol = (() => {
+    for (let i = 0; i < normalizedHeaders.length; i++) {
+      if (headers[i] === paymentHandleTypeCol || headers[i] === paymentHandleCol) continue;
+      const h = normalizedHeaders[i];
+      for (const alias of ['category', 'department', 'group', 'type']) {
+        if (h === alias || h.includes(alias)) {
+          return headers[i];
+        }
+      }
+    }
+    return undefined;
+  })();
   const descCol = findCol(['description', 'item description', 'details', 'notes', 'desc']);
   const vendorUrlCol = findCol(['vendor url', 'vendor link', 'product url', 'product link', 'store url', 'vendor', 'url', 'link']);
   const imageUrlCol = findCol(['image url', 'image link', 'photo url', 'photo', 'picture', 'image']);
@@ -158,6 +186,12 @@ export function parseRegistryCsv(text: string): RegistryCsvParseResult {
     const rawQuantity = quantityCol ? r[quantityCol] : r['quantity'] || r['Quantity'] || '';
     const rawGroup = isGroupGiftCol ? r[isGroupGiftCol] : r['isGroupGift'] || r['Is Group Gift'] || '';
     const rawMostWanted = isMostWantedCol ? r[isMostWantedCol] : r['isMostWanted'] || r['Is Most Wanted'] || '';
+    const rawPaymentHandleType = paymentHandleTypeCol
+      ? r[paymentHandleTypeCol]
+      : r['paymentHandleType'] || r['Payment Service'] || r['Payment Handle Type'] || '';
+    const rawPaymentHandle = paymentHandleCol
+      ? r[paymentHandleCol]
+      : r['paymentHandle'] || r['Payment Handle'] || '';
 
     const name = (rawName || '').trim();
     const price = parseRegistryPrice(rawPrice);
@@ -187,6 +221,9 @@ export function parseRegistryCsv(text: string): RegistryCsvParseResult {
       rawMostWanted.toLowerCase() === '1' ||
       rawMostWanted.toLowerCase() === 'y';
 
+    const paymentHandleType = (rawPaymentHandleType || '').trim() || undefined;
+    const paymentHandle = (rawPaymentHandle || '').trim() || undefined;
+
     const validation = validateRegistryItemRow({
       name,
       price,
@@ -207,6 +244,8 @@ export function parseRegistryCsv(text: string): RegistryCsvParseResult {
       quantity,
       isGroupGift,
       isMostWanted,
+      ...(paymentHandleType ? { paymentHandleType } : {}),
+      ...(paymentHandle ? { paymentHandle } : {}),
       isValid: validation.isValid,
       errors: validation.errors,
     });
@@ -238,6 +277,8 @@ export function generateRegistryCsvTemplate(): string {
     'Image URL',
     'Is Group Gift',
     'Is Most Wanted',
+    'Payment Service',
+    'Payment Handle',
   ];
 
   const sampleRows = [
@@ -251,6 +292,8 @@ export function generateRegistryCsvTemplate(): string {
       'https://target.scene7.com/is/image/Target/GUEST_123',
       'true',
       'true',
+      'Venmo',
+      '@couple-venmo',
     ],
     [
       'Le Creuset Enameled Cast Iron Dutch Oven, 5.5 Qt',
@@ -262,6 +305,8 @@ export function generateRegistryCsvTemplate(): string {
       'https://images.amazon.com/images/P/B00005IFEF.01.LZZZZZZZ.jpg',
       'true',
       'false',
+      '',
+      '',
     ],
     [
       'Brooklinen Luxe Sateen Core Sheet Set - Queen',
@@ -273,6 +318,8 @@ export function generateRegistryCsvTemplate(): string {
       '',
       'false',
       'false',
+      '',
+      '',
     ],
   ];
 

@@ -193,6 +193,12 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
           imageAlt: it.imageAlt || undefined,
           isGroupGift: it.isGroupGift,
           isMostWanted: it.isMostWanted,
+          ...(it.isGroupGift && it.paymentHandleType
+            ? { paymentHandleType: it.paymentHandleType }
+            : {}),
+          ...(it.isGroupGift && it.paymentHandle
+            ? { paymentHandle: it.paymentHandle }
+            : {}),
         })),
       };
 
@@ -320,7 +326,7 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
                 <span className="text-amber-600 dark:text-amber-400 font-semibold underline">Click to upload</span> or drag and drop your CSV file here
               </p>
               <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
-                Supports columns: Name, Price, Category, Quantity, Description, Vendor URL, Image URL
+                Supports columns: Name, Price, Category, Quantity, Description, Vendor URL, Image URL, Payment Service, Payment Handle
               </p>
             </div>
           )}

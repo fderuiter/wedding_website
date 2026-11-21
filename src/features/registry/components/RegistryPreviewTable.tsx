@@ -15,6 +15,8 @@ export interface PreviewRegistryItem {
   quantity: number;
   isGroupGift: boolean;
   isMostWanted: boolean;
+  paymentHandleType?: string;
+  paymentHandle?: string;
   isValid: boolean;
   errors: string[];
 }
@@ -232,6 +234,45 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
                             Most Wanted
                           </label>
                         </div>
+                        {item.isGroupGift && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                            <div>
+                              <label className="block text-xs font-medium text-stone-600 dark:text-stone-300">
+                                Payment Service
+                              </label>
+                              <select
+                                value={item.paymentHandleType || ''}
+                                onChange={(e) =>
+                                  handleFieldChange(item.id, 'paymentHandleType', e.target.value)
+                                }
+                                className="mt-0.5 w-full rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-2 py-1 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                aria-label="Edit payment service"
+                              >
+                                <option value="">Default / None</option>
+                                <option value="Venmo">Venmo</option>
+                                <option value="PayPal">PayPal</option>
+                                <option value="Cash App">Cash App</option>
+                                <option value="Zelle">Zelle</option>
+                                <option value="Custom">Custom / Other</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-stone-600 dark:text-stone-300">
+                                Payment Handle
+                              </label>
+                              <input
+                                type="text"
+                                value={item.paymentHandle || ''}
+                                onChange={(e) =>
+                                  handleFieldChange(item.id, 'paymentHandle', e.target.value)
+                                }
+                                placeholder="@couple-handle"
+                                className="mt-0.5 w-full rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-2.5 py-1 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                aria-label="Edit payment handle"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <>
@@ -259,6 +300,12 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
                           {item.isGroupGift && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
                               Group Gift
+                            </span>
+                          )}
+                          {item.isGroupGift && item.paymentHandle && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                              {item.paymentHandleType ? `${item.paymentHandleType}: ` : ''}
+                              {item.paymentHandle}
                             </span>
                           )}
                           {item.isMostWanted && (

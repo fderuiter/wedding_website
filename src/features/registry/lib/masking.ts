@@ -23,7 +23,7 @@ export function sanitizeRegistryItems(items: any) {
 
 function maskContributor(contributor: any) {
   if (!contributor) return contributor;
-  const { email, ...rest } = contributor;
+  const { email, retailerOrderNumber, trackingNumber, carrier, ...rest } = contributor;
   return {
     ...rest,
     name: 'Anonymous',

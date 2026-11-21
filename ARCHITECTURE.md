@@ -810,6 +810,17 @@ Import and export formats include versioning metadata (`schemaVersion: "1.0"`) t
 | `twilioFromNumber` | `string` | `Prisma` | `Admin-only` | Twilio E.164 sender phone number or messaging source for SMS broadcasts. |
 | `broadcastBatchSize` | `number` | `Prisma` | `Admin-only` | Maximum number of broadcast recipients processed per delivery batch. |
 | `broadcastBatchDelayMs` | `number` | `Prisma` | `Admin-only` | Delay in milliseconds between consecutive outbound broadcast batches. |
+| `shippingRecipientName` | `string` | `Prisma` | `Admin-only` | Recipient full name for registry gift shipping; omitted from public DTOs and served only to authenticated guests and admins. |
+| `shippingAddressLine1` | `string` | `Prisma` | `Admin-only` | Primary street address line for registry gift deliveries; omitted from public DTOs. |
+| `shippingAddressLine2` | `string` | `Prisma` | `Admin-only` | Optional apartment, suite, or unit line for registry gift deliveries; omitted from public DTOs. |
+| `shippingCity` | `string` | `Prisma` | `Admin-only` | City for registry gift deliveries; omitted from public DTOs. |
+| `shippingState` | `string` | `Prisma` | `Admin-only` | State, province, or region for registry gift deliveries; omitted from public DTOs. |
+| `shippingZip` | `string` | `Prisma` | `Admin-only` | Postal or ZIP code for registry gift deliveries; omitted from public DTOs. |
+| `shippingCountry` | `string` | `Prisma` | `Admin-only` | Destination country for registry gift deliveries; omitted from public DTOs. |
+| `shippingPhone` | `string` | `Prisma` | `Admin-only` | Carrier contact phone number for registry gift deliveries; omitted from public DTOs. |
+| `shippingDeliveryNotes` | `string` | `Prisma` | `Admin-only` | Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs. |
+| `defaultPaymentHandleType` | `string` | `Prisma` | `Admin-only` | Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs. |
+| `defaultPaymentHandle` | `string` | `Prisma` | `Admin-only` | Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs. |
 | `modules` | `object` | `Prisma` | `Public` | Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution. |
 | `features` | `object[]` | `Prisma` | `Public` | Ordered homepage content section definitions controlling section titles, visibility, and copy. |
 | `createdAt` | `date` | `Prisma` | `Public` | Timestamp recording when the configuration record was initially created. |

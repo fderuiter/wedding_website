@@ -30,6 +30,8 @@ export type {
   CreateRegistryItemInput,
   ThankYouTemplate,
   ThankYouTemplateTokens,
+  RegistryShippingAddress,
+  OrderTrackingDetails,
 } from './types';
 export {
   THANK_YOU_TEMPLATES,

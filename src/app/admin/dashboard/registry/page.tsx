@@ -92,18 +92,21 @@ export default function AdminRegistryPage() {
     (item) =>
       !item.isSample &&
       !item.purchased &&
-      (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND') &&
+      (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND' || item.isGroupGift) &&
       !(item.paymentHandle && item.paymentHandle.trim())
   );
-  const { cardCheckoutEnabled, isCapabilitiesLoading } = useRegistryCapabilities({
-    enabled: !isLoading && !error && hasFundWithoutHandle,
-  });
+  const { cardCheckoutEnabled, defaultPaymentHandle, isCapabilitiesLoading } =
+    useRegistryCapabilities({
+      enabled: !isLoading && !error && hasFundWithoutHandle,
+    });
+  const hasDefaultHandle = Boolean(defaultPaymentHandle && defaultPaymentHandle.trim());
   const isUnconfiguredFundItem = (item: (typeof safeItems)[number]) =>
     !isCapabilitiesLoading &&
     !cardCheckoutEnabled &&
+    !hasDefaultHandle &&
     !item.isSample &&
     !item.purchased &&
-    (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND') &&
+    (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND' || item.isGroupGift) &&
     !(item.paymentHandle && item.paymentHandle.trim());
   const unconfiguredFunds = safeItems.filter(isUnconfiguredFundItem);
 

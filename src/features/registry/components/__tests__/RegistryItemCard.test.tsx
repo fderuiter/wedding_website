@@ -1300,7 +1300,7 @@ describe('RegistryItemCard Component', () => {
   });
 
   describe('Stripe Elements isolation', () => {
-    it('does not mount Elements or call useStripe/useElements for physical items', () => {
+    it('does not mount Elements or call useStripe/useElements for non-group physical items', () => {
       const stripeReact = jest.requireMock('@stripe/react-stripe-js');
       const useStripeSpy = jest.spyOn(stripeReact, 'useStripe');
       const useElementsSpy = jest.spyOn(stripeReact, 'useElements');
@@ -1308,7 +1308,7 @@ describe('RegistryItemCard Component', () => {
       render(
         <Overlay isOpen={true} onClose={mockOnClose}>
           <RegistryItemCard
-            item={{ ...mockGroupItem, itemType: 'PHYSICAL' }}
+            item={{ ...mockSingleItem, itemType: 'PHYSICAL' }}
             onClose={mockOnClose}
             onContribute={mockOnContribute}
           />
@@ -1321,6 +1321,187 @@ describe('RegistryItemCard Component', () => {
 
       useStripeSpy.mockRestore();
       useElementsSpy.mockRestore();
+    });
+
+    it('mounts Elements for physical group gifts when card checkout is active and skips mounting in direct transfer mode', () => {
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={{
+              ...mockGroupItem,
+              itemType: 'PHYSICAL',
+              paymentHandleType: 'Venmo',
+              paymentHandle: '@couple-venmo',
+            }}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            cardCheckoutEnabled={true}
+            stripePublishableKey="pk_test_12345"
+          />
+        </Overlay>
+      );
+
+      // Dual-mode defaults to direct transfer (0% fee) so Elements is not mounted initially
+      expect(screen.queryByTestId('stripe-elements-container')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('radio', { name: /Card Checkout/i }));
+      expect(screen.getByTestId('stripe-elements-container')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('radio', { name: /Direct Transfer/i }));
+      expect(screen.queryByTestId('stripe-elements-container')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Multi-quantity, shipping address, order tracking, and group gift defaults', () => {
+    it('renders available unit badge and unit selector for non-group multi-quantity items', async () => {
+      const multiQtyItem: RegistryItem = {
+        ...mockSingleItem,
+        id: 'item-multi-1',
+        name: 'Linen Dinner Napkin Set',
+        price: 45,
+        quantity: 4,
+        amountContributed: 45, // 1 unit already claimed -> 3 remaining
+        isGroupGift: false,
+      };
+
+      render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard item={multiQtyItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+        </Overlay>
+      );
+
+      expect(screen.getByTestId('item-unit-count-badge')).toHaveTextContent('3 of 4 remaining (1 claimed)');
+
+      const unitSelect = screen.getByTestId('unit-quantity-select') as HTMLSelectElement;
+      expect(unitSelect.options).toHaveLength(3);
+      fireEvent.change(unitSelect, { target: { value: '2' } });
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Alex Buyer' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith(
+          'item-multi-1',
+          'Alex Buyer',
+          90
+        );
+      });
+    });
+
+    it('displays shipping address only when provided, copies address, and forwards order tracking details on external claims', async () => {
+      const writeTextMock = jest.fn().mockResolvedValue(undefined);
+      Object.assign(navigator, {
+        clipboard: { writeText: writeTextMock },
+      });
+
+      const { rerender } = render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={mockSingleItem}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            shippingAddress={null}
+          />
+        </Overlay>
+      );
+
+      expect(screen.queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={mockSingleItem}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            shippingAddress={{
+              recipientName: 'Alex & Jordan Rivera',
+              addressLine1: '742 Evergreen Terrace',
+              addressLine2: 'Apt 4B',
+              city: 'Portland',
+              state: 'OR',
+              zip: '97205',
+              country: 'United States',
+              phone: '(555) 234-5678',
+              deliveryNotes: 'Leave on covered porch',
+            }}
+          />
+        </Overlay>
+      );
+
+      expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent('742 Evergreen Terrace');
+      expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent('Leave on covered porch');
+
+      fireEvent.click(screen.getByTestId('copy-shipping-address-button'));
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('742 Evergreen Terrace'));
+      });
+
+      fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Morgan Guest' } });
+      fireEvent.change(screen.getByLabelText(/Retailer Order Number/i), { target: { value: 'ORD-554433' } });
+      fireEvent.change(screen.getByLabelText(/Shipping Carrier/i), { target: { value: 'UPS' } });
+      fireEvent.change(screen.getByLabelText(/Tracking Number/i), { target: { value: '1Z999AA10123456784' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
+
+      await waitFor(() => {
+        expect(mockOnContribute).toHaveBeenCalledWith(
+          mockSingleItem.id,
+          'Morgan Guest',
+          100,
+          undefined,
+          undefined,
+          false,
+          undefined,
+          undefined,
+          {
+            retailerOrderNumber: 'ORD-554433',
+            carrier: 'UPS',
+            trackingNumber: '1Z999AA10123456784',
+          }
+        );
+      });
+    });
+
+    it('disables checkout and warns when a physical group gift lacks both Stripe card processing and any payment handle, and enables direct mode with site default handle', () => {
+      const unconfiguredPhysicalGroupGift: RegistryItem = {
+        ...mockGroupItem,
+        id: 'phys-group-unconf',
+        itemType: 'PHYSICAL',
+        paymentHandleType: undefined,
+        paymentHandle: undefined,
+      };
+
+      const { rerender } = render(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={unconfiguredPhysicalGroupGift}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            cardCheckoutEnabled={false}
+            isAdmin={true}
+          />
+        </Overlay>
+      );
+
+      expect(screen.getByTestId('admin-fund-config-warning')).toBeInTheDocument();
+      expect(screen.getByTestId('fund-checkout-unavailable')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Checkout Disabled/i })).toBeDisabled();
+
+      rerender(
+        <Overlay isOpen={true} onClose={mockOnClose}>
+          <RegistryItemCard
+            item={unconfiguredPhysicalGroupGift}
+            onClose={mockOnClose}
+            onContribute={mockOnContribute}
+            cardCheckoutEnabled={false}
+            defaultPaymentHandleType="Venmo"
+            defaultPaymentHandle="@site-default-venmo"
+          />
+        </Overlay>
+      );
+
+      expect(screen.queryByTestId('fund-checkout-unavailable')).not.toBeInTheDocument();
+      expect(screen.getByTestId('direct-transfer-instructions')).toHaveTextContent('@site-default-venmo');
     });
   });
 });

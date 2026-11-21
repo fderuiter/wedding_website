@@ -83,6 +83,24 @@ export type CreateRegistryItemInput = Omit<
   imageDecorative?: boolean;
 };
 
+export interface RegistryShippingAddress {
+  recipientName: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  phone: string;
+  deliveryNotes: string;
+}
+
+export interface OrderTrackingDetails {
+  retailerOrderNumber?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
+}
+
 export interface IRegistryRepository {
   getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems>;
   getItemById(id: string, options?: { includeContributors?: boolean }): Promise<RegistryItemDTO | null>;
@@ -100,6 +118,9 @@ export interface IRegistryRepository {
     stripePaymentIntentId?: string | null;
     stripeChargeId?: string | null;
     transactionTimestamp?: Date | string | null;
+    retailerOrderNumber?: string | null;
+    carrier?: string | null;
+    trackingNumber?: string | null;
   }): Promise<RegistryItemDTO>;
   claimContributorEmailSend?(
     contributorId: string,

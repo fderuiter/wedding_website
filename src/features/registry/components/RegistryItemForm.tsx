@@ -25,6 +25,10 @@ interface RegistryItemFormProps {
   submitLabel?: string;
   /** Optional runtime flag indicating whether Stripe card processing is configured. */
   cardCheckoutEnabled?: boolean;
+  /** Optional site-wide default payment handle type fallback. */
+  defaultPaymentHandleType?: string | null;
+  /** Optional site-wide default payment handle fallback. */
+  defaultPaymentHandle?: string | null;
 }
 
 const defaultValues: Partial<RegistryItem> = {
@@ -63,6 +67,8 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   isSubmitting = false,
   submitLabel,
   cardCheckoutEnabled,
+  defaultPaymentHandleType,
+  defaultPaymentHandle,
 }) => {
   const storageKey =
     mode === 'edit' && initialValues?.id
@@ -108,16 +114,35 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   const imageUrlInputRef = useRef<HTMLInputElement>(null);
 
   const isFund = values.itemType === 'CASH_FUND' || values.itemType === 'EXPERIENCE_FUND';
-  const { cardCheckoutEnabled: detectedCardCheckoutEnabled, isCapabilitiesLoading } =
-    useRegistryCapabilities({
-      enabled: cardCheckoutEnabled === undefined && isFund,
-    });
+  const isPayableGroupGift = Boolean(isFund || values.isGroupGift);
+  const {
+    cardCheckoutEnabled: detectedCardCheckoutEnabled,
+    defaultPaymentHandleType: detectedDefaultPaymentHandleType,
+    defaultPaymentHandle: detectedDefaultPaymentHandle,
+    isCapabilitiesLoading,
+  } = useRegistryCapabilities({
+    enabled:
+      (cardCheckoutEnabled === undefined || defaultPaymentHandle === undefined) &&
+      isPayableGroupGift,
+  });
   const effectiveCardCheckoutEnabled =
     cardCheckoutEnabled !== undefined
       ? cardCheckoutEnabled
       : isCapabilitiesLoading
         ? undefined
         : detectedCardCheckoutEnabled;
+  const effectiveDefaultHandle =
+    defaultPaymentHandle !== undefined
+      ? defaultPaymentHandle
+      : isCapabilitiesLoading
+        ? null
+        : detectedDefaultPaymentHandle;
+  const effectiveDefaultHandleType =
+    defaultPaymentHandleType !== undefined
+      ? defaultPaymentHandleType
+      : isCapabilitiesLoading
+        ? null
+        : detectedDefaultPaymentHandleType;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -262,17 +287,18 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
     const currentItemType = values.itemType || 'PHYSICAL';
     const fundType = currentItemType === 'CASH_FUND' || currentItemType === 'EXPERIENCE_FUND';
+    const groupGiftEnabled = fundType ? true : !!values.isGroupGift;
 
     const dataToValidate = {
       ...values,
       itemType: currentItemType,
       quantity: fundType ? 1 : (values.quantity ?? 1),
-      isGroupGift: fundType ? true : !!values.isGroupGift,
+      isGroupGift: groupGiftEnabled,
       isMostWanted: !!values.isMostWanted,
       displayOrder: values.displayOrder ? Number(values.displayOrder) : 0,
       vendorUrl: fundType ? (values.vendorUrl || undefined) : values.vendorUrl,
-      paymentHandleType: values.paymentHandleType || undefined,
-      paymentHandle: values.paymentHandle || undefined,
+      paymentHandleType: groupGiftEnabled ? (values.paymentHandleType || undefined) : undefined,
+      paymentHandle: groupGiftEnabled ? (values.paymentHandle || undefined) : undefined,
     };
 
     const parseResult = RegistryItemBaseSchema.safeParse(dataToValidate);
@@ -399,7 +425,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
         </FormGroup>
       )}
 
-      {isFund && (
+      {isPayableGroupGift && (
         <>
           <FormGroup>
             <Label>Payment Service / Handle Type:</Label>
@@ -424,11 +450,29 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
               name="paymentHandle"
               value={values.paymentHandle || ''}
               onChange={handleChange}
-              placeholder="e.g. @couple-username or paypal.me/handle"
+              placeholder={
+                effectiveDefaultHandle
+                  ? `Leave blank to use default (${effectiveDefaultHandle})`
+                  : 'e.g. @couple-username or paypal.me/handle'
+              }
             />
+            {!(values.paymentHandle && values.paymentHandle.trim()) &&
+              effectiveDefaultHandle &&
+              effectiveDefaultHandle.trim() && (
+              <p
+                data-testid="default-payment-handle-hint"
+                className="text-xs text-gray-500 dark:text-gray-400 mt-1"
+              >
+                Uses site-wide default handle (
+                {effectiveDefaultHandleType ? `${effectiveDefaultHandleType}: ` : ''}
+                {effectiveDefaultHandle.trim()}) when left blank.
+              </p>
+            )}
           </FormGroup>
 
-          {effectiveCardCheckoutEnabled === false && !(values.paymentHandle && values.paymentHandle.trim()) && (
+          {effectiveCardCheckoutEnabled === false &&
+            !(values.paymentHandle && values.paymentHandle.trim()) &&
+            !(effectiveDefaultHandle && effectiveDefaultHandle.trim()) && (
             <div
               role="alert"
               data-testid="unconfigured-fund-form-warning"
@@ -439,7 +483,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
                 <span>Guest Checkout Will Be Disabled</span>
               </div>
               <p className="text-xs leading-relaxed">
-                Online card processing is not configured on this site, and no direct transfer handle is entered above. Provide a payment handle (Venmo, PayPal, Cash App, Zelle, or custom) or configure Stripe card credentials so guests can contribute to this fund.
+                Online card processing is not configured on this site, and no item or default direct transfer handle is configured. Provide a payment handle (Venmo, PayPal, Cash App, Zelle, or custom), set a site-wide default handle in Settings, or configure Stripe card credentials so guests can contribute to this {isFund ? 'fund' : 'group gift'}.
               </p>
             </div>
           )}

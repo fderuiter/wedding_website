@@ -447,8 +447,51 @@ describe('ThankYouService', () => {
       const csv = await streamToText(stream);
 
       expect(csv).toBe(
-        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft\n'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number\n'
       );
+    });
+
+    it('exports retailer order number, carrier, and tracking number columns with formula neutralization', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([
+        {
+          id: 'c-order-1',
+          name: 'Taylor Shipper',
+          email: 'taylor@example.com',
+          message: 'Enjoy!',
+          amount: 120,
+          date: '2026-06-05T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          thankYouSentAt: null,
+          thankYouNote: '',
+          retailerOrderNumber: 'ORD-98765',
+          carrier: 'UPS',
+          trackingNumber: '1Z999AA10123456784',
+          registryItem: { id: 'item-ext', name: 'Espresso Machine', category: 'Kitchen' },
+        },
+        {
+          id: 'c-order-formula',
+          name: 'Jordan Safe',
+          email: 'jordan@example.com',
+          message: '',
+          amount: 60,
+          date: '2026-06-06T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          thankYouSentAt: null,
+          thankYouNote: '',
+          retailerOrderNumber: '=HYPERLINK("http://evil")',
+          carrier: '+FedEx',
+          trackingNumber: '@TRACK123',
+          registryItem: { id: 'item-ext', name: 'Kettle', category: 'Kitchen' },
+        },
+      ]);
+
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
+
+      expect(csv).toContain('ORD-98765,UPS,1Z999AA10123456784');
+      expect(csv).toContain('\'=HYPERLINK(""http://evil"")');
+      expect(csv).toContain('\'+FedEx');
+      expect(csv).toContain('\'@TRACK123');
     });
 
     it('queries database in cursor-paginated chunks of 1000 for high-volume exports', async () => {

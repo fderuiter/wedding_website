@@ -1,6 +1,10 @@
 import React from 'react';
 import { RegistryItem } from '../types';
-import { getRegistryItemStatus } from '../lib/registryStatusUtils';
+import {
+  getRegistryItemStatus,
+  getItemTotalTargetAmount,
+  getItemUnitCounts,
+} from '../lib/registryStatusUtils';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
@@ -8,6 +12,7 @@ import { formatCurrency } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useShareItem } from '../hooks/useShareItem';
+import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
 
 /**
  * Props for the RegistryCard component.
@@ -21,6 +26,10 @@ interface RegistryCardProps {
   isAdmin?: boolean;
   /** Whether runtime Stripe card processing is configured. */
   cardCheckoutEnabled?: boolean;
+  /** Optional site-wide default payment handle type fallback. */
+  defaultPaymentHandleType?: string | null;
+  /** Optional site-wide default payment handle fallback. */
+  defaultPaymentHandle?: string | null;
   /** Function to call when the edit button is clicked. */
   onEdit?: (id: string) => void;
   /** Function to call when the delete button is clicked. */
@@ -42,21 +51,32 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
   onClick,
   isAdmin,
   cardCheckoutEnabled,
+  defaultPaymentHandleType,
+  defaultPaymentHandle,
   onEdit,
   onDelete,
 }) => {
   const status = getRegistryItemStatus(item);
   const isClaimed = status === 'claimed' || status === 'fullyFunded';
   const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
-  const hasPaymentHandle = Boolean(item.paymentHandle && item.paymentHandle.trim());
-  const isUnconfiguredFund =
-    isFund && !item.isSample && !hasPaymentHandle && cardCheckoutEnabled === false;
+  const isPayableGroupGift = Boolean(isFund || item.isGroupGift);
+  const effectiveHandle = resolveEffectivePaymentHandle(item, {
+    defaultPaymentHandleType,
+    defaultPaymentHandle,
+  });
+  const isUnconfiguredGroupGift =
+    isPayableGroupGift &&
+    !item.isSample &&
+    !effectiveHandle.paymentHandle &&
+    cardCheckoutEnabled === false;
   const isClickable = !isClaimed && !isAdmin;
   const cardClasses = `border border-card-border rounded-[var(--radius-card)] overflow-hidden shadow-card transition relative bg-card text-foreground focus-visible:ring-4 focus-visible:ring-primary outline-none block w-full text-left ${isClaimed ? 'opacity-60' : ''} ${isClickable ? 'hover:shadow-[var(--shadow-lg)] hover:scale-105' : ''}`;
   const { handleShare, copied } = useShareItem(item);
 
-  const fundingPercentage = item.price > 0
-    ? Math.min(100, Math.round(((item.amountContributed || 0) / item.price) * 100))
+  const { requestedUnits, remainingUnits } = getItemUnitCounts(item);
+  const totalTargetAmount = getItemTotalTargetAmount(item);
+  const fundingPercentage = totalTargetAmount > 0
+    ? Math.min(100, Math.round(((item.amountContributed || 0) / totalTargetAmount) * 100))
     : 0;
 
   const handleEdit = (e: React.MouseEvent) => {
@@ -141,7 +161,17 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
             </span>
           )}
         </div>
-        <p className="mt-1 text-lg text-foreground font-bold">{formatCurrency(item.price)}</p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-lg text-foreground font-bold">{formatCurrency(item.price)}</p>
+          {requestedUnits > 1 && (
+            <span
+              data-testid="registry-card-unit-badge"
+              className="bg-badge text-badge-text border border-card-border text-xs font-bold px-2.5 py-0.5 rounded-full"
+            >
+              {remainingUnits} of {requestedUnits} remaining
+            </span>
+          )}
+        </div>
         {item.isGroupGift && !isClaimed && (
           <div className="mt-1 flex flex-col gap-1">
             <div className="flex items-center justify-between text-base text-secondary font-semibold">
@@ -152,7 +182,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
                 {fundingPercentage}%
               </span>
             </div>
-            <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
+            <RegistryItemProgressBar contributed={item.amountContributed} total={totalTargetAmount} />
           </div>
         )}
         {isClaimed && (
@@ -160,7 +190,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
             {status === 'fullyFunded' ? 'Fully Funded!' : 'Claimed!'}
           </p>
         )}
-        {!isClaimed && isUnconfiguredFund && (
+        {!isClaimed && isUnconfiguredGroupGift && (
           <p
             data-testid="unconfigured-fund-card-warning"
             className="text-xs font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded px-2.5 py-1 mt-1"
