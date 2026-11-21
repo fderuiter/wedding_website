@@ -498,7 +498,89 @@ describe('InvitationCodesDashboardPage', () => {
         code: 'DAVID123',
         used: false,
       });
+      expect(screen.getByText('Invitation code created successfully.')).toBeInTheDocument();
     });
+  });
+
+  it('supports shared 17-field inline creation with whitespace code omission, tag deduplication, maxLength attributes, row validation alerts, and dirty-close confirmation', async () => {
+    mockCreate.mockResolvedValueOnce({
+      id: 'code-new',
+      guestName: 'Nora Valkyrie',
+      code: 'AUTO999',
+      used: false,
+    });
+
+    const { container } = renderComponent();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate New Code' }));
+    expect(screen.getByRole('heading', { name: 'Generate Invitation Code' })).toBeInTheDocument();
+
+    // Clean Cancel closes immediately without confirmation prompt
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(
+      screen.queryByRole('heading', { name: 'Generate Invitation Code' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    // Reopen inline form
+    fireEvent.click(screen.getByRole('button', { name: 'Generate New Code' }));
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    // Verify validation alert when guest name is blank
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Guest name is required.');
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    // Populate fields including whitespace code, duplicate tags, plusOneAllocations, and dietaryNotes
+    fireEvent.change(screen.getByPlaceholderText('e.g. John Doe'), {
+      target: { value: '  Nora Valkyrie  ' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('e.g. JOHN123'), {
+      target: { value: '    ' },
+    });
+    fireEvent.change(screen.getByLabelText('Plus-One Allocations'), {
+      target: { value: '2' },
+    });
+    fireEvent.change(screen.getByLabelText('Dietary Notes'), {
+      target: { value: '  Nut allergy  ' },
+    });
+    fireEvent.change(screen.getByLabelText('Party Tags (Comma-Separated)'), {
+      target: { value: ' VIP , Family , VIP ' },
+    });
+
+    // Dirty Cancel opens confirmation alertdialog; dismissing keeps draft intact
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const discardDialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(discardDialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(screen.getByPlaceholderText('e.g. John Doe')).toHaveValue('  Nora Valkyrie  ');
+
+    // Submit inline creation; whitespace code is omitted and duplicate tags are deduplicated
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+    await waitFor(() => {
+      expect(mockCreate).toHaveBeenCalledWith({
+        guestName: 'Nora Valkyrie',
+        used: false,
+        plusOneAllocations: 2,
+        dietaryNotes: 'Nut allergy',
+        partyTags: ['VIP', 'Family'],
+      });
+      expect(mockCreate.mock.calls[0][0]).not.toHaveProperty('code');
+      expect(screen.getByText('Invitation code created successfully.')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Generate Invitation Code' })
+      ).not.toBeInTheDocument();
+    });
+
+    // Reopening starts with a clean reset draft
+    fireEvent.click(screen.getByRole('button', { name: 'Generate New Code' }));
+    expect(screen.getByPlaceholderText('e.g. John Doe')).toHaveValue('');
+    expect(screen.getByLabelText('Plus-One Allocations')).toHaveValue(0);
+    expect(screen.getByLabelText('Dietary Notes')).toHaveValue('');
   });
 
   it('handles deleting an invitation code after confirmation', async () => {

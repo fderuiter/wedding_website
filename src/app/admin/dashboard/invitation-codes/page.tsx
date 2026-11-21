@@ -7,7 +7,7 @@ import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
+import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
 import { SegmentedTabs, SegmentedTabPanel } from '@/components/ui/SegmentedTabs';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -16,7 +16,7 @@ import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { BroadcastModal } from '@/components/admin/BroadcastModal';
 import { InvitationQRPreviewModal, InvitationQRPreviewGuest } from '@/components/admin/InvitationQRPreviewModal';
 import { InvitationQRPrintLabelsModal, PrintableInvitationCode } from '@/components/admin/InvitationQRPrintLabelsModal';
-import { GuestEditorModal } from '@/components/admin/GuestEditorModal';
+import { GuestEditorForm, GuestEditorModal } from '@/components/admin/GuestEditorModal';
 import {
   SubEventEditorModal,
   SubEventDeleteConfirmModal,
@@ -31,12 +31,7 @@ import {
   type InvitationCodeDTO,
 } from '@/features/registry';
 import type { SubEventDTO } from '@/features/sub-events';
-import {
-  PHONE_MAX_LENGTH,
-  computeMergedInvitationPreview,
-  normalizeGuestPhone,
-  validateGuestPhone,
-} from '@/utils/invitationValidation';
+import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
 
@@ -299,6 +294,8 @@ export default function InvitationCodesDashboardPage() {
   } = useAdminSubEvents({ enabled: false });
 
   const [isCreating, setIsCreating] = useState(false);
+  const [createFormKey, setCreateFormKey] = useState(0);
+  const [isCreateFormDirty, setIsCreateFormDirty] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
   const [bulkHouseholdModalOpen, setBulkHouseholdModalOpen] = useState(false);
@@ -309,24 +306,6 @@ export default function InvitationCodesDashboardPage() {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState<string>('');
   const [isMerging, setIsMerging] = useState(false);
-
-  const [newCode, setNewCode] = useState({
-    guestName: '',
-    code: '',
-    email: '',
-    phone: '',
-    plusOneFirstName: '',
-    plusOneLastName: '',
-    addressLine1: '',
-    addressLine2: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    country: '',
-    householdName: '',
-    partyGroup: '',
-    partyTags: '',
-  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
   const [addressFilter, setAddressFilter] = useState<'all' | 'complete' | 'missing'>('all');
@@ -866,60 +845,27 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
-  const handleSave = async () => {
-    if (!newCode.guestName.trim()) {
-      addToast('Guest name is required.', 'error');
-      return;
-    }
-    const phoneError = validateGuestPhone(newCode.phone);
-    if (phoneError) {
-      addToast(phoneError, 'error');
-      return;
-    }
-    const normalizedPhone = normalizeGuestPhone(newCode.phone);
+  const openFreshCreateForm = useCallback(() => {
+    setCreateFormKey((prev) => prev + 1);
+    setIsCreateFormDirty(false);
+    setIsCreating(true);
+  }, []);
+
+  const handleOpenCreateForm = useDirtyConfirmClose(
+    isCreating && isCreateFormDirty,
+    openFreshCreateForm
+  );
+
+  const handleCreateGuest = async (payload: Partial<InvitationCodeDTO>) => {
     try {
-      const payload: any = {
-        guestName: newCode.guestName.trim(),
-        code: newCode.code ? newCode.code.trim().toUpperCase() : undefined,
-        plusOneFirstName: newCode.plusOneFirstName.trim() || undefined,
-        plusOneLastName: newCode.plusOneLastName.trim() || undefined,
-        householdName: newCode.householdName.trim() || undefined,
-        partyGroup: newCode.partyGroup.trim() || undefined,
-        partyTags: newCode.partyTags ? newCode.partyTags.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
-        used: false,
-      };
-      if (newCode.email.trim()) payload.email = newCode.email.trim();
-      if (normalizedPhone) payload.extraFields = { phone: normalizedPhone };
-      if (newCode.addressLine1.trim()) payload.addressLine1 = newCode.addressLine1.trim();
-      if (newCode.addressLine2.trim()) payload.addressLine2 = newCode.addressLine2.trim();
-      if (newCode.city.trim()) payload.city = newCode.city.trim();
-      if (newCode.state.trim()) payload.state = newCode.state.trim();
-      if (newCode.zipCode.trim()) payload.zipCode = newCode.zipCode.trim();
-      if (newCode.country.trim()) payload.country = newCode.country.trim();
-
       await create(payload);
-      setNewCode({
-        guestName: '',
-        code: '',
-        email: '',
-        phone: '',
-        plusOneFirstName: '',
-        plusOneLastName: '',
-        addressLine1: '',
-        addressLine2: '',
-        city: '',
-        state: '',
-        zipCode: '',
-        country: '',
-        householdName: '',
-        partyGroup: '',
-        partyTags: '',
-      });
-
-      setIsCreating(false);
       addToast('Invitation code created successfully.', 'success');
-    } catch (e: any) {
-      addToast(e.message || 'Failed to create invitation code.', 'error');
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to create invitation code.',
+        'error'
+      );
+      throw e;
     }
   };
 
@@ -1030,26 +976,7 @@ export default function InvitationCodesDashboardPage() {
             >
               Broadcast Delivery Logs
             </Link>
-            <Button onClick={() => {
-              setNewCode({
-                guestName: '',
-                code: '',
-                email: '',
-                phone: '',
-                plusOneFirstName: '',
-                plusOneLastName: '',
-                addressLine1: '',
-                addressLine2: '',
-                city: '',
-                state: '',
-                zipCode: '',
-                country: '',
-                householdName: '',
-                partyGroup: '',
-                partyTags: '',
-              });
-              setIsCreating(true);
-            }}>Generate New Code</Button>
+            <Button onClick={handleOpenCreateForm}>Generate New Code</Button>
           </div>
         </div>
 
@@ -1063,148 +990,17 @@ export default function InvitationCodesDashboardPage() {
         {isCreating && (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow border border-primary mb-8 max-w-2xl">
             <h2 className="text-xl font-bold mb-4 text-primary">Generate Invitation Code</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <FormGroup>
-                <Label>Guest Name</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. John Doe"
-                  value={newCode.guestName}
-                  onChange={e => setNewCode({ ...newCode, guestName: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Code (Optional - auto-generated if blank)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. JOHN123"
-                  value={newCode.code}
-                  onChange={e => setNewCode({ ...newCode, code: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Email (Optional)</Label>
-                <Input
-                  type="email"
-                  placeholder="guest@example.com"
-                  value={newCode.email}
-                  onChange={e => setNewCode({ ...newCode, email: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Phone (Optional)</Label>
-                <Input
-                  type="tel"
-                  maxLength={PHONE_MAX_LENGTH}
-                  placeholder="e.g. +15551234567"
-                  value={newCode.phone}
-                  onChange={e => setNewCode({ ...newCode, phone: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Plus-One First Name (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Jane"
-                  value={newCode.plusOneFirstName}
-                  onChange={e => setNewCode({ ...newCode, plusOneFirstName: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Plus-One Last Name (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Smith"
-                  value={newCode.plusOneLastName}
-                  onChange={e => setNewCode({ ...newCode, plusOneLastName: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Address Line 1 (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="123 Main St"
-                  value={newCode.addressLine1}
-                  onChange={e => setNewCode({ ...newCode, addressLine1: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Address Line 2 (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="Apt 4B"
-                  value={newCode.addressLine2}
-                  onChange={e => setNewCode({ ...newCode, addressLine2: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>City (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="San Francisco"
-                  value={newCode.city}
-                  onChange={e => setNewCode({ ...newCode, city: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>State / Province (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="CA"
-                  value={newCode.state}
-                  onChange={e => setNewCode({ ...newCode, state: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>ZIP / Postal Code (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="94102"
-                  value={newCode.zipCode}
-                  onChange={e => setNewCode({ ...newCode, zipCode: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Country (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="United States"
-                  value={newCode.country}
-                  onChange={e => setNewCode({ ...newCode, country: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Household Name (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Smith Household"
-                  value={newCode.householdName}
-                  onChange={e => setNewCode({ ...newCode, householdName: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup>
-                <Label>Party Side / Group (Optional)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. Bride, Groom, Joint"
-                  value={newCode.partyGroup}
-                  onChange={e => setNewCode({ ...newCode, partyGroup: e.target.value })}
-                />
-              </FormGroup>
-              <FormGroup className="md:col-span-2">
-                <Label>Party Tags (Optional - comma-separated)</Label>
-                <Input
-                  type="text"
-                  placeholder="e.g. VIP, Rehearsal Dinner, Family"
-                  value={newCode.partyTags}
-                  onChange={e => setNewCode({ ...newCode, partyTags: e.target.value })}
-                />
-              </FormGroup>
-            </div>
-            <div className="flex gap-4 mt-6">
-              <Button onClick={handleSave} variant="primary">Generate</Button>
-              <Button variant="secondary" onClick={() => setIsCreating(false)}>Cancel</Button>
-            </div>
+            <GuestEditorForm
+              key={createFormKey}
+              mode="create"
+              actionsAlign="start"
+              onCreate={handleCreateGuest}
+              onClose={() => {
+                setIsCreating(false);
+                setIsCreateFormDirty(false);
+              }}
+              onDirtyChange={setIsCreateFormDirty}
+            />
           </div>
         )}
 
