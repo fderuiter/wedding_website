@@ -193,7 +193,19 @@ async function main() {
 
     console.log('✅ App container is responsive!');
 
-    // 7. Verify Health Probe
+    // 7. Verify Liveness Probe
+    console.log('Testing GET /api/live against container...');
+    const liveRes = await request('/api/live');
+    if (liveRes.statusCode !== 200) {
+      throw new Error(`Container /api/live returned status ${liveRes.statusCode}`);
+    }
+    const liveJson = JSON.parse(liveRes.body);
+    if (liveJson.status !== 'alive' || typeof liveJson.timestamp !== 'string') {
+      throw new Error(`Container /api/live body invalid: ${liveRes.body}`);
+    }
+    console.log('✅ Container /api/live OK');
+
+    // 8. Verify Health Probe
     console.log('Testing GET /api/health against container...');
     const healthRes = await request('/api/health');
     if (healthRes.statusCode !== 200) {
@@ -206,7 +218,7 @@ async function main() {
     }
     console.log('✅ Container /api/health OK');
 
-    // 8. Verify Readiness Probe
+    // 9. Verify Readiness Probe
     console.log('Testing GET /api/ready against container...');
     const readyRes = await request('/api/ready');
     if (readyRes.statusCode !== 200) {

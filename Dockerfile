@@ -3,13 +3,15 @@
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
 
-# Install OpenSSL once for Prisma engine detection and runtime TLS across stages
+# Install OpenSSL and tini once for Prisma TLS, PID 1 signal forwarding, and zombie reaping
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    tini \
+    && rm -rf /var/lib/apt/lists/* && \
+    printf 'update-notifier=false\n' > /etc/npmrc
 
 # Isolated Prisma CLI stage (excludes Studio, @prisma/dev, and builder devDependencies)
 FROM base AS prisma-cli
@@ -123,30 +125,34 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --ingroup nodejs nextjs
 
-# Copy entrypoint script and install isolated Prisma CLI wrapper on system PATH
+# Copy entrypoint script and install isolated Prisma CLI wrapper on system PATH (owned by root:root)
 COPY docker-entrypoint.sh /usr/local/bin/
-COPY --from=prisma-cli --chown=nextjs:nodejs /opt/prisma-cli /opt/prisma-cli
+COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli
 RUN printf '%s\n' \
       '#!/bin/sh' \
       'export CHECKPOINT_DISABLE=1' \
+      'export NPM_CONFIG_UPDATE_NOTIFIER=false' \
+      'export NO_UPDATE_NOTIFIER=1' \
       'export NODE_PATH="/opt/prisma-cli/node_modules${NODE_PATH:+:$NODE_PATH}"' \
       'exec node /opt/prisma-cli/node_modules/prisma/build/index.js "$@"' \
       > /usr/local/bin/prisma && \
-    chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/prisma
+    chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/prisma
 
-# Leverage traced standalone output and flat static/public asset hierarchy
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Leverage traced standalone output and flat static/public asset hierarchy owned by root:root
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 
-# Set correct permissions and pre-create writable directories
-RUN mkdir -p .next public/uploads && \
-    chown nextjs:nodejs .next public public/uploads
+# Copy Prisma schema, config, and standalone password hash utility owned by root:root
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs
 
-# Copy Prisma schema, config, and standalone password hash utility
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts
-COPY --from=builder --chown=nextjs:nodejs /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs
+# Link ./node_modules/.bin/prisma (root:root), pre-create runtime cache/upload mountpoints, and strip setuid/setgid bits
+RUN mkdir -p /app/node_modules/.bin /app/.next/cache /app/public/uploads && \
+    ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \
+    chown nextjs:nodejs /app/.next/cache /app/public/uploads && \
+    find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
 USER nextjs
 
@@ -154,5 +160,8 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\*\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
+
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.js"]

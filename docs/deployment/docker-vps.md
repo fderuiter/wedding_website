@@ -7,7 +7,7 @@
 
 ## Overview
 
-The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) orchestrated by `docker-compose.yml` across three services: `db` (`postgres:15-alpine`), a dedicated one-shot `migration` job (`npx prisma migrate deploy`), and `app` (running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/health` container healthcheck). Standalone `docker run` deployments without Compose can opt into entrypoint migrations by setting `RUN_MIGRATIONS=true` in `docker-entrypoint.sh`.
+The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) orchestrated by `docker-compose.yml` across three services: `db` (`postgres:15-alpine`), a dedicated one-shot `migration` job (`./node_modules/.bin/prisma migrate deploy`), and `app` (running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/live` container healthcheck). Standalone `docker run` deployments without Compose can opt into offline entrypoint migrations by setting `RUN_MIGRATIONS=true` in `docker-entrypoint.sh`.
 
 ---
 
@@ -77,8 +77,8 @@ The application validates the following runtime environment variables via `src/e
 ### Primary Path: Dedicated `migration` Service in `docker-compose.yml`
 `docker-compose.yml` decouples schema migrations from application container boot:
 1. `db` starts `postgres:15-alpine` bound to `127.0.0.1:${DB_PORT:-5432}:5432` and waits until its `pg_isready` healthcheck reports `service_healthy`.
-2. `migration` runs `npx prisma migrate deploy` (`restart: "no"`) against `DATABASE_URL` (`${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}`).
-3. `app` defaults `RUN_MIGRATIONS` to `false` (`${RUN_MIGRATIONS:-false}`) and waits on `migration` (`condition: service_completed_successfully`) before executing `node server.js`.
+2. `migration` runs `./node_modules/.bin/prisma migrate deploy` offline (`restart: "no"`, `read_only: true`, `cap_drop: [ALL]`, `tmpfs: [/tmp]`) against `DATABASE_URL` (`${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}`).
+3. `app` defaults `RUN_MIGRATIONS` to `false` (`${RUN_MIGRATIONS:-false}`) and waits on `migration` (`condition: service_completed_successfully`) before executing `node server.js` behind `/usr/bin/tini`.
 
 To run migrations on demand via Docker Compose:
 ```bash
@@ -87,13 +87,13 @@ docker compose run --rm migration
 If overriding `DATABASE_URL` to use an external PgBouncer pooler, pass an explicit non-pooled `DATABASE_URL` override to `migration` (`docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration`).
 
 ### Standalone Container Path (`docker-entrypoint.sh`)
-When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL` and executes `prisma migrate deploy` prior to `node server.js`.
+When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL` and executes `./node_modules/.bin/prisma migrate deploy` locally (with npm update checks disabled) prior to `node server.js`.
 
 ---
 
 ## 4. Asset Storage
 
-*   **Local Disk Storage (Default — `uploads_data` Named Volume)**: Uploaded files are written to `/app/public/uploads` and streamed dynamically at `/uploads/*` in standalone mode (`src/app/api/uploads/[...path]/route.ts`, with `X-Content-Type-Options: nosniff`) without needing a container restart. Both `Dockerfile` and `docker-compose.yml` pre-create `/app/public/uploads` owned by `nextjs:nodejs` (UID/GID 1001) and mount the persistent `uploads_data` named volume by default so uploaded photos and branding assets survive `docker compose up -d --build`:
+*   **Local Disk Storage (Default — `uploads_data` Named Volume & Ephemeral `tmpfs` Cache)**: Static application files under `/app` are owned by `root:root` and mounted `read_only: true` in `docker-compose.yml` (`cap_drop: [ALL]`, `no-new-privileges:true`), with writable `tmpfs` memory mounts backing `/tmp` and `/app/.next/cache:uid=1001,gid=1001,mode=0755` for Next.js `/_next/image` optimization. Uploaded files are written to `/app/public/uploads` and streamed dynamically at `/uploads/*` in standalone mode (`src/app/api/uploads/[...path]/route.ts`, with `X-Content-Type-Options: nosniff`) without needing a container restart. Both `Dockerfile` and `docker-compose.yml` pre-create `/app/public/uploads` owned by `nextjs:nodejs` (UID/GID 1001) and mount the persistent `uploads_data` named volume by default so uploaded photos and branding assets survive `docker compose up -d --build`:
     ```yaml
     services:
       app:
@@ -191,21 +191,21 @@ docker compose up -d --build
 
 ## 7. Health Checks
 
-`docker-compose.yml` already configures built-in `healthcheck` probes on both `db` (`pg_isready`) and `app` (`/api/health`)—no manual edits to `docker-compose.yml` are required:
+`docker-compose.yml` already configures built-in `healthcheck` probes on both `db` (`pg_isready`) and `app` (`/api/live`)—no manual edits to `docker-compose.yml` are required:
 
 ```yaml
   app:
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\\*\\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
 ```
 
-Verify live container health status with `docker compose ps`. The `/api/health` route tests database connectivity and returns HTTP `200 OK` with payload:
+Verify live container status with `docker compose ps`. Continuous container liveness checks hit `/api/live` (`{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout and readiness checks query `/api/health` (returning HTTP `200 OK` when PostgreSQL is connected, or `/api/ready` for unwrapped readiness status):
 ```json
 {
   "success": true,
@@ -237,6 +237,12 @@ Verify live container health status with `docker compose ps`. The `/api/health` 
        docker run -d --name app-rollback \
            --network wedding_website_default \
            -p 127.0.0.1:3000:3000 \
+           --read-only \
+           --cap-drop=ALL \
+           --security-opt=no-new-privileges:true \
+           --tmpfs /tmp \
+           --tmpfs /app/.next/cache:uid=1001,gid=1001,mode=0755 \
+           -v wedding_website_uploads_data:/app/public/uploads \
            --env-file .env \
            -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \
            -e E2E_TEST=false \
