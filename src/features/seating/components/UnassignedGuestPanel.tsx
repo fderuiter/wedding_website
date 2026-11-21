@@ -1,17 +1,44 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
+import { resolveSeatAssignments } from '../seatLayout';
 import {
   ADDRESS_COLLECTION_TAG,
   getDietaryBadges,
   getGuestAttendanceStatus,
   isGuestEligibleForSeating,
 } from '../utils/seatingHelpers';
+
+const POINTER_DRAG_THRESHOLD_PX = 8;
+
+type GuestPointerDragPayload =
+  | {
+    kind: 'guest';
+    guestId: string;
+    label: string;
+  }
+  | {
+    kind: 'household';
+    memberIds: string[];
+    householdName: string;
+    label: string;
+  };
+
+interface ActiveGuestPointerDrag {
+  payload: GuestPointerDragPayload;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  clientX: number;
+  clientY: number;
+  isDragging: boolean;
+  captureElement: HTMLElement | null;
+}
 
 type RsvpFilterValue = 'all' | 'attending' | 'pending';
 
@@ -63,6 +90,220 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const [selectedHouseholdForModal, setSelectedHouseholdForModal] = useState<HouseholdGroupItem | null>(null);
   const [targetHouseholdTableId, setTargetHouseholdTableId] = useState<string>('');
+
+  const [activePointerDrag, setActivePointerDrag] = useState<ActiveGuestPointerDrag | null>(null);
+  const activePointerDragRef = useRef<ActiveGuestPointerDrag | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const latestPropsRef = useRef({ tables, onAssignGuestToTable, onAssignGuestsToTable, toast });
+  latestPropsRef.current = { tables, onAssignGuestToTable, onAssignGuestsToTable, toast };
+
+  const detachDragWindowListeners = useCallback(() => {
+    if (dragCleanupRef.current) {
+      dragCleanupRef.current();
+      dragCleanupRef.current = null;
+    }
+  }, []);
+
+  const clearPointerDrag = useCallback(() => {
+    const drag = activePointerDragRef.current;
+    if (drag?.captureElement) {
+      try {
+        drag.captureElement.releasePointerCapture?.(drag.pointerId);
+      } catch {
+        // Ignore release errors when pointer was already released
+      }
+    }
+    activePointerDragRef.current = null;
+    detachDragWindowListeners();
+    setActivePointerDrag(null);
+  }, [detachDragWindowListeners]);
+
+  const updatePointerDragPosition = useCallback((pointerId: number | undefined, clientX: number, clientY: number) => {
+    const drag = activePointerDragRef.current;
+    if (!drag || (pointerId !== undefined && drag.pointerId !== undefined && drag.pointerId !== pointerId)) return;
+
+    const distance = Math.hypot(clientX - drag.startX, clientY - drag.startY);
+    const shouldDrag = drag.isDragging || distance >= POINTER_DRAG_THRESHOLD_PX;
+    if (!shouldDrag) return;
+
+    if (!drag.isDragging && drag.captureElement) {
+      try {
+        drag.captureElement.setPointerCapture?.(drag.pointerId);
+      } catch {
+        // Ignore synthetic events in test environments where pointerId isn't active
+      }
+    }
+
+    const nextDrag: ActiveGuestPointerDrag = {
+      ...drag,
+      clientX,
+      clientY,
+      isDragging: true,
+    };
+    activePointerDragRef.current = nextDrag;
+    setActivePointerDrag(nextDrag);
+  }, []);
+
+  const finishPointerDrag = useCallback((pointerId: number | undefined, clientX: number, clientY: number) => {
+    const drag = activePointerDragRef.current;
+    if (!drag || (pointerId !== undefined && drag.pointerId !== undefined && drag.pointerId !== pointerId)) return;
+
+    const wasDragging = drag.isDragging;
+    const payload = drag.payload;
+    clearPointerDrag();
+
+    if (!wasDragging || typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') {
+      return;
+    }
+
+    const hitElement = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    if (!hitElement) return;
+
+    const seatEl = hitElement.closest?.('[data-seat-number][data-table-id]') as HTMLElement | null;
+    const tableEl = hitElement.closest?.('[data-table-id]') as HTMLElement | null;
+    const resolvedTableId = seatEl?.getAttribute('data-table-id') || tableEl?.getAttribute('data-table-id');
+    if (!resolvedTableId) return;
+
+    const {
+      tables: currentTables,
+      onAssignGuestToTable: assignFn,
+      onAssignGuestsToTable: assignBatchFn,
+      toast: currentToast,
+    } = latestPropsRef.current;
+    const targetTable = currentTables.find((t) => t.id === resolvedTableId);
+
+    if (payload.kind === 'household') {
+      if (targetTable) {
+        const currentSeatedIds = new Set((targetTable.invitationCodes || []).map((g) => g.id));
+        const incomingCount = payload.memberIds.filter((id) => !currentSeatedIds.has(id)).length;
+        const availableSeats = targetTable.capacity - currentSeatedIds.size;
+        if (incomingCount > availableSeats) {
+          currentToast?.addToast(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${payload.memberIds.length} household members.`,
+            'error'
+          );
+          return;
+        }
+      }
+
+      if (assignBatchFn) {
+        void assignBatchFn(payload.memberIds, resolvedTableId);
+      } else {
+        payload.memberIds.forEach((id) => assignFn(id, resolvedTableId));
+      }
+      return;
+    }
+
+    if (targetTable) {
+      const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
+      const isAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === payload.guestId);
+      if (isFull && !isAlreadyAtTable) {
+        currentToast?.addToast(
+          `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
+          'error'
+        );
+        return;
+      }
+    }
+
+    const rawSeat = seatEl?.getAttribute('data-seat-number');
+    const parsedSeat = rawSeat ? parseInt(rawSeat, 10) : NaN;
+    if (!Number.isNaN(parsedSeat) && parsedSeat >= 1) {
+      assignFn(payload.guestId, resolvedTableId, parsedSeat);
+    } else {
+      assignFn(payload.guestId, resolvedTableId);
+    }
+  }, [clearPointerDrag]);
+
+  useEffect(() => {
+    return () => {
+      detachDragWindowListeners();
+    };
+  }, [detachDragWindowListeners]);
+
+  const startPayloadPointerDrag = (e: React.PointerEvent, payload: GuestPointerDragPayload) => {
+    if (e.pointerType === 'mouse' && typeof e.button === 'number' && e.button !== 0) return;
+    const targetNode = e.target as HTMLElement | null;
+    if (targetNode?.closest?.('button')) {
+      return;
+    }
+
+    const captureElement = e.currentTarget as HTMLElement;
+    const nextDrag: ActiveGuestPointerDrag = {
+      payload,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      isDragging: false,
+      captureElement,
+    };
+    activePointerDragRef.current = nextDrag;
+    setActivePointerDrag(nextDrag);
+
+    detachDragWindowListeners();
+    const onWinMove = (ev: PointerEvent) => updatePointerDragPosition(ev.pointerId, ev.clientX, ev.clientY);
+    const onWinUp = (ev: PointerEvent) => finishPointerDrag(ev.pointerId, ev.clientX, ev.clientY);
+    const onWinCancel = (ev: PointerEvent) => {
+      const drag = activePointerDragRef.current;
+      if (drag && (ev.pointerId === undefined || drag.pointerId === ev.pointerId)) {
+        clearPointerDrag();
+      }
+    };
+    const onWinKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape' && activePointerDragRef.current) {
+        clearPointerDrag();
+      }
+    };
+
+    window.addEventListener('pointermove', onWinMove);
+    window.addEventListener('pointerup', onWinUp);
+    window.addEventListener('pointercancel', onWinCancel);
+    window.addEventListener('keydown', onWinKeyDown);
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onWinMove);
+      window.removeEventListener('pointerup', onWinUp);
+      window.removeEventListener('pointercancel', onWinCancel);
+      window.removeEventListener('keydown', onWinKeyDown);
+    };
+  };
+
+  const handleCardPointerDown = (e: React.PointerEvent, guest: InvitationCodeDTO) => {
+    startPayloadPointerDrag(e, {
+      kind: 'guest',
+      guestId: guest.id,
+      label: guest.guestName,
+    });
+  };
+
+  const handleHouseholdPointerDown = (
+    e: React.PointerEvent,
+    householdName: string,
+    memberIds: string[]
+  ) => {
+    startPayloadPointerDrag(e, {
+      kind: 'household',
+      memberIds,
+      householdName,
+      label: `🏠 ${householdName} (${memberIds.length})`,
+    });
+  };
+
+  const handleCardPointerMove = (e: React.PointerEvent) => {
+    updatePointerDragPosition(e.pointerId, e.clientX, e.clientY);
+  };
+
+  const handleCardPointerUp = (e: React.PointerEvent) => {
+    finishPointerDrag(e.pointerId, e.clientX, e.clientY);
+  };
+
+  const handleCardPointerCancel = (e: React.PointerEvent) => {
+    const drag = activePointerDragRef.current;
+    if (drag && (e.pointerId === undefined || drag.pointerId === e.pointerId)) {
+      clearPointerDrag();
+    }
+  };
 
   const currentSearchQuery = searchQuery !== undefined ? searchQuery : internalSearchTerm;
 
@@ -185,11 +426,13 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const handleDragStart = (e: React.DragEvent, guestId: string) => {
     e.stopPropagation();
+    clearPointerDrag();
     e.dataTransfer.setData('text/plain', guestId);
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleHouseholdDragStart = (e: React.DragEvent, memberIds: string[]) => {
+    clearPointerDrag();
     e.dataTransfer.setData('text/plain', `household:${memberIds.join(',')}`);
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -453,7 +696,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                   <div
                     draggable
                     onDragStart={(e) => handleHouseholdDragStart(e, memberIds)}
-                    className="flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing"
+                    onPointerDown={(e) => handleHouseholdPointerDown(e, item.householdName, memberIds)}
+                    onPointerMove={handleCardPointerMove}
+                    onPointerUp={handleCardPointerUp}
+                    onPointerCancel={handleCardPointerCancel}
+                    className="flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none"
                   >
                     <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
                       <span
@@ -482,49 +729,71 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                     aria-label={`${item.householdName} household members`}
                     className="space-y-1.5 pl-2 border-l-2 border-purple-200 dark:border-purple-700"
                   >
-                    {item.members.map((guest) => (
-                      <div
-                        key={guest.id}
-                        role="listitem"
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, guest.id)}
-                        className="p-2 bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 rounded-md cursor-grab active:cursor-grabbing flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0 pr-1 space-y-0.5">
-                          <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">
-                            {guest.guestName}
-                          </p>
-                          <p className="text-[10px] font-mono text-gray-600 dark:text-gray-300">
-                            Code: {guest.code}
-                          </p>
-                          {renderGuestBadges(guest)}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedGuestForModal(guest);
-                            if (tables.length > 0) setTargetTableId(tables[0].id);
-                          }}
-                          className="min-h-[28px] text-[11px] font-medium px-2.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-200 rounded transition-colors shrink-0"
-                          aria-label={`Assign ${guest.guestName} to table`}
+                    {item.members.map((guest) => {
+                      const isBeingPointerDragged =
+                        activePointerDrag?.isDragging &&
+                        activePointerDrag.payload.kind === 'guest' &&
+                        activePointerDrag.payload.guestId === guest.id;
+                      return (
+                        <div
+                          key={guest.id}
+                          role="listitem"
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, guest.id)}
+                          onPointerDown={(e) => handleCardPointerDown(e, guest)}
+                          onPointerMove={handleCardPointerMove}
+                          onPointerUp={handleCardPointerUp}
+                          onPointerCancel={handleCardPointerCancel}
+                          className={`p-2 bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-700 rounded-md cursor-grab active:cursor-grabbing select-none flex items-center justify-between gap-2 ${
+                            isBeingPointerDragged ? 'opacity-50 ring-2 ring-primary' : ''
+                          }`}
                         >
-                          Assign
-                        </button>
-                      </div>
-                    ))}
+                          <div className="min-w-0 pr-1 space-y-0.5">
+                            <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">
+                              {guest.guestName}
+                            </p>
+                            <p className="text-[10px] font-mono text-gray-600 dark:text-gray-300">
+                              Code: {guest.code}
+                            </p>
+                            {renderGuestBadges(guest)}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedGuestForModal(guest);
+                              if (tables.length > 0) setTargetTableId(tables[0].id);
+                            }}
+                            className="min-h-[28px] text-[11px] font-medium px-2.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-200 rounded transition-colors shrink-0"
+                            aria-label={`Assign ${guest.guestName} to table`}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
             }
 
             const { guest } = item;
+            const isBeingPointerDragged =
+              activePointerDrag?.isDragging &&
+              activePointerDrag.payload.kind === 'guest' &&
+              activePointerDrag.payload.guestId === guest.id;
             return (
               <div
                 key={guest.id}
                 draggable
                 onDragStart={(e) => handleDragStart(e, guest.id)}
-                className="group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing transition-all flex items-center justify-between shadow-xs hover:shadow-sm"
+                onPointerDown={(e) => handleCardPointerDown(e, guest)}
+                onPointerMove={handleCardPointerMove}
+                onPointerUp={handleCardPointerUp}
+                onPointerCancel={handleCardPointerCancel}
+                className={`group p-2.5 bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 hover:border-primary/50 dark:hover:border-primary/50 rounded-lg cursor-grab active:cursor-grabbing select-none transition-all flex items-center justify-between shadow-xs hover:shadow-sm ${
+                  isBeingPointerDragged ? 'opacity-50 ring-2 ring-primary' : ''
+                }`}
                 role="listitem"
               >
                 <div className="min-w-0 pr-2 space-y-0.5">
@@ -656,8 +925,9 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               {(() => {
                 const selTable = tables.find((t) => t.id === targetTableId);
                 if (!selTable) return null;
+                const resolvedSeatMap = resolveSeatAssignments(selTable.invitationCodes, selTable.capacity);
                 return Array.from({ length: selTable.capacity }, (_, idx) => idx + 1).map((seatNum) => {
-                  const occ = selTable.invitationCodes?.find((g) => g.seatNumber === seatNum);
+                  const occ = resolvedSeatMap.get(seatNum);
                   return (
                     <option key={seatNum} value={seatNum}>
                       Seat {seatNum} {occ ? `(${occ.guestName})` : '(Empty)'}
@@ -768,6 +1038,21 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
           </form>
         )}
       </Dialog>
+
+      {/* Floating Cross-Panel Pointer Drag Chip */}
+      {activePointerDrag?.isDragging && (
+        <div
+          data-testid="guest-drag-chip"
+          aria-hidden="true"
+          className="fixed pointer-events-none z-50 px-3 py-1.5 rounded-full bg-primary text-white text-xs font-semibold shadow-lg flex items-center gap-1.5 -translate-x-1/2 -translate-y-1/2"
+          style={{
+            left: `${activePointerDrag.clientX}px`,
+            top: `${activePointerDrag.clientY}px`,
+          }}
+        >
+          <span>{activePointerDrag.payload.label}</span>
+        </div>
+      )}
     </div>
   );
 });
