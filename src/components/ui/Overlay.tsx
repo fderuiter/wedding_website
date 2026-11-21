@@ -47,11 +47,11 @@ export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
 
     const setOverlayRef = useCallback(
       (node: HTMLDivElement | null) => {
-        (overlayRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        overlayRef.current = node;
         if (typeof ref === 'function') {
           ref(node);
         } else if (ref) {
-          (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+          ref.current = node;
         }
       },
       [overlayRef, ref]
