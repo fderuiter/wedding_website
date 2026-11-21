@@ -113,4 +113,64 @@ describe('InvitationQRPreviewModal Component', () => {
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();
   });
+
+  it('keeps #ffffff QR background and >= 4.5:1 module contrast in dark mode for modal preview and 512x512 PNG export', async () => {
+    const { ThemeProvider } = await import('@/components/ThemeProvider');
+    const { getContrastRatio, hexToRgb } = await import('@/lib/theme/stylesheet');
+
+    const fillStyles: string[] = [];
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = jest.fn(function () {
+      const ctx = {
+        _fillStyle: '',
+        set fillStyle(val: string) {
+          this._fillStyle = val;
+          fillStyles.push(val);
+        },
+        get fillStyle() {
+          return this._fillStyle;
+        },
+        fillRect: jest.fn(),
+        clearRect: jest.fn(),
+        drawImage: jest.fn(),
+        scale: jest.fn(),
+        imageSmoothingEnabled: true,
+      };
+      return ctx as unknown as RenderingContext;
+    }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+
+    try {
+      render(
+        <ThemeProvider
+          initialThemeMode="dark"
+          config={{
+            themePreset: 'romantic',
+            colorPrimary: '#f472b6',
+          }}
+        >
+          <InvitationQRPreviewModal {...defaultProps} />
+        </ThemeProvider>
+      );
+
+      const qrCanvas = screen.getByLabelText('Personalized QR code for Elizabeth Bennet');
+      expect(qrCanvas).toBeInTheDocument();
+
+      // First fillStyle in qrcode.react canvas is background (#ffffff), second is foreground modules
+      const normalizedFills = fillStyles.map((s) => s.toLowerCase());
+      expect(normalizedFills).toContain('#ffffff');
+      const moduleColors = normalizedFills.filter(
+        (c) => /^#[0-9a-f]{6}$/i.test(c) && c !== '#ffffff'
+      );
+      expect(moduleColors.length).toBeGreaterThan(0);
+      for (const fg of moduleColors) {
+        expect(getContrastRatio(hexToRgb(fg), hexToRgb('#ffffff'))).toBeGreaterThanOrEqual(4.5);
+      }
+
+      fillStyles.length = 0;
+      fireEvent.click(screen.getByRole('button', { name: /Download QR code as PNG image/i }));
+      expect(fillStyles.map((s) => s.toLowerCase())).toContain('#ffffff');
+    } finally {
+      HTMLCanvasElement.prototype.getContext = originalGetContext;
+    }
+  });
 });

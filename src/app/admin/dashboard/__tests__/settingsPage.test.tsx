@@ -246,4 +246,104 @@ describe('SettingsPage View State', () => {
     expect(groupGiftingCheckbox.checked).toBe(false);
     expect(groupGiftingCheckbox).toBeDisabled();
   });
+
+  it('saves an empty themeTokens map when switching from classic to another preset without custom edits', async () => {
+    const { getPresetTokens } = await import('@/lib/theme/presets');
+    const hydratedClassic: Record<string, string> = {};
+    for (const [k, v] of Object.entries(getPresetTokens('classic', 'light'))) {
+      if (k.startsWith('--') && typeof v === 'string') {
+        hydratedClassic[k] = v;
+      }
+    }
+    mockSaveSettings.mockResolvedValue({ id: 'global', themePreset: 'romantic', themeTokens: {} });
+
+    (useAdminSettings as jest.Mock).mockReturnValue({
+      config: {
+        id: 'global',
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        weddingDate: '2026-10-10',
+        themePreset: 'classic',
+        themeTokens: hydratedClassic,
+      },
+      loading: false,
+      saving: false,
+      error: null,
+      saveSettings: mockSaveSettings,
+      profiles: [],
+      loadingList: false,
+      createProfile: mockCreateProfile,
+      creating: false,
+      fetchAll: mockFetchAll,
+    });
+
+    render(<SettingsPage />);
+
+    const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
+    fireEvent.change(presetSelect, { target: { value: 'romantic' } });
+
+    const saveButtons = screen.getAllByRole('button', { name: /save/i });
+    await act(async () => {
+      fireEvent.submit(saveButtons[0].closest('form')!);
+    });
+
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+    expect(mockSaveSettings.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        themePreset: 'romantic',
+        themeTokens: {},
+      })
+    );
+  });
+
+  it('preserves explicit custom overrides when switching presets on SettingsPage', async () => {
+    mockSaveSettings.mockResolvedValue({
+      id: 'global',
+      themePreset: 'editorial',
+      themeTokens: { '--btn-radius': '0.875rem' },
+    });
+
+    (useAdminSettings as jest.Mock).mockReturnValue({
+      config: {
+        id: 'global',
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        weddingDate: '2026-10-10',
+        themePreset: 'classic',
+        themeTokens: {
+          '--btn-radius': '0.875rem',
+          '--print-bg': '#ffffff',
+        },
+      },
+      loading: false,
+      saving: false,
+      error: null,
+      saveSettings: mockSaveSettings,
+      profiles: [],
+      loadingList: false,
+      createProfile: mockCreateProfile,
+      creating: false,
+      fetchAll: mockFetchAll,
+    });
+
+    render(<SettingsPage />);
+
+    const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
+    fireEvent.change(presetSelect, { target: { value: 'editorial' } });
+
+    const saveButtons = screen.getAllByRole('button', { name: /save/i });
+    await act(async () => {
+      fireEvent.submit(saveButtons[0].closest('form')!);
+    });
+
+    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
+    expect(mockSaveSettings.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        themePreset: 'editorial',
+        themeTokens: {
+          '--btn-radius': '0.875rem',
+        },
+      })
+    );
+  });
 });

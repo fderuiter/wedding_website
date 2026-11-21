@@ -60,14 +60,98 @@ describe('RootLayout Server Component Cookie Hydration', () => {
     expect(jsx.props.className).not.toContain('light');
   });
 
-  it('defaults to dark class when theme_mode cookie is missing or system', async () => {
+  it('does not force dark class on SSR when theme_mode cookie is missing or system', async () => {
     mockCookies.mockResolvedValue({
       get: () => undefined,
     });
 
     const jsx = await RootLayout({ children: <div>Child Content</div> });
     expect(jsx.type).toBe('html');
-    expect(jsx.props.className).toContain('dark');
+    expect(jsx.props.className).not.toContain('dark');
+  });
+
+  it('evaluates saved storage, cookies, and OS media queries in order in pre-paint themeScript', async () => {
+    mockCookies.mockResolvedValue({
+      get: () => undefined,
+    });
+
+    const jsx = await RootLayout({ children: <div>Child Content</div> });
+    const head = jsx.props.children[0];
+    const scriptEl = React.Children.toArray(head.props.children).find(
+      (child): child is React.ReactElement<{ dangerouslySetInnerHTML: { __html: string } }> =>
+        React.isValidElement(child) && child.type === 'script'
+    );
+    expect(scriptEl).toBeDefined();
+    const scriptCode = scriptEl!.props.dangerouslySetInnerHTML.__html;
+
+    const prevMatchMedia = window.matchMedia;
+    try {
+      // 1. Light OS, no storage, no cookie -> light
+      localStorage.clear();
+      document.cookie = 'theme_mode=; path=/; max-age=0';
+      document.documentElement.className = '';
+      window.matchMedia = jest.fn().mockReturnValue({ matches: false });
+      new Function(scriptCode)();
+      expect(document.documentElement.classList.contains('light')).toBe(true);
+      expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+      // 2. Dark OS, no storage, no cookie -> dark
+      document.documentElement.className = '';
+      window.matchMedia = jest.fn().mockReturnValue({ matches: true });
+      new Function(scriptCode)();
+      expect(document.documentElement.classList.contains('dark')).toBe(true);
+
+      // 3. Cookie overrides OS media query when localStorage is empty
+      document.documentElement.className = '';
+      document.cookie = 'theme_mode=light; path=/';
+      window.matchMedia = jest.fn().mockReturnValue({ matches: true });
+      new Function(scriptCode)();
+      expect(document.documentElement.classList.contains('light')).toBe(true);
+      expect(document.documentElement.classList.contains('dark')).toBe(false);
+
+      // 4. Saved localStorage overrides cookie and OS media query
+      document.documentElement.className = '';
+      localStorage.setItem('theme_mode', 'dark');
+      document.cookie = 'theme_mode=light; path=/';
+      window.matchMedia = jest.fn().mockReturnValue({ matches: false });
+      new Function(scriptCode)();
+      expect(document.documentElement.classList.contains('dark')).toBe(true);
+      expect(document.documentElement.classList.contains('light')).toBe(false);
+    } finally {
+      localStorage.clear();
+      document.cookie = 'theme_mode=; path=/; max-age=0';
+      document.documentElement.className = '';
+      window.matchMedia = prevMatchMedia;
+    }
+  });
+
+  it('wraps SetupWizard inside ThemeProvider when site is uninitialized and supports STATIC_EXPORT without cookies', async () => {
+    const configMod = await import('@/lib/config');
+    (configMod.isSiteInitialized as jest.Mock).mockReturnValueOnce(false);
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+
+    try {
+      const jsx = await RootLayout({ children: <div>Child Content</div> });
+      expect(mockCookies).not.toHaveBeenCalled();
+
+      const body = jsx.props.children[1];
+      const themeProviderEl = React.Children.toArray(body.props.children).find(
+        (child): child is React.ReactElement<{ hasServerStylesheet?: boolean; children?: React.ReactNode }> =>
+          React.isValidElement(child) &&
+          (child.props as { hasServerStylesheet?: boolean }).hasServerStylesheet === true
+      );
+      expect(themeProviderEl).toBeDefined();
+      const innerChild = themeProviderEl!.props.children as React.ReactElement;
+      expect(React.isValidElement(innerChild)).toBe(true);
+      expect(typeof innerChild.type === 'function' && innerChild.type.name).toBe('SetupWizard');
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
   });
 
   it('renders complete server stylesheet in head with dynamic-theme-style id and WCAG contrast tokens', async () => {

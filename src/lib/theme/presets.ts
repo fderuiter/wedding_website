@@ -252,8 +252,17 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--input-bg': '#18181b',
   '--input-border': '#3f3f46',
   '--input-focus-ring': '#f9fafb',
+  '--input-error-border': '#f87171',
+  '--input-error-focus-ring': '#f87171',
+  '--input-success-border': '#4ade80',
+  '--input-success-focus-ring': '#4ade80',
+  '--input-warning-border': '#fbbf24',
+  '--input-warning-focus-ring': '#fbbf24',
   '--form-label-text': '#f9fafb',
   '--form-message-text': '#a1a1aa',
+  '--form-error-text': '#fca5a5',
+  '--form-success-text': '#6ee7b7',
+  '--form-warning-text': '#fcd34d',
   '--schedule-card-bg': '#18181b',
   '--schedule-card-border': '#27272a',
   '--schedule-filter-bg': '#27272a',
@@ -1851,4 +1860,61 @@ export function getServerExportTokens(
   });
 
   return resolved;
+}
+
+export function stripPresetDefaultTokens(
+  tokens: Record<string, unknown> | null | undefined,
+  activePreset?: string | null,
+  previousPreset?: string | null
+): Record<string, string> {
+  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) {
+    return {};
+  }
+
+  const entries = Object.entries(tokens).filter(
+    ([key, val]) => key.startsWith('--') && typeof val === 'string'
+  ) as Array<[string, string]>;
+
+  if (entries.length === 0) {
+    return {};
+  }
+
+  const activeLightDefaults = getPresetTokens(activePreset, 'light') as unknown as Record<string, unknown>;
+  const prevLightDefaults = previousPreset
+    ? (getPresetTokens(previousPreset, 'light') as unknown as Record<string, unknown>)
+    : null;
+
+  let detectedHydratedDefaults: Record<string, unknown> | null = null;
+  if (entries.length >= 25) {
+    let bestMatches = 0;
+    for (const presetKey of THEME_PRESET_KEYS) {
+      const candidateDefaults = getPresetTokens(presetKey, 'light') as unknown as Record<string, unknown>;
+      let matches = 0;
+      for (const [k, v] of entries) {
+        if (candidateDefaults[k] === v) {
+          matches++;
+        }
+      }
+      if (matches >= 25 && matches > bestMatches) {
+        bestMatches = matches;
+        detectedHydratedDefaults = candidateDefaults;
+      }
+    }
+  }
+
+  const sparse: Record<string, string> = {};
+  for (const [key, val] of entries) {
+    if (activeLightDefaults[key] === val) {
+      continue;
+    }
+    if (prevLightDefaults && prevLightDefaults[key] === val) {
+      continue;
+    }
+    if (detectedHydratedDefaults && detectedHydratedDefaults[key] === val) {
+      continue;
+    }
+    sparse[key] = val;
+  }
+
+  return sparse;
 }

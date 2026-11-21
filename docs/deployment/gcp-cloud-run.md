@@ -110,6 +110,7 @@ staging-database-migration:
   with:
     environment: 'staging'
     commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
+    confirm: true
   secrets: inherit
 
 staging-deploy-provider:
@@ -118,6 +119,7 @@ staging-deploy-provider:
     contents: read
     packages: read
     attestations: read
+    id-token: write
   needs: [ci-gate, publish-artifact, staging-database-migration]
   if: |
     !cancelled() &&
@@ -142,6 +144,7 @@ staging-deploy-provider:
     image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
     image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
+    dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
 
 # Production Environment Pipeline (Mandatory Reviewer Gate & Promotion)
@@ -170,6 +173,7 @@ production-database-migration:
   with:
     environment: 'production'
     commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
+    confirm: true
   secrets: inherit
 
 production-deploy-provider:
@@ -178,6 +182,7 @@ production-deploy-provider:
     contents: read
     packages: read
     attestations: read
+    id-token: write
   needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
   if: |
     !cancelled() &&
@@ -203,14 +208,15 @@ production-deploy-provider:
     image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
     image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
+    dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
 ```
 
 #### Production Reviewer Approval Gate & Promotion
-To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules and cryptographic OIDC provenance verification:
-1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a file-based **Pre-Flight Schema Migration Status & SQL DDL Summary** from `prisma/migrations/` in `$GITHUB_STEP_SUMMARY` (`schema-compatibility` runs without `DATABASE_URL`). `publish-artifact` builds and signs the multi-arch container image on `ghcr.io`, `staging-database-migration` applies migrations against staging `DATABASE_URL`, and `staging-deploy-provider` verifies OIDC provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml` before deploying the immutable `ghcr.io/<owner>/<repo>@sha256:<hex>` digest to Cloud Run service `wedding-website`.
-2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the job before exposing production secrets. Maintainers review the file-based preflight DDL summary and live staging health check outcome before approving the deployment; after approval, `db-migrate.yml` audits live production `DATABASE_URL` (`npx prisma migrate status`), emits the live pending DDL summary, and runs `npx prisma migrate deploy`, after which `production-deploy-provider` re-verifies OIDC provenance for the exact `image_digest` validated in staging before updating the production `wedding-website` Cloud Run service.
-3. **Automated Rollback Guarantee**: Before updating the Cloud Run service, `.github/workflows/deploy-provider.yml` inspects the currently serving Cloud Run revision image (capturing `previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA). If the staging or production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/deploy.yml` automatically triggers `.github/workflows/rollback.yml` with the captured `previous_image_digest`, `previous_image_tag`, `provider`, and optional unguarded `rollback_environment` (e.g., `production-rollback`, configured without Required Reviewers, setting `SERVICE_URL` via `vars.SERVICE_URL` with `secrets.SERVICE_URL` as a legacy fallback, and holding `GCP_SA_KEY`, `GCP_PROJECT_ID`, and `DEPLOY_WEBHOOK_URL`). `rollback.yml` rejects mutable `latest` or the failing `github.sha`, verifies `npm run lint:migrations`, redeploys the previous image via `deploy-provider.yml` (including OIDC provenance verification) **without requiring a second human approval gate**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `.data.status == "ok"`, `.data.database == "connected"`) before reporting `SUCCESS`.
+To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules, isolated Cloud Run targets, and cryptographic OIDC provenance verification:
+1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a file-based **Pre-Flight Schema Migration Status & SQL DDL Summary** from `prisma/migrations/` in `$GITHUB_STEP_SUMMARY` (`schema-compatibility` runs without `DATABASE_URL`). `publish-artifact` builds and signs the multi-arch container image on `ghcr.io`, `staging-database-migration` applies migrations against staging `DATABASE_URL`, and `staging-deploy-provider` verifies OIDC provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml` before deploying the immutable `ghcr.io/<owner>/<repo>@sha256:<hex>` digest to the isolated staging Cloud Run service (`wedding-website-staging` by default, or `vars.CLOUD_RUN_SERVICE` in `vars.CLOUD_RUN_REGION`).
+2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the job before exposing production secrets. Maintainers review the file-based preflight DDL summary and live staging health check outcome before approving the deployment; after approval, `db-migrate.yml` audits live production `DATABASE_URL` (`npx prisma migrate status`), emits the live pending DDL summary, and runs `npx prisma migrate deploy`, after which `production-deploy-provider` re-verifies OIDC provenance for the exact `image_digest` validated in staging before updating the production Cloud Run service (`wedding-website` by default, or `vars.CLOUD_RUN_SERVICE` in `vars.CLOUD_RUN_REGION`).
+3. **Automated Rollback Guarantee**: Before updating the Cloud Run service, `.github/workflows/deploy-provider.yml` inspects the currently serving Cloud Run revision image in the resolved service and region (capturing `previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA). If the staging or production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/deploy.yml` automatically triggers `.github/workflows/rollback.yml` with the captured `previous_image_digest`, `previous_image_tag`, `provider`, and optional unguarded `rollback_environment` (e.g., `production-rollback`, configured without Required Reviewers, setting `SERVICE_URL`, `CLOUD_RUN_SERVICE`, `CLOUD_RUN_REGION`, and Workload Identity Federation variables `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` via `vars.*`, or holding fallback `GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, and `DEPLOY_WEBHOOK_SECRET`). `rollback.yml` rejects mutable `latest` or the failing `github.sha`, verifies `npm run lint:migrations`, redeploys the previous image via `deploy-provider.yml` (including OIDC provenance verification and fail-closed credential checks) **without requiring a second human approval gate**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `.data.status == "ok"`, `.data.database == "connected"`) before reporting `SUCCESS`.
 
 #### Workflow Parameters, Manual Dispatches & Preflight Checks
 The release pipeline supports automated merges as well as manual triggers via GitHub Actions `workflow_dispatch`:
@@ -225,10 +231,10 @@ The release pipeline supports automated merges as well as manual triggers via Gi
     *   `previous_tag`: Optional immutable container image tag override for automated rollback if health checks fail (defaults to `previous_image_digest` / `previous_image_tag` captured before rollout by `deploy-provider.yml`; mutable `latest` and the failing `github.sha` are rejected outside explicit dry-run mode).
     *   `rollback_environment`: Optional unguarded GitHub Environment name (e.g., `production-rollback`, or configured via repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT`) used by `rollback.yml` and `deploy-provider.yml` to resolve provider secrets and `vars.SERVICE_URL` (`secrets.SERVICE_URL` legacy fallback) without pausing on `production` reviewer gates.
 *   **Standalone Provider Dispatches (`deploy-provider.yml`)**:
-    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected). Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner` and `--signer-workflow`) prior to Cloud Run rollout.
+    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), plus optional `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode). Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner` and `--signer-workflow`) prior to Cloud Run rollout.
     *   Exports `service_url`, `is_dry_run`, `previous_image_tag`, `previous_image_digest`, `image_digest`, `image_uri`, and `attestation_status` outputs and records them in `$GITHUB_STEP_SUMMARY`.
 *   **Standalone Database Migration Dispatches (`db-migrate.yml`)**:
-    *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. It accepts `environment` (`production`, `staging`, or `development`) and execution confirmation (`confirm: true`).
+    *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. Manual `workflow_dispatch` runs default `confirm` to `false` and abort immediately before touching PostgreSQL unless the operator explicitly sets `confirm: true` alongside `environment` (`production`, `staging`, or `development`).
 *   **Workflow Secrets**:
     *   `DATABASE_URL` (Required by `db-migrate.yml`): Mandatory PostgreSQL connection string scoped to the respective GitHub Environment (`staging` or `production`). Must start with `postgres://` or `postgresql://`. Because `prisma.config.ts` binds `datasource.url` to `DATABASE_URL`, `npx prisma migrate deploy` always reads `DATABASE_URL`; when runtime traffic uses PgBouncer or Neon/Supabase transaction pooling, set the GitHub Environment `DATABASE_URL` secret to the direct, non-pooled PostgreSQL URL as an explicit `DATABASE_URL` override.
 *   **Preflight Schema Compatibility Linting**:
@@ -308,17 +314,21 @@ Google Cloud Run provides free, automatically managed TLS certificates for custo
 The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch`); pushing a `v*` tag triggers `publish-artifact.yml` to publish `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy-provider.yml` (`image_tag: v0.1.0`), `deploy.yml` (`image_digest`), or manual CLI deployment below:
 *   **GitHub Environment Variables** (`staging`, `production`, and optional `production-rollback`):
     *   `SERVICE_URL`: Public base URL of the Cloud Run service for post-deploy and post-rollback `/api/health` verification (`vars.SERVICE_URL` primary so job outputs and deployment summaries remain unmasked; `secrets.SERVICE_URL` is supported as a legacy fallback during migration).
+    *   `CLOUD_RUN_SERVICE`: Target Cloud Run service name for the environment (defaults to `wedding-website-staging` in `staging` and `wedding-website` in `production`, allowing isolated staging and production services within a single shared GCP project).
+    *   `CLOUD_RUN_REGION`: Target Cloud Run region for revision capture and deployment (defaults to `us-central1`).
+    *   `GCP_WORKLOAD_IDENTITY_PROVIDER`: Primary keyless OIDC **Workload Identity Federation** provider resource (`projects/<project-number>/locations/global/workloadIdentityPools/<pool>/providers/<provider>`), used by `google-github-actions/auth` with job-scoped `id-token: write`.
+    *   `GCP_SERVICE_ACCOUNT`: Google Cloud Service Account email (`<sa>@<project-id>.iam.gserviceaccount.com`) impersonated via Workload Identity Federation.
 *   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):
-    *   `GCP_SA_KEY`: Google Cloud Service Account JSON Key required by `google-github-actions/auth` in `deploy-provider.yml` (`credentials_json`).
-    *   `GCP_PROJECT_ID`: Optional Google Cloud Project ID override for `deploy-provider.yml`.
+    *   `GCP_SA_KEY`: Optional legacy Google Cloud Service Account JSON Key fallback (`credentials_json`) when `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT` are not configured. Live runs fail closed when neither Workload Identity Federation nor `GCP_SA_KEY` is present.
+    *   `GCP_PROJECT_ID`: Optional Google Cloud Project ID override for `deploy-provider.yml` (automatically inferred from Workload Identity / `GCP_SERVICE_ACCOUNT` or `GCP_SA_KEY` when omitted).
     *   `DATABASE_URL`: Direct (non-pooled) PostgreSQL connection string required by `db-migrate.yml` in `staging` and `production`.
-*   **GCP Secret Manager Runtime Secrets** (mounted onto the `wedding-website` Cloud Run service, not stored in GitHub Actions):
+*   **GCP Secret Manager Runtime Secrets** (mounted onto the `wedding-website-staging` and `wedding-website` Cloud Run services, not stored in GitHub Actions):
     *   `DATABASE_URL`, `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `GUEST_PASSCODE` (unique non-default passcode), and `GUEST_SESSION_SECRET` (at least 32 characters and distinct from `GUEST_PASSCODE` per `src/env.ts`).
 
 ### Manual CLI Deployment
-`.github/workflows/publish-artifact.yml` publishes multi-arch OCI images and OIDC build provenance attestations to `ghcr.io`, and `.github/workflows/deploy-provider.yml` rejects mutable `:latest` tags. Always deploy `wedding-website` using a verified immutable `ghcr.io` `@sha256:` digest and mount `GUEST_SESSION_SECRET` alongside the other production secrets:
+`.github/workflows/publish-artifact.yml` publishes multi-arch OCI images and OIDC build provenance attestations to `ghcr.io`, and `.github/workflows/deploy-provider.yml` rejects mutable `:latest` tags. Always deploy `wedding-website-staging` (staging) and `wedding-website` (production) using a verified immutable `ghcr.io` `@sha256:` digest and mount `GUEST_SESSION_SECRET` alongside the other production secrets:
 ```bash
-# 1. Authenticate with GCP using a service account key (GCP_SA_KEY) or interactive gcloud login
+# 1. Authenticate with GCP via interactive gcloud login (or service account key fallback GCP_SA_KEY)
 gcloud auth activate-service-account --key-file="$GCP_SA_KEY"
 gcloud config set project YOUR_PROJECT_ID
 
@@ -329,7 +339,18 @@ gh attestation verify "oci://ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" 
     --owner fderuiter \
     --signer-workflow fderuiter/wedding_website/.github/workflows/publish-artifact.yml
 
-# 3. Deploy digest-pinned container revision to Cloud Run service wedding-website
+# 3a. Deploy digest-pinned container revision to isolated staging Cloud Run service wedding-website-staging
+gcloud run deploy wedding-website-staging \
+    --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
+    --platform=managed \
+    --region=us-central1 \
+    --allow-unauthenticated \
+    --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-staging-db \
+    --set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
+    --set-secrets="DATABASE_URL=STAGING_DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
+    --port=3000
+
+# 3b. Promote verified digest-pinned container revision to production Cloud Run service wedding-website
 gcloud run deploy wedding-website \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
     --platform=managed \

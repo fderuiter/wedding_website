@@ -249,4 +249,36 @@ describe('ThingsToDoMap', () => {
     const markers = screen.getAllByTestId('marker');
     expect(markers).toHaveLength(attractions.length);
   });
+
+  it('loads CartoDB voyager light tiles immediately without requesting dark_all tiles when mounted under ThemeProvider on a light OS client', () => {
+    const actualThemeModule = jest.requireActual('@/components/ThemeProvider');
+    const ActualThemeProvider = actualThemeModule.ThemeProvider;
+    (useTheme as jest.Mock).mockImplementation(() => actualThemeModule.useTheme());
+
+    const prevMatchMedia = window.matchMedia;
+    document.documentElement.className = 'light';
+    window.matchMedia = jest.fn().mockReturnValue({
+      matches: false,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    });
+
+    try {
+      render(
+        <ActualThemeProvider initialThemeMode="system">
+          <ThingsToDoMap attractions={attractions} />
+        </ActualThemeProvider>
+      );
+
+      const tileLayer = screen.getByTestId('tile-layer');
+      expect(tileLayer).toHaveAttribute(
+        'data-url',
+        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+      );
+      expect(tileLayer.getAttribute('data-url')).not.toContain('dark_all');
+    } finally {
+      window.matchMedia = prevMatchMedia;
+      document.documentElement.className = '';
+    }
+  });
 });

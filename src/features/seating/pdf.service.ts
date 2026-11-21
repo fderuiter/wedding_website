@@ -1,7 +1,8 @@
 import PDFDocument from 'pdfkit';
 import { SeatingTableDTO } from './schemas';
 import { InvitationCodeDTO } from '@/features/registry';
-import { getDietaryBadges, isOneSidedTableShape } from './utils/seatingHelpers';
+import { computeSeatPosition, resolveSeatAssignments } from './seatLayout';
+import { getDietaryBadges } from './utils/seatingHelpers';
 
 interface GeneratePdfOptions {
   siteTitle?: string;
@@ -141,22 +142,14 @@ export async function generateSeatingChartPdf(
 
           const shapeLower = (table.shape || 'round').toLowerCase();
           const isRound = shapeLower === 'round';
-          const isOneSided = isOneSidedTableShape(shapeLower);
           const assignedCount = table.invitationCodes?.length || 0;
           const isOverCapacity = assignedCount > table.capacity;
 
           const fillColor = isOverCapacity ? '#fef2f2' : '#ffffff';
           const strokeColor = isOverCapacity ? '#ef4444' : '#475569';
 
-          // Index assigned seats by explicit seat number for O(1) constant-time resolution
-          const seatMap = new Map<number, InvitationCodeDTO>();
-          if (table.invitationCodes) {
-            for (const guest of table.invitationCodes) {
-              if (guest.seatNumber != null && !seatMap.has(guest.seatNumber)) {
-                seatMap.set(guest.seatNumber, guest);
-              }
-            }
-          }
+          // Resolve explicit and unnumbered seat assignments without array-index duplication
+          const seatMap = resolveSeatAssignments(table.invitationCodes, table.capacity);
 
           if (isRound) {
             const radius = Math.min(tw, th) / 2;
@@ -183,15 +176,22 @@ export async function generateSeatingChartPdf(
               });
 
             // Draw seat indicators around circle
-            const seatRadius = radius + 12 * scale;
+            const seatOffset = 12 * scale;
             const seatDotRadius = Math.max(3, 4.5 * scale);
 
             for (let i = 1; i <= table.capacity; i++) {
-              const angle = (i * 2 * Math.PI) / table.capacity - Math.PI / 2;
-              const sx = cx + seatRadius * Math.cos(angle);
-              const sy = cy + seatRadius * Math.sin(angle);
+              const { x: sx, y: sy } = computeSeatPosition({
+                shape: shapeLower,
+                seatNumber: i,
+                capacity: table.capacity,
+                width: tw,
+                height: th,
+                offset: seatOffset,
+                originX: tx,
+                originY: ty,
+              });
 
-              const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
+              const guest = seatMap.get(i);
               const isSeated = !!guest;
               const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes) : [];
 
@@ -227,39 +227,21 @@ export async function generateSeatingChartPdf(
             // Draw seat dots (along 1 side for head/sweetheart, or 4-sided perimeter for rectangular/square)
             const seatDotRadius = Math.max(3, 4.5 * scale);
             const cap = table.capacity;
+            const offset = 10 * scale;
 
             for (let i = 1; i <= cap; i++) {
-              let sx = tx;
-              let sy = ty;
-              const offset = 10 * scale;
+              const { x: sx, y: sy } = computeSeatPosition({
+                shape: shapeLower,
+                seatNumber: i,
+                capacity: cap,
+                width: tw,
+                height: th,
+                offset,
+                originX: tx,
+                originY: ty,
+              });
 
-              if (isOneSided) {
-                sx = tx + (tw / (cap + 1)) * i;
-                sy = ty - offset;
-              } else {
-                const perimeterIndex = i - 1;
-                const side = Math.floor((perimeterIndex / cap) * 4);
-
-                if (side === 0) {
-                  // Top
-                  sx = tx + (tw / (cap / 2 + 1)) * (perimeterIndex + 1);
-                  sy = ty - offset;
-                } else if (side === 1) {
-                  // Right
-                  sx = tx + tw + offset;
-                  sy = ty + (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
-                } else if (side === 2) {
-                  // Bottom
-                  sx = tx + tw - (tw / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
-                  sy = ty + th + offset;
-                } else {
-                  // Left
-                  sx = tx - offset;
-                  sy = ty + th - (th / (cap / 2 + 1)) * ((perimeterIndex % (cap / 2)) + 1);
-                }
-              }
-
-              const guest = seatMap.get(i) || table.invitationCodes?.[i - 1];
+              const guest = seatMap.get(i);
               const isSeated = !!guest;
               const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes) : [];
 
@@ -356,6 +338,14 @@ export async function generateSeatingChartPdf(
             doc.text('(No guests assigned to this table)', margin + 6, currentY + 5);
             currentY += 18;
           } else {
+            const resolvedRosterSeats = resolveSeatAssignments(guests, table.capacity);
+            const resolvedSeatByGuestId = new Map<string, number>();
+            resolvedRosterSeats.forEach((g, seatNum) => {
+              if (g.id) {
+                resolvedSeatByGuestId.set(g.id, seatNum);
+              }
+            });
+
             for (let idx = 0; idx < guests.length; idx++) {
               const guest = guests[idx];
               checkPageBreak(20);
@@ -364,7 +354,8 @@ export async function generateSeatingChartPdf(
               doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
 
               doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-              const seatDisplay = guest.seatNumber ? `Seat ${guest.seatNumber}` : `Seat ${idx + 1}`;
+              const resolvedSeat = guest.seatNumber || resolvedSeatByGuestId.get(guest.id) || idx + 1;
+              const seatDisplay = `Seat ${resolvedSeat}`;
               doc.text(seatDisplay, margin + 6, currentY + 5, { width: colSeatW });
               doc.text(guest.guestName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
               doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });

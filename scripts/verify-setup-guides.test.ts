@@ -197,8 +197,8 @@ describe('verify-setup-guides contract check', () => {
         .readFileSync(agentsPath, 'utf8')
         .replace('`jest.setup.js`, ', '')
         .replace(
-          '7. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n8. ESLint Code Linting (`npm run lint`)\n9. Knip Unused Export Analysis (`npm run lint:unused`)\n10. Verify Migration Compatibility (`npm run lint:migrations`)',
-          '7. Verify Migration Compatibility (`npm run lint:migrations`)\n8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)'
+          '8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
+          '8. Verify Migration Compatibility (`npm run lint:migrations`)\n9. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n10. ESLint Code Linting (`npm run lint`)\n11. Knip Unused Export Analysis (`npm run lint:unused`)'
         )
     );
 
@@ -242,7 +242,7 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
         expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
         '.githooks/pre-commit: Must enforce check:static sub-script "check:runbooks"',
-        expect.stringContaining('Commit Your Changes claims "eleven" sequential workspace checks, expected "ten"'),
+        expect.stringContaining('Commit Your Changes claims "twelve" sequential workspace checks, expected "eleven"'),
         '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
         '.github/TESTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
         'AGENTS.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',

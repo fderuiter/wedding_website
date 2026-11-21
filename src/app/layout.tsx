@@ -105,14 +105,20 @@ export default async function RootLayout({
     }
   }
 
-  const initialHtmlClass = initialThemeMode === 'light' ? 'light' : 'dark';
+  const initialHtmlClass =
+    initialThemeMode === 'dark' ? 'dark' : initialThemeMode === 'light' ? 'light' : '';
 
   const serverThemeStyles = generateThemeStylesheet(publicConfig);
 
-  const themeScript = '(function(){var d=false;try{var m=localStorage.getItem(\'theme_mode\');if(m===\'dark\')d=true;else if(m===\'light\')d=false;else d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e){try{d=window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches;}catch(e2){}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e3){}})();';
+  const themeScript =
+    '(function(){var m=null;try{m=localStorage.getItem(\'theme_mode\');}catch(e){}if(m!==\'dark\'&&m!==\'light\'&&m!==\'system\'){try{var c=document.cookie.match(/(?:^|;\\s*)theme_mode=(dark|light|system)(?:;|$)/);if(c)m=c[1];}catch(e2){}}var d=false;if(m===\'dark\')d=true;else if(m===\'light\')d=false;else{try{d=!!(window.matchMedia&&window.matchMedia(\'(prefers-color-scheme: dark)\').matches);}catch(e3){d=false;}}try{var r=document.documentElement;if(d){r.classList.add(\'dark\');r.classList.remove(\'light\');}else{r.classList.add(\'light\');r.classList.remove(\'dark\');}}catch(e4){}})();';
 
   return (
-    <html lang="en" suppressHydrationWarning className={`${initialHtmlClass} ${fontClasses}`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={[initialHtmlClass, fontClasses].filter(Boolean).join(' ')}
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <style id="dynamic-theme-style" dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
@@ -121,15 +127,15 @@ export default async function RootLayout({
         className={`${fontClasses} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}
       >
         <a href="#main-content" className="skip-link">Skip to main content</a>
-        {isUninitialized ? (
-          <SetupWizard />
-        ) : (
-          <ThemeProvider config={publicConfig} initialThemeMode={initialThemeMode} hasServerStylesheet>
+        <ThemeProvider config={publicConfig} initialThemeMode={initialThemeMode} hasServerStylesheet>
+          {isUninitialized ? (
+            <SetupWizard />
+          ) : (
             <ToastProvider>
               <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
             </ToastProvider>
-          </ThemeProvider>
-        )}
+          )}
+        </ThemeProvider>
       </body>
     </html>
   );

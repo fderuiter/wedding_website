@@ -43,6 +43,11 @@ export const steps: Step[] = [
   { name: 'Check Personal/Template Identifier Isolation', command: 'npx tsx scripts/check-personal-identifiers.ts' },
   { name: 'Check Third-Party Action Pin Commit SHAs', command: 'npm run check:action-pins' },
   { name: 'Check Documentation Relative Links', command: 'npx tsx scripts/check-doc-links.ts' },
+  {
+    name: 'Verify Specification Route & Symbol Contracts',
+    command: 'npm run check:spec-contracts',
+    remediation: 'Specification route, method, ENTITY_KEY, or symbol contract drift detected.\nRun "npm run check:spec-contracts" locally and reconcile cited "/api/*" endpoints, HTTP methods, dynamic admin entity keys, and TypeScript symbols in architectural Markdown files with live source files.',
+  },
   { name: 'Validate Prisma Schema', command: 'npx tsx scripts/check-prisma-schema.ts' },
   { name: 'TypeScript Typecheck', command: 'npm run typecheck' },
   { name: 'ESLint Code Linting', command: 'npm run lint' },
