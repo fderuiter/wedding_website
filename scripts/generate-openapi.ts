@@ -87,6 +87,11 @@ const OPENAPI_TAGS: Array<{ prefix: string; name: string; description: string }>
     description: 'Service liveness health check endpoints',
   },
   {
+    prefix: '/api/live',
+    name: 'Liveness',
+    description: 'Process liveness probe endpoints decoupled from database availability',
+  },
+  {
     prefix: '/api/media',
     name: 'Media',
     description: 'Media asset library CRUD and ZIP archive export endpoints',

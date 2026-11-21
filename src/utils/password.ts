@@ -9,7 +9,7 @@ const SCRYPT_PARAMS = {
   maxmem: 32 * 1024 * 1024,
 };
 
-export const ADMIN_PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+export const ADMIN_RECOVERY_TTL_MS = 30 * 60 * 1000;
 
 export async function hashPassword(password: string): Promise<string> {
   if (!password || typeof password !== 'string') {
@@ -67,36 +67,43 @@ export type AdminPasswordResetVerificationResult =
     error: string;
   };
 
-function deriveAdminResetSecret({
+function deriveAdminResetKey({
   envAdminPassword,
   activePasswordHash,
   adminSessionVersion,
-}: AdminPasswordResetKeyMaterial): string {
+}: AdminPasswordResetKeyMaterial): Buffer {
   if (!envAdminPassword) {
     throw new Error('ADMIN_PASSWORD secret is required to derive password reset key');
   }
-  return crypto
-    .createHmac('sha256', envAdminPassword)
-    .update(`admin-password-reset:v1:${activePasswordHash}:${adminSessionVersion}`)
-    .digest('hex');
+  const domainSalt = Buffer.from(
+    `wedding-website:admin-reset-kdf:v1:${adminSessionVersion}`,
+    'utf8'
+  );
+  return crypto.scryptSync(
+    `${envAdminPassword}:${activePasswordHash}`,
+    domainSalt,
+    32,
+    SCRYPT_PARAMS
+  );
 }
 
 export function signAdminPasswordResetToken(
   keyMaterial: AdminPasswordResetKeyMaterial,
   options?: { iat?: number; ttlMs?: number }
 ): string {
-  const secret = deriveAdminResetSecret(keyMaterial);
+  const signingKey = deriveAdminResetKey(keyMaterial);
+  const { adminSessionVersion } = keyMaterial;
   const iat = options?.iat ?? Date.now();
-  const ttlMs = options?.ttlMs ?? ADMIN_PASSWORD_RESET_TTL_MS;
+  const ttlMs = options?.ttlMs ?? ADMIN_RECOVERY_TTL_MS;
   const payload = {
     purpose: 'admin-password-reset',
-    v: keyMaterial.adminSessionVersion,
+    v: adminSessionVersion,
     iat,
     exp: iat + ttlMs,
     jti: crypto.randomBytes(12).toString('base64url'),
   };
   const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const signature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  const signature = crypto.createHmac('sha256', signingKey).update(encodedPayload).digest('base64url');
   return `${encodedPayload}.${signature}`;
 }
 
@@ -121,14 +128,14 @@ export function verifyAdminPasswordResetToken(
   }
 
   const [encodedPayload, providedSignature] = parts;
-  let secret: string;
+  let signingKey: Buffer;
   try {
-    secret = deriveAdminResetSecret(keyMaterial);
+    signingKey = deriveAdminResetKey(keyMaterial);
   } catch {
     return invalidResult;
   }
 
-  const expectedSignature = crypto.createHmac('sha256', secret).update(encodedPayload).digest('base64url');
+  const expectedSignature = crypto.createHmac('sha256', signingKey).update(encodedPayload).digest('base64url');
   const providedBuf = Buffer.from(providedSignature, 'utf8');
   const expectedBuf = Buffer.from(expectedSignature, 'utf8');
 

@@ -54,6 +54,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/admin/password-reset/request' ||
     normalizedPathname === '/api/admin/password-reset/confirm' ||
     normalizedPathname === '/api/health' ||
+    normalizedPathname === '/api/live' ||
     normalizedPathname === '/api/ready' ||
     normalizedPathname === '/api/uploads' ||
     normalizedPathname.startsWith('/api/uploads/')
@@ -87,13 +88,13 @@ export function withApiMiddleware(
         method = req.method || 'GET';
       }
       const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
-      const isHealthPath = normalizedPathname === '/api/health';
+      const isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
       const isLoginPath = isAuthLockoutRoute(normalizedPathname, method);
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Stricter limits for login/credential checks, general limits for everything else; health probe endpoint (/api/health) is exempt
+      // Stricter limits for login/credential checks, general limits for everything else; probe endpoints (/api/health, /api/live) are exempt
       if (!isHealthPath) {
         const limit = options?.limit ?? (isLoginPath ? 5 : 100);
         const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);

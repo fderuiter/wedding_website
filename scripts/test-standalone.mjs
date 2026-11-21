@@ -201,7 +201,19 @@ async function main() {
 
     console.log('✅ Standalone server is listening!');
 
-    // Test 1: Verify Health (Liveness)
+    // Test 0: Verify Liveness (/api/live)
+    console.log('Testing GET /api/live...');
+    const liveRes = await request('/api/live');
+    if (liveRes.statusCode !== 200) {
+      throw new Error(`Liveness check returned status ${liveRes.statusCode}: ${liveRes.body}`);
+    }
+    const liveJson = JSON.parse(liveRes.body);
+    if (liveJson.status !== 'alive' || typeof liveJson.timestamp !== 'string') {
+      throw new Error(`Liveness check body invalid: ${liveRes.body}`);
+    }
+    console.log('✅ /api/live OK');
+
+    // Test 1: Verify Health (Startup / Rollout Readiness)
     console.log('Testing GET /api/health...');
     const healthRes = await request('/api/health');
     if (healthRes.statusCode !== 200) {

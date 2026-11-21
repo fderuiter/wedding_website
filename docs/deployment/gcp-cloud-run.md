@@ -366,10 +366,10 @@ gcloud run deploy wedding-website \
 
 ## 7. Health Checks
 
-Cloud Run monitors container health via startup and liveness HTTP probes.
+Cloud Run separates startup readiness from ongoing process liveness so brief Cloud SQL blips do not restart warm instances.
 
 ### Cloud Run Probes Configuration
-Configure the HTTP probe on `wedding-website` to query `/api/health` on port `3000`:
+Configure the startup probe on `wedding-website` to query `/api/health` (verifying PostgreSQL connectivity before serving traffic) and the liveness probe to query `/api/live` (process liveness decoupled from PostgreSQL) on port `3000`:
 ```bash
 gcloud run services update wedding-website \
     --region=us-central1 \
@@ -379,12 +379,12 @@ gcloud run services update wedding-website \
     --startup-probe-initial-delay=5s \
     --startup-probe-period=10s \
     --liveness-probe-type=http \
-    --liveness-probe-request-path=/api/health \
+    --liveness-probe-request-path=/api/live \
     --liveness-probe-port=3000 \
     --liveness-probe-period=30s
 ```
 
-The probe verifies database query capability and returns HTTP 200 before routing live user traffic to new instances.
+The startup probe (and `.github/workflows/deploy.yml` / `.github/workflows/rollback.yml` rollout checks) verifies database query capability via `/api/health` before routing live user traffic to new instances, while `/api/live` returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL so transient database blips do not trigger container restart loops.
 
 ---
 

@@ -8,11 +8,32 @@ import { GuestLoginSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import crypto from 'node:crypto';
 
-function safeComparePasscode(a: string, b: string): boolean {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const hashA = crypto.createHash('sha256').update(a).digest();
-  const hashB = crypto.createHash('sha256').update(b).digest();
-  return crypto.timingSafeEqual(hashA, hashB);
+const PASSCODE_SCRYPT_PARAMS = {
+  N: 16384,
+  r: 8,
+  p: 1,
+  maxmem: 32 * 1024 * 1024,
+};
+
+function derivePasscodeDigest(value: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(value, salt, 32, PASSCODE_SCRYPT_PARAMS, (err, derivedKey) => {
+      if (err) {
+        return reject(err);
+      }
+      resolve(derivedKey);
+    });
+  });
+}
+
+async function safeComparePasscode(candidate: string, expected: string): Promise<boolean> {
+  if (typeof candidate !== 'string' || typeof expected !== 'string') return false;
+  const salt = crypto.randomBytes(16);
+  const [candidateKey, expectedKey] = await Promise.all([
+    derivePasscodeDigest(candidate, salt),
+    derivePasscodeDigest(expected, salt),
+  ]);
+  return crypto.timingSafeEqual(candidateKey, expectedKey);
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
@@ -49,8 +70,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const matchesSharedPasscode =
     Boolean(expectedPasscode) &&
-    (safeComparePasscode(passcode, expectedPasscode) ||
-      (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
+    ((await safeComparePasscode(passcode, expectedPasscode)) ||
+      (trimmedCode.length > 0 &&
+        trimmedCode !== passcode &&
+        (await safeComparePasscode(trimmedCode, expectedPasscode))));
 
   if (matchesSharedPasscode) {
     const iat = Date.now();

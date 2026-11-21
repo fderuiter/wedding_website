@@ -24,7 +24,15 @@ services:
       context: .
       cache_from:
         - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
-    command: npx prisma migrate deploy
+    command: ./node_modules/.bin/prisma migrate deploy
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}
       POSTGRES_URL_NON_POOLING: ${POSTGRES_URL_NON_POOLING:-}
@@ -43,6 +51,15 @@ services:
         - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64},mode=max
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=1001,gid=1001,mode=0755
     environment:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: ${NODE_ENV:-production}
@@ -76,7 +93,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\\*\\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3

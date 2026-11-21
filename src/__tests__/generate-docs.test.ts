@@ -197,15 +197,16 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 74 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/uploads/[...path] Public', () => {
+    it('lists all 75 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **74**');
+      expect(apiSection).toContain('Total API route handlers: **75**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(74);
+      expect(handlerRows).toHaveLength(75);
 
+      expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/password` | `src/app/api/admin/password/route.ts` | `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/password-reset/request` | `src/app/api/admin/password-reset/request/route.ts` | `POST` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/password-reset/confirm` | `src/app/api/admin/password-reset/confirm/route.ts` | `POST` | `Public` |');

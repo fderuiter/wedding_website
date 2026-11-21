@@ -30,14 +30,21 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
       '    apt-get update && apt-get install -y --no-install-recommends \\',
       '    openssl \\',
-      '    ca-certificates',
+      '    ca-certificates \\',
+      '    tini',
       'FROM base AS prisma-cli',
       'WORKDIR /opt/prisma-cli',
       'FROM base AS builder',
       'COPY . .',
       'FROM base AS runner',
-      'COPY --from=prisma-cli --chown=nextjs:nodejs /opt/prisma-cli /opt/prisma-cli',
-      'COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts',
+      'RUN addgroup --system --gid 1001 nodejs && \\',
+      '    adduser --system --uid 1001 --ingroup nodejs nextjs',
+      'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
+      'COPY --from=builder /app/prisma.config.ts ./prisma.config.ts',
+      'RUN ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \\',
+      '    find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true',
+      'HEALTHCHECK CMD node -e "fetch(\'http://127.0.0.1:3000/api/live\')"',
+      'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]',
       'CMD ["node", "server.js"]',
       '',
     ].join('\n')
@@ -87,7 +94,15 @@ function writeValidFixtureWorkspace(targetDir: string): void {
 
   fs.writeFileSync(
     path.join(targetDir, 'docker-entrypoint.sh'),
-    ['#!/bin/sh', 'exec "$@"', ''].join('\n')
+    [
+      '#!/bin/sh',
+      'export NPM_CONFIG_UPDATE_NOTIFIER=false',
+      'if [ "$RUN_MIGRATIONS" = "true" ]; then',
+      '  ./node_modules/.bin/prisma migrate deploy',
+      'fi',
+      'exec "$@"',
+      '',
+    ].join('\n')
   );
 
   fs.writeFileSync(
@@ -315,6 +330,77 @@ describe('check-docker-build', () => {
           filePath: '.github/workflows/containers.yml',
           lineNumber: 9,
           imageRef: 'busybox:1.36',
+        }),
+      ])
+    );
+  });
+
+  it('enforces least-privilege runner ownership, tini PID 1, /api/live HEALTHCHECK, and offline entrypoint rules', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'Dockerfile'),
+      [
+        '# syntax=docker/dockerfile:1',
+        `FROM node:22-bookworm-slim@${NODE_DIGEST} AS base`,
+        'WORKDIR /app',
+        'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\',
+        '    --mount=type=cache,target=/var/lib/apt,sharing=locked \\',
+        '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
+        '    apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates',
+        'FROM base AS prisma-cli',
+        'WORKDIR /opt/prisma-cli',
+        'FROM base AS builder',
+        'COPY . .',
+        'FROM base AS runner',
+        'COPY --from=prisma-cli --chown=nextjs:nodejs /opt/prisma-cli /opt/prisma-cli',
+        'COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.ts',
+        'CMD ["node", "server.js"]',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-entrypoint.sh'),
+      ['#!/bin/sh', 'npx -y prisma migrate deploy', 'exec "$@"', ''].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '--chown=nextjs:nodejs',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/usr/bin/tini',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'nextjs:nodejs',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'chmod a-s',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'HEALTHCHECK /api/live',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/app/node_modules/.bin/prisma',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-entrypoint.sh',
+          imageRef: 'npx',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-entrypoint.sh',
+          imageRef: './node_modules/.bin/prisma migrate deploy',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-entrypoint.sh',
+          imageRef: 'NPM_CONFIG_UPDATE_NOTIFIER=false',
         }),
       ])
     );

@@ -3,14 +3,14 @@ import { getAppConfig } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import { loadSessionGuardConfig, resolveActiveAdminPasswordHash } from '@/core/auth/nodeSessionGuards';
-import { ADMIN_PASSWORD_RESET_TTL_MS, signAdminPasswordResetToken } from '@/utils/password';
+import { ADMIN_RECOVERY_TTL_MS, signAdminPasswordResetToken } from '@/utils/password';
 import { AdminPasswordResetRequestSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { isHostAllowed } from '@/utils/hostValidation';
 import { env } from '@/env';
 
-const RESET_TTL_MINUTES = Math.round(ADMIN_PASSWORD_RESET_TTL_MS / 60000);
+const RESET_TTL_MINUTES = Math.round(ADMIN_RECOVERY_TTL_MS / 60000);
 
 const UNIFORM_RESET_RESPONSE = {
   success: true,

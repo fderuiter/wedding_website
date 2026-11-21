@@ -187,6 +187,64 @@ function checkDockerfileContent(
       reason: 'Dockerfile runner stage must copy the isolated Prisma CLI directory (/opt/prisma-cli).',
     });
   }
+  if (/COPY\s+--from=(?:builder|prisma-cli)\s+--chown=nextjs:nodejs\b/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '--chown=nextjs:nodejs',
+      reason:
+        'Dockerfile runner stage must keep static /app code, node_modules, prisma, scripts, and /opt/prisma-cli owned by root:root.',
+    });
+  }
+  if (!/\btini\b/.test(dockerfileContent) || !/ENTRYPOINT\s+\[\s*"\/usr\/bin\/tini"/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '/usr/bin/tini',
+      reason: 'Dockerfile must install tini and invoke /usr/bin/tini as PID 1 ENTRYPOINT.',
+    });
+  }
+  if (
+    !/addgroup\s+--system\s+--gid\s+1001\s+nodejs/.test(dockerfileContent) ||
+    !/--ingroup\s+nodejs\s+nextjs/.test(dockerfileContent)
+  ) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'nextjs:nodejs',
+      reason: 'Dockerfile must assign runtime user nextjs to primary group nodejs (UID/GID 1001).',
+    });
+  }
+  if (!/chmod\s+a-s/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'chmod a-s',
+      reason: 'Dockerfile must strip setuid and setgid bits across the container filesystem.',
+    });
+  }
+  if (!/^HEALTHCHECK\b[\s\S]*?\/api\/live\b/m.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'HEALTHCHECK /api/live',
+      reason: 'Dockerfile must define a HEALTHCHECK targeting /api/live.',
+    });
+  }
+  if (!/ln\s+-sf\s+\/usr\/local\/bin\/prisma\s+\/app\/node_modules\/\.bin\/prisma/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '/app/node_modules/.bin/prisma',
+      reason: 'Dockerfile must link /app/node_modules/.bin/prisma to the isolated Prisma CLI wrapper.',
+    });
+  }
 
   const instructions = parseDockerfileInstructions(dockerfileContent);
   const stageAliases = new Set<string>();
@@ -597,13 +655,31 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     });
   } else {
     const entrypointContent = fs.readFileSync(entrypointPath, 'utf8');
-    if (/\bnpx\s+(?:-y|--yes)\s+prisma\b/.test(entrypointContent)) {
+    if (/\bnpx\b/.test(entrypointContent)) {
       violations.push({
         filePath: 'docker-entrypoint.sh',
         lineNumber: 1,
         lineContent: '',
-        imageRef: 'npx -y prisma',
-        reason: 'docker-entrypoint.sh must invoke local Prisma CLI without network-fetching `npx -y`.',
+        imageRef: 'npx',
+        reason: 'docker-entrypoint.sh must invoke ./node_modules/.bin/prisma offline without npx.',
+      });
+    }
+    if (!entrypointContent.includes('./node_modules/.bin/prisma migrate deploy')) {
+      violations.push({
+        filePath: 'docker-entrypoint.sh',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: './node_modules/.bin/prisma migrate deploy',
+        reason: 'docker-entrypoint.sh must execute ./node_modules/.bin/prisma migrate deploy when RUN_MIGRATIONS=true.',
+      });
+    }
+    if (!entrypointContent.includes('NPM_CONFIG_UPDATE_NOTIFIER=false')) {
+      violations.push({
+        filePath: 'docker-entrypoint.sh',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'NPM_CONFIG_UPDATE_NOTIFIER=false',
+        reason: 'docker-entrypoint.sh must disable npm update checks via NPM_CONFIG_UPDATE_NOTIFIER=false.',
       });
     }
   }

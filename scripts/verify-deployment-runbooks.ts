@@ -311,11 +311,21 @@ function parseDockerComposeContract(composeContent: string): {
   interpolatedVars: string[];
   requiredVars: string[];
   dbPorts: string[];
+  migrationCommand: string | null;
   migrationDatabaseUrl: string | null;
+  migrationReadOnly: boolean;
+  migrationCapDropAll: boolean;
+  migrationNoNewPrivileges: boolean;
+  migrationTmpfs: string[];
   appEnvMap: Map<string, string>;
   appHasHealthcheck: boolean;
+  appHealthcheckTargetsLive: boolean;
   appHasEnvFile: boolean;
   appHostname: string | null;
+  appReadOnly: boolean;
+  appCapDropAll: boolean;
+  appNoNewPrivileges: boolean;
+  appTmpfs: string[];
   appUploadsVolumeMounted: boolean;
   topLevelUploadsVolumeDeclared: boolean;
 } {
@@ -323,17 +333,34 @@ function parseDockerComposeContract(composeContent: string): {
   const services: string[] = [];
   const dbPorts: string[] = [];
   const appEnvMap = new Map<string, string>();
+  const migrationTmpfs: string[] = [];
+  const appTmpfs: string[] = [];
+  let migrationCommand: string | null = null;
   let migrationDatabaseUrl: string | null = null;
+  let migrationReadOnly = false;
+  let migrationCapDropAll = false;
+  let migrationNoNewPrivileges = false;
   let inServices = false;
   let inTopLevelVolumes = false;
   let currentService: string | null = null;
   let inDbPorts = false;
   let inMigrationEnv = false;
+  let inMigrationCapDrop = false;
+  let inMigrationSecurityOpt = false;
+  let inMigrationTmpfs = false;
   let inAppEnv = false;
   let inAppVolumes = false;
+  let inAppCapDrop = false;
+  let inAppSecurityOpt = false;
+  let inAppTmpfs = false;
+  let inAppHealthcheck = false;
   let appHasHealthcheck = false;
+  let appHealthcheckTargetsLive = false;
   let appHasEnvFile = false;
   let appHostname: string | null = null;
+  let appReadOnly = false;
+  let appCapDropAll = false;
+  let appNoNewPrivileges = false;
   let appUploadsVolumeMounted = false;
   let topLevelUploadsVolumeDeclared = false;
 
@@ -370,8 +397,15 @@ function parseDockerComposeContract(composeContent: string): {
       services.push(currentService);
       inDbPorts = false;
       inMigrationEnv = false;
+      inMigrationCapDrop = false;
+      inMigrationSecurityOpt = false;
+      inMigrationTmpfs = false;
       inAppEnv = false;
       inAppVolumes = false;
+      inAppCapDrop = false;
+      inAppSecurityOpt = false;
+      inAppTmpfs = false;
+      inAppHealthcheck = false;
       continue;
     }
 
@@ -389,12 +423,35 @@ function parseDockerComposeContract(composeContent: string): {
     if (currentService === 'migration') {
       if (/^    [a-zA-Z0-9_-]+:/.test(line)) {
         inMigrationEnv = /^    environment:\s*$/.test(line);
+        inMigrationCapDrop = /^    cap_drop:\s*$/.test(line);
+        inMigrationSecurityOpt = /^    security_opt:\s*$/.test(line);
+        inMigrationTmpfs = /^    tmpfs:\s*$/.test(line);
+        const cmdMatch = line.match(/^    command:\s*(.+?)\s*(?:#.*)?$/);
+        if (cmdMatch) {
+          migrationCommand = cmdMatch[1].replace(/^["']|["']$/g, '').trim();
+        }
+        if (/^    read_only:\s*true\s*(?:#.*)?$/.test(line)) {
+          migrationReadOnly = true;
+        }
       } else if (inMigrationEnv) {
         const dbUrlMatch = line.match(
           /^\s*(?:-\s*)?DATABASE_URL\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
         );
         if (dbUrlMatch) {
           migrationDatabaseUrl = (dbUrlMatch[1] ?? dbUrlMatch[2] ?? '').trim();
+        }
+      } else if (inMigrationCapDrop) {
+        if (/^\s*-\s*["']?ALL["']?\s*(?:#.*)?$/.test(line)) {
+          migrationCapDropAll = true;
+        }
+      } else if (inMigrationSecurityOpt) {
+        if (/^\s*-\s*["']?no-new-privileges:true["']?\s*(?:#.*)?$/.test(line)) {
+          migrationNoNewPrivileges = true;
+        }
+      } else if (inMigrationTmpfs) {
+        const tmpfsMatch = line.match(/^\s*-\s*(?:["']([^"']*)["']|(\S+))\s*(?:#.*)?$/);
+        if (tmpfsMatch) {
+          migrationTmpfs.push(tmpfsMatch[1] ?? tmpfsMatch[2] ?? '');
         }
       }
     }
@@ -403,12 +460,34 @@ function parseDockerComposeContract(composeContent: string): {
       if (/^    [a-zA-Z0-9_-]+:/.test(line)) {
         inAppEnv = /^    environment:\s*$/.test(line);
         inAppVolumes = /^    volumes:\s*$/.test(line);
+        inAppCapDrop = /^    cap_drop:\s*$/.test(line);
+        inAppSecurityOpt = /^    security_opt:\s*$/.test(line);
+        inAppTmpfs = /^    tmpfs:\s*$/.test(line);
+        inAppHealthcheck = /^    healthcheck:\s*$/.test(line);
+        if (/^    read_only:\s*true\s*(?:#.*)?$/.test(line)) {
+          appReadOnly = true;
+        }
       }
       if (/^    healthcheck:\s*$/.test(line)) {
         appHasHealthcheck = true;
       }
+      if (inAppHealthcheck && line.includes('/api/live')) {
+        appHealthcheckTargetsLive = true;
+      }
       if (/^    env_file:\s*/.test(line)) {
         appHasEnvFile = true;
+      }
+      if (inAppCapDrop && /^\s*-\s*["']?ALL["']?\s*(?:#.*)?$/.test(line)) {
+        appCapDropAll = true;
+      }
+      if (inAppSecurityOpt && /^\s*-\s*["']?no-new-privileges:true["']?\s*(?:#.*)?$/.test(line)) {
+        appNoNewPrivileges = true;
+      }
+      if (inAppTmpfs && !/^    tmpfs:\s*$/.test(line)) {
+        const tmpfsMatch = line.match(/^\s*-\s*(?:["']([^"']*)["']|(\S+))\s*(?:#.*)?$/);
+        if (tmpfsMatch) {
+          appTmpfs.push(tmpfsMatch[1] ?? tmpfsMatch[2] ?? '');
+        }
       }
       if (inAppEnv && !line.trim().startsWith('#')) {
         const kvMatch = line.match(
@@ -450,11 +529,21 @@ function parseDockerComposeContract(composeContent: string): {
     interpolatedVars: Array.from(interpolatedSet),
     requiredVars: Array.from(requiredSet),
     dbPorts,
+    migrationCommand,
     migrationDatabaseUrl,
+    migrationReadOnly,
+    migrationCapDropAll,
+    migrationNoNewPrivileges,
+    migrationTmpfs,
     appEnvMap,
     appHasHealthcheck,
+    appHealthcheckTargetsLive,
     appHasEnvFile,
     appHostname,
+    appReadOnly,
+    appCapDropAll,
+    appNoNewPrivileges,
+    appTmpfs,
     appUploadsVolumeMounted,
     topLevelUploadsVolumeDeclared,
   };
@@ -820,6 +909,15 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  if (
+    !gcpMd.includes('--startup-probe-request-path=/api/health') ||
+    !gcpMd.includes('--liveness-probe-request-path=/api/live')
+  ) {
+    errors.push(
+      'docs/deployment/gcp-cloud-run.md: Must configure `--startup-probe-request-path=/api/health` and `--liveness-probe-request-path=/api/live`'
+    );
+  }
+
   // Verify inline mandatory Vercel env var lists in DEPLOYMENT.md and docs/deployment/README.md include GUEST_SESSION_SECRET
   for (const relPath of ['DEPLOYMENT.md', 'docs/deployment/README.md']) {
     const content = runbookContents.get(relPath) ?? '';
@@ -893,6 +991,37 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push(
       'docker-compose.yml: `migration` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
     );
+  }
+  if (composeContract.migrationCommand !== './node_modules/.bin/prisma migrate deploy') {
+    errors.push(
+      'docker-compose.yml: `migration` service must execute `./node_modules/.bin/prisma migrate deploy` offline without `npx`'
+    );
+  }
+  if (
+    !composeContract.migrationReadOnly ||
+    !composeContract.migrationCapDropAll ||
+    !composeContract.migrationNoNewPrivileges ||
+    !composeContract.migrationTmpfs.some((entry) => entry === '/tmp' || entry.startsWith('/tmp:'))
+  ) {
+    errors.push(
+      'docker-compose.yml: `migration` service must enforce `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, and `tmpfs: [/tmp]`'
+    );
+  }
+  if (
+    !composeContract.appReadOnly ||
+    !composeContract.appCapDropAll ||
+    !composeContract.appNoNewPrivileges ||
+    !composeContract.appTmpfs.some((entry) => entry === '/tmp' || entry.startsWith('/tmp:')) ||
+    !composeContract.appTmpfs.some(
+      (entry) => entry === '/app/.next/cache' || entry.startsWith('/app/.next/cache:')
+    )
+  ) {
+    errors.push(
+      'docker-compose.yml: `app` service must enforce `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, and `tmpfs` mounts for `/tmp` and `/app/.next/cache`'
+    );
+  }
+  if (!composeContract.appHasHealthcheck || !composeContract.appHealthcheckTargetsLive) {
+    errors.push('docker-compose.yml: `app` service healthcheck must probe `/api/live`');
   }
   if (!composeContract.appEnvMap.get('DATABASE_URL')?.startsWith('${DATABASE_URL:-')) {
     errors.push(
@@ -1035,6 +1164,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
   if (!middlewareRaw.includes("normalizedPath === '/api/registry/webhook/stripe'")) {
     errors.push('src/middleware.ts: Must exclude `/api/registry/webhook/stripe` from session cookie checks');
+  }
+  if (!middlewareRaw.includes("normalizedPath === '/api/live'")) {
+    errors.push('src/middleware.ts: Must exclude `/api/live` from session cookie checks');
   }
   if (!middlewareRaw.includes("'/uploads/:path*'")) {
     errors.push("src/middleware.ts: `config.matcher` must include `'/uploads/:path*'` so `ALLOWED_HOSTS` runs on `/uploads/*`");

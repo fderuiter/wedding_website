@@ -23,6 +23,7 @@ const API_GROUP_LABELS: Record<string, string> = {
   cron: 'Cron Routes',
   guest: 'Guest Routes',
   health: 'Health Check Routes',
+  live: 'Liveness Probe Routes',
   media: 'Media Routes',
   og: 'Open Graph Routes',
   photos: 'Photos Routes',
