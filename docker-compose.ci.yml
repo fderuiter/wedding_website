@@ -1,0 +1,23 @@
+# Isolated CI & Automated Container Test Overrides
+# Layer on top of docker-compose.yml for disposable smoke/E2E tests:
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml ...
+
+services:
+  db:
+    environment:
+      POSTGRES_USER: ${DB_USER:-wedding}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-wedding123}
+      POSTGRES_DB: ${DB_NAME:-wedding}
+
+  migration:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}}
+
+  app:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost,app,db,wedding_website-app-1,0.0.0.0}
+      GUEST_PASSCODE: ${GUEST_PASSCODE:-playwright-e2e-guest-passcode}
+      GUEST_SESSION_SECRET: ${GUEST_SESSION_SECRET:-playwright-e2e-session-secret-32-chars-min}
+      E2E_TEST: ${E2E_TEST:-true}

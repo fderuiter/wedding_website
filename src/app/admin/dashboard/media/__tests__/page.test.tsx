@@ -491,4 +491,18 @@ describe('MediaDashboardPage', () => {
     expect(screen.getByTestId('pending-photo-uploader-pending-node-1')).toHaveTextContent('Uploaded by Aunt Clara');
     expect(screen.queryByText('IMG_1234.HEIC')).not.toBeInTheDocument();
   });
+
+  it('renders an accessible Live Slideshow link to /photos/slideshow in the media header', async () => {
+    mockGet.mockResolvedValueOnce([]);
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No items found')).toBeInTheDocument();
+    });
+
+    const slideshowLink = screen.getByRole('link', { name: /live slideshow/i });
+    expect(slideshowLink).toBeInTheDocument();
+    expect(slideshowLink).toHaveAttribute('href', '/photos/slideshow');
+  });
 });

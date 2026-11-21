@@ -11,6 +11,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'package.json',
     'tsconfig.json',
     'docker-compose.yml',
+    'docker-compose.ci.yml',
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
@@ -187,7 +188,7 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(testingPath, 'utf8')
         .replace(/build-fallback-guest-passcode/g, 'playwright-e2e-guest-passcode')
-        .replace(/docker compose down -v/g, 'docker compose stop')
+        .replace(/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
     );
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
@@ -300,6 +301,39 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts"'),
         expect.stringContaining('AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y"'),
         expect.stringContaining('.github/TESTING.md: Must document PLAYWRIGHT_REUSE_SERVER opt-in'),
+      ])
+    );
+  });
+
+  it('rejects fallback secrets in docker-compose.yml, 4-byte placeholder scrypt hashes, and missing docker-compose.ci.yml overrides', () => {
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace('${DB_PASSWORD:?DB_PASSWORD is required}', '${DB_PASSWORD:-wedding123}')
+        .replace('127.0.0.1:${DB_PORT:-5432}:5432', '${DB_PORT:-5432}:5432')
+    );
+
+    const testContainerPath = path.join(tempDir, 'scripts/test-container.mjs');
+    fs.writeFileSync(
+      testContainerPath,
+      fs.readFileSync(testContainerPath, 'utf8').replace(/docker-compose\.ci\.yml/g, 'docker-compose.legacy.yml')
+    );
+
+    const envExamplePath = path.join(tempDir, '.env.example');
+    fs.writeFileSync(
+      envExamplePath,
+      `${fs.readFileSync(envExamplePath, 'utf8')}\n# legacy scrypt:c2FsdA==:aGFzaA==\n`
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('docker-compose.yml: Must not declare default fallback secret ${DB_PASSWORD:-...}'),
+        expect.stringContaining('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432'),
+        expect.stringContaining('scripts/test-container.mjs: Must invoke isolated "docker-compose.ci.yml" override manifest'),
+        expect.stringContaining('.env.example: Must not contain invalid 4-byte placeholder hash'),
       ])
     );
   });

@@ -196,16 +196,19 @@ function qualityCommandSearchToken(command: string): string {
   return command;
 }
 
-function parseDockerComposeDbDefaults(composeContent: string): {
+function parseDockerComposeDbDefaults(
+  composeContent: string,
+  ciComposeContent: string
+): {
   dbUser: string;
   dbPassword: string;
   dbName: string;
   dbPort: string;
 } {
   const userMatch = composeContent.match(/POSTGRES_USER:\s*\$\{DB_USER:-([^}]+)\}/);
-  const passMatch = composeContent.match(/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-([^}]+)\}/);
+  const passMatch = ciComposeContent.match(/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-([^}]+)\}/);
   const nameMatch = composeContent.match(/POSTGRES_DB:\s*\$\{DB_NAME:-([^}]+)\}/);
-  const portMatch = composeContent.match(/\$\{DB_PORT:-([^}]+)\}:5432/);
+  const portMatch = composeContent.match(/127\.0\.0\.1:\$\{DB_PORT:-([^}]+)\}:5432/);
 
   return {
     dbUser: userMatch ? userMatch[1] : 'wedding',
@@ -225,6 +228,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'package.json',
     'tsconfig.json',
     'docker-compose.yml',
+    'docker-compose.ci.yml',
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
@@ -258,6 +262,9 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
   const tsconfigRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
+  const testStandaloneRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-standalone.mjs'), 'utf8');
+  const testContainerRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-container.mjs'), 'utf8');
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
@@ -302,13 +309,65 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
 
-  const composeDb = parseDockerComposeDbDefaults(composeRaw);
+  const composeDb = parseDockerComposeDbDefaults(composeRaw, ciComposeRaw);
   const expectedComposeDbPrefix = `postgresql://${composeDb.dbUser}:${composeDb.dbPassword}@localhost:${composeDb.dbPort}/${composeDb.dbName}`;
   const envExampleDbUrl = envExample.active.get('DATABASE_URL') ?? '';
   if (!envExampleDbUrl.startsWith(expectedComposeDbPrefix)) {
     errors.push(
-      `.env.example: DATABASE_URL ("${envExampleDbUrl}") must default to "${expectedComposeDbPrefix}..." matching docker-compose.yml`
+      `.env.example: DATABASE_URL ("${envExampleDbUrl}") must default to "${expectedComposeDbPrefix}..." matching local setup guides and docker-compose.ci.yml`
     );
+  }
+
+  // Validate hardened docker-compose.yml required-secret guards and isolated docker-compose.ci.yml overrides
+  for (const requiredSecret of ['DB_PASSWORD', 'ADMIN_PASSWORD', 'GUEST_PASSCODE', 'GUEST_SESSION_SECRET']) {
+    if (!new RegExp(`\\$\\{${requiredSecret}:\\?`).test(composeRaw)) {
+      errors.push(
+        `docker-compose.yml: Must require explicit operator value via \${${requiredSecret}:?...}`
+      );
+    }
+    if (new RegExp(`\\$\\{${requiredSecret}:-`).test(composeRaw)) {
+      errors.push(
+        `docker-compose.yml: Must not declare default fallback secret \${${requiredSecret}:-...}`
+      );
+    }
+  }
+  if (!composeRaw.includes('127.0.0.1:${DB_PORT:-5432}:5432')) {
+    errors.push('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432');
+  }
+  if (!/E2E_TEST:\s*\$\{E2E_TEST:-false\}/.test(composeRaw)) {
+    errors.push('docker-compose.yml: Must set E2E_TEST: ${E2E_TEST:-false} by default');
+  }
+  if (
+    !/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-wedding123\}/.test(ciComposeRaw) ||
+    !/E2E_TEST:\s*\$\{E2E_TEST:-true\}/.test(ciComposeRaw)
+  ) {
+    errors.push(
+      'docker-compose.ci.yml: Must isolate disposable CI database credentials and E2E_TEST: ${E2E_TEST:-true}'
+    );
+  }
+  for (const [scriptLabel, scriptRaw] of [
+    ['scripts/test-standalone.mjs', testStandaloneRaw],
+    ['scripts/test-container.mjs', testContainerRaw],
+  ] as const) {
+    if (!scriptRaw.includes('docker-compose.ci.yml')) {
+      errors.push(`${scriptLabel}: Must invoke isolated "docker-compose.ci.yml" override manifest`);
+    }
+  }
+  for (const [label, rawText] of [
+    ['.env.example', envExampleRaw],
+    ['.env.test', envTestRaw],
+    ['docker-compose.yml', composeRaw],
+    ['docker-compose.ci.yml', ciComposeRaw],
+    ['scripts/test-standalone.mjs', testStandaloneRaw],
+    ['scripts/test-container.mjs', testContainerRaw],
+    ['README.md', readmeRaw],
+    ['docs/developer-setup.md', devSetupRaw],
+    ['.github/TESTING.md', testingRaw],
+    ['AGENTS.md', agentsRaw],
+  ] as const) {
+    if (rawText.includes('scrypt:c2FsdA==:aGFzaA==')) {
+      errors.push(`${label}: Must not contain invalid 4-byte placeholder hash "scrypt:c2FsdA==:aGFzaA=="`);
+    }
   }
 
   if (/shadowDatabaseUrl\s*:.*(?:dummy_shadow|mydb_shadow)/.test(prismaConfigRaw)) {
@@ -657,7 +716,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (
       !content.includes('test-standalone.mjs') ||
       !content.includes('test-container.mjs') ||
-      !content.includes('docker compose down -v') ||
+      !/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/.test(content) ||
       !content.includes('npm run build')
     ) {
       errors.push(

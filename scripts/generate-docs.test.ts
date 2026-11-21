@@ -26,7 +26,7 @@ describe('scripts/generate-docs AST analysis', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('classifies live Invite-only handlers, unwrapped routes, POST-only Edge bypass on Stripe webhook, and primary /admin/dashboard route for registry', () => {
+  it('classifies live Invite-only handlers, unwrapped routes, POST-only Edge bypass on Stripe webhook, and dedicated /admin/dashboard/registry route for registry', () => {
     const entries = collectApiRouteEntries(repoRoot);
     const byPath = new Map(entries.map((entry) => [entry.routePath, entry]));
 
@@ -69,8 +69,8 @@ describe('scripts/generate-docs AST analysis', () => {
     expect(mediaExport?.usesApiMiddleware).toBe(true);
 
     const liveEnforcement = extractFeatureRuntimeEnforcement(repoRoot);
-    expect(liveEnforcement.registry.uiCoverage).toContain('(`/admin/dashboard` skips `isFeatureEnabled`)');
-    expect(liveEnforcement.registry.uiCoverage).not.toContain('/admin/dashboard/registry');
+    expect(liveEnforcement.registry.uiCoverage).toContain('(`/admin/dashboard/registry` skips `isFeatureEnabled`)');
+    expect(liveEnforcement.registry.uiCoverage).not.toContain('(`/admin/dashboard` skips `isFeatureEnabled`)');
     expect(liveEnforcement.attractions.uiCoverage).toContain('Nav + `/` link hidden');
   });
 

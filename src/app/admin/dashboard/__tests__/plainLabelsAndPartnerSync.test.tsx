@@ -8,7 +8,7 @@ import { getAppConfig } from '@/lib/config';
 import { generateMetadata as generateHomeMetadata } from '@/app/page';
 import AdminSettingsPage from '../settings/page';
 import HistoryTimelinePage from '../history/page';
-import AdminDashboardPage from '../page';
+import AdminRegistryPage from '../registry/page';
 import { formatBackupDiagnosticPath, formatEntitySectionLabel } from '@/utils/adminLabels';
 import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 import { createMockMedia } from '@/testing/factories/mediaFactory';
@@ -325,7 +325,7 @@ describe('Partner Name Synchronization, Guided Overrides & Plain Admin Labels', 
     (global.fetch as unknown) = mockFetch;
     (window.fetch as unknown) = mockFetch;
 
-    renderWithQuery(<AdminDashboardPage />);
+    renderWithQuery(<AdminRegistryPage />);
 
     const warningBanner = await screen.findByTestId('admin-dashboard-unconfigured-funds-warning');
     expect(warningBanner).toHaveTextContent('Honeymoon Getaway Fund');

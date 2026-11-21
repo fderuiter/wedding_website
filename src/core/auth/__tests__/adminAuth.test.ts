@@ -8,6 +8,7 @@ import {
   signAdminToken,
   verifyAdminToken,
 } from '@/core/auth/auth.server';
+import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
 
 describe('admin authentication helpers', () => {
   const previousAdminPassword = process.env.ADMIN_PASSWORD;
@@ -159,6 +160,31 @@ describe('admin authentication helpers', () => {
         iat: Date.now() - (9 * 60 * 60 * 1000),
       });
       expect(await verifyAdminToken(expiredIatToken)).toBeNull();
+    });
+
+    it('derives a domain-separated signing key from 64-byte scrypt hashes and rejects raw ADMIN_PASSWORD signatures', async () => {
+      const savedPassword = process.env.ADMIN_PASSWORD;
+      const scryptHash =
+        'scrypt:dW5pdC10ZXN0LXNhbHQxNg==:PxxxlLtwOUqVGvw72ACcfwWGGFau07MUM+msUoc1D7VCuwBRorFQiYrVmcl29ZeTYQoAfO/azRoQ1cQKvm9Tmw==';
+      process.env.ADMIN_PASSWORD = scryptHash;
+      try {
+        const derivedToken = await signAdminToken({ isAdmin: true, iat: Date.now() });
+        expect(await verifyAdminToken(derivedToken)).toEqual(
+          expect.objectContaining({ isAdmin: true })
+        );
+
+        const encodedPayload = base64urlEncode(JSON.stringify({ isAdmin: true, iat: Date.now() }));
+        const rawHashToken = `${encodedPayload}.${await hmacSha256(scryptHash, encodedPayload)}`;
+        expect(await verifyAdminToken(rawHashToken)).toBeNull();
+
+        const rawReq = {
+          cookies: { get: () => ({ value: rawHashToken }) },
+          headers: { get: () => `admin_auth=${rawHashToken}` },
+        } as unknown as NextRequest;
+        await expect(isAdminRequest(rawReq)).resolves.toBe(false);
+      } finally {
+        process.env.ADMIN_PASSWORD = savedPassword;
+      }
     });
   });
 });

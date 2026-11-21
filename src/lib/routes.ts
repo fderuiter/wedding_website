@@ -29,7 +29,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/things-to-do', label: 'Things to Do', roles: ['public', 'admin'], showInNav: true, requiredModule: 'attractions' },
   { path: '/weather', label: 'Weather', roles: ['public', 'admin'], showInNav: true, requiredModule: 'weather' },
   { path: '/heart', label: 'Heart 3D', roles: ['public', 'admin'], showInNav: false, requiredModule: 'interactive3D' },
-  { path: '/archive', label: 'Archive', roles: ['public', 'admin'], showInNav: true },
+  { path: '/archive', label: 'Archive', roles: ['public', 'admin'], showInNav: false },
   
   // Admin Navigation
   { path: '/admin/dashboard', label: 'Dashboard', roles: ['admin'], showInNav: true, exact: false },
@@ -45,7 +45,7 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/api/admin/me', roles: ['public', 'admin'], exact: true },
   
   // UI Admin Route for login
-  { path: '/admin/login', label: 'Admin', roles: ['public'], showInNav: true, exact: true },
+  { path: '/admin/login', label: 'Admin', roles: ['public'], showInNav: false, exact: true },
 
   // API Feature Routes
   { path: '/api/registry/scrape', roles: ['admin'], exact: false, requiredModule: 'registry' },

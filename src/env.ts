@@ -5,6 +5,70 @@ const PLACEHOLDER_STRIPE_KEYS = new Set([
   'pk_test_placeholder_mock_key',
 ]);
 
+const SCRYPT_SALT_BYTES = 16;
+const SCRYPT_KEY_BYTES = 64;
+
+const BUILD_FALLBACK_ADMIN_PASSWORD =
+  'scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+
+const ALWAYS_BLOCKED_PROD_ADMIN_HASHES = new Set([
+  'scrypt:c2FsdA==:aGFzaA==',
+  BUILD_FALLBACK_ADMIN_PASSWORD,
+]);
+
+const E2E_FALLBACK_ADMIN_HASHES = new Set([
+  'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
+]);
+
+const ALWAYS_BLOCKED_PROD_GUEST_PASSCODES = new Set([
+  'wedding2026',
+  'your-unique-guest-passcode',
+  'replace-with-unique-guest-passcode',
+]);
+
+const E2E_FALLBACK_GUEST_PASSCODES = new Set([
+  'playwright-e2e-guest-passcode',
+  'build-fallback-guest-passcode',
+  'test-standalone-guest-passcode',
+]);
+
+const ALWAYS_BLOCKED_PROD_SESSION_SECRETS = new Set([
+  'default-guest-session-secret',
+  'your-dedicated-guest-session-secret',
+  'replace-with-random-secret-at-least-32-characters',
+]);
+
+const E2E_FALLBACK_SESSION_SECRETS = new Set([
+  'playwright-e2e-session-secret-32-chars-min',
+  'test-guest-session-secret-key-at-least-32-chars',
+  'test-standalone-guest-session-secret-32chars',
+]);
+
+const STRICT_BASE64_REGEX =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function decodeStrictBase64ByteLength(b64: string): number | null {
+  if (!b64 || b64.length % 4 !== 0 || !STRICT_BASE64_REGEX.test(b64)) {
+    return null;
+  }
+  try {
+    const bin = atob(b64);
+    return bin.length;
+  } catch {
+    return null;
+  }
+}
+
+function isValidScryptAdminPassword(val: string): boolean {
+  const parts = val.split(':');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') {
+    return false;
+  }
+  const saltBytes = decodeStrictBase64ByteLength(parts[1]);
+  const keyBytes = decodeStrictBase64ByteLength(parts[2]);
+  return saltBytes === SCRYPT_SALT_BYTES && keyBytes === SCRYPT_KEY_BYTES;
+}
+
 function normalizeOptionalEnv(val: string | undefined): string | undefined {
   if (!val) return undefined;
   const trimmed = val.trim();
@@ -52,8 +116,14 @@ const envSchema = z.object({
     }
   }, {
     message: 'POSTGRES_URL_NON_POOLING must be a valid PostgreSQL URL',
-  }),
-  ADMIN_PASSWORD: z.string().min(1, 'ADMIN_PASSWORD is required').regex(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/, 'ADMIN_PASSWORD must be in the format scrypt:[saltBase64]:[keyBase64]'),
+  }).transform(val => normalizeOptionalEnv(val)),
+  ADMIN_PASSWORD: z
+    .string()
+    .min(1, 'ADMIN_PASSWORD is required')
+    .refine(isValidScryptAdminPassword, {
+      message:
+        'ADMIN_PASSWORD must be in the format scrypt:[16-byte saltBase64]:[64-byte keyBase64]',
+    }),
   ALLOWED_HOSTS: z.string().default('localhost,127.0.0.1,*.localhost').refine(val => {
     if (!val || typeof val !== 'string') return false;
     const hosts = val.split(',').map(h => h.trim()).filter(Boolean);
@@ -85,31 +155,52 @@ const envSchema = z.object({
   GUEST_PASSCODE: z.string().default('wedding2026'),
   GUEST_SESSION_SECRET: z.string().default('default-guest-session-secret'),
   HISTORY_VERSION_LIMIT: z.coerce.number().min(1).default(50),
-  CRON_SECRET: z.string().optional(),
-  S3_BUCKET: z.string().optional(),
-  S3_REGION: z.string().optional(),
-  S3_ACCESS_KEY_ID: z.string().optional(),
-  S3_SECRET_ACCESS_KEY: z.string().optional(),
-  S3_ENDPOINT: z.string().optional(),
-  S3_PUBLIC_URL: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  CRON_SECRET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  S3_BUCKET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  S3_REGION: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  S3_ACCESS_KEY_ID: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  S3_SECRET_ACCESS_KEY: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  S3_ENDPOINT: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  S3_PUBLIC_URL: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  STRIPE_SECRET_KEY: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional().transform(val => normalizeOptionalEnv(val)),
+  STRIPE_WEBHOOK_SECRET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
+    const isE2ETestMode = process.env.E2E_TEST === 'true';
+    const trimmedAdminHash = data.ADMIN_PASSWORD?.trim() ?? '';
+    if (
+      ALWAYS_BLOCKED_PROD_ADMIN_HASHES.has(trimmedAdminHash) ||
+      (!isE2ETestMode && E2E_FALLBACK_ADMIN_HASHES.has(trimmedAdminHash))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ADMIN_PASSWORD'],
+        message: 'ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production',
+      });
+    }
+
     const trimmedPasscode = data.GUEST_PASSCODE?.trim();
-    if (!trimmedPasscode || trimmedPasscode === 'wedding2026') {
+    if (
+      !trimmedPasscode ||
+      ALWAYS_BLOCKED_PROD_GUEST_PASSCODES.has(trimmedPasscode) ||
+      (!isE2ETestMode && E2E_FALLBACK_GUEST_PASSCODES.has(trimmedPasscode))
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['GUEST_PASSCODE'],
-        message: 'GUEST_PASSCODE is required and must not use the default fallback in production',
+        message: 'GUEST_PASSCODE is required and must not use a placeholder or fallback passcode in production',
       });
     }
-    if (!data.GUEST_SESSION_SECRET || data.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
+    if (
+      !data.GUEST_SESSION_SECRET ||
+      ALWAYS_BLOCKED_PROD_SESSION_SECRETS.has(data.GUEST_SESSION_SECRET) ||
+      (!isE2ETestMode && E2E_FALLBACK_SESSION_SECRETS.has(data.GUEST_SESSION_SECRET))
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['GUEST_SESSION_SECRET'],
-        message: 'GUEST_SESSION_SECRET is required and must not use the default fallback in production',
+        message: 'GUEST_SESSION_SECRET is required and must not use a placeholder or fallback secret in production',
       });
     } else if (data.GUEST_SESSION_SECRET.length < 32) {
       ctx.addIssue({
@@ -232,9 +323,26 @@ const isBuildTime = isEdge ||
 
 // In production runtime, strictly require valid environment variables
 if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge') {
+  const isE2ETestMode = process.env.E2E_TEST === 'true';
   if (!process.env.ADMIN_PASSWORD) {
     console.error('❌ Security Error: ADMIN_PASSWORD environment variable is missing in production environment.');
     throw new Error('ADMIN_PASSWORD environment variable is required in production.');
+  }
+  const trimmedAdminPassword = process.env.ADMIN_PASSWORD.trim();
+  if (!isValidScryptAdminPassword(trimmedAdminPassword)) {
+    console.error(
+      '❌ Security Error: ADMIN_PASSWORD must be in the format scrypt:[16-byte saltBase64]:[64-byte keyBase64].'
+    );
+    throw new Error(
+      'ADMIN_PASSWORD must be in the format scrypt:[16-byte saltBase64]:[64-byte keyBase64].'
+    );
+  }
+  if (
+    ALWAYS_BLOCKED_PROD_ADMIN_HASHES.has(trimmedAdminPassword) ||
+    (!isE2ETestMode && E2E_FALLBACK_ADMIN_HASHES.has(trimmedAdminPassword))
+  ) {
+    console.error('❌ Security Error: ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production.');
+    throw new Error('ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production.');
   }
   if (!process.env.GUEST_SESSION_SECRET) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET environment variable is missing in production environment.');
@@ -243,6 +351,13 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
   if (process.env.GUEST_SESSION_SECRET === 'default-guest-session-secret') {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not use the default fallback secret in production.');
     throw new Error('GUEST_SESSION_SECRET must not use the default fallback secret in production.');
+  }
+  if (
+    ALWAYS_BLOCKED_PROD_SESSION_SECRETS.has(process.env.GUEST_SESSION_SECRET) ||
+    (!isE2ETestMode && E2E_FALLBACK_SESSION_SECRETS.has(process.env.GUEST_SESSION_SECRET))
+  ) {
+    console.error('❌ Security Error: GUEST_SESSION_SECRET must not use a placeholder or E2E fallback secret in production.');
+    throw new Error('GUEST_SESSION_SECRET must not use a placeholder or E2E fallback secret in production.');
   }
   if (process.env.GUEST_SESSION_SECRET.length < 32) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must be at least 32 characters long in production.');
@@ -256,6 +371,13 @@ if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RU
   if (trimmedGuestPasscode === 'wedding2026') {
     console.error('❌ Security Error: GUEST_PASSCODE must not use the default fallback passcode in production.');
     throw new Error('GUEST_PASSCODE must not use the default fallback passcode in production.');
+  }
+  if (
+    ALWAYS_BLOCKED_PROD_GUEST_PASSCODES.has(trimmedGuestPasscode) ||
+    (!isE2ETestMode && E2E_FALLBACK_GUEST_PASSCODES.has(trimmedGuestPasscode))
+  ) {
+    console.error('❌ Security Error: GUEST_PASSCODE must not use a placeholder or E2E fallback passcode in production.');
+    throw new Error('GUEST_PASSCODE must not use a placeholder or E2E fallback passcode in production.');
   }
   if (process.env.GUEST_SESSION_SECRET === process.env.GUEST_PASSCODE || process.env.GUEST_SESSION_SECRET === trimmedGuestPasscode) {
     console.error('❌ Security Error: GUEST_SESSION_SECRET must not match GUEST_PASSCODE.');
@@ -298,7 +420,7 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
     POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || BUILD_FALLBACK_ADMIN_PASSWORD,
     ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
     RUN_MIGRATIONS: process.env.RUN_MIGRATIONS === 'true' || process.env.RUN_MIGRATIONS === '1',

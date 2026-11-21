@@ -246,29 +246,14 @@ describe('OnboardingChecklist', () => {
     expect(await axe(allDoneRender.container)).toHaveNoViolations();
   });
 
-  it('renders above the registry table on AdminDashboardPage and updates upon revisit (Criterion 2 & Req 6)', async () => {
+  it('renders above the workflow cards on AdminDashboardPage and updates upon revisit (Criterion 2 & Req 6)', async () => {
     let guestListDone = false;
 
     mockFetch.mockImplementation((url: string) => {
-      if (url.startsWith('/api/registry/items')) {
+      if (url === '/api/admin/settings') {
         return Promise.resolve({
           ok: true,
-          json: async () => [
-            {
-              id: 'item-1',
-              name: 'Espresso Machine',
-              description: 'Kitchen gift',
-              category: 'Kitchen',
-              price: 250,
-              image: '/img.jpg',
-              vendorUrl: null,
-              quantity: 1,
-              isGroupGift: false,
-              purchased: false,
-              amountContributed: 0,
-              contributors: [],
-            },
-          ],
+          json: async () => ({ modules: { registry: true, gallery: true } }),
         });
       }
       if (url === '/api/admin/onboarding-milestones') {
@@ -301,11 +286,11 @@ describe('OnboardingChecklist', () => {
 
     const firstVisit = renderPage();
     const checklist = await screen.findByTestId('onboarding-checklist');
-    const registryTable = screen.getByRole('table');
+    const workflowsSection = screen.getByTestId('admin-overview-workflows');
 
-    // Verify checklist appears BEFORE the registry table in DOM order
+    // Verify checklist appears BEFORE the workflows section in DOM order
     expect(
-      checklist.compareDocumentPosition(registryTable) & Node.DOCUMENT_POSITION_FOLLOWING
+      checklist.compareDocumentPosition(workflowsSection) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
 
     expect(screen.getByText('2 of 4 milestones completed (2 pending)')).toBeInTheDocument();

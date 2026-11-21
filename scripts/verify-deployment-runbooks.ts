@@ -3,6 +3,7 @@ import path from 'path';
 import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { parseDocument } from 'yaml';
+import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
   file: string;
@@ -286,9 +287,32 @@ function parsePublishArtifactRegistry(workflowContent: string): string {
   return registryMatch ? registryMatch[1] : 'ghcr.io';
 }
 
+function isValidScryptHashLiteral(value: string): boolean {
+  if (!value.startsWith('scrypt:')) {
+    return false;
+  }
+  const parts = value.split(':');
+  if (parts.length !== 3) {
+    return false;
+  }
+  const [, saltB64, keyB64] = parts;
+  if (!saltB64 || !keyB64) {
+    return false;
+  }
+  const b64Re = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+  if (!b64Re.test(saltB64) || !b64Re.test(keyB64)) {
+    return false;
+  }
+  return Buffer.from(saltB64, 'base64').length === 16 && Buffer.from(keyB64, 'base64').length === 64;
+}
+
 function parseDockerComposeContract(composeContent: string): {
   services: string[];
   interpolatedVars: string[];
+  requiredVars: string[];
+  dbPorts: string[];
+  migrationDatabaseUrl: string | null;
+  appEnvMap: Map<string, string>;
   appHasHealthcheck: boolean;
   appHasEnvFile: boolean;
   appHostname: string | null;
@@ -297,9 +321,14 @@ function parseDockerComposeContract(composeContent: string): {
 } {
   const lines = composeContent.split(/\r?\n/);
   const services: string[] = [];
+  const dbPorts: string[] = [];
+  const appEnvMap = new Map<string, string>();
+  let migrationDatabaseUrl: string | null = null;
   let inServices = false;
   let inTopLevelVolumes = false;
   let currentService: string | null = null;
+  let inDbPorts = false;
+  let inMigrationEnv = false;
   let inAppEnv = false;
   let inAppVolumes = false;
   let appHasHealthcheck = false;
@@ -339,9 +368,35 @@ function parseDockerComposeContract(composeContent: string): {
     if (serviceMatch) {
       currentService = serviceMatch[1];
       services.push(currentService);
+      inDbPorts = false;
+      inMigrationEnv = false;
       inAppEnv = false;
       inAppVolumes = false;
       continue;
+    }
+
+    if (currentService === 'db') {
+      if (/^    [a-zA-Z0-9_-]+:/.test(line)) {
+        inDbPorts = /^    ports:\s*$/.test(line);
+      } else if (inDbPorts) {
+        const portMatch = line.match(/^\s*-\s*(?:["']([^"']*)["']|(\S+))\s*(?:#.*)?$/);
+        if (portMatch) {
+          dbPorts.push(portMatch[1] ?? portMatch[2] ?? '');
+        }
+      }
+    }
+
+    if (currentService === 'migration') {
+      if (/^    [a-zA-Z0-9_-]+:/.test(line)) {
+        inMigrationEnv = /^    environment:\s*$/.test(line);
+      } else if (inMigrationEnv) {
+        const dbUrlMatch = line.match(
+          /^\s*(?:-\s*)?DATABASE_URL\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
+        );
+        if (dbUrlMatch) {
+          migrationDatabaseUrl = (dbUrlMatch[1] ?? dbUrlMatch[2] ?? '').trim();
+        }
+      }
     }
 
     if (currentService === 'app') {
@@ -355,10 +410,17 @@ function parseDockerComposeContract(composeContent: string): {
       if (/^    env_file:\s*/.test(line)) {
         appHasEnvFile = true;
       }
-      if (inAppEnv) {
-        const hostMatch = line.match(/^\s*(?:-\s*)?HOSTNAME\s*(?::|=)\s*(?:["']([^"']*)["']|(\S+))\s*(?:#.*)?$/);
-        if (hostMatch) {
-          appHostname = hostMatch[1] ?? hostMatch[2] ?? null;
+      if (inAppEnv && !line.trim().startsWith('#')) {
+        const kvMatch = line.match(
+          /^\s*(?:-\s*)?([A-Z0-9_]+)\s*(?::|=)\s*(?:["']([^"']*)["']|(.+?))\s*(?:#.*)?$/
+        );
+        if (kvMatch) {
+          const envKey = kvMatch[1];
+          const envVal = (kvMatch[2] ?? kvMatch[3] ?? '').trim();
+          appEnvMap.set(envKey, envVal);
+          if (envKey === 'HOSTNAME') {
+            appHostname = envVal;
+          }
         }
       }
       if (inAppVolumes) {
@@ -369,16 +431,27 @@ function parseDockerComposeContract(composeContent: string): {
     }
   }
 
+  const sanitized = composeContent.replace(/\$\$/g, '');
   const interpolatedSet = new Set<string>();
-  const interpolationRegex = /\$\{([A-Z0-9_]+)(?::-[^}]*)?\}/g;
+  const interpolationRegex = /\$\{([A-Z0-9_]+)(?::?[-?+][^}]*)?\}/g;
   let match: RegExpExecArray | null;
-  while ((match = interpolationRegex.exec(composeContent)) !== null) {
+  while ((match = interpolationRegex.exec(sanitized)) !== null) {
     interpolatedSet.add(match[1]);
+  }
+
+  const requiredSet = new Set<string>();
+  const requiredRegex = /\$\{([A-Z0-9_]+):\?[^}]*\}/g;
+  while ((match = requiredRegex.exec(sanitized)) !== null) {
+    requiredSet.add(match[1]);
   }
 
   return {
     services,
     interpolatedVars: Array.from(interpolatedSet),
+    requiredVars: Array.from(requiredSet),
+    dbPorts,
+    migrationDatabaseUrl,
+    appEnvMap,
     appHasHealthcheck,
     appHasEnvFile,
     appHostname,
@@ -497,6 +570,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'prisma/schema.prisma',
     'Dockerfile',
     'docker-compose.yml',
+    'docker-compose.ci.yml',
     'next.config.ts',
     'vercel.json',
     'src/env.ts',
@@ -763,12 +837,105 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // 3. Docker Compose / VPS runbook contract
+  // 3. Docker Compose / VPS runbook & isolated docker-compose.ci.yml contract
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
+  const envTsRaw = fs.readFileSync(path.join(repoRoot, 'src/env.ts'), 'utf8');
   const configTsRaw = fs.readFileSync(path.join(repoRoot, 'src/lib/config.ts'), 'utf8');
+  const ciWorkflowRaw = fs.readFileSync(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
   const composeContract = parseDockerComposeContract(composeRaw);
+  const ciComposeContract = parseDockerComposeContract(ciComposeRaw);
+  const envSchemaKeys = getKeysFromSource(envTsRaw);
   const dockerMd = runbookContents.get('docs/deployment/docker-vps.md') ?? '';
   const deploymentMd = runbookContents.get('DEPLOYMENT.md') ?? '';
+
+  for (const [relPath, content] of runbookContents.entries()) {
+    if (content.includes('scrypt:c2FsdA==:aGFzaA==')) {
+      errors.push(
+        `${relPath}: Must not document invalid 4-byte placeholder hash "scrypt:c2FsdA==:aGFzaA=="`
+      );
+    }
+  }
+  if (composeRaw.includes('scrypt:c2FsdA==:aGFzaA==')) {
+    errors.push(
+      'docker-compose.yml: Must not contain invalid 4-byte placeholder hash "scrypt:c2FsdA==:aGFzaA=="'
+    );
+  }
+  if (ciComposeRaw.includes('scrypt:c2FsdA==:aGFzaA==')) {
+    errors.push(
+      'docker-compose.ci.yml: Must not contain invalid 4-byte placeholder hash "scrypt:c2FsdA==:aGFzaA=="'
+    );
+  }
+
+  for (const requiredSecret of ['DB_PASSWORD', 'ADMIN_PASSWORD', 'GUEST_PASSCODE', 'GUEST_SESSION_SECRET']) {
+    if (!composeContract.requiredVars.includes(requiredSecret)) {
+      errors.push(
+        `docker-compose.yml: Must require explicit operator value via \${${requiredSecret}:?...} without fallback defaults`
+      );
+    }
+    if (new RegExp(`\\$\\{${requiredSecret}:-`).test(composeRaw)) {
+      errors.push(
+        `docker-compose.yml: Must not define a default fallback (\${${requiredSecret}:-...}) for secret "${requiredSecret}"`
+      );
+    }
+  }
+
+  if (
+    composeContract.dbPorts.length === 0 ||
+    !composeContract.dbPorts.every((portSpec) => portSpec.startsWith('127.0.0.1:'))
+  ) {
+    errors.push(
+      'docker-compose.yml: `db` service must bind PostgreSQL strictly to loopback (`127.0.0.1:${DB_PORT:-5432}:5432`)'
+    );
+  }
+
+  if (!composeContract.migrationDatabaseUrl?.startsWith('${DATABASE_URL:-')) {
+    errors.push(
+      'docker-compose.yml: `migration` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
+    );
+  }
+  if (!composeContract.appEnvMap.get('DATABASE_URL')?.startsWith('${DATABASE_URL:-')) {
+    errors.push(
+      'docker-compose.yml: `app` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
+    );
+  }
+  if (composeContract.appEnvMap.get('E2E_TEST') !== '${E2E_TEST:-false}') {
+    errors.push('docker-compose.yml: `app` service must set `E2E_TEST: ${E2E_TEST:-false}` by default');
+  }
+  if (composeContract.appEnvMap.get('ALLOWED_HOSTS') !== '${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost}') {
+    errors.push(
+      'docker-compose.yml: `app` service must restrict default `ALLOWED_HOSTS` to `localhost,127.0.0.1,*.localhost`'
+    );
+  }
+  for (const schemaKey of envSchemaKeys) {
+    if (!composeContract.appEnvMap.has(schemaKey)) {
+      errors.push(
+        `docker-compose.yml: \`app\` service environment must forward runtime variable "${schemaKey}" from src/env.ts`
+      );
+    }
+  }
+
+  // Validate isolated docker-compose.ci.yml override contract
+  if (!/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-wedding123\}/.test(ciComposeRaw)) {
+    errors.push(
+      'docker-compose.ci.yml: Must isolate disposable CI database password default `POSTGRES_PASSWORD: ${DB_PASSWORD:-wedding123}`'
+    );
+  }
+  if (ciComposeContract.appEnvMap.get('E2E_TEST') !== '${E2E_TEST:-true}') {
+    errors.push('docker-compose.ci.yml: `app` service must isolate `E2E_TEST: ${E2E_TEST:-true}`');
+  }
+  const ciAdminEnv = ciComposeContract.appEnvMap.get('ADMIN_PASSWORD') ?? '';
+  const ciAdminDefaultMatch = ciAdminEnv.match(/^\$\{ADMIN_PASSWORD:-([^}]+)\}$/);
+  if (!ciAdminDefaultMatch || !isValidScryptHashLiteral(ciAdminDefaultMatch[1])) {
+    errors.push(
+      'docker-compose.ci.yml: `app` service must provide a valid 16-byte-salt / 64-byte-key scrypt fallback in `ADMIN_PASSWORD`'
+    );
+  }
+  if (!ciWorkflowRaw.includes('-f docker-compose.yml -f docker-compose.ci.yml')) {
+    errors.push(
+      '.github/workflows/ci.yml: Container jobs must explicitly pass `-f docker-compose.yml -f docker-compose.ci.yml`'
+    );
+  }
 
   for (const svc of composeContract.services) {
     if (!new RegExp(`\\b${svc}\\b`).test(dockerMd)) {
@@ -786,17 +953,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   if (!composeContract.appHasEnvFile) {
-    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
+    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT']) {
       if (composeContract.interpolatedVars.includes(envVar) && !dockerMd.includes(envVar)) {
         errors.push(
           `docs/deployment/docker-vps.md: Missing Compose-interpolated variable "${envVar}" from docker-compose.yml`
         );
       }
-    }
-    if (!dockerMd.includes('docker-compose.override.yml')) {
-      errors.push(
-        'docs/deployment/docker-vps.md: Must document docker-compose.override.yml (or env_file override) since app service has no env_file in docker-compose.yml'
-      );
     }
   }
 
@@ -883,7 +1045,6 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   const { workflowFiles, workflowSecrets, workflowVars, workflowYamlErrors } =
     parseWorkflowFilesAndSecrets(workflowsDir);
   errors.push(...workflowYamlErrors);
-  const ciWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'ci.yml'), 'utf8');
   const deployWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'deploy.yml'), 'utf8');
   const ciJobIds = parseCiWorkflowJobIds(ciWorkflowRaw);
 

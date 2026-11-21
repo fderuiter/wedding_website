@@ -716,4 +716,15 @@ describe('PhotoGalleryClient', () => {
       expect(screen.queryByTestId('lightbox-uploader')).not.toBeInTheDocument();
     });
   });
+
+  it('renders an accessible Live Slideshow link to /photos/slideshow outside the tablist', () => {
+    render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} />);
+
+    const slideshowLink = screen.getByRole('link', { name: /live slideshow/i });
+    expect(slideshowLink).toBeInTheDocument();
+    expect(slideshowLink).toHaveAttribute('href', '/photos/slideshow');
+
+    const tablist = screen.getByRole('tablist', { name: /photo gallery views/i });
+    expect(tablist.contains(slideshowLink)).toBe(false);
+  });
 });

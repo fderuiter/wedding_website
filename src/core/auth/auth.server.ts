@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
+import { deriveAdminSigningKey } from '@/utils/crypto';
 import {
   readRequestCookie,
   signCompactToken,
@@ -43,7 +44,7 @@ export function setAdminAuthCookie(response: NextResponse, token: string, maxAge
  * @returns The secret string used to sign and verify admin tokens
  */
 async function getSecret(): Promise<string> {
-  return env.ADMIN_PASSWORD;
+  return deriveAdminSigningKey(env.ADMIN_PASSWORD);
 }
 
 export interface AdminTokenPayload {

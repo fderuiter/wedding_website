@@ -10,6 +10,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'prisma/schema.prisma',
     'Dockerfile',
     'docker-compose.yml',
+    'docker-compose.ci.yml',
     'next.config.ts',
     'vercel.json',
     'src/env.ts',
@@ -302,6 +303,46 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining(
           '.github/workflows/deploy-provider.yml:247: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
         ),
+      ])
+    );
+  });
+
+  it('rejects fallback secrets, non-loopback db ports, E2E_TEST=true, missing 21-key forwarding, and broken docker-compose.ci.yml overrides', () => {
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace('127.0.0.1:${DB_PORT:-5432}:5432', '${DB_PORT:-5432}:5432')
+        .replace('${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}', '${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}')
+        .replace('E2E_TEST: ${E2E_TEST:-false}', 'E2E_TEST: ${E2E_TEST:-true}')
+        .replace('      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}\n', '')
+    );
+
+    const ciComposePath = path.join(tempDir, 'docker-compose.ci.yml');
+    fs.writeFileSync(
+      ciComposePath,
+      fs
+        .readFileSync(ciComposePath, 'utf8')
+        .replace('E2E_TEST: ${E2E_TEST:-true}', 'E2E_TEST: ${E2E_TEST:-false}')
+    );
+
+    const dockerMdPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerMdPath,
+      `${fs.readFileSync(dockerMdPath, 'utf8')}\nADMIN_PASSWORD="scrypt:c2FsdA==:aGFzaA=="\n`
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('docker-compose.yml: `db` service must bind PostgreSQL strictly to loopback'),
+        expect.stringContaining('docker-compose.yml: Must require explicit operator value via ${ADMIN_PASSWORD:?...}'),
+        expect.stringContaining('docker-compose.yml: Must not contain invalid 4-byte placeholder hash'),
+        expect.stringContaining('docker-compose.yml: `app` service must set `E2E_TEST: ${E2E_TEST:-false}`'),
+        expect.stringContaining('docker-compose.yml: `app` service environment must forward runtime variable "STRIPE_SECRET_KEY"'),
+        expect.stringContaining('docker-compose.ci.yml: `app` service must isolate `E2E_TEST: ${E2E_TEST:-true}`'),
+        expect.stringContaining('docs/deployment/docker-vps.md: Must not document invalid 4-byte placeholder hash'),
       ])
     );
   });

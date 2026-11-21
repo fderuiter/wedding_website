@@ -5,9 +5,10 @@ import { AdminNav, AdminNavItem } from './AdminNav';
 import { SampleDataBanner } from '@/components/admin/SampleDataBanner';
 
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
-  { href: '/admin/dashboard', label: 'Registry', featureId: 'registry' },
+  { href: '/admin/dashboard', label: 'Overview' },
+  { href: '/admin/dashboard/registry', label: 'Registry', featureId: 'registry' },
   { href: '/admin/dashboard/thank-you-notes', label: 'Thank-You Notes', featureId: 'registry' },
-  { href: '/admin/dashboard/invitation-codes', label: 'Invitation Codes', featureId: 'registry' },
+  { href: '/admin/dashboard/invitation-codes', label: 'Invitation Codes' },
   { href: '/admin/dashboard/sub-events', label: 'Sub-Events Matrix' },
   { href: '/admin/dashboard/seating-chart', label: 'Seating Chart' },
   { href: '/admin/dashboard/site-manager', label: 'Site Manager' },

@@ -10,6 +10,24 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PORT = process.env.TEST_PORT || '3000';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+const CI_ADMIN_PASSWORD =
+  'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
+
+function buildCiComposeEnv(extra = {}) {
+  return {
+    ...process.env,
+    DB_USER: process.env.DB_USER || 'wedding',
+    DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
+    DB_NAME: process.env.DB_NAME || 'wedding',
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || CI_ADMIN_PASSWORD,
+    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'playwright-e2e-guest-passcode',
+    GUEST_SESSION_SECRET:
+      process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
+    E2E_TEST: process.env.E2E_TEST || 'true',
+    ...extra,
+  };
+}
 
 function runCommand(command, args, options = {}) {
   console.log(`> ${command} ${args.join(' ')}`);
@@ -47,12 +65,13 @@ function request(urlPath) {
 }
 
 function printLogs() {
+  const composeEnv = buildCiComposeEnv();
   console.error('\n=== Actionable Migration Container Logs ===');
-  child_process.spawnSync('docker', ['compose', 'logs', 'migration'], { stdio: 'inherit', shell: true, cwd: rootDir });
+  child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'logs', 'migration'], { stdio: 'inherit', shell: true, cwd: rootDir, env: composeEnv });
   console.error('\n=== Actionable App Container Logs ===');
-  child_process.spawnSync('docker', ['compose', 'logs', 'app'], { stdio: 'inherit', shell: true, cwd: rootDir });
+  child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'logs', 'app'], { stdio: 'inherit', shell: true, cwd: rootDir, env: composeEnv });
   console.error('\n=== Actionable DB Container Logs ===');
-  child_process.spawnSync('docker', ['compose', 'logs', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir });
+  child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'logs', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir, env: composeEnv });
 }
 
 async function getAvailableDbPort() {
@@ -79,7 +98,7 @@ async function main() {
   try {
     // 1. Clean up any leftover containers and lingering port listeners before selecting ports
     console.log('Cleaning up any existing containers and listeners...');
-    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
+    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir, env: buildCiComposeEnv() });
     try {
       child_process.spawnSync('lsof -ti:3000 | xargs kill -9 2>/dev/null || true', { shell: true, stdio: 'ignore' });
     } catch {
@@ -92,15 +111,15 @@ async function main() {
 
     // 2. Start PostgreSQL from scratch
     console.log('Starting clean PostgreSQL database container...');
-    runCommand('docker', ['compose', 'up', '-d', 'db'], {
-      env: { ...process.env, DB_PORT: dbPort.toString() }
+    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
+      env: buildCiComposeEnv({ DB_PORT: dbPort.toString() })
     });
 
     // 3. Wait for PostgreSQL container health check & port opening
     console.log('Waiting for PostgreSQL container to become ready...');
     let dbReady = false;
     for (let i = 0; i < 30; i++) {
-      const check = child_process.spawnSync('docker', ['compose', 'exec', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir });
+      const check = child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir, env: buildCiComposeEnv({ DB_PORT: dbPort.toString() }) });
       if (check.status === 0) {
         dbReady = true;
         break;
@@ -145,11 +164,11 @@ async function main() {
 
     // 5. Build OCI image & start app container
     console.log('Building OCI image and starting app container via Docker Compose...');
-    runCommand('docker', ['compose', 'build'], {
-      env: { ...process.env, DB_PORT: dbPort.toString() }
+    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build'], {
+      env: buildCiComposeEnv({ DB_PORT: dbPort.toString() })
     });
-    runCommand('docker', ['compose', 'up', '-d', 'app'], {
-      env: { ...process.env, DB_PORT: dbPort.toString() }
+    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'app'], {
+      env: buildCiComposeEnv({ DB_PORT: dbPort.toString() })
     });
 
     // 6. Poll app container health/readiness
@@ -227,7 +246,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     console.log('Cleaning up container resources...');
-    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
+    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir, env: buildCiComposeEnv() });
     process.exit(passed ? 0 : 1);
   }
 }

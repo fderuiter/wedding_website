@@ -3,7 +3,7 @@ import { render as tlRender, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/ui/ToastProvider';
-import AdminDashboardPage from '../page';
+import AdminRegistryPage from '../registry/page';
 import ThankYouNotesPage from '../thank-you-notes/page';
 import type { RegistryItem } from '@/features/registry';
 import { checkAdminClient as mockCheckAdminClient } from '@/core/auth/auth.client';
@@ -82,7 +82,7 @@ describe('Couple Dashboard Verified Transaction References', () => {
       json: async () => [mockItemWithStripe],
     });
 
-    renderDashboard(<AdminDashboardPage />);
+    renderDashboard(<AdminRegistryPage />);
 
     expect((await screen.findAllByText('Honeymoon Excursion')).length).toBeGreaterThan(0);
     

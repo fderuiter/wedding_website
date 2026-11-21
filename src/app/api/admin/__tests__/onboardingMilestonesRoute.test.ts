@@ -182,4 +182,34 @@ describe('GET /api/admin/onboarding-milestones', () => {
     expect(body.allComplete).toBe(true);
     expect(body.milestones.every((m: OnboardingMilestone) => m.completed)).toBe(true);
   });
+
+  it('omits registry milestone and skips registryItem.count when registry module is disabled', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockGetAppConfig.mockResolvedValue({
+      id: 'global',
+      partner1Name: 'Taylor',
+      partner2Name: 'Jordan',
+      brideName: 'Taylor',
+      groomName: 'Jordan',
+      baseUrl: 'https://taylorandjordan.example.org',
+      modules: { registry: false },
+    } as unknown as AppConfigDTO);
+    (prisma.invitationCode.count as jest.Mock).mockResolvedValue(12);
+    (prisma.seatingTable.count as jest.Mock).mockResolvedValue(4);
+
+    const res = await GET(makeRequest(true), {});
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(prisma.registryItem.count).not.toHaveBeenCalled();
+    expect(body.totalCount).toBe(3);
+    expect(body.completedCount).toBe(3);
+    expect(body.pendingCount).toBe(0);
+    expect(body.allComplete).toBe(true);
+    expect(body.milestones.map((m: OnboardingMilestone) => m.id)).toEqual([
+      'wedding-details',
+      'guest-list',
+      'seating-layout',
+    ]);
+  });
 });

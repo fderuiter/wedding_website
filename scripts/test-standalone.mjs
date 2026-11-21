@@ -1,4 +1,5 @@
 import child_process from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -10,6 +11,17 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PORT = process.env.TEST_PORT || '3001';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+
+function createEphemeralScryptHash() {
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(crypto.randomBytes(24).toString('hex'), salt, 64, {
+    N: 16384,
+    r: 8,
+    p: 1,
+  });
+  return `scrypt:${salt.toString('base64')}:${key.toString('base64')}`;
+}
 
 function request(urlPath) {
   return new Promise((resolve, reject) => {
@@ -79,6 +91,22 @@ async function main() {
   }
 
   // Prepare environment for standalone server execution
+  const ephemeralAdminPassword = process.env.ADMIN_PASSWORD || createEphemeralScryptHash();
+  const ephemeralGuestPasscode =
+    process.env.GUEST_PASSCODE || `standalone-passcode-${crypto.randomBytes(8).toString('hex')}`;
+  const ephemeralGuestSessionSecret =
+    process.env.GUEST_SESSION_SECRET ||
+    `standalone-session-secret-${crypto.randomBytes(24).toString('hex')}`;
+  const composeEnv = {
+    ...process.env,
+    DB_USER: process.env.DB_USER || 'wedding',
+    DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
+    DB_NAME: process.env.DB_NAME || 'wedding',
+    ADMIN_PASSWORD: ephemeralAdminPassword,
+    GUEST_PASSCODE: ephemeralGuestPasscode,
+    GUEST_SESSION_SECRET: ephemeralGuestSessionSecret,
+  };
+
   const env = {
     ...process.env,
     NODE_ENV: 'production',
@@ -86,9 +114,9 @@ async function main() {
     HOSTNAME: '127.0.0.1',
     ALLOWED_HOSTS: `127.0.0.1,localhost,127.0.0.1:${PORT}`,
     DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding',
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==',
-    GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'test-standalone-guest-passcode',
-    GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET || 'test-standalone-guest-session-secret-32chars',
+    ADMIN_PASSWORD: ephemeralAdminPassword,
+    GUEST_PASSCODE: ephemeralGuestPasscode,
+    GUEST_SESSION_SECRET: ephemeralGuestSessionSecret,
   };
 
   // Remove any remaining provider flags from env
@@ -101,10 +129,10 @@ async function main() {
   if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
     console.log('Ensuring database is ready for standalone execution...');
     try {
-      child_process.spawnSync('docker', ['compose', 'up', '-d', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir });
+      child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], { stdio: 'inherit', shell: true, cwd: rootDir, env: composeEnv });
       let dbReady = false;
       for (let i = 0; i < 30; i++) {
-        const check = child_process.spawnSync('docker', ['compose', 'exec', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir });
+        const check = child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding', '-d', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir, env: composeEnv });
         if (check.status === 0) {
           dbReady = true;
           break;
@@ -226,7 +254,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     cleanup();
-    child_process.spawnSync('docker', ['compose', 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir });
+    child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir, env: composeEnv });
     // Allow process exit
     setTimeout(() => {
       process.exit(process.exitCode || 0);
