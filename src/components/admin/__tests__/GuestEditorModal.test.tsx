@@ -1,7 +1,20 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
-import { GuestEditorModal } from '../GuestEditorModal';
+import { GuestEditorForm, GuestEditorModal } from '../GuestEditorModal';
 import type { InvitationCodeDTO } from '@/features/registry';
+import {
+  ADDRESS_LINE_MAX_LENGTH,
+  CITY_MAX_LENGTH,
+  COUNTRY_MAX_LENGTH,
+  GUEST_NAME_MAX_LENGTH,
+  HOUSEHOLD_NAME_MAX_LENGTH,
+  INVITATION_CODE_MAX_LENGTH,
+  PARTY_GROUP_MAX_LENGTH,
+  PHONE_MAX_LENGTH,
+  PLUS_ONE_NAME_MAX_LENGTH,
+  STATE_MAX_LENGTH,
+  ZIP_CODE_MAX_LENGTH,
+} from '@/utils/invitationValidation';
 
 const sampleGuest: InvitationCodeDTO = {
   id: 'guest-1',
@@ -200,6 +213,184 @@ describe('GuestEditorModal', () => {
           },
         })
       );
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('GuestEditorForm', () => {
+  const expectedMaxLengths: Array<[string, number]> = [
+    ['Guest Name *', GUEST_NAME_MAX_LENGTH],
+    ['Phone', PHONE_MAX_LENGTH],
+    ['Plus-One First Name', PLUS_ONE_NAME_MAX_LENGTH],
+    ['Plus-One Last Name', PLUS_ONE_NAME_MAX_LENGTH],
+    ['Household Name', HOUSEHOLD_NAME_MAX_LENGTH],
+    ['Party Group', PARTY_GROUP_MAX_LENGTH],
+    ['Address Line 1', ADDRESS_LINE_MAX_LENGTH],
+    ['Address Line 2', ADDRESS_LINE_MAX_LENGTH],
+    ['City', CITY_MAX_LENGTH],
+    ['State / Province', STATE_MAX_LENGTH],
+    ['Zip / Postal Code', ZIP_CODE_MAX_LENGTH],
+    ['Country', COUNTRY_MAX_LENGTH],
+  ];
+
+  it('enforces all 17 controls, all 13 maxLength attributes, and zero jest-axe violations in both create and edit modes', async () => {
+    const { container: createContainer, unmount: unmountCreate } = render(
+      <GuestEditorForm
+        mode="create"
+        actionsAlign="start"
+        onClose={jest.fn()}
+        onCreate={jest.fn().mockResolvedValue({})}
+      />
+    );
+
+    expect(
+      screen.getByLabelText('Invitation Code (Optional - auto-generated if blank)')
+    ).toHaveAttribute('maxLength', String(INVITATION_CODE_MAX_LENGTH));
+    expect(
+      screen.getByLabelText('Invitation Code (Optional - auto-generated if blank)')
+    ).not.toBeRequired();
+    for (const [label, max] of expectedMaxLengths) {
+      expect(screen.getByLabelText(label)).toHaveAttribute('maxLength', String(max));
+    }
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    expect(screen.getByLabelText('Plus-One Allocations')).toBeInTheDocument();
+    expect(screen.getByLabelText('Party Tags (Comma-Separated)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Dietary Notes')).toBeInTheDocument();
+    expect(screen.queryByTestId('code-change-warning')).not.toBeInTheDocument();
+
+    const createControls = createContainer.querySelectorAll('input, textarea');
+    expect(createControls).toHaveLength(17);
+    const createMaxLengthControls = createContainer.querySelectorAll('[maxlength]');
+    expect(createMaxLengthControls).toHaveLength(13);
+
+    const createAxe = await axe(createContainer);
+    expect(createAxe).toHaveNoViolations();
+    unmountCreate();
+
+    const { container: editContainer } = render(
+      <GuestEditorForm
+        mode="edit"
+        guest={sampleGuest}
+        onClose={jest.fn()}
+        onSave={jest.fn().mockResolvedValue({})}
+      />
+    );
+
+    expect(screen.getByLabelText('Invitation Code *')).toHaveAttribute(
+      'maxLength',
+      String(INVITATION_CODE_MAX_LENGTH)
+    );
+    expect(screen.getByLabelText('Invitation Code *')).toBeRequired();
+    for (const [label, max] of expectedMaxLengths) {
+      expect(screen.getByLabelText(label)).toHaveAttribute('maxLength', String(max));
+    }
+    expect(editContainer.querySelectorAll('input, textarea')).toHaveLength(17);
+    expect(editContainer.querySelectorAll('[maxlength]')).toHaveLength(13);
+
+    const editAxe = await axe(editContainer);
+    expect(editAxe).toHaveNoViolations();
+  });
+
+  it('displays role="alert" messages on row validation errors and omits blank code while deduplicating tags in create mode', async () => {
+    const onCreate = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Invitation code collision.'))
+      .mockResolvedValueOnce({});
+    const onClose = jest.fn();
+
+    render(
+      <GuestEditorForm
+        mode="create"
+        onClose={onClose}
+        onCreate={onCreate}
+      />
+    );
+
+    // Blank guest name
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Guest name is required.');
+
+    // Invalid plusOneAllocations
+    fireEvent.change(screen.getByLabelText('Guest Name *'), {
+      target: { value: 'Martha Jones' },
+    });
+    fireEvent.change(screen.getByLabelText('Plus-One Allocations'), {
+      target: { value: '-1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Plus-one allocations must be a non-negative whole number.'
+    );
+
+    // Invalid email via validateInvitationGuestFields in row mode
+    fireEvent.change(screen.getByLabelText('Plus-One Allocations'), {
+      target: { value: '0' },
+    });
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'not-an-email' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid email format.');
+    expect(onCreate).not.toHaveBeenCalled();
+
+    // Valid sparse submission with whitespace code and duplicate tags; first call rejects
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: '   ' },
+    });
+    fireEvent.change(
+      screen.getByLabelText('Invitation Code (Optional - auto-generated if blank)'),
+      { target: { value: '   ' } }
+    );
+    fireEvent.change(screen.getByLabelText('Party Tags (Comma-Separated)'), {
+      target: { value: ' UNIT , Doctor , UNIT ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Invitation code collision.');
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Retry succeeds and closes
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenLastCalledWith({
+        guestName: 'Martha Jones',
+        used: false,
+        partyTags: ['UNIT', 'Doctor'],
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('guards dirty Cancel in standalone create mode via useDirtyConfirmClose', async () => {
+    const onClose = jest.fn();
+
+    render(
+      <GuestEditorForm
+        mode="create"
+        onClose={onClose}
+        onCreate={jest.fn().mockResolvedValue({})}
+      />
+    );
+
+    // Clean Cancel closes immediately
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    onClose.mockClear();
+
+    // Dirty Cancel opens confirmation dialog
+    fireEvent.change(screen.getByLabelText('Guest Name *'), {
+      target: { value: 'Donna Noble' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const confirmDialog = await screen.findByRole('alertdialog');
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(confirmDialog).not.toBeInTheDocument();
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
