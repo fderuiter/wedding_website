@@ -312,6 +312,7 @@ const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
 const isBuildTime = isEdge ||
                     isStaticExport ||
                     process.env.npm_lifecycle_event === 'build' ||
+                    process.env.npm_lifecycle_event === 'build:docker' ||
                     process.env.npm_lifecycle_event === 'build:export' ||
                     process.env.npm_lifecycle_event === 'prebuild' ||
                     process.env.npm_lifecycle_event === 'prisma:generate' ||

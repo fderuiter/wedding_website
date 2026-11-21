@@ -121,6 +121,12 @@ export const ARCHITECTURAL_DOCS: DocMapping[] = [
     category: 'Features',
     title: 'Web Scraper Pipeline',
   },
+  {
+    src: 'docs/BROADCASTS.md',
+    dest: 'features/broadcasts.md',
+    category: 'Features',
+    title: 'Guest Broadcasts & Messaging',
+  },
   // Security
   {
     src: 'SECURITY.md',

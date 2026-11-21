@@ -1,8 +1,25 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { FloorplanCanvas } from '../FloorplanCanvas';
 import { SeatingTableDTO } from '../../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
+
+expect.extend(toHaveNoViolations);
+
+if (typeof window !== 'undefined' && typeof window.PointerEvent === 'undefined') {
+  class JSDOMPointerEvent extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+
+    constructor(type: string, params: PointerEventInit = {}) {
+      super(type, params);
+      this.pointerId = params.pointerId ?? 0;
+      this.pointerType = params.pointerType ?? '';
+    }
+  }
+  window.PointerEvent = JSDOMPointerEvent as unknown as typeof PointerEvent;
+}
 
 describe('FloorplanCanvas component', () => {
   const mockTables: SeatingTableDTO[] = [
@@ -925,6 +942,284 @@ describe('FloorplanCanvas component', () => {
         },
       });
       expect(onDropGuestsOnTable).toHaveBeenCalledWith(['g-h1', 'g-h2'], 'tbl-small');
+    });
+  });
+
+  describe('Seat resolution, 4-edge rectangular layout, scrollable stage, touch pointer drag, and >= 24x24px targets', () => {
+    it('does not duplicate sparse explicit seats onto empty lower seats and opens assign modal when clicking empty Seat 1', () => {
+      const onUnassignGuest = jest.fn();
+      const onOpenSeatAssignModal = jest.fn();
+      const sparseHeadTable: SeatingTableDTO = {
+        id: 'table-head',
+        name: 'Sparse Head Table',
+        shape: 'rectangular',
+        capacity: 8,
+        x: 275,
+        y: 40,
+        width: 250,
+        height: 100,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'guest-bride',
+            code: 'BRIDE1',
+            guestName: 'Bride Guest',
+            tableId: 'table-head',
+            seatNumber: 2,
+          } as InvitationCodeDTO,
+          {
+            id: 'guest-groom',
+            code: 'GROOM1',
+            guestName: 'Groom Guest',
+            tableId: 'table-head',
+            seatNumber: 3,
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[sparseHeadTable]}
+          onUnassignGuest={onUnassignGuest}
+          onOpenSeatAssignModal={onOpenSeatAssignModal}
+        />
+      );
+
+      const seat1 = screen.getByLabelText('Seat 1: Empty');
+      const seat2 = screen.getByLabelText('Seat 2: Bride Guest');
+      const seat3 = screen.getByLabelText('Seat 3: Groom Guest');
+      const seat4 = screen.getByLabelText('Seat 4: Empty');
+      expect(seat1).toBeInTheDocument();
+      expect(seat2).toBeInTheDocument();
+      expect(seat3).toBeInTheDocument();
+      expect(seat4).toBeInTheDocument();
+
+      fireEvent.click(seat1);
+      expect(onOpenSeatAssignModal).toHaveBeenCalledWith('table-head', 1);
+      expect(onUnassignGuest).not.toHaveBeenCalled();
+    });
+
+    it('assigns unnumbered seated guests to the lowest unoccupied seat without overwriting explicit seatNumber occupants', () => {
+      const mixedTable: SeatingTableDTO = {
+        id: 'table-mixed',
+        name: 'Mixed Table',
+        shape: 'round',
+        capacity: 4,
+        x: 100,
+        y: 100,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'guest-unnumbered',
+            code: 'UNNUM1',
+            guestName: 'Unnumbered One',
+            tableId: 'table-mixed',
+            seatNumber: null,
+          } as InvitationCodeDTO,
+          {
+            id: 'guest-explicit-1',
+            code: 'EXP1',
+            guestName: 'Explicit One',
+            tableId: 'table-mixed',
+            seatNumber: 1,
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      render(<FloorplanCanvas {...defaultProps} tables={[mixedTable]} />);
+
+      expect(screen.getByLabelText('Seat 1: Explicit One')).toBeInTheDocument();
+      expect(screen.getByLabelText('Seat 2: Unnumbered One')).toBeInTheDocument();
+      expect(screen.getByLabelText('Seat 3: Empty')).toBeInTheDocument();
+      expect(screen.getByLabelText('Seat 4: Empty')).toBeInTheDocument();
+    });
+
+    it('distributes rectangular table seats evenly across all four edges within 0..width and 0..height', () => {
+      const rectTable: SeatingTableDTO = {
+        id: 'table-rect-8',
+        name: 'Banquet 8',
+        shape: 'rectangular',
+        capacity: 8,
+        x: 100,
+        y: 100,
+        width: 250,
+        height: 100,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      render(<FloorplanCanvas {...defaultProps} tables={[rectTable]} />);
+
+      const getCoords = (seatNum: number) => {
+        const el = screen.getByLabelText(`Seat ${seatNum}: Empty`);
+        return {
+          left: parseFloat(el.style.left),
+          top: parseFloat(el.style.top),
+        };
+      };
+
+      expect(getCoords(1).left).toBeCloseTo(250 / 3, 5);
+      expect(getCoords(1).top).toBe(-16);
+      expect(getCoords(2).left).toBeCloseTo((250 * 2) / 3, 5);
+      expect(getCoords(2).top).toBe(-16);
+      expect(getCoords(3).left).toBe(266);
+      expect(getCoords(3).top).toBeCloseTo(100 / 3, 5);
+      expect(getCoords(4).left).toBe(266);
+      expect(getCoords(4).top).toBeCloseTo((100 * 2) / 3, 5);
+      expect(getCoords(5).left).toBeCloseTo((250 * 2) / 3, 5);
+      expect(getCoords(5).top).toBe(116);
+      expect(getCoords(6).left).toBeCloseTo(250 / 3, 5);
+      expect(getCoords(6).top).toBe(116);
+      expect(getCoords(7).left).toBe(-16);
+      expect(getCoords(7).top).toBeCloseTo((100 * 2) / 3, 5);
+      expect(getCoords(8).left).toBe(-16);
+      expect(getCoords(8).top).toBeCloseTo(100 / 3, 5);
+    });
+
+    it('renders an overflow-auto container with a scrollable inner stage expanding to encompass off-screen tables', () => {
+      const farTable: SeatingTableDTO = {
+        id: 'table-far',
+        name: 'East Wing Table',
+        shape: 'rectangular',
+        capacity: 6,
+        x: 1050,
+        y: 620,
+        width: 250,
+        height: 100,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      const { container } = render(<FloorplanCanvas {...defaultProps} tables={[farTable]} />);
+      const canvasElement = container.firstElementChild as HTMLElement;
+      expect(canvasElement.className).toContain('overflow-auto');
+
+      const stage = screen.getByTestId('floorplan-stage');
+      expect(stage.style.minWidth).toBe('1348px');
+      expect(stage.style.minHeight).toBe('768px');
+    });
+
+    it('supports touch Pointer Events for dragging and rotating tables on a scrolled narrow viewport and cancels cleanly on pointerCancel', () => {
+      const onUpdateTablePosition = jest.fn();
+      const onUpdateTableRotation = jest.fn();
+      const mobileTable: SeatingTableDTO = {
+        id: 'table-mobile',
+        name: 'Mobile Table',
+        shape: 'round',
+        capacity: 4,
+        x: 500,
+        y: 120,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[mobileTable]}
+          selectedTableId="table-mobile"
+          onUpdateTablePosition={onUpdateTablePosition}
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const canvasElement = container.firstElementChild as HTMLElement;
+      Object.defineProperty(canvasElement, 'scrollLeft', { value: 400, writable: true, configurable: true });
+      Object.defineProperty(canvasElement, 'scrollTop', { value: 0, writable: true, configurable: true });
+      jest.spyOn(canvasElement, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 340,
+        bottom: 650,
+        width: 340,
+        height: 650,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+
+      const tableEl = screen.getByRole('button', { name: /^Mobile Table, shape/i });
+      expect(tableEl.className).toContain('touch-none');
+
+      // Stage X = clientX(120) + scrollLeft(400) = 520 -> offset = 20
+      fireEvent.pointerDown(tableEl, { button: 0, pointerId: 7, pointerType: 'touch', clientX: 120, clientY: 140 });
+      fireEvent.pointerMove(tableEl, { pointerId: 7, pointerType: 'touch', clientX: 220, clientY: 190 });
+      expect(tableEl.style.left).toBe('600px');
+      expect(tableEl.style.top).toBe('170px');
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+
+      fireEvent.pointerUp(tableEl, { pointerId: 7, pointerType: 'touch', clientX: 220, clientY: 190 });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('table-mobile', 600, 170);
+
+      // Pointer cancel reverts preview without saving
+      onUpdateTablePosition.mockClear();
+      fireEvent.pointerDown(tableEl, { button: 0, pointerId: 8, pointerType: 'touch', clientX: 120, clientY: 140 });
+      fireEvent.pointerMove(tableEl, { pointerId: 8, pointerType: 'touch', clientX: 240, clientY: 220 });
+      expect(tableEl.style.left).toBe('620px');
+
+      fireEvent.pointerCancel(tableEl, { pointerId: 8, pointerType: 'touch' });
+      expect(tableEl.style.left).toBe('500px');
+      expect(onUpdateTablePosition).not.toHaveBeenCalled();
+    });
+
+    it('sizes floorplan rotation handle and quick-rotate buttons to at least 24x24px and passes jest-axe with 1-sided dietary seats', async () => {
+      const a11yTables: SeatingTableDTO[] = [
+        ...mockTables,
+        {
+          id: 'tbl-sweet-a11y',
+          name: 'Sweetheart Table',
+          shape: 'sweetheart',
+          capacity: 2,
+          x: 500,
+          y: 120,
+          width: 140,
+          height: 80,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: 'g-diet-a11y',
+              code: 'BRIDE99',
+              guestName: 'Taylor Morgan',
+              tableId: 'tbl-sweet-a11y',
+              seatNumber: 1,
+              dietaryNotes: 'Vegan',
+            } as InvitationCodeDTO,
+          ],
+        },
+      ];
+
+      const { container } = render(
+        <FloorplanCanvas {...defaultProps} tables={a11yTables} selectedTableId="table-1" />
+      );
+
+      const handleBtn = screen.getByRole('button', { name: /Rotate handle for Head Table/i });
+      expect(handleBtn.className).toContain('w-7');
+      expect(handleBtn.className).toContain('h-7');
+
+      const minus45Btn = screen.getByRole('button', { name: /Rotate Head Table -45 degrees/i });
+      const plus45Btn = screen.getByRole('button', { name: /Rotate Head Table \+45 degrees/i });
+      expect(minus45Btn.className).toContain('min-w-7');
+      expect(minus45Btn.className).toContain('min-h-6');
+      expect(plus45Btn.className).toContain('min-w-7');
+      expect(plus45Btn.className).toContain('min-h-6');
+
+      // Also verify 1-sided table node exposes data-seat-side="single" markers inside role="button"
+      const sweetheartNode = screen.getByRole('button', { name: /^Sweetheart Table, shape/i });
+      expect(sweetheartNode.querySelectorAll('[data-seat-side="single"]')).toHaveLength(2);
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
     });
   });
 });

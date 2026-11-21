@@ -117,4 +117,62 @@ describe('POST /api/admin/invitation-codes/validate', () => {
       'skip'
     );
   });
+
+  test('passes mixed valid and row-invalid CSV records to dryRunValidateBatch instead of rejecting the entire batch with 400', async () => {
+    const mockResult = {
+      success: true,
+      summary: {
+        total: 2,
+        validCount: 1,
+        invalidCount: 1,
+        duplicateCount: 1,
+        updatedCount: 1,
+        skippedCount: 0,
+        createdCount: 0,
+      },
+      rows: [
+        {
+          rowIndex: 1,
+          guestName: 'Jane Doe',
+          code: 'JANE2026',
+          email: 'jane@example.com',
+          isValid: true,
+          errors: [],
+          warnings: [],
+          isDuplicate: true,
+          existingGuestName: 'Jane Doe',
+          actionOutcome: 'update',
+        },
+        {
+          rowIndex: 2,
+          guestName: 'Broken Row',
+          code: '',
+          email: 'not-an-email',
+          isValid: false,
+          errors: ['Invalid email format.'],
+          warnings: [],
+          isDuplicate: false,
+          actionOutcome: 'invalid',
+        },
+      ],
+    };
+    mockServiceInstance.dryRunValidateBatch.mockResolvedValue(mockResult);
+
+    const req = new NextRequest('http://localhost/api/admin/invitation-codes/validate', {
+      method: 'POST',
+      body: JSON.stringify({
+        records: [
+          { guestName: 'Jane Doe', email: 'jane@example.com' },
+          { guestName: 'Broken Row', email: 'not-an-email' },
+        ],
+        collisionStrategy: 'update',
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual(mockResult);
+    expect(mockServiceInstance.dryRunValidateBatch).toHaveBeenCalledTimes(1);
+  });
 });

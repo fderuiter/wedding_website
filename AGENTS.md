@@ -87,16 +87,17 @@ npm run quality
 3. Check Personal/Template Identifier Isolation (`npx tsx scripts/check-personal-identifiers.ts` / `check:identifiers`)
 4. Check Workflow YAML 1.2 Syntax & Third-Party Action Pin Commit SHAs (`npm run check:action-pins`)
 5. Check Documentation Relative Links (`npx tsx scripts/check-doc-links.ts` / `check:links`)
-6. Validate Prisma Schema (`npx tsx scripts/check-prisma-schema.ts` / `check:prisma`)
-7. TypeScript Typecheck across all four project configs (`npm run typecheck`)
-8. ESLint Code Linting (`npm run lint`)
-9. Knip Unused Export Analysis (`npm run lint:unused`)
-10. Verify Migration Compatibility (`npm run lint:migrations`)
-11. Verify Documentation Synchronization (`npm run check:doc-sync`)
-12. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
-13. Build Static Documentation Portal (`npm run docs:build`)
-14. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
-15. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
+6. Verify Specification Route & Symbol Contracts (`npm run check:spec-contracts` / [`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts))
+7. Validate Prisma Schema (`npx tsx scripts/check-prisma-schema.ts` / `check:prisma`)
+8. TypeScript Typecheck across all four project configs (`npm run typecheck`)
+9. ESLint Code Linting (`npm run lint`)
+10. Knip Unused Export Analysis (`npm run lint:unused`)
+11. Verify Migration Compatibility (`npm run lint:migrations`)
+12. Verify Documentation Synchronization (`npm run check:doc-sync`)
+13. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
+14. Build Static Documentation Portal (`npm run docs:build`)
+15. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
+16. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
 
 ### Storybook Static Showcase Verification
 
@@ -147,6 +148,7 @@ node scripts/a11y-report.mjs
   - `npm run check:identifiers` — Guard against prohibited personal/template identifiers in runtime code ([`scripts/check-personal-identifiers.ts`](scripts/check-personal-identifiers.ts)).
   - `npm run check:action-pins` — Validate strict YAML 1.2 syntax across `.github/workflows/*.yml` and verify every external GitHub Action is pinned to a full 40-character commit SHA ([`scripts/check-action-pins.ts`](scripts/check-action-pins.ts)).
   - `npm run check:links` — Verify all relative Markdown links resolve to existing repository files ([`scripts/check-doc-links.ts`](scripts/check-doc-links.ts)).
+  - `npm run check:spec-contracts` — Verify API routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and cited TypeScript symbols in architectural Markdown specifications match live codebase exports ([`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts)).
   - `npm run check:prisma` & `npm run lint:migrations` — Validate Prisma schema and migration compatibility.
   - `npm run check:doc-sync` — Verify [`public/openapi.json`](public/openapi.json), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`FEATURE_MODULES.md`](FEATURE_MODULES.md) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
   - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).

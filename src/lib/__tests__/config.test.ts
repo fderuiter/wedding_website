@@ -370,7 +370,7 @@ describe('Configuration System Layers & Precedence', () => {
     expect(effectiveConfig.venueName).toBe('DB Venue');
   });
 
-  it('merges themeTokens with deterministic precedence (Presets < DB themeTokens < SITE_THEME_TOKENS)', async () => {
+  it('merges sparse themeTokens with deterministic precedence (DB themeTokens < SITE_THEME_TOKENS) without hydrating preset defaults', async () => {
     (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
       ...baseConfig,
       id: 'global',
@@ -385,12 +385,36 @@ describe('Configuration System Layers & Precedence', () => {
 
     const effectiveConfig = await getAppConfig('global');
 
-    // Modern preset default for --btn-radius is 0.5rem (8px), but DB had 12px, and env had 20px
+    // Modern preset default for --btn-radius is 0.5rem (8px), DB had 12px, and env had 20px
     expect(effectiveConfig.themeTokens['--btn-radius']).toBe('20px');
     expect(effectiveConfig.themeTokens['--custom-db-token']).toBe('from-db');
     expect(effectiveConfig.themeTokens['--custom-env-token']).toBe('from-env');
-    // Non-overridden modern preset tokens remain intact
-    expect(effectiveConfig.themeTokens['--btn-font-weight']).toBe('600');
+    // Uncustomized preset defaults stay separate in presets.ts rather than polluting themeTokens
+    expect(effectiveConfig.themeTokens['--btn-font-weight']).toBeUndefined();
+  });
+
+  it('strips legacy hydrated classic preset tokens when loading another preset while keeping custom overrides', async () => {
+    const { getPresetTokens } = await import('@/lib/theme/presets');
+    const classicLightDump = getPresetTokens('classic', 'light') as unknown as Record<string, unknown>;
+    const pollutedTokens: Record<string, string> = {};
+    for (const [k, v] of Object.entries(classicLightDump)) {
+      if (k.startsWith('--') && typeof v === 'string') {
+        pollutedTokens[k] = v;
+      }
+    }
+    pollutedTokens['--btn-radius'] = '14px';
+
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      id: 'global',
+      themePreset: 'romantic',
+      themeTokens: pollutedTokens,
+    });
+
+    const effectiveConfig = await getAppConfig('global');
+    expect(effectiveConfig.themeTokens).toEqual({
+      '--btn-radius': '14px',
+    });
   });
 
   it('fails clearly with descriptive error if invalid config is parsed in production', async () => {

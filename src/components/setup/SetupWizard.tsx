@@ -18,6 +18,7 @@ import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
 
@@ -139,6 +140,7 @@ function SetupWizardContent() {
   };
 
   // Theme state
+  const { setPreviewConfig } = useTheme();
   const [themePreset, setThemePreset] = useState<ThemePreset>('classic');
   const [colorPrimary, setColorPrimary] = useState('#4A5568');
   const [colorSecondary, setColorSecondary] = useState('#2D3748');
@@ -171,6 +173,16 @@ function SetupWizardContent() {
       syncAdminLoginState();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (step >= 2 && typeof setPreviewConfig === 'function') {
+      setPreviewConfig({
+        themePreset,
+        colorPrimary,
+        colorSecondary,
+      });
+    }
+  }, [step, themePreset, colorPrimary, colorSecondary, setPreviewConfig]);
 
   const handleThemeChange = (fields: Record<string, any>) => {
     if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
@@ -339,7 +351,7 @@ function SetupWizardContent() {
         <Container>
           <Card className="max-w-md">
             <Heading as="h2" className="mb-4">Welcome to Your Wedding Site!</Heading>
-            <p className="mb-4 text-gray-700">Please enter the admin password configured in your environment to begin setup.</p>
+            <p className="mb-4 text-gray-700 dark:text-gray-200">Please enter the admin password configured in your environment to begin setup.</p>
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup state={error && step === 1 ? 'error' : 'default'}>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
@@ -366,7 +378,7 @@ function SetupWizardContent() {
         <Container>
           <Card className="max-w-xl">
             <Heading as="h2" className="mb-4">Step 2: The Essentials</Heading>
-            <p className="mb-4 text-gray-700">Let&apos;s start with your names and when the big day is.</p>
+            <p className="mb-4 text-gray-700 dark:text-gray-200">Let&apos;s start with your names and when the big day is.</p>
             <form onSubmit={handleSaveConfig} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormGroup state={!!error && step === 2 && step2ErrorField === 'partner1' ? 'error' : 'default'}>
@@ -532,7 +544,7 @@ function SetupWizardContent() {
                     <button
                       type="button"
                       onClick={() => setSelectedModules([])}
-                      className="text-gray-500 underline hover:text-gray-700"
+                      className="text-gray-600 dark:text-gray-300 underline hover:text-gray-800 dark:hover:text-gray-100"
                     >
                       Deselect All (Start Blank)
                     </button>
@@ -546,7 +558,7 @@ function SetupWizardContent() {
                         checked={selectedModules.includes('registry')}
                         onChange={() => toggleModule('registry')}
                       />
-                      <span className="text-sm font-medium">Registry Items & Cash Funds</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Registry Items & Cash Funds</span>
                     </label>
                   </FormGroup>
 
@@ -556,7 +568,7 @@ function SetupWizardContent() {
                         checked={selectedModules.includes('guests')}
                         onChange={() => toggleModule('guests')}
                       />
-                      <span className="text-sm font-medium">Guest List & Invitation Codes</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Guest List & Invitation Codes</span>
                     </label>
                   </FormGroup>
 
@@ -566,7 +578,7 @@ function SetupWizardContent() {
                         checked={selectedModules.includes('seating')}
                         onChange={() => toggleModule('seating')}
                       />
-                      <span className="text-sm font-medium">Seating Layout & Tables</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Seating Layout & Tables</span>
                     </label>
                   </FormGroup>
 
@@ -576,7 +588,7 @@ function SetupWizardContent() {
                         checked={selectedModules.includes('weddingParty')}
                         onChange={() => toggleModule('weddingParty')}
                       />
-                      <span className="text-sm font-medium">Wedding Party Members</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Wedding Party Members</span>
                     </label>
                   </FormGroup>
 
@@ -586,7 +598,7 @@ function SetupWizardContent() {
                         checked={selectedModules.includes('attractions')}
                         onChange={() => toggleModule('attractions')}
                       />
-                      <span className="text-sm font-medium">Local Attractions & Hotel Blocks</span>
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Local Attractions & Hotel Blocks</span>
                     </label>
                   </FormGroup>
                 </div>
@@ -641,7 +653,7 @@ function SetupWizardContent() {
                 ✓ {importedGuestCount || invitationCodes.length} guest record(s) imported.
               </div>
             ) : (
-              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-400 text-sm">
+              <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-600 dark:text-gray-300 text-sm">
                 No guests imported yet. You can import a CSV file now or add guests later from the admin dashboard.
               </div>
             )}
@@ -680,7 +692,7 @@ function SetupWizardContent() {
         <Container>
           <Card className="max-w-2xl text-center">
             <Heading as="h2" className="mb-4">Step 5: Complete Setup</Heading>
-            <p className="mb-6 text-gray-700">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
+            <p className="mb-6 text-gray-700 dark:text-gray-200">Great! Your wedding website setup is complete. You can now manage custom details or view your guest site.</p>
             <div className="space-y-4">
               <Button onClick={() => openModal('weddingParty')} variant="secondary" className="w-full py-3">
                 Manage Wedding Party ({partyMembers.length} {partyMembers.length === 1 ? 'member' : 'members'})
@@ -690,11 +702,11 @@ function SetupWizardContent() {
               </Button>
             </div>
             {(importedGuestCount > 0 || invitationCodes.length > 0) && (
-              <p className="mt-4 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              <p className="mt-4 text-sm font-medium text-emerald-700 dark:text-emerald-300">
                 Guest List: {importedGuestCount || invitationCodes.length} invitation code(s) active
               </p>
             )}
-            <p className="mt-6 mb-4 text-sm text-gray-600">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
+            <p className="mt-6 mb-4 text-sm text-gray-600 dark:text-gray-300">You can also manage content and clear sample data anytime from the Admin Dashboard.</p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
                 type="button"
@@ -746,12 +758,19 @@ function SetupWizardContent() {
 
 export default function SetupWizard() {
   const [queryClient] = useState(() => new QueryClient());
+  const outerTheme = useTheme();
 
-  return (
+  const wizardTree = (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <SetupWizardContent />
       </ToastProvider>
     </QueryClientProvider>
   );
+
+  if (outerTheme.hasThemeProvider) {
+    return wizardTree;
+  }
+
+  return <ThemeProvider>{wizardTree}</ThemeProvider>;
 }

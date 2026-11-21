@@ -209,10 +209,16 @@ describe('Optimistic Seating Chart State Updates', () => {
       expect(screen.getByTitle('Unassign guest')).toBeInTheDocument();
     });
 
+    const unassignBtn = screen.getByRole('button', { name: 'Unassign Guest One' });
+    expect(unassignBtn).toHaveAttribute('type', 'button');
+    expect(unassignBtn).toHaveAttribute('title', 'Unassign guest');
+    expect(unassignBtn.className).toContain('min-w-6');
+    expect(unassignBtn.className).toContain('min-h-6');
+
     fetchMock.mockClear();
 
     // Click unassign (x) button
-    fireEvent.click(screen.getByTitle('Unassign guest'));
+    fireEvent.click(unassignBtn);
 
     await waitFor(() => {
       // Unassigned guest count should increase to 3

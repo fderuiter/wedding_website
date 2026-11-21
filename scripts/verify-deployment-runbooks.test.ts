@@ -116,20 +116,43 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
-  it('rejects stale Cloud Run service names, mutable :latest image tags, Workload Identity claims, and missing GUEST_SESSION_SECRET', () => {
+  it('rejects stale Cloud Run service names, mutable :latest image tags, missing WIF or parameterized Cloud Run docs, and missing GUEST_SESSION_SECRET', () => {
     const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
-    const original = fs.readFileSync(gcpPath, 'utf8');
-    const brokenGcp = `${original}\n\nWorkload Identity Federation\n\`\`\`bash\ngcloud run deploy wedding-service --image gcr.io/demo/wedding-website:latest --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest"\n\`\`\`\n`;
+    const original = fs
+      .readFileSync(gcpPath, 'utf8')
+      .replace(/CLOUD_RUN_SERVICE/g, 'REMOVED_SERVICE_VAR')
+      .replace(/GCP_WORKLOAD_IDENTITY_PROVIDER/g, 'REMOVED_WIF_VAR');
+    const brokenGcp = `${original}\n\n\`\`\`bash\ngcloud run deploy wedding-service --image gcr.io/demo/wedding-website:latest --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest"\n\`\`\`\n`;
     fs.writeFileSync(gcpPath, brokenGcp);
 
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('References stale service name "wedding-service" instead of "wedding-website"'),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document parameterized Cloud Run target variables CLOUD_RUN_SERVICE and CLOUD_RUN_REGION'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document Workload Identity Federation with GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT'
+        ),
         expect.stringContaining('Container image "gcr.io/demo/wedding-website:latest" must pull from primary registry "ghcr.io/"'),
         expect.stringContaining('Mutable ":latest" image tag prohibited'),
-        expect.stringContaining('Claims Workload Identity Federation'),
         expect.stringContaining('Manual `gcloud run deploy` command omits mandatory GUEST_SESSION_SECRET'),
+      ])
+    );
+  });
+
+  it('rejects Workload Identity Federation claims in gcp-cloud-run.md when deploy-provider.yml only authenticates via credentials_json', () => {
+    const deployProviderPath = path.join(tempDir, '.github/workflows/deploy-provider.yml');
+    const keyOnlyWorkflow = fs
+      .readFileSync(deployProviderPath, 'utf8')
+      .replace(/workload_identity_provider:/g, '# key-only-test:');
+    fs.writeFileSync(deployProviderPath, keyOnlyWorkflow);
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Claims Workload Identity Federation'),
       ])
     );
   });
@@ -226,13 +249,13 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
-  it('rejects documenting SERVICE_URL as a primary GitHub Environment secret instead of vars.SERVICE_URL', () => {
+  it('rejects documenting GitHub Actions Variables (e.g. SERVICE_URL, CLOUD_RUN_SERVICE) as GitHub Environment Secrets', () => {
     const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
     const brokenDeployment = fs
       .readFileSync(deploymentPath, 'utf8')
       .replace(
         '| `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |',
-        '| `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |\n| `SERVICE_URL` | Legacy secret placement | `deploy.yml` |'
+        '| `DOCKERHUB_TOKEN` | Docker Hub access token (optional secondary registry) | `publish-artifact.yml` |\n| `SERVICE_URL` | Legacy secret placement | `deploy.yml` |\n| `CLOUD_RUN_SERVICE` | Misclassified variable | `deploy-provider.yml` |'
       );
     fs.writeFileSync(deploymentPath, brokenDeployment);
 
@@ -241,7 +264,7 @@ describe('verify-deployment-runbooks', () => {
       .readFileSync(gcpPath, 'utf8')
       .replace(
         '*   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):',
-        '*   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):\n    *   `SERVICE_URL`: Stale secret placement.'
+        '*   **GitHub Environment Secrets** (`staging`, `production`, and optional `production-rollback` without `DATABASE_URL`):\n    *   `SERVICE_URL`: Stale secret placement.\n    *   `GCP_WORKLOAD_IDENTITY_PROVIDER`: Misclassified variable.'
       );
     fs.writeFileSync(gcpPath, brokenGcp);
 
@@ -252,7 +275,13 @@ describe('verify-deployment-runbooks', () => {
           '"SERVICE_URL" must be documented as a primary GitHub Actions Variable (vars.SERVICE_URL)'
         ),
         expect.stringContaining(
+          '"CLOUD_RUN_SERVICE" must be documented as a primary GitHub Actions Variable (vars.CLOUD_RUN_SERVICE)'
+        ),
+        expect.stringContaining(
           'docs/deployment/gcp-cloud-run.md: Lists SERVICE_URL under GitHub Environment Secrets instead of GitHub Environment Variables'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Lists GCP_WORKLOAD_IDENTITY_PROVIDER under GitHub Environment Secrets instead of GitHub Environment Variables'
         ),
       ])
     );
@@ -272,7 +301,7 @@ describe('verify-deployment-runbooks', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          '.github/workflows/deploy-provider.yml:224: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
+          '.github/workflows/deploy-provider.yml:247: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
         ),
       ])
     );

@@ -215,4 +215,48 @@ describe('ThemeConfigurationPanel Component', () => {
     const axeResults = await axe(container);
     expect(axeResults).toHaveNoViolations();
   });
+
+  test('strips previous preset defaults on preset switch and omits print tokens reset to preset default', () => {
+    const handleChange = jest.fn();
+    render(
+      <ThemeConfigurationPanel
+        values={{
+          ...defaultValues,
+          themePreset: 'classic',
+          printBg: '#fef2f2',
+          themeTokens: {
+            '--card-bg': '#ffffff',
+            '--print-bg': '#fef2f2',
+            '--btn-radius': '0.625rem',
+          },
+        }}
+        onChange={handleChange}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Select Theme Preset/i), {
+      target: { value: 'romantic' },
+    });
+
+    expect(handleChange).toHaveBeenCalledWith({
+      themePreset: 'romantic',
+      themeTokens: {
+        '--print-bg': '#fef2f2',
+        '--btn-radius': '0.625rem',
+      },
+    });
+
+    handleChange.mockClear();
+    fireEvent.change(screen.getByLabelText(/Print Background Color Code/i), {
+      target: { value: '#ffffff' },
+    });
+
+    expect(handleChange).toHaveBeenCalledWith({
+      printBg: '#ffffff',
+      themeTokens: {
+        '--card-bg': '#ffffff',
+        '--btn-radius': '0.625rem',
+      },
+    });
+  });
 });
