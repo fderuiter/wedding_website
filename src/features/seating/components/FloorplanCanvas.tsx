@@ -753,7 +753,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
     for (let i = 1; i <= capacity; i++) {
       const assignedGuest = seatMap.get(i);
-      const dietaryBadges = assignedGuest ? getDietaryBadges(assignedGuest.dietaryNotes) : [];
+      const dietaryBadges = assignedGuest
+        ? getDietaryBadges(assignedGuest.dietaryNotes, assignedGuest.extraFields)
+        : [];
       const dietarySummary = dietaryBadges.map((b) => b.label).join(', ');
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =

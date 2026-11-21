@@ -366,7 +366,7 @@ export default function SeatingChartAdminPage() {
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {selectedTable.invitationCodes.map((guest) => {
                         const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
-                        const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+                        const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
                         const visibleTags = (guest.partyTags || []).filter(
                           (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
                         );
@@ -401,7 +401,7 @@ export default function SeatingChartAdminPage() {
                               <span
                                 key={badge.category}
                                 data-testid="inspector-dietary-badge"
-                                title={`${badge.label}: ${guest.dietaryNotes}`}
+                                title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
                                 className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
                               >
                                 🍽️ {badge.shortLabel}

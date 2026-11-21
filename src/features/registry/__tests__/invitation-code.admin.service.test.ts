@@ -939,5 +939,79 @@ describe('InvitationCodeAdminService', () => {
         },
       });
     });
+
+    it('reconciles SubEventRsvp mealSelections, customAnswers, and plusOneNames when merging duplicate guests', async () => {
+      const rsvpUpdateMock = jest.fn().mockResolvedValue({});
+      const rsvpDeleteManyMock = jest.fn().mockResolvedValue({ count: 1 });
+      const txMock = {
+        ...mockPrismaClient,
+        contributor: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        subEventAccess: {
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+          updateMany: jest.fn(),
+        },
+        subEventRsvp: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'rsvp-pri',
+              subEventId: 'se-rec',
+              invitationCodeId: 'pri-1',
+              status: 'pending',
+              plusOneCount: 0,
+              dietaryNotes: '',
+              mealSelections: [],
+              customAnswers: {},
+              plusOneNames: [],
+            },
+            {
+              id: 'rsvp-sec',
+              subEventId: 'se-rec',
+              invitationCodeId: 'sec-1',
+              status: 'attending',
+              plusOneCount: 1,
+              dietaryNotes: 'Nut allergy',
+              mealSelections: ['meal-salmon', 'meal-gnocchi'],
+              customAnswers: { 'q-shuttle': 'Yes, round-trip' },
+              plusOneNames: ['Jordan Taylor'],
+            },
+          ]),
+          update: rsvpUpdateMock,
+          deleteMany: rsvpDeleteManyMock,
+        },
+        broadcastRecipient: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        broadcastMessage: {
+          findMany: jest.fn().mockResolvedValue([]),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'pri-1', code: 'PRI1', guestName: 'Alice', partyTags: [] },
+            { id: 'sec-1', code: 'SEC1', guestName: 'Alice S', partyTags: [] },
+          ]),
+          update: jest.fn().mockResolvedValue({ id: 'pri-1', code: 'PRI1', guestName: 'Alice' }),
+          deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        snapshotVersion: { create: jest.fn().mockResolvedValue({}) },
+      };
+      mockPrismaClient.$transaction = jest.fn((cb: any) => cb(txMock));
+
+      await service.mergeDuplicates('pri-1', ['sec-1'], 'Admin');
+
+      expect(rsvpUpdateMock).toHaveBeenCalledWith({
+        where: { id: 'rsvp-pri' },
+        data: {
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'Nut allergy',
+          mealSelections: ['meal-salmon', 'meal-gnocchi'],
+          customAnswers: { 'q-shuttle': 'Yes, round-trip' },
+          plusOneNames: ['Jordan Taylor'],
+        },
+      });
+      expect(rsvpDeleteManyMock).toHaveBeenCalledWith({
+        where: { id: { in: ['rsvp-sec'] } },
+      });
+    });
   });
 });

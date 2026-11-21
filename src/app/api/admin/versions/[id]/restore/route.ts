@@ -489,7 +489,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       throw new ApiError(400, 'Invalid SubEvent snapshot data');
     }
 
-    const data = {
+    const data: Prisma.SubEventUncheckedUpdateInput = {
       title: snapshotData.title,
       description: snapshotData.description ?? '',
       startTime: toOptionalDate(snapshotData.startTime),
@@ -498,12 +498,34 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       location: snapshotData.location ?? '',
       category: snapshotData.category ?? '',
       isPrivate: Boolean(snapshotData.isPrivate),
+      ...(Array.isArray(snapshotData.mealOptions)
+        ? { mealOptions: snapshotData.mealOptions as Prisma.InputJsonValue }
+        : {}),
+      ...(Array.isArray(snapshotData.customQuestions)
+        ? { customQuestions: snapshotData.customQuestions as Prisma.InputJsonValue }
+        : {}),
     };
 
     await prisma.subEvent.upsert({
       where: { id: version.entityId },
       update: data,
-      create: { id: version.entityId, ...data },
+      create: {
+        id: version.entityId,
+        title: snapshotData.title,
+        description: snapshotData.description ?? '',
+        startTime: toOptionalDate(snapshotData.startTime),
+        endTime: toOptionalDate(snapshotData.endTime),
+        locationName: snapshotData.locationName ?? '',
+        location: snapshotData.location ?? '',
+        category: snapshotData.category ?? '',
+        isPrivate: Boolean(snapshotData.isPrivate),
+        ...(Array.isArray(snapshotData.mealOptions)
+          ? { mealOptions: snapshotData.mealOptions as Prisma.InputJsonValue }
+          : {}),
+        ...(Array.isArray(snapshotData.customQuestions)
+          ? { customQuestions: snapshotData.customQuestions as Prisma.InputJsonValue }
+          : {}),
+      },
     });
   } else if (version.entityType === 'SubEventAccess') {
     if (
@@ -537,6 +559,17 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       status: snapshotData.status ?? 'PENDING',
       plusOneCount: typeof snapshotData.plusOneCount === 'number' ? snapshotData.plusOneCount : 0,
       dietaryNotes: snapshotData.dietaryNotes ?? null,
+      ...(Array.isArray(snapshotData.mealSelections)
+        ? { mealSelections: snapshotData.mealSelections as Prisma.InputJsonValue }
+        : {}),
+      ...(snapshotData.customAnswers &&
+      typeof snapshotData.customAnswers === 'object' &&
+      !Array.isArray(snapshotData.customAnswers)
+        ? { customAnswers: snapshotData.customAnswers as Prisma.InputJsonValue }
+        : {}),
+      ...(Array.isArray(snapshotData.plusOneNames)
+        ? { plusOneNames: snapshotData.plusOneNames as Prisma.InputJsonValue }
+        : {}),
     };
 
     await prisma.subEventRsvp.upsert({

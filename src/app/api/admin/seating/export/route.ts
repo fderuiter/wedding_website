@@ -3,6 +3,12 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
 import { generateSeatingChartPdf, isGuestEligibleForSeating } from '@/features/seating';
+import {
+  formatAttendanceLabel,
+  formatGuestPlusOneNames,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
+} from '@/features/registry';
 import { getAppConfig } from '@/lib/config';
 
 const HEADERS = [
@@ -13,6 +19,10 @@ const HEADERS = [
   'Guest Name',
   'Invitation Code',
   'Dietary Notes',
+  'Plus-One Name',
+  'Attendance',
+  'Meal Selections',
+  'Custom Answers',
 ];
 
 interface SeatingExportRecord extends Record<string, unknown> {
@@ -23,6 +33,10 @@ interface SeatingExportRecord extends Record<string, unknown> {
   'Guest Name': string;
   'Invitation Code': string;
   'Dietary Notes': string;
+  'Plus-One Name': string;
+  'Attendance': string;
+  'Meal Selections': string;
+  'Custom Answers': string;
 }
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -102,6 +116,10 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
         'Guest Name': '(Unassigned Table)',
         'Invitation Code': '',
         'Dietary Notes': '',
+        'Plus-One Name': '',
+        'Attendance': '',
+        'Meal Selections': '',
+        'Custom Answers': '',
       });
     } else {
       for (const guest of table.invitationCodes) {
@@ -113,6 +131,10 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
           'Guest Name': guest.guestName,
           'Invitation Code': guest.code,
           'Dietary Notes': guest.dietaryNotes || '',
+          'Plus-One Name': formatGuestPlusOneNames(guest),
+          'Attendance': formatAttendanceLabel(guest as any),
+          'Meal Selections': formatGuestMealSelections(guest),
+          'Custom Answers': formatGuestCustomAnswers(guest),
         });
       }
     }
@@ -127,6 +149,10 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       'Guest Name': guest.guestName,
       'Invitation Code': guest.code,
       'Dietary Notes': guest.dietaryNotes || '',
+      'Plus-One Name': formatGuestPlusOneNames(guest),
+      'Attendance': formatAttendanceLabel(guest as any),
+      'Meal Selections': formatGuestMealSelections(guest),
+      'Custom Answers': formatGuestCustomAnswers(guest),
     });
   }
 

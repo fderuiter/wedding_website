@@ -454,4 +454,124 @@ describe('useScheduleRsvpManager', () => {
     );
     expect(onRsvpClosed).toHaveBeenCalledTimes(2);
   });
+
+  it('blocks submitSingle and submitBatch when attending guests omit required meal selections or required custom prompts, and clears them on declined', async () => {
+    const dinnerEvents = [
+      {
+        id: 'event-dinner',
+        title: 'Evening Reception',
+        mealOptions: [
+          { id: 'm-salmon', label: 'Herb Salmon', dietaryTags: ['gluten-free'] },
+          { id: 'm-beef', label: 'Braised Beef', dietaryTags: [] },
+        ],
+        customQuestions: [
+          {
+            id: 'q-shuttle',
+            prompt: 'Will you take the hotel shuttle?',
+            type: 'choice' as const,
+            required: true,
+            options: ['Yes', 'No'],
+          },
+        ],
+        userRsvp: {
+          status: 'pending' as const,
+          plusOneCount: 0,
+          dietaryNotes: '',
+        },
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: dinnerEvents,
+        maxPlusOnes: 2,
+        defaultPlusOneNames: ['Jordan Taylor'],
+      })
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-dinner', { status: 'attending', plusOneCount: 1 });
+    });
+
+    expect(result.current.getRsvpState('event-dinner').current.plusOneNames).toEqual([
+      'Jordan Taylor',
+    ]);
+
+    let singleOk = true;
+    await act(async () => {
+      singleOk = await result.current.submitSingle('event-dinner');
+    });
+    expect(singleOk).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.current.getRsvpState('event-dinner').error).toBe(
+      'Please select an entrée option for all 2 attending guests.'
+    );
+
+    act(() => {
+      result.current.updateRsvp('event-dinner', {
+        mealSelections: ['m-salmon', 'm-beef'],
+      });
+    });
+
+    let batchOk = true;
+    await act(async () => {
+      batchOk = await result.current.submitBatch();
+    });
+    expect(batchOk).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(result.current.batchError).toBe(
+      'Please answer required question: "Will you take the hotel shuttle?".'
+    );
+
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [
+          {
+            subEventId: 'event-dinner',
+            status: 'attending',
+            plusOneCount: 1,
+            dietaryNotes: '',
+            mealSelections: ['m-salmon', 'm-beef'],
+            customAnswers: { 'q-shuttle': 'Yes' },
+            plusOneNames: ['Jordan Taylor'],
+          },
+        ],
+      }),
+    });
+
+    act(() => {
+      result.current.updateRsvp('event-dinner', {
+        customAnswers: { 'q-shuttle': 'Yes' },
+      });
+    });
+
+    await act(async () => {
+      singleOk = await result.current.submitSingle('event-dinner');
+    });
+    expect(singleOk).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith('/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subEventId: 'event-dinner',
+        status: 'attending',
+        plusOneCount: 1,
+        dietaryNotes: '',
+        mealSelections: ['m-salmon', 'm-beef'],
+        customAnswers: { 'q-shuttle': 'Yes' },
+        plusOneNames: ['Jordan Taylor'],
+      }),
+    });
+
+    act(() => {
+      result.current.updateRsvp('event-dinner', { status: 'declined' });
+    });
+    const declinedState = result.current.getRsvpState('event-dinner').current;
+    expect(declinedState.plusOneCount).toBe(0);
+    expect(declinedState.mealSelections).toEqual([]);
+    expect(declinedState.customAnswers).toEqual({});
+    expect(declinedState.plusOneNames).toEqual([]);
+  });
 });

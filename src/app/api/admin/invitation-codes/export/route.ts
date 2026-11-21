@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { prisma } from '@/lib/prisma';
 import { generateCsvContent } from '@/utils/csv';
-import { matchDietaryCategory, getAttendanceStatus, isAddressComplete } from '@/features/registry';
+import {
+  matchDietaryCategory,
+  getAttendanceStatus,
+  formatAttendanceLabel,
+  formatGuestPlusOneNames,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
+  isAddressComplete,
+} from '@/features/registry';
 
 function extractPhoneNumber(extraFields: unknown): string {
   if (!extraFields) return '';
@@ -42,6 +50,9 @@ const HEADERS = [
   'Dietary Notes',
   'Plus Ones',
   'Status',
+  'Attendance',
+  'Meal Selections',
+  'Custom Answers',
 ];
 
 interface InvitationCodeExportRecord extends Record<string, unknown> {
@@ -58,6 +69,9 @@ interface InvitationCodeExportRecord extends Record<string, unknown> {
   'Dietary Notes': string;
   'Plus Ones': number;
   'Status': string;
+  'Attendance': string;
+  'Meal Selections': string;
+  'Custom Answers': string;
 }
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
@@ -131,7 +145,9 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 
   // Apply in-memory secondary filters for dietary, attendance, and address if specified
   if (dietaryFilter && dietaryFilter !== 'all') {
-    dbRecords = dbRecords.filter((item) => matchDietaryCategory(item.dietaryNotes, dietaryFilter));
+    dbRecords = dbRecords.filter((item) =>
+      matchDietaryCategory(item.dietaryNotes, dietaryFilter, item.extraFields)
+    );
   }
 
   if (attendanceFilter && attendanceFilter !== 'all') {
@@ -154,7 +170,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
 
   // Map to export format
   const exportRecords: InvitationCodeExportRecord[] = dbRecords.map((item) => {
-    const plusOneName = [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ');
+    const plusOneName = formatGuestPlusOneNames(item);
     const fullAddress = [
       item.addressLine1,
       item.addressLine2,
@@ -183,6 +199,9 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       'Dietary Notes': item.dietaryNotes || '',
       'Plus Ones': item.plusOneAllocations ?? 0,
       'Status': item.used ? 'Redeemed' : 'Unused',
+      'Attendance': formatAttendanceLabel(item as any),
+      'Meal Selections': formatGuestMealSelections(item),
+      'Custom Answers': formatGuestCustomAnswers(item),
     };
   });
 
