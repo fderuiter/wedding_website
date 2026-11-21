@@ -50,28 +50,107 @@ export interface ThankYouContributorItem {
 
 export type ThankYouMetrics = ProgressMetrics;
 
+type ThankYouStatusFilter = 'All' | 'Unsent' | 'Sent' | 'Not Needed';
+
+interface ThankYouPagination {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+interface ThankYouNotesQuery {
+  statusFilter: ThankYouStatusFilter;
+  searchQuery: string;
+  page: number;
+  pageSize: number;
+}
+
+interface ThankYouNotesSnapshot {
+  items: ThankYouContributorItem[];
+  metrics: ThankYouMetrics;
+  pagination: ThankYouPagination | null;
+}
+
+interface ThankYouNotesSetters {
+  setItems: React.Dispatch<React.SetStateAction<ThankYouContributorItem[]>>;
+  setMetrics: React.Dispatch<React.SetStateAction<ThankYouMetrics>>;
+  setPagination: React.Dispatch<React.SetStateAction<ThankYouPagination>>;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
+}
+
+const DEFAULT_THANK_YOU_METRICS: ThankYouMetrics = {
+  total: 0,
+  sent: 0,
+  unsent: 0,
+  notNeeded: 0,
+  thanked: 0,
+  completionPercentage: 0,
+};
+
+async function requestThankYouNotes(query: ThankYouNotesQuery): Promise<ThankYouNotesSnapshot> {
+  const params = new URLSearchParams();
+  if (query.statusFilter !== 'All') {
+    params.set('status', query.statusFilter);
+  }
+  if (query.searchQuery.trim()) {
+    params.set('search', query.searchQuery.trim());
+  }
+  params.set('page', query.page.toString());
+  params.set('pageSize', query.pageSize.toString());
+
+  const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch thank-you notes.');
+  }
+  const data = await res.json();
+  return {
+    items: data.items || [],
+    metrics: data.metrics || DEFAULT_THANK_YOU_METRICS,
+    pagination: data.pagination || null,
+  };
+}
+
+function applyThankYouNotesSnapshot(
+  snapshot: ThankYouNotesSnapshot,
+  setters: ThankYouNotesSetters
+): void {
+  setters.setItems(snapshot.items);
+  setters.setMetrics(snapshot.metrics);
+  if (snapshot.pagination) {
+    setters.setPagination(snapshot.pagination);
+  }
+  setters.setError(null);
+}
+
+function formatThankYouNotesError(err: unknown): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return 'An error occurred while loading thank-you notes.';
+}
+
 export default function ThankYouNotesPage() {
   const router = useRouter();
   const { addToast, confirm } = useToast();
 
   const [items, setItems] = useState<ThankYouContributorItem[]>([]);
-  const [metrics, setMetrics] = useState<ThankYouMetrics>({
-    total: 0,
-    sent: 0,
-    unsent: 0,
-    notNeeded: 0,
-    thanked: 0,
-    completionPercentage: 0,
-  });
+  const [metrics, setMetrics] = useState<ThankYouMetrics>(DEFAULT_THANK_YOU_METRICS);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Unsent' | 'Sent' | 'Not Needed'>('All');
+  const [statusFilter, setStatusFilter] = useState<ThankYouStatusFilter>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
-  const [pagination, setPagination] = useState({
+  const [pagination, setPagination] = useState<ThankYouPagination>({
     page: 1,
     pageSize: 50,
     totalItems: 0,
@@ -166,37 +245,10 @@ export default function ThankYouNotesPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (statusFilter !== 'All') {
-        params.set('status', statusFilter);
-      }
-      if (searchQuery.trim()) {
-        params.set('search', searchQuery.trim());
-      }
-      params.set('page', currentPage.toString());
-      params.set('pageSize', pageSize.toString());
-
-      const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
-      if (!res.ok) {
-        throw new Error('Failed to fetch thank-you notes.');
-      }
-      const data = await res.json();
-      setItems(data.items || []);
-      setMetrics(
-        data.metrics || {
-          total: 0,
-          sent: 0,
-          unsent: 0,
-          notNeeded: 0,
-          thanked: 0,
-          completionPercentage: 0,
-        }
-      );
-      if (data.pagination) {
-        setPagination(data.pagination);
-      }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while loading thank-you notes.');
+      const snapshot = await requestThankYouNotes({ statusFilter, searchQuery, page: currentPage, pageSize });
+      applyThankYouNotesSnapshot(snapshot, { setItems, setMetrics, setPagination, setError });
+    } catch (err: unknown) {
+      setError(formatThankYouNotesError(err));
     } finally {
       setIsLoading(false);
     }
@@ -205,52 +257,21 @@ export default function ThankYouNotesPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadThankYouNotes = async () => {
-      try {
-        const params = new URLSearchParams();
-        if (statusFilter !== 'All') {
-          params.set('status', statusFilter);
-        }
-        if (searchQuery.trim()) {
-          params.set('search', searchQuery.trim());
-        }
-        params.set('page', currentPage.toString());
-        params.set('pageSize', pageSize.toString());
-
-        const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
+    void requestThankYouNotes({ statusFilter, searchQuery, page: currentPage, pageSize })
+      .then((snapshot) => {
         if (cancelled) return;
-        if (!res.ok) {
-          throw new Error('Failed to fetch thank-you notes.');
-        }
-        const data = await res.json();
-        if (cancelled) return;
-        setItems(data.items || []);
-        setMetrics(
-          data.metrics || {
-            total: 0,
-            sent: 0,
-            unsent: 0,
-            notNeeded: 0,
-            thanked: 0,
-            completionPercentage: 0,
-          }
-        );
-        if (data.pagination) {
-          setPagination(data.pagination);
-        }
-        setError(null);
-      } catch (err: any) {
+        applyThankYouNotesSnapshot(snapshot, { setItems, setMetrics, setPagination, setError });
+      })
+      .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err.message || 'An error occurred while loading thank-you notes.');
+          setError(formatThankYouNotesError(err));
         }
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) {
           setIsLoading(false);
         }
-      }
-    };
-
-    void loadThankYouNotes();
+      });
 
     return () => {
       cancelled = true;

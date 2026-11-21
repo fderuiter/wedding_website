@@ -639,6 +639,98 @@ function MediaDashboardContent({
   );
 }
 
+interface MediaPageSnapshot {
+  media: MediaDTO[];
+  total: number;
+  totalPages: number;
+  resolvedPage?: number;
+}
+
+interface MediaSnapshotSetters {
+  currentPage: number;
+  setMedia: React.Dispatch<React.SetStateAction<MediaDTO[]>>;
+  setTotal: React.Dispatch<React.SetStateAction<number>>;
+  setTotalPages: React.Dispatch<React.SetStateAction<number>>;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
+}
+
+async function requestPendingPhotos(): Promise<PendingPhoto[] | null> {
+  const res = await apiClient.get<unknown>('/api/admin/photos/moderation');
+  if (typeof res === 'object' && res !== null) {
+    const envelope = res as { photos?: unknown; data?: unknown };
+    if (Array.isArray(envelope.photos)) {
+      return envelope.photos as PendingPhoto[];
+    }
+    if (Array.isArray(envelope.data)) {
+      return envelope.data as PendingPhoto[];
+    }
+  }
+  if (Array.isArray(res)) {
+    return res as PendingPhoto[];
+  }
+  return null;
+}
+
+async function requestMediaSnapshot(
+  targetPage: number,
+  limit: number
+): Promise<MediaPageSnapshot | null> {
+  const res = await apiClient.get<unknown>(`/api/media?page=${targetPage}&limit=${limit}`);
+  if (
+    typeof res === 'object' &&
+    res !== null &&
+    'data' in res &&
+    Array.isArray((res as { data: unknown }).data)
+  ) {
+    const envelope = res as {
+      data: MediaDTO[];
+      total?: number;
+      totalPages?: number;
+      page?: number;
+    };
+    return {
+      media: envelope.data,
+      total: envelope.total ?? 0,
+      totalPages: envelope.totalPages ?? 1,
+      resolvedPage: envelope.page ?? targetPage,
+    };
+  }
+  if (Array.isArray(res)) {
+    return {
+      media: res as MediaDTO[],
+      total: res.length,
+      totalPages: 1,
+    };
+  }
+  return null;
+}
+
+function applyMediaSnapshot(
+  snapshot: MediaPageSnapshot | null,
+  setters: MediaSnapshotSetters
+): void {
+  if (snapshot) {
+    setters.setMedia(snapshot.media);
+    setters.setTotal(snapshot.total);
+    setters.setTotalPages(snapshot.totalPages);
+    if (snapshot.resolvedPage !== undefined && snapshot.resolvedPage !== setters.currentPage) {
+      setters.setPage(snapshot.resolvedPage);
+    }
+  }
+  setters.setError(null);
+}
+
+function formatMediaError(err: unknown): string {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : 'Failed to load media library.';
+  return message || 'Failed to load media library.';
+}
+
 export default function MediaDashboardPage() {
   const [media, setMedia] = useState<MediaDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -654,15 +746,11 @@ export default function MediaDashboardPage() {
 
   const fetchPendingPhotos = async () => {
     try {
-      const res = await apiClient.get('/api/admin/photos/moderation');
-      if (res && res.photos && Array.isArray(res.photos)) {
-        setPendingPhotos(res.photos);
-      } else if (res && res.data && Array.isArray(res.data)) {
-        setPendingPhotos(res.data);
-      } else if (Array.isArray(res)) {
-        setPendingPhotos(res);
+      const photos = await requestPendingPhotos();
+      if (photos !== null) {
+        setPendingPhotos(photos);
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('Failed to load pending photos:', e);
     }
   };
@@ -673,25 +761,13 @@ export default function MediaDashboardPage() {
       setError(null);
     }
     try {
-      const res = await apiClient.get(`/api/media?page=${targetPage}&limit=${limit}`);
-      if (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data)) {
-        setMedia(res.data);
-        setTotal(res.total ?? 0);
-        setTotalPages(res.totalPages ?? 1);
-        const resPage = res.page ?? targetPage;
-        if (resPage !== page) {
-          setPage(resPage);
-        }
-      } else if (Array.isArray(res)) {
-        setMedia(res);
-        setTotal(res.length);
-        setTotalPages(1);
-      }
-      setError(null);
-    } catch (e) {
+      const snapshot = await requestMediaSnapshot(targetPage, limit);
+      applyMediaSnapshot(snapshot, {
+        currentPage: page, setMedia, setTotal, setTotalPages, setPage, setError,
+      });
+    } catch (e: unknown) {
       console.error(e);
-      const message = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to load media library.';
-      setError(message || 'Failed to load media library.');
+      setError(formatMediaError(e));
     } finally {
       if (!options?.background) {
         setLoading(false);
@@ -708,59 +784,37 @@ export default function MediaDashboardPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadMediaData = async () => {
-      const loadMediaPromise = (async () => {
-        try {
-          const res = await apiClient.get(`/api/media?page=${page}&limit=${limit}`);
-          if (cancelled) return;
-          if (res && typeof res === 'object' && 'data' in res && Array.isArray(res.data)) {
-            setMedia(res.data);
-            setTotal(res.total ?? 0);
-            setTotalPages(res.totalPages ?? 1);
-            const resPage = res.page ?? page;
-            if (resPage !== page) {
-              setPage(resPage);
-            }
-          } else if (Array.isArray(res)) {
-            setMedia(res);
-            setTotal(res.length);
-            setTotalPages(1);
-          }
-          setError(null);
-        } catch (e) {
-          if (cancelled) return;
-          console.error(e);
-          const message = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Failed to load media library.';
-          setError(message || 'Failed to load media library.');
-        } finally {
-          if (!cancelled) {
-            setLoading(false);
-          }
+    const mediaTask = requestMediaSnapshot(page, limit)
+      .then((snapshot) => {
+        if (cancelled) return;
+        applyMediaSnapshot(snapshot, {
+          currentPage: page, setMedia, setTotal, setTotalPages, setPage, setError,
+        });
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.error(e);
+        setError(formatMediaError(e));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
         }
-      })();
+      });
 
-      const loadPendingPromise = (async () => {
-        try {
-          const res = await apiClient.get('/api/admin/photos/moderation');
-          if (cancelled) return;
-          if (res && res.photos && Array.isArray(res.photos)) {
-            setPendingPhotos(res.photos);
-          } else if (res && res.data && Array.isArray(res.data)) {
-            setPendingPhotos(res.data);
-          } else if (Array.isArray(res)) {
-            setPendingPhotos(res);
-          }
-        } catch (e) {
-          if (!cancelled) {
-            console.error('Failed to load pending photos:', e);
-          }
+    const pendingTask = requestPendingPhotos()
+      .then((photos) => {
+        if (!cancelled && photos !== null) {
+          setPendingPhotos(photos);
         }
-      })();
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          console.error('Failed to load pending photos:', e);
+        }
+      });
 
-      await Promise.all([loadMediaPromise, loadPendingPromise]);
-    };
-
-    void loadMediaData();
+    void Promise.all([mediaTask, pendingTask]);
 
     return () => {
       cancelled = true;
