@@ -1,4 +1,4 @@
-import { createEvent, EventAttributes } from 'ics';
+import { createEvent, createEvents, EventAttributes } from 'ics';
 
 /**
  * @interface CalendarEvent
@@ -650,6 +650,74 @@ export function createIcsFile(event: CalendarEvent): string {
 
     const vtimezoneBlock = buildVTimezoneBlock(event.timeZone, event.startDate, event.startTime);
     icsContent = icsContent.replace('BEGIN:VEVENT', `${vtimezoneBlock}\r\nBEGIN:VEVENT`);
+  }
+
+  return icsContent;
+}
+
+/**
+ * Creates a combined multi-event RFC 5545 ICS file string for an itinerary of events.
+ * Deduplicates VTIMEZONE definitions across events and binds each VEVENT DTSTART/DTEND
+ * to its corresponding TZID.
+ * @param {CalendarEvent[]} events - Ordered list of calendar events to include.
+ * @returns {string} The generated multi-event ICS file content, or '' if empty/invalid.
+ */
+export function createMultiEventIcsFile(events: CalendarEvent[]): string {
+  if (!Array.isArray(events) || events.length === 0) {
+    return '';
+  }
+
+  const icsEvents: EventAttributes[] = events.map((event, index) => {
+    const cleanId = event.id ? event.id.replace(/[^a-zA-Z0-9._-]/g, '-') : `event-${index + 1}`;
+    return {
+      uid: `schedule-${cleanId}@wedding-itinerary`,
+      title: event.name,
+      description: event.description,
+      location: event.location,
+      start: formatDateTuple(event.startDate, event.startTime),
+      end: formatDateTuple(event.endDate, event.endTime),
+      startOutputType: 'local',
+      endOutputType: 'local',
+    };
+  });
+
+  const { error, value } = createEvents(icsEvents);
+
+  if (error || !value) {
+    if (error) {
+      console.error(error);
+    }
+    return '';
+  }
+
+  let eventIdx = 0;
+  let icsContent = value.replace(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g, (veventBlock) => {
+    const sourceEvent = events[eventIdx];
+    eventIdx += 1;
+    const tz = sourceEvent?.timeZone?.trim();
+    if (!tz) {
+      return veventBlock;
+    }
+    return veventBlock
+      .replace('DTSTART:', `DTSTART;TZID=${tz}:`)
+      .replace('DTEND:', `DTEND;TZID=${tz}:`);
+  });
+
+  const seenTimeZones = new Set<string>();
+  const vtimezoneBlocks: string[] = [];
+  for (const event of events) {
+    const tz = event.timeZone?.trim();
+    if (tz && !seenTimeZones.has(tz)) {
+      seenTimeZones.add(tz);
+      vtimezoneBlocks.push(buildVTimezoneBlock(tz, event.startDate, event.startTime));
+    }
+  }
+
+  if (vtimezoneBlocks.length > 0) {
+    icsContent = icsContent.replace(
+      'BEGIN:VEVENT',
+      `${vtimezoneBlocks.join('\r\n')}\r\nBEGIN:VEVENT`
+    );
   }
 
   return icsContent;

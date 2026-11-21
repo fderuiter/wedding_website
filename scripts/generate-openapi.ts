@@ -192,7 +192,9 @@ interface MiddlewareApiExclusions {
 
 function getMiddlewarePublicApiExclusions(): MiddlewareApiExclusions {
   const middlewarePath = path.join(rootPath, 'src/middleware.ts');
-  const source = fs.readFileSync(middlewarePath, 'utf8');
+  const rawSource = fs.readFileSync(middlewarePath, 'utf8');
+  const excludedMatch = rawSource.match(/const\s+isExcluded\s*=([\s\S]*?);/);
+  const source = excludedMatch ? excludedMatch[1] : rawSource;
   const exact = new Set<string>();
   const prefixes: string[] = [];
 
@@ -752,7 +754,10 @@ function resolveOperationSecurity(
         usesStripeSignature = true;
       }
       const exprText = n.getExpression().getText();
-      if (exprText === 'getGuestInviteSession') {
+      if (
+        exprText === 'getGuestInviteSession' ||
+        exprText === 'getGuestInviteSessionFromRequestOrToken'
+      ) {
         callsGuestInviteSession = true;
       } else if (exprText === 'isGuestRequest') {
         callsGuestRequest = true;

@@ -3,6 +3,7 @@ import {
   createYahooCalendarLink,
   createOutlookCalendarLink,
   createIcsFile,
+  createMultiEventIcsFile,
   buildVTimezoneBlock,
   formatScheduleEventToCalendarEvent,
 } from '../calendar';
@@ -234,6 +235,95 @@ describe('calendar utils', () => {
       const invalidEvent = { ...event, startDate: 'invalid-date' };
       const icsString = createIcsFile(invalidEvent);
       expect(icsString).toBe('');
+    });
+  });
+
+  describe('createMultiEventIcsFile', () => {
+    it('returns empty string when given an empty event array', () => {
+      expect(createMultiEventIcsFile([])).toBe('');
+    });
+
+    it('creates a valid RFC 5545 multi-event VCALENDAR with deduplicated VTIMEZONE and per-event VEVENT blocks', () => {
+      const welcomeDinner: CalendarEvent = {
+        id: 'sub-welcome',
+        name: 'Welcome Dinner',
+        description: 'Cocktails on the terrace.',
+        location: 'Sunset Terrace',
+        startDate: '2026-06-19',
+        startTime: '18:00',
+        endDate: '2026-06-19',
+        endTime: '21:00',
+        timeZone: 'America/Chicago',
+      };
+      const ceremony: CalendarEvent = {
+        id: 'sub-ceremony',
+        name: 'Wedding Ceremony',
+        description: 'Exchange of vows.',
+        location: 'Grand Oak Lawn',
+        startDate: '2026-06-20',
+        startTime: '15:30',
+        endDate: '2026-06-20',
+        endTime: '16:30',
+        timeZone: 'America/Chicago',
+      };
+
+      const ics = createMultiEventIcsFile([welcomeDinner, ceremony]);
+
+      expect(ics).toContain('BEGIN:VCALENDAR');
+      expect(ics).toContain('VERSION:2.0');
+      expect(ics).toContain('END:VCALENDAR');
+
+      // Exactly one deduplicated VTIMEZONE block for America/Chicago placed before VEVENTs
+      const vtzMatches = ics.match(/BEGIN:VTIMEZONE/g) || [];
+      expect(vtzMatches).toHaveLength(1);
+      expect(ics).toContain('TZID:America/Chicago');
+      // VTIMEZONE internal DTSTART lines must remain untouched (no TZID injected inside VTIMEZONE)
+      expect(ics).toContain('DTSTART:19700308T020000');
+
+      const veventMatches = ics.match(/BEGIN:VEVENT/g) || [];
+      expect(veventMatches).toHaveLength(2);
+      expect(ics.indexOf('BEGIN:VTIMEZONE')).toBeLessThan(ics.indexOf('BEGIN:VEVENT'));
+
+      expect(ics).toContain('UID:schedule-sub-welcome@wedding-itinerary');
+      expect(ics).toContain('SUMMARY:Welcome Dinner');
+      expect(ics).toContain('DTSTART;TZID=America/Chicago:20260619T180000');
+      expect(ics).toContain('DTEND;TZID=America/Chicago:20260619T210000');
+
+      expect(ics).toContain('UID:schedule-sub-ceremony@wedding-itinerary');
+      expect(ics).toContain('SUMMARY:Wedding Ceremony');
+      expect(ics).toContain('DTSTART;TZID=America/Chicago:20260620T153000');
+      expect(ics).toContain('DTEND;TZID=America/Chicago:20260620T163000');
+    });
+
+    it('supports events across distinct timezones with separate VTIMEZONE blocks', () => {
+      const multiTzIcs = createMultiEventIcsFile([
+        {
+          id: 'ny-event',
+          name: 'East Coast Send-Off',
+          description: 'Pre-trip toast',
+          location: 'NYC',
+          startDate: '2026-06-18',
+          startTime: '19:00',
+          endDate: '2026-06-18',
+          endTime: '21:00',
+          timeZone: 'America/New_York',
+        },
+        {
+          id: 'chi-event',
+          name: 'Chicago Reception',
+          description: 'Main celebration',
+          location: 'Chicago',
+          startDate: '2026-06-20',
+          startTime: '17:00',
+          endDate: '2026-06-20',
+          endTime: '23:00',
+          timeZone: 'America/Chicago',
+        },
+      ]);
+
+      expect(multiTzIcs.match(/BEGIN:VTIMEZONE/g)).toHaveLength(2);
+      expect(multiTzIcs).toContain('DTSTART;TZID=America/New_York:20260618T190000');
+      expect(multiTzIcs).toContain('DTSTART;TZID=America/Chicago:20260620T170000');
     });
   });
 

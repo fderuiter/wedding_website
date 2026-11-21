@@ -54,12 +54,26 @@ export interface ScheduleRsvpEventInit {
 
 export interface UseScheduleRsvpManagerOptions {
   initialEvents?: ScheduleRsvpEventInit[];
+  initialGuestEmail?: string | null;
   maxPlusOnes?: number | null;
   defaultPlusOneNames?: string[] | null;
   apiEndpoint?: string;
   onSuccess?: (_updatedRsvps: any[]) => void;
   onError?: (_error: Error) => void;
   onRsvpClosed?: (_message: string) => void;
+}
+
+const SIMPLE_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function getGuestEmailValidationError(rawEmail: string): string | null {
+  const trimmed = rawEmail.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length > 254 || !SIMPLE_EMAIL_PATTERN.test(trimmed)) {
+    return 'Please provide a valid email address.';
+  }
+  return null;
 }
 
 function getPlusOneValidationError(
@@ -284,6 +298,13 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     return map;
   });
 
+  const initialNormalizedEmail = (options?.initialGuestEmail ?? '').trim();
+  const [baselineGuestEmail, setBaselineGuestEmail] = useState<string>(initialNormalizedEmail);
+  const [guestEmail, setGuestEmailState] = useState<string>(initialNormalizedEmail);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const baselineGuestEmailRef = useRef<string>(initialNormalizedEmail);
+  const guestEmailDirtyRef = useRef<boolean>(false);
+
   const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchSuccessMessage, setBatchSuccessMessage] = useState<string | null>(null);
@@ -294,6 +315,24 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
+
+  const initializeGuestEmail = useCallback((email: string | null | undefined) => {
+    const normalized = typeof email === 'string' ? email.trim() : '';
+    baselineGuestEmailRef.current = normalized;
+    setBaselineGuestEmail(normalized);
+    if (!guestEmailDirtyRef.current) {
+      setGuestEmailState(normalized);
+      setEmailError(null);
+    }
+  }, []);
+
+  const setGuestEmail = useCallback((nextEmail: string) => {
+    guestEmailDirtyRef.current = nextEmail.trim() !== baselineGuestEmailRef.current.trim();
+    setGuestEmailState(nextEmail);
+    setEmailError(null);
+    setBatchError(null);
+    setBatchSuccessMessage(null);
+  }, []);
 
   const initializeEvents = useCallback((events: ScheduleRsvpEventInit[]) => {
     events.forEach((ev) => {
@@ -499,6 +538,11 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       }
       return next;
     });
+    if (!subEventId) {
+      guestEmailDirtyRef.current = false;
+      setGuestEmailState(baselineGuestEmailRef.current);
+      setEmailError(null);
+    }
     setBatchError(null);
     setBatchSuccessMessage(null);
   }, []);
@@ -508,6 +552,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   }, [eventsMap]);
 
   const dirtyCount = dirtyEventIds.length;
+  const isEmailDirty = guestEmail.trim() !== baselineGuestEmail.trim();
   const isDirty = dirtyCount > 0;
 
   const isAnySubmitting = useMemo(() => {
@@ -519,6 +564,25 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     async (subEventId: string): Promise<boolean> => {
       const item = eventsMap[subEventId];
       if (!item) return false;
+
+      const emailValidationError = getGuestEmailValidationError(guestEmail);
+      if (emailValidationError) {
+        const err = new Error(emailValidationError);
+        setEmailError(emailValidationError);
+        setEventsMap((prev) => ({
+          ...prev,
+          [subEventId]: {
+            ...prev[subEventId],
+            state: 'error',
+            isSubmitting: false,
+            message: emailValidationError,
+            error: emailValidationError,
+          },
+        }));
+        setLiveMessage(`Failed to save RSVP: ${emailValidationError}`);
+        optionsRef.current?.onError?.(err);
+        return false;
+      }
 
       const effectivePlusOneCount =
         item.current.status === 'declined' ? 0 : item.current.plusOneCount;
@@ -544,6 +608,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       }
 
       // Update state to submitting
+      setEmailError(null);
       setEventsMap((prev) => ({
         ...prev,
         [subEventId]: {
@@ -556,6 +621,12 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       }));
 
       const payloadBody = buildSubmissionPayloadItem(item, meta);
+      const trimmedEmail = guestEmail.trim();
+      if (trimmedEmail.length > 0) {
+        payloadBody.email = trimmedEmail;
+      } else if (baselineGuestEmail.trim().length > 0) {
+        payloadBody.email = '';
+      }
 
       try {
         const res = await fetch(apiEndpoint, {
@@ -601,6 +672,10 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           },
         }));
 
+        baselineGuestEmailRef.current = trimmedEmail;
+        guestEmailDirtyRef.current = false;
+        setBaselineGuestEmail(trimmedEmail);
+        setEmailError(null);
         setLiveMessage('Successfully saved RSVP.');
         optionsRef.current?.onSuccess?.(json.data);
         return true;
@@ -628,7 +703,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         return false;
       }
     },
-    [eventsMap, apiEndpoint]
+    [eventsMap, apiEndpoint, guestEmail, baselineGuestEmail]
   );
 
   const submitBatch = useCallback(async (): Promise<boolean> => {
@@ -636,12 +711,29 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       .map((id) => eventsMap[id])
       .filter((item): item is SubEventRsvpItemState => Boolean(item && item.isDirty));
 
-    if (dirtyItems.length === 0) {
+    const emailValidationError = getGuestEmailValidationError(guestEmail);
+    if (emailValidationError) {
+      setEmailError(emailValidationError);
+      setBatchError(emailValidationError);
+      setLiveMessage(`Failed to save RSVPs: ${emailValidationError}`);
+      optionsRef.current?.onError?.(new Error(emailValidationError));
+      return false;
+    }
+
+    const allTrackedItems = Object.values(eventsMap);
+    const itemsToSubmit =
+      dirtyItems.length > 0
+        ? dirtyItems
+        : isEmailDirty && allTrackedItems.length > 0
+          ? [allTrackedItems[0]]
+          : [];
+
+    if (itemsToSubmit.length === 0) {
       return true;
     }
 
     const configuredMax = optionsRef.current?.maxPlusOnes;
-    const invalidItems = dirtyItems
+    const invalidItems = itemsToSubmit
       .map((item) => {
         const effectiveCount =
           item.current.status === 'declined' ? 0 : item.current.plusOneCount;
@@ -679,13 +771,14 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     }
 
     setIsBatchSubmitting(true);
+    setEmailError(null);
     setBatchError(null);
     setBatchSuccessMessage(null);
 
-    // Transition all dirty items to submitting
+    // Transition submitted items to submitting
     setEventsMap((prev) => {
       const next = { ...prev };
-      dirtyItems.forEach((item) => {
+      itemsToSubmit.forEach((item) => {
         next[item.id] = {
           ...next[item.id],
           state: 'submitting',
@@ -697,11 +790,17 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       return next;
     });
 
-    const payload: { rsvps: SubEventRsvpSubmissionItem[] } = {
-      rsvps: dirtyItems.map((item) =>
+    const trimmedEmail = guestEmail.trim();
+    const payload: { rsvps: SubEventRsvpSubmissionItem[]; email?: string } = {
+      rsvps: itemsToSubmit.map((item) =>
         buildSubmissionPayloadItem(item, eventMetaRef.current[item.id])
       ),
     };
+    if (trimmedEmail.length > 0) {
+      payload.email = trimmedEmail;
+    } else if (baselineGuestEmail.trim().length > 0) {
+      payload.email = '';
+    }
 
     try {
       const res = await fetch(apiEndpoint, {
@@ -723,7 +822,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
       setEventsMap((prev) => {
         const next = { ...prev };
-        dirtyItems.forEach((item) => {
+        itemsToSubmit.forEach((item) => {
           const record = returnedRecords.find((r) => r.subEventId === item.id);
           const effectivePlusOnes =
             item.current.status === 'declined' ? 0 : item.current.plusOneCount;
@@ -752,10 +851,20 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
         return next;
       });
 
-      const count = dirtyItems.length;
-      const successText = `Saved ${count} RSVP update${count === 1 ? '' : 's'}.`;
-      setBatchSuccessMessage(successText);
-      setLiveMessage(`Successfully saved RSVPs for ${count} event${count === 1 ? '' : 's'}.`);
+      baselineGuestEmailRef.current = trimmedEmail;
+      guestEmailDirtyRef.current = false;
+      setBaselineGuestEmail(trimmedEmail);
+      setEmailError(null);
+
+      if (dirtyItems.length > 0) {
+        const count = dirtyItems.length;
+        const successText = `Saved ${count} RSVP update${count === 1 ? '' : 's'}.`;
+        setBatchSuccessMessage(successText);
+        setLiveMessage(`Successfully saved RSVPs for ${count} event${count === 1 ? '' : 's'}.`);
+      } else {
+        setBatchSuccessMessage('Confirmation email preferences saved.');
+        setLiveMessage('Successfully saved confirmation email preferences.');
+      }
       optionsRef.current?.onSuccess?.(json.data);
       return true;
     } catch (err: any) {
@@ -771,7 +880,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
       setEventsMap((prev) => {
         const next = { ...prev };
-        dirtyItems.forEach((item) => {
+        itemsToSubmit.forEach((item) => {
           next[item.id] = {
             ...next[item.id],
             state: 'error',
@@ -791,7 +900,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     } finally {
       setIsBatchSubmitting(false);
     }
-  }, [dirtyEventIds, eventsMap, apiEndpoint]);
+  }, [dirtyEventIds, eventsMap, apiEndpoint, guestEmail, baselineGuestEmail, isEmailDirty]);
 
   const clearLiveMessage = useCallback(() => {
     setLiveMessage(null);
@@ -805,6 +914,12 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     submitBatch,
     initializeEvents,
     resetRsvp,
+    guestEmail,
+    baselineGuestEmail,
+    setGuestEmail,
+    initializeGuestEmail,
+    emailError,
+    isEmailDirty,
     dirtyCount,
     dirtyEventIds,
     isDirty,

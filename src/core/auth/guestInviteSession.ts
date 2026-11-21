@@ -10,6 +10,7 @@ import {
   type GuestInviteSessionPayload,
   getSignedGuestInviteSession,
   signGuestInviteSessionToken,
+  signGuestItineraryToken,
   verifyGuestInviteSessionToken,
 } from './guestInviteToken';
 
@@ -17,6 +18,7 @@ export {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
   signGuestInviteSessionToken,
+  signGuestItineraryToken,
   verifyGuestInviteSessionToken,
 };
 
@@ -122,6 +124,38 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
   }
 
   const signedPayload = await getSignedGuestInviteSession(req);
+  if (!signedPayload) {
+    return null;
+  }
+
+  return resolveActiveInvitationSession(signedPayload);
+}
+
+/**
+ * Resolves a verified guest invitation session from either the guest_invite_session cookie
+ * or a signed `?token=` query parameter, confirming an active non-sample InvitationCode in DB.
+ */
+export async function getGuestInviteSessionFromRequestOrToken(
+  req: NextRequest
+): Promise<GuestInviteSessionPayload | null> {
+  if (isStaticExportBuild()) {
+    return null;
+  }
+
+  const cookieSession = await getGuestInviteSession(req);
+  if (cookieSession) {
+    return cookieSession;
+  }
+
+  const queryToken =
+    req.nextUrl?.searchParams?.get('token')?.trim() ||
+    new URLSearchParams(req.nextUrl?.search || '').get('token')?.trim() ||
+    '';
+  if (!queryToken) {
+    return null;
+  }
+
+  const signedPayload = await verifyGuestInviteSessionToken(queryToken);
   if (!signedPayload) {
     return null;
   }

@@ -574,4 +574,95 @@ describe('useScheduleRsvpManager', () => {
     expect(declinedState.customAnswers).toEqual({});
     expect(declinedState.plusOneNames).toEqual([]);
   });
+
+  it('pre-populates guestEmail, blocks malformed addresses client-side, and serializes updated or cleared email on single and batch saves', async () => {
+    const { result } = renderHook(() =>
+      useScheduleRsvpManager({
+        initialEvents: sampleEvents,
+      })
+    );
+
+    act(() => {
+      result.current.initializeGuestEmail('saved@example.com');
+    });
+    expect(result.current.guestEmail).toBe('saved@example.com');
+    expect(result.current.isEmailDirty).toBe(false);
+
+    // Malformed email blocks submission before network request
+    act(() => {
+      result.current.setGuestEmail('invalid-email');
+      result.current.updateRsvp('event-1', { status: 'attending' });
+    });
+    expect(result.current.isEmailDirty).toBe(true);
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.submitSingle('event-1');
+    });
+    expect(ok).toBe(false);
+    expect(result.current.emailError).toBe('Please provide a valid email address.');
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // Valid updated email is included in single submission payload
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ subEventId: 'event-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' }],
+      }),
+    });
+
+    act(() => {
+      result.current.setGuestEmail('  updated@example.com  ');
+    });
+
+    await act(async () => {
+      ok = await result.current.submitSingle('event-1');
+    });
+    expect(ok).toBe(true);
+    expect(result.current.emailError).toBeNull();
+    expect(result.current.isEmailDirty).toBe(false);
+    expect(global.fetch).toHaveBeenCalledWith('/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subEventId: 'event-1',
+        status: 'attending',
+        plusOneCount: 0,
+        dietaryNotes: '',
+        email: 'updated@example.com',
+      }),
+    });
+
+    // Clearing a saved baseline email sends email: "" via batch save even if 0 event statuses changed
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ subEventId: 'event-1', status: 'attending', plusOneCount: 0, dietaryNotes: '' }],
+      }),
+    });
+
+    act(() => {
+      result.current.setGuestEmail('');
+    });
+    expect(result.current.isEmailDirty).toBe(true);
+
+    await act(async () => {
+      ok = await result.current.submitBatch();
+    });
+    expect(ok).toBe(true);
+    expect(result.current.isEmailDirty).toBe(false);
+    expect(JSON.parse((global.fetch as jest.Mock).mock.calls[1][1].body)).toEqual({
+      rsvps: [
+        {
+          subEventId: 'event-1',
+          status: 'attending',
+          plusOneCount: 0,
+          dietaryNotes: '',
+        },
+      ],
+      email: '',
+    });
+  });
 });

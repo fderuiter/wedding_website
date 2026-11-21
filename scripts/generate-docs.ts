@@ -1143,7 +1143,10 @@ function nodesRequireInviteSession(nodes: ts.Node[]): boolean {
   for (const root of nodes) {
     const collectVars = (node: ts.Node) => {
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-        if (nodeContainsIdentifierCall(node.initializer, 'getGuestInviteSession')) {
+        if (
+          nodeContainsIdentifierCall(node.initializer, 'getGuestInviteSession') ||
+          nodeContainsIdentifierCall(node.initializer, 'getGuestInviteSessionFromRequestOrToken')
+        ) {
           sessionVars.add(node.name.text);
         }
         if (

@@ -122,6 +122,7 @@ export const handlers = [
       data: mockScheduleData,
       isGuest: true,
       guestName: 'Alex & Jordan',
+      guestEmail: 'alex.jordan@example.com',
       plusOneAllocations: 2,
       savedPlusOneNames: [],
       rsvpOpen: true,

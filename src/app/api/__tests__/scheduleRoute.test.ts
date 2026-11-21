@@ -15,6 +15,9 @@ describe('GET /api/schedule Route', () => {
   const mockGetSavedPlusOneNames = subEventService.getSavedPlusOneNamesForGuest as jest.MockedFunction<
     typeof subEventService.getSavedPlusOneNamesForGuest
   >;
+  const mockGetSavedEmail = subEventService.getSavedEmailForGuest as jest.MockedFunction<
+    typeof subEventService.getSavedEmailForGuest
+  >;
   const mockGetRsvpStatus = subEventService.getRsvpStatus as jest.MockedFunction<
     typeof subEventService.getRsvpStatus
   >;
@@ -22,6 +25,7 @@ describe('GET /api/schedule Route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetSavedPlusOneNames.mockResolvedValue([]);
+    mockGetSavedEmail.mockResolvedValue(null);
   });
 
   it('returns public sub-events and null plusOneAllocations for unauthenticated visitors', async () => {
@@ -38,11 +42,13 @@ describe('GET /api/schedule Route', () => {
     expect(json.data).toHaveLength(1);
     expect(json.data[0].title).toBe('Main Ceremony');
     expect(json.isGuest).toBe(false);
+    expect(json.guestEmail).toBeNull();
     expect(json.plusOneAllocations).toBeNull();
     expect(json.savedPlusOneNames).toEqual([]);
     expect(mockGetScheduleForGuest).toHaveBeenCalledWith(undefined);
     expect(mockGetPlusOneAllowance).not.toHaveBeenCalled();
     expect(mockGetSavedPlusOneNames).not.toHaveBeenCalled();
+    expect(mockGetSavedEmail).not.toHaveBeenCalled();
   });
 
   it('returns public plus private sub-events and plusOneAllocations for authenticated guests', async () => {
@@ -70,6 +76,7 @@ describe('GET /api/schedule Route', () => {
     ]);
     mockGetPlusOneAllowance.mockResolvedValue(2);
     mockGetSavedPlusOneNames.mockResolvedValue(['John Smith']);
+    mockGetSavedEmail.mockResolvedValue('jane.smith@example.com');
 
     const req = new NextRequest('http://localhost:3000/api/schedule');
     const res = await GET(req, {});
@@ -81,11 +88,13 @@ describe('GET /api/schedule Route', () => {
     expect(json.data[0].customQuestions).toHaveLength(1);
     expect(json.isGuest).toBe(true);
     expect(json.guestName).toBe('Jane Smith');
+    expect(json.guestEmail).toBe('jane.smith@example.com');
     expect(json.plusOneAllocations).toBe(2);
     expect(json.savedPlusOneNames).toEqual(['John Smith']);
     expect(mockGetScheduleForGuest).toHaveBeenCalledWith('GUESTCODE1');
     expect(mockGetPlusOneAllowance).toHaveBeenCalledWith('GUESTCODE1');
     expect(mockGetSavedPlusOneNames).toHaveBeenCalledWith('GUESTCODE1');
+    expect(mockGetSavedEmail).toHaveBeenCalledWith('GUESTCODE1');
   });
 
   it('returns RSVP open status, formatted deadline date, venue timezone, and closing message without exposing grace-period hours', async () => {

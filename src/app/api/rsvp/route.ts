@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
-import { subEventService } from '@/features/sub-events';
+import {
+  subEventService,
+  dispatchRsvpNotifications,
+  SubEventRsvpBatchSubmissionSchema,
+  SubEventRsvpSubmissionItemSchema,
+  type SubEventRsvpSubmissionItem,
+} from '@/features/sub-events';
 import { ApiError } from '@/utils/ApiError';
-import { SubEventRsvpBatchSubmissionSchema, SubEventRsvpSubmissionItemSchema } from '@/features/sub-events';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const session = await getGuestInviteSession(request);
@@ -22,25 +27,54 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const body = await request.json();
 
-  let submissions = [];
+  let submissions: SubEventRsvpSubmissionItem[] = [];
+  let submittedEmail: string | null | undefined;
 
   if (body && Array.isArray(body.rsvps)) {
     const parseResult = SubEventRsvpBatchSubmissionSchema.safeParse(body);
     if (!parseResult.success) {
       throw new ApiError(400, 'Invalid RSVP submission format: ' + parseResult.error.issues.map(i => i.message).join(', '));
     }
-    submissions = parseResult.data.rsvps;
+    submittedEmail = parseResult.data.email;
+    submissions = parseResult.data.rsvps.map(({ email: itemEmail, ...rest }) => {
+      if (submittedEmail === undefined && itemEmail !== undefined) {
+        submittedEmail = itemEmail;
+      }
+      return rest;
+    });
   } else if (body && body.subEventId) {
     const parseResult = SubEventRsvpSubmissionItemSchema.safeParse(body);
     if (!parseResult.success) {
       throw new ApiError(400, 'Invalid RSVP submission format: ' + parseResult.error.issues.map(i => i.message).join(', '));
     }
-    submissions = [parseResult.data];
+    const { email: itemEmail, ...rest } = parseResult.data;
+    submittedEmail = itemEmail;
+    submissions = [rest];
   } else {
     throw new ApiError(400, 'Invalid RSVP payload format. Expected { subEventId, status } or { rsvps: [...] }.');
   }
 
-  const updatedRsvps = await subEventService.submitSubEventRsvps(session.code, submissions);
+  const updatedRsvps =
+    submittedEmail === undefined
+      ? await subEventService.submitSubEventRsvps(session.code, submissions)
+      : await subEventService.submitSubEventRsvps(session.code, submissions, undefined, {
+        email: submittedEmail,
+      });
+
+  const hasRsvpChanges =
+    typeof subEventService.didSubmissionChangeRsvps === 'function'
+      ? subEventService.didSubmissionChangeRsvps(updatedRsvps)
+      : true;
+
+  await dispatchRsvpNotifications({
+    code: session.code,
+    guestName: session.guestName,
+    submittedEmail,
+    submissions,
+    updatedRsvps: Array.isArray(updatedRsvps) ? updatedRsvps : [],
+    hasRsvpChanges,
+    requestUrl: request.url,
+  });
 
   return NextResponse.json({
     success: true,

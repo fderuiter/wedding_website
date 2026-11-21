@@ -58,6 +58,21 @@ export async function signGuestInviteSessionToken(
 }
 
 /**
+ * Signs a guest invitation payload for one-click calendar itinerary downloads (90-day default expiry).
+ */
+export async function signGuestItineraryToken(
+  payload: Omit<GuestInviteSessionPayload, 'iat' | 'exp'> & { iat?: number; exp?: number }
+): Promise<string> {
+  const iat = payload.iat ?? Date.now();
+  const exp = payload.exp ?? (iat + 90 * 24 * 60 * 60 * 1000); // 90 days
+  return signGuestInviteSessionToken({
+    ...payload,
+    iat,
+    exp,
+  });
+}
+
+/**
  * Validates a guest invitation session token signature and expiry without database access.
  */
 export async function verifyGuestInviteSessionToken(token: string): Promise<GuestInviteSessionPayload | null> {

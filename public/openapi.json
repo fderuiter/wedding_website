@@ -11625,6 +11625,11 @@
                                 "type": "string",
                                 "maxLength": 120
                               }
+                            },
+                            "email": {
+                              "nullable": true,
+                              "type": "string",
+                              "maxLength": 254
                             }
                           },
                           "required": [
@@ -11632,6 +11637,11 @@
                             "status"
                           ]
                         }
+                      },
+                      "email": {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 254
                       }
                     },
                     "required": [
@@ -11685,6 +11695,11 @@
                           "type": "string",
                           "maxLength": 120
                         }
+                      },
+                      "email": {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 254
                       }
                     },
                     "required": [
@@ -11727,6 +11742,42 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/schedule/ics": {
+      "get": {
+        "tags": [
+          "Schedule"
+        ],
+        "summary": "GET /api/schedule/ics",
+        "description": "Endpoint for /api/schedule/ics",
+        "security": [
+          {
+            "guestInviteCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
             }

@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import { middleware, config as middlewareConfig } from '@/middleware';
 import { signAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+import { signGuestItineraryToken } from '@/core/auth/guestInviteToken';
 
 describe('Middleware Route Classification and Authorization Bypass', () => {
   const originalEnv = process.env;
@@ -287,6 +288,38 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       });
       const getWebhookRes = await middleware(getWebhookReq);
       expect(getWebhookRes.status).toBe(401);
+    });
+
+    it('allows GET /api/schedule/ics with a valid signed itinerary token without cookies while rejecting missing or forged tokens', async () => {
+      const noAuthReq = new NextRequest('http://localhost:3000/api/schedule/ics', {
+        headers: { host: 'localhost:3000' },
+      });
+      const noAuthRes = await middleware(noAuthReq);
+      expect(noAuthRes.status).toBe(401);
+
+      const forgedReq = new NextRequest('http://localhost:3000/api/schedule/ics?token=invalid.sig', {
+        headers: { host: 'localhost:3000' },
+      });
+      const forgedRes = await middleware(forgedReq);
+      expect(forgedRes.status).toBe(401);
+
+      const validToken = await signGuestItineraryToken({
+        code: 'INVITE123',
+        guestName: 'Jordan Guest',
+      });
+      const signedGetReq = new NextRequest(
+        `http://localhost:3000/api/schedule/ics?token=${encodeURIComponent(validToken)}`,
+        { headers: { host: 'localhost:3000' } }
+      );
+      const signedGetRes = await middleware(signedGetReq);
+      expect(signedGetRes.status).toBe(200);
+
+      const signedPostReq = new NextRequest(
+        `http://localhost:3000/api/schedule/ics?token=${encodeURIComponent(validToken)}`,
+        { method: 'POST', headers: { host: 'localhost:3000' } }
+      );
+      const signedPostRes = await middleware(signedPostReq);
+      expect(signedPostRes.status).toBe(401);
     });
   });
 });

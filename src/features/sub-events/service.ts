@@ -176,6 +176,27 @@ export class SubEventService {
   }
 
   /**
+   * Retrieves the saved household email from an authenticated guest's InvitationCode record.
+   */
+  async getSavedEmailForGuest(code?: string | null): Promise<string | null> {
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      return null;
+    }
+
+    const invite = await this.client.invitationCode.findUnique({
+      where: { code: code.trim().toUpperCase(), isSample: false },
+      select: { email: true },
+    });
+
+    if (!invite || invite.isSample) {
+      return null;
+    }
+
+    const trimmed = typeof invite.email === 'string' ? invite.email.trim() : '';
+    return trimmed ? trimmed : null;
+  }
+
+  /**
    * Retrieves a single sub-event by ID for a visitor or authenticated guest.
    * Public sub-events are accessible to everyone.
    * Private sub-events require an authenticated guest invitation code session with granted access.
@@ -429,13 +450,27 @@ export class SubEventService {
     });
   }
 
+  private submissionChangeMeta = new WeakMap<object, boolean>();
+
+  /**
+   * Returns whether a submitSubEventRsvps result array contained any newly created
+   * or modified RSVP rows compared to prior database state (defaults to true when untracked).
+   */
+  didSubmissionChangeRsvps(result: unknown): boolean {
+    if (result && typeof result === 'object' && this.submissionChangeMeta.has(result)) {
+      return Boolean(this.submissionChangeMeta.get(result));
+    }
+    return true;
+  }
+
   /**
    * Submits RSVP decision(s) for sub-events on behalf of an authenticated guest.
    */
   async submitSubEventRsvps(
     code: string,
     submissions: SubEventRsvpSubmissionItem[],
-    now: Date = new Date()
+    now: Date = new Date(),
+    options?: { email?: string | null }
   ) {
     if (!code || typeof code !== 'string') {
       throw new ApiError(401, 'Invitation code is required.');
@@ -645,8 +680,75 @@ export class SubEventService {
       });
     }
 
+    const areArraysEquivalent = (left: string[], right: string[]): boolean => {
+      const maxLen = Math.max(left.length, right.length);
+      for (let idx = 0; idx < maxLen; idx += 1) {
+        if ((left[idx] ?? '').trim() !== (right[idx] ?? '').trim()) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const areRecordsEquivalent = (
+      left: Record<string, string>,
+      right: Record<string, string>
+    ): boolean => {
+      const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+      for (const key of keys) {
+        if ((left[key] ?? '').trim() !== (right[key] ?? '').trim()) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    let hasRsvpChanges = true;
+
     // Execute all upsert operations and InvitationCode sync within a single Prisma transaction
     const results = await this.client.$transaction(async (tx: any) => {
+      const rawPriorRsvps =
+        typeof tx.subEventRsvp?.findMany === 'function'
+          ? await tx.subEventRsvp.findMany({
+            where: { invitationCodeId: invite.id },
+            include: { subEvent: true },
+            orderBy: { createdAt: 'asc' },
+          })
+          : null;
+
+      if (Array.isArray(rawPriorRsvps)) {
+        const priorBySubEventId = new Map<string, any>();
+        for (const row of rawPriorRsvps) {
+          if (row && row.subEventId) {
+            priorBySubEventId.set(row.subEventId, row);
+          }
+        }
+        hasRsvpChanges = normalizedSubmissions.some((item) => {
+          const prev = priorBySubEventId.get(item.subEventId);
+          if (!prev) {
+            return true;
+          }
+          const prevStatus = prev.status || 'pending';
+          const prevPlusOnes = prevStatus === 'declined' ? 0 : (prev.plusOneCount ?? 0);
+          const prevNotes = typeof prev.dietaryNotes === 'string' ? prev.dietaryNotes.trim() : '';
+          const prevMeals =
+            prevStatus === 'declined' ? [] : normalizeMealSelections(prev.mealSelections);
+          const prevAnswers =
+            prevStatus === 'declined' ? {} : normalizeCustomAnswers(prev.customAnswers);
+          const prevNames =
+            prevStatus === 'declined' ? [] : normalizePlusOneNames(prev.plusOneNames);
+
+          return (
+            prevStatus !== item.status ||
+            prevPlusOnes !== item.plusOneCount ||
+            prevNotes !== item.dietaryNotes.trim() ||
+            !areArraysEquivalent(prevMeals, item.mealSelections) ||
+            !areRecordsEquivalent(prevAnswers, item.customAnswers) ||
+            !areArraysEquivalent(prevNames, item.plusOneNames)
+          );
+        });
+      }
+
       const upserted = await Promise.all(
         normalizedSubmissions.map((item) =>
           tx.subEventRsvp.upsert({
@@ -694,14 +796,7 @@ export class SubEventService {
             })
             : null;
 
-        const dbRsvps =
-          typeof tx.subEventRsvp?.findMany === 'function'
-            ? await tx.subEventRsvp.findMany({
-              where: { invitationCodeId: invite.id },
-              include: { subEvent: true },
-              orderBy: { createdAt: 'asc' },
-            })
-            : [];
+        const dbRsvps = Array.isArray(rawPriorRsvps) ? rawPriorRsvps : [];
 
         const mergedByEvent = new Map<string, any>();
         if (Array.isArray(dbRsvps)) {
@@ -915,9 +1010,16 @@ export class SubEventService {
 
         const existingExtra = parseExtraFieldsObject(existingInvite?.extraFields);
 
+        const emailUpdatePatch: { email?: string | null } = {};
+        if (options && options.email !== undefined) {
+          const trimmedEmail = typeof options.email === 'string' ? options.email.trim() : '';
+          emailUpdatePatch.email = trimmedEmail.length > 0 ? trimmedEmail : null;
+        }
+
         await tx.invitationCode.update({
           where: { id: invite.id },
           data: {
+            ...emailUpdatePatch,
             used: nextUsed,
             usedAt: nextUsedAt,
             plusOneFirstName: nextFirstName,
@@ -940,6 +1042,10 @@ export class SubEventService {
 
       return upserted;
     });
+
+    if (results && typeof results === 'object') {
+      this.submissionChangeMeta.set(results, hasRsvpChanges);
+    }
 
     return results;
   }

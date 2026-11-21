@@ -10,6 +10,8 @@ const HTML_CHAR_MAP: Record<string, string> = {
   "'": '&#39;',
 };
 
+const PREFORMATTED_HTML_BODY_REGEX = /^\s*<(?:!DOCTYPE\s+html|html|div|table)\b/i;
+
 /**
  * Escapes unsafe HTML characters without double-escaping existing standard entities,
  * then converts blank lines into `<p>...</p>` blocks and single line breaks into `<br />` tags.
@@ -27,6 +29,14 @@ export function formatEmailHtmlBody(body: string): string {
   return paragraphs
     .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br />')}</p>`)
     .join('');
+}
+
+function resolveEmailHtmlBody(body: string): string {
+  if (!body) return '';
+  if (PREFORMATTED_HTML_BODY_REGEX.test(body)) {
+    return body;
+  }
+  return formatEmailHtmlBody(body);
 }
 
 export interface EmailMessagePayload {
@@ -115,7 +125,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
         from: payload.from,
         to: payload.to,
         subject: payload.subject,
-        html: formatEmailHtmlBody(payload.body),
+        html: resolveEmailHtmlBody(payload.body),
       }),
     });
 
@@ -143,7 +153,7 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
         personalizations: [{ to: [{ email: payload.to }] }],
         from: { email: payload.from },
         subject: payload.subject,
-        content: [{ type: 'text/html', value: formatEmailHtmlBody(payload.body) }],
+        content: [{ type: 'text/html', value: resolveEmailHtmlBody(payload.body) }],
       }),
     });
 

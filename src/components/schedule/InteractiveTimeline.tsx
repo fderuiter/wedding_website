@@ -324,7 +324,7 @@ export default function InteractiveTimeline({
     defaultPlusOneNames: apiSavedPlusOneNames,
     onRsvpClosed: handleRsvpClosedMidSession,
   });
-  const { initializeEvents } = rsvpManager;
+  const { initializeEvents, initializeGuestEmail } = rsvpManager;
 
   const isMountedRef = useRef(true);
   useEffect(() => {
@@ -354,6 +354,9 @@ export default function InteractiveTimeline({
         if (json.isGuest) {
           setIsGuest(true);
           setGuestName(json.guestName || null);
+        }
+        if ('guestEmail' in json) {
+          initializeGuestEmail(typeof json.guestEmail === 'string' ? json.guestEmail : null);
         }
         const rawSavedNames = Array.isArray(json.savedPlusOneNames)
           ? json.savedPlusOneNames
@@ -427,7 +430,7 @@ export default function InteractiveTimeline({
         setIsLoadingSchedule(false);
       }
     }
-  }, [emptyStateMessage, initialNodes.length, initializeEvents]);
+  }, [emptyStateMessage, initialNodes.length, initializeEvents, initializeGuestEmail]);
 
   const loadSchedule = useCallback(async () => {
     if (initialNodes.length === 0 && emptyStateMessage) {
@@ -552,6 +555,12 @@ export default function InteractiveTimeline({
   }
 
   const categoryLabelText = activeCategory.toLowerCase() === 'all' ? 'All categories' : activeCategory;
+  const hasGuestRsvpContext =
+    isGuest || normalizedEvents.some((ev) => !ev.isReadOnly && ev.userRsvp !== undefined);
+  const attendingEventsCount = normalizedEvents.filter((ev) => {
+    if (ev.isReadOnly) return false;
+    return rsvpManager.getRsvpState(ev.id).baseline.status === 'attending';
+  }).length;
 
   return (
     <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
@@ -648,6 +657,101 @@ export default function InteractiveTimeline({
         </div>
       )}
 
+      {/* Combined Multi-Event Itinerary Download Banner */}
+      {hasGuestRsvpContext && attendingEventsCount > 0 && (
+        <div
+          role="region"
+          aria-label="Your wedding itinerary"
+          data-testid="schedule-itinerary-banner"
+          className="mb-6 rounded-2xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/80 dark:bg-emerald-950/30 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        >
+          <div className="text-sm text-emerald-950 dark:text-emerald-100">
+            <p className="font-semibold">
+              You are attending {attendingEventsCount}{' '}
+              {attendingEventsCount === 1 ? 'scheduled event' : 'scheduled events'}.
+            </p>
+            <p className="text-xs text-emerald-900 dark:text-emerald-200 mt-0.5">
+              Download a single calendar file with all of your confirmed events.
+            </p>
+          </div>
+          <a
+            href="/api/schedule/ics"
+            download="wedding-itinerary.ics"
+            data-testid="schedule-itinerary-download-link"
+            className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-900 dark:bg-emerald-700 dark:hover:bg-emerald-600 text-white text-xs font-semibold shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:ring-offset-2 self-start sm:self-auto"
+          >
+            Download Full Itinerary (.ics)
+          </a>
+        </div>
+      )}
+
+      {/* Optional Household Confirmation Email Control */}
+      {effectiveRsvpOpen && hasGuestRsvpContext && (
+        <div
+          data-testid="schedule-guest-email-panel"
+          className="mb-8 p-4 rounded-xl border bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 shadow-sm"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex-1">
+              <label
+                htmlFor="schedule-guest-email"
+                className="block text-sm font-semibold text-gray-900 dark:text-zinc-100 mb-1"
+              >
+                Email for RSVP Confirmation{' '}
+                <span className="font-normal text-gray-600 dark:text-zinc-300">(Optional)</span>
+              </label>
+              <p
+                id="schedule-guest-email-hint"
+                className="text-xs text-gray-600 dark:text-zinc-300 mb-2"
+              >
+                Receive an HTML summary of your household responses, one-click edit link, and calendar itinerary when you save.
+              </p>
+              <input
+                id="schedule-guest-email"
+                name="guestEmail"
+                type="email"
+                autoComplete="email"
+                placeholder="guest@example.com"
+                disabled={rsvpManager.isAnySubmitting}
+                value={rsvpManager.guestEmail}
+                onChange={(e) => rsvpManager.setGuestEmail(e.target.value)}
+                aria-describedby={
+                  rsvpManager.emailError
+                    ? 'schedule-guest-email-hint schedule-guest-email-error'
+                    : 'schedule-guest-email-hint'
+                }
+                aria-invalid={rsvpManager.emailError ? 'true' : undefined}
+                data-testid="schedule-guest-email-input"
+                className="w-full sm:max-w-md px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+              />
+            </div>
+
+            {rsvpManager.isEmailDirty && rsvpManager.dirtyCount === 0 && (
+              <button
+                type="button"
+                disabled={rsvpManager.isAnySubmitting}
+                onClick={() => rsvpManager.submitBatch()}
+                data-testid="schedule-save-email-button"
+                className="px-4 py-2 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity self-start sm:self-auto"
+              >
+                {rsvpManager.isBatchSubmitting ? 'Saving...' : 'Save Email'}
+              </button>
+            )}
+          </div>
+
+          {rsvpManager.emailError && (
+            <p
+              id="schedule-guest-email-error"
+              role="alert"
+              data-testid="schedule-guest-email-error"
+              className="mt-2 text-xs font-medium text-rose-700 dark:text-rose-300"
+            >
+              {rsvpManager.emailError}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Batch Coordination Action Bar */}
       {effectiveRsvpOpen &&
         (rsvpManager.dirtyCount > 0 ||
@@ -667,7 +771,7 @@ export default function InteractiveTimeline({
                   {rsvpManager.dirtyCount} {rsvpManager.dirtyCount === 1 ? 'event has' : 'events have'} unsaved changes
                 </span>
               ) : (
-                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
                   {rsvpManager.batchSuccessMessage || 'All RSVPs up to date'}
                 </span>
               )}
@@ -1281,7 +1385,7 @@ export default function InteractiveTimeline({
                             </button>
 
                             {itemState.message && !itemState.error && (
-                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                              <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
                                 {itemState.message}
                               </span>
                             )}

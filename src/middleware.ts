@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
-import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
+import {
+  getSignedGuestInviteSession,
+  verifyGuestInviteSessionToken,
+} from '@/core/auth/guestInviteToken';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
 import { timingSafeEqualJS } from '@/utils/crypto';
@@ -43,7 +46,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  const method = request.method;
+  const method = (request.method || 'GET').toUpperCase();
   const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
 
   // Background cron execution routes support Bearer token authorization bypass
@@ -97,7 +100,14 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!isExcluded) {
-    const isGuest = (await isGuestRequest(request)) || Boolean(await getSignedGuestInviteSession(request));
+    const hasSignedScheduleIcsToken =
+      normalizedPath === '/api/schedule/ics' &&
+      method === 'GET' &&
+      Boolean(await verifyGuestInviteSessionToken(request.nextUrl.searchParams.get('token')?.trim() || ''));
+    const isGuest =
+      (await isGuestRequest(request)) ||
+      Boolean(await getSignedGuestInviteSession(request)) ||
+      hasSignedScheduleIcsToken;
     const isAdmin = await isAdminRequest(request);
 
     if (!isGuest && !isAdmin) {

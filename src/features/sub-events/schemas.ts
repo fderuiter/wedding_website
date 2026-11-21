@@ -87,6 +87,17 @@ export type SubEventDTO = z.infer<typeof SubEventSchema>;
 export const SubEventInputSchema = deriveAdminInputSchema(SubEventSchema, false);
 export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, true);
 
+const VALID_EMAIL_SCHEMA = z.email();
+
+export const GuestRsvpEmailSchema = z
+  .string()
+  .trim()
+  .max(254, 'Email address cannot exceed 254 characters.')
+  .refine((value) => value === '' || VALID_EMAIL_SCHEMA.safeParse(value).success, {
+    message: 'Please provide a valid email address.',
+  })
+  .nullish();
+
 export const SubEventRsvpSubmissionItemSchema = z.object({
   subEventId: z.string().min(1, 'Sub-event ID is required.'),
   status: z.enum(['attending', 'declined', 'pending']),
@@ -101,13 +112,20 @@ export const SubEventRsvpSubmissionItemSchema = z.object({
   mealSelections: z.array(z.string().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
   customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
   plusOneNames: z.array(z.string().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
+  email: GuestRsvpEmailSchema,
 });
 
 export const SubEventRsvpBatchSubmissionSchema = z.object({
   rsvps: z.array(SubEventRsvpSubmissionItemSchema).min(1, 'At least one RSVP submission is required.'),
+  email: GuestRsvpEmailSchema,
 });
 
-export type SubEventRsvpSubmissionItem = z.infer<typeof SubEventRsvpSubmissionItemSchema>;
+export type SubEventRsvpSubmissionItem = Omit<
+  z.infer<typeof SubEventRsvpSubmissionItemSchema>,
+  'email'
+> & {
+  email?: string | null;
+};
 
 export const UpdateSubEventAccessSchema = z.object({
   invitationCodeId: z.string().min(1, 'invitationCodeId is required.'),

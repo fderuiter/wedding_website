@@ -160,5 +160,42 @@ describe('MultiChannelMessagingProvider', () => {
         { type: 'text/html', value: expectedHtml },
       ]);
     });
+
+    it('preserves pre-rendered HTML email bodies without double-escaping markup tags', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => '',
+      });
+      global.fetch = fetchMock as any;
+
+      const htmlBody =
+        '<div style="font-family:sans-serif;"><h2>RSVP Confirmed</h2><a href="https://wedding.example/guest?code=ABC">Edit RSVP</a></div>';
+
+      const resendProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'resend',
+        resendApiKey: 're_test_123',
+        resendFrom: 'hosts@wedding.example',
+      });
+      await resendProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Your RSVP Confirmation',
+        body: htmlBody,
+      });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).html).toBe(htmlBody);
+
+      const sendgridProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'sendgrid',
+        sendgridApiKey: 'SG.test_123',
+        sendgridFrom: 'hosts@wedding.example',
+      });
+      await sendgridProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Your RSVP Confirmation',
+        body: htmlBody,
+      });
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).content).toEqual([
+        { type: 'text/html', value: htmlBody },
+      ]);
+    });
   });
 });

@@ -1533,5 +1533,96 @@ describe('SubEventService', () => {
       expect(audienceSummary.matchedCount).toBe(1);
       expect(audienceSummary.reachableCount).toBe(1);
     });
+
+    it('reads saved guest email, updates or clears InvitationCode.email on RSVP save, and detects changed vs unchanged RSVPs', async () => {
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({ email: '  household@example.com  ' })
+        .mockResolvedValueOnce(null);
+
+      await expect(service.getSavedEmailForGuest('GUEST1')).resolves.toBe('household@example.com');
+      await expect(service.getSavedEmailForGuest('UNKNOWN')).resolves.toBeNull();
+      await expect(service.getSavedEmailForGuest('')).resolves.toBeNull();
+
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({
+          id: 'inv-email',
+          guestName: 'Alex Guest',
+          plusOneAllocations: 1,
+        })
+        .mockResolvedValueOnce({
+          used: true,
+          usedAt: new Date('2026-06-01T10:00:00Z'),
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: null,
+          extraFields: {},
+        });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        { id: 'se-1', title: 'Ceremony', isPrivate: false, accesses: [] },
+      ]);
+      mockPrisma.subEventRsvp.findMany.mockResolvedValueOnce([]);
+      mockPrisma.subEventRsvp.upsert.mockImplementation(({ create }: any) => Promise.resolve(create));
+
+      const firstSave = await service.submitSubEventRsvps(
+        'EMAILCODE',
+        [{ subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: 'Vegan' }],
+        new Date('2026-06-01T12:00:00Z'),
+        { email: 'alex@example.com' }
+      );
+
+      expect(service.didSubmissionChangeRsvps(firstSave)).toBe(true);
+      expect(mockPrisma.invitationCode.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-email' },
+          data: expect.objectContaining({
+            email: 'alex@example.com',
+          }),
+        })
+      );
+
+      // Re-submitting identical RSVP data while clearing email sets email: null and marks hasRsvpChanges = false
+      mockPrisma.invitationCode.findUnique
+        .mockResolvedValueOnce({
+          id: 'inv-email',
+          guestName: 'Alex Guest',
+          plusOneAllocations: 1,
+        })
+        .mockResolvedValueOnce({
+          used: true,
+          usedAt: new Date('2026-06-01T10:00:00Z'),
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: 'Vegan',
+          extraFields: {},
+        });
+      mockPrisma.subEventRsvp.findMany.mockResolvedValueOnce([
+        {
+          subEventId: 'se-1',
+          status: 'attending',
+          plusOneCount: 0,
+          dietaryNotes: 'Vegan',
+          mealSelections: [],
+          customAnswers: {},
+          plusOneNames: [],
+        },
+      ]);
+
+      const identicalSave = await service.submitSubEventRsvps(
+        'EMAILCODE',
+        [{ subEventId: 'se-1', status: 'attending', plusOneCount: 0, dietaryNotes: 'Vegan' }],
+        new Date('2026-06-01T12:05:00Z'),
+        { email: '' }
+      );
+
+      expect(service.didSubmissionChangeRsvps(identicalSave)).toBe(false);
+      expect(mockPrisma.invitationCode.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: { id: 'inv-email' },
+          data: expect.objectContaining({
+            email: null,
+          }),
+        })
+      );
+    });
   });
 });

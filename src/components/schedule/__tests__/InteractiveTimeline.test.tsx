@@ -955,5 +955,104 @@ describe('InteractiveTimeline Component', () => {
         plusOneNames: ['John Doe'],
       });
     });
+
+    it('pre-populates optional guest email from /api/schedule, reveals combined .ics itinerary download for attending guests, and passes axe accessibility checks', async () => {
+      const submittedPayloads: any[] = [];
+      (global.fetch as jest.Mock).mockImplementation(async (url, init) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Jane Doe',
+              guestEmail: 'jane.saved@example.com',
+              plusOneAllocations: 1,
+              savedPlusOneNames: [],
+              rsvpOpen: true,
+              timezone: 'America/Chicago',
+              data: [
+                {
+                  id: 'se-ceremony',
+                  title: 'Wedding Ceremony',
+                  startTime: '2026-06-20T20:30:00.000Z',
+                  endTime: '2026-06-20T21:30:00.000Z',
+                  category: 'Ceremony',
+                  locationName: 'Oak Garden',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  userRsvp: {
+                    status: 'pending',
+                    plusOneCount: 0,
+                    dietaryNotes: '',
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        if (url === '/api/rsvp') {
+          const parsed = JSON.parse(init.body);
+          submittedPayloads.push(parsed);
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              data: [
+                {
+                  subEventId: parsed.subEventId || parsed.rsvps?.[0]?.subEventId,
+                  status: parsed.status || parsed.rsvps?.[0]?.status,
+                  plusOneCount: parsed.plusOneCount ?? parsed.rsvps?.[0]?.plusOneCount ?? 0,
+                  dietaryNotes: parsed.dietaryNotes ?? parsed.rsvps?.[0]?.dietaryNotes ?? '',
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      const { container } = render(
+        <InteractiveTimeline events={[]} timezone="America/Chicago" emptyStateMessage="No events" />
+      );
+
+      const emailInput = (await screen.findByLabelText(
+        /Email for RSVP Confirmation/i
+      )) as HTMLInputElement;
+      expect(emailInput.value).toBe('jane.saved@example.com');
+
+      // Initially pending -> combined itinerary banner is hidden until >= 1 attending event is saved
+      expect(screen.queryByTestId('schedule-itinerary-banner')).not.toBeInTheDocument();
+
+      // Malformed email shows accessible alert with zero axe violations
+      fireEvent.change(emailInput, { target: { value: 'not-an-email' } });
+      const card = screen.getByTestId('rsvp-card-se-ceremony');
+      fireEvent.click(within(card).getByRole('radio', { name: /^attending$/i }));
+      fireEvent.click(within(card).getByRole('button', { name: 'Save RSVP' }));
+
+      expect(await screen.findByTestId('schedule-guest-email-error')).toHaveTextContent(
+        'Please provide a valid email address.'
+      );
+      expect(await axe(container)).toHaveNoViolations();
+      expect(submittedPayloads).toHaveLength(0);
+
+      // Fix email and save -> sends email in POST /api/rsvp and reveals combined .ics itinerary download link
+      fireEvent.change(emailInput, { target: { value: 'jane.updated@example.com' } });
+      fireEvent.click(within(card).getByRole('button', { name: 'Save RSVP' }));
+
+      const itineraryLink = await screen.findByTestId('schedule-itinerary-download-link');
+      expect(itineraryLink).toHaveAttribute('href', '/api/schedule/ics');
+      expect(itineraryLink).toHaveAttribute('download', 'wedding-itinerary.ics');
+      expect(submittedPayloads).toEqual([
+        {
+          subEventId: 'se-ceremony',
+          status: 'attending',
+          plusOneCount: 0,
+          dietaryNotes: '',
+          email: 'jane.updated@example.com',
+        },
+      ]);
+      expect(await axe(container)).toHaveNoViolations();
+    });
   });
 });
