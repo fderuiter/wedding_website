@@ -50,6 +50,9 @@ jobs:
       - name: Check Third-Party Action Pin Commit SHAs
         run: npm run check:action-pins
 
+      - name: Check Container Digest Pins & Standalone Portability
+        run: npm run check:standalone
+
       - name: Check Documentation Relative Links
         run: npm run check:links
 
@@ -189,7 +192,7 @@ jobs:
       contents: read
     services:
       db:
-        image: postgres:15-alpine
+        image: postgres:15-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
         env:
           POSTGRES_USER: wedding
           POSTGRES_PASSWORD: wedding123
@@ -335,7 +338,7 @@ jobs:
       GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
     services:
       db:
-        image: postgres:15-alpine
+        image: postgres:15-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
         env:
           POSTGRES_USER: wedding
           POSTGRES_PASSWORD: wedding123
