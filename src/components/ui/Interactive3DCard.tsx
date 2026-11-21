@@ -54,11 +54,11 @@ export const Interactive3DCard: Interactive3DCardComponent = React.forwardRef(
 
     const setRef = useCallback(
       (node: HTMLElement | null) => {
-        (internalRef as React.MutableRefObject<HTMLElement | null>).current = node;
+        internalRef.current = node;
         if (typeof forwardedRef === 'function') {
           forwardedRef(node);
         } else if (forwardedRef) {
-          (forwardedRef as React.MutableRefObject<HTMLElement | null>).current = node;
+          forwardedRef.current = node;
         }
       },
       [forwardedRef]

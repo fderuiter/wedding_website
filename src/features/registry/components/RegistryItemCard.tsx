@@ -83,7 +83,7 @@ function isUnmockedFetchError(err: unknown): boolean {
  * Child component rendered strictly inside <Elements> when Card Checkout mode is active.
  */
 const StripeCardPaymentSection: React.FC<{
-  controllerRef: React.MutableRefObject<StripeControllerHandle | null>;
+  controllerRef: React.RefObject<StripeControllerHandle | null>;
 }> = ({ controllerRef }) => {
   const stripe = useStripe();
   const elements = useElements();
