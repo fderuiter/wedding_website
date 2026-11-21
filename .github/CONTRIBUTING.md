@@ -40,13 +40,14 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
    - **Individual Quality Checks:**
-     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:prisma`, `lint:migrations`, `check:doc-sync`, and `check:setup-guides`).
+     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:spec-contracts`, `check:prisma`, `lint:migrations`, `check:doc-sync`, and `check:setup-guides`).
      - `npm run check:env-docs` - Ensure environment variables match `.env.example` and deployment documentation.
      - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
      - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
      - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
      - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs.
      - `npm run check:links` - Validate relative documentation links across Markdown files.
+     - `npm run check:spec-contracts` - Verify `/api/*` routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural specifications match live codebase exports.
      - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
      - `npm run check:standalone` - Verify Next.js standalone build & container portability.
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
@@ -66,7 +67,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
     Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm install`), which:
     1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
-    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs eleven sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs twelve sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
 8. **Push to Your Fork:**
 

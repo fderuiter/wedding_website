@@ -9,6 +9,7 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 const WORKFLOWS_DIR = path.join(REPO_ROOT, '.github', 'workflows');
 const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
+const DB_MIGRATE_YML_PATH = path.join(WORKFLOWS_DIR, 'db-migrate.yml');
 const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
 const CLOUD_RUN_DOC_PATH = path.join(REPO_ROOT, 'docs', 'deployment', 'gcp-cloud-run.md');
 
@@ -57,6 +58,7 @@ function extractStepRunScript(workflowContent: string, stepName: string): string
 describe('Release & Provider Deployment Workflow Digest Pinning and Provenance Checks', () => {
   const deployYml = fs.readFileSync(DEPLOY_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
+  const dbMigrateYml = fs.readFileSync(DB_MIGRATE_YML_PATH, 'utf8');
 
   let tempDir: string;
   let binDir: string;
@@ -179,18 +181,19 @@ process.exit(1);
     );
   });
 
-  it('keeps top-level permissions at contents: read and scopes attestations/packages read to deployment jobs', () => {
+  it('keeps top-level permissions at contents: read and scopes attestations/packages/id-token to deployment jobs', () => {
     expect(deployYml).toMatch(/^permissions:\n  contents: read\n/m);
     expect(deployProviderYml).toMatch(/^permissions:\n  contents: read\n/m);
+    expect(dbMigrateYml).toMatch(/^permissions:\n  contents: read\n/m);
 
     expect(deployProviderYml).toContain(
-      '    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+      '    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
     );
     expect(deployYml).toContain(
-      '  staging-deploy-provider:\n    name: Staging Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+      '  staging-deploy-provider:\n    name: Staging Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
     );
     expect(deployYml).toContain(
-      '  production-deploy-provider:\n    name: Production Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read'
+      '  production-deploy-provider:\n    name: Production Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
     );
   });
 
@@ -209,6 +212,8 @@ process.exit(1);
     const stepNames = [
       'Resolve Artifact Image URI',
       'Verify Artifact Provenance Attestation',
+      'Verify Selected Provider Credentials',
+      'Capture Active Image Tag Before Rollout',
       'Deploy via Generic Webhook Adapter',
       'Dry-run Provider Adapter Validation',
       'Resolve Service URL Output',
@@ -627,5 +632,233 @@ process.exit(0);
       expect(dryRes.status).toBe(0);
       expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=healthy');
     }
+
+    // Unreachable endpoint in live mode (IS_DRY_RUN=false) fails closed after timeout
+    for (const script of [stagingProbeScript, prodProbeScript]) {
+      const fastLiveTimeoutScript = script.replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=0');
+      fs.writeFileSync(outputFile, '');
+      const unreachableRes = runBashStep(fastLiveTimeoutScript, {
+        VAR_SERVICE_URL: 'http://127.0.0.1:9',
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+      });
+      expect(unreachableRes.status).toBe(1);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain('health_status=unhealthy');
+    }
+  });
+
+  it('fails closed on missing provider credentials in live runs, resolves Cloud Run targets per environment, and selects OIDC ahead of GCP_SA_KEY', () => {
+    const verifyCredsScript = extractStepRunScript(deployProviderYml, 'Verify Selected Provider Credentials');
+
+    const parseOutputs = () => {
+      const map: Record<string, string> = {};
+      for (const line of fs.readFileSync(outputFile, 'utf8').split(/\r?\n/)) {
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+          map[line.slice(0, idx)] = line.slice(idx + 1);
+        }
+      }
+      return map;
+    };
+
+    // 1. google-cloud-run with neither OIDC nor GCP_SA_KEY fails closed
+    fs.writeFileSync(outputFile, '');
+    const missingGcpRes = runBashStep(verifyCredsScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'staging',
+      GCP_WORKLOAD_IDENTITY_PROVIDER: '',
+      GCP_SERVICE_ACCOUNT: '',
+      GCP_SA_KEY: '',
+    });
+    expect(missingGcpRes.status).not.toBe(0);
+    expect(missingGcpRes.stdout + missingGcpRes.stderr).toContain('Missing Google Cloud credentials');
+
+    // 2. Partial WIF without GCP_SA_KEY fallback fails closed
+    const partialWifRes = runBashStep(verifyCredsScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'staging',
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        'projects/123456789/locations/global/workloadIdentityPools/github/providers/oidc',
+      GCP_SERVICE_ACCOUNT: '',
+      GCP_SA_KEY: '',
+    });
+    expect(partialWifRes.status).not.toBe(0);
+    expect(partialWifRes.stdout + partialWifRes.stderr).toContain(
+      'Incomplete Google Cloud Workload Identity Federation configuration'
+    );
+
+    // 3. OIDC Workload Identity on staging resolves wedding-website-staging default service & project ID from SA email
+    fs.writeFileSync(outputFile, '');
+    const oidcStagingRes = runBashStep(verifyCredsScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'staging',
+      INPUT_CLOUD_RUN_SERVICE: '',
+      CLOUD_RUN_SERVICE: '',
+      INPUT_CLOUD_RUN_REGION: '',
+      CLOUD_RUN_REGION: '',
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        'projects/123456789/locations/global/workloadIdentityPools/github/providers/oidc',
+      GCP_SERVICE_ACCOUNT: 'runner@wedding-staging-proj.iam.gserviceaccount.com',
+      GCP_SA_KEY: '',
+      GCP_PROJECT_ID: '',
+    });
+    expect(oidcStagingRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      cloud_run_service: 'wedding-website-staging',
+      cloud_run_region: 'us-central1',
+      gcp_project_id: 'wedding-staging-proj',
+    });
+
+    // 4. GCP_SA_KEY fallback on production resolves wedding-website default and honors vars/inputs overrides
+    fs.writeFileSync(outputFile, '');
+    const keyProdRes = runBashStep(verifyCredsScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'production',
+      INPUT_CLOUD_RUN_SERVICE: '',
+      CLOUD_RUN_SERVICE: '',
+      INPUT_CLOUD_RUN_REGION: '',
+      CLOUD_RUN_REGION: 'us-east1',
+      GCP_WORKLOAD_IDENTITY_PROVIDER: '',
+      GCP_SERVICE_ACCOUNT: '',
+      GCP_SA_KEY: '{"project_id":"legacy-prod-proj"}',
+      GCP_PROJECT_ID: '',
+    });
+    expect(keyProdRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      cloud_run_service: 'wedding-website',
+      cloud_run_region: 'us-east1',
+      gcp_project_id: 'legacy-prod-proj',
+    });
+
+    fs.writeFileSync(outputFile, '');
+    const inputOverrideRes = runBashStep(verifyCredsScript, {
+      PROVIDER: 'google-cloud-run',
+      TARGET_ENV: 'staging',
+      INPUT_CLOUD_RUN_SERVICE: 'custom-input-svc',
+      CLOUD_RUN_SERVICE: 'custom-var-svc',
+      INPUT_CLOUD_RUN_REGION: 'europe-west4',
+      CLOUD_RUN_REGION: 'us-west1',
+      GCP_WORKLOAD_IDENTITY_PROVIDER: '',
+      GCP_SERVICE_ACCOUNT: '',
+      GCP_SA_KEY: '{"project_id":"override-proj"}',
+      GCP_PROJECT_ID: 'explicit-proj',
+    });
+    expect(inputOverrideRes.status).toBe(0);
+    expect(parseOutputs()).toEqual({
+      cloud_run_service: 'custom-input-svc',
+      cloud_run_region: 'europe-west4',
+      gcp_project_id: 'explicit-proj',
+    });
+
+    // 5. generic-webhook and docker-host fail closed when DEPLOY_WEBHOOK_URL or DEPLOY_WEBHOOK_SECRET is absent
+    for (const webhookProvider of ['generic-webhook', 'docker-host']) {
+      const noUrlRes = runBashStep(verifyCredsScript, {
+        PROVIDER: webhookProvider,
+        TARGET_ENV: 'production',
+        DEPLOY_WEBHOOK_URL: '',
+        DEPLOY_WEBHOOK_SECRET: 'secret-token',
+      });
+      expect(noUrlRes.status).not.toBe(0);
+      expect(noUrlRes.stdout + noUrlRes.stderr).toContain('Missing DEPLOY_WEBHOOK_URL');
+
+      const noSecretRes = runBashStep(verifyCredsScript, {
+        PROVIDER: webhookProvider,
+        TARGET_ENV: 'production',
+        DEPLOY_WEBHOOK_URL: 'https://hooks.example.com/deploy',
+        DEPLOY_WEBHOOK_SECRET: '',
+      });
+      expect(noSecretRes.status).not.toBe(0);
+      expect(noSecretRes.stdout + noSecretRes.stderr).toContain('Missing DEPLOY_WEBHOOK_SECRET');
+
+      const validWebhookRes = runBashStep(verifyCredsScript, {
+        PROVIDER: webhookProvider,
+        TARGET_ENV: 'production',
+        DEPLOY_WEBHOOK_URL: 'https://hooks.example.com/deploy',
+        DEPLOY_WEBHOOK_SECRET: 'secret-token',
+      });
+      expect(validWebhookRes.status).toBe(0);
+    }
+
+    // 6. Verify YAML step conditions select OIDC primary auth and GCP_SA_KEY fallback mutually exclusively
+    const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      jobs?: {
+        deploy?: {
+          steps?: Array<{ id?: string; if?: string; with?: Record<string, string> }>;
+        };
+      };
+    };
+    const steps = deployProviderDoc.jobs?.deploy?.steps ?? [];
+    const verifyStep = steps.find((s) => s.id === 'verify-credentials');
+    const oidcStep = steps.find((s) => s.id === 'gcp-auth-oidc');
+    const keyStep = steps.find((s) => s.id === 'gcp-auth-key');
+    const dryRunStep = steps.find((s) => s.if === 'inputs.dry_run');
+
+    expect(verifyStep?.if).toBe('!inputs.dry_run');
+    expect(oidcStep?.if).toContain('vars.GCP_WORKLOAD_IDENTITY_PROVIDER !=');
+    expect(oidcStep?.if).toContain('vars.GCP_SERVICE_ACCOUNT !=');
+    expect(oidcStep?.with?.workload_identity_provider).toBe('${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}');
+    expect(keyStep?.if).toContain("vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' || vars.GCP_SERVICE_ACCOUNT == ''");
+    expect(keyStep?.if).toContain("secrets.GCP_SA_KEY != ''");
+    expect(dryRunStep).toBeDefined();
+  });
+
+  it('defaults manual db-migrate.yml workflow_dispatch confirm to false and aborts before npx prisma migrate deploy when unconfirmed', () => {
+    const dbMigrateDoc = parseDocument(dbMigrateYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: { confirm?: { default?: boolean; required?: boolean; type?: string } } };
+        workflow_call?: { inputs?: { confirm?: { default?: boolean; type?: string } } };
+      };
+    };
+
+    expect(dbMigrateDoc.on?.workflow_dispatch?.inputs?.confirm?.default).toBe(false);
+    expect(dbMigrateDoc.on?.workflow_dispatch?.inputs?.confirm?.type).toBe('boolean');
+    expect(dbMigrateDoc.on?.workflow_call?.inputs?.confirm?.default).toBe(true);
+
+    const confirmGateScript = extractStepRunScript(dbMigrateYml, 'Verify Manual Migration Confirmation');
+    const runMigrateScript = extractStepRunScript(dbMigrateYml, 'Run Prisma Migrate Deploy');
+    expect(confirmGateScript).not.toContain('${{');
+    expect(runMigrateScript).not.toContain('${{');
+
+    // Shim npx so any accidental prisma invocation logs and fails
+    const npxShim = path.join(binDir, 'npx');
+    fs.writeFileSync(
+      npxShim,
+      `#!/usr/bin/env node
+const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(callLogFile)}, 'npx ' + process.argv.slice(2).join(' ') + '\\n');
+process.exit(0);
+`,
+      { mode: 0o755 }
+    );
+
+    fs.writeFileSync(summaryFile, '');
+    const unconfirmedGateRes = runBashStep(confirmGateScript, {
+      CONFIRM: 'false',
+      TARGET_ENV: 'production',
+    });
+    expect(unconfirmedGateRes.status).toBe(1);
+    expect(unconfirmedGateRes.stdout + unconfirmedGateRes.stderr).toContain("'confirm' input must be set to true");
+    expect(fs.readFileSync(summaryFile, 'utf8')).toContain('Database Migration Aborted (Unconfirmed)');
+
+    const unconfirmedMigrateRes = runBashStep(runMigrateScript, {
+      CONFIRM: 'false',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    });
+    expect(unconfirmedMigrateRes.status).toBe(1);
+    expect(fs.readFileSync(callLogFile, 'utf8')).toBe('');
+
+    const confirmedGateRes = runBashStep(confirmGateScript, {
+      CONFIRM: 'true',
+      TARGET_ENV: 'staging',
+    });
+    expect(confirmedGateRes.status).toBe(0);
+
+    const confirmedMigrateRes = runBashStep(runMigrateScript, {
+      CONFIRM: 'true',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    });
+    expect(confirmedMigrateRes.status).toBe(0);
+    expect(fs.readFileSync(callLogFile, 'utf8')).toContain('npx prisma migrate deploy');
   });
 });

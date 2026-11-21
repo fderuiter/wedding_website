@@ -89,6 +89,7 @@ try {
     { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
     { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
     { name: 'Documentation relative links check', script: 'check:links' },
+    { name: 'Specification route and symbol contracts check', script: 'check:spec-contracts' },
     { name: 'Prisma schema validation', script: 'check:prisma' },
     { name: 'Migration compatibility check', script: 'lint:migrations' },
     { name: 'Documentation synchronization check', script: 'check:doc-sync' },

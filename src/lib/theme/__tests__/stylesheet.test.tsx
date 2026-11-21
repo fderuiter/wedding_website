@@ -466,4 +466,51 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
     expect(darkBlock).toContain('--dialog-title-color: #f9fafb;');
     expect(darkBlock).toContain('--btn-radius: 0.75rem;');
   });
+
+  it('enforces >= 4.5:1 dark surface contrast across all 5 presets even when light surface or text tokens are customized', async () => {
+    const { THEME_PRESET_KEYS } = await import('@/lib/theme/presets');
+
+    const extractDarkVar = (darkCss: string, varName: string): string => {
+      const escaped = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = darkCss.match(new RegExp(`${escaped}:\\s*([^;]+);`, 'i'));
+      return m ? m[1].trim() : '';
+    };
+
+    for (const preset of THEME_PRESET_KEYS) {
+      const css = generateThemeStylesheet({
+        ...sampleConfig,
+        themePreset: preset,
+        themeTokens: {
+          '--card-bg': '#f8fafc',
+          '--dialog-bg': '#fffbeb',
+          '--input-bg': '#f9fafb',
+          '--container-bg': '#fff1f2',
+          '--heading-color': '#1e293b',
+          '--form-label-text': '#111827',
+          '--dialog-title-color': '#0f172a',
+        },
+      });
+
+      const darkBlockMatch = css.match(/\.dark\s*\{([\s\S]*?)\}/);
+      expect(darkBlockMatch).not.toBeNull();
+      const darkBlock = darkBlockMatch?.[1] ?? '';
+
+      const darkCardBg = extractDarkVar(darkBlock, '--card-bg');
+      const darkDialogBg = extractDarkVar(darkBlock, '--dialog-bg');
+      const darkInputBg = extractDarkVar(darkBlock, '--input-bg');
+      const darkHeading = extractDarkVar(darkBlock, '--heading-color');
+      const darkFormLabel = extractDarkVar(darkBlock, '--form-label-text');
+      const darkDialogTitle = extractDarkVar(darkBlock, '--dialog-title-color');
+      const darkFormErr = extractDarkVar(darkBlock, '--form-error-text');
+
+      expect(getContrastRatio(hexToRgb('#F9FAFB'), hexToRgb(darkCardBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb('#F9FAFB'), hexToRgb(darkDialogBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb('#F9FAFB'), hexToRgb(darkInputBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(darkHeading), hexToRgb(darkCardBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(darkFormLabel), hexToRgb(darkCardBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(darkFormLabel), hexToRgb(darkInputBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(darkDialogTitle), hexToRgb(darkDialogBg))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(darkFormErr), hexToRgb(darkCardBg))).toBeGreaterThanOrEqual(4.5);
+    }
+  });
 });

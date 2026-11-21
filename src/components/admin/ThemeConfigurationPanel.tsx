@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
-import { THEME_PRESET_KEYS, ThemePreset, getPresetTokens } from '@/lib/theme/presets';
+import { THEME_PRESET_KEYS, ThemePreset, getPresetTokens, stripPresetDefaultTokens } from '@/lib/theme/presets';
 
 const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
 
@@ -108,12 +108,28 @@ export function ThemeConfigurationPanel({
   ) => {
     const updatedTokens = {
       ...(values.themeTokens || {}),
-      [tokenKey]: val,
     };
+    const presetDefault = (activePresetTokens as unknown as Record<string, unknown>)[tokenKey];
+    if (val === presetDefault) {
+      delete updatedTokens[tokenKey];
+    } else {
+      updatedTokens[tokenKey] = val;
+    }
     onChange({
       [propName]: val,
       themeTokens: updatedTokens,
     });
+  };
+
+  const handlePresetChange = (nextPreset: ThemePreset) => {
+    if (values.themeTokens !== undefined) {
+      onChange({
+        themePreset: nextPreset,
+        themeTokens: stripPresetDefaultTokens(values.themeTokens, nextPreset, selectedPreset),
+      });
+      return;
+    }
+    onChange({ themePreset: nextPreset });
   };
 
   return (
@@ -127,7 +143,7 @@ export function ThemeConfigurationPanel({
           id="themePreset"
           name="themePreset"
           value={selectedPreset}
-          onChange={(e) => onChange({ themePreset: e.target.value as ThemePreset })}
+          onChange={(e) => handlePresetChange(e.target.value as ThemePreset)}
           aria-label="Select Theme Preset"
           aria-describedby="themePreset-desc"
           className="w-full rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
@@ -138,7 +154,7 @@ export function ThemeConfigurationPanel({
             </option>
           ))}
         </select>
-        <p id="themePreset-desc" className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p id="themePreset-desc" className="text-xs text-gray-600 dark:text-gray-300 mt-1">
           {PRESET_DESCRIPTIONS[selectedPreset] || PRESET_DESCRIPTIONS.classic}
         </p>
       </FormGroup>
@@ -193,7 +209,7 @@ export function ThemeConfigurationPanel({
       </div>
 
       {mode === 'essentials' ? (
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+        <p className="text-xs text-gray-600 dark:text-gray-300">
           Layout spacing, card rounding, and print styling colors can be customized anytime in Site Settings.
         </p>
       ) : (
@@ -300,7 +316,7 @@ export function ThemeConfigurationPanel({
             <h3 className="text-md font-semibold text-gray-900 dark:text-zinc-100">
               Print Styling Controls
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-600 dark:text-gray-300">
               Customize colors used when printing seating floorplans, rosters, and schedules.
             </p>
 

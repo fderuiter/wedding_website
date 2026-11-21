@@ -299,7 +299,7 @@ describe('ThemeProvider Theme Mode Hydration & Synchronization', () => {
     document.documentElement.className = '';
   });
 
-  it('provides default themeMode as system and resolvedTheme as dark', () => {
+  it('provides default themeMode as system and resolvedTheme as light when system does not prefer dark', () => {
     const { getByTestId } = render(
       <ThemeProvider>
         <ThemeModeTestComponent />
@@ -308,7 +308,31 @@ describe('ThemeProvider Theme Mode Hydration & Synchronization', () => {
 
     expect(getByTestId('theme-mode')).toHaveTextContent('system');
     expect(getByTestId('mode-alias')).toHaveTextContent('system');
+    expect(getByTestId('resolved-theme')).toHaveTextContent('light');
+  });
+
+  it('matches pre-paint documentElement dark or light class on mount and reads cookie fallback', () => {
+    document.documentElement.classList.add('dark');
+
+    const { getByTestId, unmount } = render(
+      <ThemeProvider initialThemeMode="system">
+        <ThemeModeTestComponent />
+      </ThemeProvider>
+    );
+
     expect(getByTestId('resolved-theme')).toHaveTextContent('dark');
+    unmount();
+
+    document.documentElement.className = 'light';
+    document.cookie = 'theme_mode=dark; path=/';
+
+    const { getByTestId: getByTestIdCookie } = render(
+      <ThemeProvider initialThemeMode="system">
+        <ThemeModeTestComponent />
+      </ThemeProvider>
+    );
+    expect(getByTestIdCookie('theme-mode')).toHaveTextContent('dark');
+    expect(getByTestIdCookie('resolved-theme')).toHaveTextContent('dark');
   });
 
   it('respects initialThemeMode prop', () => {

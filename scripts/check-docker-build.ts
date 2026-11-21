@@ -17,12 +17,23 @@ function main() {
     if (!/COPY\s+--from=builder\b[^\n]*prisma\.config\.ts/.test(dockerfileContent)) {
       errors.push('Dockerfile runner stage must copy prisma.config.ts from builder for Prisma 7 migrations.');
     }
+    if (/COPY\s+--from=builder\b[^\n]*\/app\/node_modules\s+\.\/node_modules/.test(dockerfileContent)) {
+      errors.push('Dockerfile runner stage must not overwrite standalone ./node_modules with builder /app/node_modules.');
+    }
+    if (!/COPY\s+--from=prisma-cli\b[^\n]*\/opt\/prisma-cli/.test(dockerfileContent)) {
+      errors.push('Dockerfile runner stage must copy the isolated Prisma CLI directory (/opt/prisma-cli).');
+    }
   }
 
   // Check docker-entrypoint.sh
   const entrypointPath = path.join(ROOT_DIR, 'docker-entrypoint.sh');
   if (!fs.existsSync(entrypointPath)) {
     errors.push('docker-entrypoint.sh is missing from repository root.');
+  } else {
+    const entrypointContent = fs.readFileSync(entrypointPath, 'utf8');
+    if (/\bnpx\s+(?:-y|--yes)\s+prisma\b/.test(entrypointContent)) {
+      errors.push('docker-entrypoint.sh must invoke local Prisma CLI without network-fetching `npx -y`.');
+    }
   }
 
   // Check next.config.ts for output: 'standalone'
@@ -45,6 +56,12 @@ function main() {
       const serverJs = path.join(standaloneDir, 'server.js');
       if (!fs.existsSync(serverJs)) {
         errors.push('.next/standalone/server.js is missing.');
+      }
+      if (fs.existsSync(path.join(standaloneDir, 'public', 'public'))) {
+        errors.push('.next/standalone/public/public nested copy detected.');
+      }
+      if (fs.existsSync(path.join(standaloneDir, 'public', 'mockServiceWorker.js'))) {
+        errors.push('.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.');
       }
     }
   }
