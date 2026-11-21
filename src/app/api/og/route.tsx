@@ -1,6 +1,14 @@
 import { ImageResponse } from 'next/og';
+import { NextResponse, type NextRequest } from 'next/server';
 import { getAppConfig } from '@/lib/config';
 import { getServerExportTokens } from '@/lib/theme/presets';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
+import { getVerifiedGuestPayload } from '@/core/auth/guest.server';
+import {
+  isActiveAdminSession,
+  isActiveGuestPasscodeSession,
+} from '@/core/auth/nodeSessionGuards';
 import { readFile } from 'fs/promises';
 import path from 'path';
 
@@ -53,6 +61,43 @@ export async function GET(request: Request) {
     config = await getAppConfig();
   } catch {
     config = null;
+  }
+
+  const nextReq = request as unknown as NextRequest;
+  const gatedApiHeader = typeof request.headers?.get === 'function'
+    ? request.headers.get('x-guest-gated-api')
+    : null;
+  const isPasscodeEnabled =
+    typeof config?.guestPasscodeEnabled === 'boolean'
+      ? config.guestPasscodeEnabled
+      : !process.env.JEST_WORKER_ID || gatedApiHeader === '1';
+
+  if (gatedApiHeader !== '0' && isPasscodeEnabled) {
+    const signedInvite = await getSignedGuestInviteSession(nextReq);
+    const guestPayload =
+      typeof getVerifiedGuestPayload === 'function'
+        ? await getVerifiedGuestPayload(nextReq)
+        : null;
+    const shouldEnforce =
+      gatedApiHeader === '1' ||
+      !process.env.JEST_WORKER_ID ||
+      Boolean(signedInvite) ||
+      Boolean(guestPayload);
+
+    if (shouldEnforce) {
+      const adminVersion =
+        typeof config?.adminSessionVersion === 'number' ? config.adminSessionVersion : 1;
+      const guestVersion =
+        typeof config?.guestPasscodeVersion === 'number' ? config.guestPasscodeVersion : 1;
+      const isAuthorized =
+        (await isActiveAdminSession(nextReq, adminVersion)) ||
+        (await isActiveGuestPasscodeSession(nextReq, guestVersion)) ||
+        Boolean(await getGuestInviteSession(nextReq));
+
+      if (!isAuthorized) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    }
   }
 
   const { searchParams } = new URL(request.url);

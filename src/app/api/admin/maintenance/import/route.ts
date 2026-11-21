@@ -226,10 +226,19 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         resendApiKey,
         sendgridApiKey,
         twilioAuthToken,
+        guestPasscode,
+        adminPasswordHash,
         ...rest
       } = cfg;
       const existing = existingById.get(cfg.id) ?? (cfg.id === 'global' ? fallbackGlobal : undefined);
-      const rawSecrets = { smtpPass, resendApiKey, sendgridApiKey, twilioAuthToken };
+      const rawSecrets = {
+        smtpPass,
+        resendApiKey,
+        sendgridApiKey,
+        twilioAuthToken,
+        guestPasscode,
+        adminPasswordHash,
+      };
       const mergedSecrets: Partial<Record<(typeof APP_CONFIG_SECRET_KEYS)[number], string>> = {};
 
       for (const secretKey of APP_CONFIG_SECRET_KEYS) {
@@ -240,6 +249,14 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
           mergedSecrets[secretKey] = existing[secretKey];
         }
       }
+      const preservedSessionVersions = {
+        ...(typeof existing?.guestPasscodeVersion === 'number'
+          ? { guestPasscodeVersion: existing.guestPasscodeVersion }
+          : {}),
+        ...(typeof existing?.adminSessionVersion === 'number'
+          ? { adminSessionVersion: existing.adminSessionVersion }
+          : {}),
+      };
 
       const resolvedImportModules =
         modules !== undefined
@@ -264,6 +281,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
           : {}),
         ...(features !== undefined ? { features: serializeDatesForJson(features) } : {}),
         ...(resolvedImportModules !== undefined ? { modules: serializeDatesForJson(resolvedImportModules) } : {}),
+        ...preservedSessionVersions,
         ...mergedSecrets,
       };
     });

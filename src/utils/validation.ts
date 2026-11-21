@@ -321,3 +321,23 @@ export const ImportBackupSchema = z.object({
   broadcastRecipient: z.array(z.any()).optional(),
   snapshotVersion: z.array(z.any()).optional(),
 });
+
+export const AdminPasswordChangeSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required.'),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters long.')
+    .max(128, 'New password must be at most 128 characters long.'),
+  confirmPassword: z.string().optional(),
+});
+
+export const AdminPasswordResetRequestSchema = z.object({}).loose();
+
+export const AdminPasswordResetConfirmSchema = z.object({
+  token: z.string().min(1, 'Reset token is required.'),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters long.')
+    .max(128, 'New password must be at most 128 characters long.'),
+  confirmPassword: z.string().optional(),
+});

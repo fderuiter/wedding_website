@@ -5,6 +5,7 @@ import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
 import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDeadline';
+import { env } from '../env';
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG, resolveModuleConfig } from './modules';
@@ -104,6 +105,12 @@ export const APP_DEFAULTS: LocalAppConfig = {
   twilioFromNumber: '',
   broadcastBatchSize: 50,
   broadcastBatchDelayMs: 500,
+  guestPasscode: null,
+  adminPasswordHash: null,
+  guestPasscodeEnabled: true,
+  allowSearchIndexing: false,
+  guestPasscodeVersion: 1,
+  adminSessionVersion: 1,
   modules: DEFAULT_MODULE_CONFIG,
   features: [],
   createdAt: new Date(),
@@ -148,6 +155,8 @@ export const STATIC_MOCK_CONFIG: LocalAppConfig = {
   rsvpDeadlineDate: '',
   rsvpGracePeriodHours: 0,
   rsvpClosedMessage: '',
+  guestPasscodeEnabled: false,
+  allowSearchIndexing: false,
   features: [
     { id: 'story', type: 'story', title: 'Our Story', visible: true },
     { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
@@ -251,6 +260,7 @@ function hasConfiguredSecret(value: unknown): boolean {
 }
 
 export interface AdminAppConfig extends PublicAppConfig {
+  guestPasscode: string;
   rsvpGracePeriodHours: number;
   emailProvider: string;
   smtpHost: string;
@@ -324,6 +334,8 @@ export const APP_CONFIG_SECRET_KEYS = [
   'resendApiKey',
   'sendgridApiKey',
   'twilioAuthToken',
+  'guestPasscode',
+  'adminPasswordHash',
 ] as const;
 
 export type AppConfigSecretKey = (typeof APP_CONFIG_SECRET_KEYS)[number];
@@ -395,6 +407,8 @@ const APP_CONFIG_BACKUP_KEYS = [
   'twilioFromNumber',
   'broadcastBatchSize',
   'broadcastBatchDelayMs',
+  'guestPasscodeEnabled',
+  'allowSearchIndexing',
   'createdAt',
   'updatedAt',
 ] as const;
@@ -448,9 +462,19 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(c
 
   const publicConfig = toPublicAppConfig(config);
   const raw = config as Record<string, any>;
+  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+  const fallbackEnvPasscode = isProduction
+    ? (process.env.GUEST_PASSCODE ?? '')
+    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026');
+  const effectiveGuestPasscode = hasConfiguredSecret(raw.guestPasscode)
+    ? String(raw.guestPasscode).trim()
+    : fallbackEnvPasscode;
 
   return {
     ...publicConfig,
+    guestPasscode: effectiveGuestPasscode,
+    guestPasscodeEnabled: typeof raw.guestPasscodeEnabled === 'boolean' ? raw.guestPasscodeEnabled : true,
+    allowSearchIndexing: typeof raw.allowSearchIndexing === 'boolean' ? raw.allowSearchIndexing : false,
     rsvpOpen: typeof raw.rsvpOpen === 'boolean' ? raw.rsvpOpen : true,
     rsvpGracePeriodHours: typeof raw.rsvpGracePeriodHours === 'number' ? raw.rsvpGracePeriodHours : 0,
     emailProvider: typeof raw.emailProvider === 'string' && raw.emailProvider ? raw.emailProvider : 'smtp',
@@ -592,6 +616,10 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
             rsvpDeadlineDate: '',
             rsvpGracePeriodHours: 0,
             rsvpClosedMessage: '',
+            guestPasscodeEnabled: true,
+            allowSearchIndexing: false,
+            guestPasscodeVersion: 1,
+            adminSessionVersion: 1,
           },
         }));
       } else {

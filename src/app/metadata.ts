@@ -88,6 +88,9 @@ export async function generateMetadata(): Promise<Metadata> {
       : 'Wedding website cover photo.'),
   };
 
+  const isPasswordProtected = config.guestPasscodeEnabled !== false;
+  const shouldAllowIndexing = !isPasswordProtected && Boolean(config.allowSearchIndexing);
+
   return {
     title: {
       default: siteConfig.title,
@@ -95,6 +98,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: siteConfig.description,
     keywords: dynamicKeywords,
+    robots: shouldAllowIndexing
+      ? { index: true, follow: true }
+      : { index: false, follow: false },
     authors: [{ name: brandIdentity, url: config.baseUrl }],
     creator: brandIdentity,
     publisher: brandIdentity,

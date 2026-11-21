@@ -1,5 +1,7 @@
 import React from 'react';
+import { redirect } from 'next/navigation';
 import { getAppConfig } from '@/lib/config';
+import { getVerifiedAdminPayload } from '@/core/auth/auth.server';
 import { isFeatureEnabled } from '@/lib/modules';
 import { AdminNav, AdminNavItem } from './AdminNav';
 import { SampleDataBanner } from '@/components/admin/SampleDataBanner';
@@ -27,11 +29,33 @@ export default async function AdminDashboardLayout({
   children: React.ReactNode;
 }) {
   let moduleConfig: unknown;
+  let expectedAdminSessionVersion = 1;
   try {
     const config = await getAppConfig();
     moduleConfig = config.modules;
+    if (typeof config.adminSessionVersion === 'number') {
+      expectedAdminSessionVersion = config.adminSessionVersion;
+    }
   } catch (e) {
     // Fallback if unreachable
+  }
+
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
+
+  if (!isStaticExport && typeof getVerifiedAdminPayload === 'function') {
+    const adminPayload = await getVerifiedAdminPayload();
+    if (adminPayload) {
+      const tokenVersion =
+        typeof adminPayload.adminSessionVersion === 'number'
+          ? adminPayload.adminSessionVersion
+          : 1;
+      if (tokenVersion !== expectedAdminSessionVersion) {
+        redirect('/admin/login');
+      }
+    }
   }
 
   const visibleNavItems = ADMIN_NAV_ITEMS.filter((item) => {

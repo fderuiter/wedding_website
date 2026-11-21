@@ -216,11 +216,14 @@ describe('SettingsPage View State', () => {
 
     render(<SettingsPage />);
 
-    // Guest Passcode checkbox is absent; read-only environment guidance is displayed
+    // Guest Passcode module checkbox is absent; interactive Site Visibility & Guest Passcode controls are displayed
     expect(document.getElementById('feature-guestPasscode')).toBeNull();
-    const passcodeNotice = screen.getByRole('note', { name: /Guest login passcode configuration/i });
-    expect(passcodeNotice).toHaveTextContent(/GUEST_PASSCODE/i);
-    expect(passcodeNotice).toHaveTextContent(/GUEST_SESSION_SECRET/i);
+    const visibilityGroup = screen.getByRole('group', { name: /Site Visibility & Guest Passcode/i });
+    expect(visibilityGroup).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Password Protected/i })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /Public/i })).not.toBeChecked();
+    expect(screen.getByLabelText(/Shared Guest Passcode/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy Share Details/i })).toBeInTheDocument();
 
     // All 9 module checkboxes are rendered
     const expectedIds = [

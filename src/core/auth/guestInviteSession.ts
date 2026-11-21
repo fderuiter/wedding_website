@@ -3,8 +3,12 @@ import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { isAdminRequest } from './auth.server';
-import { isGuestRequest } from './guest.server';
+import { getVerifiedGuestPayload } from './guest.server';
+import {
+  isActiveAdminSession,
+  isActiveGuestPasscodeSession,
+  loadSessionGuardConfig,
+} from './nodeSessionGuards';
 import {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
@@ -129,7 +133,7 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
   return resolveActiveInvitationSession(signedPayload);
 }
 
-function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
+export function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
   if (
     callbackPath &&
     callbackPath.startsWith('/') &&
@@ -137,7 +141,27 @@ function buildGuestLoginRedirectTarget(callbackPath: string | null): string {
     callbackPath !== '/guest/login' &&
     !callbackPath.startsWith('/guest/login?')
   ) {
-    return `/guest/login?callbackUrl=${encodeURIComponent(callbackPath)}`;
+    const queryIdx = callbackPath.indexOf('?');
+    if (queryIdx === -1) {
+      return `/guest/login?callbackUrl=${encodeURIComponent(callbackPath)}`;
+    }
+
+    const pathnamePart = callbackPath.slice(0, queryIdx);
+    const searchPart = callbackPath.slice(queryIdx + 1);
+    const incomingParams = new URLSearchParams(searchPart);
+    const incomingCode = incomingParams.get('code')?.trim();
+    if (incomingParams.has('code')) {
+      incomingParams.delete('code');
+    }
+    const cleanSearch = incomingParams.toString();
+    const cleanCallback = cleanSearch ? `${pathnamePart}?${cleanSearch}` : pathnamePart;
+
+    const redirectParams = new URLSearchParams();
+    redirectParams.set('callbackUrl', cleanCallback);
+    if (incomingCode) {
+      redirectParams.set('code', incomingCode);
+    }
+    return `/guest/login?${redirectParams.toString()}`;
   }
 
   return '/guest/login';
@@ -167,11 +191,6 @@ function redirectWithSeeOther(url: string): void {
  */
 export async function enforceActiveGuestPageSession(): Promise<void> {
   if (isStaticExportBuild()) {
-    return;
-  }
-
-  const signedInvite = await getSignedGuestInviteSession();
-  if (!signedInvite) {
     return;
   }
 
@@ -207,7 +226,23 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
     return;
   }
 
-  if ((await isAdminRequest()) || (await isGuestRequest())) {
+  const guardConfig = await loadSessionGuardConfig();
+  if (!guardConfig.guestPasscodeEnabled) {
+    return;
+  }
+
+  const signedInvite = await getSignedGuestInviteSession();
+  const guestPayload =
+    typeof getVerifiedGuestPayload === 'function' ? await getVerifiedGuestPayload() : null;
+
+  if (isGuestGatedPage !== '1' && !signedInvite && !guestPayload) {
+    return;
+  }
+
+  if (
+    (await isActiveAdminSession(undefined, guardConfig.adminSessionVersion)) ||
+    (await isActiveGuestPasscodeSession(undefined, guardConfig.guestPasscodeVersion))
+  ) {
     return;
   }
 

@@ -3,7 +3,12 @@
 import { NextRequest } from 'next/server';
 import { middleware } from '@/middleware';
 import { signGuestToken, isGuestRequest, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  signGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+  buildGuestLoginRedirectTarget,
+} from '@/core/auth/guestInviteSession';
+import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
@@ -56,10 +61,11 @@ jest.mock('next/server', () => {
     };
   });
 
-  const mockNextNext = jest.fn().mockImplementation(() => {
+  const mockNextNext = jest.fn().mockImplementation((opts?: any) => {
     return {
       status: 200,
       headers: new Headers(),
+      requestHeaders: opts?.request?.headers ? new Headers(opts.request.headers) : new Headers(),
     };
   });
 
@@ -489,11 +495,20 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.headers.get('location')).toBeNull();
     });
 
-    it('rejects unauthenticated requests to self-service lookup API /api/guest/lookup with 401', async () => {
+    it('forwards x-guest-gated-api header from Edge and rejects unauthenticated requests to /api/guest/lookup with 401 in Node guard', async () => {
       const req = new NextRequest('http://localhost/api/guest/lookup', { method: 'POST' });
-      const res = await middleware(req);
-      expect(res.status).toBe(401);
-      const data = await res.json();
+      const edgeRes: any = await middleware(req);
+      expect(edgeRes.status).toBe(200);
+      expect(edgeRes.requestHeaders.get('x-guest-gated-api')).toBe('1');
+
+      const nodeWrapped = withApiMiddleware(async () => ({ status: 200, headers: new Headers(), json: async () => ({ ok: true }) }) as any);
+      const gatedReq = new NextRequest('http://localhost/api/guest/lookup', {
+        method: 'POST',
+        headers: edgeRes.requestHeaders,
+      });
+      const nodeRes = await nodeWrapped(gatedReq);
+      expect(nodeRes.status).toBe(401);
+      const data = await nodeRes.json();
       expect(data.error).toBe('Unauthorized');
     });
 
@@ -517,31 +532,70 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.headers.get('location')).toBeNull();
     });
 
-    it('redirects unauthenticated page request from / to /guest/login with 303', async () => {
+    it('forwards x-guest-gated-page and x-guest-callback-url in Edge so Node guard redirects / to /guest/login with 303', async () => {
       const req = new NextRequest('http://localhost/');
-      const res = await middleware(req);
-      expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toContain('/guest/login');
-      expect(res.headers.get('location')).toContain('callbackUrl=%2F');
+      const res: any = await middleware(req);
+      expect(res.status).toBe(200);
+      expect(res.requestHeaders.get('x-guest-gated-page')).toBe('1');
+      expect(res.requestHeaders.get('x-guest-callback-url')).toBe('/');
+
+      const redirectTarget = buildGuestLoginRedirectTarget(
+        res.requestHeaders.get('x-guest-callback-url')
+      );
+      expect(redirectTarget).toContain('/guest/login');
+      expect(redirectTarget).toContain('callbackUrl=%2F');
     });
 
-    it('preserves code parameter across /guest/login redirects and strips code from callbackUrl', async () => {
+    it('preserves code parameter across /guest/login redirect target and strips code from callbackUrl', async () => {
       const req = new NextRequest('http://localhost/schedule?tab=dinner&code=LOVE2026');
-      const res = await middleware(req);
-      expect(res.status).toBe(303);
-      const location = res.headers.get('location')!;
-      const redirectUrl = new URL(location);
+      const res: any = await middleware(req);
+      expect(res.status).toBe(200);
+      expect(res.requestHeaders.get('x-guest-gated-page')).toBe('1');
+      expect(res.requestHeaders.get('x-guest-callback-url')).toBe('/schedule?tab=dinner&code=LOVE2026');
+
+      const location = buildGuestLoginRedirectTarget(res.requestHeaders.get('x-guest-callback-url'));
+      const redirectUrl = new URL(location, 'http://localhost');
       expect(redirectUrl.pathname).toBe('/guest/login');
       expect(redirectUrl.searchParams.get('code')).toBe('LOVE2026');
       expect(redirectUrl.searchParams.get('callbackUrl')).toBe('/schedule?tab=dinner');
     });
 
-    it('returns immediate 401 for unauthenticated API requests instead of redirect', async () => {
+    it('returns immediate 401 for unauthenticated API requests in Node guard when guestPasscodeEnabled is true, and allows access in Public mode', async () => {
       const req = new NextRequest('http://localhost/api/weather');
-      const res = await middleware(req);
-      expect(res.status).toBe(401);
-      const data = await res.json();
-      expect(data.error).toBe('Unauthorized');
+      const edgeRes: any = await middleware(req);
+      expect(edgeRes.status).toBe(200);
+      expect(edgeRes.requestHeaders.get('x-guest-gated-api')).toBe('1');
+
+      const nodeWrapped = withApiMiddleware(async () => ({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ temp: 72 }),
+      }) as any);
+
+      const gatedReq = new NextRequest('http://localhost/api/weather', {
+        headers: edgeRes.requestHeaders,
+      });
+      const blockedRes = await nodeWrapped(gatedReq);
+      expect(blockedRes.status).toBe(401);
+      const blockedData = await blockedRes.json();
+      expect(blockedData.error).toBe('Unauthorized');
+
+      const origAppConfig = (prisma as any).appConfig;
+      (prisma as any).appConfig = {
+        findUnique: jest.fn().mockResolvedValue({
+          guestPasscodeEnabled: false,
+          guestPasscodeVersion: 1,
+          adminSessionVersion: 1,
+          adminPasswordHash: null,
+          guestPasscode: null,
+        }),
+      };
+      try {
+        const publicRes = await nodeWrapped(gatedReq);
+        expect(publicRes.status).toBe(200);
+      } finally {
+        (prisma as any).appConfig = origAppConfig;
+      }
     });
 
     it('allows access for authenticated guest session', async () => {
@@ -575,21 +629,27 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(res.headers.get('location')).toBeNull();
     });
 
-    it('rejects forged token signed with passcode in middleware and redirects to /guest/login', async () => {
+    it('rejects forged token signed with passcode in Node guard and clears cookie with 401', async () => {
       const payload = { guest: true, exp: Date.now() + 1000 * 60 * 60 };
       const data = base64urlEncode(JSON.stringify(payload));
       const forgedSignature = await hmacSha256(env.GUEST_PASSCODE, data);
       const forgedToken = `${data}.${forgedSignature}`;
 
-      const req = createMockNextRequest('http://localhost/', {
+      const req = createMockNextRequest('http://localhost/api/weather', {
+        headers: { 'x-guest-gated-api': '1' },
         cookies: {
           [GUEST_COOKIE]: forgedToken,
         },
       });
 
-      const res = await middleware(req);
-      expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toContain('/guest/login');
+      const nodeWrapped = withApiMiddleware(async () => ({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ ok: true }),
+      }) as any);
+
+      const res = await nodeWrapped(req);
+      expect(res.status).toBe(401);
     });
 
     it('allows access for authenticated admin session even without guest session', async () => {

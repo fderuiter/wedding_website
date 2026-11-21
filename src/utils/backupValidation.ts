@@ -141,12 +141,16 @@ const BackupAppConfigSchema = z.object({
   twilioFromNumber: z.string().max(100).optional(),
   broadcastBatchSize: z.number().int().min(1).max(10000).optional(),
   broadcastBatchDelayMs: z.number().int().min(0).max(3600000).optional(),
+  guestPasscodeEnabled: z.boolean().optional(),
+  allowSearchIndexing: z.boolean().optional(),
 
-  // Optional provider credentials (omitted on export; preserved from live DB if omitted/blank on import)
+  // Optional provider & auth credentials (omitted on export; preserved from live DB if omitted/blank on import)
   smtpPass: z.string().nullable().optional(),
   resendApiKey: z.string().nullable().optional(),
   sendgridApiKey: z.string().nullable().optional(),
   twilioAuthToken: z.string().nullable().optional(),
+  guestPasscode: z.string().nullable().optional(),
+  adminPasswordHash: z.string().nullable().optional(),
 });
 
 // Media database-aligned schema

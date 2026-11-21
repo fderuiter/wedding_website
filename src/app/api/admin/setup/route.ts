@@ -7,9 +7,9 @@ import { ApiError } from '@/utils/ApiError';
 import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { AdminSetupSchema, formatZodError } from '@/utils/validation';
-import { isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import { isActiveAdminSession, resolveActiveAdminPasswordHash } from '@/core/auth/nodeSessionGuards';
 import { verifyPassword } from '@/utils/password';
-import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
 
@@ -65,7 +65,8 @@ export const GET = withApiMiddleware(async () => {
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const config = await getAppConfig();
   const initialized = isSiteInitialized(config);
-  const isAdmin = await isAdminRequest(req);
+  const currentSessionVersion = config.adminSessionVersion ?? 1;
+  const isAdmin = await isActiveAdminSession(req, currentSessionVersion);
 
   let body: any = {};
   try {
@@ -85,7 +86,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     if (!password) {
       throw new ApiError(401, 'Admin password is required for setup.');
     }
-    const adminPassword = env.ADMIN_PASSWORD;
+    const adminPassword = resolveActiveAdminPasswordHash(config);
     if (!adminPassword) {
       throw new ApiError(500, 'Admin password not configured in environment.');
     }
@@ -113,7 +114,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     // Auth-only check for step 1
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
-    const token = await signAdminToken({ isAdmin: true, iat, exp });
+    const token = await signAdminToken({
+      isAdmin: true,
+      adminSessionVersion: currentSessionVersion,
+      iat,
+      exp,
+    });
     const response = NextResponse.json({ success: true, initialized });
     setAdminAuthCookie(response, token);
     return response;
@@ -210,7 +216,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
   });
 
-  const sanitizedUpdatedConfig = toPublicAppConfig(AppConfigSchema.parse(updatedConfig));
+  const parsedUpdatedConfig = AppConfigSchema.parse(updatedConfig);
+  const sanitizedUpdatedConfig = toPublicAppConfig(parsedUpdatedConfig);
 
   await prisma.snapshotVersion.create({
     data: {
@@ -234,17 +241,23 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   try {
     revalidatePath('/', 'layout');
+    revalidatePath('/robots.txt');
   } catch {
     // Ignore in non-Next runtime/test environments
   }
 
   const iat = Date.now();
   const exp = iat + 60 * 60 * 8 * 1000;
-  const token = await signAdminToken({ isAdmin: true, iat, exp });
+  const token = await signAdminToken({
+    isAdmin: true,
+    adminSessionVersion: parsedUpdatedConfig.adminSessionVersion ?? 1,
+    iat,
+    exp,
+  });
 
   const response = NextResponse.json({
     success: true,
-    ...toPublicAppConfig(AppConfigSchema.parse(updatedConfig)),
+    ...sanitizedUpdatedConfig,
   });
   setAdminAuthCookie(response, token);
   return response;

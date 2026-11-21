@@ -132,7 +132,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(getZodType(shape.features)).toBe('object[]');
 
       const entries = Object.entries(shape);
-      expect(entries).toHaveLength(87);
+      expect(entries).toHaveLength(93);
 
       for (const [key, value] of entries) {
         const type = getZodType(value);
@@ -167,7 +167,7 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
   });
 
   describe('Generated AppConfig and API Route Specifications', () => {
-    it('distinguishes 72 Prisma columns, 15 virtual DTO fields, 69 public fields, 14 admin-only fields, and 4 masked secrets', () => {
+    it('distinguishes 78 Prisma columns, 15 virtual DTO fields, 71 public fields, 15 admin-only fields, 3 server-only fields, and 4 masked secrets', () => {
       const table = generateConfigTable();
       expect(table).not.toContain('Configuration field for');
 
@@ -175,18 +175,20 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
         .trim()
         .split('\n')
         .slice(2);
-      expect(rows).toHaveLength(87);
+      expect(rows).toHaveLength(93);
 
       const prismaRows = rows.filter((r) => r.includes('| `Prisma` |'));
       const virtualRows = rows.filter((r) => r.includes('| `Virtual DTO` |'));
       const publicRows = rows.filter((r) => r.includes('| `Public` |'));
       const adminOnlyRows = rows.filter((r) => r.includes('| `Admin-only` |'));
+      const serverOnlyRows = rows.filter((r) => r.includes('| `Server-only` |'));
       const maskedSecretRows = rows.filter((r) => r.includes('| `Masked secret ('));
 
-      expect(prismaRows).toHaveLength(72);
+      expect(prismaRows).toHaveLength(78);
       expect(virtualRows).toHaveLength(15);
-      expect(publicRows).toHaveLength(69);
-      expect(adminOnlyRows).toHaveLength(14);
+      expect(publicRows).toHaveLength(71);
+      expect(adminOnlyRows).toHaveLength(15);
+      expect(serverOnlyRows).toHaveLength(3);
       expect(maskedSecretRows).toHaveLength(4);
 
       expect(table).toContain('`Masked secret (hasSmtpPass)`');
@@ -195,14 +197,18 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 71 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/uploads/[...path] Public', () => {
+    it('lists all 74 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **71**');
+      expect(apiSection).toContain('Total API route handlers: **74**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(71);
+      expect(handlerRows).toHaveLength(74);
+
+      expect(apiSection).toContain('| `/api/admin/password` | `src/app/api/admin/password/route.ts` | `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/password-reset/request` | `src/app/api/admin/password-reset/request/route.ts` | `POST` | `Public` |');
+      expect(apiSection).toContain('| `/api/admin/password-reset/confirm` | `src/app/api/admin/password-reset/confirm/route.ts` | `POST` | `Public` |');
 
       expect(apiSection).toContain('| `/api/admin/invitation-codes/merge` | `src/app/api/admin/invitation-codes/merge/route.ts` | `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media` | `src/app/api/media/route.ts` | `GET`, `POST` | `Admin-only` |');

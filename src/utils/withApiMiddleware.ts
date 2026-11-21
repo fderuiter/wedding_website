@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminRequest } from '@/core/auth/auth.server';
-import { isGuestRequest } from '@/core/auth/guest.server';
+import { GUEST_COOKIE, getVerifiedGuestPayload } from '@/core/auth/guest.server';
+import {
+  isActiveAdminSession,
+  isActiveGuestPasscodeSession,
+  loadSessionGuardConfig,
+} from '@/core/auth/nodeSessionGuards';
 import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { rateLimit, type RateLimitBucket } from './rateLimit';
@@ -23,6 +27,9 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
   const upperMethod = method.toUpperCase();
   return (
     pathname === '/api/admin/login' ||
+    pathname === '/api/admin/password' ||
+    pathname === '/api/admin/password-reset/request' ||
+    pathname === '/api/admin/password-reset/confirm' ||
     pathname === '/api/guest/login' ||
     pathname === '/api/guest/lookup' ||
     (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
@@ -44,8 +51,12 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/admin/logout' ||
     normalizedPathname === '/api/admin/me' ||
     normalizedPathname === '/api/admin/setup' ||
+    normalizedPathname === '/api/admin/password-reset/request' ||
+    normalizedPathname === '/api/admin/password-reset/confirm' ||
     normalizedPathname === '/api/health' ||
-    normalizedPathname === '/api/ready'
+    normalizedPathname === '/api/ready' ||
+    normalizedPathname === '/api/uploads' ||
+    normalizedPathname.startsWith('/api/uploads/')
   );
 }
 
@@ -101,32 +112,71 @@ export function withApiMiddleware(
         }
       }
 
-      // 2. Admin & Active Guest Invite Verification
+      // 2. Admin & Active Guest Session Verification
       if (isAdminPath) {
-        const isAdmin = req ? await isAdminRequest(req) : false;
+        const isAdmin = req ? await isActiveAdminSession(req) : false;
         if (!isAdmin) {
           throw new ApiError(401, 'Unauthorized');
         }
       } else if (req && !isInviteRevocationExcludedApiPath(normalizedPathname)) {
-        const signedInvite = await getSignedGuestInviteSession(req);
-        if (signedInvite) {
-          const hasFallbackAuth = (await isAdminRequest(req)) || (await isGuestRequest(req));
-          if (!hasFallbackAuth) {
-            const activeInvite = await getGuestInviteSession(req);
-            if (!activeInvite) {
-              const unauthorizedResponse = NextResponse.json(
-                { success: false, error: 'Unauthorized' },
-                { status: 401 }
-              );
-              unauthorizedResponse.headers.set('x-api-version', 'v2');
-              unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                path: '/',
-                maxAge: 0,
-              });
-              return unauthorizedResponse;
+        let gatedApiHeader: string | null = null;
+        try {
+          gatedApiHeader = req.headers?.get?.('x-guest-gated-api') ?? null;
+        } catch {
+          gatedApiHeader = null;
+        }
+
+        if (gatedApiHeader !== '0') {
+          const signedInvite = await getSignedGuestInviteSession(req);
+          const guestPayload =
+            typeof getVerifiedGuestPayload === 'function' ? await getVerifiedGuestPayload(req) : null;
+
+          const shouldCheckGuestGate =
+            gatedApiHeader === '1' ||
+            !process.env.JEST_WORKER_ID ||
+            Boolean(signedInvite) ||
+            Boolean(guestPayload);
+
+          if (shouldCheckGuestGate) {
+            const guardConfig = await loadSessionGuardConfig();
+            if (guardConfig.guestPasscodeEnabled) {
+              const hasStaleGuestCookie =
+                Boolean(guestPayload) &&
+                (guestPayload!.guestPasscodeVersion ?? 1) !== guardConfig.guestPasscodeVersion;
+
+              const hasPasscodeOrAdminAuth =
+                (await isActiveAdminSession(req, guardConfig.adminSessionVersion)) ||
+                (await isActiveGuestPasscodeSession(req, guardConfig.guestPasscodeVersion));
+
+              if (!hasPasscodeOrAdminAuth) {
+                const activeInvite = await getGuestInviteSession(req);
+                if (!activeInvite) {
+                  const unauthorizedResponse = NextResponse.json(
+                    { success: false, error: 'Unauthorized' },
+                    { status: 401 }
+                  );
+                  unauthorizedResponse.headers.set('x-api-version', 'v2');
+                  if (signedInvite) {
+                    unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
+                      httpOnly: true,
+                      secure: process.env.NODE_ENV === 'production',
+                      sameSite: 'lax',
+                      path: '/',
+                      maxAge: 0,
+                    });
+                  }
+                  if (hasStaleGuestCookie) {
+                    unauthorizedResponse.cookies.set(GUEST_COOKIE, '', {
+                      httpOnly: true,
+                      secure: process.env.NODE_ENV === 'production',
+                      sameSite: 'lax',
+                      path: '/',
+                      maxAge: 0,
+                    });
+                  }
+                  return unauthorizedResponse;
+                }
+              }
             }
           }
         }

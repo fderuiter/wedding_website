@@ -43,6 +43,8 @@ const APP_ROUTES: AppRoute[] = [
   { path: '/api/admin/login', roles: ['public', 'admin'], exact: true },
   { path: '/api/admin/logout', roles: ['public', 'admin'], exact: true },
   { path: '/api/admin/me', roles: ['public', 'admin'], exact: true },
+  { path: '/api/admin/password-reset/request', roles: ['public', 'admin'], exact: true },
+  { path: '/api/admin/password-reset/confirm', roles: ['public', 'admin'], exact: true },
   
   // UI Admin Route for login
   { path: '/admin/login', label: 'Admin', roles: ['public'], showInNav: false, exact: true },

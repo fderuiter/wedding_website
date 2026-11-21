@@ -8,6 +8,7 @@ import { AppConfigSchema, CreateAppConfigProfileSchema, UpdateAppConfigSchema, t
 import { resolveModuleConfig } from '@/lib/modules';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { formatZodError } from '@/utils/validation';
+import { env } from '@/env';
 
 function resolveSecretField(
   incoming: string | null | undefined,
@@ -17,6 +18,49 @@ function resolveSecretField(
     return incoming;
   }
   return existingValue ?? '';
+}
+
+function resolveGuestPasscodeMutation(
+  incomingPasscode: string | null | undefined,
+  existing: { guestPasscode?: string | null; guestPasscodeVersion?: number | null }
+): { guestPasscode: string | null; guestPasscodeVersion: number } {
+  const currentVersion =
+    typeof existing.guestPasscodeVersion === 'number' ? existing.guestPasscodeVersion : 1;
+  const existingDbPasscode =
+    typeof existing.guestPasscode === 'string' && existing.guestPasscode.trim().length > 0
+      ? existing.guestPasscode.trim()
+      : null;
+
+  if (typeof incomingPasscode !== 'string' || incomingPasscode.trim().length === 0) {
+    return {
+      guestPasscode: existingDbPasscode,
+      guestPasscodeVersion: currentVersion,
+    };
+  }
+
+  const trimmedIncoming = incomingPasscode.trim();
+  const guestSessionSecret = (process.env.GUEST_SESSION_SECRET || env.GUEST_SESSION_SECRET || '').trim();
+  if (guestSessionSecret && trimmedIncoming === guestSessionSecret) {
+    throw new ApiError(400, 'Guest passcode must be distinct from GUEST_SESSION_SECRET.');
+  }
+
+  const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
+  const fallbackEnvPasscode = isProduction
+    ? (process.env.GUEST_PASSCODE ?? '').trim()
+    : (env.GUEST_PASSCODE || process.env.GUEST_PASSCODE || 'wedding2026').trim();
+  const previousEffectivePasscode = existingDbPasscode ?? fallbackEnvPasscode;
+
+  if (trimmedIncoming === previousEffectivePasscode) {
+    return {
+      guestPasscode: existingDbPasscode,
+      guestPasscodeVersion: currentVersion,
+    };
+  }
+
+  return {
+    guestPasscode: trimmedIncoming,
+    guestPasscodeVersion: currentVersion + 1,
+  };
 }
 
 export const GET = withApiMiddleware(async (req: NextRequest) => {
@@ -112,6 +156,8 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     existing.themePreset
   );
 
+  const passcodeMutation = resolveGuestPasscodeMutation(validData.guestPasscode, existing);
+
   const dbPayload = {
     ...toAppConfigDbPayload({
       ...validData,
@@ -120,6 +166,8 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     modules: mergedModules,
     showCountdown: mergedModules.countdown,
     showAddToCalendar: mergedModules.addToCalendar,
+    guestPasscode: passcodeMutation.guestPasscode,
+    guestPasscodeVersion: passcodeMutation.guestPasscodeVersion,
     smtpPass: resolveSecretField(validData.smtpPass, existing.smtpPass),
     resendApiKey: resolveSecretField(validData.resendApiKey, existing.resendApiKey),
     sendgridApiKey: resolveSecretField(validData.sendgridApiKey, existing.sendgridApiKey),
@@ -155,6 +203,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
   }
 
   revalidatePath('/', 'layout');
+  revalidatePath('/robots.txt');
 
   return NextResponse.json(toAdminAppConfig(parsedUpdatedConfig));
 });

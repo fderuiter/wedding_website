@@ -5750,6 +5750,12 @@
                           "minimum": 0,
                           "maximum": 3600000
                         },
+                        "guestPasscodeEnabled": {
+                          "type": "boolean"
+                        },
+                        "allowSearchIndexing": {
+                          "type": "boolean"
+                        },
                         "smtpPass": {
                           "nullable": true,
                           "type": "string"
@@ -5763,6 +5769,14 @@
                           "type": "string"
                         },
                         "twilioAuthToken": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "guestPasscode": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "adminPasswordHash": {
                           "nullable": true,
                           "type": "string"
                         }
@@ -6917,6 +6931,121 @@
         }
       }
     },
+    "/api/admin/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/password-reset/confirm",
+        "description": "Endpoint for /api/admin/password-reset/confirm",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128
+                  },
+                  "confirmPassword": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token",
+                  "newPassword"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/password-reset/request": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/password-reset/request",
+        "description": "Endpoint for /api/admin/password-reset/request",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/password": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/password",
+        "description": "Endpoint for /api/admin/password",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128
+                  },
+                  "confirmPassword": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "currentPassword",
+                  "newPassword"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/photos/{id}": {
       "patch": {
         "tags": [
@@ -7891,6 +8020,17 @@
                       }
                     ]
                   },
+                  "guestPasscode": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "guestPasscodeEnabled": {
+                    "type": "boolean"
+                  },
+                  "allowSearchIndexing": {
+                    "type": "boolean"
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -8333,6 +8473,17 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "guestPasscode": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "guestPasscodeEnabled": {
+                    "type": "boolean"
+                  },
+                  "allowSearchIndexing": {
+                    "type": "boolean"
                   },
                   "modules": {
                     "type": "object",

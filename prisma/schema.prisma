@@ -79,6 +79,12 @@ model AppConfig {
   twilioFromNumber String?  @default("")
   broadcastBatchSize Int    @default(50)
   broadcastBatchDelayMs Int @default(500)
+  guestPasscode        String?
+  adminPasswordHash    String?
+  guestPasscodeEnabled Boolean  @default(true)
+  allowSearchIndexing  Boolean  @default(false)
+  guestPasscodeVersion Int      @default(1)
+  adminSessionVersion  Int      @default(1)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }

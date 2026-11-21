@@ -33,8 +33,9 @@ async function getSecret(): Promise<string> {
   return secret;
 }
 
-interface GuestTokenPayload {
+export interface GuestTokenPayload {
   guest: boolean;
+  guestPasscodeVersion?: number;
   iat?: number;
   exp?: number;
 }
@@ -59,7 +60,24 @@ async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null
   }
 }
 
-export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
+export async function getVerifiedGuestPayload(req?: NextRequest): Promise<GuestTokenPayload | null> {
+  const cookieValue = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
+  if (!cookieValue) return null;
+
+  const payload = await verifyGuestToken(cookieValue);
+  if (!payload || payload.guest !== true) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (payload.exp && payload.exp < now) {
+    return null;
+  }
+
+  return payload;
+}
+
+export async function isGuestRequest(req?: NextRequest, expectedPasscodeVersion?: number): Promise<boolean> {
   const cookieValue = await readRequestCookie(GUEST_COOKIE, req);
   if (!cookieValue) return false;
 
@@ -72,6 +90,13 @@ export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
   const now = Date.now();
   if (payload.exp && payload.exp < now) {
     return false;
+  }
+
+  if (typeof expectedPasscodeVersion === 'number') {
+    const tokenVersion = typeof payload.guestPasscodeVersion === 'number' ? payload.guestPasscodeVersion : 1;
+    if (tokenVersion !== expectedPasscodeVersion) {
+      return false;
+    }
   }
 
   return true;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { loadSessionGuardConfig } from '@/core/auth/nodeSessionGuards';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
@@ -31,12 +32,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const { passcode } = parseResult.data;
   const trimmedCode = passcode.trim();
 
+  const sessionConfig = await loadSessionGuardConfig();
+  const dbPasscode = sessionConfig.guestPasscode?.trim() || '';
   const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
-  const expectedPasscode = isProduction
+  const envPasscode = isProduction
     ? (process.env.GUEST_PASSCODE ?? '')
     : env.GUEST_PASSCODE;
+  const expectedPasscode = dbPasscode || envPasscode;
 
-  if (isProduction && (!expectedPasscode.trim() || expectedPasscode.trim() === 'wedding2026')) {
+  if (isProduction && !dbPasscode && (!expectedPasscode.trim() || expectedPasscode.trim() === 'wedding2026')) {
     return NextResponse.json(
       { success: false, error: 'Guest passcode is not configured for production.' },
       { status: 503 }
@@ -51,7 +55,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (matchesSharedPasscode) {
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({ guest: true, iat, exp });
+    const token = await signGuestToken({
+      guest: true,
+      guestPasscodeVersion: sessionConfig.guestPasscodeVersion,
+      iat,
+      exp,
+    });
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     response.cookies.set(GUEST_COOKIE, token, {

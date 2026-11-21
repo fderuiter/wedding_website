@@ -1,5 +1,0 @@
-# See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
-#
-# Disallow all crawlers from accessing the entire site.
-User-agent: *
-Disallow: /

@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { isGuestRequest } from '@/core/auth/guest.server';
-import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
 import { timingSafeEqualJS } from '@/utils/crypto';
@@ -73,6 +71,8 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/admin/login' ||
     normalizedPath === '/api/admin/login' ||
     normalizedPath === '/api/admin/setup' ||
+    normalizedPath === '/api/admin/password-reset/request' ||
+    normalizedPath === '/api/admin/password-reset/confirm' ||
     normalizedPath === '/api/health' ||
     normalizedPath === '/api/ready' ||
     normalizedPath === '/robots.txt' ||
@@ -96,32 +96,6 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (!isExcluded) {
-    const isGuest = (await isGuestRequest(request)) || Boolean(await getSignedGuestInviteSession(request));
-    const isAdmin = await isAdminRequest(request);
-
-    if (!isGuest && !isAdmin) {
-      if (normalizedPath.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-      const loginUrl = new URL('/guest/login', request.url);
-      const incomingParams = new URLSearchParams(request.nextUrl.search);
-      const incomingCode = incomingParams.get('code')?.trim();
-      if (incomingParams.has('code')) {
-        incomingParams.delete('code');
-      }
-      const cleanSearch = incomingParams.toString();
-      loginUrl.searchParams.set(
-        'callbackUrl',
-        cleanSearch ? `${pathname}?${cleanSearch}` : pathname
-      );
-      if (incomingCode) {
-        loginUrl.searchParams.set('code', incomingCode);
-      }
-      return NextResponse.redirect(loginUrl, { status: 303 });
-    }
-  }
-
   const requestHeaders = new Headers();
   if (request.headers && typeof request.headers.forEach === 'function') {
     request.headers.forEach((value: string, key: string) => {
@@ -131,6 +105,7 @@ export async function middleware(request: NextRequest) {
     });
   }
   requestHeaders.set('x-guest-gated-page', !isExcluded && !isApiRoute && !isProtected ? '1' : '0');
+  requestHeaders.set('x-guest-gated-api', !isExcluded && isApiRoute && !isProtected ? '1' : '0');
   requestHeaders.set('x-guest-callback-url', pathname + request.nextUrl.search);
 
   return NextResponse.next({

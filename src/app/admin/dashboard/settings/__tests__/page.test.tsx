@@ -918,5 +918,114 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
 
     sessionSetSpy.mockRestore();
   });
+
+  it('supports Site Visibility toggle, Shared Guest Passcode reveal/edit, Copy Share Details, Allow Search Engine Indexing, Account Security password rotation, and has zero axe violations', async () => {
+    const writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+
+    let savedPayload: any = null;
+    let passwordPayload: any = null;
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (options?.method === 'PUT') {
+          savedPayload = JSON.parse(String(options.body));
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ ...mockConfig, ...savedPayload }),
+          });
+        }
+        if (url.includes('list=true')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => [{ ...mockConfig, guestPasscode: 'garden2026', guestPasscodeEnabled: true }],
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ...mockConfig, guestPasscode: 'garden2026', guestPasscodeEnabled: true }),
+        });
+      }
+      if (url === '/api/admin/password' && options?.method === 'POST') {
+        passwordPayload = JSON.parse(String(options.body));
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            message: 'Admin password updated successfully.',
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    const { container } = render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    // 1. Verify Shared Guest Passcode reveal/hide and Copy Share Details
+    const passcodeInput = screen.getByLabelText(/Shared Guest Passcode/i) as HTMLInputElement;
+    expect(passcodeInput).toHaveAttribute('type', 'password');
+    expect(passcodeInput.value).toBe('garden2026');
+
+    fireEvent.click(screen.getByRole('button', { name: /Show guest passcode/i }));
+    expect(passcodeInput).toHaveAttribute('type', 'text');
+
+    fireEvent.click(screen.getByRole('button', { name: /Copy Share Details/i }));
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        'Wedding Website: https://example.com\nGuest Passcode: garden2026'
+      );
+    });
+
+    // 2. Toggle Site Visibility to Public, edit passcode, and enable Allow Search Engine Indexing
+    const publicRadio = screen.getByRole('radio', { name: /^Public/i });
+    fireEvent.click(publicRadio);
+    fireEvent.change(passcodeInput, { target: { value: 'newpass2027' } });
+
+    const indexingCheckbox = screen.getByLabelText(/Allow Search Engine Indexing/i);
+    expect(indexingCheckbox).not.toBeChecked();
+    fireEvent.click(indexingCheckbox);
+    expect(indexingCheckbox).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+    await waitFor(() => {
+      expect(savedPayload).not.toBeNull();
+    });
+    expect(savedPayload.guestPasscodeEnabled).toBe(false);
+    expect(savedPayload.guestPasscode).toBe('newpass2027');
+    expect(savedPayload.allowSearchIndexing).toBe(true);
+
+    // 3. Submit Account Security password rotation
+    fireEvent.change(screen.getByLabelText(/^Current Password$/i), {
+      target: { value: 'old-admin-secret' },
+    });
+    fireEvent.change(screen.getByLabelText(/^New Password$/i), {
+      target: { value: 'new-admin-secret-123' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Confirm New Password$/i), {
+      target: { value: 'new-admin-secret-123' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Update Admin Password/i }));
+
+    await waitFor(() => {
+      expect(passwordPayload).toEqual({
+        currentPassword: 'old-admin-secret',
+        newPassword: 'new-admin-secret-123',
+        confirmPassword: 'new-admin-secret-123',
+      });
+    });
+    const matches = await screen.findAllByText(/Admin password updated successfully/i);
+    expect(matches.length).toBeGreaterThan(0);
+
+    // 4. Verify zero axe accessibility violations
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+  });
 });
 

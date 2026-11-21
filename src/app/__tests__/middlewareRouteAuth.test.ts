@@ -1,9 +1,15 @@
 /** @jest-environment node */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { middleware, config as middlewareConfig } from '@/middleware';
 import { signAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+
+function getLastForwardedHeader(headerName: string): string | null {
+  const mockNext = NextResponse.next as unknown as jest.Mock;
+  const lastArg = mockNext.mock.calls[mockNext.mock.calls.length - 1]?.[0];
+  return lastArg?.request?.headers?.get(headerName) ?? null;
+}
 
 describe('Middleware Route Classification and Authorization Bypass', () => {
   const originalEnv = process.env;
@@ -207,15 +213,14 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       expect(res.status).toBe(200);
     });
 
-    it('blocks unauthenticated API requests to non-excluded endpoints with 401', async () => {
+    it('marks non-excluded API requests with x-guest-gated-api in Edge so withApiMiddleware blocks unauthenticated callers with 401', async () => {
       const req = new NextRequest('http://localhost:3000/api/weather', {
         headers: { host: 'localhost:3000' },
       });
 
       const res = await middleware(req);
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json.error).toBe('Unauthorized');
+      expect(res.status).toBe(200);
+      expect(getLastForwardedHeader('x-guest-gated-api')).toBe('1');
     });
 
     it('blocks guest-authenticated GET requests to /api/media and /api/media/ with 401 while allowing /api/photos', async () => {
@@ -238,7 +243,7 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       expect(photosRes.status).toBe(200);
     });
 
-    it('enforces auth checks on /api/* paths ending with image suffixes while still excluding public static images', async () => {
+    it('enforces Edge admin auth on /api/admin/* paths ending with image suffixes and stamps x-guest-gated-api on non-admin /api/* image paths while excluding public static images', async () => {
       const adminPngReq = new NextRequest('http://localhost:3000/api/admin/evict/key-0.png', {
         headers: { host: 'localhost:3000' },
       });
@@ -249,7 +254,8 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
         headers: { host: 'localhost:3000' },
       });
       const apiPhotoSvgRes = await middleware(apiPhotoSvgReq);
-      expect(apiPhotoSvgRes.status).toBe(401);
+      expect(apiPhotoSvgRes.status).toBe(200);
+      expect(getLastForwardedHeader('x-guest-gated-api')).toBe('1');
 
       const publicImgReq = new NextRequest('http://localhost:3000/images/sunset-embrace.jpg', {
         headers: { host: 'localhost:3000' },
@@ -257,9 +263,11 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       const publicImgRes = await middleware(publicImgReq);
       expect(publicImgRes.status).toBe(200);
       expect(publicImgRes.headers.get('location')).toBeNull();
+      expect(getLastForwardedHeader('x-guest-gated-api')).toBe('0');
+      expect(getLastForwardedHeader('x-guest-gated-page')).toBe('0');
     });
 
-    it('allows unauthenticated POST /api/registry/webhook/stripe without cookies while blocking non-POST methods', async () => {
+    it('marks POST /api/registry/webhook/stripe with x-guest-gated-api=0 while stamping non-POST methods with x-guest-gated-api=1', async () => {
       const postWebhookReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
         method: 'POST',
         headers: {
@@ -270,6 +278,7 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       const postWebhookRes = await middleware(postWebhookReq);
       expect(postWebhookRes.status).toBe(200);
       expect(postWebhookRes.headers.get('location')).toBeNull();
+      expect(getLastForwardedHeader('x-guest-gated-api')).toBe('0');
 
       const trailingSlashPostReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe/', {
         method: 'POST',
@@ -280,13 +289,15 @@ describe('Middleware Route Classification and Authorization Bypass', () => {
       });
       const trailingSlashPostRes = await middleware(trailingSlashPostReq);
       expect(trailingSlashPostRes.status).toBe(200);
+      expect(getLastForwardedHeader('x-guest-gated-api')).toBe('0');
 
       const getWebhookReq = new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
         method: 'GET',
         headers: { host: 'localhost:3000' },
       });
       const getWebhookRes = await middleware(getWebhookReq);
-      expect(getWebhookRes.status).toBe(401);
+      expect(getWebhookRes.status).toBe(200);
+      expect(getLastForwardedHeader('x-guest-gated-api')).toBe('1');
     });
   });
 });

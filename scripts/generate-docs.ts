@@ -1138,7 +1138,12 @@ function expressionReferencesAnyIdentifier(node: ts.Node, names: Set<string>): b
 
 function nodesRequireInviteSession(nodes: ts.Node[]): boolean {
   const sessionVars = new Set<string>();
-  const fallbackAuthVars = new Set<string>(['isAdminRequest', 'isGuestRequest']);
+  const fallbackAuthVars = new Set<string>([
+    'isAdminRequest',
+    'isGuestRequest',
+    'isActiveAdminSession',
+    'isActiveGuestPasscodeSession',
+  ]);
 
   for (const root of nodes) {
     const collectVars = (node: ts.Node) => {
@@ -1148,7 +1153,9 @@ function nodesRequireInviteSession(nodes: ts.Node[]): boolean {
         }
         if (
           nodeContainsIdentifierCall(node.initializer, 'isAdminRequest') ||
-          nodeContainsIdentifierCall(node.initializer, 'isGuestRequest')
+          nodeContainsIdentifierCall(node.initializer, 'isGuestRequest') ||
+          nodeContainsIdentifierCall(node.initializer, 'isActiveAdminSession') ||
+          nodeContainsIdentifierCall(node.initializer, 'isActiveGuestPasscodeSession')
         ) {
           fallbackAuthVars.add(node.name.text);
         }

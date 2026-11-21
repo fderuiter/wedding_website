@@ -218,6 +218,9 @@ const rawUpdateAppConfigBaseSchema = z.object({
   twilioFromNumber: z.string().nullable().optional().default(''),
   broadcastBatchSize: z.union([z.number(), z.string().transform(v => parseInt(v, 10))]).optional().default(50),
   broadcastBatchDelayMs: z.union([z.number(), z.string().transform(v => parseInt(v, 10))]).optional().default(500),
+  guestPasscode: z.string().max(255).nullable().optional(),
+  guestPasscodeEnabled: z.boolean().optional(),
+  allowSearchIndexing: z.boolean().optional(),
   modules: ModuleConfigSchema.partial().optional(),
   timezone: z.string().refine(
     (val) => {
@@ -306,6 +309,8 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
       twilioFromNumber: data.twilioFromNumber ?? '',
       broadcastBatchSize: data.broadcastBatchSize ?? 50,
       broadcastBatchDelayMs: data.broadcastBatchDelayMs ?? 500,
+      guestPasscodeEnabled: data.guestPasscodeEnabled ?? true,
+      allowSearchIndexing: data.allowSearchIndexing ?? false,
       subdomain: data.subdomain || null,
     };
   });
@@ -418,6 +423,8 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     twilioFromNumber: data.twilioFromNumber ?? '',
     broadcastBatchSize: data.broadcastBatchSize ?? 50,
     broadcastBatchDelayMs: data.broadcastBatchDelayMs ?? 500,
+    ...(data.guestPasscodeEnabled !== undefined ? { guestPasscodeEnabled: data.guestPasscodeEnabled } : {}),
+    ...(data.allowSearchIndexing !== undefined ? { allowSearchIndexing: data.allowSearchIndexing } : {}),
   };
 }
 
@@ -763,6 +770,12 @@ export const AppConfigSchema = z.object({
   twilioFromNumber: z.string().nullable().optional().default('').describe('Twilio E.164 sender phone number or messaging source for SMS broadcasts.'),
   broadcastBatchSize: z.number().default(50).describe('Maximum number of broadcast recipients processed per delivery batch.'),
   broadcastBatchDelayMs: z.number().default(500).describe('Delay in milliseconds between consecutive outbound broadcast batches.'),
+  guestPasscode: z.string().nullable().optional().default(null).describe('Optional database override for the shared guest event passcode; omitted from public DTOs and backups and resolved in admin DTOs.'),
+  adminPasswordHash: z.string().nullable().optional().default(null).describe('Optional scrypt password hash override for administrator login; strictly omitted from public, admin, snapshot, and backup DTOs.'),
+  guestPasscodeEnabled: z.boolean().default(true).describe('Site visibility toggle controlling whether unauthenticated visitors must sign in at /guest/login (true = Password Protected mode, false = Public mode).'),
+  allowSearchIndexing: z.boolean().default(false).describe('Search engine indexing toggle controlling robots.txt directives and meta robots tags when the site is in Public mode.'),
+  guestPasscodeVersion: z.number().int().default(1).describe('Monotonic session version counter incremented when rotating guestPasscode to revoke older guest_auth cookies.'),
+  adminSessionVersion: z.number().int().default(1).describe('Monotonic session version counter incremented when rotating or resetting adminPasswordHash to revoke older admin_auth cookies and reset tokens.'),
   modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
   features: z.union([
     z.string().transform((str) => {
@@ -846,6 +859,8 @@ export const PublicAppConfigSchema = z.object({
   isRsvpOpen: z.boolean().optional(),
   rsvpDeadlineDate: z.string().default(''),
   rsvpClosedMessage: z.string().default('').transform((val) => sanitizeRsvpClosedMessage(val)),
+  guestPasscodeEnabled: z.boolean().default(true),
+  allowSearchIndexing: z.boolean().default(false),
   modules: AppConfigSchema.shape.modules,
   features: AppConfigSchema.shape.features,
   createdAt: z.coerce.date(),

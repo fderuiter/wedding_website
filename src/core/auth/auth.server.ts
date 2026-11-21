@@ -49,6 +49,7 @@ async function getSecret(): Promise<string> {
 
 export interface AdminTokenPayload {
   isAdmin: boolean;
+  adminSessionVersion?: number;
   iat?: number;
   exp?: number;
   [key: string]: unknown;
@@ -106,13 +107,26 @@ export async function verifyAdminToken(token: string): Promise<AdminTokenPayload
   }
 }
 
+export async function getVerifiedAdminPayload(req?: NextRequest): Promise<AdminTokenPayload | null> {
+  const cookieValue = await readRequestCookie(ADMIN_COOKIE, req, { suppressErrors: true });
+  if (!cookieValue) return null;
+
+  const payload = await verifyAdminToken(cookieValue);
+  if (!payload || payload.isAdmin !== true) {
+    return null;
+  }
+
+  return payload;
+}
+
 /**
  * Determine whether the current request/session represents an authenticated admin.
  *
  * @param req - Optional Next.js request object; provide this in API route contexts. Omit when running in Server Components.
+ * @param expectedSessionVersion - Optional session version from AppConfig to enforce immediate revocation on rotation.
  * @returns `true` if the request/session represents an authenticated admin, `false` otherwise.
  */
-export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
+export async function isAdminRequest(req?: NextRequest, expectedSessionVersion?: number): Promise<boolean> {
   const cookieValue = await readRequestCookie(ADMIN_COOKIE, req);
   if (!cookieValue) return false;
 
@@ -120,6 +134,13 @@ export async function isAdminRequest(req?: NextRequest): Promise<boolean> {
 
   if (!payload || payload.isAdmin !== true) {
     return false;
+  }
+
+  if (typeof expectedSessionVersion === 'number') {
+    const tokenVersion = typeof payload.adminSessionVersion === 'number' ? payload.adminSessionVersion : 1;
+    if (tokenVersion !== expectedSessionVersion) {
+      return false;
+    }
   }
 
   return true;

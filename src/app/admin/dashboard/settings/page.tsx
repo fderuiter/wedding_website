@@ -13,6 +13,7 @@ import { AdminViewState } from '@/components/admin/AdminViewState';
 import AdminPreviewLayout from '@/components/admin/AdminPreviewLayout';
 import { FormGroup, Label, Input, Textarea, Select, FormMessage } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
@@ -310,6 +311,19 @@ export default function AdminSettingsPage() {
   const [newProfileData, setNewProfileData] = useState({ partner1Name: '', partner2Name: '', subdomain: '' });
   const [createError, setCreateError] = useState('');
 
+  const [showGuestPasscode, setShowGuestPasscode] = useState(false);
+  const [copiedShareDetails, setCopiedShareDetails] = useState(false);
+
+  const [currentAdminPassword, setCurrentAdminPassword] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+  const [showCurrentAdminPassword, setShowCurrentAdminPassword] = useState(false);
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
+  const [showConfirmAdminPassword, setShowConfirmAdminPassword] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState('');
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+
   const localConfig = configOverride && configOverride.base === initialConfig
     ? configOverride.value
     : (initialConfig ?? null);
@@ -477,6 +491,14 @@ export default function AdminSettingsPage() {
       addToast(themeTokensError, 'error');
       return;
     }
+    if (
+      localConfig.guestPasscodeEnabled !== false &&
+      typeof localConfig.guestPasscode === 'string' &&
+      localConfig.guestPasscode.trim().length === 0
+    ) {
+      addToast('Guest passcode cannot be empty while Password Protected mode is enabled.', 'error');
+      return;
+    }
     try {
       const rawTokens =
         localConfig.themeTokens && typeof localConfig.themeTokens === 'object'
@@ -579,6 +601,75 @@ export default function AdminSettingsPage() {
     router.push('/admin/dashboard');
   };
 
+  const handleCopyShareDetails = async () => {
+    const siteUrl = (
+      localConfig?.baseUrl ||
+      (typeof window !== 'undefined' ? window.location.origin : '')
+    ).trim();
+    const activePasscode = (localConfig?.guestPasscode || '').trim();
+    const isPasswordProtected = localConfig?.guestPasscodeEnabled !== false;
+    const snippet =
+      isPasswordProtected && activePasscode
+        ? `Wedding Website: ${siteUrl}\nGuest Passcode: ${activePasscode}`
+        : `Wedding Website: ${siteUrl}`;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(snippet);
+      }
+      setCopiedShareDetails(true);
+      window.setTimeout(() => setCopiedShareDetails(false), 2000);
+      addToast('Guest share details copied to clipboard.', 'success');
+    } catch {
+      addToast('Unable to copy share details to clipboard.', 'error');
+    }
+  };
+
+  const handleAdminPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError('');
+    setPasswordChangeSuccess('');
+
+    if (!currentAdminPassword) {
+      setPasswordChangeError('Current password is required.');
+      return;
+    }
+    if (newAdminPassword.length < 8) {
+      setPasswordChangeError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newAdminPassword !== confirmAdminPassword) {
+      setPasswordChangeError('New password and confirmation do not match.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const response = await apiClient.post<{ success: boolean; message?: string }>(
+        '/api/admin/password',
+        {
+          currentPassword: currentAdminPassword,
+          newPassword: newAdminPassword,
+          confirmPassword: confirmAdminPassword,
+        }
+      );
+      setCurrentAdminPassword('');
+      setNewAdminPassword('');
+      setConfirmAdminPassword('');
+      const msg =
+        response?.message ||
+        'Admin password updated. Other active sessions have been signed out.';
+      setPasswordChangeSuccess(msg);
+      addToast(msg, 'success');
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to update admin password.';
+      setPasswordChangeError(errMsg);
+      addToast(errMsg, 'error');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const handleProfileSwitch = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const nextProfileId = e.target.value;
     if (nextProfileId === selectedProfileId) return;
@@ -605,6 +696,7 @@ export default function AdminSettingsPage() {
           draftType="config"
           draftData={{
             ...localConfig,
+            guestPasscode: undefined,
             smtpPass: undefined,
             resendApiKey: undefined,
             sendgridApiKey: undefined,
@@ -1080,14 +1172,130 @@ export default function AdminSettingsPage() {
                 </p>
 
                 <div
-                  role="note"
-                  aria-label="Guest login passcode configuration"
-                  className="p-4 rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/30 text-sm text-blue-900 dark:text-blue-200"
+                  role="group"
+                  aria-labelledby="site-visibility-heading"
+                  className="p-5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/40 space-y-4"
                 >
-                  <p className="font-semibold">Guest Login Passcode</p>
-                  <p className="text-xs text-blue-800 dark:text-blue-300 mt-1">
-                    Site-wide guest login gatekeeping is controlled via environment configuration (<code className="font-mono">GUEST_PASSCODE</code> and <code className="font-mono">GUEST_SESSION_SECRET</code>) enforced in Edge middleware rather than a database toggle. Update your deployment environment variables to enable, rotate, or disable the guest passcode gate.
-                  </p>
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                      <h3 id="site-visibility-heading" className="font-semibold text-gray-900 dark:text-gray-100">
+                        Site Visibility &amp; Guest Passcode
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Choose whether visitors need the shared guest passcode to browse your site, or open public pages to anyone with the link. Submitting RSVPs, viewing private events, and accessing household details always require an invitation code.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleCopyShareDetails()}
+                      className="shrink-0 inline-flex items-center gap-1.5"
+                    >
+                      <Icon name={copiedShareDetails ? 'Check' : 'Copy'} size={15} />
+                      {copiedShareDetails ? 'Copied!' : 'Copy Share Details'}
+                    </Button>
+                  </div>
+
+                  <div
+                    role="radiogroup"
+                    aria-label="Site visibility mode"
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+                  >
+                    <label
+                      htmlFor="visibility-password-protected"
+                      className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition-colors ${
+                        localConfig.guestPasscodeEnabled !== false
+                          ? 'border-rose-300 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/30'
+                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
+                      }`}
+                    >
+                      <input
+                        id="visibility-password-protected"
+                        type="radio"
+                        name="siteVisibilityMode"
+                        checked={localConfig.guestPasscodeEnabled !== false}
+                        onChange={() =>
+                          setLocalConfig((prev: any) => ({
+                            ...prev,
+                            guestPasscodeEnabled: true,
+                          }))
+                        }
+                        className="mt-1 h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-300"
+                      />
+                      <div>
+                        <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          Password Protected
+                        </span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Visitors must enter the guest passcode or an invitation code before viewing site pages. Search indexing is automatically blocked.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label
+                      htmlFor="visibility-public"
+                      className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition-colors ${
+                        localConfig.guestPasscodeEnabled === false
+                          ? 'border-rose-300 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/30'
+                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
+                      }`}
+                    >
+                      <input
+                        id="visibility-public"
+                        type="radio"
+                        name="siteVisibilityMode"
+                        checked={localConfig.guestPasscodeEnabled === false}
+                        onChange={() =>
+                          setLocalConfig((prev: any) => ({
+                            ...prev,
+                            guestPasscodeEnabled: false,
+                          }))
+                        }
+                        className="mt-1 h-4 w-4 text-rose-600 focus:ring-rose-500 border-gray-300"
+                      />
+                      <div>
+                        <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          Public
+                        </span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Anyone with the link can browse public pages and schedule events. RSVPs and private sub-events still require a household invitation code.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <FormGroup>
+                    <Label htmlFor="guest-passcode-input">Shared Guest Passcode</Label>
+                    <div className="relative max-w-md">
+                      <Input
+                        id="guest-passcode-input"
+                        name="guestPasscode"
+                        type={showGuestPasscode ? 'text' : 'password'}
+                        value={localConfig.guestPasscode ?? ''}
+                        onChange={(e) =>
+                          setLocalConfig((prev: any) => ({
+                            ...prev,
+                            guestPasscode: e.target.value,
+                          }))
+                        }
+                        placeholder="Enter shared guest passcode"
+                        autoComplete="off"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGuestPasscode((prev) => !prev)}
+                        aria-label={showGuestPasscode ? 'Hide guest passcode' : 'Show guest passcode'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      >
+                        <Icon name={showGuestPasscode ? 'EyeOff' : 'Eye'} size={18} />
+                      </button>
+                    </div>
+                    <FormMessage>
+                      Saving a new shared passcode immediately signs out visitors using the old passcode while keeping household invitation sessions active.
+                    </FormMessage>
+                  </FormGroup>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1606,6 +1814,37 @@ export default function AdminSettingsPage() {
 
               <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4">
                 <h2 className="text-xl font-semibold mb-4">SEO & Metadata</h2>
+                <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex items-start justify-between gap-4">
+                  <div>
+                    <label
+                      htmlFor="allow-search-indexing-toggle"
+                      className="font-semibold text-gray-900 dark:text-gray-100 cursor-pointer"
+                    >
+                      Allow Search Engine Indexing
+                    </label>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Off by default to keep your wedding details out of search results (<code className="font-mono">Disallow: /</code> and <code className="font-mono">noindex</code>).
+                    </p>
+                    {localConfig.guestPasscodeEnabled !== false && (
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-1.5 font-medium">
+                        Password Protected mode is currently enabled — search engine indexing remains blocked until Site Visibility is switched to Public.
+                      </p>
+                    )}
+                  </div>
+                  <input
+                    id="allow-search-indexing-toggle"
+                    name="allowSearchIndexing"
+                    type="checkbox"
+                    checked={Boolean(localConfig.allowSearchIndexing)}
+                    onChange={(e) =>
+                      setLocalConfig((prev: any) => ({
+                        ...prev,
+                        allowSearchIndexing: e.target.checked,
+                      }))
+                    }
+                    className="h-5 w-5 rounded border-gray-300 text-rose-600 focus:ring-rose-500 cursor-pointer mt-1"
+                  />
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormGroup>
                     <Label>SEO Title</Label>
@@ -1659,6 +1898,119 @@ export default function AdminSettingsPage() {
                 </Button>
               </div>
             </form>
+
+            <section
+              aria-labelledby="account-security-heading"
+              className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4 mt-4 mb-10 border border-gray-100 dark:border-zinc-700"
+            >
+              <div>
+                <h2 id="account-security-heading" className="text-xl font-semibold">
+                  Account Security
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Rotate your administrator password. Updating the password immediately revokes any older admin sessions on other devices while keeping this session signed in.
+                </p>
+              </div>
+
+              <form onSubmit={handleAdminPasswordChange} className="space-y-4 max-w-xl">
+                {passwordChangeError && (
+                  <p
+                    id="admin-password-change-error"
+                    role="alert"
+                    className="p-3 rounded-md bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-sm text-red-700 dark:text-red-300"
+                  >
+                    {passwordChangeError}
+                  </p>
+                )}
+                {passwordChangeSuccess && (
+                  <p
+                    role="status"
+                    className="p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-800 dark:text-emerald-200"
+                  >
+                    {passwordChangeSuccess}
+                  </p>
+                )}
+
+                <FormGroup>
+                  <Label htmlFor="admin-current-password">Current Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="admin-current-password"
+                      type={showCurrentAdminPassword ? 'text' : 'password'}
+                      value={currentAdminPassword}
+                      onChange={(e) => setCurrentAdminPassword(e.target.value)}
+                      autoComplete="current-password"
+                      required
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentAdminPassword((prev) => !prev)}
+                      aria-label={showCurrentAdminPassword ? 'Hide current password' : 'Show current password'}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    >
+                      <Icon name={showCurrentAdminPassword ? 'EyeOff' : 'Eye'} size={18} />
+                    </button>
+                  </div>
+                </FormGroup>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormGroup>
+                    <Label htmlFor="admin-new-password">New Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="admin-new-password"
+                        type={showNewAdminPassword ? 'text' : 'password'}
+                        value={newAdminPassword}
+                        onChange={(e) => setNewAdminPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewAdminPassword((prev) => !prev)}
+                        aria-label={showNewAdminPassword ? 'Hide new password' : 'Show new password'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      >
+                        <Icon name={showNewAdminPassword ? 'EyeOff' : 'Eye'} size={18} />
+                      </button>
+                    </div>
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="admin-confirm-password">Confirm New Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="admin-confirm-password"
+                        type={showConfirmAdminPassword ? 'text' : 'password'}
+                        value={confirmAdminPassword}
+                        onChange={(e) => setConfirmAdminPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        required
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmAdminPassword((prev) => !prev)}
+                        aria-label={showConfirmAdminPassword ? 'Hide confirm new password' : 'Show confirm new password'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 p-1 rounded focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      >
+                        <Icon name={showConfirmAdminPassword ? 'EyeOff' : 'Eye'} size={18} />
+                      </button>
+                    </div>
+                  </FormGroup>
+                </div>
+
+                <div>
+                  <Button type="submit" variant="secondary" disabled={changingPassword}>
+                    {changingPassword ? 'Updating Password...' : 'Update Admin Password'}
+                  </Button>
+                </div>
+              </form>
+            </section>
           </div>
 
           <Dialog
