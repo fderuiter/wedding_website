@@ -687,5 +687,110 @@ describe('SeatingTableAdminService', () => {
         expect.any(Object)
       );
     });
+
+    it('preserves valid existing seat numbers on the target table in assignSeatsBatch before allocating open seats', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: 'table-1', seatNumber: 3, used: true, extraFields: { attending: true } },
+        { id: 'g2', guestName: 'Bob', tableId: null, seatNumber: null, used: true, extraFields: { attending: true } },
+      ]);
+
+      mockTxSeatingTableFindUnique.mockResolvedValue({
+        id: 'table-1',
+        name: 'Table 1',
+        capacity: 4,
+        invitationCodes: [
+          { id: 'existing', guestName: 'VIP', seatNumber: 1 },
+          { id: 'g1', guestName: 'Alice', seatNumber: 3 },
+        ],
+      });
+
+      mockTxExecuteRaw.mockResolvedValue(2);
+
+      const result = await service.assignSeatsBatch(['g1', 'g2'], 'table-1', {
+        action: 'assignBatch',
+        author: 'Admin',
+      });
+
+      expect(result.updatedGuests).toEqual([
+        expect.objectContaining({ id: 'g1', guestName: 'Alice', tableId: 'table-1', seatNumber: 3 }),
+        expect.objectContaining({ id: 'g2', guestName: 'Bob', tableId: 'table-1', seatNumber: 2 }),
+      ]);
+    });
+
+    it('rejects assignSeatsBatch and restoreSeatAssignments when one or more guests are not found', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null },
+      ]);
+
+      await expect(service.assignSeatsBatch(['g1', 'missing-id'], 'table-1')).rejects.toThrow(
+        'Validation Error: One or more guests not found.'
+      );
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null },
+      ]);
+
+      await expect(
+        service.restoreSeatAssignments([
+          { invitationCodeId: 'g1', tableId: 'table-1', seatNumber: 1 },
+          { invitationCodeId: 'missing-id', tableId: null, seatNumber: null },
+        ])
+      ).rejects.toThrow('Validation Error: One or more guests not found.');
+
+      expect(mockTxExecuteRaw).not.toHaveBeenCalled();
+    });
+
+    it('prepends displaced occupant seat-clearing updates and enforces capacity in restoreSeatAssignments', async () => {
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null },
+      ]);
+
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        {
+          id: 'table-1',
+          name: 'Table 1',
+          capacity: 3,
+          invitationCodes: [{ id: 'occ-1', guestName: 'Occupied Guest', tableId: 'table-1', seatNumber: 2 }],
+        },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValue(2);
+
+      const restored = await service.restoreSeatAssignments(
+        [{ invitationCodeId: 'g1', tableId: 'table-1', seatNumber: 2 }],
+        { action: 'undo', author: 'Admin' }
+      );
+
+      expect(restored.updatedGuests).toEqual([
+        expect.objectContaining({
+          id: 'occ-1',
+          guestName: 'Occupied Guest',
+          tableId: 'table-1',
+          seatNumber: null,
+        }),
+        expect.objectContaining({
+          id: 'g1',
+          guestName: 'Alice',
+          tableId: 'table-1',
+          seatNumber: 2,
+        }),
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        { id: 'g1', guestName: 'Alice', tableId: null, seatNumber: null },
+      ]);
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        {
+          id: 'table-1',
+          name: 'Table 1',
+          capacity: 1,
+          invitationCodes: [{ id: 'occ-1', guestName: 'Occupied Guest', tableId: 'table-1', seatNumber: 1 }],
+        },
+      ]);
+
+      await expect(
+        service.restoreSeatAssignments([{ invitationCodeId: 'g1', tableId: 'table-1', seatNumber: 1 }])
+      ).rejects.toThrow('Validation Error: Table "Table 1" has reached its maximum capacity of 1.');
+    });
   });
 });
