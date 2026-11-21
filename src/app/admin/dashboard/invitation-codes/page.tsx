@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
@@ -24,6 +24,7 @@ import {
 } from '@/components/admin/SubEventEditorModal';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import {
+  extractDietaryTags,
   matchDietaryCategory,
   getAttendanceStatus,
   isAddressComplete,
@@ -36,6 +37,241 @@ import {
   normalizeGuestPhone,
   validateGuestPhone,
 } from '@/utils/invitationValidation';
+
+const EMPTY_SUB_EVENT_IDS: string[] = [];
+
+interface InvitationCodeRowInfoProps {
+  item: InvitationCodeDTO;
+  subEvents: EditableSubEvent[];
+  allowedSubEventIds: string[];
+  onPreviewQr: (_item: InvitationCodeDTO) => void;
+  onToggleSubEventAccess: (_invitationCodeId: string, _subEventId: string, _isAllowed: boolean) => void;
+}
+
+const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
+  function InvitationCodeRowInfo({
+    item,
+    subEvents,
+    allowedSubEventIds,
+    onPreviewQr,
+    onToggleSubEventAccess,
+  }) {
+    const hasAddress = isAddressComplete(item);
+    const attendanceStatus = getAttendanceStatus(item);
+
+    return (
+      <div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
+          {item.isSample && (
+            <span
+              className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
+              data-testid="sample-guest-badge"
+            >
+              Sample
+            </span>
+          )}
+          {item.householdName && (
+            <span
+              className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
+              data-testid="household-badge"
+            >
+              🏠 {item.householdName}
+            </span>
+          )}
+          {item.partyGroup && (
+            <span
+              className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
+              data-testid="party-group-badge"
+            >
+              👥 {item.partyGroup}
+            </span>
+          )}
+        </div>
+        {(item.plusOneFirstName || item.plusOneLastName) && (
+          <div className="text-sm text-gray-600 dark:text-gray-300">
+            Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
+            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="text-xs py-0.5 px-2 h-auto"
+            onClick={() => onPreviewQr(item)}
+            aria-label={`View QR code for ${item.guestName}`}
+          >
+            View QR
+          </Button>
+        </div>
+
+        {/* Party Tags Display */}
+        {item.partyTags && item.partyTags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {item.partyTags.map((tag) => (
+              <span
+                key={tag}
+                className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+                data-testid="party-tag-pill"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Mailing Address Display */}
+        <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
+          <span className="font-bold">Mailing Address: </span>
+          {hasAddress ? (
+            <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
+              {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+            </span>
+          ) : item.addressLine1 ? (
+            <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
+              Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
+            </span>
+          ) : (
+            <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+          )}
+        </div>
+
+        <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
+          <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+          <span>
+            RSVP:{' '}
+            <span
+              className={
+                attendanceStatus === 'attending'
+                  ? 'text-green-600 font-semibold'
+                  : attendanceStatus === 'declined'
+                    ? 'text-red-600 font-semibold'
+                    : 'text-amber-600 font-semibold'
+              }
+            >
+              {attendanceStatus.charAt(0).toUpperCase() + attendanceStatus.slice(1)}
+            </span>
+          </span>
+        </div>
+        {item.dietaryNotes && item.dietaryNotes.trim() && (
+          <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
+            <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+          </div>
+        )}
+
+        {/* Private Sub-Event Access Matrix Toggles */}
+        <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
+          <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
+            Private Sub-Event Permissions:
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {subEvents.length === 0 ? (
+              <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+            ) : (
+              subEvents.map((evt) => {
+                const isAllowed = allowedSubEventIds.includes(evt.id);
+                return (
+                  <label
+                    key={evt.id}
+                    className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
+                      isAllowed
+                        ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
+                        : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isAllowed}
+                      aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
+                      onChange={(e) => onToggleSubEventAccess(item.id, evt.id, e.target.checked)}
+                      className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                    />
+                    <span>
+                      {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+);
+
+interface InvitationCodeRowActionsProps {
+  item: InvitationCodeDTO;
+  onEdit: (_item: InvitationCodeDTO) => void;
+  onDelete: (_id: string, _e: React.MouseEvent<HTMLButtonElement>) => void;
+}
+
+const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
+  function InvitationCodeRowActions({ item, onEdit, onDelete }) {
+    return (
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label={`Edit guest ${item.guestName}`}
+          onClick={() => onEdit(item)}
+        >
+          Edit
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          aria-label={`Delete code for ${item.guestName}`}
+          onClick={(e) => onDelete(item.id, e)}
+        >
+          Delete
+        </Button>
+      </div>
+    );
+  }
+);
+
+interface InvitationCodeRowProps extends InvitationCodeRowInfoProps, InvitationCodeRowActionsProps {
+  isSelected: boolean;
+  onToggleSelect: (_id: string) => void;
+}
+
+const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function InvitationCodeRow({
+  item,
+  isSelected,
+  subEvents,
+  allowedSubEventIds,
+  onToggleSelect,
+  onPreviewQr,
+  onToggleSubEventAccess,
+  onEdit,
+  onDelete,
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex items-center gap-4 space-y-1">
+        <input
+          type="checkbox"
+          aria-label={`Select invitation code for ${item.guestName}`}
+          checked={isSelected}
+          onChange={() => onToggleSelect(item.id)}
+          className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
+        />
+        <InvitationCodeRowInfo
+          item={item}
+          subEvents={subEvents}
+          allowedSubEventIds={allowedSubEventIds}
+          onPreviewQr={onPreviewQr}
+          onToggleSubEventAccess={onToggleSubEventAccess}
+        />
+      </div>
+      <InvitationCodeRowActions item={item} onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+});
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
@@ -195,8 +431,13 @@ export default function InvitationCodesDashboardPage() {
     fetchSubEventsAndMatrix();
   }, []);
 
-  const handleToggleSubEventAccess = async (invitationCodeId: string, subEventId: string, isAllowed: boolean) => {
-    const previousAllowed = accessMatrix[invitationCodeId] || [];
+  const accessMatrixRef = useRef(accessMatrix);
+  useEffect(() => {
+    accessMatrixRef.current = accessMatrix;
+  }, [accessMatrix]);
+
+  const handleToggleSubEventAccess = useCallback(async (invitationCodeId: string, subEventId: string, isAllowed: boolean) => {
+    const previousAllowed = accessMatrixRef.current[invitationCodeId] || [];
     const updated = isAllowed
       ? Array.from(new Set([...previousAllowed, subEventId]))
       : previousAllowed.filter((id) => id !== subEventId);
@@ -226,7 +467,7 @@ export default function InvitationCodesDashboardPage() {
       );
       fetchSubEventsAndMatrix();
     }
-  };
+  }, [addToast]);
 
   const handleSaveGuest = async (id: string, payload: Partial<InvitationCodeDTO>) => {
     try {
@@ -346,16 +587,18 @@ export default function InvitationCodesDashboardPage() {
     let other = 0;
 
     for (const item of codes) {
-      if (!item.dietaryNotes || !item.dietaryNotes.trim()) continue;
+      const hasNotes = Boolean(item.dietaryNotes && item.dietaryNotes.trim());
+      const restrictionTags = extractDietaryTags(item.extraFields).filter((t) => t !== 'kids');
+      if (!hasNotes && restrictionTags.length === 0) continue;
       totalWithRestrictions++;
-      const notes = item.dietaryNotes.trim();
+      const notes = hasNotes ? item.dietaryNotes!.trim() : '';
 
-      const gf = matchDietaryCategory(notes, 'gluten-free');
-      const veg = matchDietaryCategory(notes, 'vegetarian');
-      const vgn = matchDietaryCategory(notes, 'vegan');
-      const df = matchDietaryCategory(notes, 'dairy-free');
-      const nut = matchDietaryCategory(notes, 'nut-free');
-      const oth = matchDietaryCategory(notes, 'other');
+      const gf = matchDietaryCategory(notes, 'gluten-free', restrictionTags);
+      const veg = matchDietaryCategory(notes, 'vegetarian', restrictionTags);
+      const vgn = matchDietaryCategory(notes, 'vegan', restrictionTags);
+      const df = matchDietaryCategory(notes, 'dairy-free', restrictionTags);
+      const nut = matchDietaryCategory(notes, 'nut-free', restrictionTags);
+      const oth = matchDietaryCategory(notes, 'other', restrictionTags);
 
       if (gf) glutenFree++;
       if (veg) vegetarian++;
@@ -392,7 +635,7 @@ export default function InvitationCodesDashboardPage() {
       }
 
       if (dietaryFilter !== 'all') {
-        if (!matchDietaryCategory(item.dietaryNotes, dietaryFilter)) {
+        if (!matchDietaryCategory(item.dietaryNotes, dietaryFilter, item.extraFields)) {
           return false;
         }
       }
@@ -463,11 +706,11 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
-  const handleToggleSelectRow = (id: string) => {
+  const handleToggleSelectRow = useCallback((id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
-  };
+  }, []);
 
   const handleBatchMarkRedeemed = async () => {
     if (selectedIds.length === 0) return;
@@ -680,7 +923,7 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleDelete = useCallback(async (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
     const card = e.currentTarget.closest('.bg-white, .dark\\:bg-gray-800');
     const isConfirmed = await confirm('Are you sure you want to delete this invitation code?');
     if (!isConfirmed) return;
@@ -690,10 +933,30 @@ export default function InvitationCodesDashboardPage() {
     try {
       await remove(id);
       addToast('Invitation code deleted successfully.', 'success');
-    } catch (e: any) {
+    } catch {
       addToast('Failed to delete invitation code.', 'error');
     }
-  };
+  }, [confirm, captureFocusTarget, remove, addToast]);
+
+  const existingCodes = useMemo(
+    () =>
+      codes
+        .map((item) => item.code)
+        .filter((c): c is string => typeof c === 'string' && Boolean(c.trim())),
+    [codes]
+  );
+
+  const nonAddressCollectionFilteredCount = useMemo(
+    () =>
+      filteredCodes.filter(
+        (c) =>
+          !Array.isArray(c.partyTags) ||
+          !c.partyTags.some(
+            (t) => typeof t === 'string' && t.trim().toLowerCase() === 'address-collection'
+          )
+      ).length,
+    [filteredCodes]
+  );
 
   const handleExportCsv = () => {
     const params = new URLSearchParams();
@@ -794,7 +1057,7 @@ export default function InvitationCodesDashboardPage() {
           isOpen={isImporting}
           onClose={() => setIsImporting(false)}
           onImportComplete={() => fetchAll()}
-          existingCodes={codes.map((item) => item.code).filter((c): c is string => typeof c === 'string' && Boolean(c.trim()))}
+          existingCodes={existingCodes}
         />
 
         {isCreating && (
@@ -1049,6 +1312,7 @@ export default function InvitationCodesDashboardPage() {
                   <option value="vegan">Vegan</option>
                   <option value="dairy-free">Dairy-Free</option>
                   <option value="nut-free">Nut-Free / Allergy</option>
+                  <option value="kids">Kids Meal</option>
                   <option value="other">Other Dietary Restrictions</option>
                 </Select>
               </FormGroup>
@@ -1196,180 +1460,20 @@ export default function InvitationCodesDashboardPage() {
           )}
 
           <div className="grid gap-4 pb-10" ref={containerRef}>
-            {filteredCodes.map((item) => {
-              const hasAddress = isAddressComplete(item);
-              return (
-                <div key={item.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div className="flex items-center gap-4 space-y-1">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select invitation code for ${item.guestName}`}
-                      checked={selectedIdsSet.has(item.id)}
-                      onChange={() => handleToggleSelectRow(item.id)}
-                      className="rounded border-gray-300 text-primary focus:ring-primary h-5 w-5 cursor-pointer"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-lg text-gray-900 dark:text-white">{item.guestName}</span>
-                        {item.isSample && (
-                          <span
-                            className="px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 font-semibold border border-amber-300 dark:border-amber-700"
-                            data-testid="sample-guest-badge"
-                          >
-                            Sample
-                          </span>
-                        )}
-                        {item.householdName && (
-                          <span
-                            className="px-2 py-0.5 rounded text-xs bg-purple-50 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200 font-semibold border border-purple-200 dark:border-purple-800"
-                            data-testid="household-badge"
-                          >
-                            🏠 {item.householdName}
-                          </span>
-                        )}
-                        {item.partyGroup && (
-                          <span
-                            className="px-2 py-0.5 rounded text-xs bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 font-semibold border border-indigo-200 dark:border-indigo-800"
-                            data-testid="party-group-badge"
-                          >
-                            👥 {item.partyGroup}
-                          </span>
-                        )}
-                      </div>
-                      {(item.plusOneFirstName || item.plusOneLastName) && (
-                        <div className="text-sm text-gray-600 dark:text-gray-300">
-                          Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-                          Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="text-xs py-0.5 px-2 h-auto"
-                          onClick={() => setQrPreviewGuest(item)}
-                          aria-label={`View QR code for ${item.guestName}`}
-                        >
-                          View QR
-                        </Button>
-                      </div>
-
-                      {/* Party Tags Display */}
-                      {item.partyTags && item.partyTags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {item.partyTags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-0.5 rounded-full text-[11px] bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
-                              data-testid="party-tag-pill"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Mailing Address Display */}
-                      <div className="text-xs text-gray-600 dark:text-gray-300 pt-1">
-                        <span className="font-bold">Mailing Address: </span>
-                        {hasAddress ? (
-                          <span className="inline-block bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded text-xs">
-                            {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
-                          </span>
-                        ) : item.addressLine1 ? (
-                          <span className="inline-block bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-2 py-0.5 rounded text-xs">
-                            Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
-                        )}
-                      </div>
-
-                      <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
-                        <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
-                        <span>
-                          RSVP:{' '}
-                          <span
-                            className={
-                              getAttendanceStatus(item) === 'attending'
-                                ? 'text-green-600 font-semibold'
-                                : getAttendanceStatus(item) === 'declined'
-                                  ? 'text-red-600 font-semibold'
-                                  : 'text-amber-600 font-semibold'
-                            }
-                          >
-                            {getAttendanceStatus(item).charAt(0).toUpperCase() + getAttendanceStatus(item).slice(1)}
-                          </span>
-                        </span>
-                      </div>
-                      {item.dietaryNotes && item.dietaryNotes.trim() && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
-                          <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
-                        </div>
-                      )}
-
-                      {/* Private Sub-Event Access Matrix Toggles */}
-                      <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60" data-testid={`sub-event-access-${item.id}`}>
-                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300 block mb-1">
-                          Private Sub-Event Permissions:
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {subEvents.length === 0 ? (
-                            <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
-                          ) : (
-                            subEvents.map((evt) => {
-                              const isAllowed = (accessMatrix[item.id] || []).includes(evt.id);
-                              return (
-                                <label
-                                  key={evt.id}
-                                  className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                    isAllowed
-                                      ? 'bg-red-50 dark:bg-red-950/40 text-primary dark:text-red-300 border-red-200 dark:border-red-800'
-                                      : 'bg-gray-50 dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                                  }`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isAllowed}
-                                    aria-label={`Toggle access for ${evt.title} on ${item.guestName}`}
-                                    onChange={(e) => handleToggleSubEventAccess(item.id, evt.id, e.target.checked)}
-                                    className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
-                                  />
-                                  <span>
-                                    {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
-                                  </span>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      aria-label={`Edit guest ${item.guestName}`}
-                      onClick={() => setEditingGuest(item)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      aria-label={`Delete code for ${item.guestName}`}
-                      onClick={(e) => handleDelete(item.id, e)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
+            {filteredCodes.map((item) => (
+              <InvitationCodeRow
+                key={item.id}
+                item={item}
+                isSelected={selectedIdsSet.has(item.id)}
+                subEvents={subEvents}
+                allowedSubEventIds={accessMatrix[item.id] ?? EMPTY_SUB_EVENT_IDS}
+                onToggleSelect={handleToggleSelectRow}
+                onPreviewQr={setQrPreviewGuest}
+                onToggleSubEventAccess={handleToggleSubEventAccess}
+                onEdit={setEditingGuest}
+                onDelete={handleDelete}
+              />
+            ))}
             {codes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No invitation codes found.</p>}
             {codes.length > 0 && filteredCodes.length === 0 && (
               <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
@@ -1634,14 +1738,12 @@ export default function InvitationCodesDashboardPage() {
                 Selected Guests:
               </p>
               <ul className="space-y-1 text-sm text-gray-800 dark:text-gray-200">
-                {codes
-                  .filter((c) => selectedIdsSet.has(c.id))
-                  .map((c) => (
-                    <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
-                      <span className="font-medium">{c.guestName}</span>
-                      <code className="text-xs font-mono text-gray-600 dark:text-gray-300">{c.code}</code>
-                    </li>
-                  ))}
+                {selectedGuests.map((c) => (
+                  <li key={c.id} className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                    <span className="font-medium">{c.guestName}</span>
+                    <code className="text-xs font-mono text-gray-600 dark:text-gray-300">{c.code}</code>
+                  </li>
+                ))}
               </ul>
             </div>
             <div className="flex justify-end gap-3 pt-2">
@@ -1872,13 +1974,7 @@ export default function InvitationCodesDashboardPage() {
           initialRecipientCount={
             broadcastModalFilters?.selectedIds
               ? broadcastModalFilters.selectedIds.length
-              : filteredCodes.filter(
-                (c) =>
-                  !Array.isArray(c.partyTags) ||
-                  !c.partyTags.some(
-                    (t) => typeof t === 'string' && t.trim().toLowerCase() === 'address-collection'
-                  )
-              ).length
+              : nonAddressCollectionFilteredCount
           }
           subEvents={subEvents}
           onViewDeliveryLogs={() => router.push('/admin/dashboard/history?tab=broadcasts')}

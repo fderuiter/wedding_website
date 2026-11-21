@@ -336,7 +336,7 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
         partyTags: ['family'],
         dietaryNotes: null,
         used: true,
-        extraFields: { attending: true },
+        extraFields: { attending: true, dietaryTags: ['dairy-free'] },
       }),
       createMockInvitationCode({
         id: 'solo-pending',
@@ -433,10 +433,13 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       );
 
       const dietaryBadges = screen.getAllByTestId('guest-dietary-badge');
-      expect(dietaryBadges.length).toBeGreaterThanOrEqual(3); // GF, NF on Eleanor + VG on Chloe
+      expect(dietaryBadges.length).toBeGreaterThanOrEqual(4); // GF, NF on Eleanor + DF on Arthur + VG on Chloe
       expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('GF');
       expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('NF');
+      expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('DF');
       expect(dietaryBadges.map((b) => b.textContent).join(' ')).toContain('VG');
+      const dfBadge = dietaryBadges.find((b) => b.textContent?.includes('DF'));
+      expect(dfBadge).toHaveAttribute('title', 'Dairy-Free');
 
       const results = await axe(container);
       expect(results).toHaveNoViolations();

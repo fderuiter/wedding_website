@@ -136,13 +136,30 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     };
   });
 
+  const normalizedSubEvents: Prisma.SubEventCreateManyInput[] = (data.subEvent ?? []).map((evt) => {
+    const { mealOptions, customQuestions, ...rest } = evt;
+    return {
+      ...rest,
+      ...(mealOptions !== undefined ? { mealOptions: serializeDatesForJson(mealOptions) } : {}),
+      ...(customQuestions !== undefined ? { customQuestions: serializeDatesForJson(customQuestions) } : {}),
+    };
+  });
+
   const normalizedSubEventAccess: Prisma.SubEventAccessCreateManyInput[] = (data.subEventAccess ?? []).filter(
     (entry) => validSubEventIds.has(entry.subEventId) && validInvitationIds.has(entry.invitationCodeId),
   );
 
-  const normalizedSubEventRsvps: Prisma.SubEventRsvpCreateManyInput[] = (data.subEventRsvp ?? []).filter(
-    (entry) => validSubEventIds.has(entry.subEventId) && validInvitationIds.has(entry.invitationCodeId),
-  );
+  const normalizedSubEventRsvps: Prisma.SubEventRsvpCreateManyInput[] = (data.subEventRsvp ?? [])
+    .filter((entry) => validSubEventIds.has(entry.subEventId) && validInvitationIds.has(entry.invitationCodeId))
+    .map((rsvp) => {
+      const { mealSelections, customAnswers, plusOneNames, ...rest } = rsvp;
+      return {
+        ...rest,
+        ...(mealSelections !== undefined ? { mealSelections: serializeDatesForJson(mealSelections) } : {}),
+        ...(customAnswers !== undefined ? { customAnswers: serializeDatesForJson(customAnswers) } : {}),
+        ...(plusOneNames !== undefined ? { plusOneNames: serializeDatesForJson(plusOneNames) } : {}),
+      };
+    });
 
   const normalizedBroadcastMessages: Prisma.BroadcastMessageCreateManyInput[] = (data.broadcastMessage ?? []).map(
     (msg) => {
@@ -283,8 +300,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     if (normalizedAttractions.length) await tx.attraction.createMany({ data: normalizedAttractions });
     if (normalizedRegistryItems.length) await tx.registryItem.createMany({ data: normalizedRegistryItems });
     if (normalizedContributors.length) await tx.contributor.createMany({ data: normalizedContributors });
-    if (data.subEvent?.length && tx.subEvent?.createMany) {
-      await tx.subEvent.createMany({ data: data.subEvent });
+    if (normalizedSubEvents.length && tx.subEvent?.createMany) {
+      await tx.subEvent.createMany({ data: normalizedSubEvents });
     }
     if (normalizedSubEventAccess.length && tx.subEventAccess?.createMany) {
       await tx.subEventAccess.createMany({ data: normalizedSubEventAccess });

@@ -155,6 +155,8 @@ export default async function HomePage() {
               attireRules: evt.attireRules || undefined,
               isPrivate: Boolean(evt.isPrivate),
               isReadOnly: Boolean(evt.isReadOnly),
+              mealOptions: evt.mealOptions ?? [],
+              customQuestions: evt.customQuestions ?? [],
               userRsvp: evt.userRsvp ?? undefined,
             },
             createdAt: new Date(0),

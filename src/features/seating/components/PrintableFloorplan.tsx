@@ -104,7 +104,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                       }
                     });
                     return table.invitationCodes.map((guest, idx) => {
-                      const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+                      const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
                       const resolvedSeat = guest.seatNumber || resolvedSeatByGuestId.get(guest.id) || idx + 1;
                       return (
                         <li
@@ -157,7 +157,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
           </h2>
           <div className="grid grid-cols-3 gap-2 text-xs">
             {printableUnassignedGuests.map((guest) => {
-              const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+              const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
               return (
                 <div
                   key={guest.id}

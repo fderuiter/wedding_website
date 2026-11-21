@@ -1,7 +1,13 @@
 import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { isEndTimeBeforeStartTime } from '@/utils/dateTime';
-import { SubEventDTO } from './schemas';
+import {
+  SubEventDTO,
+  MealOptionsListSchema,
+  CustomRsvpQuestionsListSchema,
+  normalizeMealOptions,
+  normalizeCustomQuestions,
+} from './schemas';
 
 export class SubEventAdminService extends BaseService<SubEventDTO> {
   static ENTITY_KEY = 'sub-events';
@@ -42,6 +48,22 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
     if (start && end && isEndTimeBeforeStartTime(start, end)) {
       throw new Error('Validation Error: End time cannot precede start time.');
     }
+
+    if (data.mealOptions !== undefined) {
+      const mealResult = MealOptionsListSchema.safeParse(data.mealOptions);
+      if (!mealResult.success) {
+        const issueMessage = mealResult.error.issues.map((i) => i.message).join(', ');
+        throw new Error(`Validation Error: Invalid meal options (${issueMessage})`);
+      }
+    }
+
+    if (data.customQuestions !== undefined) {
+      const questionResult = CustomRsvpQuestionsListSchema.safeParse(data.customQuestions);
+      if (!questionResult.success) {
+        const issueMessage = questionResult.error.issues.map((i) => i.message).join(', ');
+        throw new Error(`Validation Error: Invalid custom questions (${issueMessage})`);
+      }
+    }
   }
 
   protected async validate(data: Record<string, unknown>): Promise<void> {
@@ -62,6 +84,12 @@ export class SubEventAdminService extends BaseService<SubEventDTO> {
       finalData.endTime = null;
     } else if (finalData.endTime && typeof finalData.endTime === 'string') {
       finalData.endTime = new Date(finalData.endTime);
+    }
+    if (finalData.mealOptions !== undefined) {
+      finalData.mealOptions = normalizeMealOptions(finalData.mealOptions);
+    }
+    if (finalData.customQuestions !== undefined) {
+      finalData.customQuestions = normalizeCustomQuestions(finalData.customQuestions);
     }
     return finalData;
   }

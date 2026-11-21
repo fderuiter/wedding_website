@@ -282,10 +282,12 @@ model SubEvent {
   endTime      DateTime?
   locationName String?          @default("")
   location     String?          @default("")
-  category     String?          @default("")
-  isPrivate    Boolean          @default(false)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  category        String?          @default("")
+  isPrivate       Boolean          @default(false)
+  mealOptions     Json             @default("[]")
+  customQuestions Json             @default("[]")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   accesses     SubEventAccess[]
   rsvps        SubEventRsvp[]
@@ -311,6 +313,9 @@ model SubEventRsvp {
   status           String         @default("pending")
   plusOneCount     Int            @default(0)
   dietaryNotes     String?        @default("")
+  mealSelections   Json           @default("[]")
+  customAnswers    Json           @default("{}")
+  plusOneNames     Json           @default("[]")
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 

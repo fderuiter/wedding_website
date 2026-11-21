@@ -518,7 +518,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const renderGuestBadges = (guest: InvitationCodeDTO) => {
     const status = getGuestAttendanceStatus(guest);
-    const dietaryBadges = getDietaryBadges(guest.dietaryNotes);
+    const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
 
     return (
       <div className="flex flex-wrap gap-1 pt-0.5">
@@ -546,7 +546,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
           <span
             key={badge.category}
             data-testid="guest-dietary-badge"
-            title={`${badge.label}: ${guest.dietaryNotes}`}
+            title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
             className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
           >
             🍽️ {badge.shortLabel}

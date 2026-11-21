@@ -46,6 +46,42 @@ const mockScheduleData = [
     attireRules: 'Formal',
     description: 'Dinner, toasts, and dancing late into the night.',
     isPrivate: false,
+    mealOptions: [
+      {
+        id: 'meal-beef',
+        label: 'Braised Short Rib',
+        description: 'Garlic mashed potatoes & seasonal greens',
+        dietaryTags: ['gluten-free'],
+      },
+      {
+        id: 'meal-fish',
+        label: 'Herb-Crusted Halibut',
+        description: 'Lemon risotto & asparagus',
+        dietaryTags: ['gluten-free', 'nut-free'],
+      },
+      {
+        id: 'meal-veg',
+        label: 'Wild Mushroom Risotto',
+        description: 'Truffle oil & roasted root vegetables',
+        dietaryTags: ['vegan', 'gluten-free', 'dairy-free'],
+      },
+    ],
+    customQuestions: [
+      {
+        id: 'q-shuttle',
+        prompt: 'Will you use the hotel shuttle to Lakeside Ballroom?',
+        type: 'choice',
+        required: true,
+        options: ['Yes, round-trip', 'No, driving separately'],
+      },
+      {
+        id: 'q-song',
+        prompt: 'What song will get you out on the dance floor?',
+        type: 'text',
+        required: false,
+        options: [],
+      },
+    ],
     userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
   },
   {
@@ -87,6 +123,7 @@ export const handlers = [
       isGuest: true,
       guestName: 'Alex & Jordan',
       plusOneAllocations: 2,
+      savedPlusOneNames: [],
       rsvpOpen: true,
       rsvpDeadlineDate: null,
       rsvpFormattedDeadline: null,
@@ -105,16 +142,22 @@ export const handlers = [
         updated = body.rsvps.map((item: any) => ({
           subEventId: item.subEventId,
           status: item.status || 'attending',
-          plusOneCount: item.plusOneCount ?? 0,
+          plusOneCount: item.status === 'declined' ? 0 : (item.plusOneCount ?? 0),
           dietaryNotes: item.dietaryNotes || '',
+          mealSelections: item.status === 'declined' ? [] : (item.mealSelections || []),
+          customAnswers: item.status === 'declined' ? {} : (item.customAnswers || {}),
+          plusOneNames: item.status === 'declined' ? [] : (item.plusOneNames || []),
         }));
       } else if (body && body.subEventId) {
         updated = [
           {
             subEventId: body.subEventId,
             status: body.status || 'attending',
-            plusOneCount: body.plusOneCount ?? 0,
+            plusOneCount: body.status === 'declined' ? 0 : (body.plusOneCount ?? 0),
             dietaryNotes: body.dietaryNotes || '',
+            mealSelections: body.status === 'declined' ? [] : (body.mealSelections || []),
+            customAnswers: body.status === 'declined' ? {} : (body.customAnswers || {}),
+            plusOneNames: body.status === 'declined' ? [] : (body.plusOneNames || []),
           },
         ];
       }
