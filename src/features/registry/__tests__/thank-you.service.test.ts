@@ -598,15 +598,6 @@ describe('ThankYouService', () => {
       expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
     });
 
-    it('provides exportThankYouNotesLabels alias for backwards compatibility', async () => {
-      mockPrisma.contributor.findMany.mockResolvedValue([]);
-
-      const stream = service.exportThankYouNotesLabels({ template: 'avery_5160' });
-      const pdfBuffer = await streamToBuffer(stream);
-
-      expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
-    });
-
     it('passes explicit or resolved theme options during PDF label export', async () => {
       mockPrisma.contributor.findMany.mockResolvedValue([]);
 

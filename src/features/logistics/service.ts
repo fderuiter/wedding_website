@@ -8,13 +8,6 @@ export class LogisticsService {
   async getHomepageLogistics(): Promise<ContentNodeDTO[]> {
     return await this.repo.getLogisticsNodes();
   }
-
-  async getScheduleNodes(): Promise<ContentNodeDTO[]> {
-    if (this.repo.getScheduleNodes) {
-      return await this.repo.getScheduleNodes();
-    }
-    return await this.repo.getLogisticsNodes();
-  }
 }
 
 export const logisticsService = new LogisticsService(logisticsRepository);

@@ -90,7 +90,7 @@ describe('LogisticsRepository Chronological Sorting', () => {
     });
     const customService = new LogisticsService(customRepo);
 
-    const nodes = await customService.getScheduleNodes();
+    const nodes = await customService.getHomepageLogistics();
 
     expect(nodes.length).toBe(2);
     expect(nodes[0].id).toBe('1');
