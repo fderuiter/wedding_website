@@ -506,14 +506,53 @@ process.exit(1);
     });
   });
 
-  it('verifies deploy.yml health probes succeed under simulated runner secret output redaction with vars.SERVICE_URL or legacy secrets.SERVICE_URL', async () => {
+  it('verifies deploy.yml health probes succeed under simulated runner secret output redaction with vars.SERVICE_URL or legacy secrets.SERVICE_URL and reject degraded or invalid payloads', async () => {
     const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');
     const prodProbeScript = extractStepRunScript(deployYml, 'Execute Production Health Probe Verification');
 
+    let healthMode: 'wrapped-ok' | 'unwrapped-ok' | 'degraded' | 'success-false' | 'malformed' = 'wrapped-ok';
+
     const server = http.createServer((req, res) => {
       if (req.url === '/api/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+        if (healthMode === 'wrapped-ok') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'ok', timestamp: '2026-11-20T00:00:00.000Z', database: 'connected' },
+            })
+          );
+          return;
+        }
+        if (healthMode === 'unwrapped-ok') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+          return;
+        }
+        if (healthMode === 'degraded') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: true,
+              data: { status: 'degraded', database: 'disconnected' },
+            })
+          );
+          return;
+        }
+        if (healthMode === 'success-false') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: false,
+              status: 'ok',
+              database: 'connected',
+              data: { status: 'ok', database: 'connected' },
+            })
+          );
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('{"success":true,"data":{"status":"ok"');
         return;
       }
       res.writeHead(404);
@@ -550,6 +589,13 @@ process.exit(1);
         });
       });
 
+    const fastStagingFailScript = stagingProbeScript
+      .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=1')
+      .replace('DELAY=2', 'DELAY=1');
+    const fastProdFailScript = prodProbeScript
+      .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=1')
+      .replace('DELAY=2', 'DELAY=1');
+
     try {
       // Simulated runner redaction (empty string and masked '***') with vars.SERVICE_URL set
       const stagingVarsRes = await runAsync(stagingProbeScript, {
@@ -580,10 +626,58 @@ process.exit(1);
       });
       expect(prodSecretMaskedRes.status).toBe(0);
       expect(prodSecretMaskedRes.outputs).toContain('health_status=healthy');
+
+      // Unwrapped fallback succeeds when .success is absent
+      healthMode = 'unwrapped-ok';
+      const unwrappedRes = await runAsync(prodProbeScript, {
+        VAR_SERVICE_URL: liveUrl,
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+      });
+      expect(unwrappedRes.status).toBe(0);
+      expect(unwrappedRes.outputs).toContain('health_status=healthy');
+
+      // Degraded wrapped payload fails closed
+      healthMode = 'degraded';
+      for (const script of [fastStagingFailScript, fastProdFailScript]) {
+        const degradedRes = await runAsync(script, {
+          VAR_SERVICE_URL: liveUrl,
+          SERVICE_URL: '',
+          SECRET_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+        });
+        expect(degradedRes.status).toBe(1);
+        expect(degradedRes.outputs).toContain('health_status=unhealthy');
+      }
+
+      // HTTP 200 with .success == false fails closed even if status/database look healthy
+      healthMode = 'success-false';
+      for (const script of [fastStagingFailScript, fastProdFailScript]) {
+        const successFalseRes = await runAsync(script, {
+          VAR_SERVICE_URL: liveUrl,
+          SERVICE_URL: '',
+          SECRET_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+        });
+        expect(successFalseRes.status).toBe(1);
+        expect(successFalseRes.outputs).toContain('health_status=unhealthy');
+      }
+
+      // Malformed JSON fails closed
+      healthMode = 'malformed';
+      const malformedRes = await runAsync(fastStagingFailScript, {
+        VAR_SERVICE_URL: liveUrl,
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+      });
+      expect(malformedRes.status).toBe(1);
+      expect(malformedRes.outputs).toContain('health_status=unhealthy');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  });
+  }, 25000);
 
   it('fails fast in deploy.yml without polling 127.0.0.1:3000 when is_dry_run is false and SERVICE_URL is omitted, and passes dry-run when omitted', () => {
     const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');

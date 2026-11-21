@@ -576,9 +576,9 @@ fi
       expect(validRes.outputs.effective_tag).toBe(validSha);
     });
 
-    it('polls /api/health to verify HTTP 200 with .data.status=="ok" and .data.database=="connected"', async () => {
+    it('polls /api/health to verify wrapped recovery, unwrapped fallback, .success==false rejection, malformed JSON, and degraded payloads', async () => {
       let attempt = 0;
-      let mode: 'recover' | 'degraded' | 'unwrapped' = 'recover';
+      let mode: 'recover' | 'unwrapped' | 'success-false' | 'malformed' | 'degraded' = 'recover';
 
       const server = http.createServer((req, res) => {
         if (req.url !== '/api/health') {
@@ -590,7 +590,7 @@ fi
         if (mode === 'recover') {
           if (attempt === 1) {
             res.writeHead(503, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: 'Database unreachable' }));
+            res.end(JSON.stringify({ success: false, error: 'Database connection failed' }));
           } else {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(
@@ -603,6 +603,19 @@ fi
         } else if (mode === 'unwrapped') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok', database: 'connected' }));
+        } else if (mode === 'success-false') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              success: false,
+              status: 'ok',
+              database: 'connected',
+              data: { status: 'ok', database: 'connected' },
+            })
+          );
+        } else if (mode === 'malformed') {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('{"success":true,"data":{"status":"ok"');
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(
@@ -617,10 +630,15 @@ fi
       await new Promise<void>(resolve => server.listen(0, '127.0.0.1', () => resolve()));
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const fastProbeScript = healthProbeScript.replace('MAX_TIMEOUT=55', 'MAX_TIMEOUT=3').replace('DELAY=2', 'DELAY=1');
+      const fastRecoverScript = healthProbeScript
+        .replace('MAX_TIMEOUT=55', 'MAX_TIMEOUT=5')
+        .replace('DELAY=2', 'DELAY=1');
+      const fastFailScript = healthProbeScript
+        .replace('MAX_TIMEOUT=55', 'MAX_TIMEOUT=2')
+        .replace('DELAY=2', 'DELAY=1');
 
       try {
-        const okRes = await runBashStepAsync(fastProbeScript, {
+        const okRes = await runBashStepAsync(fastRecoverScript, {
           ENV_SERVICE_URL: `http://127.0.0.1:${port}/`,
           PROVIDER_SERVICE_URL: '',
           IS_DRY_RUN: 'false',
@@ -633,19 +651,46 @@ fi
 
         mode = 'unwrapped';
         attempt = 0;
-        const unwrappedRes = await runBashStepAsync(fastProbeScript, {
+        const unwrappedRes = await runBashStepAsync(fastRecoverScript, {
           ENV_SERVICE_URL: `http://127.0.0.1:${port}`,
           PROVIDER_SERVICE_URL: '',
           IS_DRY_RUN: 'false',
           TARGET_ENV: 'production',
           RESTORED_TAG: 'v1.2.2',
         });
-        expect(unwrappedRes.status).toBe(1);
-        expect(unwrappedRes.outputs.health_status).toBe('unhealthy');
+        expect(unwrappedRes.status).toBe(0);
+        expect(unwrappedRes.outputs.health_status).toBe('healthy');
+        expect(attempt).toBe(1);
+
+        mode = 'success-false';
+        attempt = 0;
+        const successFalseRes = await runBashStepAsync(fastFailScript, {
+          ENV_SERVICE_URL: `http://127.0.0.1:${port}`,
+          PROVIDER_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(successFalseRes.status).toBe(1);
+        expect(successFalseRes.outputs.health_status).toBe('unhealthy');
+        expect(attempt).toBeGreaterThanOrEqual(1);
+
+        mode = 'malformed';
+        attempt = 0;
+        const malformedRes = await runBashStepAsync(fastFailScript, {
+          ENV_SERVICE_URL: `http://127.0.0.1:${port}`,
+          PROVIDER_SERVICE_URL: '',
+          IS_DRY_RUN: 'false',
+          TARGET_ENV: 'production',
+          RESTORED_TAG: 'v1.2.2',
+        });
+        expect(malformedRes.status).toBe(1);
+        expect(malformedRes.outputs.health_status).toBe('unhealthy');
+        expect(attempt).toBeGreaterThanOrEqual(1);
 
         mode = 'degraded';
         attempt = 0;
-        const failRes = await runBashStepAsync(fastProbeScript, {
+        const failRes = await runBashStepAsync(fastFailScript, {
           ENV_SERVICE_URL: `http://127.0.0.1:${port}`,
           PROVIDER_SERVICE_URL: '',
           IS_DRY_RUN: 'false',
@@ -654,10 +699,11 @@ fi
         });
         expect(failRes.status).toBe(1);
         expect(failRes.outputs.health_status).toBe('unhealthy');
+        expect(attempt).toBeGreaterThanOrEqual(1);
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
       }
-    }, 15000);
+    }, 25000);
 
     it('prefers vars.SERVICE_URL ahead of secrets.SERVICE_URL and needs.redeploy.outputs.service_url and exports unmasked service_url into $GITHUB_STEP_SUMMARY', async () => {
       const server = http.createServer((req, res) => {
@@ -666,7 +712,7 @@ fi
           res.end(
             JSON.stringify({
               success: true,
-              data: { status: 'ok', database: 'connected' },
+              data: { status: 'ok', timestamp: '2026-11-20T00:00:00.000Z', database: 'connected' },
             })
           );
           return;
