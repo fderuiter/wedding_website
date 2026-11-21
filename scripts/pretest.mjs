@@ -104,10 +104,24 @@ async function main() {
 
     if (dockerRunning) {
       console.log('Ensuring local PostgreSQL database container is running...');
-      const startResult = child_process.spawnSync('docker', ['compose', 'up', '-d', 'db'], {
+      const ciComposeArgs = ['compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+      const ciComposeEnv = {
+        ...process.env,
+        DB_USER: process.env.DB_USER || 'wedding',
+        DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
+        DB_NAME: process.env.DB_NAME || 'wedding',
+        ADMIN_PASSWORD:
+          process.env.ADMIN_PASSWORD ||
+          'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
+        GUEST_PASSCODE: process.env.GUEST_PASSCODE || 'build-fallback-guest-passcode',
+        GUEST_SESSION_SECRET:
+          process.env.GUEST_SESSION_SECRET || 'playwright-e2e-session-secret-32-chars-min',
+      };
+      const startResult = child_process.spawnSync('docker', [...ciComposeArgs, 'up', '-d', 'db'], {
         cwd: rootDir,
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        env: ciComposeEnv,
       });
 
       if (startResult.status !== 0) {
@@ -117,7 +131,7 @@ async function main() {
         let ready = false;
         for (let i = 0; i < 15; i++) {
           try {
-            const check = child_process.spawnSync('docker', ['compose', 'exec', 'db', 'pg_isready', '-U', 'wedding'], { stdio: 'ignore', shell: true });
+            const check = child_process.spawnSync('docker', [...ciComposeArgs, 'exec', '-T', 'db', 'pg_isready', '-U', 'wedding'], { stdio: 'ignore', shell: true, cwd: rootDir, env: ciComposeEnv });
             if (check.status === 0) {
               ready = true;
               console.log('Database is ready.');

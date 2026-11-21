@@ -45,14 +45,14 @@ All operator-facing configuration across application runtime (`src/env.ts`, `src
 | Variable | Default Value | Description & Validation Requirements |
 |---|---|---|
 | `DATABASE_URL` | *None* | Primary PostgreSQL connection URL (`datasource.url` in `prisma.config.ts`). Must be a valid `postgresql://` or `postgres://` connection string. |
-| `ADMIN_PASSWORD` | *None* | Scrypt hash for admin authentication. Must match format `scrypt:[saltBase64]:[keyBase64]` (generated via `scripts/generate-password-hash.mjs`); plaintext passwords are rejected. |
+| `ADMIN_PASSWORD` | *None* | Scrypt hash for admin authentication. Must match format `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` (generated via `scripts/generate-password-hash.mjs`); plaintext passwords, non-64-byte hashes, and placeholder hashes are rejected, and `src/core/auth/auth.server.ts` derives a domain-separated HMAC signing key from the decoded hash bytes. |
 
 ### Production-Required Variables
 These variables provide convenience defaults for local `development` and `test` modes in `src/env.ts`, but startup validation strictly requires unique, non-default values when `NODE_ENV=production`:
 | Variable | Dev / Test Default | Production Requirements & Description |
 |---|---|---|
-| `GUEST_PASSCODE` | `wedding2026` | Global passcode required for guest website access. Required in `production` (must not be empty or use the `wedding2026` dev/test fallback). |
-| `GUEST_SESSION_SECRET` | `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not use the `default-guest-session-secret` fallback. |
+| `GUEST_PASSCODE` | `wedding2026` | Global passcode required for guest website access. Required in `production` (must not be empty or use `wedding2026`, template placeholders, or E2E fallback passcodes). |
+| `GUEST_SESSION_SECRET` | `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not use `default-guest-session-secret`, template placeholders, or E2E fallback secrets. |
 
 ### Optional Infrastructure & Feature Variables
 | Variable | Default Value | Description |
@@ -98,11 +98,11 @@ These variables configure container port binding, static HTML export builds, Vit
 | `STATIC_EXPORT` | *None* | Build (`next.config.ts`, `scripts/build-export.mjs`, `src/`) | Switches Next.js to static HTML export (`output: 'export'`) and `STATIC_MOCK_CONFIG` data when set to `'true'` or `'1'`. |
 | `NEXT_PUBLIC_BASE_PATH` | *None* | Static Export Build (`next.config.ts`) | Optional URL subpath prefix (`basePath` and `assetPrefix`) applied when `STATIC_EXPORT` is enabled and value is not `'/'`. |
 | `VITEPRESS_BASE` | `/` | Docs Portal (`docs-portal/.vitepress/config.mts`) | Base URL path for building and serving the VitePress documentation portal. |
-| `E2E_TEST` | *None* (`true` in `docker-compose.yml`) | Runtime / Compose (`src/lib/config.ts`, `docker-compose.yml`) | When `'true'`, `isSiteInitialized()` returns `true` to bypass `<SetupWizard />` during automated E2E tests. Set `E2E_TEST=false` on production Docker Compose hosts so initial onboarding runs. |
-| `DB_USER` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL username interpolated into the `db` container (`POSTGRES_USER`) and `migration`/`app` `DATABASE_URL`. |
-| `DB_PASSWORD` | `wedding123` | Docker Compose (`docker-compose.yml`) | PostgreSQL password interpolated into the `db` container (`POSTGRES_PASSWORD`) and `migration`/`app` `DATABASE_URL`. |
-| `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and `migration`/`app` `DATABASE_URL`. |
-| `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Host TCP port published to container port `5432` for the `db` service (`${DB_PORT:-5432}:5432`). |
+| `E2E_TEST` | `false` (`docker-compose.yml`) | Runtime / Compose (`src/lib/config.ts`, `docker-compose.yml`) | Defaults to `false` in `docker-compose.yml` so `<SetupWizard />` onboarding runs on fresh deployments; set to `'true'` only in `docker-compose.ci.yml` and automated E2E harnesses to bypass initial setup. |
+| `DB_USER` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL username interpolated into the `db` container (`POSTGRES_USER`) and fallback `migration`/`app` `DATABASE_URL`. |
+| `DB_PASSWORD` | *None* | Docker Compose (`docker-compose.yml`) | Mandatory PostgreSQL password (`${DB_PASSWORD:?...}`) interpolated into the `db` container (`POSTGRES_PASSWORD`) and fallback `migration`/`app` `DATABASE_URL` (CI smoke tests supply `wedding123` via `docker-compose.ci.yml`). |
+| `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and fallback `migration`/`app` `DATABASE_URL`. |
+| `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Loopback host TCP port published to container port `5432` for the `db` service (`127.0.0.1:${DB_PORT:-5432}:5432`). |
 
 ### Optional Site Configuration Overrides (`SITE_*`)
 `src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:

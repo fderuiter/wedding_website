@@ -12,6 +12,7 @@ import { GUEST_COOKIE, isGuestRequest } from '@/core/auth/guest.server';
 import { GUEST_INVITE_COOKIE, getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { ADMIN_COOKIE, isAdminRequest } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
+import { base64urlEncode, hmacSha256 } from '@/utils/crypto';
 
 describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
   const originalGuestSecret = process.env.GUEST_SESSION_SECRET;
@@ -107,8 +108,9 @@ describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
     );
   });
 
-  it('signs admin_auth tokens with ADMIN_PASSWORD accepted by isAdminRequest', async () => {
-    process.env.ADMIN_PASSWORD = 'scrypt:c2FsdA==:aGFzaA==';
+  it('signs admin_auth tokens with domain-separated key from 64-byte scrypt ADMIN_PASSWORD and rejects raw ADMIN_PASSWORD signatures', async () => {
+    process.env.ADMIN_PASSWORD =
+      'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
     const token = generateAdminCookieValue();
     const accepted = await isAdminRequest({
@@ -119,6 +121,17 @@ describe('E2E Auth Helpers (e2e/helpers/auth.ts)', () => {
     } as never);
 
     expect(accepted).toBe(true);
+
+    const encodedPayload = base64urlEncode(JSON.stringify({ isAdmin: true, iat: Date.now() }));
+    const rawSignedToken = `${encodedPayload}.${await hmacSha256(process.env.ADMIN_PASSWORD, encodedPayload)}`;
+    const rawAccepted = await isAdminRequest({
+      cookies: {
+        get: (name: string) => (name === ADMIN_COOKIE ? { value: rawSignedToken } : undefined),
+      },
+      headers: new Headers(),
+    } as never);
+
+    expect(rawAccepted).toBe(false);
   });
 
   it('seeds guest and admin cookies onto both 127.0.0.1 and localhost origins', async () => {

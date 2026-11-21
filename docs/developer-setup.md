@@ -48,14 +48,14 @@ The platform relies on environment variables for database connections, administr
 
 2. **Configure Required & Core Variables:**
 
-   Open `.env` in your editor and review or customize the core runtime variables. By default, `DATABASE_URL` matches the local PostgreSQL container in [`docker-compose.yml`](../docker-compose.yml) (`POSTGRES_USER=wedding`, `POSTGRES_PASSWORD=wedding123`, `POSTGRES_DB=wedding` on port `5432`):
+   Open `.env` in your editor and review or customize the core runtime variables. By default, `DATABASE_URL` matches the local PostgreSQL container (`POSTGRES_USER=wedding`, `POSTGRES_PASSWORD=wedding123`, `POSTGRES_DB=wedding` bound on `127.0.0.1:5432` in [`docker-compose.yml`](../docker-compose.yml) / [`docker-compose.ci.yml`](../docker-compose.ci.yml)):
 
    ```env
-   # PostgreSQL connection (matches `docker compose up -d db` defaults in docker-compose.yml)
+   # PostgreSQL connection (matches `DB_PASSWORD=wedding123 docker compose up -d db` local setup)
    DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding?schema=public"
 
-   # Required for Admin Login (64-byte scrypt hash verified by src/utils/password.ts, NOT plaintext)
-   ADMIN_PASSWORD="scrypt:c2FsdA==:aGFzaA=="
+   # Required for Admin Login (16-byte salt + 64-byte scrypt hash verified by src/utils/password.ts, NOT plaintext)
+   ADMIN_PASSWORD="scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
 
    # Trusted host domains allowed to access the application
    ALLOWED_HOSTS="localhost,127.0.0.1,*.localhost,wedding.example,*.wedding.example"
@@ -94,7 +94,7 @@ The platform relies on environment variables for database connections, administr
    Start the PostgreSQL container and apply the Prisma schema to create application tables:
 
    ```bash
-   docker compose up -d db
+   DB_PASSWORD=wedding123 docker compose up -d db
    npm run migrate:dev
    ```
 

@@ -5,7 +5,8 @@ import path from 'node:path';
 
 describe('Production Boot Guest Session Secret Validation', () => {
   const rootDir = path.resolve(__dirname, '../..');
-  const validAdminPassword = 'scrypt:c2FsdA==:aGFzaA==';
+  const validAdminPassword =
+    'scrypt:dW5pdC10ZXN0LXNhbHQxNg==:PxxxlLtwOUqVGvw72ACcfwWGGFau07MUM+msUoc1D7VCuwBRorFQiYrVmcl29ZeTYQoAfO/azRoQ1cQKvm9Tmw==';
   const validDatabaseUrl = 'postgresql://wedding:wedding123@localhost:5432/wedding';
   const valid32Secret = 'a-secure-guest-session-secret-32-chars-minimum!';
   const validGuestPasscode = 'custom-production-guest-passcode-2026';
@@ -131,6 +132,64 @@ describe('Production Boot Guest Session Secret Validation', () => {
 
       expect(res.status).not.toBe(0);
       expect(res.stderr).toContain('GUEST_PASSCODE must not use the default fallback passcode in production');
+    });
+
+    it('halts startup when ADMIN_PASSWORD uses invalid 4-byte scrypt:c2FsdA==:aGFzaA== placeholder', () => {
+      const res = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: 'scrypt:c2FsdA==:aGFzaA==',
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('scrypt:[16-byte saltBase64]:[64-byte keyBase64]');
+    });
+
+    it('halts startup when ADMIN_PASSWORD, GUEST_PASSCODE, or GUEST_SESSION_SECRET uses E2E or template placeholders in production', () => {
+      const e2eAdminRes = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD:
+          'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+      expect(e2eAdminRes.status).not.toBe(0);
+      expect(e2eAdminRes.stderr).toContain('ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production');
+
+      const dummyAdminRes = runEnvBoot({
+        NODE_ENV: 'production',
+        E2E_TEST: 'true',
+        ADMIN_PASSWORD:
+          'scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: 'playwright-e2e-guest-passcode',
+        GUEST_SESSION_SECRET: 'playwright-e2e-session-secret-32-chars-min',
+      });
+      expect(dummyAdminRes.status).not.toBe(0);
+      expect(dummyAdminRes.stderr).toContain('ADMIN_PASSWORD must not use a placeholder or E2E fallback hash in production');
+
+      const e2ePasscodeRes = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: 'playwright-e2e-guest-passcode',
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+      expect(e2ePasscodeRes.status).not.toBe(0);
+      expect(e2ePasscodeRes.stderr).toContain('GUEST_PASSCODE must not use a placeholder or E2E fallback passcode in production');
+
+      const e2eSessionRes = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: 'playwright-e2e-session-secret-32-chars-min',
+      });
+      expect(e2eSessionRes.status).not.toBe(0);
+      expect(e2eSessionRes.stderr).toContain('GUEST_SESSION_SECRET must not use a placeholder or E2E fallback secret in production');
     });
 
     it('succeeds when a distinct secret of at least 32 characters and unique GUEST_PASSCODE are present', () => {

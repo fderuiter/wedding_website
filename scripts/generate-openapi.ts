@@ -1,5 +1,7 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy';
-process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'scrypt:c2FsdA==:aGFzaA==';
+process.env.ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD ||
+  'scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
 
 import { Project, SyntaxKind, Node, type CallExpression } from 'ts-morph';
 import path from 'path';

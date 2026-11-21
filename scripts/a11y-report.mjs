@@ -77,7 +77,8 @@ export function generateReport(options = {}) {
 
 const DEFAULT_TEST_DATABASE_URL =
   'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
-const DEFAULT_TEST_ADMIN_PASSWORD = 'scrypt:c2FsdA==:aGFzaA==';
+const DEFAULT_TEST_ADMIN_PASSWORD =
+  'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
 function defaultRunStep(command, args, cwd, envOverrides) {
   const result = childProcess.spawnSync(command, args, {
