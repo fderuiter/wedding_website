@@ -383,18 +383,6 @@ class S3StorageProvider implements StorageProvider {
     }
   }
 
-  getBucket(): string {
-    return this.bucket;
-  }
-
-  getPublicUrlPrefix(): string {
-    return this.publicUrl;
-  }
-
-  getClient(): S3Client {
-    return this.client;
-  }
-
   private extractKey(keyOrUrl: string): string {
     if (keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')) {
       try {

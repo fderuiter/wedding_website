@@ -512,15 +512,6 @@ export class ThankYouService {
 
     return generatePdfLabelSheetStream(chunkFetcher, template, resolvedThemeOptions);
   }
-
-  /**
-   * Alias for exportThankYouNotesPdf for backwards compatibility / alternate interface naming.
-   */
-  exportThankYouNotesLabels(
-    options: ThankYouNotesFilterOptions & { template?: LabelTemplate; themeOptions?: LabelThemeOptions } = {}
-  ): ReadableStream<Uint8Array> {
-    return this.exportThankYouNotesPdf(options);
-  }
 }
 
 export const thankYouService = new ThankYouService();

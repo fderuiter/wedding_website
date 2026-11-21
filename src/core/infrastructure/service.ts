@@ -199,10 +199,6 @@ export class BaseService<T extends { id: string }> {
     await this.repo.reorder(orderedIds);
   }
 
-  async toggleVisibility(id: string, isVisible: boolean): Promise<T> {
-    return this.update(id, { isVisible });
-  }
-
   protected async createSnapshot(entityId: string, data: any, author: string, client?: any) {
     await createAuditSnapshot(this.entityType, entityId, data, author, client || this.repo.client);
   }

@@ -144,10 +144,6 @@ export class LogisticsRepository implements ILogisticsRepository {
     return this.sortNodesChronologically(fallbackNodes);
   }
 
-  async getScheduleNodes(): Promise<ContentNodeDTO[]> {
-    return this.getLogisticsNodes();
-  }
-
   public sortNodesChronologically(nodes: ContentNodeDTO[]): ContentNodeDTO[] {
     return [...nodes].sort((a, b) => {
       const timeA = (a.data as any)?.startTime ? new Date((a.data as any).startTime).getTime() : Infinity;
