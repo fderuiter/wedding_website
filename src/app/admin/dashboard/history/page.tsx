@@ -392,6 +392,55 @@ function HistoryTimelineContent({
   );
 }
 
+interface VersionsSnapshot {
+  versions: HistoryTimelineContentProps['versions'];
+  paginationMeta: PaginationMeta | null;
+}
+
+async function requestVersionsSnapshot(
+  currentPage: number,
+  currentLimit: number
+): Promise<VersionsSnapshot> {
+  const data = await apiClient.get<unknown>(
+    `/api/admin/versions?page=${currentPage}&limit=${currentLimit}`
+  );
+  if (Array.isArray(data)) {
+    return {
+      versions: data,
+      paginationMeta: null,
+    };
+  }
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    'items' in data &&
+    Array.isArray((data as { items: unknown }).items)
+  ) {
+    const envelope = data as {
+      items: HistoryTimelineContentProps['versions'];
+      pagination?: PaginationMeta | null;
+    };
+    return {
+      versions: envelope.items,
+      paginationMeta: envelope.pagination || null,
+    };
+  }
+  return {
+    versions: [],
+    paginationMeta: null,
+  };
+}
+
+function formatVersionsError(err: unknown): string {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : 'Failed to load version history.';
+  return message || 'Failed to load version history.';
+}
+
 export default function HistoryTimelinePage() {
   const [versions, setVersions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -410,21 +459,12 @@ export default function HistoryTimelinePage() {
       setError(null);
     }
     try {
-      const data = await apiClient.get<any>(`/api/admin/versions?page=${currentPage}&limit=${currentLimit}`);
-      if (Array.isArray(data)) {
-        setVersions(data);
-        setPaginationMeta(null);
-      } else if (data && Array.isArray(data.items)) {
-        setVersions(data.items);
-        setPaginationMeta(data.pagination || null);
-      } else {
-        setVersions([]);
-        setPaginationMeta(null);
-      }
+      const snapshot = await requestVersionsSnapshot(currentPage, currentLimit);
+      setVersions(snapshot.versions);
+      setPaginationMeta(snapshot.paginationMeta);
       setError(null);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to load version history.';
-      setError(message || 'Failed to load version history.');
+      setError(formatVersionsError(err));
     } finally {
       if (!options?.background) {
         setLoading(false);
@@ -441,33 +481,23 @@ export default function HistoryTimelinePage() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadVersions = async () => {
-      try {
-        const data = await apiClient.get<any>(`/api/admin/versions?page=${page}&limit=${limit}`);
+    void requestVersionsSnapshot(page, limit)
+      .then((snapshot) => {
         if (cancelled) return;
-        if (Array.isArray(data)) {
-          setVersions(data);
-          setPaginationMeta(null);
-        } else if (data && Array.isArray(data.items)) {
-          setVersions(data.items);
-          setPaginationMeta(data.pagination || null);
-        } else {
-          setVersions([]);
-          setPaginationMeta(null);
-        }
+        setVersions(snapshot.versions);
+        setPaginationMeta(snapshot.paginationMeta);
         setError(null);
-      } catch (err: unknown) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : typeof err === 'string' ? err : 'Failed to load version history.';
-        setError(message || 'Failed to load version history.');
-      } finally {
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(formatVersionsError(err));
+        }
+      })
+      .finally(() => {
         if (!cancelled) {
           setLoading(false);
         }
-      }
-    };
-
-    void loadVersions();
+      });
 
     return () => {
       cancelled = true;
