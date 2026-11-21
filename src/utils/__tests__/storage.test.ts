@@ -205,41 +205,61 @@ describe('Hybrid Storage Provider', () => {
   });
 
   describe('S3StorageProvider configuration and urls via getStorageProvider', () => {
-    type S3ProviderInternals = ReturnType<typeof getStorageProvider> & {
-      getBucket(): string;
-      getClient(): S3Client;
-    };
+    let mockSend: jest.SpiedFunction<typeof S3Client.prototype.send>;
+    let capturedForcePathStyle: boolean | undefined;
 
     beforeEach(() => {
       process.env.S3_BUCKET = 'test-bucket';
       process.env.S3_REGION = 'us-west-2';
       process.env.S3_ACCESS_KEY_ID = 'access';
       process.env.S3_SECRET_ACCESS_KEY = 'secret';
+      capturedForcePathStyle = undefined;
+      mockSend = jest
+        .spyOn(S3Client.prototype, 'send')
+        .mockImplementation(function (this: S3Client) {
+          capturedForcePathStyle = this.config.forcePathStyle;
+          return Promise.resolve({} as never);
+        });
     });
 
-    it('initializes with correct AWS S3 endpoint, virtual-hosted style, and public URL when S3_ENDPOINT and S3_PUBLIC_URL are absent', () => {
-      const provider = getStorageProvider() as S3ProviderInternals;
-      expect(provider.getBucket()).toBe('test-bucket');
+    afterEach(() => {
+      mockSend.mockRestore();
+    });
+
+    it('initializes with correct AWS S3 endpoint, virtual-hosted style, and public URL when S3_ENDPOINT and S3_PUBLIC_URL are absent', async () => {
+      const provider = getStorageProvider();
+      await provider.delete('uploads/test.png');
+
+      const cmd = mockSend.mock.calls[0][0] as DeleteObjectCommand;
+      expect(cmd.input.Bucket).toBe('test-bucket');
       expect(provider.getPublicUrl('uploads/test.png')).toBe(
         'https://test-bucket.s3.us-west-2.amazonaws.com/uploads/test.png'
       );
-      expect(provider.getClient().config.forcePathStyle).toBe(false);
+      expect(capturedForcePathStyle).toBe(false);
     });
 
-    it('initializes with custom R2 endpoint, forcePathStyle enabled, and endpoint-based public URL fallback', () => {
+    it('initializes with custom R2 endpoint, forcePathStyle enabled, and endpoint-based public URL fallback', async () => {
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint/';
 
-      const provider = getStorageProvider() as S3ProviderInternals;
-      expect(provider.getClient().config.forcePathStyle).toBe(true);
+      const provider = getStorageProvider();
+      await provider.delete('uploads/test.png');
+
+      const cmd = mockSend.mock.calls[0][0] as DeleteObjectCommand;
+      expect(cmd.input.Bucket).toBe('test-bucket');
+      expect(capturedForcePathStyle).toBe(true);
       expect(provider.getPublicUrl('uploads/test.png')).toBe('https://custom.r2.endpoint/test-bucket/uploads/test.png');
     });
 
-    it('initializes with custom endpoint, forcePathStyle enabled, and S3_PUBLIC_URL override when both are provided', () => {
+    it('initializes with custom endpoint, forcePathStyle enabled, and S3_PUBLIC_URL override when both are provided', async () => {
       process.env.S3_ENDPOINT = 'https://custom.r2.endpoint';
       process.env.S3_PUBLIC_URL = 'https://pub-domain.com/';
 
-      const provider = getStorageProvider() as S3ProviderInternals;
-      expect(provider.getClient().config.forcePathStyle).toBe(true);
+      const provider = getStorageProvider();
+      await provider.delete('uploads/test.png');
+
+      const cmd = mockSend.mock.calls[0][0] as DeleteObjectCommand;
+      expect(cmd.input.Bucket).toBe('test-bucket');
+      expect(capturedForcePathStyle).toBe(true);
       expect(provider.getPublicUrl('uploads/test.png')).toBe('https://pub-domain.com/uploads/test.png');
     });
   });
