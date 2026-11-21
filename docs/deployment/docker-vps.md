@@ -89,7 +89,7 @@ docker compose run --rm migration
 If overriding `DATABASE_URL` to use an external PgBouncer pooler, pass an explicit non-pooled `DATABASE_URL` override to `migration` (`docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration`).
 
 ### Standalone Container Path (`docker-entrypoint.sh`)
-When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL` and executes `npx -y prisma migrate deploy` prior to `node server.js`.
+When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL` and executes `prisma migrate deploy` prior to `node server.js`.
 
 ---
 

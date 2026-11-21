@@ -255,8 +255,10 @@ jobs:
 
       - name: Copy standalone static assets
         run: |
+          rm -rf .next/standalone/.next/static .next/standalone/public
           cp -r .next/static .next/standalone/.next/static
           cp -r public .next/standalone/public
+          rm -f .next/standalone/public/mockServiceWorker.js
       - name: Run Standalone Execution Smoke Test
         run: npm run test:standalone
 

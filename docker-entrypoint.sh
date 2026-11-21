@@ -15,7 +15,11 @@ fi
 
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
-  npx -y prisma migrate deploy
+  if command -v prisma >/dev/null 2>&1; then
+    prisma migrate deploy
+  else
+    npx --no-install prisma migrate deploy
+  fi
 else
   echo "Skipping automatic container database migration (decoupled to explicit CI/CD migration step)."
 fi
