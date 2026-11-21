@@ -45,7 +45,254 @@ import {
   BroadcastTemplateContext,
 } from './types';
 
+type FinalBroadcastStatus = 'SENT' | 'PARTIALLY_SENT' | 'FAILED';
+
+interface PreparedBroadcastRecipient {
+  id: string;
+  broadcastId: string;
+  invitationCodeId: string | null;
+  guestName: string;
+  destination: string;
+  status: string;
+  error: string | null;
+}
+
+interface RecipientDispatchTarget {
+  recipientId: string;
+  destination: string;
+  guestName: string;
+  code?: string | null;
+  householdName?: string | null;
+}
+
+interface RecipientBatchOutcome {
+  target: RecipientDispatchTarget;
+  result: DispatchResult;
+}
+
 export class BroadcastService {
+  private static formatWeddingDate(weddingDate?: Date | string | null): string {
+    return weddingDate
+      ? new Date(weddingDate).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      : '';
+  }
+
+  private static buildTemplateContext(
+    guest: {
+      guestName?: string | null;
+      code?: string | null;
+      householdName?: string | null;
+    },
+    config: { weddingDate?: Date | string | null; venueName?: string | null } | null | undefined,
+    baseUrl: string
+  ): BroadcastTemplateContext {
+    const invitationCode = guest.code || '';
+    return {
+      guestName: guest.guestName ?? '',
+      invitationCode,
+      code: invitationCode,
+      rsvpUrl: buildGuestRsvpUrl(baseUrl, invitationCode),
+      baseUrl,
+      householdName: guest.householdName || '',
+      weddingDate: this.formatWeddingDate(config?.weddingDate),
+      venueName: config?.venueName || '',
+    };
+  }
+
+  private static renderMessageContent(params: {
+    guest: {
+      guestName?: string | null;
+      code?: string | null;
+      householdName?: string | null;
+    };
+    config: { weddingDate?: Date | string | null; venueName?: string | null } | null | undefined;
+    baseUrl: string;
+    channel: BroadcastChannel;
+    body: string;
+    subject?: string | null;
+    escapeEmailBody?: boolean;
+    isTest?: boolean;
+  }): { body: string; subject: string | undefined } {
+    const context = this.buildTemplateContext(params.guest, params.config, params.baseUrl);
+    const isEmail = params.channel === 'EMAIL';
+    const escapeHtml = isEmail && (params.escapeEmailBody ?? true);
+    const renderedBody = renderBroadcastTemplate(params.body, context, { escapeHtml });
+
+    if (params.isTest) {
+      if (!isEmail) {
+        return { body: renderedBody, subject: undefined };
+      }
+      const sanitizedSubject = params.subject
+        ? sanitizeEmailSubject(renderBroadcastTemplate(params.subject, context))
+        : '';
+      const baseSubject = sanitizedSubject || 'Broadcast Test';
+      const prefixedSubject = baseSubject.startsWith('[TEST]')
+        ? baseSubject
+        : `[TEST] ${baseSubject}`;
+      return { body: renderedBody, subject: prefixedSubject };
+    }
+
+    if (!params.subject) {
+      return { body: renderedBody, subject: undefined };
+    }
+
+    const rawSubject = renderBroadcastTemplate(params.subject, context);
+    const renderedSubject = isEmail ? sanitizeEmailSubject(rawSubject) : rawSubject;
+    return { body: renderedBody, subject: renderedSubject };
+  }
+
+  private static async dispatchChannelMessage(
+    provider: MultiChannelMessagingProvider,
+    channel: BroadcastChannel,
+    to: string,
+    body: string,
+    subject?: string
+  ): Promise<DispatchResult> {
+    if (channel === 'EMAIL') {
+      return provider.sendEmail({
+        to,
+        subject: subject ?? '',
+        body,
+      });
+    }
+    return provider.sendSms({
+      to,
+      body,
+    });
+  }
+
+  private static deriveBroadcastStatus(
+    sentCount: number,
+    failedCount: number
+  ): FinalBroadcastStatus {
+    if (failedCount === 0) {
+      return 'SENT';
+    }
+    return sentCount > 0 ? 'PARTIALLY_SENT' : 'FAILED';
+  }
+
+  private static async persistDispatchBatch(outcomes: RecipientBatchOutcome[]): Promise<void> {
+    await Promise.all(
+      outcomes.map(({ target, result }) =>
+        result.success
+          ? prisma.broadcastRecipient.update({
+            where: { id: target.recipientId },
+            data: {
+              status: 'SENT',
+              sentAt: new Date(),
+            },
+          })
+          : prisma.broadcastRecipient.update({
+            where: { id: target.recipientId },
+            data: {
+              status: 'FAILED',
+              error: result.error || 'Dispatch failed',
+            },
+          })
+      )
+    );
+  }
+
+  private static async persistRetryBatch(outcomes: RecipientBatchOutcome[]): Promise<void> {
+    const successfulRecipientIds = outcomes
+      .filter((item) => item.result.success)
+      .map((item) => item.target.recipientId);
+    const failedBatchItems = outcomes.filter((item) => !item.result.success);
+
+    const updatePromises: Promise<unknown>[] = [];
+
+    if (successfulRecipientIds.length > 0) {
+      updatePromises.push(
+        prisma.broadcastRecipient.updateMany({
+          where: { id: { in: successfulRecipientIds } },
+          data: {
+            status: 'SENT',
+            error: null,
+            sentAt: new Date(),
+          },
+        })
+      );
+    }
+
+    for (const item of failedBatchItems) {
+      updatePromises.push(
+        prisma.broadcastRecipient.update({
+          where: { id: item.target.recipientId },
+          data: {
+            status: 'FAILED',
+            error: item.result.error || 'Retry failed',
+          },
+        })
+      );
+    }
+
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+    }
+  }
+
+  private static async runThrottledRecipientBatches(params: {
+    targets: RecipientDispatchTarget[];
+    channel: BroadcastChannel;
+    subject?: string | null;
+    body: string;
+    config: any;
+    baseUrl: string;
+    persistBatch: (_outcomes: RecipientBatchOutcome[]) => Promise<void>;
+  }): Promise<{ sentCount: number; failedCount: number }> {
+    const { targets, channel, subject, body, config, baseUrl, persistBatch } = params;
+    const provider = new MultiChannelMessagingProvider(config);
+    const batchSize = config.broadcastBatchSize ?? 50;
+    const batchDelayMs = config.broadcastBatchDelayMs ?? 500;
+
+    let sentCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < targets.length; i += batchSize) {
+      const batch = targets.slice(i, i + batchSize);
+
+      const outcomes: RecipientBatchOutcome[] = await Promise.all(
+        batch.map(async (target) => {
+          const rendered = this.renderMessageContent({
+            guest: target,
+            config,
+            baseUrl,
+            channel,
+            body,
+            subject,
+          });
+          const result = await this.dispatchChannelMessage(
+            provider,
+            channel,
+            target.destination,
+            rendered.body,
+            rendered.subject
+          );
+          return { target, result };
+        })
+      );
+
+      for (const { result } of outcomes) {
+        if (result.success) {
+          sentCount++;
+        } else {
+          failedCount++;
+        }
+      }
+
+      await persistBatch(outcomes);
+
+      if (i + batchSize < targets.length && batchDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
+      }
+    }
+
+    return { sentCount, failedCount };
+  }
   /**
    * Resolves target invitation code records based on filter criteria.
    */
@@ -195,22 +442,19 @@ export class BroadcastService {
       };
     }
 
-    const guestCode = sampleGuest.code || '';
-    const context: BroadcastTemplateContext = {
-      guestName: sampleGuest.guestName || 'Valued Guest',
-      invitationCode: guestCode,
-      rsvpUrl: buildGuestRsvpUrl(baseUrl, guestCode),
+    const rendered = this.renderMessageContent({
+      guest: {
+        guestName: sampleGuest.guestName || 'Valued Guest',
+        code: sampleGuest.code,
+        householdName: sampleGuest.householdName,
+      },
+      config,
       baseUrl,
-      householdName: sampleGuest.householdName || '',
-      weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-      venueName: config.venueName || '',
-    };
-
-    const isEmail = input.channel === 'EMAIL';
-    const renderedBody = renderBroadcastTemplate(input.body, context);
-    const rawSubject = input.subject ? renderBroadcastTemplate(input.subject, context) : undefined;
-    const renderedSubject =
-      rawSubject !== undefined && isEmail ? sanitizeEmailSubject(rawSubject) : rawSubject;
+      channel: input.channel,
+      body: input.body,
+      subject: input.subject,
+      escapeEmailBody: false,
+    });
 
     const destination = input.channel === 'EMAIL'
       ? (sampleGuest.email || 'jane@example.com')
@@ -229,8 +473,8 @@ export class BroadcastService {
 
     return {
       channel: input.channel,
-      subject: renderedSubject,
-      body: renderedBody,
+      subject: rendered.subject,
+      body: rendered.body,
       sampleGuestName: sampleGuest.guestName,
       destination,
       ...audienceCounts,
@@ -269,47 +513,24 @@ export class BroadcastService {
       }
     }
 
-    const sampleCode = 'SAMPLE2026';
-    const context: BroadcastTemplateContext = {
-      guestName: 'Jane Doe',
-      invitationCode: sampleCode,
-      code: sampleCode,
-      rsvpUrl: buildGuestRsvpUrl(baseUrl, sampleCode),
+    const rendered = this.renderMessageContent({
+      guest: { guestName: 'Jane Doe', code: 'SAMPLE2026', householdName: 'Doe Family' },
+      config,
       baseUrl,
-      householdName: 'Doe Family',
-      weddingDate: config.weddingDate
-        ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-        : '',
-      venueName: config.venueName || '',
-    };
-
-    const isEmail = input.channel === 'EMAIL';
-    const renderedBody = renderBroadcastTemplate(input.body, context, { escapeHtml: isEmail });
-
-    let personalizedSubject: string | undefined = undefined;
-    if (isEmail) {
-      const sanitizedSubject = input.subject
-        ? sanitizeEmailSubject(renderBroadcastTemplate(input.subject, context))
-        : '';
-      const baseSubject = sanitizedSubject || 'Broadcast Test';
-      personalizedSubject = baseSubject.startsWith('[TEST]') ? baseSubject : `[TEST] ${baseSubject}`;
-    }
+      channel: input.channel,
+      body: input.body,
+      subject: input.subject,
+      isTest: true,
+    });
 
     const provider = new MultiChannelMessagingProvider(config);
-
-    let result: DispatchResult;
-    if (input.channel === 'EMAIL') {
-      result = await provider.sendEmail({
-        to: destination,
-        subject: personalizedSubject || '[TEST] Broadcast',
-        body: renderedBody,
-      });
-    } else {
-      result = await provider.sendSms({
-        to: destination,
-        body: renderedBody,
-      });
-    }
+    const result = await this.dispatchChannelMessage(
+      provider,
+      input.channel,
+      destination,
+      rendered.body,
+      rendered.subject
+    );
 
     if (!result.success) {
       throw new Error(result.error || `Failed to dispatch test ${input.channel.toLowerCase()}.`);
@@ -319,8 +540,8 @@ export class BroadcastService {
       success: true,
       channel: input.channel,
       destination,
-      subject: personalizedSubject,
-      body: renderedBody,
+      subject: rendered.subject,
+      body: rendered.body,
       ...(baseUrlWarning ? { baseUrlWarning } : {}),
     };
   }
@@ -412,27 +633,11 @@ export class BroadcastService {
 
     // Validate and prepare all recipient records in memory
     const recipientRecords: {
-      recipient: {
-        id: string;
-        broadcastId: string;
-        invitationCodeId: string | null;
-        guestName: string;
-        destination: string;
-        status: string;
-        error: string | null;
-      };
+      recipient: PreparedBroadcastRecipient;
       guest: any;
     }[] = [];
 
-    const preparedRecipients: {
-      id: string;
-      broadcastId: string;
-      invitationCodeId: string | null;
-      guestName: string;
-      destination: string;
-      status: string;
-      error: string | null;
-    }[] = [];
+    const preparedRecipients: PreparedBroadcastRecipient[] = [];
 
     for (const guest of guests) {
       const destination = channel === 'EMAIL'
@@ -485,86 +690,30 @@ export class BroadcastService {
       }
     }
 
-    const provider = new MultiChannelMessagingProvider(config);
-    const batchSize = config.broadcastBatchSize ?? 50;
-    const batchDelayMs = config.broadcastBatchDelayMs ?? 500;
+    const initialFailedCount = recipientRecords.filter((r) => r.recipient.status === 'FAILED').length;
+    const targets: RecipientDispatchTarget[] = recipientRecords
+      .filter((r) => r.recipient.status === 'PENDING')
+      .map(({ recipient, guest }) => ({
+        recipientId: recipient.id,
+        destination: recipient.destination,
+        guestName: guest.guestName,
+        code: guest.code,
+        householdName: guest.householdName,
+      }));
 
-    let sentCount = 0;
-    let failedCount = recipientRecords.filter(r => r.recipient.status === 'FAILED').length;
+    const batchCounts = await this.runThrottledRecipientBatches({
+      targets,
+      channel,
+      subject,
+      body,
+      config,
+      baseUrl,
+      persistBatch: (outcomes) => this.persistDispatchBatch(outcomes),
+    });
 
-    // Process pending recipients in batches
-    const pendingItems = recipientRecords.filter(r => r.recipient.status === 'PENDING');
-
-    for (let i = 0; i < pendingItems.length; i += batchSize) {
-      const batch = pendingItems.slice(i, i + batchSize);
-
-      await Promise.all(
-        batch.map(async ({ recipient, guest }) => {
-          const guestCode = guest.code || '';
-          const context: BroadcastTemplateContext = {
-            guestName: guest.guestName,
-            invitationCode: guestCode,
-            rsvpUrl: buildGuestRsvpUrl(baseUrl, guestCode),
-            baseUrl,
-            householdName: guest.householdName || '',
-            weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-            venueName: config.venueName || '',
-          };
-
-          const isEmail = channel === 'EMAIL';
-          const personalizedBody = renderBroadcastTemplate(body, context, { escapeHtml: isEmail });
-          const personalizedSubject = subject
-            ? (isEmail
-              ? sanitizeEmailSubject(renderBroadcastTemplate(subject, context))
-              : renderBroadcastTemplate(subject, context))
-            : '';
-
-          let result: DispatchResult;
-          if (channel === 'EMAIL') {
-            result = await provider.sendEmail({
-              to: recipient.destination,
-              subject: personalizedSubject,
-              body: personalizedBody,
-            });
-          } else {
-            result = await provider.sendSms({
-              to: recipient.destination,
-              body: personalizedBody,
-            });
-          }
-
-          if (result.success) {
-            sentCount++;
-            await prisma.broadcastRecipient.update({
-              where: { id: recipient.id },
-              data: {
-                status: 'SENT',
-                sentAt: new Date(),
-              },
-            });
-          } else {
-            failedCount++;
-            await prisma.broadcastRecipient.update({
-              where: { id: recipient.id },
-              data: {
-                status: 'FAILED',
-                error: result.error || 'Dispatch failed',
-              },
-            });
-          }
-        })
-      );
-
-      if (i + batchSize < pendingItems.length && batchDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
-      }
-    }
-
-    const finalStatus = failedCount === 0
-      ? 'SENT'
-      : sentCount > 0
-        ? 'PARTIALLY_SENT'
-        : 'FAILED';
+    const sentCount = batchCounts.sentCount;
+    const failedCount = initialFailedCount + batchCounts.failedCount;
+    const finalStatus = this.deriveBroadcastStatus(sentCount, failedCount);
 
     const updatedMessage = await prisma.broadcastMessage.update({
       where: { id: broadcastMessage.id },
@@ -714,100 +863,23 @@ export class BroadcastService {
       (config as any)?.baseUrl,
       requestOrigin
     );
-    const provider = new MultiChannelMessagingProvider(config);
-    const batchSize = config.broadcastBatchSize ?? 50;
-    const batchDelayMs = config.broadcastBatchDelayMs ?? 500;
+    const targets: RecipientDispatchTarget[] = failedRecipients.map((recipient) => ({
+      recipientId: recipient.id,
+      destination: recipient.destination,
+      guestName: recipient.guestName,
+      code: recipient.invitationCode?.code,
+      householdName: recipient.invitationCode?.householdName,
+    }));
 
-    for (let i = 0; i < failedRecipients.length; i += batchSize) {
-      const batch = failedRecipients.slice(i, i + batchSize);
-
-      const batchResults = await Promise.all(
-        batch.map(async (recipient) => {
-          const guest = recipient.invitationCode || {
-            guestName: recipient.guestName,
-            code: '',
-            householdName: '',
-          };
-
-          const guestCode = guest.code || '';
-          const context: BroadcastTemplateContext = {
-            guestName: recipient.guestName,
-            invitationCode: guestCode,
-            rsvpUrl: buildGuestRsvpUrl(baseUrl, guestCode),
-            baseUrl,
-            householdName: guest.householdName || '',
-            weddingDate: config.weddingDate ? new Date(config.weddingDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '',
-            venueName: config.venueName || '',
-          };
-
-          const isEmail = broadcast.channel === 'EMAIL';
-          const personalizedBody = renderBroadcastTemplate(broadcast.body, context, { escapeHtml: isEmail });
-          const personalizedSubject = broadcast.subject
-            ? (isEmail
-              ? sanitizeEmailSubject(renderBroadcastTemplate(broadcast.subject, context))
-              : renderBroadcastTemplate(broadcast.subject, context))
-            : '';
-
-          let result: DispatchResult;
-          if (broadcast.channel === 'EMAIL') {
-            result = await provider.sendEmail({
-              to: recipient.destination,
-              subject: personalizedSubject,
-              body: personalizedBody,
-            });
-          } else {
-            result = await provider.sendSms({
-              to: recipient.destination,
-              body: personalizedBody,
-            });
-          }
-
-          return { recipient, result };
-        })
-      );
-
-      const successfulRecipientIds = batchResults
-        .filter((item) => item.result.success)
-        .map((item) => item.recipient.id);
-
-      const failedBatchItems = batchResults
-        .filter((item) => !item.result.success);
-
-      const updatePromises: Promise<unknown>[] = [];
-
-      if (successfulRecipientIds.length > 0) {
-        updatePromises.push(
-          prisma.broadcastRecipient.updateMany({
-            where: { id: { in: successfulRecipientIds } },
-            data: {
-              status: 'SENT',
-              error: null,
-              sentAt: new Date(),
-            },
-          })
-        );
-      }
-
-      for (const item of failedBatchItems) {
-        updatePromises.push(
-          prisma.broadcastRecipient.update({
-            where: { id: item.recipient.id },
-            data: {
-              status: 'FAILED',
-              error: item.result.error || 'Retry failed',
-            },
-          })
-        );
-      }
-
-      if (updatePromises.length > 0) {
-        await Promise.all(updatePromises);
-      }
-
-      if (i + batchSize < failedRecipients.length && batchDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, batchDelayMs));
-      }
-    }
+    await this.runThrottledRecipientBatches({
+      targets,
+      channel: broadcast.channel as BroadcastChannel,
+      subject: broadcast.subject,
+      body: broadcast.body,
+      config,
+      baseUrl,
+      persistBatch: (outcomes) => this.persistRetryBatch(outcomes),
+    });
 
     const [sentCount, failedCount] = await Promise.all([
       prisma.broadcastRecipient.count({
@@ -818,11 +890,7 @@ export class BroadcastService {
       }),
     ]);
 
-    const finalStatus = failedCount === 0
-      ? 'SENT'
-      : sentCount > 0
-        ? 'PARTIALLY_SENT'
-        : 'FAILED';
+    const finalStatus = this.deriveBroadcastStatus(sentCount, failedCount);
 
     const updatedBroadcast = await prisma.broadcastMessage.update({
       where: { id: broadcastId },
