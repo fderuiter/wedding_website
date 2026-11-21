@@ -139,9 +139,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Set correct permissions and pre-create writable directories
-RUN mkdir -p .next public/uploads && \
-    chown nextjs:nodejs .next public public/uploads
+# Set correct permissions, pre-create writable directories, and expose isolated Prisma CLI to `npx prisma`
+RUN mkdir -p .next public/uploads node_modules/.bin && \
+    ln -sf /usr/local/bin/prisma node_modules/.bin/prisma && \
+    chown -h nextjs:nodejs .next public public/uploads node_modules/.bin node_modules/.bin/prisma
 
 # Copy Prisma schema, config, and standalone password hash utility
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma

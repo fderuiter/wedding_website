@@ -23,9 +23,7 @@ services:
     build:
       context: .
       cache_from:
-        - type=gha,scope=app
-      cache_to:
-        - type=gha,scope=app,mode=max
+        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
     command: npx prisma migrate deploy
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-wedding}}
@@ -40,9 +38,9 @@ services:
     build:
       context: .
       cache_from:
-        - type=gha,scope=app
+        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
       cache_to:
-        - type=gha,scope=app,mode=max
+        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64},mode=max
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     environment:

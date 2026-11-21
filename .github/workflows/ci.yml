@@ -271,19 +271,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      - name: Expose GitHub Runtime for BuildKit Cache
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+
       - name: Run OCI Container & Clean Database Smoke Test
+        env:
+          GHA_CACHE_SCOPE: app-amd64
         run: npm run test:container
 
-      - name: Tag and Export Docker Container Image
+      - name: Export Compressed Docker Container Image
         run: |
-          docker tag wedding-website:latest wedding-website:latest
-          docker save wedding-website:latest -o /tmp/wedding-website-image.tar
+          if ! command -v zstd >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+          fi
+          docker save wedding-website:latest | zstd -T0 -o /tmp/wedding-website-image.tar.zst
 
       - name: Upload Docker Container Image Artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wedding-website-container
-          path: /tmp/wedding-website-image.tar
+          path: /tmp/wedding-website-image.tar.zst
+          compression-level: 0
           retention-days: 1
 
       - name: Upload Next.js Build Artifact
@@ -298,6 +306,25 @@ jobs:
             prisma/
             node_modules/.prisma
             node_modules/@prisma
+
+  container-arm64:
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Expose GitHub Runtime for BuildKit Cache
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+
+      - name: Run Native ARM64 OCI Container & Clean Database Smoke Test
+        env:
+          GHA_CACHE_SCOPE: app-arm64
+        run: node scripts/test-container.mjs
 
   storybook-build:
     needs: verify
@@ -452,14 +479,17 @@ jobs:
 
       - name: Load Docker Image
         run: |
-          if [ -f /tmp/wedding-website-image.tar ]; then
-            docker load -i /tmp/wedding-website-image.tar
-            rm -f /tmp/wedding-website-image.tar
-          elif [ -f wedding-website-image.tar ]; then
-            docker load -i wedding-website-image.tar
-            rm -f wedding-website-image.tar
+          if ! command -v zstd >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+          fi
+          if [ -f /tmp/wedding-website-image.tar.zst ]; then
+            zstd -dc /tmp/wedding-website-image.tar.zst | docker load
+            rm -f /tmp/wedding-website-image.tar.zst
+          elif [ -f wedding-website-image.tar.zst ]; then
+            zstd -dc wedding-website-image.tar.zst | docker load
+            rm -f wedding-website-image.tar.zst
           else
-            echo "Error: Docker image archive not found!"
+            echo "Error: Compressed Docker image archive (.tar.zst) not found!"
             exit 1
           fi
 
