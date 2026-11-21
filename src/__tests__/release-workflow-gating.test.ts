@@ -228,8 +228,58 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(outputs).toContain('tag_name=v0.1.0');
       expect(outputs).toContain('primary_uri=ghcr.io/fderuiter/wedding_website:v0.1.0');
       expect(outputs).toContain(
-        `tags=ghcr.io/fderuiter/wedding_website:v0.1.0,ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:v0.1.0,fderuiter/wedding-website:${sampleSha},fderuiter/wedding-website:latest`
+        `tags=ghcr.io/fderuiter/wedding_website:v0.1.0,ghcr.io/fderuiter/wedding_website:${sampleSha},ghcr.io/fderuiter/wedding_website:latest,fderuiter/wedding-website:v0.1.0,fderuiter/wedding-website:${sampleSha},fderuiter/wedding-website:latest`
       );
+
+      // Verify pre-release v* tag publishes version + SHA without overwriting :latest on either registry
+      fs.writeFileSync(outputFile, '');
+      const preReleaseRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          REGISTRY: 'ghcr.io',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_SHA: sampleSha,
+          GITHUB_REF: 'refs/tags/v0.2.0-rc.1',
+          GITHUB_REF_NAME: 'v0.2.0-rc.1',
+          RAW_INPUT_TAG: '',
+          INPUT_COMMIT_SHA: '',
+          DOCKERHUB_USERNAME: 'fderuiter',
+          DOCKERHUB_TOKEN: 'dckr_pat_test',
+        },
+      });
+      expect(preReleaseRes.status).toBe(0);
+      const preReleaseOutputs = fs.readFileSync(outputFile, 'utf8');
+      expect(preReleaseOutputs).toContain(
+        `tags=ghcr.io/fderuiter/wedding_website:v0.2.0-rc.1,ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:v0.2.0-rc.1,fderuiter/wedding-website:${sampleSha}`
+      );
+      expect(preReleaseOutputs).not.toContain(':latest');
+
+      // Verify branch dispatch with Docker Hub credentials never overwrites :latest on GHCR or Docker Hub
+      fs.writeFileSync(outputFile, '');
+      const branchDispatchRes = spawnSync('bash', ['-eo', 'pipefail', '-c', computeTagScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: outputFile,
+          REGISTRY: 'ghcr.io',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_SHA: sampleSha,
+          GITHUB_REF: 'refs/heads/feature/test-branch',
+          GITHUB_REF_NAME: 'feature/test-branch',
+          RAW_INPUT_TAG: '',
+          INPUT_COMMIT_SHA: '',
+          DOCKERHUB_USERNAME: 'fderuiter',
+          DOCKERHUB_TOKEN: 'dckr_pat_test',
+        },
+      });
+      expect(branchDispatchRes.status).toBe(0);
+      const branchOutputs = fs.readFileSync(outputFile, 'utf8');
+      expect(branchOutputs).toContain(
+        `tags=ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:${sampleSha}`
+      );
+      expect(branchOutputs).not.toContain(':latest');
 
       // Verify workflow_call with explicit commit SHA tag publishes only the SHA tag
       fs.writeFileSync(outputFile, '');
@@ -245,16 +295,175 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
           GITHUB_REF_NAME: 'main',
           RAW_INPUT_TAG: sampleSha,
           INPUT_COMMIT_SHA: sampleSha,
-          DOCKERHUB_USERNAME: '',
-          DOCKERHUB_TOKEN: '',
+          DOCKERHUB_USERNAME: 'fderuiter',
+          DOCKERHUB_TOKEN: 'dckr_pat_test',
         },
       });
       expect(shaRes.status).toBe(0);
       const shaOutputs = fs.readFileSync(outputFile, 'utf8');
       expect(shaOutputs).toContain(`tag_name=${sampleSha}`);
-      expect(shaOutputs).toContain(`tags=ghcr.io/fderuiter/wedding_website:${sampleSha}`);
+      expect(shaOutputs).toContain(
+        `tags=ghcr.io/fderuiter/wedding_website:${sampleSha},fderuiter/wedding-website:${sampleSha}`
+      );
+      expect(shaOutputs).not.toContain(':latest');
     } finally {
       fs.rmSync(tempOutDir, { recursive: true, force: true });
+    }
+  });
+
+  it('builds, Trivy-scans, and smoke-tests native amd64 and arm64 images without QEMU before pushing digests and merging provenance-attested OCI index', () => {
+    expect(publishWorkflow).not.toContain('setup-qemu-action');
+    expect(publishWorkflow).toContain('runner: ubuntu-latest');
+    expect(publishWorkflow).toContain('runner: ubuntu-24.04-arm');
+    expect(publishWorkflow).toContain('platform: linux/amd64');
+    expect(publishWorkflow).toContain('platform: linux/arm64');
+    expect(publishWorkflow).toContain('cache-from: type=gha,scope=app-${{ matrix.arch }}');
+    expect(publishWorkflow).toContain('cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max');
+
+    // Verify Trivy scan and native container smoke test execute before registry login and digest push in the build job
+    const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0] ?? '';
+    const trivyIdx = buildJobSection.indexOf('aquasecurity/trivy-action');
+    const sarifIdx = buildJobSection.indexOf('github/codeql-action/upload-sarif');
+    const smokeIdx = buildJobSection.indexOf('node scripts/test-container.mjs');
+    const loginIdx = buildJobSection.indexOf('docker/login-action');
+    const pushDigestIdx = buildJobSection.indexOf('push-by-digest=true');
+
+    expect(trivyIdx).toBeGreaterThan(-1);
+    expect(sarifIdx).toBeGreaterThan(trivyIdx);
+    expect(smokeIdx).toBeGreaterThan(sarifIdx);
+    expect(loginIdx).toBeGreaterThan(smokeIdx);
+    expect(pushDigestIdx).toBeGreaterThan(loginIdx);
+
+    expect(buildJobSection).toContain("severity: 'CRITICAL,HIGH'");
+    expect(buildJobSection).toContain("exit-code: '1'");
+    expect(buildJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");
+
+    // Verify publish job merges per-architecture digests, verifies linux/amd64 & linux/arm64 manifests, attests provenance, and preserves outputs
+    const publishJobSection = publishWorkflow.split(/\n  publish:\n/)[1] ?? '';
+    expect(publishJobSection).toContain('needs: [build]');
+    expect(publishJobSection).toContain('docker buildx imagetools create');
+    expect(publishJobSection).toContain('actions/attest-build-provenance');
+    expect(publishJobSection).toContain('image_uri: ${{ steps.meta.outputs.primary_uri }}');
+    expect(publishJobSection).toContain('image_tag: ${{ steps.meta.outputs.tag_name }}');
+    expect(publishJobSection).toContain('image_digest: ${{ steps.merge.outputs.digest }}');
+  });
+
+  it('aligns per-architecture BuildKit cache scopes, exports CI cache credentials, compresses CI image archives with zstd, and smoke-tests arm64 in CI', () => {
+    const composeContent = fs.readFileSync(path.join(process.cwd(), 'docker-compose.yml'), 'utf8');
+    expect(composeContent).toContain('type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}');
+    expect(composeContent).not.toContain('type=gha,scope=app\n');
+
+    expect(ciWorkflow).toContain('crazy-max/ghaction-github-runtime@');
+    expect(ciWorkflow).toContain('GHA_CACHE_SCOPE: app-amd64');
+    expect(ciWorkflow).toContain('runs-on: ubuntu-24.04-arm');
+    expect(ciWorkflow).toContain('GHA_CACHE_SCOPE: app-arm64');
+    expect(ciWorkflow).not.toContain('docker tag wedding-website:latest wedding-website:latest');
+    expect(ciWorkflow).toContain('wedding-website-image.tar.zst');
+    expect(ciWorkflow).toContain('zstd -dc');
+
+    const testContainerScript = fs.readFileSync(
+      path.join(process.cwd(), 'scripts', 'test-container.mjs'),
+      'utf8'
+    );
+    expect(testContainerScript).toContain(
+      "runCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration']"
+    );
+    expect(testContainerScript).not.toMatch(/['"]run['"][^\n]*['"]--no-build['"]/);
+  });
+
+  it('merges verified amd64 and arm64 digests into a multi-platform OCI index and fails closed if either architecture manifest is missing', () => {
+    const runBlocks = extractRunBlocks(publishWorkflow);
+    const mergeScript = runBlocks.find((block) => block.includes('docker buildx imagetools create'));
+    expect(mergeScript).toBeDefined();
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-merge-test-'));
+    const binDir = path.join(tempDir, 'bin');
+    const digestsDir = path.join('/tmp', 'digests');
+    const outputFile = path.join(tempDir, 'github_output.txt');
+    const callsFile = path.join(tempDir, 'docker_calls.log');
+
+    const amd64Digest = 'sha256:1111111111111111111111111111111111111111111111111111111111111111';
+    const arm64Digest = 'sha256:2222222222222222222222222222222222222222222222222222222222222222';
+    const mergedDigest = 'sha256:3333333333333333333333333333333333333333333333333333333333333333';
+
+    try {
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.mkdirSync(digestsDir, { recursive: true });
+      fs.writeFileSync(path.join(digestsDir, 'amd64.digest'), `${amd64Digest}\n`);
+      fs.writeFileSync(path.join(digestsDir, 'arm64.digest'), `${arm64Digest}\n`);
+      fs.writeFileSync(outputFile, '');
+      fs.writeFileSync(callsFile, '');
+
+      const dockerShim = path.join(binDir, 'docker');
+      fs.writeFileSync(
+        dockerShim,
+        `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(callsFile)}, args.join(' ') + '\\n');
+if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'create') {
+  process.exit(0);
+}
+if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
+  if (args.includes('--raw')) {
+    const manifests = process.env.OMIT_ARM64 === 'true'
+      ? [{ platform: { os: 'linux', architecture: 'amd64' } }]
+      : [
+          { platform: { os: 'linux', architecture: 'amd64' } },
+          { platform: { os: 'linux', architecture: 'arm64' } },
+        ];
+    process.stdout.write(JSON.stringify({ manifests }));
+    process.exit(0);
+  }
+  process.stdout.write('${mergedDigest}');
+  process.exit(0);
+}
+process.exit(1);
+`
+      );
+      fs.chmodSync(dockerShim, 0o755);
+
+      const okRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
+          PRIMARY_URI: 'ghcr.io/fderuiter/wedding_website:v0.1.0',
+          TAGS: 'ghcr.io/fderuiter/wedding_website:v0.1.0,ghcr.io/fderuiter/wedding_website:latest,fderuiter/wedding-website:v0.1.0,fderuiter/wedding-website:latest',
+        },
+      });
+      expect(okRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`digest=${mergedDigest}`);
+
+      const calls = fs.readFileSync(callsFile, 'utf8');
+      expect(calls).toContain(
+        `buildx imagetools create --tag ghcr.io/fderuiter/wedding_website:v0.1.0 --tag ghcr.io/fderuiter/wedding_website:latest ghcr.io/fderuiter/wedding_website@${amd64Digest} ghcr.io/fderuiter/wedding_website@${arm64Digest}`
+      );
+      expect(calls).toContain(
+        `buildx imagetools create --tag fderuiter/wedding-website:v0.1.0 --tag fderuiter/wedding-website:latest fderuiter/wedding-website@${amd64Digest} fderuiter/wedding-website@${arm64Digest}`
+      );
+
+      // Verify missing linux/arm64 manifest in merged index fails closed
+      const failRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: '',
+          PRIMARY_URI: 'ghcr.io/fderuiter/wedding_website:v0.1.0',
+          TAGS: 'ghcr.io/fderuiter/wedding_website:v0.1.0',
+          OMIT_ARM64: 'true',
+        },
+      });
+      expect(failRes.status).not.toBe(0);
+    } finally {
+      fs.rmSync(digestsDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });

@@ -1,4 +1,5 @@
 import child_process from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
@@ -154,21 +155,56 @@ async function main() {
 
     console.log('✅ PostgreSQL container is ready!');
 
+    const skipImageBuild = process.env.SKIP_IMAGE_BUILD === 'true';
+    const forceContainerMigration = process.argv.includes('--container-migration');
+    const hostPrismaBin = path.join(
+      rootDir,
+      'node_modules',
+      '.bin',
+      process.platform === 'win32' ? 'prisma.cmd' : 'prisma'
+    );
+    const useHostPrisma = !forceContainerMigration && fs.existsSync(hostPrismaBin);
+    const composeEnv = buildCiComposeEnv({ DB_PORT: dbPort.toString() });
+
+    if (skipImageBuild) {
+      runCommand('docker', ['image', 'inspect', 'wedding-website:latest'], {
+        stdio: 'ignore',
+        env: composeEnv
+      });
+    } else if (!useHostPrisma) {
+      console.log('Building OCI image via Docker Compose ahead of container-based migration smoke test...');
+      runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
+        env: composeEnv
+      });
+    }
+
     // 4. Test clean-database migration path
     console.log('Testing clean-database Prisma migration deploy path...');
-    const testDbUrl = `postgresql://wedding:wedding123@localhost:${dbPort}/wedding`;
-    runCommand('npx', ['prisma', 'migrate', 'deploy'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl, DB_PORT: dbPort.toString() }
-    });
+    if (useHostPrisma) {
+      const testDbUrl = `postgresql://wedding:wedding123@localhost:${dbPort}/wedding`;
+      runCommand('npx', ['prisma', 'migrate', 'deploy'], {
+        env: { ...process.env, DATABASE_URL: testDbUrl, DB_PORT: dbPort.toString() }
+      });
+    } else {
+      runCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration'], {
+        env: composeEnv
+      });
+    }
     console.log('✅ Clean-database migrations applied successfully!');
 
-    // 5. Build OCI image & start app container
-    console.log('Building OCI image and starting app container via Docker Compose...');
-    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build'], {
-      env: buildCiComposeEnv({ DB_PORT: dbPort.toString() })
-    });
-    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'app'], {
-      env: buildCiComposeEnv({ DB_PORT: dbPort.toString() })
+    // 5. Build OCI image (unless pre-built) & start app container
+    if (skipImageBuild) {
+      console.log('Starting pre-built OCI app container via Docker Compose (SKIP_IMAGE_BUILD=true)...');
+    } else if (useHostPrisma) {
+      console.log('Building OCI image and starting app container via Docker Compose...');
+      runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
+        env: composeEnv
+      });
+    } else {
+      console.log('Starting newly built OCI app container via Docker Compose...');
+    }
+    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', '--no-build', 'app'], {
+      env: composeEnv
     });
 
     // 6. Poll app container health/readiness
