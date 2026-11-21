@@ -1,6 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import GuestAddressPage from '../page';
+
+expect.extend(toHaveNoViolations);
 
 const mockAddToast = jest.fn();
 jest.mock('@/components/ui/ToastProvider', () => ({
@@ -640,5 +643,124 @@ describe('GuestAddressPage (/guest)', () => {
     await waitFor(() => {
       expect(addressPatchSaved).toBe(true);
     });
+  });
+
+  it('keeps street address and invite code hidden for name-lookup sessions until verified via ZIP or code while passing axe', async () => {
+    globalFetch.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as { url?: string })?.url || '';
+      if (url.includes('/api/guest/address/verify') && init?.method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            addressVerified: true,
+            data: {
+              guestName: 'Oliver Bennett',
+              code: 'BENN0001',
+              addressLine1: '42 Bellevue Ave',
+              city: 'Newport',
+              state: 'RI',
+              zipCode: '02840',
+              country: 'USA',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/guest/address')) {
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({
+            success: false,
+            error: 'Address verification required.',
+            details: {
+              requiresAddressVerification: true,
+              guestName: 'Oliver Bennett',
+            },
+          }),
+        };
+      }
+      if (url.includes('/api/schedule')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            isGuest: true,
+            guestName: 'Oliver Bennett',
+            householdName: 'Bennett Household',
+            householdMembers: [
+              { invitationCodeId: 'inv-1', guestName: 'Oliver Bennett', plusOneAllocations: 0 },
+              { invitationCodeId: 'inv-2', guestName: 'Claire Bennett', plusOneAllocations: 0 },
+            ],
+            plusOneAllocations: 0,
+            rsvpOpen: true,
+            data: [
+              {
+                id: 'se-1',
+                title: 'Wedding Ceremony',
+                startTime: '2026-09-19T16:00:00.000Z',
+                category: 'Ceremony',
+                isPrivate: false,
+                isReadOnly: false,
+                userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+                householdRsvps: [
+                  {
+                    invitationCodeId: 'inv-1',
+                    guestName: 'Oliver Bennett',
+                    plusOneAllocations: 0,
+                    savedPlusOneNames: [],
+                    userRsvp: {
+                      status: 'pending',
+                      plusOneCount: 0,
+                      dietaryNotes: '',
+                    },
+                  },
+                  {
+                    invitationCodeId: 'inv-2',
+                    guestName: 'Claire Bennett',
+                    plusOneAllocations: 0,
+                    savedPlusOneNames: [],
+                    userRsvp: {
+                      status: 'pending',
+                      plusOneCount: 0,
+                      dietaryNotes: '',
+                    },
+                  },
+                ],
+              },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+
+    const { container } = render(<GuestAddressPage />);
+
+    // Household RSVP schedule is unlocked immediately
+    const ceremonyCard = await screen.findByTestId('rsvp-card-se-1');
+    expect(ceremonyCard).toHaveTextContent('Bennett Household');
+    expect(ceremonyCard).toHaveTextContent('Oliver Bennett');
+    expect(ceremonyCard).toHaveTextContent('Claire Bennett');
+
+    // Invite Code badge and Address Line 1 are NOT rendered before verification
+    expect(screen.queryByText('Invite Code:')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Address Line 1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('guest-address-verification-gate')).toBeInTheDocument();
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Verify with saved postal ZIP code
+    fireEvent.change(screen.getByLabelText('Or Saved Postal ZIP Code'), {
+      target: { value: '02840' },
+    });
+    fireEvent.click(screen.getByTestId('submit-address-verification'));
+
+    // Mailing address form and Invite Code badge now unlock
+    expect(await screen.findByDisplayValue('42 Bellevue Ave')).toBeInTheDocument();
+    expect(screen.getByText('BENN0001')).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

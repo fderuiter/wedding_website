@@ -8,11 +8,25 @@ import {
 
 export const GUEST_INVITE_COOKIE = 'guest_invite_session';
 
+type GuestInviteSessionScope = 'full' | 'rsvp';
+
 export interface GuestInviteSessionPayload {
   code: string;
   guestName: string;
+  scope?: GuestInviteSessionScope;
+  addressVerified?: boolean;
   iat?: number;
   exp?: number;
+}
+
+export function isAddressVerifiedSession(
+  session: GuestInviteSessionPayload | null | undefined
+): boolean {
+  if (!session) return false;
+  if (session.scope === 'rsvp' || session.addressVerified === false) {
+    return false;
+  }
+  return true;
 }
 
 async function getSecret(): Promise<string> {

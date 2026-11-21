@@ -1534,4 +1534,184 @@ describe('SubEventService', () => {
       expect(audienceSummary.reachableCount).toBe(1);
     });
   });
+
+  describe('Multi-Person Household Schedule & Atomic RSVP Isolation', () => {
+    const primaryMember = {
+      id: 'inv-hh-1',
+      code: 'BENN0001',
+      guestName: 'Oliver Bennett',
+      householdName: 'Bennett Household',
+      plusOneAllocations: 1,
+      plusOneFirstName: 'Sam',
+      plusOneLastName: 'Taylor',
+      extraFields: {},
+      isSample: false,
+    };
+    const siblingMember = {
+      id: 'inv-hh-2',
+      code: 'BENN0002',
+      guestName: 'Claire Bennett',
+      householdName: 'Bennett Household',
+      plusOneAllocations: 0,
+      plusOneFirstName: null,
+      plusOneLastName: null,
+      extraFields: {},
+      isSample: false,
+    };
+
+    it('returns householdRsvps for all members on public events and ONLY for authorized members on private events', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({ id: 'inv-hh-1', isSample: false });
+      mockPrisma.invitationCode.findMany
+        .mockResolvedValueOnce([primaryMember])
+        .mockResolvedValueOnce([primaryMember, siblingMember]);
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-private-rehearsal',
+          title: 'Private Rehearsal Dinner',
+          isPrivate: true,
+          startTime: new Date('2026-06-19T18:00:00Z'),
+          accesses: [{ invitationCodeId: 'inv-hh-1' }], // Only Oliver holds SubEventAccess
+          rsvps: [
+            {
+              invitationCodeId: 'inv-hh-1',
+              status: 'attending',
+              plusOneCount: 0,
+              dietaryNotes: 'No nuts',
+            },
+          ],
+        },
+        {
+          id: 'se-public-ceremony',
+          title: 'Wedding Ceremony',
+          isPrivate: false,
+          startTime: new Date('2026-06-20T15:00:00Z'),
+          accesses: [],
+          rsvps: [],
+        },
+      ]);
+
+      const summary = await service.getHouseholdSummaryForGuest('BENN0001');
+      expect(summary).toEqual({
+        householdName: 'Bennett Household',
+        members: [
+          { invitationCodeId: 'inv-hh-1', guestName: 'Oliver Bennett', plusOneAllocations: 1 },
+          { invitationCodeId: 'inv-hh-2', guestName: 'Claire Bennett', plusOneAllocations: 0 },
+        ],
+      });
+
+      mockPrisma.invitationCode.findMany
+        .mockResolvedValueOnce([primaryMember])
+        .mockResolvedValueOnce([primaryMember, siblingMember]);
+
+      const schedule = await service.getScheduleForGuest('BENN0001');
+      expect(schedule).toHaveLength(2);
+
+      // Private event ONLY exposes Oliver (not Claire)
+      expect(schedule[0].id).toBe('se-private-rehearsal');
+      expect(schedule[0].householdRsvps).toHaveLength(1);
+      expect(schedule[0].householdRsvps?.[0]).toMatchObject({
+        invitationCodeId: 'inv-hh-1',
+        guestName: 'Oliver Bennett',
+        userRsvp: {
+          status: 'attending',
+          dietaryNotes: 'No nuts',
+        },
+      });
+
+      // Public event exposes both Oliver and Claire
+      expect(schedule[1].id).toBe('se-public-ceremony');
+      expect(schedule[1].householdRsvps).toHaveLength(2);
+      expect(schedule[1].householdRsvps?.map((m) => m.invitationCodeId)).toEqual([
+        'inv-hh-1',
+        'inv-hh-2',
+      ]);
+    });
+
+    it('rejects cross-household or unauthorized private-event member submissions with 403 and saves valid household batch atomically', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-hh-1',
+        guestName: 'Oliver Bennett',
+        plusOneAllocations: 1,
+        isSample: false,
+      });
+      mockPrisma.invitationCode.findMany
+        .mockResolvedValueOnce([primaryMember])
+        .mockResolvedValueOnce([primaryMember, siblingMember]);
+
+      // Cross-household invitationCodeId -> 403
+      await expect(
+        service.submitSubEventRsvps('BENN0001', [
+          {
+            subEventId: 'se-public-ceremony',
+            invitationCodeId: 'inv-stranger-999',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+          },
+        ])
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      // Sibling without SubEventAccess on private event -> 403
+      mockPrisma.invitationCode.findMany
+        .mockResolvedValueOnce([primaryMember])
+        .mockResolvedValueOnce([primaryMember, siblingMember]);
+      mockPrisma.subEvent.findMany.mockResolvedValueOnce([
+        {
+          id: 'se-private-rehearsal',
+          title: 'Private Rehearsal Dinner',
+          isPrivate: true,
+          accesses: [{ invitationCodeId: 'inv-hh-1' }],
+        },
+      ]);
+
+      await expect(
+        service.submitSubEventRsvps('BENN0001', [
+          {
+            subEventId: 'se-private-rehearsal',
+            invitationCodeId: 'inv-hh-2',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+          },
+        ])
+      ).rejects.toMatchObject({ statusCode: 403 });
+
+      // Valid atomic batch across both members for public ceremony
+      mockPrisma.invitationCode.findMany
+        .mockResolvedValueOnce([primaryMember])
+        .mockResolvedValueOnce([primaryMember, siblingMember])
+        .mockResolvedValueOnce([primaryMember, siblingMember]);
+      mockPrisma.subEvent.findMany.mockResolvedValueOnce([
+        {
+          id: 'se-public-ceremony',
+          title: 'Wedding Ceremony',
+          isPrivate: false,
+          accesses: [],
+        },
+      ]);
+      mockPrisma.subEventRsvp.upsert.mockImplementation(({ create }: any) => Promise.resolve(create));
+      mockPrisma.invitationCode.update.mockResolvedValue({});
+
+      const saved = await service.submitSubEventRsvps('BENN0001', [
+        {
+          subEventId: 'se-public-ceremony',
+          invitationCodeId: 'inv-hh-1',
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: 'No shellfish',
+        },
+        {
+          subEventId: 'se-public-ceremony',
+          invitationCodeId: 'inv-hh-2',
+          status: 'declined',
+          plusOneCount: 0,
+          dietaryNotes: '',
+        },
+      ]);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(saved).toHaveLength(2);
+    });
+  });
 });

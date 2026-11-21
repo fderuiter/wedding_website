@@ -29,9 +29,16 @@ import {
   getAttendanceStatus,
   isAddressComplete,
   type InvitationCodeDTO,
+  type SplitInvitationCoupleDTO,
+  type SplitInvitationCoupleResult,
 } from '@/features/registry';
 import type { SubEventDTO } from '@/features/sub-events';
-import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
+import {
+  computeMergedInvitationPreview,
+  isCombinedCoupleGuest,
+  parseCombinedCoupleGuestNames,
+  suggestHouseholdNameForSplit,
+} from '@/utils/invitationValidation';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
 
@@ -90,7 +97,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
         )}
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-700 dark:text-red-300">{item.code}</code>
           </div>
           <Button
             size="sm"
@@ -130,21 +137,21 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
               Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
             </span>
           ) : (
-            <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+            <span className="text-gray-600 dark:text-gray-300 italic">No address provided</span>
           )}
         </div>
 
-        <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
-          <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+        <div className="text-xs text-gray-600 dark:text-gray-300 flex flex-wrap gap-x-4 pt-1">
+          <span>Status: <span className={item.used ? 'text-red-700 dark:text-red-300 font-semibold' : 'text-green-700 dark:text-green-300 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
           <span>
             RSVP:{' '}
             <span
               className={
                 attendanceStatus === 'attending'
-                  ? 'text-green-600 font-semibold'
+                  ? 'text-green-700 dark:text-green-300 font-semibold'
                   : attendanceStatus === 'declined'
-                    ? 'text-red-600 font-semibold'
-                    : 'text-amber-600 font-semibold'
+                    ? 'text-red-700 dark:text-red-300 font-semibold'
+                    : 'text-amber-800 dark:text-amber-300 font-semibold'
               }
             >
               {attendanceStatus.charAt(0).toUpperCase() + attendanceStatus.slice(1)}
@@ -164,7 +171,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
           </span>
           <div className="flex flex-wrap gap-2">
             {subEvents.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+              <span className="text-xs text-gray-600 dark:text-gray-300 italic">No sub-events created yet</span>
             ) : (
               subEvents.map((evt) => {
                 const isAllowed = allowedSubEventIds.includes(evt.id);
@@ -201,13 +208,26 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
 interface InvitationCodeRowActionsProps {
   item: InvitationCodeDTO;
   onEdit: (_item: InvitationCodeDTO) => void;
+  onSplitCouple?: (_item: InvitationCodeDTO) => void;
   onDelete: (_id: string, _e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
-  function InvitationCodeRowActions({ item, onEdit, onDelete }) {
+  function InvitationCodeRowActions({ item, onEdit, onSplitCouple, onDelete }) {
+    const canSplitCouple = Boolean(onSplitCouple && isCombinedCoupleGuest(item));
     return (
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        {canSplitCouple && (
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label={`Split couple ${item.guestName} into household members`}
+            onClick={() => onSplitCouple?.(item)}
+            data-testid={`split-couple-btn-${item.id}`}
+          >
+            Split Couple
+          </Button>
+        )}
         <Button
           variant="secondary"
           size="sm"
@@ -243,6 +263,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
   onPreviewQr,
   onToggleSubEventAccess,
   onEdit,
+  onSplitCouple,
   onDelete,
 }) {
   return (
@@ -263,7 +284,12 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
           onToggleSubEventAccess={onToggleSubEventAccess}
         />
       </div>
-      <InvitationCodeRowActions item={item} onEdit={onEdit} onDelete={onDelete} />
+      <InvitationCodeRowActions
+        item={item}
+        onEdit={onEdit}
+        onSplitCouple={onSplitCouple}
+        onDelete={onDelete}
+      />
     </div>
   );
 });
@@ -284,6 +310,7 @@ export default function InvitationCodesDashboardPage() {
     updateBatch,
     batchUpdateTags,
     mergeDuplicates,
+    splitCouple,
     fetchAll,
   } = useAdminInvitationCodes();
 
@@ -306,6 +333,12 @@ export default function InvitationCodesDashboardPage() {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [primaryMergeId, setPrimaryMergeId] = useState<string>('');
   const [isMerging, setIsMerging] = useState(false);
+  const [splittingGuest, setSplittingGuest] = useState<InvitationCodeDTO | null>(null);
+  const [splitHouseholdName, setSplitHouseholdName] = useState('');
+  const [splitMembers, setSplitMembers] = useState<
+    Array<{ guestName: string; email: string; plusOneAllocations: number }>
+  >([]);
+  const [isSplitting, setIsSplitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'redeemed' | 'unused'>('all');
   const [addressFilter, setAddressFilter] = useState<'all' | 'complete' | 'missing'>('all');
@@ -845,6 +878,88 @@ export default function InvitationCodesDashboardPage() {
     }
   };
 
+  const handleOpenSplitModal = useCallback((guest: InvitationCodeDTO) => {
+    const parsedNames = parseCombinedCoupleGuestNames(guest);
+    const normalizedNames = parsedNames.length >= 2 ? parsedNames : [guest.guestName || '', ''];
+    setSplittingGuest(guest);
+    setSplitHouseholdName(suggestHouseholdNameForSplit(guest));
+    setSplitMembers(
+      normalizedNames.map((name, idx) => ({
+        guestName: name,
+        email: idx === 0 ? guest.email || '' : '',
+        plusOneAllocations: 0,
+      }))
+    );
+  }, []);
+
+  const handleConfirmSplitCouple = async () => {
+    if (!splittingGuest) return;
+    const cleanHousehold = splitHouseholdName.trim();
+    if (!cleanHousehold) {
+      addToast('Please enter a shared household name.', 'error');
+      return;
+    }
+
+    const cleanedMembers = splitMembers.map((m) => ({
+      guestName: m.guestName.trim(),
+      email: m.email.trim() || null,
+      plusOneAllocations: Math.max(0, Math.floor(Number(m.plusOneAllocations) || 0)),
+    }));
+
+    if (cleanedMembers.length < 2) {
+      addToast('Please list at least two household members.', 'error');
+      return;
+    }
+    if (cleanedMembers.some((m) => !m.guestName)) {
+      addToast('Every split household member must have a full name.', 'error');
+      return;
+    }
+
+    const payload: SplitInvitationCoupleDTO = {
+      sourceId: splittingGuest.id,
+      householdName: cleanHousehold,
+      members: cleanedMembers,
+    };
+
+    setIsSplitting(true);
+    try {
+      let splitResult: SplitInvitationCoupleResult | undefined;
+      if (typeof splitCouple === 'function') {
+        splitResult = await splitCouple(payload);
+      } else {
+        const res = await fetch('/api/admin/invitation-codes/split', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.error || 'Failed to split couple into household members.');
+        }
+        splitResult = (json.data || json) as SplitInvitationCoupleResult;
+        fetchAll?.();
+      }
+
+      const memberCount = splitResult?.records?.length ?? cleanedMembers.length;
+      addToast(
+        `Split "${splittingGuest.guestName}" into ${memberCount} individual members under ${cleanHousehold}.`,
+        'success'
+      );
+      setSplittingGuest(null);
+      setSelectedIds([]);
+      fetchSubEventsAndMatrix();
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Failed to split couple into household members.',
+        'error'
+      );
+    } finally {
+      setIsSplitting(false);
+    }
+  };
+
   const openFreshCreateForm = useCallback(() => {
     setCreateFormKey((prev) => prev + 1);
     setIsCreateFormDirty(false);
@@ -1267,6 +1382,7 @@ export default function InvitationCodesDashboardPage() {
                 onPreviewQr={setQrPreviewGuest}
                 onToggleSubEventAccess={handleToggleSubEventAccess}
                 onEdit={setEditingGuest}
+                onSplitCouple={handleOpenSplitModal}
                 onDelete={handleDelete}
               />
             ))}
@@ -1298,6 +1414,15 @@ export default function InvitationCodesDashboardPage() {
               <Button size="sm" variant="secondary" onClick={() => setBulkHouseholdModalOpen(true)}>
                 Set Household
               </Button>
+              {selectedIds.length === 1 && selectedGuests[0] && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => handleOpenSplitModal(selectedGuests[0])}
+                >
+                  Split into Household
+                </Button>
+              )}
               {selectedIds.length >= 2 && (
                 <Button
                   size="sm"
@@ -1733,6 +1858,202 @@ export default function InvitationCodesDashboardPage() {
               </Button>
             </div>
           </form>
+        </Dialog>
+
+        <Dialog
+          isOpen={Boolean(splittingGuest)}
+          onClose={() => {
+            if (!isSplitting) {
+              setSplittingGuest(null);
+            }
+          }}
+          title="Split Couple into Household Members"
+          className="max-w-2xl w-full"
+        >
+          {splittingGuest && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleConfirmSplitCouple();
+              }}
+              className="space-y-4 max-h-[80vh] overflow-y-auto pr-1"
+              data-testid="split-couple-modal-form"
+            >
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Convert <strong>{splittingGuest.guestName}</strong> into individual household member
+                rows sharing a single household name. Mailing address, party group, tags, and
+                private sub-event permissions are copied to each member so anyone in the household
+                can RSVP individually.
+              </p>
+
+              <FormGroup>
+                <Label htmlFor="split-household-name">Shared Household Name</Label>
+                <Input
+                  id="split-household-name"
+                  type="text"
+                  value={splitHouseholdName}
+                  onChange={(e) => setSplitHouseholdName(e.target.value)}
+                  placeholder="e.g. Smith Household"
+                  required
+                  disabled={isSplitting}
+                />
+              </FormGroup>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                    Individual Household Members ({splitMembers.length})
+                  </span>
+                  {splitMembers.length < 6 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={isSplitting}
+                      onClick={() =>
+                        setSplitMembers((prev) => [
+                          ...prev,
+                          { guestName: '', email: '', plusOneAllocations: 0 },
+                        ])
+                      }
+                    >
+                      + Add Member
+                    </Button>
+                  )}
+                </div>
+
+                {splitMembers.map((member, idx) => (
+                  <div
+                    key={idx}
+                    data-testid={`split-member-row-${idx}`}
+                    className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/60 p-3.5 space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-gray-800 dark:text-gray-100">
+                        Member {idx + 1}{' '}
+                        {idx === 0 ? (
+                          <span className="ml-1 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                            (Keeps code {splittingGuest.code}, gifts &amp; seat)
+                          </span>
+                        ) : (
+                          <span className="ml-1 text-[11px] font-normal text-gray-500 dark:text-gray-400">
+                            (Receives new personal code)
+                          </span>
+                        )}
+                      </span>
+                      {splitMembers.length > 2 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={isSplitting}
+                          aria-label={`Remove household member ${idx + 1}`}
+                          onClick={() =>
+                            setSplitMembers((prev) => prev.filter((_, mIdx) => mIdx !== idx))
+                          }
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <FormGroup className="sm:col-span-1 space-y-1">
+                        <Label htmlFor={`split-member-name-${idx}`} className="text-xs mb-0">
+                          Full Name (First &amp; Last)
+                        </Label>
+                        <Input
+                          id={`split-member-name-${idx}`}
+                          type="text"
+                          value={member.guestName}
+                          onChange={(e) =>
+                            setSplitMembers((prev) =>
+                              prev.map((m, mIdx) =>
+                                mIdx === idx ? { ...m, guestName: e.target.value } : m
+                              )
+                            )
+                          }
+                          placeholder="First and last name"
+                          required
+                          disabled={isSplitting}
+                        />
+                      </FormGroup>
+
+                      <FormGroup className="sm:col-span-1 space-y-1">
+                        <Label htmlFor={`split-member-email-${idx}`} className="text-xs mb-0">
+                          Email (Optional)
+                        </Label>
+                        <Input
+                          id={`split-member-email-${idx}`}
+                          type="email"
+                          value={member.email}
+                          onChange={(e) =>
+                            setSplitMembers((prev) =>
+                              prev.map((m, mIdx) =>
+                                mIdx === idx ? { ...m, email: e.target.value } : m
+                              )
+                            )
+                          }
+                          placeholder="member@example.com"
+                          disabled={isSplitting}
+                        />
+                      </FormGroup>
+
+                      <FormGroup className="sm:col-span-1 space-y-1">
+                        <Label htmlFor={`split-member-plusones-${idx}`} className="text-xs mb-0">
+                          Plus-One Allocation
+                        </Label>
+                        <Input
+                          id={`split-member-plusones-${idx}`}
+                          type="number"
+                          min={0}
+                          max={20}
+                          value={String(member.plusOneAllocations)}
+                          onChange={(e) =>
+                            setSplitMembers((prev) =>
+                              prev.map((m, mIdx) =>
+                                mIdx === idx
+                                  ? {
+                                    ...m,
+                                    plusOneAllocations: Math.max(
+                                      0,
+                                      parseInt(e.target.value || '0', 10) || 0
+                                    ),
+                                  }
+                                  : m
+                              )
+                            )
+                          }
+                          disabled={isSplitting}
+                        />
+                      </FormGroup>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isSplitting}
+                  onClick={() => setSplittingGuest(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={isSplitting}
+                  data-testid="confirm-split-couple-btn"
+                >
+                  {isSplitting
+                    ? 'Splitting Couple...'
+                    : `Split into ${splitMembers.length} Household Members`}
+                </Button>
+              </div>
+            </form>
+          )}
         </Dialog>
 
         <GuestEditorModal

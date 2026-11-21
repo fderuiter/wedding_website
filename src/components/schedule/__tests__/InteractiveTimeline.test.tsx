@@ -955,5 +955,178 @@ describe('InteractiveTimeline Component', () => {
         plusOneNames: ['John Doe'],
       });
     });
+
+    it('renders separate per-member RSVP controls for multi-person households, scopes private events to invited members, saves in batch, and passes axe', async () => {
+      let submittedBatch: unknown = null;
+
+      (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url === '/api/schedule') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              isGuest: true,
+              guestName: 'Oliver Bennett',
+              householdName: 'Bennett Household',
+              householdMembers: [
+                { invitationCodeId: 'inv-1', guestName: 'Oliver Bennett', plusOneAllocations: 1 },
+                { invitationCodeId: 'inv-2', guestName: 'Claire Bennett', plusOneAllocations: 0 },
+              ],
+              plusOneAllocations: 1,
+              savedPlusOneNames: [],
+              rsvpOpen: true,
+              data: [
+                {
+                  id: 'se-rehearsal',
+                  title: 'Bridal Party Rehearsal',
+                  startTime: '2026-09-18T18:00:00.000Z',
+                  endTime: '2026-09-18T20:00:00.000Z',
+                  category: 'Rehearsal',
+                  isPrivate: true,
+                  isReadOnly: false,
+                  userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+                  householdRsvps: [
+                    {
+                      invitationCodeId: 'inv-1',
+                      guestName: 'Oliver Bennett',
+                      plusOneAllocations: 1,
+                      savedPlusOneNames: [],
+                      userRsvp: {
+                        status: 'pending',
+                        plusOneCount: 0,
+                        dietaryNotes: '',
+                        mealSelections: [],
+                        customAnswers: {},
+                        plusOneNames: [],
+                      },
+                    },
+                  ],
+                },
+                {
+                  id: 'se-ceremony',
+                  title: 'Wedding Ceremony & Reception',
+                  startTime: '2026-09-19T16:00:00.000Z',
+                  endTime: '2026-09-19T22:00:00.000Z',
+                  category: 'Ceremony',
+                  isPrivate: false,
+                  isReadOnly: false,
+                  userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: '' },
+                  householdRsvps: [
+                    {
+                      invitationCodeId: 'inv-1',
+                      guestName: 'Oliver Bennett',
+                      plusOneAllocations: 1,
+                      savedPlusOneNames: [],
+                      userRsvp: {
+                        status: 'pending',
+                        plusOneCount: 0,
+                        dietaryNotes: '',
+                        mealSelections: [],
+                        customAnswers: {},
+                        plusOneNames: [],
+                      },
+                    },
+                    {
+                      invitationCodeId: 'inv-2',
+                      guestName: 'Claire Bennett',
+                      plusOneAllocations: 0,
+                      savedPlusOneNames: [],
+                      userRsvp: {
+                        status: 'pending',
+                        plusOneCount: 0,
+                        dietaryNotes: '',
+                        mealSelections: [],
+                        customAnswers: {},
+                        plusOneNames: [],
+                      },
+                    },
+                  ],
+                },
+              ],
+            }),
+          };
+        }
+        if (url === '/api/rsvp' && init?.method === 'POST') {
+          const parsed = JSON.parse(String(init.body));
+          submittedBatch = parsed.rsvps;
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              data: parsed.rsvps,
+            }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      });
+
+      const { container } = render(
+        <InteractiveTimeline events={[]} timezone="UTC" emptyStateMessage="No events" />
+      );
+
+      const rehearsalCard = await screen.findByTestId('rsvp-card-se-rehearsal');
+      const ceremonyCard = screen.getByTestId('rsvp-card-se-ceremony');
+
+      // Private rehearsal card displays Oliver ONLY (Claire does not hold SubEventAccess)
+      expect(
+        within(rehearsalCard).getByTestId('rsvp-member-card-se-rehearsal-inv-1')
+      ).toBeInTheDocument();
+      expect(
+        within(rehearsalCard).queryByTestId('rsvp-member-card-se-rehearsal-inv-2')
+      ).not.toBeInTheDocument();
+
+      // Public ceremony card displays BOTH Oliver and Claire
+      const oliverCeremony = within(ceremonyCard).getByTestId('rsvp-member-card-se-ceremony-inv-1');
+      const claireCeremony = within(ceremonyCard).getByTestId('rsvp-member-card-se-ceremony-inv-2');
+      expect(oliverCeremony).toBeInTheDocument();
+      expect(claireCeremony).toBeInTheDocument();
+
+      // Oliver has plusOneAllocations: 1 (max="1") while Claire has 0 (disabled, max="0")
+      expect(within(oliverCeremony).getByLabelText(/plus-one count/i)).toHaveAttribute('max', '1');
+      expect(within(claireCeremony).getByLabelText(/plus-one count/i)).toBeDisabled();
+      expect(within(claireCeremony).getByLabelText(/plus-one count/i)).toHaveAttribute('max', '0');
+
+      // Update Oliver on Rehearsal + Oliver & Claire separately on Ceremony
+      fireEvent.click(
+        within(
+          within(rehearsalCard).getByTestId('rsvp-member-card-se-rehearsal-inv-1')
+        ).getByRole('radio', { name: /^attending$/i })
+      );
+      fireEvent.click(within(oliverCeremony).getByRole('radio', { name: /^attending$/i }));
+      fireEvent.change(within(oliverCeremony).getByLabelText(/dietary requirements \/ notes/i), {
+        target: { value: 'Tree nut allergy' },
+      });
+      fireEvent.click(within(claireCeremony).getByRole('radio', { name: /^declined$/i }));
+
+      expect(await axe(container)).toHaveNoViolations();
+
+      const saveAllBtn = screen.getByRole('button', { name: /save all modified events/i });
+      fireEvent.click(saveAllBtn);
+
+      const liveStatus = await screen.findByTestId('rsvp-live-status');
+      expect(liveStatus).toHaveTextContent('Successfully saved RSVPs for 2 events.');
+      expect(Array.isArray(submittedBatch)).toBe(true);
+      expect(submittedBatch).toHaveLength(3);
+      expect(submittedBatch).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            subEventId: 'se-rehearsal',
+            invitationCodeId: 'inv-1',
+            status: 'attending',
+          }),
+          expect.objectContaining({
+            subEventId: 'se-ceremony',
+            invitationCodeId: 'inv-1',
+            status: 'attending',
+            dietaryNotes: 'Tree nut allergy',
+          }),
+          expect.objectContaining({
+            subEventId: 'se-ceremony',
+            invitationCodeId: 'inv-2',
+            status: 'declined',
+          }),
+        ])
+      );
+    });
   });
 });

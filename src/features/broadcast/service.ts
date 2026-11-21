@@ -1,7 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
+import { ApiError } from '@/utils/ApiError';
 import { generateSecureUUID } from '@/utils/uuid';
-import { buildGuestRsvpUrl, renderBroadcastTemplate, sanitizeEmailSubject } from './template';
+import {
+  buildGuestRsvpUrl,
+  escapeHtmlEntities,
+  renderBroadcastTemplate,
+  sanitizeEmailSubject,
+} from './template';
 import {
   filterTargetGuestsInMemory,
   getGuestPhone,
@@ -907,5 +913,59 @@ export class BroadcastService {
     return baseUrlWarning && updatedBroadcast
       ? { ...updatedBroadcast, baseUrlWarning }
       : updatedBroadcast;
+  }
+
+  /**
+   * Dispatches an automated host alert email to AppConfig.contactEmail when a guest
+   * cannot find their invitation by name lookup.
+   */
+  static async sendGuestLookupAlert(params: {
+    guestName: string;
+    guestEmail: string;
+    message?: string;
+  }): Promise<{ delivered: true }> {
+    const config = await getAppConfig('global');
+    const contactEmail = typeof config?.contactEmail === 'string' ? config.contactEmail.trim() : '';
+    const isValidContactEmail =
+      contactEmail.length > 0 &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail) &&
+      contactEmail.toLowerCase() !== 'hosts@wedding.example';
+
+    if (!isValidContactEmail) {
+      throw new ApiError(
+        503,
+        'Host contact email is not configured yet. Please reach out to the couple directly.'
+      );
+    }
+
+    const cleanGuestName = params.guestName.trim();
+    const cleanGuestEmail = params.guestEmail.trim();
+    const cleanMessage = (params.message || '').trim();
+
+    const subject = sanitizeEmailSubject(`[RSVP Name Lookup Help] ${cleanGuestName}`);
+    const bodySections = [
+      'A guest could not locate their wedding invitation by name and requested help:',
+      `Guest Name: ${escapeHtmlEntities(cleanGuestName)}\nReply Email: ${escapeHtmlEntities(cleanGuestEmail)}\nSubmitted At: ${new Date().toISOString()}`,
+    ];
+
+    if (cleanMessage) {
+      bodySections.push(`Guest Note:\n${escapeHtmlEntities(cleanMessage)}`);
+    }
+
+    const provider = new MultiChannelMessagingProvider(config);
+    const result = await provider.sendEmail({
+      to: contactEmail,
+      subject: subject || '[RSVP Name Lookup Help] Guest Assistance Request',
+      body: bodySections.join('\n\n'),
+    });
+
+    if (!result.success) {
+      throw new ApiError(
+        502,
+        result.error || 'Unable to send host alert email right now. Please try again later.'
+      );
+    }
+
+    return { delivered: true };
   }
 }

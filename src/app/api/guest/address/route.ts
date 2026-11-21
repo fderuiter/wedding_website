@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { isAddressVerifiedSession } from '@/core/auth/guestInviteToken';
 import { prisma } from '@/lib/prisma';
 import { GuestAddressUpdateSchema } from '@/features/registry';
 
@@ -9,6 +10,21 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   if (!session) {
     return NextResponse.json(
       { success: false, error: 'Unauthorized. Please enter your invitation code.' },
+      { status: 401 }
+    );
+  }
+
+  if (!isAddressVerifiedSession(session)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          'Please verify your invitation code or saved ZIP code to view or update your mailing address.',
+        details: {
+          requiresAddressVerification: true,
+          guestName: session.guestName,
+        },
+      },
       { status: 401 }
     );
   }
@@ -44,6 +60,21 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
   if (!session) {
     return NextResponse.json(
       { success: false, error: 'Unauthorized. Please enter your invitation code.' },
+      { status: 401 }
+    );
+  }
+
+  if (!isAddressVerifiedSession(session)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          'Please verify your invitation code or saved ZIP code to view or update your mailing address.',
+        details: {
+          requiresAddressVerification: true,
+          guestName: session.guestName,
+        },
+      },
       { status: 401 }
     );
   }

@@ -112,7 +112,11 @@ const HELP_TABS: readonly {
       ],
       [
         'No code yet?',
-        'Share postal details on the Mailing Address Form without a code, or contact the hosts below for code recovery.',
+        'If you have the shared event passcode, unlock your household RSVP using your first and last name, or share postal details on the Mailing Address Form.',
+      ],
+      [
+        'Name lookup & spelling tips',
+        'Enter both your first and last name as printed on your invitation. If your name still does not match, use the automated Notify the Hosts alert for assistance.',
       ],
     ],
   },

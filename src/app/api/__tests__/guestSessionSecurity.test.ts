@@ -5,6 +5,7 @@ import { POST as guestLoginPost } from '@/app/api/guest/login/route';
 import { POST as guestLookupPost } from '@/app/api/guest/lookup/route';
 import { POST as rsvpPost } from '@/app/api/rsvp/route';
 import { GET as addressGet, PUT as addressPut } from '@/app/api/guest/address/route';
+import { POST as addressVerifyPost } from '@/app/api/guest/address/verify/route';
 import { GET as scheduleGet } from '@/app/api/schedule/route';
 import { GET as photosGet } from '@/app/api/photos/route';
 import { GET as registryItemsGet } from '@/app/api/registry/items/route';
@@ -25,6 +26,7 @@ jest.mock('@/lib/prisma', () => ({
   prisma: {
     invitationCode: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
     },
@@ -102,7 +104,7 @@ describe('Guest Session Security Integration', () => {
       expect(json.data.addressLine1).toBe('123 Harbor View');
     });
 
-    test('shared passcode login followed by guest lookup does not mint guest_invite_session or authorize /api/guest/address', async () => {
+    test('shared passcode login followed by name lookup unlocks RSVP & schedule while blocking /api/guest/address until verified', async () => {
       const originalPasscode = process.env.GUEST_PASSCODE;
       process.env.GUEST_PASSCODE = 'test-guest-passcode';
 
@@ -121,7 +123,13 @@ describe('Guest Session Security Integration', () => {
       };
 
       const request = async (
-        path: '/api/guest/login' | '/api/guest/lookup' | '/api/guest/address' | '/api/rsvp' | '/api/schedule',
+        path:
+          | '/api/guest/login'
+          | '/api/guest/lookup'
+          | '/api/guest/address'
+          | '/api/guest/address/verify'
+          | '/api/rsvp'
+          | '/api/schedule',
         init: { method: string; headers?: Record<string, string>; body?: string }
       ) => {
         const cookieHeader = Array.from(cookieJar.entries())
@@ -144,6 +152,8 @@ describe('Guest Session Security Integration', () => {
           res = await guestLookupPost(req);
         } else if (path === '/api/guest/address') {
           res = init.method === 'PUT' ? await addressPut(req) : await addressGet(req);
+        } else if (path === '/api/guest/address/verify') {
+          res = await addressVerifyPost(req);
         } else if (path === '/api/rsvp') {
           res = await rsvpPost(req, {});
         } else {
@@ -163,50 +173,146 @@ describe('Guest Session Security Integration', () => {
         expect(cookieJar.has(GUEST_COOKIE)).toBe(true);
         expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
 
-        // Single-token surname query ("Vance") does not match plus-one surname or mint session
-        (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValueOnce(null);
+        // Single-token surname query ("Vance") fails validation with 400 and mints no session
         const lookupRes = await request('/api/guest/lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: 'Vance' }),
         });
-        expect(lookupRes.status).toBe(404);
+        expect(lookupRes.status).toBe(400);
         expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
 
         const addrRead = await request('/api/guest/address', { method: 'GET' });
         expect(addrRead.status).toBe(401);
         expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
 
-        // Even when a full guest name matches in /api/guest/lookup, no guest_invite_session is minted
-        (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValueOnce({
+        // Full first + last name lookup mints an RSVP-scoped session without leaking code or street address
+        (mockPrisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+          {
+            id: 'inv-vance',
+            code: 'VANCE2026',
+            guestName: 'Eleanor Vance',
+            householdName: 'Vance Household',
+            addressLine1: '742 Evergreen Terrace',
+            zipCode: '02840',
+            isSample: false,
+          },
+        ]);
+        const matchedLookupRes = await request('/api/guest/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firstName: 'Eleanor', lastName: 'Vance' }),
+        });
+        expect(matchedLookupRes.status).toBe(200);
+        const matchedLookupJson = await matchedLookupRes.json();
+        expect(matchedLookupJson.code).toBeUndefined();
+        expect(matchedLookupJson.addressLine1).toBeUndefined();
+        expect(matchedLookupJson.addressVerified).toBe(false);
+        expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(true);
+
+        // /api/guest/address GET and PUT MUST STILL reject RSVP-only sessions without leaking address/code or writing DB
+        (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
           id: 'inv-vance',
           code: 'VANCE2026',
           guestName: 'Eleanor Vance',
           addressLine1: '742 Evergreen Terrace',
+          zipCode: '02840',
+          isSample: false,
         });
-        const matchedLookupRes = await request('/api/guest/lookup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: 'Eleanor Vance' }),
-        });
-        expect(matchedLookupRes.status).toBe(200);
-        expect(cookieJar.has(GUEST_INVITE_COOKIE)).toBe(false);
-
         const addrReadAfterMatch = await request('/api/guest/address', { method: 'GET' });
         expect(addrReadAfterMatch.status).toBe(401);
+        const addrReadJson = await addrReadAfterMatch.json();
+        expect(addrReadJson.data).toBeUndefined();
+        expect(JSON.stringify(addrReadJson)).not.toContain('742 Evergreen Terrace');
+        expect(JSON.stringify(addrReadJson)).not.toContain('VANCE2026');
+        expect(addrReadJson.details).toEqual({
+          requiresAddressVerification: true,
+          guestName: 'Eleanor Vance',
+        });
 
+        const addrWriteAfterMatch = await request('/api/guest/address', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            addressLine1: '999 Attacker Lane',
+            city: 'Boston',
+            state: 'MA',
+            zipCode: '02110',
+            country: 'USA',
+          }),
+        });
+        expect(addrWriteAfterMatch.status).toBe(401);
+        expect(mockPrisma.invitationCode.update).not.toHaveBeenCalled();
+
+        // Meanwhile, /api/rsvp and /api/schedule ARE unlocked for the household
+        (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+          id: 'inv-vance',
+          code: 'VANCE2026',
+          guestName: 'Eleanor Vance',
+          isSample: false,
+        });
+        mockSubEventService.submitSubEventRsvps.mockResolvedValueOnce([
+          {
+            id: 'rsvp-1',
+            subEventId: 'se-100',
+            invitationCodeId: 'inv-vance',
+            status: 'attending',
+            plusOneCount: 0,
+            dietaryNotes: '',
+            mealSelections: [],
+            customAnswers: {},
+            plusOneNames: [],
+          },
+        ] as any);
         const rsvpAttempt = await request('/api/rsvp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subEventId: 'se-100', status: 'declined' }),
+          body: JSON.stringify({ subEventId: 'se-100', status: 'attending' }),
         });
-        expect(rsvpAttempt.status).toBe(401);
+        expect(rsvpAttempt.status).toBe(200);
 
         mockSubEventService.getScheduleForGuest.mockResolvedValueOnce([]);
         const scheduleRes = await request('/api/schedule', { method: 'GET' });
         const scheduleJson = await scheduleRes.json();
-        expect(scheduleJson.isGuest).toBe(false);
-        expect(mockSubEventService.getScheduleForGuest).toHaveBeenCalledWith(undefined);
+        expect(scheduleJson.isGuest).toBe(true);
+        expect(mockSubEventService.getScheduleForGuest).toHaveBeenCalledWith('VANCE2026');
+
+        // Verifying saved ZIP upgrades session to full scope so /api/guest/address succeeds
+        (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+          id: 'inv-vance',
+          code: 'VANCE2026',
+          guestName: 'Eleanor Vance',
+          householdName: 'Vance Household',
+          addressLine1: '742 Evergreen Terrace',
+          city: 'Newport',
+          state: 'RI',
+          zipCode: '02840',
+          country: 'USA',
+          isSample: false,
+        });
+        (mockPrisma.invitationCode.findMany as jest.Mock).mockResolvedValueOnce([
+          {
+            id: 'inv-vance',
+            code: 'VANCE2026',
+            guestName: 'Eleanor Vance',
+            householdName: 'Vance Household',
+            zipCode: '02840',
+            isSample: false,
+          },
+        ]);
+
+        const verifyRes = await request('/api/guest/address/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zipCode: '02840' }),
+        });
+        expect(verifyRes.status).toBe(200);
+
+        const addrReadVerified = await request('/api/guest/address', { method: 'GET' });
+        expect(addrReadVerified.status).toBe(200);
+        const addrVerifiedJson = await addrReadVerified.json();
+        expect(addrVerifiedJson.data.addressLine1).toBe('742 Evergreen Terrace');
+        expect(addrVerifiedJson.data.code).toBe('VANCE2026');
       } finally {
         if (originalPasscode === undefined) {
           delete process.env.GUEST_PASSCODE;

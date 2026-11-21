@@ -14,16 +14,30 @@ export interface GuestLoginMachineState {
   showPasscode: boolean;
   error: string;
   showHelp: boolean;
+  unlockByName?: boolean;
+  firstName?: string;
+  lastName?: string;
+  disambiguationEmail?: string;
+  disambiguationZip?: string;
+  requiresDisambiguation?: boolean;
+  lookupNotFound?: boolean;
 }
 
 export type GuestLoginMachineAction =
   | { type: 'LOGIN_START' }
   | { type: 'LOGIN_SUCCESS' }
   | { type: 'LOGIN_FAILURE'; error: string }
+  | { type: 'LOOKUP_DISAMBIGUATION_REQUIRED'; error: string }
+  | { type: 'LOOKUP_NOT_FOUND'; error: string }
   | { type: 'SET_PASSCODE'; passcode: string }
   | { type: 'SET_SHOW_PASSCODE'; show: boolean }
   | { type: 'TOGGLE_SHOW_PASSCODE' }
   | { type: 'SET_SHOW_HELP'; show: boolean }
+  | { type: 'SET_UNLOCK_BY_NAME'; unlockByName: boolean }
+  | { type: 'SET_FIRST_NAME'; firstName: string }
+  | { type: 'SET_LAST_NAME'; lastName: string }
+  | { type: 'SET_DISAMBIGUATION_EMAIL'; email: string }
+  | { type: 'SET_DISAMBIGUATION_ZIP'; zipCode: string }
   | { type: 'RESET' };
 
 export const initialGuestLoginMachineState: GuestLoginMachineState = {
@@ -153,6 +167,7 @@ export function guestLoginMachineReducer(
         ...state,
         status: 'logging_in',
         error: '',
+        lookupNotFound: false,
       };
 
     case 'LOGIN_SUCCESS':
@@ -160,6 +175,8 @@ export function guestLoginMachineReducer(
         ...state,
         status: 'authenticated',
         error: '',
+        requiresDisambiguation: false,
+        lookupNotFound: false,
       };
 
     case 'LOGIN_FAILURE':
@@ -167,6 +184,24 @@ export function guestLoginMachineReducer(
         ...state,
         status: 'idle',
         error: action.error,
+      };
+
+    case 'LOOKUP_DISAMBIGUATION_REQUIRED':
+      return {
+        ...state,
+        status: 'idle',
+        error: action.error,
+        requiresDisambiguation: true,
+        lookupNotFound: false,
+      };
+
+    case 'LOOKUP_NOT_FOUND':
+      return {
+        ...state,
+        status: 'idle',
+        error: action.error,
+        lookupNotFound: true,
+        requiresDisambiguation: false,
       };
 
     case 'SET_PASSCODE':
@@ -191,6 +226,41 @@ export function guestLoginMachineReducer(
       return {
         ...state,
         showHelp: action.show,
+      };
+
+    case 'SET_UNLOCK_BY_NAME':
+      return {
+        ...state,
+        unlockByName: action.unlockByName,
+        error: '',
+        requiresDisambiguation: false,
+        lookupNotFound: false,
+      };
+
+    case 'SET_FIRST_NAME':
+      return {
+        ...state,
+        firstName: action.firstName,
+        lookupNotFound: false,
+      };
+
+    case 'SET_LAST_NAME':
+      return {
+        ...state,
+        lastName: action.lastName,
+        lookupNotFound: false,
+      };
+
+    case 'SET_DISAMBIGUATION_EMAIL':
+      return {
+        ...state,
+        disambiguationEmail: action.email,
+      };
+
+    case 'SET_DISAMBIGUATION_ZIP':
+      return {
+        ...state,
+        disambiguationZip: action.zipCode,
       };
 
     case 'RESET':
@@ -319,12 +389,144 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     [cancelInFlightLogin, dispatch, navigateToDestination, getTargetCallbackUrl]
   );
 
+  const getNameLookupCallbackUrl = useCallback((): string => {
+    const explicitCallback =
+      optionsRef.current?.callbackUrl !== undefined
+        ? optionsRef.current.callbackUrl
+        : searchParams?.get('callbackUrl') ?? null;
+    if (explicitCallback && explicitCallback.trim()) {
+      return stripCodeFromCallbackUrl(getSafeCallbackUrl(explicitCallback));
+    }
+    return '/guest';
+  }, [searchParams]);
+
+  const submitNameLookup = useCallback(async () => {
+    const current = stateRef.current;
+    const passcodeValue = current.passcode.trim();
+    const firstName = (current.firstName || '').trim();
+    const lastName = (current.lastName || '').trim();
+    const email = (current.disambiguationEmail || '').trim();
+    const zipCode = (current.disambiguationZip || '').trim();
+
+    if (!passcodeValue) {
+      dispatch({
+        type: 'LOGIN_FAILURE',
+        error: 'Please enter the shared event passcode.',
+      });
+      return;
+    }
+
+    if (!firstName || !lastName) {
+      dispatch({
+        type: 'LOGIN_FAILURE',
+        error: 'Please enter both your first and last name to unlock your invitation.',
+      });
+      return;
+    }
+
+    cancelInFlightLogin();
+
+    const controller = new AbortController();
+    loginAbortControllerRef.current = controller;
+
+    dispatch({ type: 'LOGIN_START' });
+
+    try {
+      const loginRes = await fetch('/api/guest/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: passcodeValue }),
+        signal: controller.signal,
+      });
+
+      const loginData = await loginRes.json().catch(() => ({}));
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      if (!loginRes.ok) {
+        dispatch({
+          type: 'LOGIN_FAILURE',
+          error: toPlainLoginErrorMessage(loginData.error, loginRes.status),
+        });
+        return;
+      }
+
+      const lookupRes = await fetch('/api/guest/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          ...(email ? { email } : {}),
+          ...(zipCode ? { zipCode } : {}),
+        }),
+        signal: controller.signal,
+      });
+
+      const lookupData = await lookupRes.json().catch(() => ({}));
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      if (lookupRes.status === 409 && lookupData?.details?.requiresDisambiguation) {
+        dispatch({
+          type: 'LOOKUP_DISAMBIGUATION_REQUIRED',
+          error:
+            typeof lookupData.error === 'string' && lookupData.error.trim()
+              ? lookupData.error
+              : 'Multiple invitations match that name. Please enter your email address or postal ZIP code to confirm your household.',
+        });
+        return;
+      }
+
+      if (lookupRes.status === 404) {
+        dispatch({
+          type: 'LOOKUP_NOT_FOUND',
+          error:
+            typeof lookupData.error === 'string' && lookupData.error.trim()
+              ? lookupData.error
+              : 'We could not find an invitation matching that first and last name.',
+        });
+        return;
+      }
+
+      if (!lookupRes.ok) {
+        dispatch({
+          type: 'LOGIN_FAILURE',
+          error: toPlainLoginErrorMessage(lookupData.error, lookupRes.status),
+        });
+        return;
+      }
+
+      stripCodeFromBrowserHistory();
+      dispatch({ type: 'LOGIN_SUCCESS' });
+      navigateToDestination(getNameLookupCallbackUrl());
+    } catch (err: unknown) {
+      if (isAbortError(err) || controller.signal.aborted) {
+        return;
+      }
+      dispatch({
+        type: 'LOGIN_FAILURE',
+        error: 'A connection error occurred. Please try again.',
+      });
+    } finally {
+      if (loginAbortControllerRef.current === controller) {
+        loginAbortControllerRef.current = null;
+      }
+    }
+  }, [cancelInFlightLogin, dispatch, navigateToDestination, getNameLookupCallbackUrl]);
+
   const handleLogin = useCallback(
     async (e?: FormEvent) => {
       if (e) e.preventDefault();
+      if (stateRef.current.unlockByName) {
+        await submitNameLookup();
+        return;
+      }
       await submitPasscode(stateRef.current.passcode);
     },
-    [submitPasscode]
+    [submitNameLookup, submitPasscode]
   );
 
   useEffect(() => {
@@ -367,6 +569,26 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     dispatch({ type: 'SET_SHOW_HELP', show });
   }, [dispatch]);
 
+  const setUnlockByName = useCallback((unlockByName: boolean) => {
+    dispatch({ type: 'SET_UNLOCK_BY_NAME', unlockByName });
+  }, [dispatch]);
+
+  const setFirstName = useCallback((firstName: string) => {
+    dispatch({ type: 'SET_FIRST_NAME', firstName });
+  }, [dispatch]);
+
+  const setLastName = useCallback((lastName: string) => {
+    dispatch({ type: 'SET_LAST_NAME', lastName });
+  }, [dispatch]);
+
+  const setDisambiguationEmail = useCallback((email: string) => {
+    dispatch({ type: 'SET_DISAMBIGUATION_EMAIL', email });
+  }, [dispatch]);
+
+  const setDisambiguationZip = useCallback((zipCode: string) => {
+    dispatch({ type: 'SET_DISAMBIGUATION_ZIP', zipCode });
+  }, [dispatch]);
+
   useEffect(() => {
     return () => {
       if (loginAbortControllerRef.current) {
@@ -389,6 +611,11 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     setShowPasscode,
     toggleShowPasscode,
     setShowHelp,
+    setUnlockByName,
+    setFirstName,
+    setLastName,
+    setDisambiguationEmail,
+    setDisambiguationZip,
     cancelInFlightLogin,
     isLoading,
     isBusy,
@@ -399,6 +626,13 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     error: state.error,
     loading: isLoading,
     showHelp: state.showHelp,
+    unlockByName: Boolean(state.unlockByName),
+    firstName: state.firstName || '',
+    lastName: state.lastName || '',
+    disambiguationEmail: state.disambiguationEmail || '',
+    disambiguationZip: state.disambiguationZip || '',
+    requiresDisambiguation: Boolean(state.requiresDisambiguation),
+    lookupNotFound: Boolean(state.lookupNotFound),
     status: state.status,
   };
 }

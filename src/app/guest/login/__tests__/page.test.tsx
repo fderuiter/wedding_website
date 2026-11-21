@@ -399,4 +399,124 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
       expect(mockPush).toHaveBeenCalledWith('/');
     });
   });
+
+  it('supports passcode-gated name lookup with disambiguation and redirects to /guest while passing axe', async () => {
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      // 1. /api/guest/login passcode succeeds
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, sessionType: 'passcode' }),
+      } as unknown as Response)
+      // 2. /api/guest/lookup returns 409 requiresDisambiguation
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          success: false,
+          error: 'Multiple invitations match that name.',
+          details: { requiresDisambiguation: true },
+        }),
+      } as unknown as Response)
+      // 3. /api/guest/login passcode again
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, sessionType: 'passcode' }),
+      } as unknown as Response)
+      // 4. /api/guest/lookup with ZIP succeeds
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          sessionType: 'name_lookup',
+          guestName: 'Alex Chen',
+          householdName: 'Chen Household',
+          addressVerified: false,
+        }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    const { container } = render(<GuestLoginPage />);
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+
+    const toggleBtn = screen.getByTestId('toggle-name-unlock-button');
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.change(screen.getByPlaceholderText('Enter passcode or invitation code'), {
+      target: { value: 'wedding2026' },
+    });
+    fireEvent.change(screen.getByLabelText('First Name'), { target: { value: 'Alex' } });
+    fireEvent.change(screen.getByLabelText('Last Name'), { target: { value: 'Chen' } });
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: /unlock household rsvp/i }));
+
+    expect(await screen.findByTestId('guest-login-disambiguation-fields')).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.change(screen.getByLabelText('ZIP / Postal Code'), { target: { value: '02116' } });
+    fireEvent.click(screen.getByRole('button', { name: /unlock household rsvp/i }));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/guest');
+    });
+  });
+
+  it('displays spelling guidance and sends an automated host alert email when name lookup fails with 404', async () => {
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, sessionType: 'passcode' }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => ({
+          success: false,
+          error: 'No invitation found matching the provided name.',
+          details: { showLookupHelp: true },
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          message: 'We notified the hosts! They will follow up with your invitation details shortly.',
+        }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    const { container } = render(<GuestLoginPage />);
+    fireEvent.click(screen.getByTestId('toggle-name-unlock-button'));
+    fireEvent.change(screen.getByPlaceholderText('Enter passcode or invitation code'), {
+      target: { value: 'wedding2026' },
+    });
+    fireEvent.change(screen.getByLabelText('First Name'), { target: { value: 'Rob' } });
+    fireEvent.change(screen.getByLabelText('Last Name'), { target: { value: 'Smyth' } });
+    fireEvent.click(screen.getByRole('button', { name: /unlock household rsvp/i }));
+
+    const helpPanel = await screen.findByTestId('guest-lookup-help-panel');
+    expect(helpPanel).toHaveTextContent(/Spelling & Name Lookup Tips/i);
+
+    fireEvent.click(screen.getByTestId('open-host-alert-button'));
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.change(screen.getByLabelText('Your Email Address'), {
+      target: { value: 'rob@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('submit-host-alert-button'));
+
+    expect(await screen.findByTestId('guest-lookup-alert-success')).toHaveTextContent(
+      /We notified the hosts/i
+    );
+  });
 });

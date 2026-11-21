@@ -58,28 +58,29 @@ export const GuestLoginSchema = z.object({
   passcode: z.string({ message: 'Passcode is required' }).min(1, 'Passcode cannot be empty')
 });
 
+const DISALLOWED_LOOKUP_TEXT_RE = /[<>]|\p{Cc}/u;
+
 /**
  * Schema for guest self-service invitation lookup.
- * Note: Lookup route requires exact case-insensitive matching; partial substring queries are rejected with 404.
+ * Requires both first and last names (at least two whitespace-separated tokens)
+ * and supports optional email or postal/ZIP disambiguation when names collide.
  */
 export const GuestLookupSchema = z.object({
-  query: z.string().trim().optional(),
-  name: z.string().trim().optional(),
-  email: z.string().trim().optional(),
+  firstName: z.string().trim().max(80, 'First name must be 80 characters or fewer.').optional(),
+  lastName: z.string().trim().max(80, 'Last name must be 80 characters or fewer.').optional(),
+  query: z.string().trim().max(160, 'Name must be 160 characters or fewer.').optional(),
+  name: z.string().trim().max(160, 'Name must be 160 characters or fewer.').optional(),
+  email: z.string().trim().max(254, 'Email must be 254 characters or fewer.').optional(),
+  zipCode: z.string().trim().max(20, 'ZIP or postal code must be 20 characters or fewer.').optional(),
 }).superRefine((data, ctx) => {
-  const query = data.query?.trim();
-  const name = data.name?.trim();
-  const email = data.email?.trim();
+  const firstName = data.firstName?.trim() || '';
+  const lastName = data.lastName?.trim() || '';
+  const rawName = data.name?.trim() || '';
+  const rawQuery = data.query?.trim() || '';
+  const email = data.email?.trim() || '';
+  const zipCode = data.zipCode?.trim() || '';
 
-  if (!query && !name && !email) {
-    ctx.addIssue({
-      code: 'custom',
-      message: 'Name or email is required.',
-    });
-    return;
-  }
-
-  if (email !== undefined && email !== '') {
+  if (email) {
     const emailResult = z.email().safeParse(email);
     if (!emailResult.success) {
       ctx.addIssue({
@@ -87,37 +88,110 @@ export const GuestLookupSchema = z.object({
         path: ['email'],
         message: 'Invalid email format.',
       });
+      return;
     }
   }
 
-  if (name !== undefined && name !== '') {
-    if (name.length < 2) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['name'],
-        message: 'Name must be at least 2 characters.',
-      });
-    }
-  }
-
-  if (query !== undefined && query !== '') {
-    if (query.includes('@')) {
-      const emailResult = z.email().safeParse(query);
-      if (!emailResult.success) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['query'],
-          message: 'Invalid email format.',
-        });
-      }
-    } else if (query.length < 2) {
+  if (rawQuery.includes('@') && !firstName && !lastName && !rawName) {
+    const queryEmailResult = z.email().safeParse(rawQuery);
+    if (!queryEmailResult.success) {
       ctx.addIssue({
         code: 'custom',
         path: ['query'],
-        message: 'Name must be at least 2 characters.',
+        message: 'Invalid email format.',
       });
+      return;
     }
+    ctx.addIssue({
+      code: 'custom',
+      path: ['name'],
+      message: 'Please enter both your first and last name.',
+    });
+    return;
   }
+
+  if (zipCode && (DISALLOWED_LOOKUP_TEXT_RE.test(zipCode) || !/^[A-Za-z0-9\s-]{2,20}$/.test(zipCode))) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['zipCode'],
+      message: 'Invalid ZIP or postal code format.',
+    });
+    return;
+  }
+
+  const hasStructuredInput = data.firstName !== undefined || data.lastName !== undefined;
+  const combinedName = hasStructuredInput
+    ? [firstName, lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+    : (rawName || rawQuery).replace(/\s+/g, ' ').trim();
+
+  if (!combinedName) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'First and last name are required.',
+    });
+    return;
+  }
+
+  if (DISALLOWED_LOOKUP_TEXT_RE.test(combinedName)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['name'],
+      message: 'Name cannot contain HTML brackets or control characters.',
+    });
+    return;
+  }
+
+  if (combinedName.length < 2) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['name'],
+      message: 'Name must be at least 2 characters.',
+    });
+    return;
+  }
+
+  if (hasStructuredInput && (!firstName || !lastName)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: [!firstName ? 'firstName' : 'lastName'],
+      message: 'Please enter both your first and last name.',
+    });
+    return;
+  }
+
+  const tokens = combinedName.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['name'],
+      message: 'Please enter both your first and last name.',
+    });
+  }
+});
+
+export const GuestLookupAlertSchema = z.object({
+  guestName: z
+    .string({ message: 'Your full name is required.' })
+    .refine((val) => !DISALLOWED_LOOKUP_TEXT_RE.test(val), {
+      message: 'Name cannot contain HTML brackets or control characters.',
+    })
+    .trim()
+    .min(2, 'Please enter your full name.')
+    .max(120, 'Name must be 120 characters or fewer.'),
+  guestEmail: z
+    .string({ message: 'Your email address is required.' })
+    .trim()
+    .max(254, 'Email must be 254 characters or fewer.')
+    .pipe(z.email('Please enter a valid email address.')),
+  message: z
+    .string()
+    .refine((val) => !DISALLOWED_LOOKUP_TEXT_RE.test(val), {
+      message: 'Message cannot contain HTML brackets or control characters.',
+    })
+    .trim()
+    .max(500, 'Message must be 500 characters or fewer.')
+    .optional()
+    .or(z.literal('')),
 });
 
 export const SingleGuestPhotoSchema = z.any()

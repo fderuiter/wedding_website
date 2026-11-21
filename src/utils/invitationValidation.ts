@@ -795,3 +795,165 @@ export function computeMergedInvitationPreview(
   };
 }
 
+const HONORIFIC_OR_KINSHIP_WORDS = new Set([
+  'mr',
+  'mrs',
+  'ms',
+  'mx',
+  'miss',
+  'dr',
+  'prof',
+  'rev',
+  'hon',
+  'capt',
+  'col',
+  'gen',
+  'sgt',
+  'sir',
+  'lady',
+  'lord',
+  'uncle',
+  'aunt',
+  'auntie',
+  'grandma',
+  'grandpa',
+  'grandmother',
+  'grandfather',
+  'cousin',
+]);
+
+function isTitleOrKinshipToken(token: string): boolean {
+  const clean = token.replace(/\./g, '').trim().toLowerCase();
+  return HONORIFIC_OR_KINSHIP_WORDS.has(clean);
+}
+
+function countNonTitleNameTokens(segment: string): number {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  let count = 0;
+  for (const tok of tokens) {
+    if (!isTitleOrKinshipToken(tok)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+const COUPLE_CONNECTOR_REGEX = /\s+(?:&|and|\+)\s+/i;
+const DUAL_HONORIFIC_PREFIX_REGEX =
+  /^((?:mr|mrs|ms|mx|miss|dr|prof|rev|hon)\.?\s+(?:&|and|\+)\s+(?:mr|mrs|ms|mx|miss|dr|prof|rev|hon)\.?)\s+(.+)$/i;
+
+export interface CombinedCoupleCandidateInput {
+  guestName?: string | null;
+  householdName?: string | null;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+}
+
+/**
+ * Detects whether an InvitationCode row looks like a combined couple or joint entry
+ * (e.g., "Mr. & Mrs. Robert Smith", "Uncle David & Aunt Clara", "Oliver & Claire Bennett",
+ * or an entry with a named plus-one companion).
+ */
+export function isCombinedCoupleGuest(item: CombinedCoupleCandidateInput): boolean {
+  const guestName = (item.guestName || '').trim();
+  if (guestName && COUPLE_CONNECTOR_REGEX.test(guestName)) {
+    return true;
+  }
+  const hasCompanionFirst = Boolean((item.plusOneFirstName || '').trim());
+  const hasCompanionLast = Boolean((item.plusOneLastName || '').trim());
+  return hasCompanionFirst && hasCompanionLast;
+}
+
+/**
+ * Splits a combined couple guest record into suggested individual member names.
+ */
+export function parseCombinedCoupleGuestNames(item: CombinedCoupleCandidateInput): string[] {
+  const guestName = (item.guestName || '').replace(/\s+/g, ' ').trim();
+  const companionFull = [item.plusOneFirstName, item.plusOneLastName]
+    .map((v) => (v || '').trim())
+    .filter(Boolean)
+    .join(' ');
+
+  if (!guestName) {
+    return ['', ''];
+  }
+
+  // Case 1: Dual honorific prefix before a single shared name, e.g. "Mr. & Mrs. Robert Smith"
+  const dualHonorificMatch = guestName.match(DUAL_HONORIFIC_PREFIX_REGEX);
+  if (dualHonorificMatch) {
+    const prefixParts = dualHonorificMatch[1]
+      .split(COUPLE_CONNECTOR_REGEX)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const remainder = dualHonorificMatch[2].trim();
+    if (prefixParts.length === 2 && remainder) {
+      return [`${prefixParts[0]} ${remainder}`.trim(), `${prefixParts[1]} ${remainder}`.trim()];
+    }
+  }
+
+  // Case 2: General connector ("&", "and", "+"), e.g. "Oliver & Claire Bennett" or "Uncle David & Aunt Clara"
+  if (COUPLE_CONNECTOR_REGEX.test(guestName)) {
+    const rawParts = guestName
+      .split(COUPLE_CONNECTOR_REGEX)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (rawParts.length >= 2) {
+      const lastPart = rawParts[rawParts.length - 1];
+      const lastTokens = lastPart.split(/\s+/).filter(Boolean);
+      const lastNonTitleCount = countNonTitleNameTokens(lastPart);
+      // Shared trailing surname exists if the final segment has >= 2 non-title tokens (e.g. "Claire Bennett" or "Aunt Clara Miller")
+      const sharedSurname =
+        lastNonTitleCount >= 2 ? lastTokens[lastTokens.length - 1] : null;
+
+      return rawParts.map((part, idx) => {
+        if (idx === rawParts.length - 1) {
+          return part;
+        }
+        const nonTitleCount = countNonTitleNameTokens(part);
+        if (nonTitleCount <= 1 && sharedSurname) {
+          return `${part} ${sharedSurname}`.trim();
+        }
+        return part;
+      });
+    }
+  }
+
+  // Case 3: Primary guest + named plus-one companion
+  if (companionFull) {
+    return [guestName, companionFull];
+  }
+
+  return [guestName, ''];
+}
+
+/**
+ * Produces a sensible default household name when splitting a combined couple record.
+ */
+export function suggestHouseholdNameForSplit(item: CombinedCoupleCandidateInput): string {
+  const existing = (item.householdName || '').trim();
+  if (existing) {
+    return existing;
+  }
+
+  const parsedMembers = parseCombinedCoupleGuestNames(item).filter(Boolean);
+  if (parsedMembers.length >= 2) {
+    const lastTokens = parsedMembers.map((name) => {
+      const tokens = name.split(/\s+/).filter(Boolean);
+      return tokens[tokens.length - 1] || '';
+    });
+    const firstSurname = lastTokens[0];
+    if (
+      firstSurname &&
+      !isTitleOrKinshipToken(firstSurname) &&
+      lastTokens.every((tok) => tok.toLowerCase() === firstSurname.toLowerCase())
+    ) {
+      return `${firstSurname} Household`;
+    }
+  }
+
+  const guestName = (item.guestName || '').trim();
+  return guestName ? `${guestName} Household`.slice(0, HOUSEHOLD_NAME_MAX_LENGTH) : 'Shared Household';
+}
+
+

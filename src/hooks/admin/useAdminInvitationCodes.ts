@@ -1,6 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/features/admin';
-import type { InvitationCodeDTO, MergeInvitationCodesResult } from '@/features/registry';
+import type {
+  InvitationCodeDTO,
+  MergeInvitationCodesResult,
+  SplitInvitationCoupleDTO,
+  SplitInvitationCoupleResult,
+} from '@/features/registry';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 
@@ -189,6 +194,34 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     },
   });
 
+  const { mutateAsync: mutateSplitCouple } = useMutation({
+    mutationFn: async (payload: SplitInvitationCoupleDTO) =>
+      apiClient.post<SplitInvitationCoupleResult>(`${INVITATION_CODES_ENDPOINT}/split`, payload),
+    onSuccess: (response, { sourceId }) => {
+      const splitRecords = response?.records;
+      if (!Array.isArray(splitRecords) || splitRecords.length === 0) {
+        return;
+      }
+      queryClient.setQueryData<InvitationCacheValue | undefined>(
+        INVITATION_CODES_QUERY_KEY,
+        (old) =>
+          updateInvitationCache(old, (items) => {
+            const idx = items.findIndex((item) => item.id === sourceId);
+            if (idx === -1) {
+              return [...splitRecords, ...items];
+            }
+            const next = [...items];
+            next.splice(idx, 1, ...splitRecords);
+            return next;
+          })
+      );
+    },
+    meta: {
+      showSuccessToast: false,
+      showErrorToast: false,
+    },
+  });
+
   return {
     ...orchestration,
     batchUpdateTags: (
@@ -198,6 +231,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     ) => mutateBatchUpdateTags({ ids, tags, action }),
     mergeDuplicates: (primaryId: string, secondaryIds: string[]) =>
       mutateMergeDuplicates({ primaryId, secondaryIds }),
+    splitCouple: (payload: SplitInvitationCoupleDTO) => mutateSplitCouple(payload),
   };
 }
 

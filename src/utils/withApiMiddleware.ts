@@ -25,6 +25,8 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
     pathname === '/api/admin/login' ||
     pathname === '/api/guest/login' ||
     pathname === '/api/guest/lookup' ||
+    pathname === '/api/guest/lookup/alert' ||
+    pathname === '/api/guest/address/verify' ||
     (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
     pathname === '/api/registry/validate-code'
   );

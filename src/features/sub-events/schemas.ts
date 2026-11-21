@@ -89,6 +89,7 @@ export const SubEventUpdateInputSchema = deriveAdminInputSchema(SubEventSchema, 
 
 export const SubEventRsvpSubmissionItemSchema = z.object({
   subEventId: z.string().min(1, 'Sub-event ID is required.'),
+  invitationCodeId: z.string().trim().min(1, 'Invitation code ID cannot be empty.').optional(),
   status: z.enum(['attending', 'declined', 'pending']),
   plusOneCount: z
     .number()

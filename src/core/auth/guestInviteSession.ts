@@ -9,6 +9,7 @@ import {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
   getSignedGuestInviteSession,
+  isAddressVerifiedSession,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from './guestInviteToken';
@@ -16,6 +17,7 @@ import {
 export {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
+  isAddressVerifiedSession,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 };

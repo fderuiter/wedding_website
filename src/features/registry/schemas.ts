@@ -462,6 +462,85 @@ export interface MergeInvitationCodesResult {
   };
 }
 
+export const GuestAddressVerifySchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .max(INVITATION_CODE_MAX_LENGTH, `Code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`)
+      .optional()
+      .or(z.literal('')),
+    zipCode: z
+      .string()
+      .trim()
+      .max(ZIP_CODE_MAX_LENGTH, `Zip Code must be under ${ZIP_CODE_MAX_LENGTH} characters.`)
+      .optional()
+      .or(z.literal('')),
+  })
+  .superRefine((data, ctx) => {
+    const hasCode = Boolean(data.code && data.code.trim().length > 0);
+    const hasZip = Boolean(data.zipCode && data.zipCode.trim().length > 0);
+    if (!hasCode && !hasZip) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['code'],
+        message: 'Please enter your invitation code or saved ZIP/postal code to verify access.',
+      });
+    }
+  });
+
+export type GuestAddressVerifyDTO = z.infer<typeof GuestAddressVerifySchema>;
+
+export const SplitInvitationCoupleMemberSchema = z.object({
+  guestName: requiredGuestNameField,
+  email: optionalNullableEmailField,
+  dietaryNotes: z
+    .string()
+    .trim()
+    .max(1000, 'Dietary notes must be under 1000 characters.')
+    .optional()
+    .or(z.literal(''))
+    .nullable(),
+  plusOneAllocations: z.coerce
+    .number()
+    .int('Plus-one allocation must be an integer.')
+    .min(0, 'Plus-one allocation must be non-negative.')
+    .max(10, 'Plus-one allocation cannot exceed 10.')
+    .optional()
+    .default(0),
+});
+
+export type SplitInvitationCoupleMemberDTO = z.infer<typeof SplitInvitationCoupleMemberSchema>;
+
+export const SplitInvitationCoupleSchema = z.object({
+  sourceId: z
+    .string({ message: 'Source invitation ID is required.' })
+    .trim()
+    .min(1, 'Source invitation ID is required.'),
+  householdName: z
+    .string({ message: 'Household name is required.' })
+    .trim()
+    .min(1, `Household name is required and must be under ${HOUSEHOLD_NAME_MAX_LENGTH} characters.`)
+    .max(
+      HOUSEHOLD_NAME_MAX_LENGTH,
+      `Household name is required and must be under ${HOUSEHOLD_NAME_MAX_LENGTH} characters.`
+    ),
+  members: z
+    .array(SplitInvitationCoupleMemberSchema)
+    .min(2, 'At least two household members are required to split a combined entry.')
+    .max(10, 'Maximum of 10 household members allowed when splitting a combined entry.'),
+});
+
+export type SplitInvitationCoupleDTO = z.infer<typeof SplitInvitationCoupleSchema>;
+
+export interface SplitInvitationCoupleResult {
+  success: boolean;
+  householdName: string;
+  records: InvitationCodeDTO[];
+  createdCount: number;
+}
+
+
 
 
 

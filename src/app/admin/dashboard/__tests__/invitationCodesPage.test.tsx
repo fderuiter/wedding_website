@@ -83,6 +83,7 @@ describe('InvitationCodesDashboardPage', () => {
   const mockUpdateBatch = jest.fn();
   const mockBatchUpdateTags = jest.fn();
   const mockMergeDuplicates = jest.fn();
+  const mockSplitCouple = jest.fn();
   const mockFetchAll = jest.fn();
 
   beforeEach(() => {
@@ -1952,6 +1953,104 @@ describe('InvitationCodesDashboardPage', () => {
 
       await waitFor(() => {
         expect(mockMergeDuplicates).toHaveBeenCalledWith('code-2', ['code-1']);
+      });
+    });
+
+    it('opens Split Couple modal for a combined couple entry, pre-fills parsed individual members and household name, passes axe, and submits splitCouple', async () => {
+      const combinedGuest = {
+        id: 'code-couple-1',
+        guestName: 'Oliver & Claire Bennett',
+        code: 'BENN2026',
+        email: 'oliver@example.com',
+        dietaryNotes: 'No shellfish',
+        plusOneAllocations: 0,
+        used: false,
+      };
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [combinedGuest, ...mockCodes],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        splitCouple: mockSplitCouple,
+        fetchAll: mockFetchAll,
+      });
+
+      mockSplitCouple.mockResolvedValue({
+        success: true,
+        householdName: 'Bennett Household',
+        createdCount: 1,
+        records: [
+          {
+            id: 'code-couple-1',
+            code: 'BENN2026',
+            guestName: 'Oliver Bennett',
+            householdName: 'Bennett Household',
+          },
+          {
+            id: 'code-couple-2',
+            code: 'CLAIRE99',
+            guestName: 'Claire Bennett',
+            householdName: 'Bennett Household',
+          },
+        ],
+      });
+
+      const { container } = renderComponent();
+
+      const splitRowBtn = screen.getByRole('button', {
+        name: 'Split couple Oliver & Claire Bennett into household members',
+      });
+      fireEvent.click(splitRowBtn);
+
+      const dialog = screen.getByRole('dialog', {
+        name: 'Split Couple into Household Members',
+      });
+      expect(dialog).toBeInTheDocument();
+
+      const householdInput = within(dialog).getByLabelText('Shared Household Name') as HTMLInputElement;
+      expect(householdInput.value).toBe('Bennett Household');
+
+      const member0Row = within(dialog).getByTestId('split-member-row-0');
+      const member1Row = within(dialog).getByTestId('split-member-row-1');
+      expect(
+        (within(member0Row).getByLabelText('Full Name (First & Last)') as HTMLInputElement).value
+      ).toBe('Oliver Bennett');
+      expect(
+        (within(member1Row).getByLabelText('Full Name (First & Last)') as HTMLInputElement).value
+      ).toBe('Claire Bennett');
+
+      fireEvent.change(within(member1Row).getByLabelText('Email (Optional)'), {
+        target: { value: 'claire@example.com' },
+      });
+
+      expect(await axe(container)).toHaveNoViolations();
+
+      fireEvent.click(within(dialog).getByTestId('confirm-split-couple-btn'));
+
+      await waitFor(() => {
+        expect(mockSplitCouple).toHaveBeenCalledWith({
+          sourceId: 'code-couple-1',
+          householdName: 'Bennett Household',
+          members: [
+            expect.objectContaining({
+              guestName: 'Oliver Bennett',
+              email: 'oliver@example.com',
+              plusOneAllocations: 0,
+            }),
+            expect.objectContaining({
+              guestName: 'Claire Bennett',
+              email: 'claire@example.com',
+              plusOneAllocations: 0,
+            }),
+          ],
+        });
       });
     });
   });

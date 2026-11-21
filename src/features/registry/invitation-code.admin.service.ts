@@ -6,6 +6,8 @@ import {
   DryRunValidationSummary,
   DryRunValidationResponse,
   MergeInvitationCodesResult,
+  SplitInvitationCoupleDTO,
+  SplitInvitationCoupleResult,
 } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
@@ -24,6 +26,7 @@ import {
   mergeDietaryNotes,
   normalizeBatchInvitationRecord,
   normalizeInvitationCode,
+  normalizeNullableString,
   normalizePartialInvitationFields,
   normalizePartyTags,
   resolveBatchGuestMatches,
@@ -1165,6 +1168,198 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         record: updatedPrimary as unknown as InvitationCodeDTO,
         mergedCount: trimmedSecondaries.length,
         transferredCounts,
+      };
+    });
+  }
+
+  async splitCouple(
+    payload: SplitInvitationCoupleDTO,
+    author: string = 'Admin'
+  ): Promise<SplitInvitationCoupleResult> {
+    const cleanSourceId = typeof payload.sourceId === 'string' ? payload.sourceId.trim() : '';
+    if (!cleanSourceId) {
+      throw new Error('Validation Error: Source invitation ID is required.');
+    }
+
+    const cleanHouseholdName =
+      typeof payload.householdName === 'string' ? payload.householdName.trim() : '';
+    if (!cleanHouseholdName) {
+      throw new Error('Validation Error: Household name is required.');
+    }
+
+    if (!Array.isArray(payload.members) || payload.members.length < 2) {
+      throw new Error(
+        'Validation Error: At least two household members are required to split a combined entry.'
+      );
+    }
+    if (payload.members.length > 10) {
+      throw new Error(
+        'Validation Error: Maximum of 10 household members allowed when splitting a combined entry.'
+      );
+    }
+
+    for (const member of payload.members) {
+      const memberErrors = validateInvitationGuestFields(
+        {
+          guestName: member.guestName,
+          email: member.email ?? null,
+          householdName: cleanHouseholdName,
+          plusOneAllocations: member.plusOneAllocations ?? 0,
+        },
+        { mode: 'service' }
+      );
+      if (memberErrors.length > 0) {
+        throw new Error(memberErrors[0]);
+      }
+    }
+
+    return executeInTransaction(this.repo.client, async (tx: Prisma.TransactionClient) => {
+      const source = await tx.invitationCode.findUnique({
+        where: { id: cleanSourceId },
+      });
+      if (!source) {
+        throw new Error('Validation Error: Source guest record not found.');
+      }
+
+      const [sourceAccesses, sourceRsvps] = await Promise.all([
+        tx.subEventAccess.findMany({
+          where: { invitationCodeId: cleanSourceId },
+        }),
+        tx.subEventRsvp.findMany({
+          where: { invitationCodeId: cleanSourceId },
+        }),
+      ]);
+
+      const firstMember = payload.members[0];
+      const firstEmail =
+        firstMember.email !== undefined
+          ? normalizeNullableString(firstMember.email)
+          : source.email;
+      const firstDietary =
+        firstMember.dietaryNotes !== undefined
+          ? normalizeNullableString(firstMember.dietaryNotes)
+          : source.dietaryNotes;
+      const firstPlusOnes = Math.max(0, firstMember.plusOneAllocations ?? 0);
+
+      const updatedPrimary = await tx.invitationCode.update({
+        where: { id: cleanSourceId },
+        data: {
+          guestName: firstMember.guestName.trim(),
+          householdName: cleanHouseholdName,
+          email: firstEmail,
+          dietaryNotes: firstDietary,
+          plusOneAllocations: firstPlusOnes,
+          ...(firstPlusOnes === 0
+            ? {
+              plusOneFirstName: null,
+              plusOneLastName: null,
+            }
+            : {}),
+        },
+      });
+
+      const usedCodesInTx = new Set<string>([source.code.toUpperCase()]);
+      const generateUniqueCodeInTx = async (): Promise<string> => {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const candidate = generateRandomCode().toUpperCase();
+          if (usedCodesInTx.has(candidate)) continue;
+          const existing = await tx.invitationCode.findUnique({
+            where: { code: candidate },
+          });
+          if (!existing) {
+            usedCodesInTx.add(candidate);
+            return candidate;
+          }
+        }
+        throw new Error('Failed to generate a unique invitation code for split household member.');
+      };
+
+      const createdMembers: InvitationCodeDTO[] = [];
+      for (let idx = 1; idx < payload.members.length; idx++) {
+        const member = payload.members[idx];
+        const newCode = await generateUniqueCodeInTx();
+        const memberEmail = normalizeNullableString(member.email);
+        const memberDietary = normalizeNullableString(member.dietaryNotes);
+        const memberPlusOnes = Math.max(0, member.plusOneAllocations ?? 0);
+
+        const created = await tx.invitationCode.create({
+          data: {
+            code: newCode,
+            guestName: member.guestName.trim(),
+            email: memberEmail,
+            addressLine1: source.addressLine1,
+            addressLine2: source.addressLine2,
+            city: source.city,
+            state: source.state,
+            zipCode: source.zipCode,
+            country: source.country,
+            dietaryNotes: memberDietary,
+            plusOneAllocations: memberPlusOnes,
+            plusOneFirstName: null,
+            plusOneLastName: null,
+            householdName: cleanHouseholdName,
+            partyGroup: source.partyGroup,
+            partyTags: Array.isArray(source.partyTags) ? source.partyTags : [],
+            used: source.used,
+            usedAt: source.usedAt,
+            isSample: source.isSample,
+          },
+        });
+
+        if (sourceAccesses.length > 0) {
+          await tx.subEventAccess.createMany({
+            data: sourceAccesses.map((acc) => ({
+              subEventId: acc.subEventId,
+              invitationCodeId: created.id,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        if (sourceRsvps.length > 0 && typeof tx.subEventRsvp?.createMany === 'function') {
+          await tx.subEventRsvp.createMany({
+            data: sourceRsvps.map((rsvp) => ({
+              subEventId: rsvp.subEventId,
+              invitationCodeId: created.id,
+              status: rsvp.status,
+              plusOneCount: 0,
+              dietaryNotes: memberDietary || '',
+              mealSelections: [],
+              customAnswers: {},
+              plusOneNames: [],
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        createdMembers.push(created as unknown as InvitationCodeDTO);
+      }
+
+      const records: InvitationCodeDTO[] = [
+        updatedPrimary as unknown as InvitationCodeDTO,
+        ...createdMembers,
+      ];
+
+      await createAuditSnapshot(
+        'InvitationCode',
+        'split_couple',
+        {
+          sourceId: cleanSourceId,
+          sourceCode: source.code,
+          previousGuestName: source.guestName,
+          householdName: cleanHouseholdName,
+          recordIds: records.map((r) => r.id),
+          records,
+        },
+        author,
+        tx
+      );
+
+      return {
+        success: true,
+        householdName: cleanHouseholdName,
+        records,
+        createdCount: createdMembers.length,
       };
     });
   }

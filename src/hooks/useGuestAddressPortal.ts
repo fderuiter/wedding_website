@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useRef, useCallback, type FormEvent } from 'react';
+import { useReducer, useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { useToast } from '@/components/ui/ToastProvider';
 
 type GuestPortalStatus = 'idle' | 'validating' | 'authenticated' | 'saving' | 'error';
@@ -23,17 +23,25 @@ export interface GuestAddressPortalState {
   form: AddressFormData;
   baseline: AddressFormData;
   error: string | null;
+  addressVerified?: boolean;
+  householdName?: string;
 }
 
 export type GuestAddressPortalAction =
   | { type: 'INIT_START' }
   | { type: 'INIT_UNAUTHENTICATED' }
+  | {
+    type: 'INIT_RSVP_ONLY_SESSION';
+    guestName: string;
+    householdName?: string;
+  }
   | { type: 'VALIDATE_START'; code?: string }
   | {
     type: 'VALIDATE_SUCCESS';
     guestName: string;
     code: string;
     address?: Partial<AddressFormData>;
+    householdName?: string;
   }
   | { type: 'VALIDATE_FAILURE'; error: string; isAuthError: boolean }
   | { type: 'SAVE_START' }
@@ -95,6 +103,21 @@ export function guestAddressPortalReducer(
         error: null,
       };
 
+    case 'INIT_RSVP_ONLY_SESSION':
+      return {
+        ...state,
+        status: 'authenticated',
+        sessionActive: true,
+        isInitialLoading: false,
+        guestName: action.guestName,
+        householdName: action.householdName || '',
+        code: '',
+        addressVerified: false,
+        form: { ...initialAddressData },
+        baseline: { ...initialAddressData },
+        error: null,
+      };
+
     case 'VALIDATE_START':
       return {
         ...state,
@@ -119,6 +142,8 @@ export function guestAddressPortalReducer(
         isInitialLoading: false,
         guestName: action.guestName,
         code: action.code,
+        addressVerified: true,
+        ...(action.householdName !== undefined ? { householdName: action.householdName } : {}),
         form: nextAddress,
         baseline: nextAddress,
         error: null,
@@ -271,16 +296,36 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   }, []);
 
   const fetchAddressData = useCallback(
-    async (signal: AbortSignal): Promise<{ success: boolean; data?: GuestAddressApiResponse; isAuth?: boolean; error?: string }> => {
+    async (
+      signal: AbortSignal
+    ): Promise<{
+      success: boolean;
+      data?: GuestAddressApiResponse;
+      isAuth?: boolean;
+      requiresAddressVerification?: boolean;
+      guestName?: string;
+      error?: string;
+    }> => {
       try {
         const res = await fetch('/api/guest/address', { signal });
         if (signal.aborted) return { success: false };
+
+        const data = typeof res.json === 'function' ? await res.json().catch(() => null) : null;
+        if (signal.aborted) return { success: false };
+
+        if (res.status === 401 && data?.details?.requiresAddressVerification) {
+          return {
+            success: false,
+            isAuth: false,
+            requiresAddressVerification: true,
+            guestName: typeof data.details.guestName === 'string' ? data.details.guestName : '',
+          };
+        }
 
         if (isAuthError(res.status)) {
           return { success: false, isAuth: true };
         }
 
-        const data = await res.json().catch(() => null);
         if (res.ok && data?.success && data?.data) {
           return { success: true, data: data.data };
         }
@@ -319,6 +364,11 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
             zipCode: result.data.zipCode || '',
             country: result.data.country || '',
           },
+        });
+      } else if (result.requiresAddressVerification) {
+        dispatch({
+          type: 'INIT_RSVP_ONLY_SESSION',
+          guestName: result.guestName || '',
         });
       } else if (result.isAuth) {
         dispatch({ type: 'INIT_UNAUTHENTICATED' });
@@ -587,6 +637,204 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     }
   }, [cancelInFlightValidation, checkInitialSession, validateCode]);
 
+  const [showNameLookup, setShowNameLookup] = useState(false);
+  const [lookupPasscode, setLookupPasscode] = useState('');
+  const [lookupFirstName, setLookupFirstName] = useState('');
+  const [lookupLastName, setLookupLastName] = useState('');
+  const [lookupEmail, setLookupEmail] = useState('');
+  const [lookupZip, setLookupZip] = useState('');
+  const [requiresDisambiguation, setRequiresDisambiguation] = useState(false);
+  const [lookupNotFound, setLookupNotFound] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [isLookingUpName, setIsLookingUpName] = useState(false);
+  const [needsPasscodeForLookup, setNeedsPasscodeForLookup] = useState(false);
+
+  const [verifyCodeInput, setVerifyCodeInput] = useState('');
+  const [verifyZipInput, setVerifyZipInput] = useState('');
+  const [isVerifyingAddress, setIsVerifyingAddress] = useState(false);
+  const [verifyAddressError, setVerifyAddressError] = useState<string | null>(null);
+
+  const handleLookupByName = useCallback(
+    async (e?: FormEvent) => {
+      if (e?.preventDefault) {
+        e.preventDefault();
+      }
+
+      const firstName = lookupFirstName.trim();
+      const lastName = lookupLastName.trim();
+      const passcode = lookupPasscode.trim();
+      const email = lookupEmail.trim();
+      const zipCode = lookupZip.trim();
+
+      if (!firstName || !lastName) {
+        setLookupError('Please enter both your first and last name to unlock your invitation.');
+        return;
+      }
+
+      setIsLookingUpName(true);
+      setLookupError(null);
+      setLookupNotFound(false);
+
+      try {
+        if (passcode) {
+          const loginRes = await fetch('/api/guest/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ passcode }),
+          });
+          const loginData = await loginRes.json().catch(() => null);
+          if (!loginRes.ok) {
+            setLookupError(
+              loginData?.error ||
+                'Incorrect event passcode. Please check your invitation and try again.'
+            );
+            return;
+          }
+        }
+
+        const res = await fetch('/api/guest/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            firstName,
+            lastName,
+            ...(email ? { email } : {}),
+            ...(zipCode ? { zipCode } : {}),
+          }),
+        });
+
+        const data = await res.json().catch(() => null);
+
+        if (res.status === 401) {
+          setNeedsPasscodeForLookup(true);
+          setLookupError(
+            'Please enter the shared event passcode to look up your invitation by name.'
+          );
+          return;
+        }
+
+        if (res.status === 409 && data?.details?.requiresDisambiguation) {
+          setRequiresDisambiguation(true);
+          setLookupError(
+            data?.error ||
+              'Multiple invitations match that name. Please enter your email address or postal ZIP code to confirm your household.'
+          );
+          return;
+        }
+
+        if (res.status === 404) {
+          setLookupNotFound(true);
+          setLookupError(
+            data?.error || 'We could not find an invitation matching that first and last name.'
+          );
+          return;
+        }
+
+        if (!res.ok || !data?.success) {
+          setLookupError(
+            data?.error || 'Unable to look up your invitation right now. Please try again.'
+          );
+          return;
+        }
+
+        const resolvedGuestName =
+          typeof data.guestName === 'string' && data.guestName.trim()
+            ? data.guestName
+            : `${firstName} ${lastName}`;
+        const resolvedHouseholdName =
+          typeof data.householdName === 'string' ? data.householdName : '';
+
+        dispatch({
+          type: 'INIT_RSVP_ONLY_SESSION',
+          guestName: resolvedGuestName,
+          householdName: resolvedHouseholdName,
+        });
+        setRequiresDisambiguation(false);
+        setLookupNotFound(false);
+        setNeedsPasscodeForLookup(false);
+        addToast(`Welcome ${resolvedGuestName}!`, 'success');
+      } catch {
+        setLookupError('A network error occurred while looking up your invitation.');
+      } finally {
+        setIsLookingUpName(false);
+      }
+    },
+    [
+      addToast,
+      dispatch,
+      lookupEmail,
+      lookupFirstName,
+      lookupLastName,
+      lookupPasscode,
+      lookupZip,
+    ]
+  );
+
+  const handleVerifyAddressAccess = useCallback(
+    async (e?: FormEvent) => {
+      if (e?.preventDefault) {
+        e.preventDefault();
+      }
+
+      const cleanCode = verifyCodeInput.trim().toUpperCase();
+      const cleanZip = verifyZipInput.trim();
+
+      if (!cleanCode && !cleanZip) {
+        setVerifyAddressError(
+          'Please enter your personal invitation code or saved postal ZIP code.'
+        );
+        return;
+      }
+
+      setIsVerifyingAddress(true);
+      setVerifyAddressError(null);
+
+      try {
+        const res = await fetch('/api/guest/address/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(cleanCode ? { code: cleanCode } : {}),
+            ...(cleanZip ? { zipCode: cleanZip } : {}),
+          }),
+        });
+
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success || !data?.data) {
+          setVerifyAddressError(
+            data?.error ||
+              'Could not verify mailing address access. Check your invitation code or saved ZIP code.'
+          );
+          return;
+        }
+
+        dispatch({
+          type: 'VALIDATE_SUCCESS',
+          guestName: data.data.guestName || stateRef.current.guestName,
+          code: data.data.code || cleanCode,
+          address: {
+            addressLine1: data.data.addressLine1 || '',
+            addressLine2: data.data.addressLine2 || '',
+            city: data.data.city || '',
+            state: data.data.state || '',
+            zipCode: data.data.zipCode || '',
+            country: data.data.country || '',
+          },
+        });
+        setVerifyCodeInput('');
+        setVerifyZipInput('');
+        addToast('Mailing address access verified!', 'success');
+      } catch {
+        setVerifyAddressError(
+          'A network error occurred while verifying mailing address access.'
+        );
+      } finally {
+        setIsVerifyingAddress(false);
+      }
+    },
+    [addToast, dispatch, verifyCodeInput, verifyZipInput]
+  );
+
   const isDirty =
     state.form.addressLine1 !== state.baseline.addressLine1 ||
     state.form.addressLine2 !== state.baseline.addressLine2 ||
@@ -599,11 +847,37 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     state,
     dispatch,
     handleValidateCode,
+    handleLookupByName,
+    handleVerifyAddressAccess,
     handleSaveAddress,
     handleRetry,
     setField,
     setCode,
     resetError,
+    showNameLookup,
+    setShowNameLookup,
+    lookupPasscode,
+    setLookupPasscode,
+    lookupFirstName,
+    setLookupFirstName,
+    lookupLastName,
+    setLookupLastName,
+    lookupEmail,
+    setLookupEmail,
+    lookupZip,
+    setLookupZip,
+    requiresDisambiguation,
+    lookupNotFound,
+    lookupError,
+    isLookingUpName,
+    needsPasscodeForLookup,
+    isAddressVerified: state.addressVerified !== false,
+    verifyCodeInput,
+    setVerifyCodeInput,
+    verifyZipInput,
+    setVerifyZipInput,
+    isVerifyingAddress,
+    verifyAddressError,
     isDirty,
     isLoading: state.isInitialLoading,
     isValidating: state.status === 'validating',

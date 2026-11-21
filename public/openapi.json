@@ -4987,6 +4987,104 @@
         }
       }
     },
+    "/api/admin/invitation-codes/split": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/invitation-codes/split",
+        "description": "Endpoint for /api/admin/invitation-codes/split",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sourceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "householdName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "members": {
+                    "minItems": 2,
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "guestName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "email": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                ""
+                              ]
+                            }
+                          ]
+                        },
+                        "dietaryNotes": {
+                          "nullable": true,
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 1000
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                ""
+                              ]
+                            }
+                          ]
+                        },
+                        "plusOneAllocations": {
+                          "default": 0,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 10
+                        }
+                      },
+                      "required": [
+                        "guestName"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "sourceId",
+                  "householdName",
+                  "members"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/invitation-codes/validate": {
       "post": {
         "tags": [
@@ -9591,6 +9689,65 @@
         }
       }
     },
+    "/api/guest/address/verify": {
+      "post": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "POST /api/guest/address/verify",
+        "description": "Endpoint for /api/guest/address/verify",
+        "security": [
+          {
+            "guestInviteCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 50
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "zipCode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/guest/login": {
       "post": {
         "tags": [
@@ -9624,13 +9781,13 @@
         }
       }
     },
-    "/api/guest/lookup": {
+    "/api/guest/lookup/alert": {
       "post": {
         "tags": [
           "Guest"
         ],
-        "summary": "POST /api/guest/lookup",
-        "description": "Endpoint for /api/guest/lookup",
+        "summary": "POST /api/guest/lookup/alert",
+        "description": "Endpoint for /api/guest/lookup/alert",
         "security": [
           {
             "guestCookieAuth": []
@@ -9649,14 +9806,87 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "guestName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "guestEmail": {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  "message": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "guestName",
+                  "guestEmail"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/guest/lookup": {
+      "post": {
+        "tags": [
+          "Guest"
+        ],
+        "summary": "POST /api/guest/lookup",
+        "description": "Endpoint for /api/guest/lookup",
+        "security": [
+          {
+            "guestInviteCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
                   "query": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 160
                   },
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 160
                   },
                   "email": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  "zipCode": {
+                    "type": "string",
+                    "maxLength": 20
                   }
                 }
               }
@@ -11585,6 +11815,10 @@
                               "type": "string",
                               "minLength": 1
                             },
+                            "invitationCodeId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
                             "status": {
                               "type": "string",
                               "enum": [
@@ -11642,6 +11876,10 @@
                     "type": "object",
                     "properties": {
                       "subEventId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "invitationCodeId": {
                         "type": "string",
                         "minLength": 1
                       },

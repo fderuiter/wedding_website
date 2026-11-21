@@ -13,6 +13,7 @@ import {
 import type {
   MealOptionDTO,
   CustomRsvpQuestionDTO,
+  HouseholdMemberEventRsvp,
 } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
@@ -52,6 +53,7 @@ interface ScheduleEventItem {
     customAnswers?: Record<string, string>;
     plusOneNames?: string[];
   } | null;
+  householdRsvps?: HouseholdMemberEventRsvp[];
   createdAt?: Date;
 }
 
@@ -196,6 +198,7 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         mealOptions: normalizeMealOptions(data?.mealOptions),
         customQuestions: normalizeCustomQuestions(data?.customQuestions),
         userRsvp: data?.userRsvp !== undefined ? data.userRsvp : undefined,
+        householdRsvps: Array.isArray(data?.householdRsvps) ? data.householdRsvps : undefined,
         createdAt: node.createdAt,
       };
     })
@@ -222,6 +225,7 @@ export default function InteractiveTimeline({
   const [subEventsFromApi, setSubEventsFromApi] = useState<ScheduleEventItem[] | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [guestName, setGuestName] = useState<string | null>(null);
+  const [householdName, setHouseholdName] = useState<string | null>(null);
   const [apiMaxPlusOnes, setApiMaxPlusOnes] = useState<number | null | undefined>(undefined);
   const [apiSavedPlusOneNames, setApiSavedPlusOneNames] = useState<string[] | null>(null);
   const [apiRsvpOpen, setApiRsvpOpen] = useState<boolean | undefined>(undefined);
@@ -306,6 +310,7 @@ export default function InteractiveTimeline({
         mealOptions: normalizeMealOptions(data?.mealOptions),
         customQuestions: normalizeCustomQuestions(data?.customQuestions),
         userRsvp: data?.userRsvp || null,
+        householdRsvps: Array.isArray(data?.householdRsvps) ? data.householdRsvps : undefined,
       };
     });
   }, [initialNodes]);
@@ -354,6 +359,7 @@ export default function InteractiveTimeline({
         if (json.isGuest) {
           setIsGuest(true);
           setGuestName(json.guestName || null);
+          setHouseholdName(typeof json.householdName === 'string' ? json.householdName : null);
         }
         const rawSavedNames = Array.isArray(json.savedPlusOneNames)
           ? json.savedPlusOneNames
@@ -401,6 +407,7 @@ export default function InteractiveTimeline({
             mealOptions: normalizeMealOptions(item.mealOptions),
             customQuestions: normalizeCustomQuestions(item.customQuestions),
             userRsvp: item.userRsvp !== undefined ? item.userRsvp : null,
+            householdRsvps: Array.isArray(item.householdRsvps) ? item.householdRsvps : undefined,
           }));
           setSubEventsFromApi(mapped);
           initializeEvents(mapped);
@@ -667,13 +674,13 @@ export default function InteractiveTimeline({
                   {rsvpManager.dirtyCount} {rsvpManager.dirtyCount === 1 ? 'event has' : 'events have'} unsaved changes
                 </span>
               ) : (
-                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                   {rsvpManager.batchSuccessMessage || 'All RSVPs up to date'}
                 </span>
               )}
             </div>
             {rsvpManager.batchError && (
-              <span className="text-xs text-rose-600 dark:text-rose-400">
+              <span className="text-xs text-rose-800 dark:text-rose-300">
                 {rsvpManager.batchError}
               </span>
             )}
@@ -696,7 +703,7 @@ export default function InteractiveTimeline({
                 type="button"
                 disabled={rsvpManager.isAnySubmitting}
                 onClick={() => rsvpManager.submitBatch()}
-                className="px-3 py-1.5 border border-rose-500 text-rose-600 dark:text-rose-400 font-semibold text-xs rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 transition-colors"
+                className="px-3 py-1.5 border border-rose-600 text-rose-800 dark:text-rose-300 font-semibold text-xs rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 disabled:opacity-50 transition-colors"
               >
                 Retry Batch
               </button>
@@ -836,476 +843,820 @@ export default function InteractiveTimeline({
                     </div>
 
                     {/* Interactive RSVP Form or Read-Only Saved Summary for Authenticated Guests */}
-                    {!event.isReadOnly && (isGuest || event.userRsvp !== undefined) && (() => {
-                      const itemState = rsvpManager.getRsvpState(event.id);
-                      const eventMealOptions = event.mealOptions ?? [];
-                      const eventCustomQuestions = event.customQuestions ?? [];
+                    {!event.isReadOnly &&
+                      (isGuest || event.userRsvp !== undefined || Array.isArray(event.householdRsvps)) &&
+                      (() => {
+                        const itemState = rsvpManager.getRsvpState(event.id);
+                        const eventMealOptions = event.mealOptions ?? [];
+                        const eventCustomQuestions = event.customQuestions ?? [];
+                        const hasHouseholdMembers =
+                          Array.isArray(event.householdRsvps) &&
+                          event.householdRsvps.length > 0 &&
+                          Boolean(itemState.members && itemState.memberOrder?.length);
 
-                      if (!effectiveRsvpOpen) {
-                        const savedRsvp = itemState.baseline;
-                        const statusLabel =
-                          savedRsvp.status === 'attending'
-                            ? 'Attending'
-                            : savedRsvp.status === 'declined'
-                              ? 'Declined'
-                              : 'Pending';
-                        const statusBadgeClass =
-                          savedRsvp.status === 'attending'
-                            ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
-                            : savedRsvp.status === 'declined'
-                              ? 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-200 border-rose-300 dark:border-rose-700'
-                              : 'bg-gray-200 text-gray-800 dark:bg-zinc-700 dark:text-zinc-200 border-gray-300 dark:border-zinc-600';
-                        const savedPlusOnes =
-                          savedRsvp.status === 'declined' ? 0 : savedRsvp.plusOneCount;
-                        const savedPlusOneNames =
-                          savedRsvp.status === 'declined'
-                            ? []
-                            : savedRsvp.plusOneNames.filter((n) => n.trim().length > 0);
-                        const mealMap = new Map(eventMealOptions.map((m) => [m.id, m]));
-                        const savedMealsSummary =
-                          savedRsvp.status === 'attending' && eventMealOptions.length > 0
-                            ? savedRsvp.mealSelections
-                              .map((optId, idx) => {
-                                if (!optId) return null;
-                                const opt = mealMap.get(optId);
-                                const who =
-                                  idx === 0
-                                    ? guestName || 'Primary Guest'
-                                    : savedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
-                                return `${who}: ${opt?.label || optId}`;
-                              })
-                              .filter(Boolean)
-                              .join('; ')
-                            : '';
-                        const savedAnswersSummary =
-                          savedRsvp.status === 'attending' && eventCustomQuestions.length > 0
-                            ? eventCustomQuestions
-                              .map((q) => {
-                                const ans = savedRsvp.customAnswers[q.id];
-                                return ans ? `${q.prompt}: ${ans}` : null;
-                              })
-                              .filter(Boolean)
-                              .join('; ')
-                            : '';
+                        if (hasHouseholdMembers && itemState.members && itemState.memberOrder) {
+                          if (!effectiveRsvpOpen) {
+                            return (
+                              <div
+                                className="mb-6 p-4 rounded-xl border bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white space-y-3"
+                                data-testid={`rsvp-readonly-${event.id}`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-bold text-sm">
+                                    Household Saved RSVP for {event.title}
+                                  </span>
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-zinc-200">
+                                    RSVPs Closed
+                                  </span>
+                                </div>
+                                <div className="space-y-2">
+                                  {itemState.memberOrder.map((mId) => {
+                                    const member = itemState.members![mId];
+                                    if (!member) return null;
+                                    const savedRsvp = member.baseline;
+                                    const statusLabel =
+                                      savedRsvp.status === 'attending'
+                                        ? 'Attending'
+                                        : savedRsvp.status === 'declined'
+                                          ? 'Declined'
+                                          : 'Pending';
+                                    const statusBadgeClass =
+                                      savedRsvp.status === 'attending'
+                                        ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                                        : savedRsvp.status === 'declined'
+                                          ? 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                                          : 'bg-gray-200 text-gray-800 dark:bg-zinc-700 dark:text-zinc-200 border-gray-300 dark:border-zinc-600';
+                                    const savedPlusOnes =
+                                      savedRsvp.status === 'declined' ? 0 : savedRsvp.plusOneCount;
+                                    const savedNames =
+                                      savedRsvp.status === 'declined'
+                                        ? []
+                                        : savedRsvp.plusOneNames.filter((n) => n.trim().length > 0);
+
+                                    return (
+                                      <div
+                                        key={mId}
+                                        className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50"
+                                      >
+                                        <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                                          <span className="font-semibold text-xs text-gray-900 dark:text-white">
+                                            {member.guestName}
+                                          </span>
+                                          <span
+                                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${statusBadgeClass}`}
+                                          >
+                                            {statusLabel}
+                                          </span>
+                                        </div>
+                                        <p className="text-xs text-gray-600 dark:text-gray-300">
+                                          Plus-Ones: {savedPlusOnes}
+                                          {savedNames.length > 0 ? ` (${savedNames.join(', ')})` : ''}
+                                          {' • '}
+                                          Dietary: {savedRsvp.dietaryNotes || 'None noted'}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          const isControlDisabled =
+                            rsvpManager.isAnySubmitting || itemState.isSubmitting;
+
+                          return (
+                            <div
+                              className={`mb-6 p-4 rounded-xl border text-gray-900 dark:text-white transition-all space-y-4 ${
+                                itemState.state === 'error'
+                                  ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
+                                  : itemState.isDirty
+                                    ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 ring-1 ring-amber-300 dark:ring-amber-700'
+                                    : 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700'
+                              }`}
+                              data-testid={`rsvp-card-${event.id}`}
+                            >
+                              <div className="flex flex-wrap justify-between items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span
+                                    id={`rsvp-heading-${event.id}`}
+                                    className="font-bold text-sm"
+                                  >
+                                    Household RSVP for {event.title}
+                                  </span>
+                                  {householdName && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-200 border border-purple-200 dark:border-purple-800">
+                                      {householdName}
+                                    </span>
+                                  )}
+                                  {itemState.isDirty && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
+                                      Unsaved changes
+                                    </span>
+                                  )}
+                                </div>
+                                {event.isPrivate && (
+                                  <span className="text-xs text-gray-600 dark:text-gray-300">
+                                    Invited:{' '}
+                                    {itemState.memberOrder
+                                      .map((mId) => itemState.members![mId]?.guestName)
+                                      .filter(Boolean)
+                                      .join(', ')}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="space-y-3" data-testid={`household-members-${event.id}`}>
+                                {itemState.memberOrder.map((memberId) => {
+                                  const member = itemState.members![memberId];
+                                  if (!member) return null;
+                                  const memberHeadingId = `rsvp-member-heading-${event.id}-${memberId}`;
+                                  const memberMaxPlusOnes = member.plusOneAllocations;
+                                  const memberIsZeroPlusOnes = memberMaxPlusOnes === 0;
+                                  const memberIsDeclined = member.current.status === 'declined';
+                                  const memberIsAttending = member.current.status === 'attending';
+                                  const memberPlusOneDisabled =
+                                    isControlDisabled || memberIsZeroPlusOnes || memberIsDeclined;
+                                  const memberPlusOneMaxAttr = Math.min(
+                                    MAX_RSVP_PLUS_ONE_COUNT,
+                                    Math.max(0, memberMaxPlusOnes)
+                                  );
+                                  const memberAttendingPlusOnes =
+                                    memberIsZeroPlusOnes || !memberIsAttending
+                                      ? 0
+                                      : member.current.plusOneCount;
+
+                                  return (
+                                    <div
+                                      key={memberId}
+                                      data-testid={`rsvp-member-card-${event.id}-${memberId}`}
+                                      className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 space-y-3"
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span
+                                          id={memberHeadingId}
+                                          className="font-bold text-sm text-gray-900 dark:text-white"
+                                        >
+                                          {member.guestName}
+                                        </span>
+                                        {member.isDirty && (
+                                          <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                                            Modified
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <ToggleButtonGroup
+                                        mode="radiogroup"
+                                        aria-labelledby={memberHeadingId}
+                                        value={member.current.status}
+                                        onChange={(st) =>
+                                          rsvpManager.updateMemberRsvp(event.id, memberId, {
+                                            status: st,
+                                          })
+                                        }
+                                        className="flex flex-wrap gap-2 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
+                                        options={(['attending', 'declined', 'pending'] as const).map(
+                                          (st) => ({
+                                            value: st,
+                                            label: st,
+                                            disabled: isControlDisabled,
+                                            className:
+                                              'px-3 py-1.5 rounded-lg text-xs font-semibold capitalize',
+                                            activeClassName:
+                                              st === 'attending'
+                                                ? 'bg-emerald-700 text-white border border-emerald-900 ring-2 ring-offset-1 ring-emerald-700 dark:ring-emerald-400 shadow-sm'
+                                                : st === 'declined'
+                                                  ? 'bg-rose-700 text-white border border-rose-900 ring-2 ring-offset-1 ring-rose-700 dark:ring-rose-400 shadow-sm'
+                                                  : 'bg-amber-700 text-white border border-amber-900 ring-2 ring-offset-1 ring-amber-700 dark:ring-amber-400 shadow-sm',
+                                            inactiveClassName:
+                                              'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100',
+                                          })
+                                        )}
+                                      />
+
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                          <label
+                                            htmlFor={`rsvp-plus-one-${event.id}-${memberId}`}
+                                            className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                          >
+                                            Plus-One Count for {member.guestName}
+                                            <span className="ml-1 font-normal text-gray-600 dark:text-gray-400">
+                                              {memberMaxPlusOnes === 0
+                                                ? '(No plus-ones allocated)'
+                                                : `(Max ${memberMaxPlusOnes})`}
+                                            </span>
+                                          </label>
+                                          <input
+                                            id={`rsvp-plus-one-${event.id}-${memberId}`}
+                                            type="number"
+                                            min={0}
+                                            max={memberPlusOneMaxAttr}
+                                            disabled={memberPlusOneDisabled}
+                                            value={
+                                              memberIsZeroPlusOnes || memberIsDeclined
+                                                ? 0
+                                                : member.current.plusOneCount
+                                            }
+                                            onChange={(e) => {
+                                              if (memberIsZeroPlusOnes || memberIsDeclined) return;
+                                              rsvpManager.updateMemberRsvp(event.id, memberId, {
+                                                plusOneCount: Math.max(
+                                                  0,
+                                                  parseInt(e.target.value, 10) || 0
+                                                ),
+                                              });
+                                            }}
+                                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                          />
+                                        </div>
+
+                                        <div>
+                                          <label
+                                            htmlFor={`rsvp-dietary-notes-${event.id}-${memberId}`}
+                                            className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                          >
+                                            Dietary Requirements / Notes for {member.guestName}
+                                          </label>
+                                          <input
+                                            id={`rsvp-dietary-notes-${event.id}-${memberId}`}
+                                            type="text"
+                                            placeholder="e.g. Vegetarian, Nut allergy"
+                                            disabled={isControlDisabled}
+                                            value={member.current.dietaryNotes}
+                                            onChange={(e) =>
+                                              rsvpManager.updateMemberRsvp(event.id, memberId, {
+                                                dietaryNotes: e.target.value,
+                                              })
+                                            }
+                                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {memberIsAttending && memberAttendingPlusOnes > 0 && (
+                                        <div
+                                          className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 p-3"
+                                          data-testid={`rsvp-plus-one-names-${event.id}-${memberId}`}
+                                        >
+                                          <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                            Plus-One Guest{' '}
+                                            {memberAttendingPlusOnes === 1 ? 'Name' : 'Names'} for{' '}
+                                            {member.guestName}
+                                          </p>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {Array.from(
+                                              { length: memberAttendingPlusOnes },
+                                              (_, idx) => {
+                                                const nameInputId = `rsvp-plus-one-name-${event.id}-${memberId}-${idx}`;
+                                                return (
+                                                  <div key={nameInputId}>
+                                                    <label
+                                                      htmlFor={nameInputId}
+                                                      className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                                    >
+                                                      {memberAttendingPlusOnes === 1
+                                                        ? `Plus-One Full Name (${member.guestName})`
+                                                        : `Plus-One #${idx + 1} Full Name (${member.guestName})`}
+                                                    </label>
+                                                    <input
+                                                      id={nameInputId}
+                                                      type="text"
+                                                      placeholder="e.g. Jordan Taylor"
+                                                      disabled={isControlDisabled}
+                                                      value={member.current.plusOneNames[idx] ?? ''}
+                                                      onChange={(e) => {
+                                                        const nextNames = Array.from(
+                                                          { length: memberAttendingPlusOnes },
+                                                          (__, nIdx) =>
+                                                            nIdx === idx
+                                                              ? e.target.value
+                                                              : (member.current.plusOneNames[nIdx] ??
+                                                                '')
+                                                        );
+                                                        rsvpManager.updateMemberRsvp(
+                                                          event.id,
+                                                          memberId,
+                                                          { plusOneNames: nextNames }
+                                                        );
+                                                      }}
+                                                      className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                                    />
+                                                  </div>
+                                                );
+                                              }
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="flex justify-between items-center pt-1">
+                                <button
+                                  type="button"
+                                  disabled={isControlDisabled}
+                                  onClick={() => rsvpManager.submitSingle(event.id)}
+                                  className="px-4 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
+                                >
+                                  {itemState.isSubmitting ? 'Submitting...' : 'Save RSVP'}
+                                </button>
+
+                                {itemState.message && !itemState.error && (
+                                  <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                                    {itemState.message}
+                                  </span>
+                                )}
+                              </div>
+
+                              {itemState.error && (
+                                <div
+                                  role="alert"
+                                  className="mt-2 text-xs text-rose-800 dark:text-rose-300 flex items-center justify-between"
+                                >
+                                  <span>{itemState.error}</span>
+                                  <button
+                                    type="button"
+                                    disabled={isControlDisabled}
+                                    onClick={() => rsvpManager.submitSingle(event.id)}
+                                    className="underline font-medium hover:text-rose-700 ml-2"
+                                  >
+                                    Retry
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (!effectiveRsvpOpen) {
+                          const savedRsvp = itemState.baseline;
+                          const statusLabel =
+                            savedRsvp.status === 'attending'
+                              ? 'Attending'
+                              : savedRsvp.status === 'declined'
+                                ? 'Declined'
+                                : 'Pending';
+                          const statusBadgeClass =
+                            savedRsvp.status === 'attending'
+                              ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                              : savedRsvp.status === 'declined'
+                                ? 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-200 border-rose-300 dark:border-rose-700'
+                                : 'bg-gray-200 text-gray-800 dark:bg-zinc-700 dark:text-zinc-200 border-gray-300 dark:border-zinc-600';
+                          const savedPlusOnes =
+                            savedRsvp.status === 'declined' ? 0 : savedRsvp.plusOneCount;
+                          const savedPlusOneNames =
+                            savedRsvp.status === 'declined'
+                              ? []
+                              : savedRsvp.plusOneNames.filter((n) => n.trim().length > 0);
+                          const mealMap = new Map(eventMealOptions.map((m) => [m.id, m]));
+                          const savedMealsSummary =
+                            savedRsvp.status === 'attending' && eventMealOptions.length > 0
+                              ? savedRsvp.mealSelections
+                                .map((optId, idx) => {
+                                  if (!optId) return null;
+                                  const opt = mealMap.get(optId);
+                                  const who =
+                                    idx === 0
+                                      ? guestName || 'Primary Guest'
+                                      : savedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
+                                  return `${who}: ${opt?.label || optId}`;
+                                })
+                                .filter(Boolean)
+                                .join('; ')
+                              : '';
+                          const savedAnswersSummary =
+                            savedRsvp.status === 'attending' && eventCustomQuestions.length > 0
+                              ? eventCustomQuestions
+                                .map((q) => {
+                                  const ans = savedRsvp.customAnswers[q.id];
+                                  return ans ? `${q.prompt}: ${ans}` : null;
+                                })
+                                .filter(Boolean)
+                                .join('; ')
+                              : '';
+
+                          return (
+                            <div
+                              className="mb-6 p-4 rounded-xl border bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
+                              data-testid={`rsvp-readonly-${event.id}`}
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                                <span className="font-bold text-sm">
+                                  Your Saved RSVP for {event.title}
+                                </span>
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-zinc-200">
+                                  RSVPs Closed
+                                </span>
+                              </div>
+                              <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                                <div>
+                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                    Attendance Status
+                                  </dt>
+                                  <dd>
+                                    <span
+                                      className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-semibold border ${statusBadgeClass}`}
+                                    >
+                                      {statusLabel}
+                                    </span>
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                    Plus-One Guests
+                                  </dt>
+                                  <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                    {savedPlusOnes}
+                                    {savedPlusOneNames.length > 0 && ` (${savedPlusOneNames.join(', ')})`}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                    Dietary Notes
+                                  </dt>
+                                  <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                    {savedRsvp.dietaryNotes ? savedRsvp.dietaryNotes : 'None noted'}
+                                  </dd>
+                                </div>
+                                {savedMealsSummary && (
+                                  <div className="sm:col-span-3">
+                                    <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                      Entrée Selections
+                                    </dt>
+                                    <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                      {savedMealsSummary}
+                                    </dd>
+                                  </div>
+                                )}
+                                {savedAnswersSummary && (
+                                  <div className="sm:col-span-3">
+                                    <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                      Additional Responses
+                                    </dt>
+                                    <dd className="font-medium text-gray-900 dark:text-zinc-100">
+                                      {savedAnswersSummary}
+                                    </dd>
+                                  </div>
+                                )}
+                              </dl>
+                            </div>
+                          );
+                        }
+
+                        const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
+                        const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
+                        const isDeclined = itemState.current.status === 'declined';
+                        const isAttending = itemState.current.status === 'attending';
+                        const isPlusOneDisabled =
+                          isControlDisabled || isZeroPlusOneAllowance || isDeclined;
+                        const plusOneMaxAttr =
+                          typeof effectiveMaxPlusOnes === 'number'
+                            ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, effectiveMaxPlusOnes))
+                            : MAX_RSVP_PLUS_ONE_COUNT;
+                        const attendingPlusOneCount =
+                          isZeroPlusOneAllowance || !isAttending ? 0 : itemState.current.plusOneCount;
+                        const attendingPartySize = isAttending ? 1 + attendingPlusOneCount : 0;
 
                         return (
                           <div
-                            className="mb-6 p-4 rounded-xl border bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
-                            data-testid={`rsvp-readonly-${event.id}`}
+                            className={`mb-6 p-4 rounded-xl border text-gray-900 dark:text-white transition-all ${
+                              itemState.state === 'error'
+                                ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
+                                : itemState.isDirty
+                                  ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 ring-1 ring-amber-300 dark:ring-amber-700'
+                                  : 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700'
+                            }`}
+                            data-testid={`rsvp-card-${event.id}`}
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                              <span className="font-bold text-sm">
-                                Your Saved RSVP for {event.title}
-                              </span>
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-200 dark:bg-zinc-700 text-gray-700 dark:text-zinc-200">
-                                RSVPs Closed
-                              </span>
-                            </div>
-                            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                              <div>
-                                <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                                  Attendance Status
-                                </dt>
-                                <dd>
-                                  <span
-                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-md font-semibold border ${statusBadgeClass}`}
-                                  >
-                                    {statusLabel}
+                            <div className="font-bold text-sm mb-2 flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <span id={`rsvp-heading-${event.id}`}>Your RSVP for {event.title}</span>
+                                {itemState.isDirty && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
+                                    Unsaved changes
                                   </span>
-                                </dd>
+                                )}
                               </div>
-                              <div>
-                                <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                                  Plus-One Guests
-                                </dt>
-                                <dd className="font-medium text-gray-900 dark:text-zinc-100">
-                                  {savedPlusOnes}
-                                  {savedPlusOneNames.length > 0 && ` (${savedPlusOneNames.join(', ')})`}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                                  Dietary Notes
-                                </dt>
-                                <dd className="font-medium text-gray-900 dark:text-zinc-100">
-                                  {savedRsvp.dietaryNotes ? savedRsvp.dietaryNotes : 'None noted'}
-                                </dd>
-                              </div>
-                              {savedMealsSummary && (
-                                <div className="sm:col-span-3">
-                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                                    Entrée Selections
-                                  </dt>
-                                  <dd className="font-medium text-gray-900 dark:text-zinc-100">
-                                    {savedMealsSummary}
-                                  </dd>
-                                </div>
-                              )}
-                              {savedAnswersSummary && (
-                                <div className="sm:col-span-3">
-                                  <dt className="font-semibold text-gray-600 dark:text-gray-400 mb-1">
-                                    Additional Responses
-                                  </dt>
-                                  <dd className="font-medium text-gray-900 dark:text-zinc-100">
-                                    {savedAnswersSummary}
-                                  </dd>
-                                </div>
-                              )}
-                            </dl>
-                          </div>
-                        );
-                      }
-
-                      const isControlDisabled = rsvpManager.isAnySubmitting || itemState.isSubmitting;
-                      const isZeroPlusOneAllowance = effectiveMaxPlusOnes === 0;
-                      const isDeclined = itemState.current.status === 'declined';
-                      const isAttending = itemState.current.status === 'attending';
-                      const isPlusOneDisabled =
-                        isControlDisabled || isZeroPlusOneAllowance || isDeclined;
-                      const plusOneMaxAttr =
-                        typeof effectiveMaxPlusOnes === 'number'
-                          ? Math.min(MAX_RSVP_PLUS_ONE_COUNT, Math.max(0, effectiveMaxPlusOnes))
-                          : MAX_RSVP_PLUS_ONE_COUNT;
-                      const attendingPlusOneCount =
-                        isZeroPlusOneAllowance || !isAttending ? 0 : itemState.current.plusOneCount;
-                      const attendingPartySize = isAttending ? 1 + attendingPlusOneCount : 0;
-
-                      return (
-                        <div
-                          className={`mb-6 p-4 rounded-xl border text-gray-900 dark:text-white transition-all ${
-                            itemState.state === 'error'
-                              ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
-                              : itemState.isDirty
-                                ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-700 ring-1 ring-amber-300 dark:ring-amber-700'
-                                : 'bg-gray-50 dark:bg-gray-800/80 border-gray-200 dark:border-gray-700'
-                          }`}
-                          data-testid={`rsvp-card-${event.id}`}
-                        >
-                          <div className="font-bold text-sm mb-2 flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                              <span id={`rsvp-heading-${event.id}`}>Your RSVP for {event.title}</span>
-                              {itemState.isDirty && (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200">
-                                  Unsaved changes
+                              {guestName && (
+                                <span className="text-xs text-gray-600 dark:text-gray-300 font-normal">
+                                  Welcome, {guestName}
                                 </span>
                               )}
                             </div>
-                            {guestName && (
-                              <span className="text-xs text-gray-600 dark:text-gray-300 font-normal">
-                                Welcome, {guestName}
-                              </span>
-                            )}
-                          </div>
 
-                          <ToggleButtonGroup
-                            mode="radiogroup"
-                            aria-labelledby={`rsvp-heading-${event.id}`}
-                            value={itemState.current.status}
-                            onChange={(st) => rsvpManager.updateRsvp(event.id, { status: st })}
-                            className="flex flex-wrap gap-2 mb-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
-                            options={(['attending', 'declined', 'pending'] as const).map((st) => ({
-                              value: st,
-                              label: st,
-                              disabled: isControlDisabled,
-                              className: 'px-3 py-1.5 rounded-lg text-xs font-semibold capitalize',
-                              activeClassName:
+                            <ToggleButtonGroup
+                              mode="radiogroup"
+                              aria-labelledby={`rsvp-heading-${event.id}`}
+                              value={itemState.current.status}
+                              onChange={(st) => rsvpManager.updateRsvp(event.id, { status: st })}
+                              className="flex flex-wrap gap-2 mb-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
+                              options={(['attending', 'declined', 'pending'] as const).map((st) => ({
+                                value: st,
+                                label: st,
+                                disabled: isControlDisabled,
+                                className: 'px-3 py-1.5 rounded-lg text-xs font-semibold capitalize',
+                                activeClassName:
                                 st === 'attending'
                                   ? 'bg-emerald-700 text-white border border-emerald-900 ring-2 ring-offset-1 ring-emerald-700 dark:ring-emerald-400 shadow-sm'
                                   : st === 'declined'
                                     ? 'bg-rose-700 text-white border border-rose-900 ring-2 ring-offset-1 ring-rose-700 dark:ring-rose-400 shadow-sm'
                                     : 'bg-amber-700 text-white border border-amber-900 ring-2 ring-offset-1 ring-amber-700 dark:ring-amber-400 shadow-sm',
-                              inactiveClassName:
+                                inactiveClassName:
                                 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-100',
-                            }))}
-                          />
+                              }))}
+                            />
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                            <div>
-                              <label
-                                htmlFor={`rsvp-plus-one-${event.id}`}
-                                className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
-                              >
-                                Plus-One Count
-                                {typeof effectiveMaxPlusOnes === 'number' && (
-                                  <span className="ml-1 font-normal text-gray-600 dark:text-gray-400">
-                                    {effectiveMaxPlusOnes === 0
-                                      ? '(No plus-ones allocated)'
-                                      : `(Max ${effectiveMaxPlusOnes})`}
-                                  </span>
-                                )}
-                              </label>
-                              <input
-                                id={`rsvp-plus-one-${event.id}`}
-                                type="number"
-                                min={0}
-                                max={plusOneMaxAttr}
-                                disabled={isPlusOneDisabled}
-                                value={
-                                  isZeroPlusOneAllowance || isDeclined
-                                    ? 0
-                                    : itemState.current.plusOneCount
-                                }
-                                onChange={(e) => {
-                                  if (isZeroPlusOneAllowance || isDeclined) return;
-                                  rsvpManager.updateRsvp(event.id, {
-                                    plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
-                                  });
-                                }}
-                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                              />
-                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                              <div>
+                                <label
+                                  htmlFor={`rsvp-plus-one-${event.id}`}
+                                  className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                >
+                                  Plus-One Count
+                                  {typeof effectiveMaxPlusOnes === 'number' && (
+                                    <span className="ml-1 font-normal text-gray-600 dark:text-gray-400">
+                                      {effectiveMaxPlusOnes === 0
+                                        ? '(No plus-ones allocated)'
+                                        : `(Max ${effectiveMaxPlusOnes})`}
+                                    </span>
+                                  )}
+                                </label>
+                                <input
+                                  id={`rsvp-plus-one-${event.id}`}
+                                  type="number"
+                                  min={0}
+                                  max={plusOneMaxAttr}
+                                  disabled={isPlusOneDisabled}
+                                  value={
+                                    isZeroPlusOneAllowance || isDeclined
+                                      ? 0
+                                      : itemState.current.plusOneCount
+                                  }
+                                  onChange={(e) => {
+                                    if (isZeroPlusOneAllowance || isDeclined) return;
+                                    rsvpManager.updateRsvp(event.id, {
+                                      plusOneCount: Math.max(0, parseInt(e.target.value, 10) || 0),
+                                    });
+                                  }}
+                                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                />
+                              </div>
 
-                            <div>
-                              <label
-                                htmlFor={`rsvp-dietary-notes-${event.id}`}
-                                className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
-                              >
-                                Dietary Requirements / Notes
-                              </label>
-                              <input
-                                id={`rsvp-dietary-notes-${event.id}`}
-                                type="text"
-                                placeholder="e.g. Vegetarian, Nut allergy"
-                                disabled={isControlDisabled}
-                                value={itemState.current.dietaryNotes}
-                                onChange={(e) =>
-                                  rsvpManager.updateRsvp(event.id, {
-                                    dietaryNotes: e.target.value,
-                                  })
-                                }
-                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Conditional Plus-One Name Inputs for Attending Guests */}
-                          {isAttending && attendingPlusOneCount > 0 && (
-                            <div
-                              className="mb-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
-                              data-testid={`rsvp-plus-one-names-${event.id}`}
-                            >
-                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                                Plus-One Guest {attendingPlusOneCount === 1 ? 'Name' : 'Names'}
-                              </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {Array.from({ length: attendingPlusOneCount }, (_, idx) => {
-                                  const nameInputId = `rsvp-plus-one-name-${event.id}-${idx}`;
-                                  return (
-                                    <div key={nameInputId}>
-                                      <label
-                                        htmlFor={nameInputId}
-                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
-                                      >
-                                        {attendingPlusOneCount === 1
-                                          ? 'Plus-One Full Name'
-                                          : `Plus-One #${idx + 1} Full Name`}
-                                      </label>
-                                      <input
-                                        id={nameInputId}
-                                        type="text"
-                                        placeholder="e.g. Jordan Taylor"
-                                        disabled={isControlDisabled}
-                                        value={itemState.current.plusOneNames[idx] ?? ''}
-                                        onChange={(e) => {
-                                          const nextNames = Array.from(
-                                            { length: attendingPlusOneCount },
-                                            (__, nIdx) =>
-                                              nIdx === idx
-                                                ? e.target.value
-                                                : (itemState.current.plusOneNames[nIdx] ?? '')
-                                          );
-                                          rsvpManager.updateRsvp(event.id, {
-                                            plusOneNames: nextNames,
-                                          });
-                                        }}
-                                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
-                                      />
-                                    </div>
-                                  );
-                                })}
+                              <div>
+                                <label
+                                  htmlFor={`rsvp-dietary-notes-${event.id}`}
+                                  className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1"
+                                >
+                                  Dietary Requirements / Notes
+                                </label>
+                                <input
+                                  id={`rsvp-dietary-notes-${event.id}`}
+                                  type="text"
+                                  placeholder="e.g. Vegetarian, Nut allergy"
+                                  disabled={isControlDisabled}
+                                  value={itemState.current.dietaryNotes}
+                                  onChange={(e) =>
+                                    rsvpManager.updateRsvp(event.id, {
+                                      dietaryNotes: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                />
                               </div>
                             </div>
-                          )}
 
-                          {/* Conditional Per-Attendee Meal Selectors for Attending Guests */}
-                          {isAttending && eventMealOptions.length > 0 && (
-                            <div
-                              className="mb-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
-                              data-testid={`rsvp-meals-${event.id}`}
-                            >
-                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                                Entrée Selections *
-                              </p>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {Array.from({ length: attendingPartySize }, (_, attendeeIdx) => {
-                                  const selectId = `rsvp-meal-${event.id}-${attendeeIdx}`;
-                                  const attendeeLabel =
-                                    attendeeIdx === 0
-                                      ? guestName || 'Primary Guest'
-                                      : (itemState.current.plusOneNames[attendeeIdx - 1] ?? '').trim() ||
-                                        `Plus-One #${attendeeIdx}`;
-                                  const selectedMealId =
-                                    itemState.current.mealSelections[attendeeIdx] ?? '';
-                                  const selectedMealObj = eventMealOptions.find(
-                                    (m) => m.id === selectedMealId
-                                  );
-
-                                  return (
-                                    <div key={selectId}>
-                                      <label
-                                        htmlFor={selectId}
-                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
-                                      >
-                                        {`Entrée for ${attendeeLabel} *`}
-                                      </label>
-                                      <select
-                                        id={selectId}
-                                        required
-                                        disabled={isControlDisabled}
-                                        value={selectedMealId}
-                                        onChange={(e) => {
-                                          const nextMeals = Array.from(
-                                            { length: attendingPartySize },
-                                            (__, mIdx) =>
-                                              mIdx === attendeeIdx
-                                                ? e.target.value
-                                                : (itemState.current.mealSelections[mIdx] ?? '')
-                                          );
-                                          rsvpManager.updateRsvp(event.id, {
-                                            mealSelections: nextMeals,
-                                          });
-                                        }}
-                                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
-                                      >
-                                        <option value="">Select an entrée...</option>
-                                        {eventMealOptions.map((opt) => (
-                                          <option key={opt.id} value={opt.id}>
-                                            {opt.dietaryTags.length > 0
-                                              ? `${opt.label} (${opt.dietaryTags.join(', ')})`
-                                              : opt.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      {selectedMealObj?.description && (
-                                        <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                          {selectedMealObj.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Conditional Custom RSVP Prompts for Attending Guests */}
-                          {isAttending && eventCustomQuestions.length > 0 && (
-                            <div
-                              className="mb-3 space-y-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
-                              data-testid={`rsvp-questions-${event.id}`}
-                            >
-                              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                                Additional RSVP Questions
-                              </p>
-                              <div className="space-y-2.5">
-                                {eventCustomQuestions.map((question) => {
-                                  const qControlId = `rsvp-question-${event.id}-${question.id}`;
-                                  const currentAnswer =
-                                    itemState.current.customAnswers[question.id] ?? '';
-
-                                  return (
-                                    <div key={question.id}>
-                                      <label
-                                        htmlFor={qControlId}
-                                        className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
-                                      >
-                                        {question.prompt}
-                                        {question.required ? ' *' : ''}
-                                      </label>
-                                      {question.type === 'choice' ? (
-                                        <select
-                                          id={qControlId}
-                                          required={question.required}
+                            {/* Conditional Plus-One Name Inputs for Attending Guests */}
+                            {isAttending && attendingPlusOneCount > 0 && (
+                              <div
+                                className="mb-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
+                                data-testid={`rsvp-plus-one-names-${event.id}`}
+                              >
+                                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                  Plus-One Guest {attendingPlusOneCount === 1 ? 'Name' : 'Names'}
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {Array.from({ length: attendingPlusOneCount }, (_, idx) => {
+                                    const nameInputId = `rsvp-plus-one-name-${event.id}-${idx}`;
+                                    return (
+                                      <div key={nameInputId}>
+                                        <label
+                                          htmlFor={nameInputId}
+                                          className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        >
+                                          {attendingPlusOneCount === 1
+                                            ? 'Plus-One Full Name'
+                                            : `Plus-One #${idx + 1} Full Name`}
+                                        </label>
+                                        <input
+                                          id={nameInputId}
+                                          type="text"
+                                          placeholder="e.g. Jordan Taylor"
                                           disabled={isControlDisabled}
-                                          value={currentAnswer}
-                                          onChange={(e) =>
+                                          value={itemState.current.plusOneNames[idx] ?? ''}
+                                          onChange={(e) => {
+                                            const nextNames = Array.from(
+                                              { length: attendingPlusOneCount },
+                                              (__, nIdx) =>
+                                                nIdx === idx
+                                                  ? e.target.value
+                                                  : (itemState.current.plusOneNames[nIdx] ?? '')
+                                            );
                                             rsvpManager.updateRsvp(event.id, {
-                                              customAnswers: {
-                                                ...itemState.current.customAnswers,
-                                                [question.id]: e.target.value,
-                                              },
-                                            })
-                                          }
+                                              plusOneNames: nextNames,
+                                            });
+                                          }}
+                                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Conditional Per-Attendee Meal Selectors for Attending Guests */}
+                            {isAttending && eventMealOptions.length > 0 && (
+                              <div
+                                className="mb-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
+                                data-testid={`rsvp-meals-${event.id}`}
+                              >
+                                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                  Entrée Selections *
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  {Array.from({ length: attendingPartySize }, (_, attendeeIdx) => {
+                                    const selectId = `rsvp-meal-${event.id}-${attendeeIdx}`;
+                                    const attendeeLabel =
+                                      attendeeIdx === 0
+                                        ? guestName || 'Primary Guest'
+                                        : (itemState.current.plusOneNames[attendeeIdx - 1] ?? '').trim() ||
+                                        `Plus-One #${attendeeIdx}`;
+                                    const selectedMealId =
+                                      itemState.current.mealSelections[attendeeIdx] ?? '';
+                                    const selectedMealObj = eventMealOptions.find(
+                                      (m) => m.id === selectedMealId
+                                    );
+
+                                    return (
+                                      <div key={selectId}>
+                                        <label
+                                          htmlFor={selectId}
+                                          className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        >
+                                          {`Entrée for ${attendeeLabel} *`}
+                                        </label>
+                                        <select
+                                          id={selectId}
+                                          required
+                                          disabled={isControlDisabled}
+                                          value={selectedMealId}
+                                          onChange={(e) => {
+                                            const nextMeals = Array.from(
+                                              { length: attendingPartySize },
+                                              (__, mIdx) =>
+                                                mIdx === attendeeIdx
+                                                  ? e.target.value
+                                                  : (itemState.current.mealSelections[mIdx] ?? '')
+                                            );
+                                            rsvpManager.updateRsvp(event.id, {
+                                              mealSelections: nextMeals,
+                                            });
+                                          }}
                                           className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
                                         >
-                                          <option value="">Select an option...</option>
-                                          {question.options.map((choice) => (
-                                            <option key={choice} value={choice}>
-                                              {choice}
+                                          <option value="">Select an entrée...</option>
+                                          {eventMealOptions.map((opt) => (
+                                            <option key={opt.id} value={opt.id}>
+                                              {opt.dietaryTags.length > 0
+                                                ? `${opt.label} (${opt.dietaryTags.join(', ')})`
+                                                : opt.label}
                                             </option>
                                           ))}
                                         </select>
-                                      ) : (
-                                        <input
-                                          id={qControlId}
-                                          type="text"
-                                          required={question.required}
-                                          disabled={isControlDisabled}
-                                          value={currentAnswer}
-                                          onChange={(e) =>
-                                            rsvpManager.updateRsvp(event.id, {
-                                              customAnswers: {
-                                                ...itemState.current.customAnswers,
-                                                [question.id]: e.target.value,
-                                              },
-                                            })
-                                          }
-                                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
-                                        />
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                                        {selectedMealObj?.description && (
+                                          <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                            {selectedMealObj.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          )}
-
-                          <div className="flex justify-between items-center">
-                            <button
-                              type="button"
-                              disabled={isControlDisabled}
-                              onClick={() => rsvpManager.submitSingle(event.id)}
-                              className="px-4 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
-                            >
-                              {itemState.isSubmitting ? 'Submitting...' : 'Save RSVP'}
-                            </button>
-
-                            {itemState.message && !itemState.error && (
-                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                                {itemState.message}
-                              </span>
                             )}
-                          </div>
 
-                          {itemState.error && (
-                            <div
-                              role="alert"
-                              className="mt-2 text-xs text-rose-600 dark:text-rose-400 flex items-center justify-between"
-                            >
-                              <span>{itemState.error}</span>
+                            {/* Conditional Custom RSVP Prompts for Attending Guests */}
+                            {isAttending && eventCustomQuestions.length > 0 && (
+                              <div
+                                className="mb-3 space-y-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-3"
+                                data-testid={`rsvp-questions-${event.id}`}
+                              >
+                                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                  Additional RSVP Questions
+                                </p>
+                                <div className="space-y-2.5">
+                                  {eventCustomQuestions.map((question) => {
+                                    const qControlId = `rsvp-question-${event.id}-${question.id}`;
+                                    const currentAnswer =
+                                      itemState.current.customAnswers[question.id] ?? '';
+
+                                    return (
+                                      <div key={question.id}>
+                                        <label
+                                          htmlFor={qControlId}
+                                          className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                                        >
+                                          {question.prompt}
+                                          {question.required ? ' *' : ''}
+                                        </label>
+                                        {question.type === 'choice' ? (
+                                          <select
+                                            id={qControlId}
+                                            required={question.required}
+                                            disabled={isControlDisabled}
+                                            value={currentAnswer}
+                                            onChange={(e) =>
+                                              rsvpManager.updateRsvp(event.id, {
+                                                customAnswers: {
+                                                  ...itemState.current.customAnswers,
+                                                  [question.id]: e.target.value,
+                                                },
+                                              })
+                                            }
+                                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                          >
+                                            <option value="">Select an option...</option>
+                                            {question.options.map((choice) => (
+                                              <option key={choice} value={choice}>
+                                                {choice}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          <input
+                                            id={qControlId}
+                                            type="text"
+                                            required={question.required}
+                                            disabled={isControlDisabled}
+                                            value={currentAnswer}
+                                            onChange={(e) =>
+                                              rsvpManager.updateRsvp(event.id, {
+                                                customAnswers: {
+                                                  ...itemState.current.customAnswers,
+                                                  [question.id]: e.target.value,
+                                                },
+                                              })
+                                            }
+                                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex justify-between items-center">
                               <button
                                 type="button"
                                 disabled={isControlDisabled}
                                 onClick={() => rsvpManager.submitSingle(event.id)}
-                                className="underline font-medium hover:text-rose-700 ml-2"
+                                className="px-4 py-1.5 bg-primary text-white font-semibold text-xs rounded-lg shadow hover:opacity-90 disabled:opacity-50 transition-opacity"
                               >
-                                Retry
+                                {itemState.isSubmitting ? 'Submitting...' : 'Save RSVP'}
                               </button>
+
+                              {itemState.message && !itemState.error && (
+                                <span className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
+                                  {itemState.message}
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+
+                            {itemState.error && (
+                              <div
+                                role="alert"
+                                className="mt-2 text-xs text-rose-800 dark:text-rose-300 flex items-center justify-between"
+                              >
+                                <span>{itemState.error}</span>
+                                <button
+                                  type="button"
+                                  disabled={isControlDisabled}
+                                  onClick={() => rsvpManager.submitSingle(event.id)}
+                                  className="underline font-medium hover:text-rose-700 ml-2"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
 
                     {/* Per-Event Calendar Export Dropdown */}

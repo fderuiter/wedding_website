@@ -37,6 +37,8 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/admin/invitation-codes/batch',
   '/api/admin/invitation-codes/batch/validate',
   '/api/admin/invitation-codes/export',
+  '/api/admin/invitation-codes/merge',
+  '/api/admin/invitation-codes/split',
   '/api/admin/invitation-codes/validate',
   '/api/admin/login',
   '/api/admin/logout',
@@ -63,8 +65,10 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/cron/broadcasts',
   '/api/guest/address',
   '/api/guest/address/public',
+  '/api/guest/address/verify',
   '/api/guest/login',
   '/api/guest/lookup',
+  '/api/guest/lookup/alert',
   '/api/guest/photos/upload',
   '/api/health',
   '/api/media',
@@ -105,6 +109,8 @@ function isAuthLockoutRoute(pathname: string, method: string = 'GET'): boolean {
     normalized === '/api/admin/login' ||
     normalized === '/api/guest/login' ||
     normalized === '/api/guest/lookup' ||
+    normalized === '/api/guest/lookup/alert' ||
+    normalized === '/api/guest/address/verify' ||
     (normalized === '/api/admin/setup' && upperMethod === 'POST') ||
     normalized === '/api/registry/validate-code'
   );
