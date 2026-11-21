@@ -26,6 +26,110 @@ interface InvitationCode {
   allowedSubEventIds?: string[];
 }
 
+interface MatrixFilterOptions {
+  partyTags: string[];
+  partyGroups: string[];
+  householdNames: string[];
+}
+
+interface AccessMatrixQuery {
+  page: number;
+  limit: number;
+  searchQuery: string;
+  selectedTagFilter: string;
+  selectedGroupFilter: string;
+  selectedHouseholdFilter: string;
+}
+
+interface AccessMatrixSnapshot {
+  subEvents: SubEvent[];
+  invitationCodes: InvitationCode[];
+  totalRecords: number;
+  totalPages: number;
+  filterOptions: MatrixFilterOptions;
+  accessMatrix: Record<string, string[]>;
+}
+
+interface AccessMatrixSetters {
+  setSubEvents: React.Dispatch<React.SetStateAction<SubEvent[]>>;
+  setInvitationCodes: React.Dispatch<React.SetStateAction<InvitationCode[]>>;
+  setTotalRecords: React.Dispatch<React.SetStateAction<number>>;
+  setTotalPages: React.Dispatch<React.SetStateAction<number>>;
+  setFilterOptions: React.Dispatch<React.SetStateAction<MatrixFilterOptions>>;
+  setAccessMatrix: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
+}
+
+async function requestAccessMatrix(query: AccessMatrixQuery): Promise<AccessMatrixSnapshot> {
+  const params = new URLSearchParams();
+  params.set('page', query.page.toString());
+  params.set('limit', query.limit.toString());
+  if (query.searchQuery.trim()) params.set('search', query.searchQuery.trim());
+  if (query.selectedTagFilter !== 'all') params.set('partyTag', query.selectedTagFilter);
+  if (query.selectedGroupFilter !== 'all') params.set('partyGroup', query.selectedGroupFilter);
+  if (query.selectedHouseholdFilter !== 'all') params.set('householdName', query.selectedHouseholdFilter);
+
+  const res = await fetch(`/api/admin/sub-events/access?${params.toString()}`);
+  if (!res.ok) throw new Error('Failed to load access matrix');
+  const json = await res.json();
+  const data = json.data || json;
+
+  const events: SubEvent[] = data.subEvents || [];
+  const codes: InvitationCode[] = data.invitationCodes || [];
+  const pagination = data.pagination || {
+    total: codes.length,
+    page: query.page,
+    limit: query.limit,
+    totalPages: 1,
+  };
+  const opts: MatrixFilterOptions = data.filterOptions || {
+    partyTags: [],
+    partyGroups: [],
+    householdNames: [],
+  };
+
+  const matrixMap: Record<string, string[]> = {};
+  codes.forEach((c) => {
+    matrixMap[c.id] = c.allowedSubEventIds || [];
+  });
+
+  return {
+    subEvents: events,
+    invitationCodes: codes,
+    totalRecords: pagination.total ?? codes.length,
+    totalPages: pagination.totalPages ?? 1,
+    filterOptions: opts,
+    accessMatrix: matrixMap,
+  };
+}
+
+function applyAccessMatrixSnapshot(
+  snapshot: AccessMatrixSnapshot,
+  setters: AccessMatrixSetters
+): void {
+  setters.setSubEvents(snapshot.subEvents);
+  setters.setInvitationCodes(snapshot.invitationCodes);
+  setters.setTotalRecords(snapshot.totalRecords);
+  setters.setTotalPages(snapshot.totalPages);
+  setters.setFilterOptions(snapshot.filterOptions);
+  setters.setAccessMatrix(snapshot.accessMatrix);
+}
+
+function notifyAccessMatrixError(
+  err: unknown,
+  addToast: ReturnType<typeof useToast>['addToast']
+): void {
+  let message = 'Error fetching access matrix';
+  if (err instanceof Error && err.message) {
+    message = err.message;
+  } else if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      message = candidate;
+    }
+  }
+  addToast(message, 'error');
+}
+
 function sortSubEventsBySchedule(events: SubEvent[]): SubEvent[] {
   return [...events].sort((a, b) => {
     const aTime = a.startTime ? new Date(a.startTime).getTime() : NaN;
@@ -64,11 +168,11 @@ function SubEventsMatrixPageContent() {
   const [totalPages, setTotalPages] = useState<number>(1);
 
   // Available Filter Options
-  const [filterOptions, setFilterOptions] = useState<{
-    partyTags: string[];
-    partyGroups: string[];
-    householdNames: string[];
-  }>({ partyTags: [], partyGroups: [], householdNames: [] });
+  const [filterOptions, setFilterOptions] = useState<MatrixFilterOptions>({
+    partyTags: [],
+    partyGroups: [],
+    householdNames: [],
+  });
 
   // Multi-row selection
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
@@ -81,37 +185,14 @@ function SubEventsMatrixPageContent() {
   const fetchMatrix = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set('page', currentPage.toString());
-      params.set('limit', pageSize.toString());
-      if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      if (selectedTagFilter !== 'all') params.set('partyTag', selectedTagFilter);
-      if (selectedGroupFilter !== 'all') params.set('partyGroup', selectedGroupFilter);
-      if (selectedHouseholdFilter !== 'all') params.set('householdName', selectedHouseholdFilter);
-
-      const res = await fetch(`/api/admin/sub-events/access?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to load access matrix');
-      const json = await res.json();
-      const data = json.data || json;
-
-      const events: SubEvent[] = data.subEvents || [];
-      const codes: InvitationCode[] = data.invitationCodes || [];
-      const pagination = data.pagination || { total: codes.length, page: currentPage, limit: pageSize, totalPages: 1 };
-      const opts = data.filterOptions || { partyTags: [], partyGroups: [], householdNames: [] };
-
-      setSubEvents(events);
-      setInvitationCodes(codes);
-      setTotalRecords(pagination.total ?? codes.length);
-      setTotalPages(pagination.totalPages ?? 1);
-      setFilterOptions(opts);
-
-      const matrixMap: Record<string, string[]> = {};
-      codes.forEach((c) => {
-        matrixMap[c.id] = c.allowedSubEventIds || [];
+      const snapshot = await requestAccessMatrix({
+        page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
       });
-      setAccessMatrix(matrixMap);
-    } catch (e: any) {
-      addToast(e.message || 'Error fetching access matrix', 'error');
+      applyAccessMatrixSnapshot(snapshot, {
+        setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
+      });
+    } catch (err: unknown) {
+      notifyAccessMatrixError(err, addToast);
     } finally {
       setIsLoading(false);
     }
@@ -121,50 +202,25 @@ function SubEventsMatrixPageContent() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadMatrix = async () => {
-      try {
-        const params = new URLSearchParams();
-        params.set('page', currentPage.toString());
-        params.set('limit', pageSize.toString());
-        if (searchQuery.trim()) params.set('search', searchQuery.trim());
-        if (selectedTagFilter !== 'all') params.set('partyTag', selectedTagFilter);
-        if (selectedGroupFilter !== 'all') params.set('partyGroup', selectedGroupFilter);
-        if (selectedHouseholdFilter !== 'all') params.set('householdName', selectedHouseholdFilter);
-
-        const res = await fetch(`/api/admin/sub-events/access?${params.toString()}`);
-        if (!res.ok) throw new Error('Failed to load access matrix');
-        const json = await res.json();
+    void requestAccessMatrix({
+      page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
+    })
+      .then((snapshot) => {
         if (cancelled) return;
-
-        const data = json.data || json;
-        const events: SubEvent[] = data.subEvents || [];
-        const codes: InvitationCode[] = data.invitationCodes || [];
-        const pagination = data.pagination || { total: codes.length, page: currentPage, limit: pageSize, totalPages: 1 };
-        const opts = data.filterOptions || { partyTags: [], partyGroups: [], householdNames: [] };
-
-        const matrixMap: Record<string, string[]> = {};
-        codes.forEach((c) => {
-          matrixMap[c.id] = c.allowedSubEventIds || [];
+        applyAccessMatrixSnapshot(snapshot, {
+          setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
         });
-
-        setSubEvents(events);
-        setInvitationCodes(codes);
-        setTotalRecords(pagination.total ?? codes.length);
-        setTotalPages(pagination.totalPages ?? 1);
-        setFilterOptions(opts);
-        setAccessMatrix(matrixMap);
-      } catch (e: any) {
+      })
+      .catch((err: unknown) => {
         if (!cancelled) {
-          addToast(e.message || 'Error fetching access matrix', 'error');
+          notifyAccessMatrixError(err, addToast);
         }
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) {
           setIsLoading(false);
         }
-      }
-    };
-
-    void loadMatrix();
+      });
 
     return () => {
       cancelled = true;
