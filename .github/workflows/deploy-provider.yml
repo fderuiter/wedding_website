@@ -41,6 +41,16 @@ on:
         required: false
         default: false
         type: boolean
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       environment:
@@ -71,12 +81,24 @@ on:
         required: false
         default: false
         type: boolean
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
     secrets:
       GCP_SA_KEY:
         required: false
       GCP_PROJECT_ID:
         required: false
       DEPLOY_WEBHOOK_URL:
+        required: false
+      DEPLOY_WEBHOOK_SECRET:
         required: false
       DATABASE_URL:
         required: false
@@ -117,6 +139,7 @@ jobs:
       contents: read
       packages: read
       attestations: read
+      id-token: write
     environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}
     outputs:
       service_url: ${{ steps.resolve-url.outputs.service_url }}
@@ -239,8 +262,109 @@ jobs:
           echo "attestation_status=verified" >> "$GITHUB_OUTPUT"
           echo "Verified OIDC build provenance attestation for ${IMAGE_DIGEST}."
 
-      - name: Deploy to Google Cloud Run Adapter
-        if: (!inputs.dry_run) && (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
+      - name: Verify Selected Provider Credentials
+        id: verify-credentials
+        if: "!inputs.dry_run"
+        env:
+          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          INPUT_CLOUD_RUN_SERVICE: ${{ inputs.cloud_run_service }}
+          CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+          INPUT_CLOUD_RUN_REGION: ${{ inputs.cloud_run_region }}
+          CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        run: |
+          EFFECTIVE_PROVIDER="${PROVIDER:-google-cloud-run}"
+          EFFECTIVE_ENV="${TARGET_ENV:-production}"
+
+          if [[ ! "$EFFECTIVE_PROVIDER" =~ ^(google-cloud-run|docker-host|generic-webhook)$ ]]; then
+            echo "::error::Invalid provider '${EFFECTIVE_PROVIDER}'. Must be one of: google-cloud-run, docker-host, generic-webhook."
+            exit 1
+          fi
+
+          if [ "$EFFECTIVE_PROVIDER" = "google-cloud-run" ]; then
+            HAS_WIF="false"
+            if [ -n "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}" ] && [ -n "${GCP_SERVICE_ACCOUNT:-}" ]; then
+              HAS_WIF="true"
+            elif [ -n "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}" ] || [ -n "${GCP_SERVICE_ACCOUNT:-}" ]; then
+              if [ -z "${GCP_SA_KEY:-}" ]; then
+                echo "::error::Incomplete Google Cloud Workload Identity Federation configuration for environment '${EFFECTIVE_ENV}': both vars.GCP_WORKLOAD_IDENTITY_PROVIDER and vars.GCP_SERVICE_ACCOUNT must be configured (or provide secrets.GCP_SA_KEY fallback)."
+                exit 1
+              fi
+              echo "::warning::Incomplete Workload Identity Federation configuration detected; falling back to secrets.GCP_SA_KEY."
+            fi
+
+            if [ "$HAS_WIF" != "true" ] && [ -z "${GCP_SA_KEY:-}" ]; then
+              echo "::error::Missing Google Cloud credentials for provider '${EFFECTIVE_PROVIDER}' in environment '${EFFECTIVE_ENV}'. Configure vars.GCP_WORKLOAD_IDENTITY_PROVIDER and vars.GCP_SERVICE_ACCOUNT for OIDC Workload Identity Federation, or secrets.GCP_SA_KEY as fallback."
+              exit 1
+            fi
+
+            if [ "$EFFECTIVE_ENV" = "production" ]; then
+              DEFAULT_SERVICE="wedding-website"
+            else
+              DEFAULT_SERVICE="wedding-website-${EFFECTIVE_ENV}"
+            fi
+
+            RESOLVED_SERVICE="${INPUT_CLOUD_RUN_SERVICE:-${CLOUD_RUN_SERVICE:-${DEFAULT_SERVICE}}}"
+            RESOLVED_REGION="${INPUT_CLOUD_RUN_REGION:-${CLOUD_RUN_REGION:-us-central1}}"
+
+            if [[ ! "$RESOLVED_SERVICE" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+              echo "::error::Invalid Cloud Run service name '${RESOLVED_SERVICE}'. Must be lowercase alphanumeric and hyphens."
+              exit 1
+            fi
+            if [[ ! "$RESOLVED_REGION" =~ ^[a-z0-9]+(-[a-z0-9]+)+$ ]]; then
+              echo "::error::Invalid Cloud Run region '${RESOLVED_REGION}'."
+              exit 1
+            fi
+
+            RESOLVED_PROJECT="${GCP_PROJECT_ID:-}"
+            if [ -z "$RESOLVED_PROJECT" ] && [[ "${GCP_SERVICE_ACCOUNT:-}" =~ @([^.@]+)\.iam\.gserviceaccount\.com$ ]]; then
+              RESOLVED_PROJECT="${BASH_REMATCH[1]}"
+            fi
+            if [ -z "$RESOLVED_PROJECT" ] && [ -n "${GCP_SA_KEY:-}" ]; then
+              RESOLVED_PROJECT=$(printf '%s' "$GCP_SA_KEY" | jq -r '.project_id // empty' 2>/dev/null || true)
+            fi
+
+            echo "cloud_run_service=${RESOLVED_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "cloud_run_region=${RESOLVED_REGION}" >> "$GITHUB_OUTPUT"
+            echo "gcp_project_id=${RESOLVED_PROJECT}" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$EFFECTIVE_PROVIDER" = "generic-webhook" ] || [ "$EFFECTIVE_PROVIDER" = "docker-host" ]; then
+            if [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; then
+              echo "::error::Missing DEPLOY_WEBHOOK_URL secret for provider '${EFFECTIVE_PROVIDER}' in environment '${EFFECTIVE_ENV}'."
+              exit 1
+            fi
+            if [ -z "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
+              echo "::error::Missing DEPLOY_WEBHOOK_SECRET secret for provider '${EFFECTIVE_PROVIDER}' in environment '${EFFECTIVE_ENV}'. Webhook signing secret is required."
+              exit 1
+            fi
+          fi
+
+      - name: Authenticate to Google Cloud via Workload Identity Federation
+        id: gcp-auth-oidc
+        if: >-
+          (!inputs.dry_run) &&
+          (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
+          vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' &&
+          vars.GCP_SERVICE_ACCOUNT != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Authenticate to Google Cloud via Service Account Key
+        id: gcp-auth-key
+        if: >-
+          (!inputs.dry_run) &&
+          (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
+          (vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' || vars.GCP_SERVICE_ACCOUNT == '') &&
+          secrets.GCP_SA_KEY != ''
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
@@ -249,12 +373,20 @@ jobs:
         id: capture-previous
         env:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+          INPUT_CLOUD_RUN_SERVICE: ${{ inputs.cloud_run_service }}
+          CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+          INPUT_CLOUD_RUN_REGION: ${{ inputs.cloud_run_region }}
+          CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
           INCOMING_TAG: ${{ inputs.image_tag || '' }}
           INCOMING_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           CURRENT_SHA: ${{ github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          AUTH_PROJECT_ID: ${{ steps.gcp-auth-oidc.outputs.project_id || steps.gcp-auth-key.outputs.project_id }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           PREVIOUS_IMAGE_TAG=""
@@ -305,22 +437,39 @@ jobs:
             fi
           }
 
-          if [ "$DRY_RUN" != "true" ] && { [ "$PROVIDER" = "google-cloud-run" ] || [ -z "$PROVIDER" ]; } && [ -n "$GCP_SA_KEY" ] && command -v gcloud >/dev/null 2>&1; then
+          EFFECTIVE_ENV="${TARGET_ENV:-production}"
+          if [ "$EFFECTIVE_ENV" = "production" ]; then
+            DEFAULT_SERVICE="wedding-website"
+          else
+            DEFAULT_SERVICE="wedding-website-${EFFECTIVE_ENV}"
+          fi
+          RESOLVED_SERVICE="${INPUT_CLOUD_RUN_SERVICE:-${CLOUD_RUN_SERVICE:-${DEFAULT_SERVICE}}}"
+          RESOLVED_REGION="${INPUT_CLOUD_RUN_REGION:-${CLOUD_RUN_REGION:-us-central1}}"
+
+          HAS_GCP_AUTH="false"
+          if [ -n "${GCP_SA_KEY:-}" ] || { [ -n "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}" ] && [ -n "${GCP_SERVICE_ACCOUNT:-}" ]; }; then
+            HAS_GCP_AUTH="true"
+          fi
+
+          if [ "$DRY_RUN" != "true" ] && { [ "$PROVIDER" = "google-cloud-run" ] || [ -z "$PROVIDER" ]; } && [ "$HAS_GCP_AUTH" = "true" ] && command -v gcloud >/dev/null 2>&1; then
             PROJECT_ARGS=()
-            RESOLVED_PROJECT_ID="$GCP_PROJECT_ID"
-            if [ -z "$RESOLVED_PROJECT_ID" ]; then
+            RESOLVED_PROJECT_ID="${GCP_PROJECT_ID:-${AUTH_PROJECT_ID:-}}"
+            if [ -z "$RESOLVED_PROJECT_ID" ] && [[ "${GCP_SERVICE_ACCOUNT:-}" =~ @([^.@]+)\.iam\.gserviceaccount\.com$ ]]; then
+              RESOLVED_PROJECT_ID="${BASH_REMATCH[1]}"
+            fi
+            if [ -z "$RESOLVED_PROJECT_ID" ] && [ -n "${GCP_SA_KEY:-}" ]; then
               RESOLVED_PROJECT_ID=$(printf '%s' "$GCP_SA_KEY" | jq -r '.project_id // empty' 2>/dev/null || true)
             fi
             if [ -n "$RESOLVED_PROJECT_ID" ]; then
               PROJECT_ARGS=(--project="$RESOLVED_PROJECT_ID")
             fi
 
-            SERVICE_JSON=$(gcloud run services describe wedding-website --region=us-central1 "${PROJECT_ARGS[@]}" --format=json 2>/dev/null || true)
+            SERVICE_JSON=$(gcloud run services describe "$RESOLVED_SERVICE" --region="$RESOLVED_REGION" "${PROJECT_ARGS[@]}" --format=json 2>/dev/null || true)
             if [ -n "$SERVICE_JSON" ]; then
               SERVING_IMAGE=""
               ACTIVE_REVISION=$(printf '%s' "$SERVICE_JSON" | jq -r '([.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName) // .status.latestReadyRevisionName // empty' 2>/dev/null || true)
               if [ -n "$ACTIVE_REVISION" ]; then
-                SERVING_IMAGE=$(gcloud run revisions describe "$ACTIVE_REVISION" --region=us-central1 "${PROJECT_ARGS[@]}" --format='value(spec.containers[0].image)' 2>/dev/null || true)
+                SERVING_IMAGE=$(gcloud run revisions describe "$ACTIVE_REVISION" --region="$RESOLVED_REGION" "${PROJECT_ARGS[@]}" --format='value(spec.containers[0].image)' 2>/dev/null || true)
               fi
               if [ -z "$SERVING_IMAGE" ]; then
                 SERVING_IMAGE=$(printf '%s' "$SERVICE_JSON" | jq -r '.spec.template.spec.containers[0].image // empty' 2>/dev/null || true)
@@ -378,6 +527,8 @@ jobs:
           echo "previous_image_tag=${PREVIOUS_IMAGE_TAG}" >> "$GITHUB_OUTPUT"
           echo "previous_image_digest=${PREVIOUS_IMAGE_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "previous_tag_source=${TAG_SOURCE}" >> "$GITHUB_OUTPUT"
+          echo "cloud_run_service=${RESOLVED_SERVICE}" >> "$GITHUB_OUTPUT"
+          echo "cloud_run_region=${RESOLVED_REGION}" >> "$GITHUB_OUTPUT"
           if [ -n "$PREVIOUS_IMAGE_TAG" ] || [ -n "$PREVIOUS_IMAGE_DIGEST" ]; then
             echo "Captured pre-rollout previous image: tag=${PREVIOUS_IMAGE_TAG:-none} digest=${PREVIOUS_IMAGE_DIGEST:-none} (source: ${TAG_SOURCE})"
           else
@@ -386,57 +537,69 @@ jobs:
 
       - name: Execute Cloud Run Deployment
         id: cloudrun
-        if: (!inputs.dry_run) && (inputs.provider == 'google-cloud-run' || inputs.provider == '') && secrets.GCP_SA_KEY != ''
+        if: >-
+          (!inputs.dry_run) &&
+          (inputs.provider == 'google-cloud-run' || inputs.provider == '') &&
+          ((vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '') || secrets.GCP_SA_KEY != '')
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
-          service: wedding-website
+          service: ${{ steps.verify-credentials.outputs.cloud_run_service || inputs.cloud_run_service || vars.CLOUD_RUN_SERVICE || (inputs.environment == 'staging' && 'wedding-website-staging') || 'wedding-website' }}
           image: ${{ steps.resolve.outputs.image_uri }}
-          region: us-central1
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          region: ${{ steps.verify-credentials.outputs.cloud_run_region || inputs.cloud_run_region || vars.CLOUD_RUN_REGION || 'us-central1' }}
+          project_id: ${{ secrets.GCP_PROJECT_ID || steps.gcp-auth-oidc.outputs.project_id || steps.gcp-auth-key.outputs.project_id || steps.verify-credentials.outputs.gcp_project_id }}
 
       - name: Deploy via Generic Webhook Adapter
-        if: (!inputs.dry_run) && (inputs.provider == 'generic-webhook' || inputs.provider == 'docker-host') && secrets.DEPLOY_WEBHOOK_URL != ''
+        if: >-
+          (!inputs.dry_run) &&
+          (inputs.provider == 'generic-webhook' || inputs.provider == 'docker-host')
         env:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
         run: |
-          echo "Triggering deployment webhook for image ${IMAGE_URI}..."
+          if [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; then
+            echo "::error::Missing DEPLOY_WEBHOOK_URL secret for webhook deployment."
+            exit 1
+          fi
+          if [ -z "${DEPLOY_WEBHOOK_SECRET:-}" ]; then
+            echo "::error::Missing DEPLOY_WEBHOOK_SECRET secret for webhook deployment. Refusing to send unauthenticated webhook request."
+            exit 1
+          fi
+
+          echo "Triggering signed deployment webhook for image ${IMAGE_URI}..."
           if [ -n "${IMAGE_DIGEST:-}" ]; then
             PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg digest "$IMAGE_DIGEST" --arg env "$TARGET_ENV" '{image: $image, digest: $digest, environment: $env}')
           else
             PAYLOAD=$(jq -n --arg image "$IMAGE_URI" --arg env "$TARGET_ENV" '{image: $image, environment: $env}')
           fi
+
+          WEBHOOK_TIMESTAMP=$(date -u +%s)
+          BODY_SIGNATURE=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" | awk '{print $NF}')
+          TIMESTAMP_SIGNATURE=$(printf '%s' "${WEBHOOK_TIMESTAMP}.${PAYLOAD}" | openssl dgst -sha256 -hmac "$DEPLOY_WEBHOOK_SECRET" | awk '{print $NF}')
+
+          if [[ ! "$BODY_SIGNATURE" =~ ^[a-f0-9]{64}$ ]] || [[ ! "$TIMESTAMP_SIGNATURE" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "::error::Failed to compute HMAC-SHA256 webhook signature."
+            exit 1
+          fi
+
           curl --silent --show-error --location --fail-with-body \
             --connect-timeout 10 --max-time 30 \
             -X POST "$DEPLOY_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: sha256=${BODY_SIGNATURE}" \
+            -H "X-Deploy-Timestamp: ${WEBHOOK_TIMESTAMP}" \
+            -H "X-Deploy-Signature-256: sha256=${TIMESTAMP_SIGNATURE}" \
             -d "$PAYLOAD"
 
       - name: Dry-run Provider Adapter Validation
-        if: inputs.dry_run || (secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == '')
+        if: inputs.dry_run
         env:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
         run: |
-          echo "::notice::No active cloud provider secrets configured (e.g. GCP_SA_KEY or DEPLOY_WEBHOOK_URL) or explicit dry-run requested. Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
-
-      - name: Verify Selected Provider Credentials
-        if: (!inputs.dry_run) && !(secrets.GCP_SA_KEY == '' && secrets.DEPLOY_WEBHOOK_URL == '')
-        env:
-          PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
-        run: |
-          if { [ "$PROVIDER" = "google-cloud-run" ] || [ -z "$PROVIDER" ]; } && [ -z "$GCP_SA_KEY" ]; then
-            echo "::error::Missing GCP_SA_KEY secret for provider '${PROVIDER}'."
-            exit 1
-          fi
-          if { [ "$PROVIDER" = "generic-webhook" ] || [ "$PROVIDER" = "docker-host" ]; } && [ -z "$DEPLOY_WEBHOOK_URL" ]; then
-            echo "::error::Missing DEPLOY_WEBHOOK_URL secret for provider '${PROVIDER}'."
-            exit 1
-          fi
+          echo "::notice::Explicit dry-run mode enabled. Validated provider adapter deployment parameters for pinned image URI ${IMAGE_URI} (${IMAGE_DIGEST})."
 
       - name: Resolve Service URL Output
         id: resolve-url
@@ -445,12 +608,10 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           CLOUDRUN_URL: ${{ steps.cloudrun.outputs.url }}
           SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
           INPUT_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
           IS_DRY_RUN="false"
-          if [ "${INPUT_DRY_RUN:-false}" = "true" ] || { [ -z "${GCP_SA_KEY:-}" ] && [ -z "${DEPLOY_WEBHOOK_URL:-}" ]; }; then
+          if [ "${INPUT_DRY_RUN:-false}" = "true" ]; then
             IS_DRY_RUN="true"
           fi
 

@@ -84,6 +84,8 @@ on:
         required: false
       DEPLOY_WEBHOOK_URL:
         required: false
+      DEPLOY_WEBHOOK_SECRET:
+        required: false
       SERVICE_URL:
         required: false
 
@@ -240,6 +242,7 @@ jobs:
       contents: read
       packages: read
       attestations: read
+      id-token: write
     needs: [preflight]
     uses: ./.github/workflows/deploy-provider.yml
     with:
@@ -267,7 +270,7 @@ jobs:
           VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
           ENV_SERVICE_URL: ${{ secrets.SERVICE_URL }}
           PROVIDER_SERVICE_URL: ${{ needs.redeploy.outputs.service_url }}
-          IS_DRY_RUN: ${{ needs.redeploy.outputs.is_dry_run }}
+          IS_DRY_RUN: ${{ (inputs.dry_run && needs.redeploy.outputs.is_dry_run == 'true') && 'true' || 'false' }}
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag }}
         run: |
@@ -353,7 +356,7 @@ jobs:
               echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
             fi
 
-            if [ "$IS_DRY_RUN" = "true" ] && [ -z "$CONFIGURED_SERVICE_URL" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
+            if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
               if [ $ELAPSED -ge 2 ]; then
                 echo "::notice::Dry-run rollback environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true

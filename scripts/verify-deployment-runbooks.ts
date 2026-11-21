@@ -251,15 +251,31 @@ function getPrismaMajorVersion(packageJsonContent: string): number {
 
 function parseDeployProviderContract(workflowContent: string): {
   cloudRunService: string | null;
+  allowedCloudRunServices: Set<string>;
+  usesParameterizedCloudRunTarget: boolean;
   gcpAuthSecret: string | null;
   usesWorkloadIdentity: boolean;
 } {
   const serviceMatch = workflowContent.match(/^\s*service:\s*([a-zA-Z0-9_-]+)\s*$/m);
+  const usesParameterizedCloudRunTarget =
+    /\bvars\.CLOUD_RUN_SERVICE\b/.test(workflowContent) &&
+    /\bvars\.CLOUD_RUN_REGION\b/.test(workflowContent);
+  const allowedCloudRunServices = new Set<string>();
+  if (serviceMatch) {
+    allowedCloudRunServices.add(serviceMatch[1]);
+  }
+  if (usesParameterizedCloudRunTarget || allowedCloudRunServices.size === 0) {
+    allowedCloudRunServices.add('wedding-website');
+    allowedCloudRunServices.add('wedding-website-staging');
+  }
+
   const authSecretMatch = workflowContent.match(/credentials_json:\s*\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}/);
   const usesWorkloadIdentity = /workload_identity_provider\s*:/.test(workflowContent);
 
   return {
-    cloudRunService: serviceMatch ? serviceMatch[1] : null,
+    cloudRunService: serviceMatch ? serviceMatch[1] : 'wedding-website',
+    allowedCloudRunServices,
+    usesParameterizedCloudRunTarget,
     gcpAuthSecret: authSecretMatch ? authSecretMatch[1] : null,
     usesWorkloadIdentity,
   };
@@ -614,34 +630,60 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // 2. Cloud Run, GHCR digest, GCP_SA_KEY, and GUEST_SESSION_SECRET contract
+  // 2. Cloud Run, GHCR digest, Workload Identity Federation / GCP_SA_KEY, and GUEST_SESSION_SECRET contract
   const deployProviderRaw = fs.readFileSync(path.join(repoRoot, '.github/workflows/deploy-provider.yml'), 'utf8');
   const publishArtifactRaw = fs.readFileSync(path.join(repoRoot, '.github/workflows/publish-artifact.yml'), 'utf8');
-  const { cloudRunService, gcpAuthSecret, usesWorkloadIdentity } = parseDeployProviderContract(deployProviderRaw);
+  const {
+    cloudRunService,
+    allowedCloudRunServices,
+    usesParameterizedCloudRunTarget,
+    gcpAuthSecret,
+    usesWorkloadIdentity,
+  } = parseDeployProviderContract(deployProviderRaw);
   const canonicalRegistry = parsePublishArtifactRegistry(publishArtifactRaw);
   const gcpMd = runbookContents.get('docs/deployment/gcp-cloud-run.md') ?? '';
+  const deploymentMdForCloudRun = runbookContents.get('DEPLOYMENT.md') ?? '';
   const gcpFencedLines = extractFencedLogicalLines(gcpMd);
 
   if (cloudRunService) {
-    if (gcpMd.includes('wedding-service') && cloudRunService !== 'wedding-service') {
+    if (gcpMd.includes('wedding-service') && !allowedCloudRunServices.has('wedding-service')) {
       errors.push(
         `docs/deployment/gcp-cloud-run.md: References stale service name "wedding-service" instead of "${cloudRunService}"`
       );
     }
 
+    const allowedServicesLabel = Array.from(allowedCloudRunServices).join(', ');
     for (const line of gcpFencedLines) {
       const positionalMatch = line.match(
         /\bgcloud\s+run\s+(?:deploy|services\s+update|services\s+update-traffic)\s+([a-zA-Z0-9_-]+)/
       );
-      if (positionalMatch && positionalMatch[1] !== cloudRunService) {
+      if (positionalMatch && !allowedCloudRunServices.has(positionalMatch[1])) {
         errors.push(
-          `docs/deployment/gcp-cloud-run.md: gcloud command targets service "${positionalMatch[1]}" instead of "${cloudRunService}"`
+          `docs/deployment/gcp-cloud-run.md: gcloud command targets service "${positionalMatch[1]}" instead of allowed services (${allowedServicesLabel})`
         );
       }
       const serviceFlagMatch = line.match(/--service(?:=|\s+)([a-zA-Z0-9_-]+)/);
-      if (serviceFlagMatch && serviceFlagMatch[1] !== cloudRunService) {
+      if (serviceFlagMatch && !allowedCloudRunServices.has(serviceFlagMatch[1])) {
         errors.push(
-          `docs/deployment/gcp-cloud-run.md: --service flag targets "${serviceFlagMatch[1]}" instead of "${cloudRunService}"`
+          `docs/deployment/gcp-cloud-run.md: --service flag targets "${serviceFlagMatch[1]}" instead of allowed services (${allowedServicesLabel})`
+        );
+      }
+    }
+  }
+
+  if (usesParameterizedCloudRunTarget) {
+    for (const [docLabel, docText] of [
+      ['DEPLOYMENT.md', deploymentMdForCloudRun],
+      ['docs/deployment/gcp-cloud-run.md', gcpMd],
+    ] as const) {
+      if (!docText.includes('CLOUD_RUN_SERVICE') || !docText.includes('CLOUD_RUN_REGION')) {
+        errors.push(
+          `${docLabel}: Must document parameterized Cloud Run target variables CLOUD_RUN_SERVICE and CLOUD_RUN_REGION`
+        );
+      }
+      if (!docText.includes('wedding-website-staging')) {
+        errors.push(
+          `${docLabel}: Must document isolated default staging Cloud Run service "wedding-website-staging"`
         );
       }
     }
@@ -657,6 +699,23 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push(
       'docs/deployment/gcp-cloud-run.md: Claims Workload Identity Federation while deploy-provider.yml authenticates via credentials_json'
     );
+  }
+
+  if (usesWorkloadIdentity) {
+    for (const [docLabel, docText] of [
+      ['DEPLOYMENT.md', deploymentMdForCloudRun],
+      ['docs/deployment/gcp-cloud-run.md', gcpMd],
+    ] as const) {
+      if (
+        !/Workload Identity Federation/i.test(docText) ||
+        !docText.includes('GCP_WORKLOAD_IDENTITY_PROVIDER') ||
+        !docText.includes('GCP_SERVICE_ACCOUNT')
+      ) {
+        errors.push(
+          `${docLabel}: Must document Workload Identity Federation with GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT`
+        );
+      }
+    }
   }
 
   for (const line of gcpFencedLines) {
@@ -960,9 +1019,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
             `DEPLOYMENT.md: GitHub Environment secret "${entryName}" is not consumed by any GitHub Actions workflow`
           );
         }
-        if (inEnvSecretsList && entryName === 'SERVICE_URL' && workflowVars.has('SERVICE_URL')) {
+        if (inEnvSecretsList && workflowVars.has(entryName)) {
           errors.push(
-            'DEPLOYMENT.md: GitHub Environment Setup lists SERVICE_URL under Environment Secrets instead of Environment Variables (vars.SERVICE_URL)'
+            `DEPLOYMENT.md: GitHub Environment Setup lists ${entryName} under Environment Secrets instead of Environment Variables (vars.${entryName})`
           );
         }
       }
@@ -998,9 +1057,24 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         if (/^\*\s+\*\*/.test(line.trim())) {
           inGcpSecretsBullets = false;
         }
-        if (inGcpSecretsBullets && /^\s*\*\s+`SERVICE_URL`\s*:/.test(line)) {
+        if (inGcpSecretsBullets) {
+          const secretBulletMatch = line.match(/^\s*\*\s+`([A-Z0-9_]+)`\s*:/);
+          if (secretBulletMatch && workflowVars.has(secretBulletMatch[1])) {
+            errors.push(
+              `docs/deployment/gcp-cloud-run.md: Lists ${secretBulletMatch[1]} under GitHub Environment Secrets instead of GitHub Environment Variables (vars.${secretBulletMatch[1]})`
+            );
+          }
+        }
+      }
+      for (const requiredGcpVar of [
+        'CLOUD_RUN_SERVICE',
+        'CLOUD_RUN_REGION',
+        'GCP_WORKLOAD_IDENTITY_PROVIDER',
+        'GCP_SERVICE_ACCOUNT',
+      ]) {
+        if (workflowVars.has(requiredGcpVar) && !gcpAutomatedSection.includes(requiredGcpVar)) {
           errors.push(
-            'docs/deployment/gcp-cloud-run.md: Lists SERVICE_URL under GitHub Environment Secrets instead of GitHub Environment Variables (vars.SERVICE_URL)'
+            `docs/deployment/gcp-cloud-run.md: Automated Deployment section must document GitHub Environment Variable "${requiredGcpVar}"`
           );
         }
       }

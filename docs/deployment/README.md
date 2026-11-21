@@ -36,7 +36,7 @@ To distinguish officially verified deployment targets from community-maintained 
 ## Available Deployment Recipes
 
 *   [**Generic Docker / VPS Deployment Guide**](./docker-vps.md): Canonical portable container baseline suitable for Ubuntu, Debian, AWS EC2, DigitalOcean, or Hetzner.
-*   [**Google Cloud Run Deployment Guide**](./gcp-cloud-run.md): Fully managed serverless container target deploying immutable `ghcr.io` OCI digests to service `wedding-website` with GCP Secret Manager and Cloud SQL.
+*   [**Google Cloud Run Deployment Guide**](./gcp-cloud-run.md): Fully managed serverless container target deploying immutable `ghcr.io` OCI digests to isolated Cloud Run services (`wedding-website-staging` and `wedding-website`, configurable via `CLOUD_RUN_SERVICE` / `CLOUD_RUN_REGION`) using Workload Identity Federation OIDC (or `GCP_SA_KEY` fallback), GCP Secret Manager, and Cloud SQL.
 *   [**Vercel Deployment Guide**](./vercel.md): Serverless Node.js deployment target with serverless PostgreSQL connection pooling.
 *   [**Railway & Render PaaS Guide**](./railway-render.md): Low-friction PaaS deployment targets with integrated database provisioning.
 *   [**GitHub Pages Workflow**](../../.github/workflows/ci.yml): Automated workflow for publishing static documentation portals with official GitHub Pages actions.
