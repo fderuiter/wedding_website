@@ -13,12 +13,19 @@ if [[ ! "$DATABASE_URL" =~ ^postgres(ql)?:// ]]; then
   exit 1
 fi
 
+export NPM_CONFIG_UPDATE_NOTIFIER=false
+export NO_UPDATE_NOTIFIER=1
+export CHECKPOINT_DISABLE=1
+
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
-  if command -v prisma >/dev/null 2>&1; then
+  if [ -x "./node_modules/.bin/prisma" ]; then
+    ./node_modules/.bin/prisma migrate deploy
+  elif command -v prisma >/dev/null 2>&1; then
     prisma migrate deploy
   else
-    npx --no-install prisma migrate deploy
+    echo "ERROR: Local Prisma CLI binary not found at ./node_modules/.bin/prisma."
+    exit 1
   fi
 else
   echo "Skipping automatic container database migration (decoupled to explicit CI/CD migration step)."

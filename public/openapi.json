@@ -22,6 +22,10 @@
       "description": "Service liveness health check endpoints"
     },
     {
+      "name": "Liveness",
+      "description": "Process liveness probe endpoints decoupled from database availability"
+    },
+    {
       "name": "Media",
       "description": "Media asset library CRUD and ZIP archive export endpoints"
     },
@@ -9734,6 +9738,20 @@
         ],
         "summary": "GET /api/health",
         "description": "Endpoint for /api/health",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/live": {
+      "get": {
+        "tags": [
+          "Liveness"
+        ],
+        "summary": "GET /api/live",
+        "description": "Endpoint for /api/live",
         "responses": {
           "200": {
             "description": "Successful response"

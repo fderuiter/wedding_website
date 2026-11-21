@@ -59,6 +59,7 @@ describe('scripts/generate-docs AST analysis', () => {
       .map((entry) => entry.routePath)
       .sort();
     expect(unwrappedPaths).toEqual([
+      '/api/live',
       '/api/og',
       '/api/ready',
       '/api/registry/webhook/stripe',

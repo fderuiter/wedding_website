@@ -17,11 +17,15 @@ export async function GET() {
     );
   } catch (error: any) {
     console.error('Readiness check failed:', error);
+    const errorMessage =
+      process.env.NODE_ENV === 'production'
+        ? 'Database connection failed'
+        : error?.message || 'Database connection failed';
     return NextResponse.json(
       {
         status: 'unhealthy',
         database: 'disconnected',
-        error: error?.message || 'Database connection failed',
+        error: errorMessage,
         timestamp: new Date().toISOString(),
       },
       { status: 503 }

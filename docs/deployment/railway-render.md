@@ -126,13 +126,12 @@ Both Railway and Render provide automatic TLS certificates via Let's Encrypt.
 
 ## 7. Health Checks
 
-Both platforms support HTTP health check probes to monitor container readiness and trigger zero-downtime rolling updates.
+Both platforms support HTTP health check probes for zero-downtime deployment rollouts alongside the container's built-in `/api/live` liveness `HEALTHCHECK`:
 
-*   **Health Check Path**: `/api/health`
-*   **Railway Configuration**: In **Settings > Healthcheck Path**, enter `/api/health`.
-*   **Render Configuration**: In **Web Service Settings > Health Check Path**, enter `/api/health`.
-
-When `/api/health` returns HTTP 200 `{ "success": true, "data": { "status": "ok", ... } }`, the platform routes live user traffic to the newly deployed container instance.
+*   **Deployment Readiness Path (`/api/health`)**: Verifies PostgreSQL connectivity (`SELECT 1`) and returns HTTP 200 `{ "success": true, "data": { "status": "ok", "database": "connected", ... } }` before routing live user traffic to a newly deployed revision (or use `/api/ready` for unwrapped readiness responses with masked production error messages).
+*   **Process Liveness Path (`/api/live`)**: Returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL. Used by the `Dockerfile` `HEALTHCHECK` and recommended for continuous runtime liveness monitors so brief database blips do not trigger container restart loops.
+*   **Railway Configuration**: In **Settings > Healthcheck Path** (deploy-time readiness gate), enter `/api/health`.
+*   **Render Configuration**: In **Web Service Settings > Health Check Path**, enter `/api/live` to prevent runtime restart loops during transient database maintenance (or `/api/health` if gating database connectivity exclusively at deploy time).
 
 ---
 

@@ -74,6 +74,7 @@ export async function middleware(request: NextRequest) {
     normalizedPath === '/api/admin/login' ||
     normalizedPath === '/api/admin/setup' ||
     normalizedPath === '/api/health' ||
+    normalizedPath === '/api/live' ||
     normalizedPath === '/api/ready' ||
     normalizedPath === '/robots.txt' ||
     normalizedPath === '/favicon.ico' ||
