@@ -360,6 +360,15 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciWorkflow).not.toContain('docker tag wedding-website:latest wedding-website:latest');
     expect(ciWorkflow).toContain('wedding-website-image.tar.zst');
     expect(ciWorkflow).toContain('zstd -dc');
+
+    const testContainerScript = fs.readFileSync(
+      path.join(process.cwd(), 'scripts', 'test-container.mjs'),
+      'utf8'
+    );
+    expect(testContainerScript).toContain(
+      "runCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration']"
+    );
+    expect(testContainerScript).not.toMatch(/['"]run['"][^\n]*['"]--no-build['"]/);
   });
 
   it('merges verified amd64 and arm64 digests into a multi-platform OCI index and fails closed if either architecture manifest is missing', () => {
