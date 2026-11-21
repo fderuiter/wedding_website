@@ -53,6 +53,9 @@ jobs:
       - name: Check Documentation Relative Links
         run: npm run check:links
 
+      - name: Verify Specification Route & Symbol Contracts
+        run: npm run check:spec-contracts
+
       - name: Validate Prisma Schema
         run: npm run check:prisma
 
