@@ -1,89 +1,725 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import { isMap, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
+
+interface Violation {
+  filePath: string;
+  lineNumber: number;
+  lineContent: string;
+  imageRef: string;
+  reason: string;
+}
+
+interface PinnedImageOccurrence {
+  filePath: string;
+  lineNumber: number;
+  lineContent: string;
+  imageName: string;
+  digest: string;
+}
+
+interface DockerfileInstruction {
+  startLine: number;
+  firstLineContent: string;
+  text: string;
+}
 
 const ROOT_DIR = process.cwd();
+const SHA256_DIGEST_REGEX = /^sha256:[a-fA-F0-9]{64}$/;
 
-function main() {
-  console.log('🔍 Checking standalone & container portability configuration...');
+function normalizeImageKey(imageName: string): string {
+  const trimmed = imageName.trim();
+  if (trimmed.startsWith('docker.io/library/')) {
+    return trimmed.slice('docker.io/library/'.length);
+  }
+  if (trimmed.startsWith('index.docker.io/library/')) {
+    return trimmed.slice('index.docker.io/library/'.length);
+  }
+  if (trimmed.startsWith('docker.io/')) {
+    return trimmed.slice('docker.io/'.length);
+  }
+  if (trimmed.startsWith('index.docker.io/')) {
+    return trimmed.slice('index.docker.io/'.length);
+  }
+  return trimmed;
+}
 
-  const errors: string[] = [];
+function validateExternalImageRef(
+  rawRef: string,
+  filePath: string,
+  lineNumber: number,
+  lineContent: string,
+  violations: Violation[],
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+): void {
+  const cleanedRef = rawRef.trim().replace(/^['"]|['"]$/g, '');
+  if (!cleanedRef || cleanedRef.includes('${{')) {
+    return;
+  }
 
-  // Check Dockerfile
-  const dockerfilePath = path.join(ROOT_DIR, 'Dockerfile');
+  const lastAtIdx = cleanedRef.lastIndexOf('@');
+  if (lastAtIdx === -1) {
+    violations.push({
+      filePath,
+      lineNumber,
+      lineContent,
+      imageRef: cleanedRef,
+      reason: `External container image "${cleanedRef}" is missing an immutable "@sha256:<64-hex>" digest.`,
+    });
+    return;
+  }
+
+  const imageName = cleanedRef.slice(0, lastAtIdx).trim();
+  const digest = cleanedRef.slice(lastAtIdx + 1).trim();
+
+  if (!imageName) {
+    violations.push({
+      filePath,
+      lineNumber,
+      lineContent,
+      imageRef: cleanedRef,
+      reason: `External container image "${cleanedRef}" is missing an image repository name before "@".`,
+    });
+    return;
+  }
+
+  if (!SHA256_DIGEST_REGEX.test(digest)) {
+    violations.push({
+      filePath,
+      lineNumber,
+      lineContent,
+      imageRef: cleanedRef,
+      reason: `External container image "${cleanedRef}" has invalid digest "${digest}" (expected "sha256:<64-hex>").`,
+    });
+    return;
+  }
+
+  const normalizedKey = normalizeImageKey(imageName);
+  const existing = pinnedOccurrences.get(normalizedKey) ?? [];
+  existing.push({
+    filePath,
+    lineNumber,
+    lineContent,
+    imageName,
+    digest: digest.toLowerCase(),
+  });
+  pinnedOccurrences.set(normalizedKey, existing);
+}
+
+function parseDockerfileInstructions(content: string): DockerfileInstruction[] {
+  const lines = content.split(/\r?\n/);
+  const instructions: DockerfileInstruction[] = [];
+
+  let currentParts: string[] = [];
+  let startLine = 1;
+  let firstLineContent = '';
+
+  lines.forEach((rawLine, index) => {
+    const trimmed = rawLine.trim();
+
+    if (currentParts.length === 0) {
+      if (!trimmed || trimmed.startsWith('#')) {
+        return;
+      }
+      startLine = index + 1;
+      firstLineContent = trimmed;
+    } else if (trimmed.startsWith('#')) {
+      // Comments inside backslash-continued Dockerfile instructions are ignored by BuildKit
+      return;
+    }
+
+    if (trimmed.endsWith('\\')) {
+      currentParts.push(trimmed.slice(0, -1).trim());
+    } else {
+      currentParts.push(trimmed);
+      instructions.push({
+        startLine,
+        firstLineContent,
+        text: currentParts.filter(Boolean).join(' '),
+      });
+      currentParts = [];
+      firstLineContent = '';
+    }
+  });
+
+  if (currentParts.length > 0) {
+    instructions.push({
+      startLine,
+      firstLineContent,
+      text: currentParts.filter(Boolean).join(' '),
+    });
+  }
+
+  return instructions;
+}
+
+function checkDockerfileContent(
+  dockerfileContent: string,
+  relPath: string,
+  violations: Violation[],
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+): void {
+  if (!/COPY\s+--from=builder\b[^\n]*prisma\.config\.ts/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'prisma.config.ts',
+      reason: 'Dockerfile runner stage must copy prisma.config.ts from builder for Prisma 7 migrations.',
+    });
+  }
+  if (/COPY\s+--from=builder\b[^\n]*\/app\/node_modules\s+\.\/node_modules/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '/app/node_modules',
+      reason: 'Dockerfile runner stage must not overwrite standalone ./node_modules with builder /app/node_modules.',
+    });
+  }
+  if (!/COPY\s+--from=prisma-cli\b[^\n]*\/opt\/prisma-cli/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '/opt/prisma-cli',
+      reason: 'Dockerfile runner stage must copy the isolated Prisma CLI directory (/opt/prisma-cli).',
+    });
+  }
+
+  const instructions = parseDockerfileInstructions(dockerfileContent);
+  const stageAliases = new Set<string>();
+
+  for (const instr of instructions) {
+    const fromMatch = instr.text.match(/^FROM\s+(.*)$/i);
+    if (fromMatch) {
+      const rest = fromMatch[1].trim();
+      const parsedFrom = rest.match(/^(?:--\S+\s+)*(\S+)(?:\s+AS\s+([a-zA-Z0-9._-]+))?\s*$/i);
+      if (parsedFrom) {
+        const imageSpec = parsedFrom[1];
+        const stageAlias = parsedFrom[2];
+        const lowerImage = imageSpec.toLowerCase();
+
+        if (lowerImage !== 'scratch' && !stageAliases.has(lowerImage) && !imageSpec.includes('${{')) {
+          validateExternalImageRef(
+            imageSpec,
+            relPath,
+            instr.startLine,
+            instr.firstLineContent,
+            violations,
+            pinnedOccurrences
+          );
+        }
+
+        if (stageAlias) {
+          stageAliases.add(stageAlias.toLowerCase());
+        }
+      }
+      continue;
+    }
+
+    const copyFromMatch = instr.text.match(/^COPY\s+(?:--\S+\s+)*--from=([^\s]+)\b/i);
+    if (copyFromMatch) {
+      const fromTarget = copyFromMatch[1].trim();
+      const lowerTarget = fromTarget.toLowerCase();
+      if (
+        !/^\d+$/.test(fromTarget) &&
+        lowerTarget !== 'scratch' &&
+        !stageAliases.has(lowerTarget) &&
+        !fromTarget.includes('${{')
+      ) {
+        validateExternalImageRef(
+          fromTarget,
+          relPath,
+          instr.startLine,
+          instr.firstLineContent,
+          violations,
+          pinnedOccurrences
+        );
+      }
+      continue;
+    }
+
+    const runMatch = instr.text.match(/^RUN\s+(.*)$/i);
+    if (runMatch && /\bapt-get\b/.test(runMatch[1])) {
+      const runBody = runMatch[1];
+
+      if (!/--mount=type=cache,[^\s]*target=\/var\/cache\/apt(?:,|\s)/.test(runBody)) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: '/var/cache/apt',
+          reason: 'Dockerfile APT RUN block must mount BuildKit cache for "/var/cache/apt".',
+        });
+      }
+
+      if (!/--mount=type=cache,[^\s]*target=\/var\/lib\/apt(?:,|\s)/.test(runBody)) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: '/var/lib/apt',
+          reason: 'Dockerfile APT RUN block must mount BuildKit cache for "/var/lib/apt".',
+        });
+      }
+
+      const shellCmd = runBody.replace(/^(?:--\S+\s+)*/, '');
+      const dockerCleanMatch = shellCmd.match(
+        /\brm\s+-[a-zA-Z]*f[a-zA-Z]*\s+['"]?\/etc\/apt\/apt\.conf\.d\/docker-clean['"]?(?=\s|;|&|$)/
+      );
+      const firstAptGetIdx = shellCmd.search(/\bapt-get\b/);
+
+      if (!dockerCleanMatch || dockerCleanMatch.index === undefined || dockerCleanMatch.index > firstAptGetIdx) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: '/etc/apt/apt.conf.d/docker-clean',
+          reason:
+            'Dockerfile APT RUN block must run "rm -f /etc/apt/apt.conf.d/docker-clean" before "apt-get" so BuildKit retains .deb packages in /var/cache/apt.',
+        });
+      }
+
+      const commandSegments = shellCmd.split(/\s*(?:&&|\|\||;|\|)\s*/);
+      for (const segment of commandSegments) {
+        if (/\bapt-get\b.*\binstall\b/.test(segment) && !/(?:^|\s)--no-install-recommends(?:\s|$)/.test(segment)) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: 'apt-get install',
+            reason: 'Dockerfile "apt-get install" command must include "--no-install-recommends".',
+          });
+        }
+      }
+
+      if (/\brm\s+-[^\n;&|]*\/var\/lib\/apt\/lists\b/.test(shellCmd)) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: instr.startLine,
+          lineContent: instr.firstLineContent,
+          imageRef: '/var/lib/apt/lists/*',
+          reason:
+            'Dockerfile APT RUN block must not delete "/var/lib/apt/lists/*" inside a BuildKit /var/lib/apt cache mount.',
+        });
+      }
+    }
+  }
+}
+
+function recordYamlDiagnostics(
+  doc: ReturnType<typeof parseDocument>,
+  relPath: string,
+  lines: string[],
+  violations: Violation[]
+): void {
+  for (const err of doc.errors) {
+    const lineNumber = err.linePos?.[0]?.line ?? 1;
+    const summary = err.message.split(/\r?\n/)[0].trim();
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent: (lines[lineNumber - 1] ?? '').trim(),
+      imageRef: err.code,
+      reason: `YAML 1.2 parse error (${err.code}): ${summary}`,
+    });
+  }
+
+  for (const warn of doc.warnings) {
+    const lineNumber = warn.linePos?.[0]?.line ?? 1;
+    const summary = warn.message.split(/\r?\n/)[0].trim();
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent: (lines[lineNumber - 1] ?? '').trim(),
+      imageRef: warn.code,
+      reason: `YAML 1.2 warning (${warn.code}): ${summary}`,
+    });
+  }
+}
+
+function checkDockerComposeFile(
+  composePath: string,
+  baseDir: string,
+  violations: Violation[],
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+): void {
+  const relPath = path.relative(baseDir, composePath).replace(/\\/g, '/');
+  const content = fs.readFileSync(composePath, 'utf8');
+  const lines = content.split(/\r?\n/);
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(content, { version: '1.2', strict: true, lineCounter });
+
+  recordYamlDiagnostics(doc, relPath, lines, violations);
+
+  if (!isMap(doc.contents)) {
+    return;
+  }
+
+  const servicesNode = doc.contents.get('services', true);
+  if (!isMap(servicesNode)) {
+    return;
+  }
+
+  for (const svcPair of servicesNode.items) {
+    const svcMap = svcPair.value;
+    if (!isMap(svcMap)) {
+      continue;
+    }
+
+    // Skip local Compose services that build from source (e.g. migration and app)
+    const buildNode = svcMap.get('build', true);
+    if (buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null)) {
+      continue;
+    }
+
+    const imageNode = svcMap.get('image', true);
+    if (isScalar(imageNode) && typeof imageNode.value === 'string') {
+      const offset = imageNode.range?.[0] ?? 0;
+      const lineNumber = lineCounter.linePos(offset).line;
+      const lineContent = (lines[lineNumber - 1] ?? '').trim();
+      validateExternalImageRef(
+        imageNode.value,
+        relPath,
+        lineNumber,
+        lineContent,
+        violations,
+        pinnedOccurrences
+      );
+    }
+  }
+}
+
+function validateScalarImageNode(
+  node: unknown,
+  relPath: string,
+  lines: string[],
+  lineCounter: LineCounter,
+  violations: Violation[],
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>,
+  stripPrefix: string = ''
+): void {
+  if (!isScalar(node) || typeof node.value !== 'string') {
+    return;
+  }
+  const rawVal = stripPrefix && node.value.startsWith(stripPrefix)
+    ? node.value.slice(stripPrefix.length)
+    : node.value;
+  const offset = node.range?.[0] ?? 0;
+  const lineNumber = lineCounter.linePos(offset).line;
+  const lineContent = (lines[lineNumber - 1] ?? '').trim();
+  validateExternalImageRef(rawVal, relPath, lineNumber, lineContent, violations, pinnedOccurrences);
+}
+
+function validateContainerOrServiceNode(
+  node: unknown,
+  relPath: string,
+  lines: string[],
+  lineCounter: LineCounter,
+  violations: Violation[],
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+): void {
+  if (isScalar(node)) {
+    validateScalarImageNode(node, relPath, lines, lineCounter, violations, pinnedOccurrences);
+  } else if (isMap(node)) {
+    validateScalarImageNode(
+      node.get('image', true),
+      relPath,
+      lines,
+      lineCounter,
+      violations,
+      pinnedOccurrences
+    );
+  }
+}
+
+function checkWorkflowImages(
+  workflowPath: string,
+  baseDir: string,
+  violations: Violation[],
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+): void {
+  const relPath = path.relative(baseDir, workflowPath).replace(/\\/g, '/');
+  const content = fs.readFileSync(workflowPath, 'utf8');
+  const lines = content.split(/\r?\n/);
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(content, { version: '1.2', strict: true, lineCounter });
+
+  recordYamlDiagnostics(doc, relPath, lines, violations);
+
+  if (!isMap(doc.contents)) {
+    return;
+  }
+
+  const jobsNode: unknown = doc.contents.get('jobs', true);
+  if (!isMap(jobsNode)) {
+    return;
+  }
+
+  for (const jobPair of jobsNode.items) {
+    const jobMap: unknown = jobPair.value;
+    if (!isMap(jobMap)) {
+      continue;
+    }
+
+    validateContainerOrServiceNode(
+      jobMap.get('container', true),
+      relPath,
+      lines,
+      lineCounter,
+      violations,
+      pinnedOccurrences
+    );
+
+    const servicesNode: unknown = jobMap.get('services', true);
+    if (isMap(servicesNode)) {
+      for (const svcPair of servicesNode.items) {
+        validateContainerOrServiceNode(
+          svcPair.value,
+          relPath,
+          lines,
+          lineCounter,
+          violations,
+          pinnedOccurrences
+        );
+      }
+    }
+
+    const stepsNode: unknown = jobMap.get('steps', true);
+    if (isSeq(stepsNode)) {
+      for (const stepNode of stepsNode.items) {
+        if (!isMap(stepNode)) {
+          continue;
+        }
+        const usesNode: unknown = stepNode.get('uses', true);
+        if (isScalar(usesNode) && typeof usesNode.value === 'string' && usesNode.value.trim().startsWith('docker://')) {
+          validateScalarImageNode(
+            usesNode,
+            relPath,
+            lines,
+            lineCounter,
+            violations,
+            pinnedOccurrences,
+            'docker://'
+          );
+        }
+
+        const withNode: unknown = stepNode.get('with', true);
+        if (isMap(withNode)) {
+          validateScalarImageNode(
+            withNode.get('image', true),
+            relPath,
+            lines,
+            lineCounter,
+            violations,
+            pinnedOccurrences
+          );
+        }
+      }
+    }
+  }
+}
+
+export function checkDockerBuild(rootDir: string = ROOT_DIR): {
+  violations: Violation[];
+} {
+  const violations: Violation[] = [];
+  const pinnedOccurrences = new Map<string, PinnedImageOccurrence[]>();
+
+  // 1. Check Dockerfile
+  const dockerfilePath = path.join(rootDir, 'Dockerfile');
   if (!fs.existsSync(dockerfilePath)) {
-    errors.push('Dockerfile is missing from repository root.');
+    violations.push({
+      filePath: 'Dockerfile',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'Dockerfile',
+      reason: 'Dockerfile is missing from repository root.',
+    });
   } else {
     const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf8');
-    if (!/COPY\s+--from=builder\b[^\n]*prisma\.config\.ts/.test(dockerfileContent)) {
-      errors.push('Dockerfile runner stage must copy prisma.config.ts from builder for Prisma 7 migrations.');
-    }
-    if (/COPY\s+--from=builder\b[^\n]*\/app\/node_modules\s+\.\/node_modules/.test(dockerfileContent)) {
-      errors.push('Dockerfile runner stage must not overwrite standalone ./node_modules with builder /app/node_modules.');
-    }
-    if (!/COPY\s+--from=prisma-cli\b[^\n]*\/opt\/prisma-cli/.test(dockerfileContent)) {
-      errors.push('Dockerfile runner stage must copy the isolated Prisma CLI directory (/opt/prisma-cli).');
+    checkDockerfileContent(dockerfileContent, 'Dockerfile', violations, pinnedOccurrences);
+  }
+
+  // 2. Check docker-compose.yml
+  const composePath = path.join(rootDir, 'docker-compose.yml');
+  if (!fs.existsSync(composePath)) {
+    violations.push({
+      filePath: 'docker-compose.yml',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'docker-compose.yml',
+      reason: 'docker-compose.yml is missing from repository root.',
+    });
+  } else {
+    checkDockerComposeFile(composePath, rootDir, violations, pinnedOccurrences);
+  }
+
+  // 3. Check .github/workflows/*.yml
+  const workflowsDir = path.join(rootDir, '.github', 'workflows');
+  if (fs.existsSync(workflowsDir)) {
+    const workflowFiles = fs
+      .readdirSync(workflowsDir)
+      .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+      .sort();
+    for (const file of workflowFiles) {
+      checkWorkflowImages(path.join(workflowsDir, file), rootDir, violations, pinnedOccurrences);
     }
   }
 
-  // Check docker-entrypoint.sh
-  const entrypointPath = path.join(ROOT_DIR, 'docker-entrypoint.sh');
+  // 4. Verify matching @sha256 digests across Dockerfile, docker-compose.yml, and .github/workflows/*.yml
+  for (const [normalizedImage, occurrences] of pinnedOccurrences.entries()) {
+    const canonical = occurrences[0];
+    for (const occ of occurrences.slice(1)) {
+      if (occ.digest !== canonical.digest) {
+        violations.push({
+          filePath: occ.filePath,
+          lineNumber: occ.lineNumber,
+          lineContent: occ.lineContent,
+          imageRef: `${occ.imageName}@${occ.digest}`,
+          reason: `Image "${normalizedImage}" digest "${occ.digest}" does not match "${canonical.digest}" at ${canonical.filePath}:${canonical.lineNumber}. All references to "${normalizedImage}" must share the same @sha256 digest.`,
+        });
+      }
+    }
+  }
+
+  // 5. Check docker-entrypoint.sh
+  const entrypointPath = path.join(rootDir, 'docker-entrypoint.sh');
   if (!fs.existsSync(entrypointPath)) {
-    errors.push('docker-entrypoint.sh is missing from repository root.');
+    violations.push({
+      filePath: 'docker-entrypoint.sh',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'docker-entrypoint.sh',
+      reason: 'docker-entrypoint.sh is missing from repository root.',
+    });
   } else {
     const entrypointContent = fs.readFileSync(entrypointPath, 'utf8');
     if (/\bnpx\s+(?:-y|--yes)\s+prisma\b/.test(entrypointContent)) {
-      errors.push('docker-entrypoint.sh must invoke local Prisma CLI without network-fetching `npx -y`.');
+      violations.push({
+        filePath: 'docker-entrypoint.sh',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'npx -y prisma',
+        reason: 'docker-entrypoint.sh must invoke local Prisma CLI without network-fetching `npx -y`.',
+      });
     }
   }
 
-  // Check next.config.ts for output: 'standalone'
-  const nextConfigPath = path.join(ROOT_DIR, 'next.config.ts');
+  // 6. Check next.config.ts for output: 'standalone'
+  const nextConfigPath = path.join(rootDir, 'next.config.ts');
   if (fs.existsSync(nextConfigPath)) {
     const configContent = fs.readFileSync(nextConfigPath, 'utf8');
     if (!configContent.includes("output: 'standalone'") && !configContent.includes('output: "standalone"')) {
-      errors.push("next.config.ts must specify output: 'standalone' for provider-neutral deployment.");
+      violations.push({
+        filePath: 'next.config.ts',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'output',
+        reason: "next.config.ts must specify output: 'standalone' for provider-neutral deployment.",
+      });
     }
   } else {
-    errors.push('next.config.ts is missing.');
+    violations.push({
+      filePath: 'next.config.ts',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'next.config.ts',
+      reason: 'next.config.ts is missing.',
+    });
   }
 
-  // Check if build was executed and generated standalone directory
-  const standaloneDir = path.join(ROOT_DIR, '.next', 'standalone');
-  if (fs.existsSync(path.join(ROOT_DIR, '.next'))) {
+  // 7. Check if build was executed and generated standalone directory
+  const standaloneDir = path.join(rootDir, '.next', 'standalone');
+  if (fs.existsSync(path.join(rootDir, '.next'))) {
     if (!fs.existsSync(standaloneDir)) {
-      errors.push('.next directory exists but .next/standalone was not generated. Ensure Next.js build produces standalone output.');
+      violations.push({
+        filePath: '.next/standalone',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: '.next/standalone',
+        reason: '.next directory exists but .next/standalone was not generated. Ensure Next.js build produces standalone output.',
+      });
     } else {
       const serverJs = path.join(standaloneDir, 'server.js');
       if (!fs.existsSync(serverJs)) {
-        errors.push('.next/standalone/server.js is missing.');
+        violations.push({
+          filePath: '.next/standalone/server.js',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'server.js',
+          reason: '.next/standalone/server.js is missing.',
+        });
       }
       if (fs.existsSync(path.join(standaloneDir, 'public', 'public'))) {
-        errors.push('.next/standalone/public/public nested copy detected.');
+        violations.push({
+          filePath: '.next/standalone/public/public',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'public/public',
+          reason: '.next/standalone/public/public nested copy detected.',
+        });
       }
       if (fs.existsSync(path.join(standaloneDir, 'public', 'mockServiceWorker.js'))) {
-        errors.push('.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.');
+        violations.push({
+          filePath: '.next/standalone/public/mockServiceWorker.js',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'mockServiceWorker.js',
+          reason: '.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.',
+        });
       }
     }
   }
 
-  if (errors.length > 0) {
-    console.error('\n❌ Standalone & container portability check failed:\n');
-    errors.forEach((err, idx) => console.error(`  [${idx + 1}] ${err}`));
+  return { violations };
+}
+
+function main(): void {
+  console.log('🔍 Checking standalone & container portability, digest pins, and APT cache rules...');
+
+  const { violations } = checkDockerBuild(ROOT_DIR);
+
+  if (violations.length > 0) {
+    console.error(`\n❌ Found ${violations.length} standalone or container configuration violation(s):\n`);
+    violations.forEach((v, idx) => {
+      console.error(`  [${idx + 1}] ${v.filePath}:${v.lineNumber}`);
+      if (v.lineContent) {
+        console.error(`      Line: "${v.lineContent}"`);
+      }
+      console.error(`      Reason: ${v.reason}\n`);
+    });
 
     console.error(`
 ================================================================================
 ACTIONABLE REMEDIATION:
 --------------------------------------------------------------------------------
-1. Ensure next.config.ts contains output: 'standalone'.
-2. Ensure Dockerfile and docker-entrypoint.sh exist in the repository root.
-3. Run 'npm run build' to generate the standalone build bundle at .next/standalone.
+1. Pin all external container images across Dockerfile, docker-compose.yml, and
+   .github/workflows/*.yml to matching multi-architecture @sha256:<64-hex> digests.
+2. In Dockerfile APT RUN blocks, mount BuildKit caches for /var/cache/apt and
+   /var/lib/apt, run "rm -f /etc/apt/apt.conf.d/docker-clean" before "apt-get",
+   pass "--no-install-recommends" to "apt-get install", and do not delete
+   "/var/lib/apt/lists/*" inside the cache mount.
+3. Ensure next.config.ts contains output: 'standalone', and Dockerfile and
+   docker-entrypoint.sh exist in the repository root.
+4. Run 'npm run build' to generate the standalone build bundle at .next/standalone.
 ================================================================================
 `);
     process.exit(1);
   }
 
-  console.log('✅ Standalone & container portability check passed!');
+  console.log('✅ Standalone & container portability, digest pin, and APT cache checks passed!');
   process.exit(0);
 }
 
-main();
+const isDirectExecution =
+  typeof process.argv[1] === 'string' &&
+  (path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url)) ||
+    process.argv[1].endsWith('check-docker-build.ts') ||
+    process.argv[1].endsWith('check-docker-build.js'));
+
+if (isDirectExecution) {
+  main();
+}
