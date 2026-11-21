@@ -6,6 +6,7 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { AppConfigSchema, CreateAppConfigProfileSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
 import { resolveModuleConfig } from '@/lib/modules';
+import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { formatZodError } from '@/utils/validation';
 
 function resolveSecretField(
@@ -32,12 +33,25 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     const allConfigs = await prisma.appConfig.findMany({
       orderBy: { createdAt: 'desc' }
     });
-    return NextResponse.json(allConfigs.map(c => toAdminAppConfig(AppConfigSchema.parse(c))));
+    return NextResponse.json(
+      allConfigs.map((c) => {
+        const parsed = AppConfigSchema.parse(c);
+        return toAdminAppConfig({
+          ...parsed,
+          themeTokens: stripPresetDefaultTokens(parsed.themeTokens, parsed.themePreset),
+        });
+      })
+    );
   }
 
   const target = isMultisiteEnabled() ? (id || subdomain || undefined) : 'global';
   const config = await getAppConfig(target);
-  return NextResponse.json(toAdminAppConfig(config));
+  return NextResponse.json(
+    toAdminAppConfig({
+      ...config,
+      themeTokens: stripPresetDefaultTokens(config.themeTokens, config.themePreset),
+    })
+  );
 });
 
 export const PUT = withApiMiddleware(async (req: NextRequest) => {
@@ -92,8 +106,17 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     ...incomingModules,
   });
 
+  const cleanedThemeTokens = stripPresetDefaultTokens(
+    validData.themeTokens,
+    validData.themePreset,
+    existing.themePreset
+  );
+
   const dbPayload = {
-    ...toAppConfigDbPayload(validData),
+    ...toAppConfigDbPayload({
+      ...validData,
+      themeTokens: cleanedThemeTokens,
+    }),
     modules: mergedModules,
     showCountdown: mergedModules.countdown,
     showAddToCalendar: mergedModules.addToCalendar,
@@ -162,10 +185,18 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const newId = validData.id || `profile-${Math.random().toString(36).slice(2, 11)}`;
 
+  const cleanedCreateTokens = stripPresetDefaultTokens(
+    validData.themeTokens,
+    validData.themePreset
+  );
+
   const createdConfig = await prisma.appConfig.create({
     data: {
       id: newId,
-      ...toAppConfigDbPayload(validData),
+      ...toAppConfigDbPayload({
+        ...validData,
+        themeTokens: cleanedCreateTokens,
+      }),
     },
   });
 

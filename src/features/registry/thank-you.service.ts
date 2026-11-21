@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
+import { getPresetTokens } from '@/lib/theme/presets';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ContributorSchema } from './schemas';
@@ -474,12 +475,24 @@ export class ThankYouService {
         async start(controller) {
           try {
             const appConfig = await getAppConfig();
+            const presetLightTokens = getPresetTokens(appConfig.themePreset, 'light');
+            const effectiveThemeTokens: Record<string, string> = {};
+            for (const [key, val] of Object.entries(presetLightTokens)) {
+              if (key.startsWith('--') && typeof val === 'string') {
+                effectiveThemeTokens[key] = val;
+              }
+            }
+            for (const [key, val] of Object.entries(appConfig.themeTokens || {})) {
+              if (key.startsWith('--') && typeof val === 'string') {
+                effectiveThemeTokens[key] = val;
+              }
+            }
             resolvedThemeOptions = {
-              fontHeading: appConfig.themeTokens?.['--font-heading'],
-              fontBody: appConfig.themeTokens?.['--font-body'],
-              textColor: appConfig.themeTokens?.['--print-text'],
-              primaryColor: appConfig.colorPrimary || appConfig.themeTokens?.['--heading-color'],
-              themeTokens: appConfig.themeTokens,
+              fontHeading: effectiveThemeTokens['--font-heading'],
+              fontBody: effectiveThemeTokens['--font-body'],
+              textColor: effectiveThemeTokens['--print-text'],
+              primaryColor: appConfig.colorPrimary || effectiveThemeTokens['--heading-color'],
+              themeTokens: effectiveThemeTokens,
             };
           } catch {
             resolvedThemeOptions = {};

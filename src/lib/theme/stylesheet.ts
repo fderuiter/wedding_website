@@ -195,7 +195,7 @@ export function optimizeContrast(baseHex: string, bgHex: string, minRatio: numbe
       const bgLuminance = getLuminance(bgRgb);
       const { h, s, l } = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
 
-      const isLightBg = bgLuminance > 0.5;
+      const isLightBg = bgLuminance > 0.179;
       const boundaryHex = isLightBg ? '#000000' : '#ffffff';
       let bestHex = boundaryHex;
 
@@ -370,14 +370,68 @@ export function generateDynamicStyles(
     }
   }
 
+  const parseColorRgb = (raw: string): { r: number; g: number; b: number } | null => {
+    const trimmed = raw.trim();
+    if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(trimmed)) {
+      return hexToRgb(trimmed);
+    }
+    const rgbMatch = trimmed.match(
+      /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i
+    );
+    if (rgbMatch) {
+      const r = Math.min(255, Number(rgbMatch[1]));
+      const g = Math.min(255, Number(rgbMatch[2]));
+      const b = Math.min(255, Number(rgbMatch[3]));
+      return { r, g, b };
+    }
+    return null;
+  };
+
+  const darkSurfaceBgTokenKeys = new Set([
+    '--container-bg',
+    '--card-bg',
+    '--dialog-bg',
+    '--input-bg',
+    '--schedule-card-bg',
+    '--schedule-filter-bg',
+    '--schedule-tag-bg',
+    '--canvas-bg',
+    '--floorplan-table-bg',
+    '--floorplan-status-overcapacity-bg',
+  ]);
+
+  const darkSurfaceBorderTokenKeys = new Set([
+    '--card-border',
+    '--dialog-border-color',
+    '--input-border',
+    '--schedule-card-border',
+    '--floorplan-table-border',
+  ]);
+
+  const darkForegroundRgb = hexToRgb('#F9FAFB');
+
   const darkCustomTokenOverrides: Record<string, string> = {};
   for (const [k, v] of Object.entries(sanitizedCustomTokens)) {
     const defaultLightRaw = (baseLightTokens as unknown as Record<string, unknown>)[k];
     const defaultLightSanitized =
       typeof defaultLightRaw === 'string' ? sanitizeTokenValue(defaultLightRaw) : undefined;
-    if (defaultLightSanitized === undefined || v !== defaultLightSanitized) {
-      darkCustomTokenOverrides[k] = v;
+    if (defaultLightSanitized !== undefined && v === defaultLightSanitized) {
+      continue;
     }
+
+    if (darkSurfaceBgTokenKeys.has(k)) {
+      const parsedBg = parseColorRgb(v);
+      if (!parsedBg || getContrastRatio(darkForegroundRgb, parsedBg) < 4.5) {
+        continue;
+      }
+    } else if (darkSurfaceBorderTokenKeys.has(k)) {
+      const parsedBorder = parseColorRgb(v);
+      if (parsedBorder && getLuminance(parsedBorder) > 0.7) {
+        continue;
+      }
+    }
+
+    darkCustomTokenOverrides[k] = v;
   }
 
   const lightPresetTokens = {
@@ -385,10 +439,45 @@ export function generateDynamicStyles(
     ...sanitizedCustomTokens,
   };
 
-  const darkPresetTokens = {
-    ...baseDarkTokens,
+  const darkPresetTokens: Record<string, string> = {
+    ...(baseDarkTokens as unknown as Record<string, string>),
     ...darkCustomTokenOverrides,
   };
+
+  const darkCardAndInputBg = resolveDarkSurfaceBg(
+    resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    darkPresetTokens['--input-bg']
+  );
+  const darkTextSurfaceMap: Record<string, string> = {
+    '--heading-color': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--btn-outline-text': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--btn-ghost-text': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--form-label-text': darkCardAndInputBg,
+    '--form-message-text': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--form-error-text': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--form-success-text': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--form-warning-text': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--card-bg']),
+    '--dialog-title-color': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--dialog-bg']),
+    '--dialog-desc-color': resolveDarkSurfaceBg('#18181b', darkPresetTokens['--dialog-bg']),
+    '--schedule-filter-text': resolveDarkSurfaceBg('#27272a', darkPresetTokens['--schedule-filter-bg']),
+    '--schedule-tag-text': resolveDarkSurfaceBg('#27272a', darkPresetTokens['--schedule-tag-bg']),
+  };
+
+  for (const [textKey, surfaceBg] of Object.entries(darkTextSurfaceMap)) {
+    if (textKey in darkCustomTokenOverrides) {
+      const customVal = darkCustomTokenOverrides[textKey];
+      const parsedText = parseColorRgb(customVal);
+      if (parsedText) {
+        const customHex = rgbToHex(parsedText.r, parsedText.g, parsedText.b);
+        darkPresetTokens[textKey] = optimizeContrast(customHex, surfaceBg, 4.5);
+      } else if (!customVal.startsWith('var(--color-')) {
+        const baseFallback = (baseDarkTokens as unknown as Record<string, unknown>)[textKey];
+        if (typeof baseFallback === 'string') {
+          darkPresetTokens[textKey] = baseFallback;
+        }
+      }
+    }
+  }
 
   const safeContainerMaxWidth = sanitizeLayoutToken(layoutTokens?.containerMaxWidth, '64rem');
   const safeGridGap = sanitizeLayoutToken(layoutTokens?.gridGap, '1.5rem');
