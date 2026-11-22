@@ -30,7 +30,7 @@ export default async function AdminDashboardLayout({
   try {
     const config = await getAppConfig();
     moduleConfig = config.modules;
-  } catch (e) {
+  } catch {
     // Fallback if unreachable
   }
 

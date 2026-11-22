@@ -747,7 +747,7 @@ export const AppConfigSchema = z.object({
     z.string().transform((str) => {
       try {
         return JSON.parse(str);
-      } catch (e) {
+      } catch {
         return {};
       }
     }),
@@ -812,7 +812,7 @@ export const AppConfigSchema = z.object({
     z.string().transform((str) => {
       try {
         return JSON.parse(str);
-      } catch (e) {
+      } catch {
         return [];
       }
     }),

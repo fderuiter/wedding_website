@@ -27,7 +27,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
       try {
         const match = crypto.timingSafeEqual(expectedKey, derivedKey);
         resolve(match);
-      } catch (e) {
+      } catch {
         resolve(false);
       }
     });
