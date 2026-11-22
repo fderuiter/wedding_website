@@ -342,8 +342,16 @@ jobs:
             RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
 
             if [ "$HTTP_STATUS" = "200" ]; then
-              STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
-              DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
+              STATUS_VAL=""
+              DB_STATUS=""
+              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+              fi
 
               if [ "$STATUS_VAL" = "ok" ] && [ "$DB_STATUS" = "connected" ]; then
                 echo "✅ Post-rollback health probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"

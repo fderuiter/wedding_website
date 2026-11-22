@@ -406,12 +406,20 @@ jobs:
             echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
 
             HTTP_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
-            HTTP_STATUS=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | cut -d':' -f2)
-            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
 
             if [ "$HTTP_STATUS" = "200" ]; then
-              DB_STATUS=$(echo "$RESPONSE_BODY" | grep -o '"database"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)
-              STATUS_VAL=$(echo "$RESPONSE_BODY" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)
+              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
+              STATUS_VAL=""
+              DB_STATUS=""
+              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+              fi
 
               if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
                 echo "✅ Staging health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
@@ -429,7 +437,7 @@ jobs:
                 echo "::notice::Dry-run staging environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true
                 HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"status":"ok","database":"connected","mode":"dry-run"}'
+                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
                 break
               fi
             fi
@@ -635,12 +643,20 @@ jobs:
             echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
 
             HTTP_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
-            HTTP_STATUS=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | cut -d':' -f2)
-            RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
+            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
+            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
 
             if [ "$HTTP_STATUS" = "200" ]; then
-              DB_STATUS=$(echo "$RESPONSE_BODY" | grep -o '"database"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)
-              STATUS_VAL=$(echo "$RESPONSE_BODY" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)
+              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
+              STATUS_VAL=""
+              DB_STATUS=""
+              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
+              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
+                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
+                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
+              fi
 
               if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
                 echo "✅ Production health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
@@ -658,7 +674,7 @@ jobs:
                 echo "::notice::Dry-run production environment detected without live endpoint. Dry-run health verification probe validated."
                 SUCCESS=true
                 HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"status":"ok","database":"connected","mode":"dry-run"}'
+                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
                 break
               fi
             fi
