@@ -4,9 +4,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
@@ -28,6 +25,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache Storybook Webpack build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules/.cache/webpack
+            node_modules/.cache/storybook
+          key: ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-${{ hashFiles('.storybook/**', 'src/**/*.ts', 'src/**/*.tsx', 'src/**/*.css') }}
+          restore-keys: |
+            ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-
+
       - name: Build Storybook Static Showcase
         run: npm run build-storybook
+
+      - name: Upload Storybook Static Showcase Artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: storybook-static
+          path: storybook-static/
+          if-no-files-found: error
+          retention-days: 7
 

@@ -22,8 +22,6 @@ services:
     image: wedding-website:latest
     build:
       context: .
-      cache_from:
-        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
     command: ./node_modules/.bin/prisma migrate deploy
     init: true
     read_only: true
@@ -45,10 +43,6 @@ services:
     image: wedding-website:latest
     build:
       context: .
-      cache_from:
-        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
-      cache_to:
-        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64},mode=max
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     init: true

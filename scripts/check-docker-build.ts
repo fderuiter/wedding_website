@@ -248,6 +248,13 @@ function checkDockerfileContent(
 
   const instructions = parseDockerfileInstructions(dockerfileContent);
   const stageAliases = new Set<string>();
+  let currentStage: string | null = null;
+  let hasBuilderStage = false;
+  let seenBuilderNpmCi = false;
+  let builderNpmCiLine = 1;
+  let seenBuilderBuildDocker = false;
+  const builderCopiedBeforeNpmCi: string[] = [];
+  const builderCopiedAfterNpmCi = new Set<string>();
 
   for (const instr of instructions) {
     const fromMatch = instr.text.match(/^FROM\s+(.*)$/i);
@@ -271,7 +278,14 @@ function checkDockerfileContent(
         }
 
         if (stageAlias) {
-          stageAliases.add(stageAlias.toLowerCase());
+          const normalizedAlias = stageAlias.toLowerCase();
+          stageAliases.add(normalizedAlias);
+          currentStage = normalizedAlias;
+          if (normalizedAlias === 'builder') {
+            hasBuilderStage = true;
+          }
+        } else {
+          currentStage = null;
         }
       }
       continue;
@@ -299,7 +313,111 @@ function checkDockerfileContent(
       continue;
     }
 
+    const copyMatch = instr.text.match(/^COPY\s+(.*)$/i);
+    if (copyMatch && currentStage === 'builder') {
+      const tokens = copyMatch[1]
+        .trim()
+        .split(/\s+/)
+        .filter((tok) => tok && !tok.startsWith('--'));
+      const sources = tokens.length > 1 ? tokens.slice(0, -1) : [];
+
+      for (const rawSrc of sources) {
+        const cleanedSrc = rawSrc.replace(/^['"]|['"]$/g, '');
+        if (cleanedSrc === '.' || cleanedSrc === './') {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: 'COPY . .',
+            reason:
+              'Dockerfile builder stage must copy explicit build inputs instead of broad "COPY . ." so unrelated repository edits preserve BuildKit layer caches.',
+          });
+          continue;
+        }
+
+        const normalizedSrc = cleanedSrc.replace(/^\.\//, '').replace(/\/+$/, '');
+        if (normalizedSrc === 'docker-entrypoint.sh' || normalizedSrc.endsWith('/docker-entrypoint.sh')) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: 'docker-entrypoint.sh',
+            reason:
+              'Dockerfile must keep docker-entrypoint.sh scoped to the runner stage so entrypoint edits do not invalidate builder layers.',
+          });
+          continue;
+        }
+
+        if (!seenBuilderNpmCi) {
+          builderCopiedBeforeNpmCi.push(normalizedSrc);
+        } else {
+          builderCopiedAfterNpmCi.add(normalizedSrc);
+        }
+      }
+      continue;
+    }
+
     const runMatch = instr.text.match(/^RUN\s+(.*)$/i);
+    if (runMatch && currentStage === 'builder') {
+      const runBody = runMatch[1];
+
+      if (/\bnpm\s+ci\b/.test(runBody)) {
+        seenBuilderNpmCi = true;
+        builderNpmCiLine = instr.startLine;
+
+        if (!/--mount=type=cache,[^\s]*target=\/root\/\.npm(?:,|\s)/.test(runBody)) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: '/root/.npm',
+            reason: 'Dockerfile builder "npm ci" RUN block must mount BuildKit cache for "/root/.npm".',
+          });
+        }
+
+        if (!/\bnpm\s+ci\b[^\n;&|]*--ignore-scripts\b/.test(runBody)) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: 'npm ci --ignore-scripts',
+            reason:
+              'Dockerfile builder stage must run "npm ci --ignore-scripts" before copying Prisma and source files.',
+          });
+        }
+
+        const hasPkg = builderCopiedBeforeNpmCi.includes('package.json');
+        const hasLock = builderCopiedBeforeNpmCi.includes('package-lock.json');
+        const disallowedBeforeNpmCi = builderCopiedBeforeNpmCi.filter(
+          (src) => src !== 'package.json' && src !== 'package-lock.json'
+        );
+        if (!hasPkg || !hasLock || disallowedBeforeNpmCi.length > 0) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: disallowedBeforeNpmCi[0] ?? 'package.json',
+            reason:
+              'Dockerfile builder stage must copy only package.json and package-lock.json before "npm ci --ignore-scripts" (copy prisma/ and prisma.config.ts afterward).',
+          });
+        }
+      }
+
+      if (/\bnpm\s+run\s+build:docker\b/.test(runBody)) {
+        seenBuilderBuildDocker = true;
+        if (!/--mount=type=cache,[^\s]*target=\/app\/\.next\/cache(?:,|\s)/.test(runBody)) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: instr.startLine,
+            lineContent: instr.firstLineContent,
+            imageRef: '/app/.next/cache',
+            reason:
+              'Dockerfile builder "npm run build:docker" RUN block must mount BuildKit cache for "/app/.next/cache".',
+          });
+        }
+      }
+    }
+
     if (runMatch && /\bapt-get\b/.test(runMatch[1])) {
       const runBody = runMatch[1];
 
@@ -365,6 +483,52 @@ function checkDockerfileContent(
       }
     }
   }
+
+  if (hasBuilderStage) {
+    if (!seenBuilderNpmCi) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'npm ci --ignore-scripts',
+        reason: 'Dockerfile builder stage must execute "npm ci --ignore-scripts" before copying application sources.',
+      });
+    } else {
+      const requiredBuilderInputs = [
+        'prisma',
+        'prisma.config.ts',
+        'next.config.ts',
+        'postcss.config.mjs',
+        'tsconfig.json',
+        'next-env.d.ts',
+        'assets',
+        'public',
+        'src',
+        'scripts/generate-password-hash.mjs',
+      ];
+      for (const reqInput of requiredBuilderInputs) {
+        if (!builderCopiedAfterNpmCi.has(reqInput)) {
+          violations.push({
+            filePath: relPath,
+            lineNumber: builderNpmCiLine,
+            lineContent: '',
+            imageRef: reqInput,
+            reason: `Dockerfile builder stage must explicitly copy "${reqInput}" after "npm ci --ignore-scripts".`,
+          });
+        }
+      }
+    }
+
+    if (!seenBuilderBuildDocker) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'npm run build:docker',
+        reason: 'Dockerfile builder stage must execute "npm run build:docker".',
+      });
+    }
+  }
 }
 
 function recordYamlDiagnostics(
@@ -412,6 +576,35 @@ function checkDockerComposeFile(
 
   recordYamlDiagnostics(doc, relPath, lines, violations);
 
+  if (relPath === 'docker-compose.yml') {
+    lines.forEach((rawLine, idx) => {
+      const trimmed = rawLine.trim();
+      if (!trimmed || trimmed.startsWith('#')) {
+        return;
+      }
+      if (/\btype=gha\b/.test(trimmed)) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: idx + 1,
+          lineContent: trimmed,
+          imageRef: 'type=gha',
+          reason:
+            'docker-compose.yml must remain provider-neutral and omit GitHub Actions BuildKit cache backends ("type=gha"); move CI cache_from overrides to docker-compose.ci.yml.',
+        });
+      }
+      if (/\bGHA_CACHE_SCOPE\b/.test(trimmed)) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: idx + 1,
+          lineContent: trimmed,
+          imageRef: 'GHA_CACHE_SCOPE',
+          reason:
+            'docker-compose.yml must omit "GHA_CACHE_SCOPE"; isolate CI cache scope configuration in docker-compose.ci.yml.',
+        });
+      }
+    });
+  }
+
   if (!isMap(doc.contents)) {
     return;
   }
@@ -419,6 +612,48 @@ function checkDockerComposeFile(
   const servicesNode = doc.contents.get('services', true);
   if (!isMap(servicesNode)) {
     return;
+  }
+
+  if (relPath === 'docker-compose.ci.yml') {
+    for (const requiredService of ['migration', 'app']) {
+      const svcNode = servicesNode.get(requiredService, true);
+      const buildNode = isMap(svcNode) ? svcNode.get('build', true) : undefined;
+      const cacheFromNode = isMap(buildNode) ? buildNode.get('cache_from', true) : undefined;
+      const hasValidGhaCacheFrom =
+        isSeq(cacheFromNode) &&
+        cacheFromNode.items.some(
+          (item) =>
+            isScalar(item) &&
+            typeof item.value === 'string' &&
+            item.value.includes('type=gha') &&
+            item.value.includes('${GHA_CACHE_SCOPE:-app-amd64}')
+        );
+
+      if (!hasValidGhaCacheFrom) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: `${requiredService}.build.cache_from`,
+          reason: `docker-compose.ci.yml service "${requiredService}" must configure build.cache_from with "type=gha,scope=\${GHA_CACHE_SCOPE:-app-amd64}".`,
+        });
+      }
+
+      const cacheToNode = isMap(buildNode) ? buildNode.get('cache_to', true) : undefined;
+      if (cacheToNode !== undefined) {
+        const offset = isMap(cacheToNode) || isSeq(cacheToNode) || isScalar(cacheToNode)
+          ? (cacheToNode.range?.[0] ?? 0)
+          : 0;
+        const lineNumber = lineCounter.linePos(offset).line;
+        violations.push({
+          filePath: relPath,
+          lineNumber,
+          lineContent: (lines[lineNumber - 1] ?? '').trim(),
+          imageRef: `${requiredService}.build.cache_to`,
+          reason: `docker-compose.ci.yml service "${requiredService}" must not configure build.cache_to.`,
+        });
+      }
+    }
   }
 
   for (const svcPair of servicesNode.items) {
@@ -601,7 +836,64 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     checkDockerfileContent(dockerfileContent, 'Dockerfile', violations, pinnedOccurrences);
   }
 
-  // 2. Check docker-compose.yml
+  // 1b. Check .dockerignore
+  const dockerignorePath = path.join(rootDir, '.dockerignore');
+  if (!fs.existsSync(dockerignorePath)) {
+    violations.push({
+      filePath: '.dockerignore',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '.dockerignore',
+      reason: '.dockerignore is missing from repository root.',
+    });
+  } else {
+    const ignoreLines = fs
+      .readFileSync(dockerignorePath, 'utf8')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+
+    let dockerfileIgnored = false;
+    let entrypointIgnored = false;
+    for (const rule of ignoreLines) {
+      const normalizedRule = rule.replace(/^\/+/, '');
+      if (normalizedRule === 'Dockerfile') {
+        dockerfileIgnored = true;
+      } else if (rule === '!Dockerfile' || rule === '!/Dockerfile') {
+        dockerfileIgnored = false;
+      }
+      if (
+        normalizedRule === 'docker-entrypoint.sh' ||
+        normalizedRule === '*.sh' ||
+        normalizedRule === '**/*.sh'
+      ) {
+        entrypointIgnored = true;
+      } else if (rule === '!docker-entrypoint.sh' || rule === '!/docker-entrypoint.sh') {
+        entrypointIgnored = false;
+      }
+    }
+
+    if (!dockerfileIgnored) {
+      violations.push({
+        filePath: '.dockerignore',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'Dockerfile',
+        reason: '.dockerignore must exclude "Dockerfile" so Dockerfile runner edits do not invalidate build context.',
+      });
+    }
+    if (entrypointIgnored) {
+      violations.push({
+        filePath: '.dockerignore',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'docker-entrypoint.sh',
+        reason: '.dockerignore must keep "docker-entrypoint.sh" unignored for the Dockerfile runner stage.',
+      });
+    }
+  }
+
+  // 2. Check docker-compose.yml (and docker-compose.ci.yml if present)
   const composePath = path.join(rootDir, 'docker-compose.yml');
   if (!fs.existsSync(composePath)) {
     violations.push({
@@ -613,6 +905,11 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     });
   } else {
     checkDockerComposeFile(composePath, rootDir, violations, pinnedOccurrences);
+  }
+
+  const ciComposePath = path.join(rootDir, 'docker-compose.ci.yml');
+  if (fs.existsSync(ciComposePath)) {
+    checkDockerComposeFile(ciComposePath, rootDir, violations, pinnedOccurrences);
   }
 
   // 3. Check .github/workflows/*.yml

@@ -102,7 +102,6 @@ These variables configure container port binding, static HTML export builds, Vit
 | `DB_PASSWORD` | *None* | Docker Compose (`docker-compose.yml`) | Mandatory PostgreSQL password (`${DB_PASSWORD:?...}`) interpolated into the `db` container (`POSTGRES_PASSWORD`) and fallback `migration`/`app` `DATABASE_URL` (CI smoke tests supply `wedding123` via `docker-compose.ci.yml`). |
 | `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and fallback `migration`/`app` `DATABASE_URL`. |
 | `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Loopback host TCP port published to container port `5432` for the `db` service (`127.0.0.1:${DB_PORT:-5432}:5432`). |
-| `GHA_CACHE_SCOPE` | `app-amd64` | Docker Compose Build (`docker-compose.yml`) | Per-architecture BuildKit GitHub Actions layer cache scope (`app-amd64` on `linux/amd64` and `app-arm64` on `linux/arm64`) shared across `docker-compose.yml`, `.github/workflows/ci.yml`, and `.github/workflows/publish-artifact.yml`. |
 
 ### Optional Site Configuration Overrides (`SITE_*`)
 `src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:
