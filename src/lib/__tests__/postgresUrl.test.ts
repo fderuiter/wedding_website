@@ -312,9 +312,11 @@ function buildSelectOneResponse(): Buffer {
 }
 
 interface MockPgServerOptions {
-  sslSupport: 'none-keep-open' | 'none-close-socket' | 'tls';
+  sslSupport: 'none-keep-open' | 'none-close-socket' | 'none-eof' | 'tls';
   tlsKey?: string;
   tlsCert?: string;
+  tlsClientCa?: string;
+  requireClientCert?: boolean;
   startupDelayMs?: number;
 }
 
@@ -363,11 +365,23 @@ async function startMockPgServer(
             return;
           }
 
+          if (options.sslSupport === 'none-eof') {
+            stream.end();
+            return;
+          }
+
           stream.write(Buffer.from('S', 'ascii'));
           const tlsSocket = new tls.TLSSocket(stream, {
             isServer: true,
             key: options.tlsKey,
             cert: options.tlsCert,
+            ...(options.requireClientCert
+              ? {
+                ca: options.tlsClientCa,
+                requestCert: true,
+                rejectUnauthorized: true,
+              }
+              : {}),
           });
           openSockets.add(tlsSocket);
           tlsSocket.on('error', () => {});
@@ -710,6 +724,58 @@ describe('Shared PostgreSQL URI parser, normalizer, and libpq TLS runtime pool',
       } finally {
         await requirePool.end();
         await plainServer.close();
+      }
+    });
+
+    it('falls back to plaintext when server closes SSLRequest with EOF under sslmode=prefer and preserves client sslkey across pooled connections', async () => {
+      const eofOnSslServer = await startMockPgServer({
+        sslSupport: 'none-eof',
+      });
+      const { poolConfig: fallbackPoolConfig } = buildPostgresRuntimeConfig(
+        `postgresql://wedding:pass@127.0.0.1:${eofOnSslServer.port}/wedding?sslmode=prefer`
+      );
+      const fallbackPool = new Pool(fallbackPoolConfig);
+      try {
+        const res = await fallbackPool.query<{ ok: number }>('SELECT 1');
+        expect(res.rows).toEqual([{ ok: 1 }]);
+        expect(eofOnSslServer.sslNegotiationsAttempted()).toBe(1);
+        expect(eofOnSslServer.plaintextStartupsCompleted()).toBe(1);
+      } finally {
+        await fallbackPool.end();
+        await eofOnSslServer.close();
+      }
+
+      const mtlsServer = await startMockPgServer({
+        sslSupport: 'tls',
+        tlsKey: fs.readFileSync(certs.localhostKeyPath, 'utf8'),
+        tlsCert: fs.readFileSync(certs.localhostCertPath, 'utf8'),
+        tlsClientCa: fs.readFileSync(certs.caCertPath, 'utf8'),
+        requireClientCert: true,
+      });
+      const encodedCert = encodeURIComponent(certs.localhostCertPath);
+      const encodedKey = encodeURIComponent(certs.localhostKeyPath);
+      const { poolConfig: mtlsPoolConfig } = buildPostgresRuntimeConfig(
+        `postgresql://wedding:pass@localhost:${mtlsServer.port}/wedding?sslmode=prefer&sslcert=${encodedCert}&sslkey=${encodedKey}`
+      );
+      const mtlsPool = new Pool(mtlsPoolConfig);
+      try {
+        const [c1, c2] = await Promise.all([mtlsPool.connect(), mtlsPool.connect()]);
+        try {
+          const [r1, r2] = await Promise.all([
+            c1.query<{ ok: number }>('SELECT 1'),
+            c2.query<{ ok: number }>('SELECT 1'),
+          ]);
+          expect(r1.rows).toEqual([{ ok: 1 }]);
+          expect(r2.rows).toEqual([{ ok: 1 }]);
+        } finally {
+          c1.release();
+          c2.release();
+        }
+        expect(mtlsServer.tlsConnectionsCompleted()).toBe(2);
+        expect(mtlsServer.plaintextStartupsCompleted()).toBe(0);
+      } finally {
+        await mtlsPool.end();
+        await mtlsServer.close();
       }
     });
 

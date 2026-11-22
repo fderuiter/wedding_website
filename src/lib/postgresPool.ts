@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import net from 'node:net';
-import tls, { type ConnectionOptions } from 'node:tls';
+import type { ConnectionOptions, TLSSocket } from 'node:tls';
 import pg, { type ClientBase, type ClientConfig, type PoolConfig } from 'pg';
 import {
   parsePostgresUrl,
@@ -25,7 +25,7 @@ interface InternalPgConnectionConfig {
 }
 
 interface InternalPgConnectionInstance {
-  stream: net.Socket | tls.TLSSocket;
+  stream: net.Socket | TLSSocket;
   ssl: boolean | ConnectionOptions;
   sslNegotiation: string;
   _keepAlive?: boolean;
@@ -33,7 +33,11 @@ interface InternalPgConnectionInstance {
   _connecting?: boolean;
   _ending?: boolean;
   connect(_portOrPath: number | string, _host?: string): void;
-  attachListeners(_stream: net.Socket | tls.TLSSocket): void;
+  upgradeToSSL(
+    _host: string | undefined,
+    _reportStreamError: (_error: NodeJS.ErrnoException) => void
+  ): void;
+  attachListeners(_stream: net.Socket | TLSSocket): void;
   requestSsl(): void;
   emit(_event: string, ..._args: unknown[]): boolean;
 }
@@ -180,7 +184,7 @@ function createPreferTlsClientConstructor(
     }
 
     override connect(portOrPath: number | string, host?: string): void {
-      if (!this.ssl) {
+      if (!this.ssl || typeof this.upgradeToSSL !== 'function') {
         super.connect(portOrPath, host);
         return;
       }
@@ -270,63 +274,19 @@ function createPreferTlsClientConstructor(
       });
 
       initialSocket.once('data', (buffer: Buffer) => {
-        const responseCode = buffer.toString('utf8', 0, 1);
+        const responseCode = buffer.toString('utf8');
         if (responseCode !== 'S') {
           // 'N' (SSL unsupported) or non-SSL response -> fall back to plaintext per libpq prefer
           fallbackToPlaintext();
           return;
         }
 
-        const upgradeOptions: ConnectionOptions = {
-          ...tlsOptions,
-          socket: initialSocket,
-        };
-        if (host !== undefined) {
-          upgradeOptions.host = host;
-          if (net.isIP(host) === 0) {
-            upgradeOptions.servername = host;
-          }
-        }
-
-        let secureSocket: tls.TLSSocket;
-        try {
-          secureSocket = tls.connect(upgradeOptions);
-        } catch {
-          fallbackToPlaintext();
-          return;
-        }
-
-        const onHandshakeError = () => {
-          secureSocket.removeAllListeners();
-          secureSocket.on('error', () => {});
-          secureSocket.destroy();
-          fallbackToPlaintext();
-        };
-
-        secureSocket.once('error', onHandshakeError);
-        secureSocket.once('close', () => {
-          if (!sslUpgraded && !fallbackTriggered && !this._ending) {
-            fallbackToPlaintext();
-          }
-        });
-
-        secureSocket.once('secureConnect', () => {
-          if (fallbackTriggered) {
-            return;
-          }
-          sslUpgraded = true;
-          initialSocket.removeListener('error', onInitialError);
-          initialSocket.removeListener('close', onInitialClose);
-          secureSocket.removeListener('error', onHandshakeError);
-
-          this.stream = secureSocket;
-          this.attachListeners(secureSocket);
-          secureSocket.on('error', reportRuntimeStreamError);
-          secureSocket.on('close', () => {
-            this.emit('end');
-          });
-
-          this.emit('sslconnect');
+        sslUpgraded = true;
+        initialSocket.removeListener('error', onInitialError);
+        initialSocket.removeListener('close', onInitialClose);
+        super.upgradeToSSL(host, reportRuntimeStreamError);
+        this.stream.on('close', () => {
+          this.emit('end');
         });
       });
 
