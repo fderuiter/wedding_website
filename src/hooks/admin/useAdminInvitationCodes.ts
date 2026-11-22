@@ -1,6 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/features/admin';
 import type { InvitationCodeDTO, MergeInvitationCodesResult } from '@/features/registry';
+import type {
+  AdminSingleGuestRsvpOverrideDTO,
+  AdminBatchAttendanceOverrideDTO,
+} from '@/features/sub-events';
+import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
 import { normalizePartyTags } from '@/utils/invitationValidation';
 import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 
@@ -23,8 +28,26 @@ interface BatchUpdateTagsResponse {
   records?: InvitationCodeDTO[];
 }
 
+interface AdminSingleRsvpOverrideResponse {
+  success?: boolean;
+  data?: {
+    invitationCode?: InvitationCodeDTO;
+    rsvps?: unknown[];
+  };
+}
+
+interface AdminBatchAttendanceResponse {
+  success?: boolean;
+  data?: {
+    updatedCount?: number;
+    records?: InvitationCodeDTO[];
+  };
+}
+
+const ADMIN_RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
 const INVITATION_CODES_QUERY_KEY = ['admin-invitation-codes'] as const;
 const INVITATION_CODES_ENDPOINT = '/api/admin/invitation-codes';
+const INVITATION_CODES_CATALOG_ENDPOINT = `${INVITATION_CODES_ENDPOINT}/catalog?limit=${INVITATION_MAX_CATALOG_LIMIT}`;
 
 function isPaginatedCache(value: unknown): value is PaginatedInvitationCache {
   return (
@@ -68,14 +91,22 @@ function computeNextTags(
   return Array.from(new Set([...current, ...cleanTags]));
 }
 
+const INVITATION_INVALIDATE_QUERY_KEYS = [ADMIN_RSVP_SUMMARY_QUERY_KEY] as const;
+
 export function useAdminInvitationCodes(options?: AdminHookOptions) {
   const queryClient = useQueryClient();
   const orchestration = useAdminEntityOrchestration<InvitationCodeDTO>({
     queryKey: INVITATION_CODES_QUERY_KEY,
     endpoint: INVITATION_CODES_ENDPOINT,
+    fetchEndpoint: INVITATION_CODES_CATALOG_ENDPOINT,
+    invalidateQueryKeys: INVITATION_INVALIDATE_QUERY_KEYS,
     entityName: 'invitation code',
     options,
   });
+
+  const invalidateRsvpSummary = () => {
+    queryClient.invalidateQueries({ queryKey: ADMIN_RSVP_SUMMARY_QUERY_KEY });
+  };
 
   const { mutateAsync: mutateBatchUpdateTags } = useMutation({
     mutationFn: async ({
@@ -189,6 +220,60 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     },
   });
 
+  const { mutateAsync: mutateUpdateGuestRsvps } = useMutation({
+    mutationFn: async (payload: AdminSingleGuestRsvpOverrideDTO) =>
+      apiClient.put<AdminSingleRsvpOverrideResponse>(`${INVITATION_CODES_ENDPOINT}/rsvps`, payload),
+    onSuccess: (response, variables) => {
+      const updatedInvite = response?.data?.invitationCode;
+      if (updatedInvite) {
+        queryClient.setQueryData<InvitationCacheValue | undefined>(
+          INVITATION_CODES_QUERY_KEY,
+          (old) =>
+            updateInvitationCache(old, (items) =>
+              items.map((item) =>
+                item.id === variables.invitationCodeId ? { ...item, ...updatedInvite } : item
+              )
+            )
+        );
+      } else {
+        queryClient.invalidateQueries({ queryKey: INVITATION_CODES_QUERY_KEY });
+      }
+      invalidateRsvpSummary();
+    },
+    meta: {
+      showSuccessToast: false,
+      showErrorToast: false,
+    },
+  });
+
+  const { mutateAsync: mutateBatchUpdateAttendance } = useMutation({
+    mutationFn: async (payload: AdminBatchAttendanceOverrideDTO) =>
+      apiClient.put<AdminBatchAttendanceResponse>(`${INVITATION_CODES_ENDPOINT}/rsvps`, payload),
+    onSuccess: (response) => {
+      const updatedRecords = response?.data?.records;
+      if (Array.isArray(updatedRecords) && updatedRecords.length > 0) {
+        const byId = new Map(updatedRecords.map((rec) => [rec.id, rec]));
+        queryClient.setQueryData<InvitationCacheValue | undefined>(
+          INVITATION_CODES_QUERY_KEY,
+          (old) =>
+            updateInvitationCache(old, (items) =>
+              items.map((item) => {
+                const updated = byId.get(item.id);
+                return updated ? { ...item, ...updated } : item;
+              })
+            )
+        );
+      } else {
+        queryClient.invalidateQueries({ queryKey: INVITATION_CODES_QUERY_KEY });
+      }
+      invalidateRsvpSummary();
+    },
+    meta: {
+      showSuccessToast: false,
+      showErrorToast: false,
+    },
+  });
+
   return {
     ...orchestration,
     batchUpdateTags: (
@@ -198,6 +283,13 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
     ) => mutateBatchUpdateTags({ ids, tags, action }),
     mergeDuplicates: (primaryId: string, secondaryIds: string[]) =>
       mutateMergeDuplicates({ primaryId, secondaryIds }),
+    updateGuestRsvps: (payload: AdminSingleGuestRsvpOverrideDTO) =>
+      mutateUpdateGuestRsvps(payload),
+    batchUpdateAttendance: (
+      invitationCodeIds: string[],
+      status: AdminBatchAttendanceOverrideDTO['status'],
+      subEventIds?: string[]
+    ) => mutateBatchUpdateAttendance({ invitationCodeIds, status, subEventIds }),
   };
 }
 

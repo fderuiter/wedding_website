@@ -595,7 +595,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     try {
       const [tablesRes, guestsRes] = await Promise.all([
         fetch('/api/admin/seating-tables'),
-        fetch('/api/admin/invitation-codes'),
+        fetch('/api/admin/invitation-codes/catalog?limit=1000'),
       ]);
 
       if (!tablesRes.ok || !guestsRes.ok) {
@@ -606,7 +606,13 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const guestsData = await guestsRes.json();
 
       const rawTables = Array.isArray(tablesData) ? tablesData : (Array.isArray(tablesData?.data) ? tablesData.data : []);
-      const rawGuests = Array.isArray(guestsData) ? guestsData : (Array.isArray(guestsData?.data) ? guestsData.data : []);
+      const rawGuests = Array.isArray(guestsData)
+        ? guestsData
+        : Array.isArray(guestsData?.items)
+          ? guestsData.items
+          : Array.isArray(guestsData?.data)
+            ? guestsData.data
+            : [];
 
       dispatch({
         type: 'INIT_DATA',

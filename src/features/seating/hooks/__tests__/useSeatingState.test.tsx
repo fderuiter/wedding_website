@@ -246,10 +246,10 @@ describe('useSeatingState & seatingReducer', () => {
           } as Response);
         }
 
-        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve([mockGuest1, mockGuest2, mockGuest3]),
+            json: () => Promise.resolve({ items: [mockGuest1, mockGuest2, mockGuest3], total: 3, page: 1, limit: 1000, totalPages: 1 }),
           } as Response);
         }
 
@@ -295,7 +295,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -347,7 +347,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -388,7 +388,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -540,7 +540,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1, mockTable2]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -718,7 +718,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
             json: () =>
@@ -752,7 +752,7 @@ describe('useSeatingState & seatingReducer', () => {
             json: () => Promise.resolve([mockTable1, mockTable2]),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
           return Promise.resolve({
             ok: true,
             json: () => Promise.resolve([mockGuest1, mockGuest2, mockGuest3]),

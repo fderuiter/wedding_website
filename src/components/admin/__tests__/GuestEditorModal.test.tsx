@@ -216,6 +216,142 @@ describe('GuestEditorModal', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('loads admin RSVP details, saves per-event RSVP status, plus-ones, meal selections, and custom questions, supports Clear RSVP Responses, and passes jest-axe', async () => {
+    const originalFetch = global.fetch;
+    const onRsvpUpdated = jest.fn();
+
+    const mockRsvpDetail = {
+      invitationCode: sampleGuest,
+      subEvents: [
+        {
+          id: 'se-rec',
+          title: 'Reception Dinner',
+          isPrivate: false,
+          hasAccess: true,
+          mealOptions: [
+            { id: 'meal-veg', label: 'Wild Mushroom Risotto', dietaryTags: ['vegetarian'] },
+            { id: 'meal-fish', label: 'Halibut', dietaryTags: [] },
+          ],
+          customQuestions: [
+            {
+              id: 'q-shuttle',
+              prompt: 'Need hotel shuttle?',
+              type: 'choice',
+              required: true,
+              options: ['Yes', 'No'],
+            },
+            {
+              id: 'q-song',
+              prompt: 'Favorite dance song',
+              type: 'text',
+              required: false,
+              options: [],
+            },
+          ],
+        },
+      ],
+      rsvps: [],
+    };
+
+    global.fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.startsWith('/api/admin/invitation-codes/rsvps') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockRsvpDetail }),
+        } as Response);
+      }
+      if (url === '/api/admin/invitation-codes/rsvps' && init?.method === 'PUT') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: mockRsvpDetail,
+            }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: false } as Response);
+    }) as any;
+
+    try {
+      const { baseElement } = render(
+        <GuestEditorModal
+          isOpen={true}
+          onClose={jest.fn()}
+          guest={sampleGuest}
+          onSave={jest.fn().mockResolvedValue({})}
+          onRsvpUpdated={onRsvpUpdated}
+        />
+      );
+
+      // Wait for RSVP override panel to finish loading
+      const statusSelect = await screen.findByLabelText('RSVP status for Reception Dinner');
+      fireEvent.change(statusSelect, { target: { value: 'attending' } });
+
+      // Configure +1 attending count & companion name
+      const plusOneCountInput = screen.getByLabelText('Attending plus-ones for Reception Dinner');
+      fireEvent.change(plusOneCountInput, { target: { value: '1' } });
+
+      const companionInput = screen.getByLabelText('Plus-one 1 name for Reception Dinner');
+      fireEvent.change(companionInput, { target: { value: 'Danny Pink' } });
+
+      // Select meals for primary guest and +1
+      fireEvent.change(
+        screen.getByLabelText('Meal selection for primary guest (Reception Dinner)'),
+        { target: { value: 'meal-veg' } }
+      );
+      fireEvent.change(
+        screen.getByLabelText('Meal selection for plus-one 1 (Reception Dinner)'),
+        { target: { value: 'meal-fish' } }
+      );
+
+      // Answer custom questions
+      fireEvent.change(screen.getByLabelText('Need hotel shuttle? (Reception Dinner)'), {
+        target: { value: 'Yes' },
+      });
+      fireEvent.change(screen.getByLabelText('Favorite dance song (Reception Dinner)'), {
+        target: { value: 'Do You Love Me' },
+      });
+
+      const axeResults = await axe(baseElement);
+      expect(axeResults).toHaveNoViolations();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/admin/invitation-codes/rsvps',
+          expect.objectContaining({
+            method: 'PUT',
+            body: expect.stringContaining('"meal-veg"'),
+          })
+        );
+        expect(onRsvpUpdated).toHaveBeenCalledTimes(1);
+      });
+
+      // Clear all RSVPs and submit
+      fireEvent.click(screen.getByRole('button', { name: 'Clear RSVP Responses' }));
+      expect(screen.getByTestId('rsvp-clear-pending-banner')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Save Guest Changes' }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/admin/invitation-codes/rsvps',
+          expect.objectContaining({
+            method: 'PUT',
+            body: JSON.stringify({
+              invitationCodeId: 'guest-1',
+              clearAll: true,
+            }),
+          })
+        );
+        expect(onRsvpUpdated).toHaveBeenCalledTimes(2);
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 
 describe('GuestEditorForm', () => {
