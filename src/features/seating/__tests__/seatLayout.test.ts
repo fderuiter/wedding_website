@@ -1,11 +1,48 @@
-import { computeSeatPosition, resolveSeatAssignments } from '../seatLayout';
+import {
+  computeSeatPosition,
+  resolveDetailedSeatAssignments,
+  resolveSeatAssignments,
+} from '../seatLayout';
 import { createMockInvitationCode } from '@/testing/factories/registryFactory';
 
 describe('seatLayout shared seating geometry and seat resolution', () => {
   describe('resolveSeatAssignments', () => {
-    it('returns an empty map when guests list is empty or undefined', () => {
+    it('returns an empty map when guests list is empty or undefined or capacity <= 0 (landmark)', () => {
       expect(resolveSeatAssignments(undefined, 8).size).toBe(0);
       expect(resolveSeatAssignments([], 8).size).toBe(0);
+      const guest = createMockInvitationCode({ id: 'g-1', guestName: 'Guest 1', seatNumber: 1 });
+      expect(resolveSeatAssignments([guest], 0).size).toBe(0);
+      expect(resolveDetailedSeatAssignments([guest], 0).size).toBe(0);
+    });
+
+    it('claims 3 distinct chairs with attendee names for an invitation with 2 attending plus-ones', () => {
+      const partyOfThree = createMockInvitationCode({
+        id: 'g-party',
+        guestName: 'Alex Rivera',
+        seatNumber: 2,
+        plusOneSeatNumbers: [3, 4],
+        used: true,
+        extraFields: {
+          attending: true,
+          plusOneNames: ['Jordan Rivera', 'Casey Rivera'],
+        },
+      });
+      const soloGuest = createMockInvitationCode({
+        id: 'g-solo',
+        guestName: 'Sam Patel',
+        seatNumber: null,
+      });
+
+      const detailed = resolveDetailedSeatAssignments([partyOfThree, soloGuest], 6);
+      expect(detailed.size).toBe(4);
+      expect(detailed.get(1)?.attendeeName).toBe('Sam Patel');
+      expect(detailed.get(1)?.isPlusOne).toBe(false);
+      expect(detailed.get(2)?.attendeeName).toBe('Alex Rivera');
+      expect(detailed.get(2)?.isPlusOne).toBe(false);
+      expect(detailed.get(3)?.attendeeName).toBe('Jordan Rivera');
+      expect(detailed.get(3)?.isPlusOne).toBe(true);
+      expect(detailed.get(4)?.attendeeName).toBe('Casey Rivera');
+      expect(detailed.get(4)?.isPlusOne).toBe(true);
     });
 
     it('preserves explicit seatNumbers and deterministically fills gaps for unnumbered or duplicate seats', () => {

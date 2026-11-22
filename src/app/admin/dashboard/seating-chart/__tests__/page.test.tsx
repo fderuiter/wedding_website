@@ -260,4 +260,94 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     fireEvent.click(undoBtn);
     expect(mockUndoLastBatchAction).toHaveBeenCalledTimes(1);
   });
+
+  test('renders plus-one seats & meal summaries in Selected Table Inspector, landmark inspector state, and caterer/Avery export links', () => {
+    const tableWithPlusOneMeals = {
+      ...mockTable,
+      capacity: 4,
+      invitationCodes: [
+        {
+          id: 'g-party-insp',
+          guestName: 'Leslie Knope',
+          code: 'WAFFLES99',
+          tableId: 'table-1',
+          seatNumber: 1,
+          plusOneSeatNumbers: [2],
+          used: true,
+          dietaryNotes: 'Nut-Free',
+          extraFields: {
+            attending: true,
+            plusOneNames: ['Ben Wyatt'],
+            mealSelections: [
+              { attendeeName: 'Leslie Knope', mealOptionLabel: 'Belgian Waffles' },
+              { attendeeName: 'Ben Wyatt', mealOptionLabel: 'Calzone' },
+            ],
+          },
+        },
+      ],
+    };
+
+    const landmarkDj = {
+      id: 'lm-dj',
+      name: 'DJ Entertainment',
+      shape: 'dj' as const,
+      capacity: 0,
+      x: 320,
+      y: 100,
+      width: 120,
+      height: 80,
+      rotation: 0,
+      invitationCodes: [],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [tableWithPlusOneMeals, landmarkDj],
+      allGuests: tableWithPlusOneMeals.invitationCodes,
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      unassignGuest: mockUnassignGuest,
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    // Verify new caterer & Avery export toolbar links
+    expect(screen.getByRole('link', { name: 'Meal Counts CSV' })).toHaveAttribute(
+      'href',
+      '/api/admin/seating/export?format=meals'
+    );
+    expect(screen.getByRole('link', { name: 'Place Cards PDF' })).toHaveAttribute(
+      'href',
+      '/api/admin/seating/export?format=place-cards'
+    );
+    expect(screen.getByRole('link', { name: 'Escort Cards PDF' })).toHaveAttribute(
+      'href',
+      '/api/admin/seating/export?format=escort-cards'
+    );
+
+    // Select guest table -> shows meal summary & inline plus-one seat row without exposing WAFFLES99
+    fireEvent.click(screen.getByRole('button', { name: /Table 1 - Head Table, shape/i }));
+    expect(screen.getByTestId('inspector-meal-summary')).toHaveTextContent(
+      'Belgian Waffles: 1, Calzone: 1'
+    );
+    expect(screen.getByTestId('inspector-plus-one-seat')).toHaveTextContent('Ben Wyatt');
+    expect(screen.getByTestId('inspector-plus-one-seat')).toHaveTextContent('Seat 2');
+    expect(screen.queryByText('WAFFLES99')).not.toBeInTheDocument();
+
+    // Select DJ landmark -> shows zero-capacity landmark inspector state
+    fireEvent.click(
+      screen.getByRole('button', { name: /DJ Entertainment, landmark DJ Booth, 0 seats/i })
+    );
+    expect(
+      screen.getByText(/Room landmark fixture — drag or rotate to position on floorplan\./i)
+    ).toBeInTheDocument();
+  });
 });

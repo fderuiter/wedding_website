@@ -1,5 +1,10 @@
 import { InvitationCodeDTO } from '@/features/registry';
-import { isOneSidedTableShape } from './utils/seatingHelpers';
+import {
+  getInvitationPartyMembers,
+  isLandmarkTableShape,
+  isOneSidedTableShape,
+  type DietaryBadgeInfo,
+} from './utils/seatingHelpers';
 
 interface SeatPositionOptions {
   shape: string;
@@ -17,48 +22,145 @@ interface SeatCoordinates {
   y: number;
 }
 
+export interface ResolvedSeatEntry {
+  guest: InvitationCodeDTO;
+  seatNumber: number;
+  attendeeName: string;
+  isPlusOne: boolean;
+  plusOneIndex: number | null;
+  mealChoice: string | null;
+  dietaryBadges: DietaryBadgeInfo[];
+}
+
 /**
- * Resolves seated guests onto 1-indexed seat numbers without duplicating guests across empty seats.
+ * Resolves seated invitations (including each invitation's attending plus-ones) onto distinct
+ * 1-indexed chair numbers without duplicating guests across empty seats.
  *
- * Pass 1: Guests with a valid explicit `seatNumber` (>= 1) claim their seat first (first-seen wins on collisions).
- * Pass 2: Remaining guests without a `seatNumber` (or whose seat collided) fill the lowest unoccupied seats in 1..capacity.
+ * Pass 1a: Primary guests with a valid explicit `seatNumber` (>= 1) claim their seat first.
+ * Pass 1b: Attending plus-ones with a valid explicit `plusOneSeatNumbers[idx]` (>= 1) claim their seat.
+ * Pass 2: Any remaining unplaced primary or plus-one attendees fill the lowest unoccupied chairs in 1..maxSeat.
  */
-export function resolveSeatAssignments(
+export function resolveDetailedSeatAssignments(
   guests: InvitationCodeDTO[] | undefined,
   capacity: number
-): Map<number, InvitationCodeDTO> {
-  const seatMap = new Map<number, InvitationCodeDTO>();
-  if (!guests || guests.length === 0) {
+): Map<number, ResolvedSeatEntry> {
+  const seatMap = new Map<number, ResolvedSeatEntry>();
+  if (!guests || guests.length === 0 || capacity <= 0) {
     return seatMap;
   }
 
-  const unplacedGuests: InvitationCodeDTO[] = [];
+  interface PendingAttendee {
+    guest: InvitationCodeDTO;
+    attendeeName: string;
+    isPlusOne: boolean;
+    plusOneIndex: number | null;
+    mealChoice: string | null;
+    dietaryBadges: DietaryBadgeInfo[];
+    explicitSeat: number | null;
+  }
+
+  const primaryQueue: PendingAttendee[] = [];
+  const plusOneQueue: PendingAttendee[] = [];
 
   for (const guest of guests) {
-    const explicitSeat = guest.seatNumber;
-    if (
-      typeof explicitSeat === 'number' &&
-      Number.isInteger(explicitSeat) &&
-      explicitSeat >= 1 &&
-      !seatMap.has(explicitSeat)
-    ) {
-      seatMap.set(explicitSeat, guest);
-    } else {
-      unplacedGuests.push(guest);
+    const members = getInvitationPartyMembers(guest);
+    if (members.length === 0) {
+      // Even if an explicitly passed guest mock is missing attendance flags, fallback to 1 primary seat
+      // unless it was already filtered upstream; getInvitationPartyMembers returns >=1 for eligible guests.
+      continue;
+    }
+
+    const primaryMember = members[0];
+    primaryQueue.push({
+      guest,
+      attendeeName: primaryMember.attendeeName,
+      isPlusOne: false,
+      plusOneIndex: null,
+      mealChoice: primaryMember.mealChoice,
+      dietaryBadges: primaryMember.dietaryBadges,
+      explicitSeat:
+        typeof guest.seatNumber === 'number' &&
+        Number.isInteger(guest.seatNumber) &&
+        guest.seatNumber >= 1
+          ? guest.seatNumber
+          : null,
+    });
+
+    const explicitPlusOneSeats = Array.isArray(guest.plusOneSeatNumbers)
+      ? guest.plusOneSeatNumbers
+      : [];
+
+    for (let idx = 1; idx < members.length; idx++) {
+      const member = members[idx];
+      const plusIdx = idx - 1;
+      const rawSeat = explicitPlusOneSeats[plusIdx];
+      plusOneQueue.push({
+        guest,
+        attendeeName: member.attendeeName,
+        isPlusOne: true,
+        plusOneIndex: plusIdx,
+        mealChoice: member.mealChoice,
+        dietaryBadges: member.dietaryBadges,
+        explicitSeat:
+          typeof rawSeat === 'number' && Number.isInteger(rawSeat) && rawSeat >= 1
+            ? rawSeat
+            : null,
+      });
     }
   }
 
-  if (unplacedGuests.length > 0) {
+  const unplaced: PendingAttendee[] = [];
+
+  for (const item of primaryQueue) {
+    if (item.explicitSeat !== null && !seatMap.has(item.explicitSeat)) {
+      seatMap.set(item.explicitSeat, {
+        guest: item.guest,
+        seatNumber: item.explicitSeat,
+        attendeeName: item.attendeeName,
+        isPlusOne: false,
+        plusOneIndex: null,
+        mealChoice: item.mealChoice,
+        dietaryBadges: item.dietaryBadges,
+      });
+    } else {
+      unplaced.push(item);
+    }
+  }
+
+  for (const item of plusOneQueue) {
+    if (item.explicitSeat !== null && !seatMap.has(item.explicitSeat)) {
+      seatMap.set(item.explicitSeat, {
+        guest: item.guest,
+        seatNumber: item.explicitSeat,
+        attendeeName: item.attendeeName,
+        isPlusOne: true,
+        plusOneIndex: item.plusOneIndex,
+        mealChoice: item.mealChoice,
+        dietaryBadges: item.dietaryBadges,
+      });
+    } else {
+      unplaced.push(item);
+    }
+  }
+
+  if (unplaced.length > 0) {
+    const totalAttendees = primaryQueue.length + plusOneQueue.length;
+    const maxFallbackSeat = Math.max(capacity, totalAttendees);
     let candidateSeat = 1;
-    const maxFallbackSeat = Math.max(capacity, guests.length);
-    for (const guest of unplacedGuests) {
-      while (seatMap.has(candidateSeat) && candidateSeat <= maxFallbackSeat) {
+    for (const item of unplaced) {
+      while (seatMap.has(candidateSeat) && candidateSeat <= maxFallbackSeat + totalAttendees) {
         candidateSeat++;
       }
-      if (candidateSeat <= Math.max(capacity, candidateSeat)) {
-        seatMap.set(candidateSeat, guest);
-        candidateSeat++;
-      }
+      seatMap.set(candidateSeat, {
+        guest: item.guest,
+        seatNumber: candidateSeat,
+        attendeeName: item.attendeeName,
+        isPlusOne: item.isPlusOne,
+        plusOneIndex: item.plusOneIndex,
+        mealChoice: item.mealChoice,
+        dietaryBadges: item.dietaryBadges,
+      });
+      candidateSeat++;
     }
   }
 
@@ -66,8 +168,24 @@ export function resolveSeatAssignments(
 }
 
 /**
+ * Resolves seated guests (and their attending plus-ones) onto 1-indexed seat numbers without
+ * duplicating guests across empty seats. An invitation with N attending plus-ones claims `1 + N` chairs.
+ */
+export function resolveSeatAssignments(
+  guests: InvitationCodeDTO[] | undefined,
+  capacity: number
+): Map<number, InvitationCodeDTO> {
+  const detailed = resolveDetailedSeatAssignments(guests, capacity);
+  const seatMap = new Map<number, InvitationCodeDTO>();
+  for (const [seatNum, entry] of detailed.entries()) {
+    seatMap.set(seatNum, entry.guest);
+  }
+  return seatMap;
+}
+
+/**
  * Computes consistent 2D center coordinates for a 1-indexed seat around a round, 1-sided (head/sweetheart),
- * or 4-sided rectangular/square table.
+ * or 4-sided rectangular/square table. Landmarks do not place seats.
  */
 export function computeSeatPosition({
   shape,
@@ -79,6 +197,13 @@ export function computeSeatPosition({
   originX = 0,
   originY = 0,
 }: SeatPositionOptions): SeatCoordinates {
+  if (isLandmarkTableShape(shape) || capacity <= 0) {
+    return {
+      x: originX + width / 2,
+      y: originY + height / 2,
+    };
+  }
+
   const safeCapacity = Math.max(1, capacity);
   const shapeLower = (shape || 'round').toLowerCase();
 

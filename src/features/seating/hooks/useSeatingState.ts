@@ -4,7 +4,16 @@ import { useReducer, useEffect, useCallback, useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 import { useToast } from '@/components/ui/ToastProvider';
-import { isGuestEligibleForSeating } from '../utils/seatingHelpers';
+import { resolveSeatAssignments } from '../seatLayout';
+import {
+  getAttendingPlusOneCount,
+  getDefaultShapeDimensions,
+  getRequiredChairCount,
+  getTableOccupiedChairCount,
+  isGuestEligibleForSeating,
+  isLandmarkTable,
+  isLandmarkTableShape,
+} from '../utils/seatingHelpers';
 
 function useOptionalToast() {
   try {
@@ -18,6 +27,7 @@ export interface GuestSeatSnapshot {
   invitationCodeId: string;
   tableId: string | null;
   seatNumber: number | null;
+  plusOneSeatNumbers?: number[];
 }
 
 export interface SeatingUndoSnapshot {
@@ -43,6 +53,7 @@ export type SeatingAction =
       guestId: string;
       tableId: string | null;
       seatNumber: number | null;
+      plusOneSeatNumbers?: number[];
     };
   }
   | { type: 'CONFIRM_ASSIGN_GUEST'; payload: InvitationCodeDTO }
@@ -52,6 +63,7 @@ export type SeatingAction =
       guestId: string;
       tableId?: string | null;
       seatNumber?: number | null;
+      plusOneSeatNumbers?: number[];
       displacedGuest?: {
         guestId: string;
         seatNumber?: number | null;
@@ -65,6 +77,7 @@ export type SeatingAction =
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
         [key: string]: any;
       }>;
     };
@@ -84,6 +97,7 @@ export type SeatingAction =
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
         [key: string]: any;
       }>;
     };
@@ -114,9 +128,126 @@ export type SeatingAction =
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
       }>;
     };
   };
+
+function extractArrayPayload<T>(json: unknown): T[] {
+  if (Array.isArray(json)) return json as T[];
+  if (json && typeof json === 'object' && Array.isArray((json as { data?: unknown }).data)) {
+    return (json as { data: T[] }).data;
+  }
+  return [];
+}
+
+function dedupeById<T extends { id?: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (item && typeof item.id === 'string') {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+function detectRemainingPageCount(res: Response, firstBatchLength: number): {
+  needsPagination: boolean;
+  totalCount: number | null;
+} {
+  if (!res.headers || typeof res.headers.get !== 'function') {
+    return { needsPagination: false, totalCount: null };
+  }
+  const rawTotal = res.headers.get('X-Total-Count');
+  if (rawTotal !== null) {
+    const parsedTotal = Number(rawTotal);
+    if (Number.isInteger(parsedTotal) && parsedTotal > firstBatchLength) {
+      return { needsPagination: true, totalCount: parsedTotal };
+    }
+    if (
+      Number.isInteger(parsedTotal) &&
+      parsedTotal >= firstBatchLength &&
+      firstBatchLength > 0
+    ) {
+      return { needsPagination: false, totalCount: parsedTotal };
+    }
+    if (parsedTotal === 0 && firstBatchLength === 0) {
+      return { needsPagination: false, totalCount: 0 };
+    }
+  }
+  const hasNext = res.headers.get('X-Has-Next-Page');
+  if (hasNext === 'true') {
+    return { needsPagination: true, totalCount: null };
+  }
+  return { needsPagination: false, totalCount: null };
+}
+
+async function fetchRemainingPages<T extends { id?: string }>(
+  endpoint: string,
+  firstBatch: T[],
+  totalCount: number | null
+): Promise<T[]> {
+  const PAGE_LIMIT = 100;
+
+  // Re-fetch from skip=0 with deterministic primary-key ordering (`orderBy=id&orderDir=asc`)
+  // so records sharing identical `createdAt` timestamps in PostgreSQL cannot shift across pages.
+  if (totalCount !== null && totalCount > firstBatch.length) {
+    const offsets: number[] = [];
+    for (let skip = 0; skip < totalCount; skip += PAGE_LIMIT) {
+      offsets.push(skip);
+    }
+    const pageResponses = await Promise.all(
+      offsets.map((skip, idx) =>
+        fetch(
+          `${endpoint}?page=${idx + 1}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+        )
+      )
+    );
+    for (const r of pageResponses) {
+      if (!r.ok) {
+        throw new Error('Failed to load seating chart data.');
+      }
+    }
+    const pagePayloads = await Promise.all(pageResponses.map((r) => r.json()));
+    const combined: T[] = [];
+    for (const payload of pagePayloads) {
+      combined.push(...extractArrayPayload<T>(payload));
+    }
+    combined.push(...firstBatch);
+    return dedupeById(combined);
+  }
+
+  const combined: T[] = [];
+  let skip = 0;
+  let page = 1;
+  // Sequential fallback when X-Has-Next-Page is present without X-Total-Count
+  while (true) {
+    const nextRes = await fetch(
+      `${endpoint}?page=${page}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+    );
+    if (!nextRes.ok) {
+      throw new Error('Failed to load seating chart data.');
+    }
+    const nextJson = await nextRes.json();
+    const nextBatch = extractArrayPayload<T>(nextJson);
+    if (nextBatch.length === 0) break;
+    combined.push(...nextBatch);
+    skip += nextBatch.length;
+    page += 1;
+    const stillHasNext =
+      nextRes.headers && typeof nextRes.headers.get === 'function'
+        ? nextRes.headers.get('X-Has-Next-Page') === 'true'
+        : false;
+    if (!stillHasNext || nextBatch.length < PAGE_LIMIT) {
+      break;
+    }
+  }
+  combined.push(...firstBatch);
+  return dedupeById(combined);
+}
 
 /**
  * Synchronizes tables' nested invitationCodes with guest assignments in a single pass O(G + T).
@@ -185,10 +316,19 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       };
 
     case 'ASSIGN_GUEST_OPTIMISTIC': {
-      const { guestId, tableId, seatNumber } = action.payload;
+      const { guestId, tableId, seatNumber, plusOneSeatNumbers } = action.payload;
       const nextGuests = state.guests.map((g) => {
         if (g.id === guestId) {
-          return { ...g, tableId, seatNumber };
+          return {
+            ...g,
+            tableId,
+            seatNumber,
+            ...(plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers }
+              : !tableId
+                ? { plusOneSeatNumbers: [] }
+                : {}),
+          };
         }
         if (
           tableId &&
@@ -221,10 +361,15 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
     }
 
     case 'REVERT_ASSIGN_GUEST': {
-      const { guestId, tableId, seatNumber, displacedGuest } = action.payload;
+      const { guestId, tableId, seatNumber, plusOneSeatNumbers, displacedGuest } = action.payload;
       const nextGuests = state.guests.map((g) => {
         if (g.id === guestId) {
-          return { ...g, tableId: tableId ?? null, seatNumber: seatNumber ?? null };
+          return {
+            ...g,
+            tableId: tableId ?? null,
+            seatNumber: seatNumber ?? null,
+            ...(plusOneSeatNumbers !== undefined ? { plusOneSeatNumbers } : {}),
+          };
         }
         if (displacedGuest && g.id === displacedGuest.guestId) {
           return { ...g, seatNumber: displacedGuest.seatNumber ?? null };
@@ -254,6 +399,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             invitationCodeId: guest.id,
             tableId: guest.tableId ?? null,
             seatNumber: guest.seatNumber ?? null,
+            ...(Array.isArray(guest.plusOneSeatNumbers) && guest.plusOneSeatNumbers.length > 0
+              ? { plusOneSeatNumbers: guest.plusOneSeatNumbers }
+              : {}),
           });
         }
       }
@@ -266,6 +414,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...update,
             tableId: update.tableId !== undefined ? update.tableId : guest.tableId,
             seatNumber: update.seatNumber !== undefined ? update.seatNumber : guest.seatNumber,
+            ...(update.plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers: update.plusOneSeatNumbers }
+              : {}),
           };
         }
         return guest;
@@ -299,6 +450,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             invitationCodeId: guest.id,
             tableId: guest.tableId ?? null,
             seatNumber: guest.seatNumber ?? null,
+            ...(Array.isArray(guest.plusOneSeatNumbers) && guest.plusOneSeatNumbers.length > 0
+              ? { plusOneSeatNumbers: guest.plusOneSeatNumbers }
+              : {}),
           });
         }
       }
@@ -310,6 +464,7 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...guest,
             tableId: upd.tableId,
             seatNumber: upd.seatNumber,
+            plusOneSeatNumbers: upd.tableId ? (upd.plusOneSeatNumbers ?? []) : [],
           };
         }
         return guest;
@@ -344,6 +499,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...upd,
             tableId: upd.tableId !== undefined ? upd.tableId : guest.tableId,
             seatNumber: upd.seatNumber !== undefined ? upd.seatNumber : guest.seatNumber,
+            ...(upd.plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers: upd.plusOneSeatNumbers }
+              : {}),
           };
         }
         return guest;
@@ -369,6 +527,7 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...guest,
             tableId: prev.tableId,
             seatNumber: prev.seatNumber,
+            plusOneSeatNumbers: prev.plusOneSeatNumbers ?? [],
           };
         }
         return guest;
@@ -405,11 +564,19 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       // Track restored seats per table so any non-restored occupant on that seat gets displaced cleanly
       const claimedSeatsByTable = new Map<string, Set<number>>();
       for (const a of snapshot.assignments) {
-        if (a.tableId && typeof a.seatNumber === 'number') {
+        if (a.tableId) {
           if (!claimedSeatsByTable.has(a.tableId)) {
             claimedSeatsByTable.set(a.tableId, new Set());
           }
-          claimedSeatsByTable.get(a.tableId)!.add(a.seatNumber);
+          const tableSet = claimedSeatsByTable.get(a.tableId)!;
+          if (typeof a.seatNumber === 'number') {
+            tableSet.add(a.seatNumber);
+          }
+          if (Array.isArray(a.plusOneSeatNumbers)) {
+            for (const ps of a.plusOneSeatNumbers) {
+              if (typeof ps === 'number') tableSet.add(ps);
+            }
+          }
         }
       }
 
@@ -420,6 +587,7 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...guest,
             tableId: restored.tableId,
             seatNumber: restored.seatNumber,
+            plusOneSeatNumbers: restored.tableId ? (restored.plusOneSeatNumbers ?? []) : [],
           };
         }
         if (
@@ -502,7 +670,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
     case 'DELETE_TABLE': {
       const { tableId } = action.payload;
       const nextGuests = state.guests.map((g) =>
-        g.tableId === tableId ? { ...g, tableId: null, seatNumber: null } : g
+        g.tableId === tableId
+          ? { ...g, tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
+          : g
       );
       const nextTables = state.tables.filter((t) => t.id !== tableId);
       return {
@@ -518,7 +688,14 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       const nextGuests = state.guests.map((g) => {
         const prev = affectedMap.get(g.id);
         if (prev) {
-          return { ...g, tableId: prev.tableId, seatNumber: prev.seatNumber };
+          return {
+            ...g,
+            tableId: prev.tableId,
+            seatNumber: prev.seatNumber,
+            ...(prev.plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers: prev.plusOneSeatNumbers }
+              : {}),
+          };
         }
         return g;
       });
@@ -567,6 +744,7 @@ export interface UseSeatingStateReturn {
       id: string;
       tableId?: string | null;
       seatNumber?: number | null;
+      plusOneSeatNumbers?: number[];
       [key: string]: any;
     }>;
     assignedCount?: number;
@@ -588,7 +766,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     return state.guests.filter((g) => !g.tableId && isGuestEligibleForSeating(g));
   }, [state.guests]);
 
-  // Fetch tables and invitation codes
+  // Fetch all pages of tables and invitation codes without dropping records past row 50
   const fetchData = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -605,8 +783,32 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const tablesData = await tablesRes.json();
       const guestsData = await guestsRes.json();
 
-      const rawTables = Array.isArray(tablesData) ? tablesData : (Array.isArray(tablesData?.data) ? tablesData.data : []);
-      const rawGuests = Array.isArray(guestsData) ? guestsData : (Array.isArray(guestsData?.data) ? guestsData.data : []);
+      let rawTables = extractArrayPayload<SeatingTableDTO>(tablesData);
+      let rawGuests = extractArrayPayload<InvitationCodeDTO>(guestsData);
+
+      const tablesPageInfo = detectRemainingPageCount(tablesRes, rawTables.length);
+      const guestsPageInfo = detectRemainingPageCount(guestsRes, rawGuests.length);
+
+      if (tablesPageInfo.needsPagination || guestsPageInfo.needsPagination) {
+        const [fullTables, fullGuests] = await Promise.all([
+          tablesPageInfo.needsPagination
+            ? fetchRemainingPages<SeatingTableDTO>(
+              '/api/admin/seating-tables',
+              rawTables,
+              tablesPageInfo.totalCount
+            )
+            : Promise.resolve(rawTables),
+          guestsPageInfo.needsPagination
+            ? fetchRemainingPages<InvitationCodeDTO>(
+              '/api/admin/invitation-codes',
+              rawGuests,
+              guestsPageInfo.totalCount
+            )
+            : Promise.resolve(rawGuests),
+        ]);
+        rawTables = fullTables;
+        rawGuests = fullGuests;
+      }
 
       dispatch({
         type: 'INIT_DATA',
@@ -636,6 +838,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
         [key: string]: any;
       }>;
       assignedCount?: number;
@@ -651,7 +854,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     []
   );
 
-  // Seat assignment with granular rollback on failure
+  // Seat assignment with party chair capacity checks, landmark guards, and granular rollback on failure
   const assignGuestToTable = useCallback(
     async (
       guestId: string,
@@ -661,24 +864,71 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const targetTableId = tableId || null;
       const targetSeatNumber = targetTableId ? (seatNumber ?? null) : null;
 
-      // Table capacity validation prior to optimistic dispatch
+      const currentGuest = state.guests.find((g) => g.id === guestId);
+      const requiredChairs = currentGuest ? getRequiredChairCount(currentGuest) : 1;
+      const plusOneCount = currentGuest ? getAttendingPlusOneCount(currentGuest) : 0;
+
+      let optimisticPrimarySeat: number | null = targetSeatNumber;
+      let optimisticPlusOneSeats: number[] | undefined = targetTableId ? undefined : [];
+
+      // Landmark & table capacity validation prior to optimistic dispatch
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         if (targetTable) {
-          const existingCount = state.guests.filter(
+          if (isLandmarkTable(targetTable)) {
+            toast?.addToast(
+              `Cannot assign guests to landmark "${targetTable.name}".`,
+              'error'
+            );
+            return false;
+          }
+
+          const otherGuests = state.guests.filter(
             (g) => g.tableId === targetTableId && g.id !== guestId
-          ).length;
-          if (existingCount >= targetTable.capacity) {
+          );
+          const existingOccupiedChairs = getTableOccupiedChairCount(otherGuests);
+          if (existingOccupiedChairs + requiredChairs > targetTable.capacity) {
             toast?.addToast(
               `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
               'error'
             );
             return false;
           }
+
+          if (plusOneCount > 0) {
+            const resolved = resolveSeatAssignments(otherGuests, targetTable.capacity);
+            const usedSeats = new Set<number>(resolved.keys());
+            if (
+              typeof optimisticPrimarySeat === 'number' &&
+              optimisticPrimarySeat >= 1 &&
+              optimisticPrimarySeat <= targetTable.capacity &&
+              !usedSeats.has(optimisticPrimarySeat)
+            ) {
+              usedSeats.add(optimisticPrimarySeat);
+            } else {
+              for (let s = 1; s <= targetTable.capacity; s++) {
+                if (!usedSeats.has(s)) {
+                  usedSeats.add(s);
+                  optimisticPrimarySeat = s;
+                  break;
+                }
+              }
+            }
+
+            optimisticPlusOneSeats = [];
+            for (let i = 0; i < plusOneCount; i++) {
+              for (let s = 1; s <= targetTable.capacity; s++) {
+                if (!usedSeats.has(s)) {
+                  usedSeats.add(s);
+                  optimisticPlusOneSeats.push(s);
+                  break;
+                }
+              }
+            }
+          }
         }
       }
 
-      const currentGuest = state.guests.find((g) => g.id === guestId);
       if (!currentGuest) {
         return false;
       }
@@ -688,6 +938,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         guestId: currentGuest.id,
         tableId: currentGuest.tableId,
         seatNumber: currentGuest.seatNumber,
+        plusOneSeatNumbers: currentGuest.plusOneSeatNumbers,
       };
 
       let displacedGuest: { guestId: string; seatNumber?: number | null } | null = null;
@@ -712,7 +963,10 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         payload: {
           guestId,
           tableId: targetTableId,
-          seatNumber: targetSeatNumber,
+          seatNumber: optimisticPrimarySeat,
+          ...(optimisticPlusOneSeats !== undefined
+            ? { plusOneSeatNumbers: optimisticPlusOneSeats }
+            : {}),
         },
       });
 
@@ -735,7 +989,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           throw new Error('Failed to assign guest seat');
         }
 
-        const returnedGuest: InvitationCodeDTO = await res.json();
+        const rawJson = await res.json();
+        const returnedGuest: InvitationCodeDTO = rawJson?.data ?? rawJson;
         if (returnedGuest && returnedGuest.id) {
           dispatch({
             type: 'CONFIRM_ASSIGN_GUEST',
@@ -751,10 +1006,12 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             guestId: previousGuestAssignment.guestId,
             tableId: previousGuestAssignment.tableId,
             seatNumber: previousGuestAssignment.seatNumber,
+            plusOneSeatNumbers: previousGuestAssignment.plusOneSeatNumbers,
             displacedGuest,
           },
         });
-        const message = err instanceof Error && err.message ? err.message : 'Error assigning guest seat';
+        const message =
+          err instanceof Error && err.message ? err.message : 'Error assigning guest seat';
         toast?.addToast(message, 'error');
         return false;
       }
@@ -783,14 +1040,28 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
 
       const targetTableId = tableId || null;
       const batchIdSet = new Set(uniqueIds);
+      const affectedGuests = state.guests.filter((g) => batchIdSet.has(g.id));
+      if (affectedGuests.length === 0) {
+        return false;
+      }
 
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         if (targetTable) {
-          const existingOtherCount = state.guests.filter(
-            (g) => g.tableId === targetTableId && !batchIdSet.has(g.id)
-          ).length;
-          if (existingOtherCount + uniqueIds.length > targetTable.capacity) {
+          if (isLandmarkTable(targetTable)) {
+            toast?.addToast(
+              `Cannot assign guests to landmark "${targetTable.name}".`,
+              'error'
+            );
+            return false;
+          }
+
+          const existingOtherChairs = getTableOccupiedChairCount(
+            state.guests.filter((g) => g.tableId === targetTableId && !batchIdSet.has(g.id))
+          );
+          const incomingBatchChairs = getTableOccupiedChairCount(affectedGuests);
+
+          if (existingOtherChairs + incomingBatchChairs > targetTable.capacity) {
             toast?.addToast(
               `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
               'error'
@@ -800,31 +1071,24 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         }
       }
 
-      const affectedGuests = state.guests.filter((g) => batchIdSet.has(g.id));
-      if (affectedGuests.length === 0) {
-        return false;
-      }
-
       const previousAssignments: GuestSeatSnapshot[] = affectedGuests.map((g) => ({
         invitationCodeId: g.id,
         tableId: g.tableId ?? null,
         seatNumber: g.seatNumber ?? null,
+        ...(Array.isArray(g.plusOneSeatNumbers) && g.plusOneSeatNumbers.length > 0
+          ? { plusOneSeatNumbers: g.plusOneSeatNumbers }
+          : {}),
       }));
 
       const plannedUpdates: GuestSeatSnapshot[] = [];
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         const cap = targetTable?.capacity ?? 50;
+        const otherGuestsAtTable = state.guests.filter(
+          (g) => g.tableId === targetTableId && !batchIdSet.has(g.id)
+        );
         const usedSeats = new Set<number>(
-          state.guests
-            .filter(
-              (g) =>
-                g.tableId === targetTableId &&
-                !batchIdSet.has(g.id) &&
-                typeof g.seatNumber === 'number' &&
-                g.seatNumber > 0
-            )
-            .map((g) => g.seatNumber as number)
+          resolveSeatAssignments(otherGuestsAtTable, cap).keys()
         );
         const nextSeat = () => {
           for (let i = 1; i <= cap; i++) {
@@ -839,6 +1103,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         for (const id of uniqueIds) {
           const existing = state.guests.find((g) => g.id === id);
           if (!existing) continue;
+          const plusOneCount = getAttendingPlusOneCount(existing);
           let seat: number | null = null;
           if (
             existing.tableId === targetTableId &&
@@ -852,10 +1117,34 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           } else {
             seat = nextSeat();
           }
+
+          const plusOneSeats: number[] = [];
+          const prevPlusOneSeats =
+            existing.tableId === targetTableId && Array.isArray(existing.plusOneSeatNumbers)
+              ? existing.plusOneSeatNumbers
+              : [];
+
+          for (let i = 0; i < plusOneCount; i++) {
+            const candidate = prevPlusOneSeats[i];
+            if (
+              typeof candidate === 'number' &&
+              candidate >= 1 &&
+              candidate <= cap &&
+              !usedSeats.has(candidate)
+            ) {
+              usedSeats.add(candidate);
+              plusOneSeats.push(candidate);
+            } else {
+              const s = nextSeat();
+              if (s !== null) plusOneSeats.push(s);
+            }
+          }
+
           plannedUpdates.push({
             invitationCodeId: id,
             tableId: targetTableId,
             seatNumber: seat,
+            ...(plusOneSeats.length > 0 ? { plusOneSeatNumbers: plusOneSeats } : {}),
           });
         }
       } else {
@@ -962,11 +1251,19 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     // Capture current assignments before applying undo so we can revert if network fails
     const claimedSeatsByTable = new Map<string, Set<number>>();
     for (const a of snapshot.assignments) {
-      if (a.tableId && typeof a.seatNumber === 'number') {
+      if (a.tableId) {
         if (!claimedSeatsByTable.has(a.tableId)) {
           claimedSeatsByTable.set(a.tableId, new Set());
         }
-        claimedSeatsByTable.get(a.tableId)!.add(a.seatNumber);
+        const tableSet = claimedSeatsByTable.get(a.tableId)!;
+        if (typeof a.seatNumber === 'number') {
+          tableSet.add(a.seatNumber);
+        }
+        if (Array.isArray(a.plusOneSeatNumbers)) {
+          for (const ps of a.plusOneSeatNumbers) {
+            if (typeof ps === 'number') tableSet.add(ps);
+          }
+        }
       }
     }
 
@@ -984,6 +1281,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         invitationCodeId: g.id,
         tableId: g.tableId ?? null,
         seatNumber: g.seatNumber ?? null,
+        ...(Array.isArray(g.plusOneSeatNumbers) && g.plusOneSeatNumbers.length > 0
+          ? { plusOneSeatNumbers: g.plusOneSeatNumbers }
+          : {}),
       }));
 
     dispatch({ type: 'APPLY_UNDO_OPTIMISTIC' });
@@ -1046,7 +1346,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             body: JSON.stringify(tableData),
           });
           if (!res.ok) throw new Error('Failed to update table');
-          const updatedTable: SeatingTableDTO = await res.json();
+          const rawJson = await res.json();
+          const updatedTable: SeatingTableDTO = rawJson?.data ?? rawJson;
           dispatch({
             type: 'UPDATE_TABLE',
             payload: updatedTable,
@@ -1055,22 +1356,27 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         } else {
           const defaultX = (state.tables.length % 4) * 180 + 40;
           const defaultY = Math.floor(state.tables.length / 4) * 180 + 40;
+          const resolvedShape = tableData.shape ?? 'round';
+          const shapeDefaults = getDefaultShapeDimensions(resolvedShape);
+          const isLandmark = isLandmarkTableShape(resolvedShape);
           const res = await fetch('/api/admin/seating-tables', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               x: defaultX,
               y: defaultY,
-              shape: 'round',
-              capacity: 8,
-              width: 120,
-              height: 120,
+              shape: resolvedShape,
+              capacity: isLandmark ? 0 : shapeDefaults.defaultCapacity,
+              width: shapeDefaults.width,
+              height: shapeDefaults.height,
               rotation: 0,
               ...tableData,
+              ...(isLandmark ? { capacity: 0 } : {}),
             }),
           });
           if (!res.ok) throw new Error('Failed to create table');
-          const createdTable: SeatingTableDTO = await res.json();
+          const rawJson = await res.json();
+          const createdTable: SeatingTableDTO = rawJson?.data ?? rawJson;
           dispatch({
             type: 'CREATE_TABLE',
             payload: createdTable,
@@ -1097,6 +1403,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           id: g.id,
           tableId: g.tableId,
           seatNumber: g.seatNumber,
+          plusOneSeatNumbers: g.plusOneSeatNumbers,
         }));
 
       dispatch({

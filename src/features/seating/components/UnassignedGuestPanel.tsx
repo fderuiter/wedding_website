@@ -6,12 +6,17 @@ import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
-import { resolveSeatAssignments } from '../seatLayout';
+import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
   ADDRESS_COLLECTION_TAG,
+  getAttendingPlusOneCount,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestPlusOneNamesList,
+  getRequiredChairCount,
+  getTableOccupiedChairCount,
   isGuestEligibleForSeating,
+  isLandmarkTable,
 } from '../utils/seatingHelpers';
 
 const POINTER_DRAG_THRESHOLD_PX = 8;
@@ -79,6 +84,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const toast = useOptionalToast();
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [includePending, setIncludePending] = useState(true);
+  const [keepHouseholdsIntact, setKeepHouseholdsIntact] = useState(false);
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [rsvpFilter, setRsvpFilter] = useState<RsvpFilterValue>('all');
   const [partyGroupFilter, setPartyGroupFilter] = useState<string>('all');
@@ -91,11 +97,32 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const [selectedHouseholdForModal, setSelectedHouseholdForModal] = useState<HouseholdGroupItem | null>(null);
   const [targetHouseholdTableId, setTargetHouseholdTableId] = useState<string>('');
 
+  const guestTables = useMemo(() => tables.filter((t) => !isLandmarkTable(t)), [tables]);
+  const unassignedById = useMemo(() => {
+    const map = new Map<string, InvitationCodeDTO>();
+    for (const g of unassignedGuests) {
+      map.set(g.id, g);
+    }
+    return map;
+  }, [unassignedGuests]);
+
   const [activePointerDrag, setActivePointerDrag] = useState<ActiveGuestPointerDrag | null>(null);
   const activePointerDragRef = useRef<ActiveGuestPointerDrag | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
-  const latestPropsRef = useRef({ tables, onAssignGuestToTable, onAssignGuestsToTable, toast });
-  latestPropsRef.current = { tables, onAssignGuestToTable, onAssignGuestsToTable, toast };
+  const latestPropsRef = useRef({
+    tables,
+    unassignedById,
+    onAssignGuestToTable,
+    onAssignGuestsToTable,
+    toast,
+  });
+  latestPropsRef.current = {
+    tables,
+    unassignedById,
+    onAssignGuestToTable,
+    onAssignGuestsToTable,
+    toast,
+  };
 
   const detachDragWindowListeners = useCallback(() => {
     if (dragCleanupRef.current) {
@@ -166,18 +193,30 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
     const {
       tables: currentTables,
+      unassignedById: guestLookup,
       onAssignGuestToTable: assignFn,
       onAssignGuestsToTable: assignBatchFn,
       toast: currentToast,
     } = latestPropsRef.current;
     const targetTable = currentTables.find((t) => t.id === resolvedTableId);
 
+    if (targetTable && isLandmarkTable(targetTable)) {
+      currentToast?.addToast(`Cannot assign guests to landmark "${targetTable.name}".`, 'error');
+      return;
+    }
+
     if (payload.kind === 'household') {
       if (targetTable) {
         const currentSeatedIds = new Set((targetTable.invitationCodes || []).map((g) => g.id));
-        const incomingCount = payload.memberIds.filter((id) => !currentSeatedIds.has(id)).length;
-        const availableSeats = targetTable.capacity - currentSeatedIds.size;
-        if (incomingCount > availableSeats) {
+        const incomingChairs = payload.memberIds
+          .filter((id) => !currentSeatedIds.has(id))
+          .reduce((sum, id) => {
+            const g = guestLookup.get(id);
+            return sum + (g ? Math.max(1, getRequiredChairCount(g)) : 1);
+          }, 0);
+        const occupiedChairs = getTableOccupiedChairCount(targetTable.invitationCodes);
+        const availableSeats = Math.max(0, targetTable.capacity - occupiedChairs);
+        if (incomingChairs > availableSeats) {
           currentToast?.addToast(
             `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${payload.memberIds.length} household members.`,
             'error'
@@ -195,14 +234,28 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     }
 
     if (targetTable) {
-      const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
       const isAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === payload.guestId);
-      if (isFull && !isAlreadyAtTable) {
-        currentToast?.addToast(
-          `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
-          'error'
-        );
-        return;
+      if (!isAlreadyAtTable) {
+        const occupiedChairs = getTableOccupiedChairCount(targetTable.invitationCodes);
+        const availableSeats = Math.max(0, targetTable.capacity - occupiedChairs);
+        const draggedGuest = guestLookup.get(payload.guestId);
+        const neededChairs = draggedGuest ? Math.max(1, getRequiredChairCount(draggedGuest)) : 1;
+
+        if (availableSeats <= 0) {
+          currentToast?.addToast(
+            `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
+            'error'
+          );
+          return;
+        }
+
+        if (neededChairs > availableSeats) {
+          currentToast?.addToast(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} (${neededChairs} seats needed).`,
+            'error'
+          );
+          return;
+        }
       }
     }
 
@@ -369,12 +422,23 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       if (!term) return true;
 
       const matchesName = guest.guestName.toLowerCase().includes(term);
+      const matchesPlusOne = getGuestPlusOneNamesList(guest).some((n) =>
+        n.toLowerCase().includes(term)
+      );
       const matchesCode = guest.code ? guest.code.toLowerCase().includes(term) : false;
       const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
       const matchesGroup = guest.partyGroup ? guest.partyGroup.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
       const matchesDiet = guest.dietaryNotes ? guest.dietaryNotes.toLowerCase().includes(term) : false;
-      return matchesName || matchesCode || matchesHousehold || matchesGroup || matchesTags || matchesDiet;
+      return (
+        matchesName ||
+        matchesPlusOne ||
+        matchesCode ||
+        matchesHousehold ||
+        matchesGroup ||
+        matchesTags ||
+        matchesDiet
+      );
     });
   }, [eligibleGuests, rsvpFilter, partyGroupFilter, partyTagFilter, currentSearchQuery]);
 
@@ -444,8 +508,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       };
-      if (!includePending) {
-        fetchInit.body = JSON.stringify({ includePending: false });
+      if (!includePending || keepHouseholdsIntact) {
+        fetchInit.body = JSON.stringify({
+          ...(!includePending ? { includePending: false } : {}),
+          ...(keepHouseholdsIntact ? { keepHouseholdsIntact: true } : {}),
+        });
       }
 
       const res = await fetch('/api/admin/seating/auto-assign', fetchInit);
@@ -492,9 +559,12 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const openHouseholdModal = (group: HouseholdGroupItem) => {
     setSelectedHouseholdForModal(group);
-    const needed = group.members.length;
-    const firstFittingTable = tables.find(
-      (t) => t.capacity - (t.invitationCodes?.length || 0) >= needed
+    const neededChairs = group.members.reduce(
+      (sum, m) => sum + Math.max(1, getRequiredChairCount(m)),
+      0
+    );
+    const firstFittingTable = guestTables.find(
+      (t) => t.capacity - getTableOccupiedChairCount(t.invitationCodes) >= neededChairs
     );
     setTargetHouseholdTableId(firstFittingTable ? firstFittingTable.id : '');
   };
@@ -519,51 +589,71 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const renderGuestBadges = (guest: InvitationCodeDTO) => {
     const status = getGuestAttendanceStatus(guest);
     const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+    const requiredChairs = Math.max(1, getRequiredChairCount(guest));
+    const plusOneCount = getAttendingPlusOneCount(guest);
+    const plusOneNames = getGuestPlusOneNamesList(guest);
 
     return (
-      <div className="flex flex-wrap gap-1 pt-0.5">
-        <span
-          data-testid="guest-rsvp-badge"
-          className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
-            status === 'attending'
-              ? 'bg-green-50 text-green-800 border-green-300 dark:bg-green-950/70 dark:text-green-200 dark:border-green-800'
-              : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-800'
-          }`}
-        >
-          {status === 'attending' ? 'Attending' : 'Pending'}
-        </span>
-
-        {guest.partyGroup && (
-          <span
-            data-testid="guest-party-group-badge"
-            className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+      <div className="space-y-0.5 pt-0.5">
+        {plusOneCount > 0 && (
+          <p
+            data-testid="guest-plus-one-names"
+            className="text-[10px] font-medium text-indigo-800 dark:text-indigo-200 truncate"
           >
-            {guest.partyGroup}
-          </span>
+            +1: {plusOneNames.length > 0 ? plusOneNames.join(', ') : `${plusOneCount} guest${plusOneCount === 1 ? '' : 's'}`}
+          </p>
         )}
-
-        {dietaryBadges.map((badge) => (
+        <div className="flex flex-wrap gap-1">
           <span
-            key={badge.category}
-            data-testid="guest-dietary-badge"
-            title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
-            className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
+            data-testid="guest-chair-count-badge"
+            className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600"
           >
-            🍽️ {badge.shortLabel}
+            {requiredChairs} {requiredChairs === 1 ? 'chair' : 'chairs'}
           </span>
-        ))}
 
-        {guest.partyTags &&
-          guest.partyTags
-            .filter((tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG)
-            .map((tag) => (
-              <span
-                key={tag}
-                className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
-              >
-                #{tag}
-              </span>
-            ))}
+          <span
+            data-testid="guest-rsvp-badge"
+            className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
+              status === 'attending'
+                ? 'bg-green-50 text-green-800 border-green-300 dark:bg-green-950/70 dark:text-green-200 dark:border-green-800'
+                : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-800'
+            }`}
+          >
+            {status === 'attending' ? 'Attending' : 'Pending'}
+          </span>
+
+          {guest.partyGroup && (
+            <span
+              data-testid="guest-party-group-badge"
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+            >
+              {guest.partyGroup}
+            </span>
+          )}
+
+          {dietaryBadges.map((badge) => (
+            <span
+              key={badge.category}
+              data-testid="guest-dietary-badge"
+              title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
+            >
+              🍽️ {badge.shortLabel}
+            </span>
+          ))}
+
+          {guest.partyTags &&
+            guest.partyTags
+              .filter((tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG)
+              .map((tag) => (
+                <span
+                  key={tag}
+                  className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+                >
+                  #{tag}
+                </span>
+              ))}
+        </div>
       </div>
     );
   };
@@ -710,7 +800,17 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                         🏠 {item.householdName}
                       </span>
                       <span className="text-[11px] font-medium text-purple-800 dark:text-purple-200">
-                        ({item.members.length} guests)
+                        ({item.members.length} guests
+                        {(() => {
+                          const totalChairs = item.members.reduce(
+                            (sum, m) => sum + Math.max(1, getRequiredChairCount(m)),
+                            0
+                          );
+                          return totalChairs > item.members.length
+                            ? ` · ${totalChairs} chairs`
+                            : '';
+                        })()}
+                        )
                       </span>
                     </div>
 
@@ -762,7 +862,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                             type="button"
                             onClick={() => {
                               setSelectedGuestForModal(guest);
-                              if (tables.length > 0) setTargetTableId(tables[0].id);
+                              if (guestTables.length > 0) setTargetTableId(guestTables[0].id);
                             }}
                             className="min-h-[28px] text-[11px] font-medium px-2.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-200 rounded transition-colors shrink-0"
                             aria-label={`Assign ${guest.guestName} to table`}
@@ -819,7 +919,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                   type="button"
                   onClick={() => {
                     setSelectedGuestForModal(guest);
-                    if (tables.length > 0) setTargetTableId(tables[0].id);
+                    if (guestTables.length > 0) setTargetTableId(guestTables[0].id);
                   }}
                   className="min-h-[28px] text-[11px] font-medium px-2.5 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-primary hover:text-white hover:border-primary text-gray-700 dark:text-gray-200 rounded transition-colors shrink-0"
                   aria-label={`Assign ${guest.guestName} to table`}
@@ -837,7 +937,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <label
             htmlFor="auto-assign-include-pending"
-            className="flex items-center gap-2 min-h-[28px] mb-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
+            className="flex items-center gap-2 min-h-[28px] mb-1 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
           >
             <input
               id="auto-assign-include-pending"
@@ -847,6 +947,20 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
             />
             <span>Include pending RSVPs in auto-assign</span>
+          </label>
+
+          <label
+            htmlFor="auto-assign-keep-households-intact"
+            className="flex items-center gap-2 min-h-[28px] mb-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
+          >
+            <input
+              id="auto-assign-keep-households-intact"
+              type="checkbox"
+              checked={keepHouseholdsIntact}
+              onChange={(e) => setKeepHouseholdsIntact(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
+            />
+            <span>Keep households intact (skip if split required)</span>
           </label>
 
           <Button
@@ -900,11 +1014,12 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               }}
               className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
-              {tables.map((t) => {
-                const isFull = (t.invitationCodes?.length || 0) >= t.capacity;
+              {guestTables.map((t) => {
+                const occupied = getTableOccupiedChairCount(t.invitationCodes);
+                const isFull = occupied >= t.capacity;
                 return (
                   <option key={t.id} value={t.id}>
-                    {t.name} ({t.invitationCodes?.length || 0}/{t.capacity} seats{isFull ? ' - FULL' : ''})
+                    {t.name} ({occupied}/{t.capacity} seats{isFull ? ' - FULL' : ''})
                   </option>
                 );
               })}
@@ -923,14 +1038,17 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
             >
               <option value="">Any available seat</option>
               {(() => {
-                const selTable = tables.find((t) => t.id === targetTableId);
+                const selTable = guestTables.find((t) => t.id === targetTableId);
                 if (!selTable) return null;
-                const resolvedSeatMap = resolveSeatAssignments(selTable.invitationCodes, selTable.capacity);
+                const resolvedSeatMap = resolveDetailedSeatAssignments(
+                  selTable.invitationCodes,
+                  selTable.capacity
+                );
                 return Array.from({ length: selTable.capacity }, (_, idx) => idx + 1).map((seatNum) => {
                   const occ = resolvedSeatMap.get(seatNum);
                   return (
                     <option key={seatNum} value={seatNum}>
-                      Seat {seatNum} {occ ? `(${occ.guestName})` : '(Empty)'}
+                      Seat {seatNum} {occ ? `(${occ.attendeeName})` : '(Empty)'}
                     </option>
                   );
                 });
@@ -975,68 +1093,74 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         }
         className="max-w-sm w-full"
       >
-        {selectedHouseholdForModal && (
-          <form onSubmit={handleHouseholdAssignSubmit} className="space-y-3">
-            <p className="text-xs text-gray-600 dark:text-gray-300">
-              Members: {selectedHouseholdForModal.members.map((m) => m.guestName).join(', ')}
-            </p>
-
-            <div>
-              <label
-                htmlFor="household-assign-table-select"
-                className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
-              >
-                Select Table with {selectedHouseholdForModal.members.length}+ Open Seats
-              </label>
-              <select
-                id="household-assign-table-select"
-                value={targetHouseholdTableId}
-                onChange={(e) => setTargetHouseholdTableId(e.target.value)}
-                className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-              >
-                <option value="" disabled>
-                  Select a table...
-                </option>
-                {tables.map((t) => {
-                  const seated = t.invitationCodes?.length || 0;
-                  const openSeats = t.capacity - seated;
-                  const fits = openSeats >= selectedHouseholdForModal.members.length;
-                  return (
-                    <option key={t.id} value={t.id} disabled={!fits}>
-                      {t.name} ({openSeats} open of {t.capacity}{fits ? '' : ' - insufficient space'})
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {!targetHouseholdTableId && (
-              <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded p-2">
-                No single table currently has {selectedHouseholdForModal.members.length} open seats.
+        {selectedHouseholdForModal && (() => {
+          const neededHouseholdChairs = selectedHouseholdForModal.members.reduce(
+            (sum, m) => sum + Math.max(1, getRequiredChairCount(m)),
+            0
+          );
+          return (
+            <form onSubmit={handleHouseholdAssignSubmit} className="space-y-3">
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                Members: {selectedHouseholdForModal.members.map((m) => m.guestName).join(', ')}
               </p>
-            )}
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedHouseholdForModal(null);
-                  setTargetHouseholdTableId('');
-                }}
-                className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!targetHouseholdTableId}
-                className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
-              >
-                Confirm Household Seating
-              </button>
-            </div>
-          </form>
-        )}
+              <div>
+                <label
+                  htmlFor="household-assign-table-select"
+                  className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >
+                  Select Table with {neededHouseholdChairs}+ Open Seats
+                </label>
+                <select
+                  id="household-assign-table-select"
+                  value={targetHouseholdTableId}
+                  onChange={(e) => setTargetHouseholdTableId(e.target.value)}
+                  className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="" disabled>
+                    Select a table...
+                  </option>
+                  {guestTables.map((t) => {
+                    const seated = getTableOccupiedChairCount(t.invitationCodes);
+                    const openSeats = Math.max(0, t.capacity - seated);
+                    const fits = openSeats >= neededHouseholdChairs;
+                    return (
+                      <option key={t.id} value={t.id} disabled={!fits}>
+                        {t.name} ({openSeats} open of {t.capacity}{fits ? '' : ' - insufficient space'})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {!targetHouseholdTableId && (
+                <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded p-2">
+                  No single table currently has {neededHouseholdChairs} open seats.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedHouseholdForModal(null);
+                    setTargetHouseholdTableId('');
+                  }}
+                  className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!targetHouseholdTableId}
+                  className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                >
+                  Confirm Household Seating
+                </button>
+              </div>
+            </form>
+          );
+        })()}
       </Dialog>
 
       {/* Floating Cross-Panel Pointer Drag Chip */}

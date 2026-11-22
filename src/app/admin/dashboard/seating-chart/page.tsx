@@ -8,11 +8,18 @@ import {
   TableModal,
   PrintableFloorplan,
   useSeatingState,
+  resolveDetailedSeatAssignments,
   resolveSeatAssignments,
   ADDRESS_COLLECTION_TAG,
+  computeTableMealCounts,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestPlusOneNamesList,
+  getRequiredChairCount,
+  getSeatingShapeLabel,
+  getTableOccupiedChairCount,
   isGuestEligibleForSeating,
+  isLandmarkTable,
 } from '@/features/seating';
 import { Dialog } from '@/components/ui/Dialog';
 import { InvitationCodeDTO } from '@/features/registry';
@@ -64,6 +71,7 @@ export default function SeatingChartAdminPage() {
       }
       return (
         g.guestName.toLowerCase().includes(normalizedQuery) ||
+        getGuestPlusOneNamesList(g).some((n) => n.toLowerCase().includes(normalizedQuery)) ||
         (g.code ? g.code.toLowerCase().includes(normalizedQuery) : false) ||
         (g.householdName && g.householdName.toLowerCase().includes(normalizedQuery)) ||
         (g.partyGroup && g.partyGroup.toLowerCase().includes(normalizedQuery)) ||
@@ -127,14 +135,30 @@ export default function SeatingChartAdminPage() {
   };
 
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
-  const selectedTableSeatLookup = useMemo(() => {
-    const lookup = new Map<string, number>();
-    if (!selectedTable?.invitationCodes) return lookup;
-    const seatMap = resolveSeatAssignments(selectedTable.invitationCodes, selectedTable.capacity);
-    seatMap.forEach((g, seatNum) => {
-      if (g.id) lookup.set(g.id, seatNum);
+  const selectedTableDetails = useMemo(() => {
+    const primarySeatLookup = new Map<string, number>();
+    const plusOneSeatsByGuestId = new Map<
+      string,
+      Array<{ seatNumber: number; attendeeName: string }>
+    >();
+    if (!selectedTable?.invitationCodes || isLandmarkTable(selectedTable)) {
+      return { primarySeatLookup, plusOneSeatsByGuestId };
+    }
+    const detailedMap = resolveDetailedSeatAssignments(
+      selectedTable.invitationCodes,
+      selectedTable.capacity
+    );
+    detailedMap.forEach((entry, seatNum) => {
+      if (!entry.guest.id) return;
+      if (entry.isPlusOne) {
+        const list = plusOneSeatsByGuestId.get(entry.guest.id) ?? [];
+        list.push({ seatNumber: seatNum, attendeeName: entry.attendeeName });
+        plusOneSeatsByGuestId.set(entry.guest.id, list);
+      } else {
+        primarySeatLookup.set(entry.guest.id, seatNum);
+      }
     });
-    return lookup;
+    return { primarySeatLookup, plusOneSeatsByGuestId };
   }, [selectedTable]);
 
   return (
@@ -201,6 +225,39 @@ export default function SeatingChartAdminPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
               Export CSV
+            </a>
+
+            <a
+              href="/api/admin/seating/export?format=meals"
+              download
+              className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Meal Counts CSV
+            </a>
+
+            <a
+              href="/api/admin/seating/export?format=place-cards"
+              download="seating-place-cards.pdf"
+              className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 11h10M7 15h6M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+              </svg>
+              Place Cards PDF
+            </a>
+
+            <a
+              href="/api/admin/seating/export?format=escort-cards"
+              download="seating-escort-cards.pdf"
+              className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2zm4 4h10M7 15h6" />
+              </svg>
+              Escort Cards PDF
             </a>
 
             <button
@@ -340,6 +397,7 @@ export default function SeatingChartAdminPage() {
           <div className="lg:col-span-3 space-y-4">
             <FloorplanCanvas
               tables={tables}
+              allGuests={allGuests}
               selectedTableId={selectedTableId}
               onSelectTable={setSelectedTableId}
               onUpdateTablePosition={handleUpdateTablePosition}
@@ -353,150 +411,187 @@ export default function SeatingChartAdminPage() {
             />
 
             {/* Selected Table Inspector Bar */}
-            {selectedTable && (
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                    {selectedTable.name}
-                    <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
-                      ({selectedTable.shape}, {selectedTable.capacity} capacity, {selectedTable.invitationCodes?.length || 0} seated)
-                    </span>
-                  </h3>
-                  {selectedTable.invitationCodes && selectedTable.invitationCodes.length > 0 ? (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {selectedTable.invitationCodes.map((guest) => {
-                        const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
-                        const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
-                        const visibleTags = (guest.partyTags || []).filter(
-                          (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
-                        );
+            {selectedTable && (() => {
+              const selectedIsLandmark = isLandmarkTable(selectedTable);
+              const selectedOccupiedChairs = selectedIsLandmark
+                ? 0
+                : getTableOccupiedChairCount(selectedTable.invitationCodes);
+              const selectedMealSummary = selectedIsLandmark
+                ? null
+                : computeTableMealCounts(selectedTable.invitationCodes);
 
-                        return (
-                          <span
-                            key={guest.id}
-                            data-testid={isDeclined ? 'inspector-declined-guest-chip' : 'inspector-guest-chip'}
-                            className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded ${
-                              isDeclined
-                                ? 'bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                            }`}
-                          >
-                            <span>
-                              Seat {guest.seatNumber || selectedTableSeatLookup.get(guest.id) || '?'}: {guest.guestName}
+              return (
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 flex-wrap">
+                      {selectedTable.name}
+                      <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
+                        {selectedIsLandmark
+                          ? `(Landmark · ${getSeatingShapeLabel(selectedTable.shape)}, 0 seats)`
+                          : `(${selectedTable.shape}, ${selectedTable.capacity} capacity, ${selectedOccupiedChairs} seated)`}
+                      </span>
+                    </h3>
+                    {!selectedIsLandmark && selectedOccupiedChairs > 0 && selectedMealSummary && (
+                      <p
+                        data-testid="inspector-meal-summary"
+                        className="mt-1 text-[11px] font-medium text-gray-700 dark:text-gray-300"
+                      >
+                        Entrées: {selectedMealSummary.formattedMeals}
+                      </p>
+                    )}
+                    {selectedIsLandmark ? (
+                      <p className="text-xs text-gray-600 dark:text-gray-300 italic">
+                        Room landmark fixture — drag or rotate to position on floorplan.
+                      </p>
+                    ) : selectedTable.invitationCodes && selectedTable.invitationCodes.length > 0 ? (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {selectedTable.invitationCodes.map((guest) => {
+                          const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
+                          const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+                          const visibleTags = (guest.partyTags || []).filter(
+                            (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
+                          );
+                          const plusOneSeats =
+                            selectedTableDetails.plusOneSeatsByGuestId.get(guest.id) || [];
+
+                          return (
+                            <span
+                              key={guest.id}
+                              data-testid={isDeclined ? 'inspector-declined-guest-chip' : 'inspector-guest-chip'}
+                              className={`inline-flex items-center flex-wrap gap-1 text-[11px] px-2 py-0.5 rounded ${
+                                isDeclined
+                                  ? 'bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                              }`}
+                            >
+                              <span>
+                                Seat {guest.seatNumber || selectedTableDetails.primarySeatLookup.get(guest.id) || '?'}: {guest.guestName}
+                              </span>
+                              {plusOneSeats.map((po) => (
+                                <span
+                                  key={`${guest.id}-po-${po.seatNumber}`}
+                                  data-testid="inspector-plus-one-seat"
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-900 dark:bg-indigo-950/80 dark:text-indigo-200 font-semibold"
+                                >
+                                  Seat {po.seatNumber}: {po.attendeeName} (+1)
+                                </span>
+                              ))}
+                              {isDeclined && (
+                                <span
+                                  data-testid="seated-declined-badge"
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-100 font-bold"
+                                >
+                                  RSVP Declined
+                                </span>
+                              )}
+                              {guest.householdName && (
+                                <span className="text-[9px] text-purple-800 dark:text-purple-200 font-semibold ml-0.5">
+                                  (🏠 {guest.householdName})
+                                </span>
+                              )}
+                              {dietaryBadges.map((badge) => (
+                                <span
+                                  key={badge.category}
+                                  data-testid="inspector-dietary-badge"
+                                  title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
+                                >
+                                  🍽️ {badge.shortLabel}
+                                </span>
+                              ))}
+                              {visibleTags.length > 0 && (
+                                <span className="text-[9px] text-blue-800 dark:text-blue-200 ml-0.5">
+                                  [{visibleTags.join(', ')}]
+                                </span>
+                              )}
+                              {isDeclined ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnassignGuest(guest.id)}
+                                  className="min-h-[24px] px-2 py-0.5 ml-1 text-[10px] font-semibold bg-red-700 hover:bg-red-800 text-white rounded transition-colors"
+                                  aria-label={`Release seat for declined guest ${guest.guestName}`}
+                                >
+                                  Release Seat
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnassignGuest(guest.id)}
+                                  className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-600 hover:text-red-600 dark:text-gray-200 dark:hover:text-red-400 font-bold ml-0.5 rounded"
+                                  title="Unassign guest"
+                                  aria-label={`Unassign ${guest.guestName}`}
+                                >
+                                  ×
+                                </button>
+                              )}
                             </span>
-                            {isDeclined && (
-                              <span
-                                data-testid="seated-declined-badge"
-                                className="text-[9px] px-1.5 py-0.5 rounded bg-red-200 text-red-900 dark:bg-red-900 dark:text-red-100 font-bold"
-                              >
-                                RSVP Declined
-                              </span>
-                            )}
-                            {guest.householdName && (
-                              <span className="text-[9px] text-purple-800 dark:text-purple-200 font-semibold ml-0.5">
-                                (🏠 {guest.householdName})
-                              </span>
-                            )}
-                            {dietaryBadges.map((badge) => (
-                              <span
-                                key={badge.category}
-                                data-testid="inspector-dietary-badge"
-                                title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
-                                className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
-                              >
-                                🍽️ {badge.shortLabel}
-                              </span>
-                            ))}
-                            {visibleTags.length > 0 && (
-                              <span className="text-[9px] text-blue-800 dark:text-blue-200 ml-0.5">
-                                [{visibleTags.join(', ')}]
-                              </span>
-                            )}
-                            {isDeclined ? (
-                              <button
-                                type="button"
-                                onClick={() => handleUnassignGuest(guest.id)}
-                                className="min-h-[24px] px-2 py-0.5 ml-1 text-[10px] font-semibold bg-red-700 hover:bg-red-800 text-white rounded transition-colors"
-                                aria-label={`Release seat for declined guest ${guest.guestName}`}
-                              >
-                                Release Seat
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleUnassignGuest(guest.id)}
-                                className="min-w-6 min-h-6 inline-flex items-center justify-center text-gray-600 hover:text-red-600 dark:text-gray-200 dark:hover:text-red-400 font-bold ml-0.5 rounded"
-                                title="Unassign guest"
-                                aria-label={`Unassign ${guest.guestName}`}
-                              >
-                                ×
-                              </button>
-                            )}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-600 dark:text-gray-300 italic">No guests assigned to this table yet.</p>
-                  )}
-                </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-600 dark:text-gray-300 italic">No guests assigned to this table yet.</p>
+                    )}
+                  </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-lg border border-gray-200 dark:border-gray-600">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = selectedTable.rotation || 0;
+                          const next = (current - 45 + 360) % 360;
+                          handleUpdateTableRotation(selectedTable.id, next);
+                        }}
+                        className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                        title="Rotate -45°"
+                      >
+                        -45°
+                      </button>
+                      <span className="px-1.5 font-mono text-xs font-bold text-primary">
+                        {selectedTable.rotation || 0}°
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = selectedTable.rotation || 0;
+                          const next = (current + 45) % 360;
+                          handleUpdateTableRotation(selectedTable.id, next);
+                        }}
+                        className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
+                        title="Rotate +45°"
+                      >
+                        +45°
+                      </button>
+                    </div>
+                    {!selectedIsLandmark && (
+                      <button
+                        type="button"
+                        data-testid="clear-table-seats-button"
+                        onClick={() => handleClearTableSeats(selectedTable.id)}
+                        disabled={(selectedTable.invitationCodes?.length || 0) === 0}
+                        className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 hover:bg-amber-100 rounded-lg border border-amber-300 dark:border-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Clear Seats
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => {
-                        const current = selectedTable.rotation || 0;
-                        const next = (current - 45 + 360) % 360;
-                        handleUpdateTableRotation(selectedTable.id, next);
-                      }}
-                      className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
-                      title="Rotate -45°"
+                      onClick={() => handleEditTable(selectedTable)}
+                      className="min-h-[30px] px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                     >
-                      -45°
+                      Edit Properties
                     </button>
-                    <span className="px-1.5 font-mono text-xs font-bold text-primary">
-                      {selectedTable.rotation || 0}°
-                    </span>
                     <button
                       type="button"
-                      onClick={() => {
-                        const current = selectedTable.rotation || 0;
-                        const next = (current + 45) % 360;
-                        handleUpdateTableRotation(selectedTable.id, next);
-                      }}
-                      className="min-w-[32px] min-h-[26px] inline-flex items-center justify-center px-2 py-1 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 rounded shadow-2xs"
-                      title="Rotate +45°"
+                      onClick={() => handleDeleteTable(selectedTable.id)}
+                      className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded-lg border border-red-200"
                     >
-                      +45°
+                      Delete Table
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    data-testid="clear-table-seats-button"
-                    onClick={() => handleClearTableSeats(selectedTable.id)}
-                    disabled={(selectedTable.invitationCodes?.length || 0) === 0}
-                    className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200 hover:bg-amber-100 rounded-lg border border-amber-300 dark:border-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Clear Seats
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEditTable(selectedTable)}
-                    className="min-h-[30px] px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    Edit Properties
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTable(selectedTable.id)}
-                    className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded-lg border border-red-200"
-                  >
-                    Delete Table
-                  </button>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -561,11 +656,17 @@ export default function SeatingChartAdminPage() {
                   defaultValue={unassignedGuests[0]?.id || ''}
                   className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                 >
-                  {unassignedGuests.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.guestName} ({g.code})
-                    </option>
-                  ))}
+                  {unassignedGuests.map((g) => {
+                    const chairs = Math.max(1, getRequiredChairCount(g));
+                    const plusOneNames = getGuestPlusOneNamesList(g);
+                    return (
+                      <option key={g.id} value={g.id}>
+                        {g.guestName}
+                        {plusOneNames.length > 0 ? ` (+1: ${plusOneNames.join(', ')})` : ''}
+                        {chairs > 1 ? ` — ${chairs} chairs` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="flex justify-end gap-2 pt-2">

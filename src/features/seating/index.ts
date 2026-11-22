@@ -12,6 +12,7 @@ export type {
   SeatingTableDTO,
 } from './schemas';
 export { SeatingTableAdminService } from './admin.service';
+export type { AutoAssignOptions } from './admin.service';
 export { PrintableFloorplan } from './components/PrintableFloorplan';
 export { FloorplanCanvas } from './components/FloorplanCanvas';
 export { UnassignedGuestPanel } from './components/UnassignedGuestPanel';
@@ -30,14 +31,24 @@ export type {
   GuestSeatSnapshot,
   UseSeatingStateOptions,
 } from './hooks/useSeatingState';
-export { generateSeatingChartPdf } from './pdf.service';
-export { computeSeatPosition, resolveSeatAssignments } from './seatLayout';
+export { generateAveryCardsPdf, generateSeatingChartPdf } from './pdf.service';
+export {
+  computeSeatPosition,
+  resolveDetailedSeatAssignments,
+  resolveSeatAssignments,
+} from './seatLayout';
 export {
   ADDRESS_COLLECTION_TAG,
-  isGuestEligibleForSeating,
+  computeTableMealCounts,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestPlusOneNamesList,
+  getRequiredChairCount,
+  getSeatingShapeLabel,
+  getTableOccupiedChairCount,
   hasAddressCollectionTag,
+  isGuestEligibleForSeating,
+  isLandmarkTable,
   isOneSidedTableShape,
 } from './utils/seatingHelpers';
 export type { DietaryBadgeInfo } from './utils/seatingHelpers';

@@ -155,4 +155,97 @@ describe('SeatingTableAdminService Auto-Assign Bulk Integration', () => {
     const snapshots = await realPrisma.snapshotVersion.findMany();
     expect(snapshots).toHaveLength(0);
   });
+
+  it('persists plusOneSeatNumbers integer arrays, skips zero-capacity landmarks, and enforces keepHouseholdsIntact in PostgreSQL', async () => {
+    const cleanPrisma = new PrismaClient({ adapter });
+    service.repo.client = cleanPrisma;
+    try {
+      await cleanPrisma.seatingTable.createMany({
+        data: [
+          { id: 'lm-dance-int', name: 'Dance Floor', shape: 'dance-floor', capacity: 0 },
+          { id: 'lm-bar-int', name: 'Open Bar', shape: 'bar', capacity: 0 },
+          { id: 'tbl-int-1', name: 'Table 01', shape: 'round', capacity: 4 },
+          { id: 'tbl-int-2', name: 'Table 02', shape: 'round', capacity: 2 },
+        ],
+      });
+
+      await cleanPrisma.invitationCode.createMany({
+        data: [
+          {
+            id: 'g-plus-int-1',
+            code: 'C-PLUS-1',
+            guestName: 'Host With Two Plus Ones',
+            partyGroup: 'VIP',
+            partyTags: ['bridal-party'],
+            used: true,
+            extraFields: { attending: true, plusOneNames: ['Guest Plus A', 'Guest Plus B'] },
+            tableId: null,
+            seatNumber: null,
+          },
+          {
+            id: 'g-plus-int-2',
+            code: 'C-PLUS-2',
+            guestName: 'Solo VIP Friend',
+            partyGroup: 'VIP',
+            partyTags: ['bridal-party'],
+            used: true,
+            extraFields: { attending: true },
+            tableId: null,
+            seatNumber: null,
+          },
+          // Intact household of 3 invitations cannot fit into remaining Table 02 (cap 2) when keepHouseholdsIntact: true
+          {
+            id: 'g-hh-int-1',
+            code: 'C-HH-1',
+            guestName: 'Household Member 1',
+            householdName: 'Bennett Household',
+            used: true,
+            extraFields: { attending: true },
+            tableId: null,
+          },
+          {
+            id: 'g-hh-int-2',
+            code: 'C-HH-2',
+            guestName: 'Household Member 2',
+            householdName: 'Bennett Household',
+            used: true,
+            extraFields: { attending: true },
+            tableId: null,
+          },
+          {
+            id: 'g-hh-int-3',
+            code: 'C-HH-3',
+            guestName: 'Household Member 3',
+            householdName: 'Bennett Household',
+            used: true,
+            extraFields: { attending: true },
+            tableId: null,
+          },
+        ],
+      });
+
+      const result = await service.autoAssignSeats('IntegrationAdmin', {
+        keepHouseholdsIntact: true,
+      });
+
+      expect(result.assignedCount).toBe(2);
+      expect(result.unassignedCount).toBe(3);
+
+      const hostRow = await cleanPrisma.invitationCode.findUnique({ where: { id: 'g-plus-int-1' } });
+      const soloRow = await cleanPrisma.invitationCode.findUnique({ where: { id: 'g-plus-int-2' } });
+      const landmarkGuests = await cleanPrisma.invitationCode.findMany({
+        where: { tableId: { in: ['lm-dance-int', 'lm-bar-int'] } },
+      });
+
+      expect(landmarkGuests).toHaveLength(0);
+      expect(hostRow.tableId).toBe('tbl-int-1');
+      expect(hostRow.seatNumber).toBe(1);
+      expect(hostRow.plusOneSeatNumbers).toEqual([2, 3]);
+      expect(soloRow.tableId).toBe('tbl-int-1');
+      expect(soloRow.seatNumber).toBe(4);
+      expect(soloRow.plusOneSeatNumbers).toEqual([]);
+    } finally {
+      await cleanPrisma.$disconnect();
+    }
+  });
 });

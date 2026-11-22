@@ -3,8 +3,15 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
-import { computeSeatPosition, resolveSeatAssignments } from '../seatLayout';
-import { getDietaryBadges, isOneSidedTableShape } from '../utils/seatingHelpers';
+import { computeSeatPosition, resolveDetailedSeatAssignments } from '../seatLayout';
+import {
+  getGuestPlusOneNamesList,
+  getRequiredChairCount,
+  getSeatingShapeLabel,
+  getTableOccupiedChairCount,
+  isLandmarkTable,
+  isOneSidedTableShape,
+} from '../utils/seatingHelpers';
 
 const EMPTY_SET = new Set<string>();
 const DEFAULT_STAGE_WIDTH = 800;
@@ -55,6 +62,7 @@ type ActivePointerGesture =
 
 interface FloorplanCanvasProps {
   tables: SeatingTableDTO[];
+  allGuests?: InvitationCodeDTO[];
   selectedTableId: string | null;
   onSelectTable: (tableId: string | null) => void;
   onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
@@ -69,6 +77,7 @@ interface FloorplanCanvasProps {
 
 export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   tables,
+  allGuests,
   selectedTableId,
   onSelectTable,
   onUpdateTablePosition,
@@ -143,6 +152,30 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const normalizedQuery = searchQuery ? searchQuery.trim().toLowerCase() : '';
   const isSearching = normalizedQuery.length > 0;
 
+  const guestById = useMemo(() => {
+    const map = new Map<string, InvitationCodeDTO>();
+    for (const g of allGuests ?? []) {
+      if (g?.id) map.set(g.id, g);
+    }
+    for (const table of tables) {
+      for (const g of table.invitationCodes ?? []) {
+        if (g?.id && !map.has(g.id)) {
+          map.set(g.id, g);
+        }
+      }
+    }
+    return map;
+  }, [allGuests, tables]);
+
+  const getIncomingRequiredChairs = useCallback(
+    (guestId: string): number => {
+      const guest = guestById.get(guestId);
+      if (!guest) return 1;
+      return Math.max(1, getRequiredChairCount(guest));
+    },
+    [guestById]
+  );
+
   // Compute search match counts and lookup Sets with memoization
   const { totalSeatedMatches, matchingGuestIds, matchingTableIds } = useMemo(() => {
     if (!isSearching) {
@@ -161,6 +194,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       if (!table.invitationCodes) continue;
       for (const guest of table.invitationCodes) {
         const nameMatch = guest.guestName.toLowerCase().includes(normalizedQuery);
+        const plusOneMatch = getGuestPlusOneNamesList(guest).some((n) =>
+          n.toLowerCase().includes(normalizedQuery)
+        );
         const codeMatch = guest.code ? guest.code.toLowerCase().includes(normalizedQuery) : false;
         const householdMatch = guest.householdName
           ? guest.householdName.toLowerCase().includes(normalizedQuery)
@@ -169,7 +205,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           ? guest.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery))
           : false;
 
-        if (nameMatch || codeMatch || householdMatch || tagMatch) {
+        if (nameMatch || plusOneMatch || codeMatch || householdMatch || tagMatch) {
           count++;
           guestIds.add(guest.id);
           tableIds.add(table.id);
@@ -606,13 +642,19 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   };
 
   // HTML5 Drag and Drop Handlers for Dropzones
+  const isTableBlockedForDrop = (targetTable: SeatingTableDTO | undefined): boolean => {
+    if (!targetTable) return false;
+    if (isLandmarkTable(targetTable)) return true;
+    return getTableOccupiedChairCount(targetTable.invitationCodes) >= targetTable.capacity;
+  };
+
   const handleTableDragEnter = (e: React.DragEvent, tableId: string) => {
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const blocked = isTableBlockedForDrop(targetTable);
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+      e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
     }
     setActiveDropTarget({ type: 'table', tableId });
   };
@@ -621,9 +663,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const blocked = isTableBlockedForDrop(targetTable);
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+      e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
     }
     if (!activeDropTarget || activeDropTarget.type !== 'table' || activeDropTarget.tableId !== tableId) {
       setActiveDropTarget({ type: 'table', tableId });
@@ -643,9 +685,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const blocked = isTableBlockedForDrop(targetTable);
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+      e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
     }
     setActiveDropTarget({ type: 'seat', tableId, seatNumber });
   };
@@ -654,9 +696,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const blocked = isTableBlockedForDrop(targetTable);
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
+      e.dataTransfer.dropEffect = blocked ? 'none' : 'move';
     }
     if (
       !activeDropTarget ||
@@ -695,6 +737,10 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     if (!rawData) return;
 
     const targetTable = tables.find((t) => t.id === tableId);
+    if (targetTable && isLandmarkTable(targetTable)) {
+      setLiveAnnouncement(`Cannot assign guests to landmark "${targetTable.name}".`);
+      return;
+    }
 
     if (rawData.startsWith('household:')) {
       const guestIds = rawData
@@ -706,9 +752,12 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
       if (targetTable) {
         const currentSeatedIds = new Set((targetTable.invitationCodes || []).map((g) => g.id));
-        const incomingCount = guestIds.filter((id) => !currentSeatedIds.has(id)).length;
-        const availableSeats = targetTable.capacity - currentSeatedIds.size;
-        if (incomingCount > availableSeats) {
+        const incomingChairs = guestIds
+          .filter((id) => !currentSeatedIds.has(id))
+          .reduce((sum, id) => sum + getIncomingRequiredChairs(id), 0);
+        const occupiedChairs = getTableOccupiedChairCount(targetTable.invitationCodes);
+        const availableSeats = Math.max(0, targetTable.capacity - occupiedChairs);
+        if (incomingChairs > availableSeats) {
           setLiveAnnouncement(
             `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${guestIds.length} household members.`
           );
@@ -726,14 +775,26 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
     const guestId = rawData;
     if (targetTable) {
-      const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
       const isGuestAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === guestId);
+      if (!isGuestAlreadyAtTable) {
+        const occupiedChairs = getTableOccupiedChairCount(targetTable.invitationCodes);
+        const availableSeats = Math.max(0, targetTable.capacity - occupiedChairs);
+        const requiredChairs = getIncomingRequiredChairs(guestId);
 
-      if (isFull && !isGuestAlreadyAtTable) {
-        setLiveAnnouncement(
-          `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
-        );
-        return;
+        if (availableSeats <= 0) {
+          setLiveAnnouncement(
+            `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
+          );
+          return;
+        }
+
+        if (requiredChairs > availableSeats) {
+          const draggedGuest = guestById.get(guestId);
+          setLiveAnnouncement(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${draggedGuest?.guestName || 'Guest'} (${requiredChairs} chairs needed).`
+          );
+          return;
+        }
       }
     }
 
@@ -742,9 +803,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
   // Helper to render seat positions around table
   const renderSeats = (table: SeatingTableDTO) => {
+    if (isLandmarkTable(table)) {
+      return null;
+    }
+
     const seats = [];
     const capacity = table.capacity;
-    const seatMap = resolveSeatAssignments(table.invitationCodes, capacity);
+    const seatMap = resolveDetailedSeatAssignments(table.invitationCodes, capacity);
+    const occupiedChairs = getTableOccupiedChairCount(table.invitationCodes);
     const isRound = table.shape === 'round';
     const isOneSided = isOneSidedTableShape(table.shape);
     const width = table.width || 120;
@@ -752,17 +818,18 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     const seatOffset = isRound || isOneSided ? 18 : 16;
 
     for (let i = 1; i <= capacity; i++) {
-      const assignedGuest = seatMap.get(i);
-      const dietaryBadges = assignedGuest
-        ? getDietaryBadges(assignedGuest.dietaryNotes, assignedGuest.extraFields)
-        : [];
+      const seatEntry = seatMap.get(i);
+      const assignedGuest = seatEntry?.guest;
+      const attendeeName = seatEntry?.attendeeName ?? assignedGuest?.guestName ?? '';
+      const isPlusOneSeat = Boolean(seatEntry?.isPlusOne);
+      const dietaryBadges = seatEntry ? seatEntry.dietaryBadges : [];
       const dietarySummary = dietaryBadges.map((b) => b.label).join(', ');
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =
         activeDropTarget?.tableId === table.id &&
         activeDropTarget?.type === 'seat' &&
         activeDropTarget?.seatNumber === i;
-      const isSeatDropDisabled = isSeatDropTarget && (table.invitationCodes?.length || 0) >= table.capacity;
+      const isSeatDropDisabled = isSeatDropTarget && occupiedChairs >= table.capacity;
 
       const { x: seatX, y: seatY } = computeSeatPosition({
         seatNumber: i,
@@ -773,6 +840,20 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         offset: seatOffset,
       });
 
+      const nameParts = attendeeName.trim().split(/\s+/).filter(Boolean);
+      const seatInitials =
+        nameParts.length > 0
+          ? `${nameParts[0][0] || ''}${nameParts[1]?.[0] || ''}`
+          : '?';
+
+      const seatAriaLabel = assignedGuest
+        ? isPlusOneSeat
+          ? `Seat ${i}: ${attendeeName} (+1 of ${assignedGuest.guestName})${dietarySummary ? `, Dietary: ${dietarySummary}` : ''}`
+          : dietarySummary
+            ? `Seat ${i}: ${assignedGuest.guestName}, Dietary: ${dietarySummary}`
+            : `Seat ${i}: ${assignedGuest.guestName}`
+        : `Seat ${i}: Empty`;
+
       seats.push(
         <React.Fragment key={i}>
           <button
@@ -781,13 +862,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             role="button"
             data-table-id={table.id}
             data-seat-number={i}
-            aria-label={
-              assignedGuest
-                ? dietarySummary
-                  ? `Seat ${i}: ${assignedGuest.guestName}, Dietary: ${dietarySummary}`
-                  : `Seat ${i}: ${assignedGuest.guestName}`
-                : `Seat ${i}: Empty`
-            }
+            data-is-plus-one={isPlusOneSeat ? 'true' : undefined}
+            aria-label={seatAriaLabel}
             onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
             onDragOver={(e) => handleSeatDragOver(e, table.id, i)}
             onDragLeave={(e) => handleSeatDragLeave(e, table.id, i)}
@@ -798,7 +874,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
               e.stopPropagation();
               if (assignedGuest) {
                 onUnassignGuest(assignedGuest.id);
-                setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
+                setLiveAnnouncement(`${attendeeName} unassigned from ${table.name} Seat ${i}`);
               } else {
                 onOpenSeatAssignModal?.(table.id, i);
               }
@@ -811,8 +887,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             title={
               assignedGuest
                 ? isMatch
-                  ? `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
-                  : `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
+                  ? `Seat ${i}: ${attendeeName}${isPlusOneSeat ? ` (+1 of ${assignedGuest.guestName})` : ''}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Click to unassign)`
+                  : `Seat ${i}: ${attendeeName}${isPlusOneSeat ? ` (+1 of ${assignedGuest.guestName})` : ''}${dietarySummary ? ` (${dietarySummary})` : ''} (Click or press Enter/Space/Delete to unassign)`
                 : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
             }
             className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
@@ -855,13 +931,26 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             {assignedGuest ? (
               <span
                 className="truncate px-0.5 text-[10px] before:content-[attr(data-initials)]"
-                data-initials={`${assignedGuest.guestName.split(' ')[0][0]}${assignedGuest.guestName.split(' ')[1]?.[0] || ''}`}
+                data-initials={seatInitials}
                 aria-hidden="true"
               />
             ) : (
               <span aria-hidden="true">{i}</span>
             )}
           </button>
+          {assignedGuest && isPlusOneSeat && (
+            <span
+              data-testid="seat-plus-one-badge"
+              aria-hidden="true"
+              className="absolute pointer-events-none px-1 min-w-[14px] h-[14px] rounded-full bg-indigo-700 text-white text-[8px] leading-[14px] font-bold border border-white shadow-2xs z-30"
+              style={{
+                left: `${seatX + 4}px`,
+                top: `${seatY - 16}px`,
+              }}
+            >
+              +1
+            </span>
+          )}
           {assignedGuest && dietaryBadges.length > 0 && (
             <span
               data-testid="seat-dietary-badge"
@@ -1016,24 +1105,27 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         </div>
 
         {tables.map((table) => {
-          const assignedCount = table.invitationCodes?.length || 0;
+          const isLandmark = isLandmarkTable(table);
+          const assignedCount = isLandmark ? 0 : getTableOccupiedChairCount(table.invitationCodes);
           const isSelected = selectedTableId === table.id;
-          const isOverCapacity = assignedCount > table.capacity;
-          const isFull = assignedCount >= table.capacity;
+          const isOverCapacity = !isLandmark && assignedCount > table.capacity;
+          const isFull = !isLandmark && assignedCount >= table.capacity;
           const hasMatchingGuest = isSearching && matchingTableIds.has(table.id);
           const isTableDropTarget = activeDropTarget?.tableId === table.id && activeDropTarget?.type === 'table';
-          const isDropDisabled = isTableDropTarget && isFull;
+          const isDropDisabled = isTableDropTarget && (isLandmark || isFull);
           const isDraggingThisTable = activeGesture?.mode === 'drag' && activeGesture.tableId === table.id;
           const isRotatingThisTable = activeGesture?.mode === 'rotate' && activeGesture.tableId === table.id;
           const isGestureActiveOnTable = isDraggingThisTable || isRotatingThisTable;
           const renderedX = isDraggingThisTable ? activeGesture.previewX : table.x;
           const renderedY = isDraggingThisTable ? activeGesture.previewY : table.y;
           const renderedRotation = isRotatingThisTable ? activeGesture.previewRotation : (table.rotation || 0);
+          const isCircularSurface = table.shape === 'round' || table.shape === 'cake';
 
           return (
             <React.Fragment key={table.id}>
               <div
                 data-table-id={table.id}
+                data-table-landmark={isLandmark ? 'true' : undefined}
                 data-is-drop-target={isTableDropTarget ? 'true' : undefined}
                 data-drop-disabled={isDropDisabled ? 'true' : undefined}
                 aria-disabled={isDropDisabled ? 'true' : undefined}
@@ -1053,7 +1145,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 onDrop={(e) => handleDropOnTable(e, table.id)}
                 className={`absolute cursor-move touch-none ${isGestureActiveOnTable ? 'transition-none' : 'transition-all'} transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-primary ${
                   isTableDropTarget
-                    ? isFull
+                    ? isDropDisabled
                       ? 'ring-4 ring-red-500 border-red-500 shadow-xl shadow-red-500/20 scale-[1.03] z-30 cursor-not-allowed'
                       : 'ring-4 ring-primary border-primary shadow-xl shadow-primary/20 scale-[1.03] z-30'
                     : isSelected
@@ -1071,25 +1163,35 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 }}
                 tabIndex={0}
                 role="button"
-                aria-label={`${table.name}, shape ${table.shape}, capacity ${table.capacity}, seated ${assignedCount}`}
+                aria-label={
+                  isLandmark
+                    ? `${table.name}, landmark ${getSeatingShapeLabel(table.shape)}, 0 seats`
+                    : `${table.name}, shape ${table.shape}, capacity ${table.capacity}, seated ${assignedCount}`
+                }
               >
-                {/* Table Surface */}
+                {/* Table or Landmark Surface */}
                 <div
                   className={`w-full h-full border-2 flex flex-col items-center justify-center p-2 pb-5 text-center shadow-md relative transition-colors ${
-                    table.shape === 'round' ? 'rounded-full' : ''
-                  } ${isTableDropTarget ? (isFull ? 'border-red-500' : 'border-primary') : ''}`}
+                    isCircularSurface ? 'rounded-full' : ''
+                  } ${isLandmark ? 'border-dashed' : ''} ${
+                    isTableDropTarget ? (isDropDisabled ? 'border-red-500' : 'border-primary') : ''
+                  }`}
                   style={{
                     backgroundColor: isOverCapacity || isDropDisabled
                       ? 'var(--floorplan-status-overcapacity-bg, #fef2f2)'
-                      : 'var(--floorplan-table-bg, #ffffff)',
+                      : isLandmark
+                        ? 'color-mix(in srgb, var(--floorplan-table-bg, #f8fafc) 92%, #64748b)'
+                        : 'var(--floorplan-table-bg, #ffffff)',
                     borderColor: isTableDropTarget
-                      ? isFull
+                      ? isDropDisabled
                         ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
                         : 'var(--color-primary, #B91C1C)'
                       : isOverCapacity
                         ? 'var(--floorplan-status-overcapacity-border, #ef4444)'
-                        : 'var(--floorplan-table-border, #d1d5db)',
-                    borderRadius: table.shape === 'round'
+                        : isLandmark
+                          ? '#64748b'
+                          : 'var(--floorplan-table-border, #d1d5db)',
+                    borderRadius: isCircularSurface
                       ? '9999px'
                       : 'var(--floorplan-table-radius, 0.75rem)',
                     color: isOverCapacity || isDropDisabled
@@ -1098,7 +1200,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   }}
                 >
                   <span className="font-bold text-xs truncate max-w-[90%]">{table.name}</span>
-                  {isOneSidedTableShape(table.shape) &&
+                  {!isLandmark &&
+                    isOneSidedTableShape(table.shape) &&
                     Array.from({ length: table.capacity }, (_, idx) => (
                       <span
                         key={idx}
@@ -1124,19 +1227,31 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 }}
               >
                 <div className="w-full h-full flex flex-col items-center justify-center pt-4 text-center relative">
-                  <span
-                    className="text-[10px] font-medium"
-                    style={{
-                      color: isOverCapacity
-                        ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
-                        : 'color-mix(in srgb, var(--color-foreground, #1f2937) 65%, transparent)',
-                    }}
-                  >
-                    {assignedCount} / {table.capacity} seats
-                  </span>
+                  {isLandmark ? (
+                    <span
+                      data-testid="table-landmark-badge"
+                      className="text-[10px] font-semibold uppercase tracking-wide"
+                      style={{
+                        color: 'color-mix(in srgb, var(--color-foreground, #1f2937) 75%, transparent)',
+                      }}
+                    >
+                      {getSeatingShapeLabel(table.shape)}
+                    </span>
+                  ) : (
+                    <span
+                      className="text-[10px] font-medium"
+                      style={{
+                        color: isOverCapacity
+                          ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
+                          : 'color-mix(in srgb, var(--color-foreground, #1f2937) 65%, transparent)',
+                      }}
+                    >
+                      {assignedCount} / {table.capacity} seats
+                    </span>
+                  )}
 
                   {/* Over capacity / Full capacity warning badges */}
-                  {isOverCapacity ? (
+                  {!isLandmark && isOverCapacity ? (
                     <span
                       data-testid="table-overcapacity-badge"
                       className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md animate-bounce"
@@ -1146,7 +1261,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                     >
                       Over capacity!
                     </span>
-                  ) : isFull ? (
+                  ) : !isLandmark && isFull ? (
                     <span
                       data-testid="table-full-badge"
                       className="absolute -top-2 -right-2 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md"
@@ -1169,8 +1284,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   )}
                 </div>
 
-                {/* Individual Seat Circles around table */}
-                {renderSeats(table)}
+                {/* Individual Seat Circles around table (omitted on landmarks) */}
+                {!isLandmark && renderSeats(table)}
 
                 {/* Rotation Controls and Handle for Selected Table */}
                 {isSelected && (
