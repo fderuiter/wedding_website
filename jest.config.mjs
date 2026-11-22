@@ -45,6 +45,7 @@ const config = {
     '^@/features/(.*)$': '<rootDir>/src/features/$1',
     '^@/core/(.*)$': '<rootDir>/src/core/$1',
     '^@/hooks/(.*)$': '<rootDir>/src/hooks/$1',
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/e2e/', '.skip.tsx$'],
 };

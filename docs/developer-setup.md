@@ -150,7 +150,7 @@ Before committing code or submitting pull requests, run local quality checks to 
   # or
   npm run type-check
   ```
-  Validates `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` with strict compiler flags (`strict`, `noUnusedLocals`, `noUnusedParameters`).
+  Validates `tsconfig.json`, `tsconfig.build.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` with strict compiler flags (`strict`, `noUnusedLocals`, `noUnusedParameters`).
 
 - **ESLint, Unused Exports & Static Checks:**
   ```bash

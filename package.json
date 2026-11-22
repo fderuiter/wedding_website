@@ -21,8 +21,8 @@
     "lint:migrations": "tsx scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
-    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
+    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.build.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json && tsc --noEmit -p tsconfig.scripts.json",
     "pretest": "node scripts/pretest.mjs",
     "pretest:watch": "npm run pretest",
     "pretest:cov": "npm run pretest",
@@ -51,7 +51,7 @@
     "check:spec-contracts": "npx tsx scripts/verify-spec-contracts.ts",
     "check:static": "npm run check:env-docs && npm run check:runbooks && npm run check:identifiers && npm run check:action-pins && npm run check:links && npm run check:spec-contracts && npm run check:prisma && npm run lint:migrations && npm run check:doc-sync && npm run check:setup-guides",
     "check:audit": "npm audit --omit=dev --audit-level=high",
-    "docs:dev": "npx tsx scripts/generate-portal.ts && vitepress dev docs-portal",
+    "docs:dev": "npx tsx scripts/generate-portal.ts --watch --serve",
     "docs:build": "npx tsx scripts/generate-portal.ts && vitepress build docs-portal",
     "docs:preview": "vitepress preview docs-portal",
     "quality": "npx tsx scripts/check-quality.ts",
@@ -97,10 +97,12 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
+    "@babel/preset-env": "^7.29.14",
+    "@babel/preset-react": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.64.1",
     "@storybook/addon-essentials": "^8.6.14",
-    "@storybook/nextjs": "^8.6.19",
     "@storybook/react": "^8.6.19",
     "@storybook/react-webpack5": "^8.6.19",
     "@stylistic/eslint-plugin": "^5.10.0",
@@ -148,9 +150,6 @@
   "overrides": {
     "archiver": {
       "minimatch": "^11.0.8"
-    },
-    "@storybook/nextjs": {
-      "next": "$next"
     },
     "effect": "^3.22.5",
     "image-size": "^2.1.0",

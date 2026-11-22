@@ -227,6 +227,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'prisma.config.ts',
     'package.json',
     'tsconfig.json',
+    'tsconfig.build.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'eslint.config.mjs',
@@ -261,6 +262,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
   const tsconfigRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
+  const tsconfigBuildRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.build.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
   const testStandaloneRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-standalone.mjs'), 'utf8');
@@ -725,9 +727,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
   }
 
-  // 6. AGENTS.md tsconfig.json exclude list & check-quality.ts step order
+  // 6. AGENTS.md tsconfig.json & tsconfig.build.json exclude lists & check-quality.ts step order
   const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
   const tsconfigExcludes = tsconfig.exclude ?? [];
+  const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as { exclude?: string[] };
+  const tsconfigBuildExcludes = tsconfigBuild.exclude ?? [];
   const agentsTsSection = extractMarkdownSection(
     agentsRaw,
     /^##\s+3\.\s+TypeScript Configuration Split\b/,
@@ -737,6 +741,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (!agentsTsSection.includes(`\`${excludePattern}\``)) {
       errors.push(
         `AGENTS.md: Missing tsconfig.json exclude entry "${excludePattern}" in TypeScript Configuration Split section`
+      );
+    }
+  }
+  for (const excludePattern of tsconfigBuildExcludes) {
+    if (!agentsTsSection.includes(`\`${excludePattern}\``)) {
+      errors.push(
+        `AGENTS.md: Missing tsconfig.build.json exclude entry "${excludePattern}" in TypeScript Configuration Split section`
       );
     }
   }
