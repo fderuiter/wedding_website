@@ -45,6 +45,45 @@ describe('RegistryCard', () => {
     expect(badge).toHaveTextContent('Most Wanted');
   });
 
+  it('displays requested and remaining unit count badge when quantity > 1 and hides it when quantity === 1', () => {
+    const { rerender } = render(<RegistryCard item={mockItem} onClick={() => {}} />);
+    expect(screen.queryByTestId('registry-card-unit-badge')).not.toBeInTheDocument();
+
+    const multiQtyItem: RegistryItem = {
+      ...mockItem,
+      price: 50,
+      quantity: 3,
+      amountContributed: 50,
+      purchased: false,
+    };
+    rerender(<RegistryCard item={multiQtyItem} onClick={() => {}} />);
+    expect(screen.getByTestId('registry-card-unit-badge')).toHaveTextContent('2 of 3 remaining');
+  });
+
+  it('shows unconfigured warning badge for physical group gifts without Stripe or payment handle unless site default handle is provided', () => {
+    const physicalGroupItem: RegistryItem = {
+      ...mockItem,
+      itemType: 'PHYSICAL',
+      isGroupGift: true,
+      paymentHandle: undefined,
+    };
+    const { rerender } = render(
+      <RegistryCard item={physicalGroupItem} onClick={() => {}} cardCheckoutEnabled={false} />
+    );
+    expect(screen.getByTestId('unconfigured-fund-card-warning')).toBeInTheDocument();
+
+    rerender(
+      <RegistryCard
+        item={physicalGroupItem}
+        onClick={() => {}}
+        cardCheckoutEnabled={false}
+        defaultPaymentHandle="@site-default"
+        defaultPaymentHandleType="Venmo"
+      />
+    );
+    expect(screen.queryByTestId('unconfigured-fund-card-warning')).not.toBeInTheDocument();
+  });
+
   it('does not render Most Wanted badge when isMostWanted is false or undefined', () => {
     render(<RegistryCard item={mockItem} onClick={() => {}} />);
 

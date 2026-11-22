@@ -609,6 +609,15 @@ export default function AdminSettingsPage() {
             resendApiKey: undefined,
             sendgridApiKey: undefined,
             twilioAuthToken: undefined,
+            shippingRecipientName: undefined,
+            shippingAddressLine1: undefined,
+            shippingAddressLine2: undefined,
+            shippingCity: undefined,
+            shippingState: undefined,
+            shippingZip: undefined,
+            shippingCountry: undefined,
+            shippingPhone: undefined,
+            shippingDeliveryNotes: undefined,
             weddingDate: localConfig.weddingDate ? new Date(localConfig.weddingDate).toISOString() : new Date().toISOString()
           }}
           entityId={selectedProfileId}
@@ -758,6 +767,188 @@ export default function AdminSettingsPage() {
                     <Label>Longitude</Label>
                     <Input required type="number" step="any" name="longitude" value={localConfig.longitude || 0} onChange={handleChange} />
                   </FormGroup>
+                </div>
+              </section>
+
+              <section
+                aria-labelledby="registry-shipping-settings-heading"
+                className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4"
+              >
+                <div>
+                  <h2 id="registry-shipping-settings-heading" className="text-xl font-semibold">
+                    Registry Shipping &amp; Payment Defaults
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Share a private delivery address with authenticated guests on external store gifts and set a site-wide fallback peer-to-peer payment handle for cash funds and group gifts.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormGroup>
+                    <Label htmlFor="shipping-recipient-name">Shipping Recipient Name</Label>
+                    <Input
+                      id="shipping-recipient-name"
+                      type="text"
+                      name="shippingRecipientName"
+                      maxLength={255}
+                      value={localConfig.shippingRecipientName || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. Alex & Jordan Rivera"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-phone">Delivery Phone Number</Label>
+                    <Input
+                      id="shipping-phone"
+                      type="tel"
+                      name="shippingPhone"
+                      maxLength={50}
+                      value={localConfig.shippingPhone || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. (555) 234-5678"
+                    />
+                    <FormMessage>
+                      Optional carrier contact phone shown only to authenticated guests and admins.
+                    </FormMessage>
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-address-line1">Shipping Street Address</Label>
+                    <Input
+                      id="shipping-address-line1"
+                      type="text"
+                      name="shippingAddressLine1"
+                      maxLength={255}
+                      value={localConfig.shippingAddressLine1 || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. 742 Evergreen Terrace"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-address-line2">Apartment, Suite, or Unit</Label>
+                    <Input
+                      id="shipping-address-line2"
+                      type="text"
+                      name="shippingAddressLine2"
+                      maxLength={255}
+                      value={localConfig.shippingAddressLine2 || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. Apt 4B (optional)"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-city">Shipping City</Label>
+                    <Input
+                      id="shipping-city"
+                      type="text"
+                      name="shippingCity"
+                      maxLength={120}
+                      value={localConfig.shippingCity || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. Portland"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-state">Shipping State / Province</Label>
+                    <Input
+                      id="shipping-state"
+                      type="text"
+                      name="shippingState"
+                      maxLength={120}
+                      value={localConfig.shippingState || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. OR"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-zip">Shipping Postal / Zip Code</Label>
+                    <Input
+                      id="shipping-zip"
+                      type="text"
+                      name="shippingZip"
+                      maxLength={40}
+                      value={localConfig.shippingZip || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. 97205"
+                    />
+                  </FormGroup>
+
+                  <FormGroup>
+                    <Label htmlFor="shipping-country">Shipping Country</Label>
+                    <Input
+                      id="shipping-country"
+                      type="text"
+                      name="shippingCountry"
+                      maxLength={120}
+                      value={localConfig.shippingCountry || ''}
+                      onChange={handleChange}
+                      placeholder="e.g. United States"
+                    />
+                  </FormGroup>
+                </div>
+
+                <FormGroup>
+                  <Label htmlFor="shipping-delivery-notes">Delivery Notes &amp; Gate Instructions</Label>
+                  <Textarea
+                    id="shipping-delivery-notes"
+                    name="shippingDeliveryNotes"
+                    rows={2}
+                    maxLength={500}
+                    value={localConfig.shippingDeliveryNotes || ''}
+                    onChange={handleChange}
+                    placeholder="e.g. Leave packages on covered front porch; gate code #1234"
+                  />
+                  <FormMessage>
+                    Included when authenticated guests view or copy your shipping address on external registry items.
+                  </FormMessage>
+                </FormGroup>
+
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                      Default Peer-to-Peer Payment Handle
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Used automatically for cash funds and physical group gifts that do not define a custom item-level handle.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormGroup>
+                      <Label htmlFor="default-payment-handle-type">Default Payment Service</Label>
+                      <Select
+                        id="default-payment-handle-type"
+                        name="defaultPaymentHandleType"
+                        value={localConfig.defaultPaymentHandleType || ''}
+                        onChange={handleChange}
+                      >
+                        <option value="">None</option>
+                        <option value="Venmo">Venmo</option>
+                        <option value="PayPal">PayPal</option>
+                        <option value="Cash App">Cash App</option>
+                        <option value="Zelle">Zelle</option>
+                        <option value="Custom">Custom Link</option>
+                      </Select>
+                    </FormGroup>
+
+                    <FormGroup>
+                      <Label htmlFor="default-payment-handle">Default Payment Handle / Link</Label>
+                      <Input
+                        id="default-payment-handle"
+                        type="text"
+                        name="defaultPaymentHandle"
+                        maxLength={255}
+                        value={localConfig.defaultPaymentHandle || ''}
+                        onChange={handleChange}
+                        placeholder="e.g. @couple-venmo or https://paypal.me/couple"
+                      />
+                    </FormGroup>
+                  </div>
                 </div>
               </section>
 

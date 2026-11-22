@@ -50,6 +50,8 @@ describe('POST /api/registry/contribute', () => {
     purchased: false,
     isGroupGift: true,
     isSample: false,
+    paymentHandleType: 'Venmo' as const,
+    paymentHandle: '@happy-couple',
     image: { id: 'img-1', url: '/image.jpg' },
     contributors: [],
   };

@@ -918,5 +918,90 @@ describe('AdminSettingsPage Unsaved Draft Guard & Secret Storage Safety', () => 
 
     sessionSetSpy.mockRestore();
   });
+
+  it('renders Registry Shipping & Payment Defaults inputs, passes axe, and submits shipping and default handle fields on save', async () => {
+    let savedBody: Record<string, unknown> | null = null;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/admin/settings')) {
+        if (init?.method === 'PUT') {
+          savedBody = JSON.parse(String(init.body || '{}'));
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ ...mockConfig, ...savedBody }),
+          });
+        }
+        if (url.includes('list=true')) {
+          return Promise.resolve({ ok: true, json: async () => [mockConfig] });
+        }
+        return Promise.resolve({ ok: true, json: async () => mockConfig });
+      }
+      return Promise.reject(new Error(`Unhandled: ${url}`));
+    });
+
+    const { container } = render(<AdminSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Shipping Recipient Name/i), {
+      target: { name: 'shippingRecipientName', value: 'Alice & Bob' },
+    });
+    fireEvent.change(screen.getByLabelText(/Delivery Phone Number/i), {
+      target: { name: 'shippingPhone', value: '(555) 867-5309' },
+    });
+    fireEvent.change(screen.getByLabelText(/Shipping Street Address/i), {
+      target: { name: 'shippingAddressLine1', value: '742 Evergreen Terrace' },
+    });
+    fireEvent.change(screen.getByLabelText(/Apartment, Suite, or Unit/i), {
+      target: { name: 'shippingAddressLine2', value: 'Apt 2B' },
+    });
+    fireEvent.change(screen.getByLabelText(/Shipping City/i), {
+      target: { name: 'shippingCity', value: 'Portland' },
+    });
+    fireEvent.change(screen.getByLabelText(/Shipping State \/ Province/i), {
+      target: { name: 'shippingState', value: 'OR' },
+    });
+    fireEvent.change(screen.getByLabelText(/Shipping Postal \/ Zip Code/i), {
+      target: { name: 'shippingZip', value: '97205' },
+    });
+    fireEvent.change(screen.getByLabelText(/Shipping Country/i), {
+      target: { name: 'shippingCountry', value: 'United States' },
+    });
+    fireEvent.change(screen.getByLabelText(/Delivery Notes & Gate Instructions/i), {
+      target: { name: 'shippingDeliveryNotes', value: 'Gate code #4242' },
+    });
+    fireEvent.change(screen.getByLabelText(/Default Payment Service/i), {
+      target: { name: 'defaultPaymentHandleType', value: 'Venmo' },
+    });
+    fireEvent.change(screen.getByLabelText(/Default Payment Handle \/ Link/i), {
+      target: { name: 'defaultPaymentHandle', value: '@alice-and-bob' },
+    });
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Settings/i }));
+
+    await waitFor(() => {
+      expect(savedBody).not.toBeNull();
+    });
+
+    expect(savedBody).toEqual(
+      expect.objectContaining({
+        shippingRecipientName: 'Alice & Bob',
+        shippingPhone: '(555) 867-5309',
+        shippingAddressLine1: '742 Evergreen Terrace',
+        shippingAddressLine2: 'Apt 2B',
+        shippingCity: 'Portland',
+        shippingState: 'OR',
+        shippingZip: '97205',
+        shippingCountry: 'United States',
+        shippingDeliveryNotes: 'Gate code #4242',
+        defaultPaymentHandleType: 'Venmo',
+        defaultPaymentHandle: '@alice-and-bob',
+      })
+    );
+  }, 15000);
 });
 

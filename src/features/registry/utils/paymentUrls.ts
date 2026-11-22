@@ -100,3 +100,82 @@ export function getPaymentUrl(
 
   return null;
 }
+
+export interface EffectivePaymentHandle {
+  paymentHandleType: string | null;
+  paymentHandle: string | null;
+  source: 'item' | 'default' | 'none';
+}
+
+/**
+ * Resolves the effective peer-to-peer payment handle for a group gift or fund,
+ * preferring an item-specific handle when set and falling back to site-wide defaults.
+ */
+export function resolveEffectivePaymentHandle(
+  item?: { paymentHandleType?: string | null; paymentHandle?: string | null } | null,
+  defaults?: { defaultPaymentHandleType?: string | null; defaultPaymentHandle?: string | null } | null
+): EffectivePaymentHandle {
+  const itemHandle = item?.paymentHandle?.trim() || '';
+  if (itemHandle) {
+    return {
+      paymentHandleType: item?.paymentHandleType?.trim() || null,
+      paymentHandle: itemHandle,
+      source: 'item',
+    };
+  }
+
+  const defaultHandle = defaults?.defaultPaymentHandle?.trim() || '';
+  if (defaultHandle) {
+    return {
+      paymentHandleType: defaults?.defaultPaymentHandleType?.trim() || null,
+      paymentHandle: defaultHandle,
+      source: 'default',
+    };
+  }
+
+  return {
+    paymentHandleType: null,
+    paymentHandle: null,
+    source: 'none',
+  };
+}
+
+/**
+ * Formats an authenticated registry shipping address into multi-line plain text for display and clipboard copying.
+ */
+export function formatRegistryShippingAddress(shipping: {
+  recipientName?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  deliveryNotes?: string | null;
+}): string {
+  const lines: string[] = [];
+  const recipient = shipping.recipientName?.trim() || '';
+  const line1 = shipping.addressLine1?.trim() || '';
+  const line2 = shipping.addressLine2?.trim() || '';
+  const city = shipping.city?.trim() || '';
+  const state = shipping.state?.trim() || '';
+  const zip = shipping.zip?.trim() || '';
+  const country = shipping.country?.trim() || '';
+  const phone = shipping.phone?.trim() || '';
+  const notes = shipping.deliveryNotes?.trim() || '';
+
+  if (recipient) lines.push(recipient);
+  if (line1) lines.push(line1);
+  if (line2) lines.push(line2);
+
+  const cityState = [city, state].filter(Boolean).join(', ');
+  const localityLine = [cityState, zip].filter(Boolean).join(' ');
+  if (localityLine) lines.push(localityLine);
+
+  if (country) lines.push(country);
+  if (phone) lines.push(`Phone: ${phone}`);
+  if (notes) lines.push(`Delivery Notes: ${notes}`);
+
+  return lines.join('\n');
+}

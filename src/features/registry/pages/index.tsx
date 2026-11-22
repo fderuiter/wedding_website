@@ -54,6 +54,9 @@ function RegistryPageContent() {
     isAdmin,
     cardCheckoutEnabled,
     stripePublishableKey,
+    defaultPaymentHandleType,
+    defaultPaymentHandle,
+    shippingAddress,
     filteredItems,
     visibleItems,
     categories,
@@ -294,6 +297,8 @@ function RegistryPageContent() {
                   onClick={handleCardClick}
                   isAdmin={isAdmin}
                   cardCheckoutEnabled={cardCheckoutEnabled}
+                  defaultPaymentHandleType={defaultPaymentHandleType}
+                  defaultPaymentHandle={defaultPaymentHandle}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                 />
@@ -358,6 +363,9 @@ function RegistryPageContent() {
               onContribute={handleContribute}
               cardCheckoutEnabled={cardCheckoutEnabled}
               stripePublishableKey={stripePublishableKey}
+              defaultPaymentHandleType={defaultPaymentHandleType}
+              defaultPaymentHandle={defaultPaymentHandle}
+              shippingAddress={shippingAddress}
               isAdmin={isAdmin}
             />
           )}

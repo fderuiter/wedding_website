@@ -76,6 +76,9 @@ export const ContributorSchema = z.object({
   thankYouNote: z.string().nullable().optional(),
   stripePaymentIntentId: z.string().nullable().optional(),
   stripeChargeId: z.string().nullable().optional(),
+  retailerOrderNumber: z.string().nullable().optional(),
+  carrier: z.string().nullable().optional(),
+  trackingNumber: z.string().nullable().optional(),
   transactionTimestamp: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
   confirmationEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
   alertEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
@@ -122,6 +125,9 @@ export const ContributionSchema = z.object({
   message: z.string().max(1000, 'Personal note must be under 1000 characters.').optional().nullable(),
   coverFee: z.boolean().optional().default(false),
   paymentIntentId: z.string().trim().optional(),
+  retailerOrderNumber: optionalNullableTrimmedField(120, 'Retailer order number'),
+  carrier: optionalNullableTrimmedField(100, 'Carrier'),
+  trackingNumber: optionalNullableTrimmedField(120, 'Tracking number'),
 }, { message: 'Invalid request body.' }).superRefine((data, ctx) => {
   const resolvedName = data.name || data.purchaserName;
   if (!resolvedName || resolvedName.trim().length === 0 || resolvedName.trim().length > 100) {
@@ -133,9 +139,20 @@ export const ContributionSchema = z.object({
   }
 }).transform((data) => {
   const resolvedName = (data.name || data.purchaserName || '').trim();
+  const normalizeOptional = (value?: string | null) =>
+    value && value.trim().length > 0 ? value.trim() : undefined;
   return {
     ...data,
     name: resolvedName,
+    ...(data.retailerOrderNumber !== undefined
+      ? { retailerOrderNumber: normalizeOptional(data.retailerOrderNumber) }
+      : {}),
+    ...(data.carrier !== undefined
+      ? { carrier: normalizeOptional(data.carrier) }
+      : {}),
+    ...(data.trackingNumber !== undefined
+      ? { trackingNumber: normalizeOptional(data.trackingNumber) }
+      : {}),
   };
 });
 

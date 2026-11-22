@@ -126,6 +126,44 @@ describe('RegistryItemForm', () => {
     });
   });
 
+  it('exposes payment handle fields and site default fallback hint on physical group gifts', async () => {
+    const onSubmit = jest.fn().mockResolvedValue(undefined);
+    render(
+      <RegistryItemForm
+        mode="add"
+        onSubmit={onSubmit}
+        cardCheckoutEnabled={false}
+        defaultPaymentHandleType="Venmo"
+        defaultPaymentHandle="@site-default-venmo"
+      />
+    );
+
+    expect(screen.queryByLabelText(/Payment Service/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Allow Group Gifting/i));
+
+    expect(screen.getByLabelText(/Payment Service/i)).toBeInTheDocument();
+    expect(screen.getByTestId('default-payment-handle-hint')).toHaveTextContent('@site-default-venmo');
+
+    fireEvent.change(screen.getByLabelText(/Item Name/i), { target: { value: 'Stand Mixer' } });
+    fireEvent.change(screen.getByLabelText(/Price/), { target: { value: '400' } });
+    fireEvent.change(screen.getByLabelText(/Category/), { target: { value: 'Kitchen' } });
+    fireEvent.change(screen.getByLabelText(/Payment Service/i), { target: { value: 'PayPal' } });
+    fireEvent.change(screen.getByLabelText(/Payment Handle/i), { target: { value: 'https://paypal.me/couple' } });
+
+    fireEvent.submit(screen.getByTestId('form'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemType: 'PHYSICAL',
+        name: 'Stand Mixer',
+        isGroupGift: true,
+        paymentHandleType: 'PayPal',
+        paymentHandle: 'https://paypal.me/couple',
+      })
+    );
+  });
+
   it('supports toggling Mark as Most Wanted and setting Display Position / Order', async () => {
     const onSubmit = jest.fn().mockResolvedValue(undefined);
     render(<RegistryItemForm mode="add" onSubmit={onSubmit} />);

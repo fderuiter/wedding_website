@@ -10,6 +10,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
 import { dispatchContributionNotifications } from '../notifications';
+import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
@@ -24,7 +25,19 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, name, email, amount, code, message, coverFee, paymentIntentId } = parseResult.data;
+  const {
+    itemId,
+    name,
+    email,
+    amount,
+    code,
+    message,
+    coverFee,
+    paymentIntentId,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
+  } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
   if (targetItem && targetItem.isSample) {
@@ -39,12 +52,15 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const isFund =
     targetItem?.itemType === 'CASH_FUND' || targetItem?.itemType === 'EXPERIENCE_FUND';
-  const hasPaymentHandle = Boolean(targetItem?.paymentHandle && targetItem.paymentHandle.trim());
+  const isPayableGroupGift = Boolean(isFund || targetItem?.isGroupGift);
+  const effectiveHandle = resolveEffectivePaymentHandle(targetItem, config);
 
-  if (isFund && !paymentIntentId && !hasPaymentHandle) {
+  if (isPayableGroupGift && !paymentIntentId && !effectiveHandle.paymentHandle) {
     throw new ApiError(
       400,
-      'Direct transfer is not available for this fund because no payment handle is configured.'
+      isFund
+        ? 'Direct transfer is not available for this fund because no payment handle is configured.'
+        : 'Direct transfer is not available for this group gift because no payment handle is configured.'
     );
   }
 
@@ -56,7 +72,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  const effectiveCoverFee = isFund && !paymentIntentId ? false : Boolean(coverFee);
+  const effectiveCoverFee = isPayableGroupGift && !paymentIntentId ? false : Boolean(coverFee);
 
   let stripePaymentIntentId: string | null = null;
   let stripeChargeId: string | null = null;
@@ -106,6 +122,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     code: finalCode,
     message,
     coverFee: effectiveCoverFee,
+    ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
+    ...(carrier ? { carrier } : {}),
+    ...(trackingNumber ? { trackingNumber } : {}),
     ...(stripePaymentIntentId
       ? { stripePaymentIntentId, stripeChargeId, transactionTimestamp }
       : {}),
@@ -123,6 +142,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       coverFee: effectiveCoverFee,
       stripePaymentIntentId,
       transactionTimestamp,
+      ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
+      ...(carrier ? { carrier } : {}),
+      ...(trackingNumber ? { trackingNumber } : {}),
     },
     config,
     requestUrl: request.url,

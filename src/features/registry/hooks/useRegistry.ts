@@ -5,7 +5,7 @@ import type { SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem, PaginatedRegistryItems } from '../types';
+import { RegistryItem, PaginatedRegistryItems, OrderTrackingDetails } from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
 
 import { apiClient } from '@/lib/apiClient';
@@ -18,6 +18,7 @@ import {
   REGISTRY_MAX_CATALOG_LIMIT,
 } from '@/utils/registryPagination';
 import { useRegistryCapabilities } from './useRegistryCapabilities';
+import { getItemTotalTargetAmount } from '../lib/registryStatusUtils';
 
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 
@@ -34,18 +35,23 @@ interface ContributeVariables {
   coverFee?: boolean;
   email?: string | null;
   paymentIntentId?: string;
+  retailerOrderNumber?: string;
+  carrier?: string;
+  trackingNumber?: string;
 }
 
 function applyOptimisticContribution(item: RegistryItem, variables: ContributeVariables): RegistryItem {
   if (item.id !== variables.itemId) return item;
+  const totalTargetAmount = getItemTotalTargetAmount(item);
+  const newAmount = (item.amountContributed || 0) + variables.amount;
   if (item.isGroupGift) {
-    const newAmount = item.amountContributed + variables.amount;
     const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
+    const isPayableGroupGift = Boolean(isFund || item.isGroupGift);
     const effectiveCoverFee =
-      isFund && !variables.paymentIntentId ? false : (variables.coverFee ?? false);
+      isPayableGroupGift && !variables.paymentIntentId ? false : (variables.coverFee ?? false);
     return {
       ...item,
-      amountContributed: Math.min(item.price, newAmount),
+      amountContributed: Math.min(totalTargetAmount, newAmount),
       contributors: [
         ...item.contributors,
         {
@@ -64,13 +70,16 @@ function applyOptimisticContribution(item: RegistryItem, variables: ContributeVa
           transactionTimestamp: new Date().toISOString(),
         },
       ],
-      purchased: newAmount >= item.price,
+      purchased: newAmount >= totalTargetAmount,
     };
   }
   return {
     ...item,
-    purchased: true,
-    purchaserName: variables.purchaserName,
+    amountContributed: Math.min(totalTargetAmount, newAmount),
+    purchased: newAmount >= totalTargetAmount,
+    purchaserName: item.purchaserName
+      ? `${item.purchaserName}, ${variables.purchaserName}`
+      : variables.purchaserName,
   };
 }
 
@@ -97,9 +106,15 @@ export function useRegistry() {
   const {
     cardCheckoutEnabled: detectedCardCheckoutEnabled,
     stripePublishableKey,
+    defaultPaymentHandleType: detectedDefaultPaymentHandleType,
+    defaultPaymentHandle: detectedDefaultPaymentHandle,
+    shippingAddress: detectedShippingAddress,
     isCapabilitiesLoading,
   } = useRegistryCapabilities();
   const cardCheckoutEnabled = isCapabilitiesLoading ? undefined : detectedCardCheckoutEnabled;
+  const defaultPaymentHandleType = isCapabilitiesLoading ? null : detectedDefaultPaymentHandleType;
+  const defaultPaymentHandle = isCapabilitiesLoading ? null : detectedDefaultPaymentHandle;
+  const shippingAddress = isCapabilitiesLoading ? null : detectedShippingAddress;
   const [selectedItem, setSelectedItem] = useState<RegistryItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(REGISTRY_INITIAL_VISIBLE_ITEMS);
@@ -220,8 +235,32 @@ export function useRegistry() {
   }, []);
 
   const { mutate: contribute } = useMutation({
-    mutationFn: async ({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }: ContributeVariables) => {
-      return apiClient.post('/api/registry/contribute', { itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId });
+    mutationFn: async ({
+      itemId,
+      purchaserName,
+      amount,
+      code,
+      message,
+      coverFee,
+      email,
+      paymentIntentId,
+      retailerOrderNumber,
+      carrier,
+      trackingNumber,
+    }: ContributeVariables) => {
+      return apiClient.post('/api/registry/contribute', {
+        itemId,
+        purchaserName,
+        amount,
+        code,
+        message,
+        coverFee,
+        email,
+        paymentIntentId,
+        ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
+        ...(carrier ? { carrier } : {}),
+        ...(trackingNumber ? { trackingNumber } : {}),
+      });
     },
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ['registry-items'] });
@@ -419,17 +458,33 @@ export function useRegistry() {
     message?: string,
     coverFee?: boolean,
     email?: string,
-    paymentIntentId?: string
+    paymentIntentId?: string,
+    orderDetails?: OrderTrackingDetails
   ) => {
     return new Promise<void>((resolve, reject) => {
-      contribute({ itemId, purchaserName, amount, code, message, coverFee, email, paymentIntentId }, {
-        onSuccess: () => {
-          resolve();
+      contribute(
+        {
+          itemId,
+          purchaserName,
+          amount,
+          code,
+          message,
+          coverFee,
+          email,
+          paymentIntentId,
+          retailerOrderNumber: orderDetails?.retailerOrderNumber || undefined,
+          carrier: orderDetails?.carrier || undefined,
+          trackingNumber: orderDetails?.trackingNumber || undefined,
         },
-        onError: (error) => {
-          reject(error);
+        {
+          onSuccess: () => {
+            resolve();
+          },
+          onError: (error) => {
+            reject(error);
+          },
         }
-      });
+      );
     });
   }, [contribute]);
 
@@ -463,6 +518,9 @@ export function useRegistry() {
     isAdmin,
     cardCheckoutEnabled,
     stripePublishableKey,
+    defaultPaymentHandleType,
+    defaultPaymentHandle,
+    shippingAddress,
     filteredItems,
     visibleItems,
     categories,

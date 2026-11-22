@@ -315,6 +315,9 @@ class RegistryRepository implements IRegistryRepository {
       stripePaymentIntentId?: string | null;
       stripeChargeId?: string | null;
       transactionTimestamp?: Date | string | null;
+      retailerOrderNumber?: string | null;
+      carrier?: string | null;
+      trackingNumber?: string | null;
     }
   ) {
     const runTransaction = async (txClient: any) => {
@@ -385,13 +388,23 @@ class RegistryRepository implements IRegistryRepository {
         });
       }
 
-      const priceCents = Math.round(item.price * 100);
+      const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
+      const quantity = isFund ? 1 : Math.max(1, Math.floor(item.quantity || 1));
+      const unitPriceCents = Math.round(item.price * 100);
+      const totalTargetCents = unitPriceCents * quantity;
       const contributedCents = Math.round(item.amountContributed * 100);
-      const remainingCents = priceCents - contributedCents;
+      const remainingCents = totalTargetCents - contributedCents;
       const contributionCents = Math.round(contribution.amount * 100);
 
       if (contributionCents > remainingCents) {
         throw new Error('Contribution cannot be greater than the remaining amount.');
+      }
+
+      const isGroupGift = Boolean(isFund || item.isGroupGift);
+      if (!isGroupGift && unitPriceCents > 0) {
+        if (contributionCents < unitPriceCents || contributionCents % unitPriceCents !== 0) {
+          throw new ApiError(400, 'Contribution amount must match a whole number of available units.');
+        }
       }
 
       const coverFee = Boolean(contribution.coverFee);
@@ -402,13 +415,34 @@ class RegistryRepository implements IRegistryRepository {
 
       const messageToSave = contribution.message && contribution.message.trim() ? contribution.message.trim() : null;
       const emailToSave = contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
+      const retailerOrderNumberToSave =
+        contribution.retailerOrderNumber && contribution.retailerOrderNumber.trim()
+          ? contribution.retailerOrderNumber.trim()
+          : null;
+      const carrierToSave =
+        contribution.carrier && contribution.carrier.trim()
+          ? contribution.carrier.trim()
+          : null;
+      const trackingNumberToSave =
+        contribution.trackingNumber && contribution.trackingNumber.trim()
+          ? contribution.trackingNumber.trim()
+          : null;
       const transactionDate = contribution.transactionTimestamp ? new Date(contribution.transactionTimestamp) : new Date();
+
+      const updatedPurchaserName = !isGroupGift
+        ? item.purchaserName
+          ? `${item.purchaserName}, ${finalName}`
+          : finalName
+        : item.purchaserName;
 
       const updatedItem = await txClient.registryItem.update({
         where: { id: itemId },
         data: {
           amountContributed: newTotal,
-          purchased: newTotalCents >= priceCents,
+          purchased: newTotalCents >= totalTargetCents,
+          ...(!isGroupGift && updatedPurchaserName !== undefined
+            ? { purchaserName: updatedPurchaserName }
+            : {}),
           contributors: {
             create: {
               name: finalName,
@@ -418,6 +452,9 @@ class RegistryRepository implements IRegistryRepository {
               feeAmount,
               message: messageToSave,
               date: transactionDate,
+              ...(retailerOrderNumberToSave ? { retailerOrderNumber: retailerOrderNumberToSave } : {}),
+              ...(carrierToSave ? { carrier: carrierToSave } : {}),
+              ...(trackingNumberToSave ? { trackingNumber: trackingNumberToSave } : {}),
               ...(contribution.stripePaymentIntentId ? { stripePaymentIntentId: contribution.stripePaymentIntentId } : {}),
               ...(contribution.stripeChargeId ? { stripeChargeId: contribution.stripeChargeId } : {}),
               ...(contribution.transactionTimestamp ? { transactionTimestamp: new Date(contribution.transactionTimestamp) } : {}),

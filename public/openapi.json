@@ -1082,6 +1082,18 @@
                               "nullable": true,
                               "type": "string"
                             },
+                            "retailerOrderNumber": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "carrier": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "trackingNumber": {
+                              "nullable": true,
+                              "type": "string"
+                            },
                             "transactionTimestamp": {
                               "nullable": true,
                               "anyOf": [
@@ -5754,6 +5766,50 @@
                           "minimum": 0,
                           "maximum": 3600000
                         },
+                        "shippingRecipientName": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "shippingAddressLine1": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "shippingAddressLine2": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "shippingCity": {
+                          "type": "string",
+                          "maxLength": 120
+                        },
+                        "shippingState": {
+                          "type": "string",
+                          "maxLength": 120
+                        },
+                        "shippingZip": {
+                          "type": "string",
+                          "maxLength": 40
+                        },
+                        "shippingCountry": {
+                          "type": "string",
+                          "maxLength": 120
+                        },
+                        "shippingPhone": {
+                          "type": "string",
+                          "maxLength": 60
+                        },
+                        "shippingDeliveryNotes": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "defaultPaymentHandleType": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "defaultPaymentHandle": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
                         "smtpPass": {
                           "nullable": true,
                           "type": "string"
@@ -6495,6 +6551,21 @@
                           "nullable": true,
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "retailerOrderNumber": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 120
+                        },
+                        "carrier": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "trackingNumber": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 120
                         },
                         "registryItemId": {
                           "nullable": true,
@@ -7895,6 +7966,61 @@
                       }
                     ]
                   },
+                  "shippingRecipientName": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "shippingAddressLine1": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "shippingAddressLine2": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "shippingCity": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "shippingState": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "shippingZip": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "shippingCountry": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "shippingPhone": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "shippingDeliveryNotes": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "defaultPaymentHandleType": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "defaultPaymentHandle": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
                   "modules": {
                     "type": "object",
                     "properties": {
@@ -8337,6 +8463,61 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "shippingRecipientName": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "shippingAddressLine1": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "shippingAddressLine2": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "shippingCity": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "shippingState": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "shippingZip": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  "shippingCountry": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "shippingPhone": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "shippingDeliveryNotes": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "defaultPaymentHandleType": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "defaultPaymentHandle": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "modules": {
                     "type": "object",
@@ -10312,6 +10493,51 @@
                   },
                   "paymentIntentId": {
                     "type": "string"
+                  },
+                  "retailerOrderNumber": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "carrier": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "trackingNumber": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
                   }
                 },
                 "required": [

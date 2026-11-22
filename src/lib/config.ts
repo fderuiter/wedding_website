@@ -104,6 +104,17 @@ export const APP_DEFAULTS: LocalAppConfig = {
   twilioFromNumber: '',
   broadcastBatchSize: 50,
   broadcastBatchDelayMs: 500,
+  shippingRecipientName: '',
+  shippingAddressLine1: '',
+  shippingAddressLine2: '',
+  shippingCity: '',
+  shippingState: '',
+  shippingZip: '',
+  shippingCountry: '',
+  shippingPhone: '',
+  shippingDeliveryNotes: '',
+  defaultPaymentHandleType: '',
+  defaultPaymentHandle: '',
   modules: DEFAULT_MODULE_CONFIG,
   features: [],
   createdAt: new Date(),
@@ -265,6 +276,17 @@ export interface AdminAppConfig extends PublicAppConfig {
   twilioFromNumber: string;
   broadcastBatchSize: number;
   broadcastBatchDelayMs: number;
+  shippingRecipientName: string;
+  shippingAddressLine1: string;
+  shippingAddressLine2: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingZip: string;
+  shippingCountry: string;
+  shippingPhone: string;
+  shippingDeliveryNotes: string;
+  defaultPaymentHandleType: string;
+  defaultPaymentHandle: string;
   hasSmtpPass: boolean;
   hasResendApiKey: boolean;
   hasSendgridApiKey: boolean;
@@ -395,6 +417,17 @@ const APP_CONFIG_BACKUP_KEYS = [
   'twilioFromNumber',
   'broadcastBatchSize',
   'broadcastBatchDelayMs',
+  'shippingRecipientName',
+  'shippingAddressLine1',
+  'shippingAddressLine2',
+  'shippingCity',
+  'shippingState',
+  'shippingZip',
+  'shippingCountry',
+  'shippingPhone',
+  'shippingDeliveryNotes',
+  'defaultPaymentHandleType',
+  'defaultPaymentHandle',
   'createdAt',
   'updatedAt',
 ] as const;
@@ -466,6 +499,17 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(c
     twilioFromNumber: raw.twilioFromNumber ?? '',
     broadcastBatchSize: typeof raw.broadcastBatchSize === 'number' ? raw.broadcastBatchSize : 50,
     broadcastBatchDelayMs: typeof raw.broadcastBatchDelayMs === 'number' ? raw.broadcastBatchDelayMs : 500,
+    shippingRecipientName: raw.shippingRecipientName ?? '',
+    shippingAddressLine1: raw.shippingAddressLine1 ?? '',
+    shippingAddressLine2: raw.shippingAddressLine2 ?? '',
+    shippingCity: raw.shippingCity ?? '',
+    shippingState: raw.shippingState ?? '',
+    shippingZip: raw.shippingZip ?? '',
+    shippingCountry: raw.shippingCountry ?? '',
+    shippingPhone: raw.shippingPhone ?? '',
+    shippingDeliveryNotes: raw.shippingDeliveryNotes ?? '',
+    defaultPaymentHandleType: raw.defaultPaymentHandleType ?? '',
+    defaultPaymentHandle: raw.defaultPaymentHandle ?? '',
     hasSmtpPass: hasConfiguredSecret(raw.smtpPass),
     hasResendApiKey: hasConfiguredSecret(raw.resendApiKey),
     hasSendgridApiKey: hasConfiguredSecret(raw.sendgridApiKey),

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RegistryItem } from '../types';
+import { RegistryItem, OrderTrackingDetails } from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
+import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
 
 export type ContributionPhase =
   | 'idle'
@@ -19,7 +20,11 @@ export interface ContributionFieldErrors {
   name?: string;
   email?: string;
   amount?: string;
+  units?: string;
   message?: string;
+  retailerOrderNumber?: string;
+  carrier?: string;
+  trackingNumber?: string;
 }
 
 export interface UseRegistryContributionMachineOptions {
@@ -32,14 +37,19 @@ export interface UseRegistryContributionMachineOptions {
     message?: string,
     coverFee?: boolean,
     email?: string,
-    paymentIntentId?: string
+    paymentIntentId?: string,
+    orderDetails?: OrderTrackingDetails
   ) => Promise<void>;
   initialContributorName?: string;
   initialEmail?: string;
   initialAmount?: number | string;
+  initialUnits?: number;
   initialMessage?: string;
   initialCoverFee?: boolean;
   initialInvitationCode?: string;
+  initialRetailerOrderNumber?: string;
+  initialCarrier?: string;
+  initialTrackingNumber?: string;
 }
 
 export interface UseRegistryContributionMachineReturn {
@@ -56,9 +66,13 @@ export interface UseRegistryContributionMachineReturn {
   contributorName: string;
   email: string;
   amount: number | string;
+  selectedUnits: number;
   message: string;
   coverFee: boolean;
   invitationCode: string;
+  retailerOrderNumber: string;
+  carrier: string;
+  trackingNumber: string;
 
   // Payment transaction reference
   paymentTransactionId: string | null;
@@ -73,9 +87,13 @@ export interface UseRegistryContributionMachineReturn {
   setContributorName: (name: string) => void;
   setEmail: (email: string) => void;
   setAmount: (amount: number | string) => void;
+  setSelectedUnits: (units: number) => void;
   setMessage: (message: string) => void;
   setCoverFee: (coverFee: boolean | ((prev: boolean) => boolean)) => void;
   setInvitationCode: (code: string) => void;
+  setRetailerOrderNumber: (value: string) => void;
+  setCarrier: (value: string) => void;
+  setTrackingNumber: (value: string) => void;
   setPaymentTransactionId: (id: string | null) => void;
   setPhase: (phase: ContributionPhase) => void;
   setSubmissionError: (error: string | null) => void;
@@ -99,9 +117,13 @@ export function useRegistryContributionMachine({
   initialContributorName = '',
   initialEmail = '',
   initialAmount = '',
+  initialUnits = 1,
   initialMessage = '',
   initialCoverFee = false,
   initialInvitationCode = '',
+  initialRetailerOrderNumber = '',
+  initialCarrier = '',
+  initialTrackingNumber = '',
 }: UseRegistryContributionMachineOptions): UseRegistryContributionMachineReturn {
   const {
     invitationCode: sessionCode,
@@ -118,9 +140,13 @@ export function useRegistryContributionMachine({
   const [hasEditedContributorName, setHasEditedContributorName] = useState(false);
   const [email, setEmailState] = useState(initialEmail);
   const [amount, setAmountState] = useState<number | string>(initialAmount);
+  const [selectedUnitsState, setSelectedUnitsState] = useState<number>(initialUnits);
   const [message, setMessageState] = useState(initialMessage);
   const [coverFee, setCoverFeeState] = useState(initialCoverFee);
   const [invitationCodeState, setInvitationCodeState] = useState(initialInvitationCode);
+  const [retailerOrderNumber, setRetailerOrderNumberState] = useState(initialRetailerOrderNumber);
+  const [carrier, setCarrierState] = useState(initialCarrier);
+  const [trackingNumber, setTrackingNumberState] = useState(initialTrackingNumber);
   const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
 
   // Partitioned error states
@@ -188,6 +214,51 @@ export function useRegistryContributionMachine({
       if (!prev.amount) return prev;
       const next = { ...prev };
       delete next.amount;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setSelectedUnits = useCallback((units: number) => {
+    setSelectedUnitsState(units);
+    setFieldErrors((prev) => {
+      if (!prev.units && !prev.amount) return prev;
+      const next = { ...prev };
+      delete next.units;
+      delete next.amount;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setRetailerOrderNumber = useCallback((val: string) => {
+    setRetailerOrderNumberState(val);
+    setFieldErrors((prev) => {
+      if (!prev.retailerOrderNumber) return prev;
+      const next = { ...prev };
+      delete next.retailerOrderNumber;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setCarrier = useCallback((val: string) => {
+    setCarrierState(val);
+    setFieldErrors((prev) => {
+      if (!prev.carrier) return prev;
+      const next = { ...prev };
+      delete next.carrier;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setTrackingNumber = useCallback((val: string) => {
+    setTrackingNumberState(val);
+    setFieldErrors((prev) => {
+      if (!prev.trackingNumber) return prev;
+      const next = { ...prev };
+      delete next.trackingNumber;
       return next;
     });
     setSubmissionError(null);
@@ -354,11 +425,35 @@ export function useRegistryContributionMachine({
     setSubmissionError(null);
   }, [clearSession, currentSessionKey]);
 
+  const { requestedUnits, remainingUnits } = getItemUnitCounts(item);
+  const selectedUnits = selectedUnitsState;
+
   const validateContribution = useCallback((): boolean => {
     setFieldErrors({});
     setSubmissionError(null);
 
-    const rawAmount = item.isGroupGift ? amount : item.price;
+    if (!item.isGroupGift && requestedUnits > 1) {
+      if (
+        !Number.isInteger(selectedUnits) ||
+        selectedUnits < 1 ||
+        selectedUnits > remainingUnits
+      ) {
+        setFieldErrors({
+          units:
+            remainingUnits > 0
+              ? `Please select between 1 and ${remainingUnits} available units.`
+              : 'No units are currently available.',
+        });
+        setPhase('error');
+        return false;
+      }
+    }
+
+    const rawAmount = item.isGroupGift
+      ? amount
+      : requestedUnits > 1
+        ? Math.round(item.price * selectedUnits * 100) / 100
+        : item.price;
 
     const result = ContributionSchema.safeParse({
       itemId: item.id,
@@ -368,6 +463,9 @@ export function useRegistryContributionMachine({
       code: invitationCode || undefined,
       message: message || undefined,
       coverFee,
+      retailerOrderNumber: retailerOrderNumber || undefined,
+      carrier: carrier || undefined,
+      trackingNumber: trackingNumber || undefined,
     });
 
     if (!result.success) {
@@ -384,7 +482,7 @@ export function useRegistryContributionMachine({
     }
 
     if (item.isGroupGift) {
-      const remainingAmount = item.price - item.amountContributed;
+      const remainingAmount = getItemRemainingAmount(item);
       if (result.data.amount > remainingAmount) {
         const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
         setFieldErrors({ amount: msg });
@@ -395,16 +493,19 @@ export function useRegistryContributionMachine({
 
     return true;
   }, [
-    item.isGroupGift,
-    item.price,
-    item.amountContributed,
-    item.id,
+    item,
+    requestedUnits,
+    remainingUnits,
+    selectedUnits,
     amount,
     contributorName,
     email,
     invitationCode,
     message,
     coverFee,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
   ]);
 
   // Action: Submit contribution
@@ -426,7 +527,28 @@ export function useRegistryContributionMachine({
       setFieldErrors({});
       setSubmissionError(null);
 
-      const rawAmount = item.isGroupGift ? amount : item.price;
+      if (!item.isGroupGift && requestedUnits > 1) {
+        if (
+          !Number.isInteger(selectedUnits) ||
+          selectedUnits < 1 ||
+          selectedUnits > remainingUnits
+        ) {
+          setFieldErrors({
+            units:
+              remainingUnits > 0
+                ? `Please select between 1 and ${remainingUnits} available units.`
+                : 'No units are currently available.',
+          });
+          setPhase('error');
+          return;
+        }
+      }
+
+      const rawAmount = item.isGroupGift
+        ? amount
+        : requestedUnits > 1
+          ? Math.round(item.price * selectedUnits * 100) / 100
+          : item.price;
       const effectiveCoverFee =
         options?.coverFeeOverride !== undefined ? options.coverFeeOverride : coverFee;
 
@@ -439,6 +561,9 @@ export function useRegistryContributionMachine({
         message: message || undefined,
         coverFee: effectiveCoverFee,
         paymentIntentId,
+        retailerOrderNumber: retailerOrderNumber || undefined,
+        carrier: carrier || undefined,
+        trackingNumber: trackingNumber || undefined,
       });
 
       if (!result.success) {
@@ -458,7 +583,7 @@ export function useRegistryContributionMachine({
       const finalAmount = validData.amount;
 
       if (item.isGroupGift) {
-        const remainingAmount = item.price - item.amountContributed;
+        const remainingAmount = getItemRemainingAmount(item);
         if (finalAmount > remainingAmount) {
           const msg = `Amount cannot exceed the remaining ${formatCurrency(remainingAmount)}.`;
           setFieldErrors({ amount: msg });
@@ -467,9 +592,34 @@ export function useRegistryContributionMachine({
         }
       }
 
+      const hasOrderDetails = Boolean(
+        validData.retailerOrderNumber || validData.carrier || validData.trackingNumber
+      );
+      const orderDetailsPayload: OrderTrackingDetails | undefined = hasOrderDetails
+        ? {
+          ...(validData.retailerOrderNumber
+            ? { retailerOrderNumber: validData.retailerOrderNumber }
+            : {}),
+          ...(validData.carrier ? { carrier: validData.carrier } : {}),
+          ...(validData.trackingNumber ? { trackingNumber: validData.trackingNumber } : {}),
+        }
+        : undefined;
+
       setPhase('submitting');
       try {
-        if (paymentIntentId !== undefined && onContribute.length >= 8) {
+        if (orderDetailsPayload) {
+          await onContribute(
+            item.id,
+            validData.name,
+            finalAmount,
+            validData.code || undefined,
+            validData.message || undefined,
+            validData.coverFee,
+            validData.email || undefined,
+            paymentIntentId,
+            orderDetailsPayload
+          );
+        } else if (paymentIntentId !== undefined && onContribute.length >= 8) {
           await onContribute(
             item.id,
             validData.name,
@@ -514,16 +664,19 @@ export function useRegistryContributionMachine({
     },
     [
       phase,
-      item.isGroupGift,
-      item.price,
-      item.amountContributed,
-      item.id,
+      item,
+      requestedUnits,
+      remainingUnits,
+      selectedUnits,
       amount,
       contributorName,
       email,
       invitationCode,
       message,
       coverFee,
+      retailerOrderNumber,
+      carrier,
+      trackingNumber,
       onContribute,
     ]
   );
@@ -538,7 +691,15 @@ export function useRegistryContributionMachine({
 
   // Composite primary error string for backwards compatibility / global message
   const primaryFieldError =
-    fieldErrors.name || fieldErrors.amount || fieldErrors.email || fieldErrors.message || null;
+    fieldErrors.name ||
+    fieldErrors.amount ||
+    fieldErrors.units ||
+    fieldErrors.email ||
+    fieldErrors.retailerOrderNumber ||
+    fieldErrors.carrier ||
+    fieldErrors.trackingNumber ||
+    fieldErrors.message ||
+    null;
   const error = submissionError || primaryFieldError;
 
   return {
@@ -553,9 +714,13 @@ export function useRegistryContributionMachine({
     contributorName,
     email,
     amount,
+    selectedUnits,
     message,
     coverFee,
     invitationCode,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
 
     paymentTransactionId,
 
@@ -567,9 +732,13 @@ export function useRegistryContributionMachine({
     setContributorName,
     setEmail,
     setAmount,
+    setSelectedUnits,
     setMessage,
     setCoverFee,
     setInvitationCode,
+    setRetailerOrderNumber,
+    setCarrier,
+    setTrackingNumber,
     setPaymentTransactionId,
     setPhase,
     setSubmissionError,

@@ -633,4 +633,61 @@ describe('ThankYouNotesPage', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('displays submitted retailer order number, carrier, and tracking number alongside gift items and passes axe', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        items: [
+          {
+            id: 'contrib-order-1',
+            name: 'Taylor Shipper',
+            email: 'taylor@example.com',
+            amount: 180,
+            date: '2026-06-05T12:00:00.000Z',
+            thankYouStatus: 'Unsent',
+            retailerOrderNumber: 'WS-998877',
+            carrier: 'FedEx',
+            trackingNumber: '771234567890',
+            registryItem: {
+              id: 'item-1',
+              name: 'Dutch Oven',
+              category: 'Kitchen',
+            },
+          },
+        ],
+        metrics: {
+          total: 1,
+          sent: 0,
+          unsent: 1,
+          notNeeded: 0,
+          thanked: 0,
+          completionPercentage: 0,
+        },
+        pagination: {
+          page: 1,
+          pageSize: 50,
+          totalItems: 1,
+          totalPages: 1,
+        },
+      }),
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Taylor Shipper')).toBeInTheDocument();
+    });
+
+    const trackingSummary = screen.getByTestId('order-tracking-summary-contrib-order-1');
+    expect(trackingSummary).toHaveTextContent('WS-998877');
+    expect(trackingSummary).toHaveTextContent('FedEx • 771234567890');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

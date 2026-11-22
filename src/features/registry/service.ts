@@ -86,6 +86,9 @@ class RegistryService {
       stripePaymentIntentId?: string | null;
       stripeChargeId?: string | null;
       transactionTimestamp?: Date | string | null;
+      retailerOrderNumber?: string | null;
+      carrier?: string | null;
+      trackingNumber?: string | null;
     }
   ) {
     if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {

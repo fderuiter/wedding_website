@@ -141,6 +141,17 @@ const BackupAppConfigSchema = z.object({
   twilioFromNumber: z.string().max(100).optional(),
   broadcastBatchSize: z.number().int().min(1).max(10000).optional(),
   broadcastBatchDelayMs: z.number().int().min(0).max(3600000).optional(),
+  shippingRecipientName: z.string().max(255).optional(),
+  shippingAddressLine1: z.string().max(255).optional(),
+  shippingAddressLine2: z.string().max(255).optional(),
+  shippingCity: z.string().max(120).optional(),
+  shippingState: z.string().max(120).optional(),
+  shippingZip: z.string().max(40).optional(),
+  shippingCountry: z.string().max(120).optional(),
+  shippingPhone: z.string().max(60).optional(),
+  shippingDeliveryNotes: z.string().max(1000).optional(),
+  defaultPaymentHandleType: z.string().max(100).optional(),
+  defaultPaymentHandle: z.string().max(255).optional(),
 
   // Optional provider credentials (omitted on export; preserved from live DB if omitted/blank on import)
   smtpPass: z.string().nullable().optional(),
@@ -262,6 +273,9 @@ const BackupContributorSchema = z.object({
   transactionTimestamp: z.date().nullable().optional(),
   confirmationEmailSentAt: z.date().nullable().optional(),
   alertEmailSentAt: z.date().nullable().optional(),
+  retailerOrderNumber: z.string().max(120).nullable().optional(),
+  carrier: z.string().max(100).nullable().optional(),
+  trackingNumber: z.string().max(120).nullable().optional(),
   registryItemId: z.string().max(255).nullable().optional(),
   invitationCodeId: z.string().max(255).nullable().optional(),
 });

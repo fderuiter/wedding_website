@@ -28,6 +28,9 @@ export interface ThankYouContributorItem {
   stripePaymentIntentId?: string | null;
   stripeChargeId?: string | null;
   transactionTimestamp?: string | null;
+  retailerOrderNumber?: string | null;
+  carrier?: string | null;
+  trackingNumber?: string | null;
   registryItemId?: string | null;
   registryItem?: {
     id: string;
@@ -728,6 +731,27 @@ export default function ThankYouNotesPage() {
                       </div>
                       {item.registryItem?.category && (
                         <div className="text-xs text-gray-500">{item.registryItem.category}</div>
+                      )}
+                      {(item.retailerOrderNumber || item.carrier || item.trackingNumber) && (
+                        <div
+                          data-testid={`order-tracking-summary-${item.id}`}
+                          className="mt-1.5 space-y-0.5 rounded border border-sky-200 dark:border-sky-800/60 bg-sky-50/70 dark:bg-sky-950/30 px-2 py-1 text-[11px] text-sky-900 dark:text-sky-200"
+                        >
+                          {item.retailerOrderNumber && (
+                            <div>
+                              <span className="font-semibold">Order #:</span>{' '}
+                              <span className="font-mono">{item.retailerOrderNumber}</span>
+                            </div>
+                          )}
+                          {(item.carrier || item.trackingNumber) && (
+                            <div>
+                              <span className="font-semibold">Tracking:</span>{' '}
+                              <span>
+                                {[item.carrier, item.trackingNumber].filter(Boolean).join(' • ')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </TableCell>
 

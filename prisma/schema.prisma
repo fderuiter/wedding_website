@@ -79,6 +79,17 @@ model AppConfig {
   twilioFromNumber String?  @default("")
   broadcastBatchSize Int    @default(50)
   broadcastBatchDelayMs Int @default(500)
+  shippingRecipientName    String @default("")
+  shippingAddressLine1     String @default("")
+  shippingAddressLine2     String @default("")
+  shippingCity             String @default("")
+  shippingState            String @default("")
+  shippingZip              String @default("")
+  shippingCountry          String @default("")
+  shippingPhone            String @default("")
+  shippingDeliveryNotes    String @default("")
+  defaultPaymentHandleType String @default("")
+  defaultPaymentHandle     String @default("")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -186,6 +197,9 @@ model Contributor {
   transactionTimestamp  DateTime?
   confirmationEmailSentAt DateTime?
   alertEmailSentAt        DateTime?
+  retailerOrderNumber     String?
+  carrier                 String?
+  trackingNumber          String?
   registryItem   RegistryItem? @relation(fields: [registryItemId], references: [id], onDelete: Cascade)
   registryItemId String?
   createdAt      DateTime      @default(now())

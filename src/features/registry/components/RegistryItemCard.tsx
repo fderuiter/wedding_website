@@ -4,18 +4,27 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import type { Stripe, StripeElements } from '@stripe/stripe-js';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { useTheme } from '@/components/ThemeProvider';
-import { RegistryItem } from '../types';
+import { RegistryItem, RegistryShippingAddress, OrderTrackingDetails } from '../types';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
 import { Icon } from '@/components/ui/Icon';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
-import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
+import { FormGroup, Label, Input, Textarea, FormMessage, Select } from '@/components/ui/forms';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { useShareItem } from '../hooks/useShareItem';
 import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
-import { getPaymentUrl } from '../utils/paymentUrls';
+import {
+  getPaymentUrl,
+  resolveEffectivePaymentHandle,
+  formatRegistryShippingAddress,
+} from '../utils/paymentUrls';
+import {
+  getItemRemainingAmount,
+  getItemTotalTargetAmount,
+  getItemUnitCounts,
+} from '../lib/registryStatusUtils';
 import {
   CARD_PROCESSING_FEE_RATE,
   calculateContributionAmounts,
@@ -43,11 +52,15 @@ interface RegistryItemCardProps {
     message?: string,
     coverFee?: boolean,
     email?: string,
-    paymentIntentId?: string
+    paymentIntentId?: string,
+    orderDetails?: OrderTrackingDetails
   ) => Promise<void>;
   titleId?: string;
   cardCheckoutEnabled?: boolean;
   stripePublishableKey?: string | null;
+  defaultPaymentHandleType?: string | null;
+  defaultPaymentHandle?: string | null;
+  shippingAddress?: RegistryShippingAddress | null;
   isAdmin?: boolean;
 }
 
@@ -143,6 +156,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   titleId,
   cardCheckoutEnabled,
   stripePublishableKey,
+  defaultPaymentHandleType,
+  defaultPaymentHandle,
+  shippingAddress,
   isAdmin = false,
 }) => {
   const { resolvedTheme } = useTheme();
@@ -162,9 +178,13 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     contributorName,
     email,
     amount,
+    selectedUnits,
     message,
     coverFee,
     invitationCode,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
 
     paymentTransactionId,
 
@@ -175,8 +195,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     setContributorName,
     setEmail,
     setAmount,
+    setSelectedUnits,
     setMessage,
     setCoverFee,
+    setRetailerOrderNumber,
+    setCarrier,
+    setTrackingNumber,
     setPaymentTransactionId,
     setPhase,
     setSubmissionError,
@@ -192,28 +216,44 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const { handleShare, copied } = useShareItem(item);
   const toastContext = useOptionalToast();
   const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [isCardProcessing, setIsCardProcessing] = useState(false);
   const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (receiptCopyTimerRef.current) {
         clearTimeout(receiptCopyTimerRef.current);
       }
+      if (addressCopyTimerRef.current) {
+        clearTimeout(addressCopyTimerRef.current);
+      }
     };
   }, []);
 
-  const remainingAmount = item.price - item.amountContributed;
+  const { requestedUnits, claimedUnits, remainingUnits } = getItemUnitCounts(item);
+  const totalTargetAmount = getItemTotalTargetAmount(item);
+  const remainingAmount = getItemRemainingAmount(item);
   const isFullyFunded = remainingAmount <= 0;
 
   const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
-  const hasPaymentHandle = Boolean(item.paymentHandle && item.paymentHandle.trim());
+  const isPayableGroupGift = Boolean(isFund || item.isGroupGift);
+  const effectiveHandle = resolveEffectivePaymentHandle(item, {
+    defaultPaymentHandleType,
+    defaultPaymentHandle,
+  });
+  const effectiveHandleType = effectiveHandle.paymentHandleType;
+  const effectiveHandleValue = effectiveHandle.paymentHandle;
+  const hasPaymentHandle = Boolean(effectiveHandleValue);
   const effectiveCardCheckoutEnabled = resolveEffectiveCardCheckoutEnabled(
     cardCheckoutEnabled,
     stripePublishableKey
   );
 
-  const isDualMode = isFund && hasPaymentHandle && effectiveCardCheckoutEnabled;
-  const isUnconfiguredFund = isFund && !hasPaymentHandle && !effectiveCardCheckoutEnabled;
+  const isDualMode = isPayableGroupGift && hasPaymentHandle && effectiveCardCheckoutEnabled;
+  const isUnconfiguredGroupGift =
+    isPayableGroupGift && !hasPaymentHandle && !effectiveCardCheckoutEnabled;
 
   const modeBaseKey = `${item.id}-${hasPaymentHandle ? 'handle' : 'nohandle'}`;
   const [selectedModeOverride, setSelectedModeOverride] = useState<{
@@ -229,15 +269,23 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         : 'card';
 
   const activePaymentMode: FundPaymentMode | null = useMemo(() => {
-    if (!isFund) return null;
-    if (isUnconfiguredFund) return 'unavailable';
+    if (!isPayableGroupGift) return null;
+    if (isUnconfiguredGroupGift) return 'unavailable';
     if (hasPaymentHandle && !effectiveCardCheckoutEnabled) return 'direct';
     if (!hasPaymentHandle && effectiveCardCheckoutEnabled) return 'card';
     return selectedMode;
-  }, [isFund, isUnconfiguredFund, hasPaymentHandle, effectiveCardCheckoutEnabled, selectedMode]);
+  }, [
+    isPayableGroupGift,
+    isUnconfiguredGroupGift,
+    hasPaymentHandle,
+    effectiveCardCheckoutEnabled,
+    selectedMode,
+  ]);
 
-  const isDirectMode = isFund && activePaymentMode === 'direct';
-  const isCardMode = isFund && activePaymentMode === 'card';
+  const isDirectMode = isPayableGroupGift && activePaymentMode === 'direct';
+  const isCardMode = isPayableGroupGift && activePaymentMode === 'card';
+  const isBusy = isSubmitting || isCardProcessing;
+  const isEffectiveSubmitDisabled = isSubmitDisabled || isCardProcessing;
 
   // Stripe PaymentIntent state (only used in Card Checkout mode, scoped by item.id)
   const [paymentIntentData, setPaymentIntentData] = useState<{
@@ -266,7 +314,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     ? typeof amount === 'number'
       ? amount
       : parseFloat(amount as string)
-    : item.price;
+    : requestedUnits > 1
+      ? Math.round(item.price * selectedUnits * 100) / 100
+      : item.price;
   const baseContributionAmount =
     !isNaN(parsedContributionAmount) && parsedContributionAmount > 0 ? parsedContributionAmount : 0;
 
@@ -277,7 +327,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     0,
     Math.round((baseContributionAmount - estimatedProcessingFee) * 100) / 100
   );
-  const paymentUrl = getPaymentUrl(item.paymentHandleType, item.paymentHandle);
+  const paymentUrl = getPaymentUrl(effectiveHandleType, effectiveHandleValue);
 
   const initialElementsAmount = item.isGroupGift
     ? Math.min(100, remainingAmount > 0 ? remainingAmount : item.price)
@@ -442,12 +492,12 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isFund) {
+    if (!isPayableGroupGift) {
       await handleSubmit(e);
       return;
     }
 
-    if (isUnconfiguredFund) {
+    if (isUnconfiguredGroupGift) {
       return;
     }
 
@@ -467,6 +517,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     }
 
     setSubmissionError(null);
+    setIsCardProcessing(true);
 
     try {
       const currentSynced =
@@ -621,6 +672,8 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     } catch (err: any) {
       setPhase('error');
       setSubmissionError(err?.message || 'Payment processing failed. Please try again.');
+    } finally {
+      setIsCardProcessing(false);
     }
   };
 
@@ -636,12 +689,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     let paymentMethodLine = 'Physical Gift Claim';
     if (paymentTransactionId) {
       paymentMethodLine = 'Card Checkout';
-    } else if (isFund) {
-      paymentMethodLine = item.paymentHandleType
-        ? `Direct Transfer (${item.paymentHandleType}${hasPaymentHandle ? `: ${item.paymentHandle}` : ''})`
-        : hasPaymentHandle
-          ? `Direct Transfer (${item.paymentHandle})`
-          : 'Direct Transfer';
+    } else if (isPayableGroupGift && hasPaymentHandle) {
+      paymentMethodLine = effectiveHandleType
+        ? `Direct Transfer (${effectiveHandleType}: ${effectiveHandleValue})`
+        : `Direct Transfer (${effectiveHandleValue})`;
     } else if (item.isGroupGift) {
       paymentMethodLine = 'Group Gift Contribution';
     }
@@ -710,8 +761,57 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isVendorUrlSafe =
     item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
 
+  const formattedShippingText = useMemo(
+    () => (shippingAddress ? formatRegistryShippingAddress(shippingAddress) : ''),
+    [shippingAddress]
+  );
+  const hasFormattedShipping = Boolean(isVendorUrlSafe && shippingAddress && formattedShippingText);
+
+  const handleCopyShippingAddress = async () => {
+    if (!formattedShippingText) return;
+    let copySucceeded = false;
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(formattedShippingText);
+        copySucceeded = true;
+      } catch {
+        // Fallback below
+      }
+    }
+
+    if (!copySucceeded && typeof document !== 'undefined') {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = formattedShippingText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        copySucceeded = true;
+      } catch {
+        // Fallback failed
+      }
+    }
+
+    if (copySucceeded) {
+      setCopiedAddress(true);
+      if (addressCopyTimerRef.current) {
+        clearTimeout(addressCopyTimerRef.current);
+      }
+      addressCopyTimerRef.current = setTimeout(() => {
+        setCopiedAddress(false);
+      }, 2500);
+      toastContext?.addToast('Shipping address copied to clipboard!', 'success');
+    } else {
+      toastContext?.addToast('Failed to copy shipping address', 'error');
+    }
+  };
+
   const showDirectTransferDetails =
-    hasPaymentHandle && (!isFund || isDirectMode || item.isSample || item.purchased);
+    hasPaymentHandle && (!isPayableGroupGift || isDirectMode || item.isSample || item.purchased);
 
   return (
     <div
@@ -740,11 +840,24 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         {item.name}
       </h2>
       <p className="text-gray-700 dark:text-gray-300 mb-3">{item.description}</p>
-      <p className="text-lg font-semibold mb-1 text-secondary">
-        {isFund ? 'Target Goal:' : 'Price:'} {formatCurrency(item.price)}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <p className="text-lg font-semibold text-secondary">
+          {isFund ? 'Target Goal:' : 'Price:'} {formatCurrency(item.price)}
+          {requestedUnits > 1 && item.isGroupGift
+            ? ` (${formatCurrency(totalTargetAmount)} total)`
+            : ''}
+        </p>
+        {requestedUnits > 1 && (
+          <span
+            data-testid="item-unit-count-badge"
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-badge text-badge-text border border-card-border"
+          >
+            {remainingUnits} of {requestedUnits} remaining ({claimedUnits} claimed)
+          </span>
+        )}
+      </div>
 
-      {isDualMode && !item.isSample && !isSuccess && (!item.purchased || isSubmitting) && (
+      {isDualMode && !item.isSample && !isSuccess && (!item.purchased || isBusy) && (
         <div className="mb-3 mt-2">
           <p
             id={`payment-mode-label-${item.id}`}
@@ -860,17 +973,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         >
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-              Send directly via {item.paymentHandleType || 'Payment App'}:
+              Send directly via {effectiveHandleType || 'Payment App'}:
             </p>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               <span className="text-sm font-mono text-primary font-bold select-all">
-                {item.paymentHandle}
+                {effectiveHandleValue}
               </span>
               {paymentUrl && (
                 <AccessibleExternalLink
                   href={paymentUrl}
                   className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  aria-label={`Open payment link for ${item.paymentHandleType || 'Payment App'}`}
+                  aria-label={`Open payment link for ${effectiveHandleType || 'Payment App'}`}
                   showIcon
                   iconClassName="w-3.5 h-3.5"
                 >
@@ -896,7 +1009,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 value={paymentUrl}
                 size={80}
                 level="M"
-                aria-label={`QR code to pay via ${item.paymentHandleType || 'Payment App'}`}
+                aria-label={`QR code to pay via ${effectiveHandleType || 'Payment App'}`}
               />
               <span className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 font-sans">
                 Scan to Pay
@@ -916,7 +1029,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               {formatCurrency(remainingAmount)} still needed.
             </p>
           )}
-          <RegistryItemProgressBar contributed={item.amountContributed} total={item.price} />
+          <RegistryItemProgressBar contributed={item.amountContributed} total={totalTargetAmount} />
         </div>
       )}
 
@@ -946,6 +1059,33 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         </Button>
       </div>
 
+      {hasFormattedShipping && (
+        <div
+          data-testid="registry-shipping-address-card"
+          className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-1.5">
+            <span className="font-semibold text-gray-800 dark:text-gray-100">
+              Ship Directly to Couple
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="copy-shipping-address-button"
+              onClick={handleCopyShippingAddress}
+              className="inline-flex items-center gap-1.5 text-xs"
+            >
+              <Icon name={copiedAddress ? 'Check' : 'Copy'} className="w-3.5 h-3.5" />
+              {copiedAddress ? 'Address Copied!' : 'Copy Shipping Address'}
+            </Button>
+          </div>
+          <pre className="whitespace-pre-wrap font-sans text-xs text-gray-700 dark:text-gray-300 leading-relaxed m-0">
+            {formattedShippingText}
+          </pre>
+        </div>
+      )}
+
       {item.isSample ? (
         <div className="mt-5 pt-4 border-t border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 p-3.5 rounded-lg text-amber-900 dark:text-amber-100 text-sm">
           <span className="font-bold block mb-1">Demo / Sample Registry Item</span>
@@ -960,7 +1100,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/60 text-green-600 dark:text-green-300 mb-3">
             <Icon name="Check" className="w-6 h-6" />
           </div>
-          {isFund && !paymentTransactionId ? (
+          {isPayableGroupGift && !paymentTransactionId && hasPaymentHandle ? (
             <>
               <h3 className="text-xl font-bold text-green-700 dark:text-green-400 mb-1">
                 Direct Transfer Recorded!
@@ -969,32 +1109,30 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 Thank you, <span className="font-semibold">{contributorName}</span>! Your self-reported direct transfer of{' '}
                 <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> (0% fee) has been recorded for the couple.
               </p>
-              {hasPaymentHandle && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 mb-4 text-left">
-                  <p className="font-semibold mb-1">
-                    Reminder: Complete your transfer in {item.paymentHandleType || 'your payment app'}
-                  </p>
-                  <p>
-                    No card was charged on this website. If you have not sent your transfer yet, send{' '}
-                    <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> directly to{' '}
-                    <span className="font-mono font-bold select-all">{item.paymentHandle}</span>
-                    {paymentUrl ? (
-                      <>
-                        {' '}
-                        (
-                        <AccessibleExternalLink
-                          href={paymentUrl}
-                          className="underline font-semibold text-primary"
-                        >
-                          Open {item.paymentHandleType || 'Payment Link'}
-                        </AccessibleExternalLink>
-                        )
-                      </>
-                    ) : null}
-                    .
-                  </p>
-                </div>
-              )}
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 mb-4 text-left">
+                <p className="font-semibold mb-1">
+                  Reminder: Complete your transfer in {effectiveHandleType || 'your payment app'}
+                </p>
+                <p>
+                  No card was charged on this website. If you have not sent your transfer yet, send{' '}
+                  <span className="font-semibold">{formatCurrency(baseContributionAmount)}</span> directly to{' '}
+                  <span className="font-mono font-bold select-all">{effectiveHandleValue}</span>
+                  {paymentUrl ? (
+                    <>
+                      {' '}
+                      (
+                      <AccessibleExternalLink
+                        href={paymentUrl}
+                        className="underline font-semibold text-primary"
+                      >
+                        Open {effectiveHandleType || 'Payment Link'}
+                      </AccessibleExternalLink>
+                      )
+                    </>
+                  ) : null}
+                  .
+                </p>
+              </div>
             </>
           ) : (
             <>
@@ -1037,7 +1175,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </Button>
           </div>
         </div>
-      ) : isUnconfiguredFund && !item.purchased && !isSubmitting ? (
+      ) : isUnconfiguredGroupGift && !item.purchased && !isBusy ? (
         <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
           {isAdmin && (
             <div
@@ -1050,7 +1188,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 <span>Administrator Warning: Checkout Disabled</span>
               </div>
               <p className="text-xs leading-relaxed">
-                This fund has neither a peer-to-peer payment handle nor active Stripe card credentials configured. Add a payment handle to this fund or configure Stripe card processing to accept guest contributions.
+                This {isFund ? 'fund' : 'group gift'} has neither a peer-to-peer payment handle nor active Stripe card credentials configured. Add a payment handle to this item, set a default handle in Settings, or configure Stripe card processing to accept guest contributions.
               </p>
             </div>
           )}
@@ -1062,14 +1200,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               Online Checkout Unavailable
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-              Online contributions for this fund are not currently enabled. Please check back later or contact the couple directly if you would like to contribute.
+              Online contributions for this {isFund ? 'fund' : 'group gift'} are not currently enabled. Please check back later or contact the couple directly if you would like to contribute.
             </p>
             <Button type="button" variant="secondary" disabled className="w-full">
               Checkout Disabled
             </Button>
           </div>
         </div>
-      ) : (!item.purchased || isSubmitting) ? (
+      ) : (!item.purchased || isBusy) ? (
         <form noValidate className="mt-5 pt-4 border-t border-primary" onSubmit={handlePaymentSubmit}>
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
@@ -1133,6 +1271,29 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             />
             {fieldErrors.email && <FormMessage>{fieldErrors.email}</FormMessage>}
           </FormGroup>
+          {!item.isGroupGift && requestedUnits > 1 && (
+            <FormGroup state={fieldErrors.units ? 'error' : 'default'} className="mb-3">
+              <Label>
+                Quantity to Claim <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                data-testid="unit-quantity-select"
+                value={String(selectedUnits)}
+                onChange={(e) => setSelectedUnits(Number(e.target.value))}
+                disabled={isBusy}
+              >
+                {Array.from({ length: Math.max(1, remainingUnits) }, (_, idx) => idx + 1).map(
+                  (unitOption) => (
+                    <option key={unitOption} value={unitOption}>
+                      {unitOption} {unitOption === 1 ? 'unit' : 'units'} (
+                      {formatCurrency(Math.round(item.price * unitOption * 100) / 100)})
+                    </option>
+                  )
+                )}
+              </Select>
+              {fieldErrors.units && <FormMessage>{fieldErrors.units}</FormMessage>}
+            </FormGroup>
+          )}
           {item.isGroupGift && (
             <FormGroup state={fieldErrors.amount ? 'error' : 'default'} className="mb-3">
               <Label>
@@ -1208,7 +1369,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </FormGroup>
           )}
 
-          {isFund && (
+          {isPayableGroupGift && (
             <div className="mb-4 p-3.5 bg-slate-50 dark:bg-slate-900/80 rounded-lg border border-slate-200 dark:border-slate-700 text-sm">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-1.5 font-semibold text-gray-800 dark:text-gray-200">
@@ -1287,13 +1448,72 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </Elements>
           )}
 
+          {isVendorUrlSafe && !isPayableGroupGift && (
+            <div
+              data-testid="external-order-tracking-fields"
+              className="mb-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 space-y-2.5"
+            >
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                Order &amp; Shipping Details (Optional)
+              </p>
+              <FormGroup
+                state={fieldErrors.retailerOrderNumber ? 'error' : 'default'}
+                className="mb-0"
+              >
+                <Label>Retailer Order Number (Optional)</Label>
+                <Input
+                  type="text"
+                  placeholder="e.g. 114-3941689-8772232"
+                  value={retailerOrderNumber}
+                  onChange={(e) => setRetailerOrderNumber(e.target.value)}
+                  disabled={isBusy}
+                  maxLength={120}
+                />
+                {fieldErrors.retailerOrderNumber && (
+                  <FormMessage>{fieldErrors.retailerOrderNumber}</FormMessage>
+                )}
+              </FormGroup>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <FormGroup state={fieldErrors.carrier ? 'error' : 'default'} className="mb-0">
+                  <Label>Shipping Carrier (Optional)</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. UPS, FedEx, USPS"
+                    value={carrier}
+                    onChange={(e) => setCarrier(e.target.value)}
+                    disabled={isBusy}
+                    maxLength={100}
+                  />
+                  {fieldErrors.carrier && <FormMessage>{fieldErrors.carrier}</FormMessage>}
+                </FormGroup>
+                <FormGroup
+                  state={fieldErrors.trackingNumber ? 'error' : 'default'}
+                  className="mb-0"
+                >
+                  <Label>Tracking Number (Optional)</Label>
+                  <Input
+                    type="text"
+                    placeholder="e.g. 1Z999AA10123456784"
+                    value={trackingNumber}
+                    onChange={(e) => setTrackingNumber(e.target.value)}
+                    disabled={isBusy}
+                    maxLength={120}
+                  />
+                  {fieldErrors.trackingNumber && (
+                    <FormMessage>{fieldErrors.trackingNumber}</FormMessage>
+                  )}
+                </FormGroup>
+              </div>
+            </div>
+          )}
+
           <FormGroup state={fieldErrors.message ? 'error' : 'default'} className="mb-3">
             <Label>Personal Message (Optional)</Label>
             <Textarea
               placeholder="Warm wishes for the couple..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              disabled={isSubmitting}
+              disabled={isBusy}
               maxLength={1000}
               rows={3}
             />
@@ -1308,10 +1528,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             type="submit"
             variant="primary"
             className="w-full flex items-center justify-center"
-            disabled={isSubmitDisabled}
-            aria-busy={isSubmitting}
+            disabled={isEffectiveSubmitDisabled}
+            aria-busy={isBusy}
           >
-            {isSubmitting ? (
+            {isBusy ? (
               <>
                 <Icon name="Loader2" className="animate-spin mr-2 h-5 w-5" aria-hidden="true" />
                 Processing...
