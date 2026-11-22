@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { sanitizeAppConfigForBackup } from '@/lib/config';
+import { sanitizeAppConfigForBackup, sanitizeSnapshotForBackup } from '@/lib/backupPersistence';
 
 const EXPORT_CHUNK_SIZE = 100;
 const BACKUP_SCHEMA_VERSION = '2.0';
+
+interface ExportChunkDelegate {
+  findMany: (_args: {
+    take: number;
+    orderBy: { id: 'asc' };
+    cursor?: { id: string };
+    skip?: number;
+  }) => Promise<Record<string, unknown>[]>;
+}
 
 interface ModelExportConfig {
   key: string;
@@ -12,159 +21,41 @@ interface ModelExportConfig {
   sanitize?: (item: Record<string, unknown>) => Record<string, unknown>;
 }
 
-function sanitizeSnapshotForExport(snapshot: Record<string, unknown>): Record<string, unknown> {
-  if (
-    snapshot?.entityType === 'AppConfig' &&
-    snapshot.data &&
-    typeof snapshot.data === 'object' &&
-    !Array.isArray(snapshot.data)
-  ) {
-    return {
-      ...snapshot,
-      data: sanitizeAppConfigForBackup(snapshot.data as Record<string, unknown>),
-    };
-  }
-  return snapshot;
+function createChunkFetcher(
+  delegate: ExportChunkDelegate,
+): (_cursor?: string) => Promise<Record<string, unknown>[]> {
+  return (cursor) =>
+    delegate.findMany({
+      take: EXPORT_CHUNK_SIZE,
+      orderBy: { id: 'asc' },
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
 }
 
 export const GET = withApiMiddleware(async (_request: NextRequest) => {
   const models: ModelExportConfig[] = [
     {
       key: 'appConfig',
-      fetchChunks: (cursor) =>
-        prisma.appConfig.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-      sanitize: (config) => sanitizeAppConfigForBackup(config),
+      fetchChunks: createChunkFetcher(prisma.appConfig),
+      sanitize: sanitizeAppConfigForBackup,
     },
-    {
-      key: 'contentNode',
-      fetchChunks: (cursor) =>
-        prisma.contentNode.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'media',
-      fetchChunks: (cursor) =>
-        prisma.media.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'seatingTable',
-      fetchChunks: (cursor) =>
-        prisma.seatingTable.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'invitationCode',
-      fetchChunks: (cursor) =>
-        prisma.invitationCode.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'weddingPartyMember',
-      fetchChunks: (cursor) =>
-        prisma.weddingPartyMember.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'attraction',
-      fetchChunks: (cursor) =>
-        prisma.attraction.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'registryItem',
-      fetchChunks: (cursor) =>
-        prisma.registryItem.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'contributor',
-      fetchChunks: (cursor) =>
-        prisma.contributor.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'subEvent',
-      fetchChunks: (cursor) =>
-        prisma.subEvent.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'subEventAccess',
-      fetchChunks: (cursor) =>
-        prisma.subEventAccess.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'subEventRsvp',
-      fetchChunks: (cursor) =>
-        prisma.subEventRsvp.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'broadcastMessage',
-      fetchChunks: (cursor) =>
-        prisma.broadcastMessage.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
-    {
-      key: 'broadcastRecipient',
-      fetchChunks: (cursor) =>
-        prisma.broadcastRecipient.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-    },
+    { key: 'contentNode', fetchChunks: createChunkFetcher(prisma.contentNode) },
+    { key: 'media', fetchChunks: createChunkFetcher(prisma.media) },
+    { key: 'seatingTable', fetchChunks: createChunkFetcher(prisma.seatingTable) },
+    { key: 'invitationCode', fetchChunks: createChunkFetcher(prisma.invitationCode) },
+    { key: 'weddingPartyMember', fetchChunks: createChunkFetcher(prisma.weddingPartyMember) },
+    { key: 'attraction', fetchChunks: createChunkFetcher(prisma.attraction) },
+    { key: 'registryItem', fetchChunks: createChunkFetcher(prisma.registryItem) },
+    { key: 'contributor', fetchChunks: createChunkFetcher(prisma.contributor) },
+    { key: 'subEvent', fetchChunks: createChunkFetcher(prisma.subEvent) },
+    { key: 'subEventAccess', fetchChunks: createChunkFetcher(prisma.subEventAccess) },
+    { key: 'subEventRsvp', fetchChunks: createChunkFetcher(prisma.subEventRsvp) },
+    { key: 'broadcastMessage', fetchChunks: createChunkFetcher(prisma.broadcastMessage) },
+    { key: 'broadcastRecipient', fetchChunks: createChunkFetcher(prisma.broadcastRecipient) },
     {
       key: 'snapshotVersion',
-      fetchChunks: (cursor) =>
-        prisma.snapshotVersion.findMany({
-          take: EXPORT_CHUNK_SIZE,
-          orderBy: { id: 'asc' },
-          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        }),
-      sanitize: sanitizeSnapshotForExport,
+      fetchChunks: createChunkFetcher(prisma.snapshotVersion),
+      sanitize: sanitizeSnapshotForBackup,
     },
   ];
 
