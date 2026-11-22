@@ -61,12 +61,17 @@ export const RegistryQuerySchema = z.object({
 
 export type RegistryQueryParams = z.infer<typeof RegistryQuerySchema>;
 
+export const ContributorStatusEnum = z.enum(['RESERVED', 'CONFIRMED', 'CANCELLED', 'REFUNDED']);
+export type ContributorStatus = z.infer<typeof ContributorStatusEnum>;
+
 export const ContributorSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   email: z.string().nullable().optional(),
   isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce.number({ message: 'Contribution amount must be a positive number.' }).positive('Contribution amount must be a positive number.'),
+  refundedAmount: z.coerce.number().min(0, 'Refunded amount cannot be negative.').optional().default(0),
+  status: ContributorStatusEnum.optional().default('CONFIRMED'),
   coverFee: z.boolean().optional().default(false),
   feeAmount: z.coerce.number().optional().default(0),
   message: z.string().nullable().optional(),
@@ -82,6 +87,7 @@ export const ContributorSchema = z.object({
   transactionTimestamp: z.union([z.string(), z.date()]).nullable().optional().transform(d => d ? new Date(d).toISOString() : null),
   confirmationEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
   alertEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
+  reminderEmailSentAt: z.union([z.string(), z.date()]).transform(d => new Date(d).toISOString()).nullable().optional(),
   registryItemId: z.string().nullable().optional(),
   registryItem: z.object({
     id: z.string(),
@@ -100,6 +106,18 @@ export const ContributorSchema = z.object({
     zipCode: z.string().nullable().optional(),
     country: z.string().nullable().optional(),
   }).nullable().optional(),
+});
+
+export const GuestClaimQuerySchema = z.object({
+  token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),
+});
+
+export const GuestClaimActionSchema = z.object({
+  token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),
+});
+
+export const AdminContributorActionSchema = z.object({
+  action: z.enum(['confirm', 'remind', 'void']),
 });
 
 export const UpdateThankYouNoteSchema = z.object({

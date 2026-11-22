@@ -80,6 +80,7 @@ function RegistryPageContent() {
     handleEdit,
     handleDelete,
     handleContribute,
+    syncItemInCache,
   } = useRegistry();
 
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
@@ -361,6 +362,7 @@ function RegistryPageContent() {
               titleId={`registry-item-title-${selectedItem.id}`}
               onClose={handleCloseModal}
               onContribute={handleContribute}
+              onItemUpdated={syncItemInCache}
               cardCheckoutEnabled={cardCheckoutEnabled}
               stripePublishableKey={stripePublishableKey}
               defaultPaymentHandleType={defaultPaymentHandleType}

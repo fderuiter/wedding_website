@@ -1031,6 +1031,21 @@
                               "minimum": 0,
                               "exclusiveMinimum": true
                             },
+                            "refundedAmount": {
+                              "default": 0,
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "status": {
+                              "default": "CONFIRMED",
+                              "type": "string",
+                              "enum": [
+                                "RESERVED",
+                                "CONFIRMED",
+                                "CANCELLED",
+                                "REFUNDED"
+                              ]
+                            },
                             "coverFee": {
                               "default": false,
                               "type": "boolean"
@@ -1119,6 +1134,18 @@
                               ]
                             },
                             "alertEmailSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "reminderEmailSentAt": {
                               "nullable": true,
                               "anyOf": [
                                 {
@@ -3993,6 +4020,58 @@
         }
       }
     },
+    "/api/admin/contributors/{id}/action": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/contributors/[id]/action",
+        "description": "Endpoint for /api/admin/contributors/[id]/action",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "confirm",
+                      "remind",
+                      "void"
+                    ]
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/features": {
       "get": {
         "tags": [
@@ -6499,6 +6578,19 @@
                           "type": "number",
                           "minimum": 0
                         },
+                        "refundedAmount": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "RESERVED",
+                            "CONFIRMED",
+                            "CANCELLED",
+                            "REFUNDED"
+                          ]
+                        },
                         "coverFee": {
                           "type": "boolean"
                         },
@@ -6548,6 +6640,11 @@
                           "format": "date-time"
                         },
                         "alertEmailSentAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "reminderEmailSentAt": {
                           "nullable": true,
                           "type": "string",
                           "format": "date-time"
@@ -10425,6 +10522,62 @@
         }
       }
     },
+    "/api/registry/claim": {
+      "get": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "GET /api/registry/claim",
+        "description": "Scanner-safe read endpoint for signed guest claim confirmation/cancellation links.\nPerforms zero database mutations so email security link scanners cannot confirm or cancel gifts.",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Registry"
+        ],
+        "summary": "POST /api/registry/claim",
+        "description": "Explicit form-submission mutation endpoint for signed guest claim confirmation or cancellation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/registry/contribute": {
       "post": {
         "tags": [
@@ -11748,7 +11901,7 @@
           "Registry"
         ],
         "summary": "POST /api/registry/webhook/stripe",
-        "description": "Stripe webhook handler for registry contributions.\nCryptographically verifies signatures using STRIPE_WEBHOOK_SECRET.\nProcesses payment_intent.succeeded events idempotently.",
+        "description": "Stripe webhook handler for registry contributions.\nCryptographically verifies signatures using STRIPE_WEBHOOK_SECRET.\nProcesses payment_intent.succeeded, charge.refunded, and charge.dispute.created idempotently.",
         "security": [
           {
             "stripeSignature": []

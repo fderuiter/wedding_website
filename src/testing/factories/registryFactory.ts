@@ -18,6 +18,8 @@ export function createMockContributor(
     name: 'Guest Contributor',
     isPlusOne: false,
     amount: 100,
+    refundedAmount: 0,
+    status: 'CONFIRMED',
     coverFee: false,
     feeAmount: 0,
     date: '2026-01-01T00:00:00.000Z',

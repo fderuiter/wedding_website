@@ -23,9 +23,7 @@ export function sanitizeRegistryItems(items: any) {
 
 function maskContributor(contributor: any) {
   if (!contributor) return contributor;
-  const { email, retailerOrderNumber, trackingNumber, carrier, ...rest } = contributor;
   return {
-    ...rest,
     name: 'Anonymous',
     amount: 'Anonymous',
     date: 'Anonymous',
@@ -39,7 +37,13 @@ export function maskRegistryItem(item: any) {
     result.purchaserName = 'Anonymous';
   }
   if ('contributors' in item && item.contributors !== undefined && Array.isArray(item.contributors)) {
-    result.contributors = item.contributors.map(maskContributor);
+    result.contributors = item.contributors
+      .filter((contributor: any) => {
+        if (!contributor) return false;
+        const status = typeof contributor.status === 'string' ? contributor.status.toUpperCase() : 'CONFIRMED';
+        return status !== 'CANCELLED' && status !== 'REFUNDED';
+      })
+      .map(maskContributor);
   }
   return result;
 }

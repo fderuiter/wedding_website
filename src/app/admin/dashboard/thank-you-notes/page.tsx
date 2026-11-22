@@ -9,6 +9,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { formatCurrency, formatDate } from '@/utils/intl';
 import type { ProgressMetrics } from '@/features/registry';
 import {
+  ContributorLifecycleBadge,
   THANK_YOU_TEMPLATES,
   substituteThankYouTemplateTokens,
 } from '@/features/registry';
@@ -21,6 +22,9 @@ export interface ThankYouContributorItem {
   email?: string | null;
   message?: string | null;
   amount: number;
+  refundedAmount?: number;
+  status?: string;
+  reminderEmailSentAt?: string | null;
   date: string;
   thankYouStatus: 'Unsent' | 'Sent' | 'Not Needed' | string;
   thankYouSentAt?: string | null;
@@ -168,6 +172,7 @@ export default function ThankYouNotesPage() {
   const [editSentAt, setEditSentAt] = useState<string>('');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
 
   const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
     setIsLoading(true);
@@ -408,6 +413,50 @@ export default function ThankYouNotesPage() {
       addToast(err.message || 'Failed to update record.', 'error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleLifecycleAction = async (
+    item: ThankYouContributorItem,
+    action: 'confirm' | 'remind' | 'void'
+  ) => {
+    if (action === 'void') {
+      const isConfirmed = await confirm(
+        `Void the contribution from ${item.name}? This preserves contributor history while recalculating the gift item balance.`
+      );
+      if (!isConfirmed) return;
+    }
+
+    setPendingActionId(item.id);
+    try {
+      const res = await fetch(`/api/admin/contributors/${encodeURIComponent(item.id)}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to update contributor lifecycle status.');
+      }
+
+      const successMessage =
+        action === 'confirm'
+          ? `Confirmed contribution from ${item.name}.`
+          : action === 'remind'
+            ? `Sent polite reminder email to ${item.name}.`
+            : `Voided contribution from ${item.name}.`;
+      addToast(successMessage, 'success');
+      await fetchData();
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to update contributor lifecycle status.',
+        'error'
+      );
+    } finally {
+      setPendingActionId(null);
     }
   };
 
@@ -756,11 +805,28 @@ export default function ThankYouNotesPage() {
                     </TableCell>
 
                     <TableCell>
-                      <div className="font-semibold">{formatCurrency(item.amount)}</div>
+                      <div
+                        className={`font-semibold ${
+                          (item.status || 'CONFIRMED').toUpperCase() === 'CANCELLED' ||
+                          (item.status || 'CONFIRMED').toUpperCase() === 'REFUNDED'
+                            ? 'line-through text-gray-500 dark:text-gray-400'
+                            : ''
+                        }`}
+                      >
+                        {formatCurrency(item.amount)}
+                      </div>
                       <div className="text-xs text-gray-500">{formatDate(item.date)}</div>
+                      <div className="mt-1">
+                        <ContributorLifecycleBadge
+                          status={item.status}
+                          amount={item.amount}
+                          refundedAmount={item.refundedAmount}
+                          contributorId={item.id}
+                        />
+                      </div>
                       {(item.stripeChargeId || item.stripePaymentIntentId) && (
                         <div
-                          className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-medium truncate max-w-[120px]"
+                          className="mt-0.5 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-medium truncate max-w-[120px]"
                           title={`Stripe Ref: ${item.stripeChargeId || item.stripePaymentIntentId}`}
                         >
                           Ref: {item.stripeChargeId || item.stripePaymentIntentId}
@@ -872,14 +938,50 @@ export default function ThankYouNotesPage() {
                           </Button>
                         </div>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => startEditing(item)}
-                          aria-label={`Edit thank-you note for ${item.name}`}
-                        >
-                          Edit
-                        </Button>
+                        <div className="inline-flex flex-wrap justify-end gap-1.5">
+                          {(item.status || 'CONFIRMED').toUpperCase() === 'RESERVED' && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                disabled={pendingActionId === item.id}
+                                onClick={() => void handleLifecycleAction(item, 'confirm')}
+                                aria-label={`Confirm contribution from ${item.name}`}
+                              >
+                                Confirm
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={pendingActionId === item.id}
+                                onClick={() => void handleLifecycleAction(item, 'remind')}
+                                aria-label={`Send polite reminder to ${item.name}`}
+                              >
+                                Polite Reminder
+                              </Button>
+                            </>
+                          )}
+                          {(item.status || 'CONFIRMED').toUpperCase() !== 'CANCELLED' &&
+                            (item.status || 'CONFIRMED').toUpperCase() !== 'REFUNDED' && (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              disabled={pendingActionId === item.id}
+                              onClick={() => void handleLifecycleAction(item, 'void')}
+                              aria-label={`Void contribution from ${item.name}`}
+                            >
+                              Void
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => startEditing(item)}
+                            aria-label={`Edit thank-you note for ${item.name}`}
+                          >
+                            Edit
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>

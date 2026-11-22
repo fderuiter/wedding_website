@@ -185,6 +185,8 @@ model Contributor {
   email          String?
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
+  refundedAmount Float         @default(0)
+  status         String        @default("CONFIRMED")
   coverFee       Boolean       @default(false)
   feeAmount      Float         @default(0)
   message        String?
@@ -197,6 +199,7 @@ model Contributor {
   transactionTimestamp  DateTime?
   confirmationEmailSentAt DateTime?
   alertEmailSentAt        DateTime?
+  reminderEmailSentAt     DateTime?
   retailerOrderNumber     String?
   carrier                 String?
   trackingNumber          String?
@@ -209,6 +212,8 @@ model Contributor {
   invitationCode   InvitationCode? @relation(fields: [invitationCodeId], references: [id])
 
   @@index([stripePaymentIntentId])
+  @@index([stripeChargeId])
+  @@index([status])
   @@index([registryItemId])
   @@index([invitationCodeId])
   @@index([thankYouStatus, date])

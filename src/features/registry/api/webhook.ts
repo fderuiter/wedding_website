@@ -1,7 +1,10 @@
 import { NextResponse, NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { registryService } from '../service';
-import { dispatchContributionNotifications } from '../notifications';
+import {
+  dispatchContributionNotifications,
+  dispatchLedgerAdjustmentNotification,
+} from '../notifications';
 import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
 import { logger } from '@/lib/logger';
 import { StripeWebhookEventSchema } from '@/utils/validation';
@@ -9,7 +12,7 @@ import { StripeWebhookEventSchema } from '@/utils/validation';
 /**
  * Stripe webhook handler for registry contributions.
  * Cryptographically verifies signatures using STRIPE_WEBHOOK_SECRET.
- * Processes payment_intent.succeeded events idempotently.
+ * Processes payment_intent.succeeded, charge.refunded, and charge.dispute.created idempotently.
  */
 export async function POST(request: NextRequest) {
   const signature = request.headers.get('stripe-signature');
@@ -131,6 +134,92 @@ export async function POST(request: NextRequest) {
         // Log error without PII and return 200 to Stripe if already processed or handled gracefully
         logger.error('Error processing webhook payment_intent.succeeded', {
           itemId,
+          stripePaymentIntentId,
+          reason: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
+  } else if (parsedEvent.success && event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge;
+    const stripeChargeId = typeof charge.id === 'string' && charge.id ? charge.id : null;
+    const stripePaymentIntentId =
+      typeof charge.payment_intent === 'string'
+        ? charge.payment_intent
+        : (charge.payment_intent as any)?.id || null;
+    const amountRefundedCents =
+      typeof charge.amount_refunded === 'number' && Number.isFinite(charge.amount_refunded)
+        ? Math.max(0, charge.amount_refunded)
+        : 0;
+    const chargeAmountCents =
+      typeof charge.amount === 'number' && Number.isFinite(charge.amount) ? charge.amount : 0;
+    const forceFullReversal = Boolean(
+      charge.refunded || (chargeAmountCents > 0 && amountRefundedCents >= chargeAmountCents)
+    );
+
+    if (stripeChargeId || stripePaymentIntentId) {
+      try {
+        const reconciled = await registryService.reconcileStripeAdjustment({
+          stripeChargeId,
+          stripePaymentIntentId,
+          refundedCents: amountRefundedCents,
+          forceFullReversal,
+        });
+
+        if (reconciled.matched && reconciled.changed && reconciled.contributor) {
+          await dispatchLedgerAdjustmentNotification({
+            eventType:
+              reconciled.contributor.status === 'REFUNDED' ? 'refund' : 'partial_refund',
+            contributor: reconciled.contributor,
+            item: reconciled.item,
+            refundedAmount: reconciled.refundedAmount,
+            requestUrl: request.url,
+          });
+        }
+      } catch (err: unknown) {
+        logger.error('Error processing webhook charge.refunded', {
+          stripeChargeId,
+          stripePaymentIntentId,
+          reason: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
+    }
+  } else if (parsedEvent.success && event.type === 'charge.dispute.created') {
+    const dispute = event.data.object as Stripe.Dispute;
+    const stripeChargeId =
+      typeof dispute.charge === 'string'
+        ? dispute.charge
+        : (dispute.charge as any)?.id || null;
+    const stripePaymentIntentId =
+      typeof dispute.payment_intent === 'string'
+        ? dispute.payment_intent
+        : (dispute.payment_intent as any)?.id || null;
+    const disputedCents =
+      typeof dispute.amount === 'number' && Number.isFinite(dispute.amount)
+        ? Math.max(0, dispute.amount)
+        : 0;
+    const forceFullReversal = disputedCents <= 0;
+
+    if (stripeChargeId || stripePaymentIntentId) {
+      try {
+        const reconciled = await registryService.reconcileStripeAdjustment({
+          stripeChargeId,
+          stripePaymentIntentId,
+          refundedCents: disputedCents,
+          forceFullReversal,
+        });
+
+        if (reconciled.matched && reconciled.changed && reconciled.contributor) {
+          await dispatchLedgerAdjustmentNotification({
+            eventType: 'dispute',
+            contributor: reconciled.contributor,
+            item: reconciled.item,
+            refundedAmount: reconciled.refundedAmount,
+            requestUrl: request.url,
+          });
+        }
+      } catch (err: unknown) {
+        logger.error('Error processing webhook charge.dispute.created', {
+          stripeChargeId,
           stripePaymentIntentId,
           reason: err instanceof Error ? err.message : 'Unknown error',
         });

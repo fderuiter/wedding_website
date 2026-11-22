@@ -341,6 +341,7 @@ describe('RegistryRepository', () => {
               name: contribution.name,
               email: null,
               amount: contribution.amount,
+              status: 'RESERVED',
               coverFee: false,
               feeAmount: 0,
               message: null,
@@ -447,6 +448,7 @@ describe('RegistryRepository', () => {
               name: contribution.name,
               email: null,
               amount: contribution.amount,
+              status: 'RESERVED',
               coverFee: false,
               feeAmount: 0,
               message: null,
@@ -510,6 +512,7 @@ describe('RegistryRepository', () => {
               name: 'Guest Contributor',
               email: null,
               amount: 50,
+              status: 'RESERVED',
               coverFee: false,
               feeAmount: 0,
               message: null,
@@ -571,6 +574,7 @@ describe('RegistryRepository', () => {
               name: 'Jane Smith',
               email: null,
               amount: 50,
+              status: 'RESERVED',
               coverFee: false,
               feeAmount: 0,
               message: null,
@@ -676,6 +680,7 @@ describe('RegistryRepository', () => {
               name: 'Jane Smith',
               email: null,
               amount: 50,
+              status: 'RESERVED',
               coverFee: false,
               feeAmount: 0,
               message: null,
@@ -719,6 +724,7 @@ describe('RegistryRepository', () => {
               name: 'Generous Guest',
               email: null,
               amount: 100,
+              status: 'RESERVED',
               coverFee: true,
               feeAmount: 2.5,
               message: null,
@@ -761,6 +767,7 @@ describe('RegistryRepository', () => {
               name: 'Well Wisher',
               email: 'wellwisher@example.com',
               amount: 50,
+              status: 'RESERVED',
               coverFee: false,
               feeAmount: 0,
               message: 'Congrats!',
@@ -852,6 +859,283 @@ describe('RegistryRepository', () => {
       ).rejects.toMatchObject({
         statusCode: 400,
       });
+    });
+
+    it('records Stripe card payments with status CONFIRMED immediately', async () => {
+      const tx = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn().mockResolvedValue({ ...mockRegistryItem, amountContributed: 100, purchased: true }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(tx));
+
+      await registryRepository.contributeToItem('1', {
+        name: 'Card Guest',
+        amount: 100,
+        stripePaymentIntentId: 'pi_card_immediate',
+        stripeChargeId: 'ch_card_immediate',
+      });
+
+      expect(tx.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contributors: {
+              create: expect.objectContaining({
+                name: 'Card Guest',
+                amount: 100,
+                status: 'CONFIRMED',
+                stripePaymentIntentId: 'pi_card_immediate',
+                stripeChargeId: 'ch_card_immediate',
+              }),
+            },
+          }),
+        })
+      );
+    });
+  });
+
+  describe('contributor lifecycle and non-destructive Stripe reconciliation', () => {
+    it('confirms RESERVED contributions, cancels RESERVED claims, voids contributions non-destructively, and recalculates item totals', async () => {
+      const reservedRow = {
+        id: 'c-res-1',
+        name: 'Taylor Guest',
+        email: 'taylor@example.com',
+        amount: 100,
+        refundedAmount: 0,
+        status: 'RESERVED',
+        coverFee: false,
+        feeAmount: 0,
+        date: new Date('2026-11-20T00:00:00Z'),
+        isPlusOne: false,
+        thankYouStatus: 'Unsent',
+        registryItemId: 'item-ledger-1',
+      };
+
+      const itemWithContributors = {
+        ...mockRegistryItem,
+        id: 'item-ledger-1',
+        isGroupGift: false,
+        price: 100,
+        quantity: 1,
+        amountContributed: 100,
+        purchased: true,
+        purchaserName: 'Taylor Guest',
+      };
+
+      // 1. Confirm RESERVED -> CONFIRMED
+      const txConfirm = {
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue(reservedRow),
+          update: jest.fn().mockResolvedValue({ ...reservedRow, status: 'CONFIRMED' }),
+          findMany: jest.fn().mockResolvedValue([{ ...reservedRow, status: 'CONFIRMED' }]),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(itemWithContributors),
+          update: jest.fn().mockResolvedValue({
+            ...itemWithContributors,
+            contributors: [{ ...reservedRow, status: 'CONFIRMED' }],
+          }),
+        },
+        snapshotVersion: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txConfirm));
+
+      const confirmRes = await registryRepository.confirmContribution!('c-res-1', 'Guest');
+      expect(confirmRes.changed).toBe(true);
+      expect(confirmRes.contributor.status).toBe('CONFIRMED');
+
+      // 2. Guest cancel on CONFIRMED is rejected with 409
+      const txCancelConfirmed = {
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue({ ...reservedRow, status: 'CONFIRMED' }),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txCancelConfirmed));
+      await expect(registryRepository.cancelReservedContribution!('c-res-1')).rejects.toMatchObject({
+        statusCode: 409,
+      });
+
+      // 3. Admin void transitions CONFIRMED -> CANCELLED without deleting contributor and reopens item
+      const txVoid = {
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue({ ...reservedRow, status: 'CONFIRMED' }),
+          update: jest.fn().mockResolvedValue({ ...reservedRow, status: 'CANCELLED' }),
+          findMany: jest.fn().mockResolvedValue([{ ...reservedRow, status: 'CANCELLED' }]),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(itemWithContributors),
+          update: jest.fn().mockImplementation(({ data }) =>
+            Promise.resolve({
+              ...itemWithContributors,
+              ...data,
+              contributors: [{ ...reservedRow, status: 'CANCELLED' }],
+            })
+          ),
+        },
+        snapshotVersion: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txVoid));
+
+      const voidRes = await registryRepository.voidContribution!('c-res-1', 'Admin');
+      expect(voidRes.changed).toBe(true);
+      expect(voidRes.contributor.status).toBe('CANCELLED');
+      expect(txVoid.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            amountContributed: 0,
+            purchased: false,
+            purchaserName: null,
+          },
+        })
+      );
+    });
+
+    it('reconciles partial and full Stripe refunds idempotently', async () => {
+      const stripeContrib = {
+        id: 'c-stripe-1',
+        name: 'Alex Card',
+        email: 'alex@example.com',
+        amount: 100,
+        refundedAmount: 0,
+        status: 'CONFIRMED',
+        coverFee: false,
+        feeAmount: 0,
+        date: new Date('2026-11-20T00:00:00Z'),
+        isPlusOne: false,
+        thankYouStatus: 'Unsent',
+        stripePaymentIntentId: 'pi_refund_1',
+        stripeChargeId: 'ch_refund_1',
+        registryItemId: 'item-fund-1',
+      };
+      const fundItem = {
+        ...mockRegistryItem,
+        id: 'item-fund-1',
+        price: 100,
+        quantity: 1,
+        isGroupGift: true,
+        amountContributed: 100,
+        purchased: true,
+      };
+
+      // Partial refund of $40 -> stays CONFIRMED, refundedAmount = 40, item amountContributed = 60, purchased = false
+      const txPartial = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue(stripeContrib),
+          findUnique: jest.fn().mockResolvedValue(stripeContrib),
+          update: jest.fn().mockResolvedValue({ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }),
+          findMany: jest.fn().mockResolvedValue([{ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }]),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...fundItem,
+            contributors: [{ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }],
+          }),
+          update: jest.fn().mockImplementation(({ data }) =>
+            Promise.resolve({
+              ...fundItem,
+              ...data,
+              contributors: [{ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }],
+            })
+          ),
+        },
+        snapshotVersion: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txPartial));
+
+      const partialRes = await registryRepository.reconcileStripeAdjustment!({
+        stripeChargeId: 'ch_refund_1',
+        stripePaymentIntentId: 'pi_refund_1',
+        refundedCents: 4000,
+      });
+      expect(partialRes.matched).toBe(true);
+      expect(partialRes.changed).toBe(true);
+      expect(partialRes.refundedAmount).toBe(40);
+      expect(partialRes.contributor?.status).toBe('CONFIRMED');
+      expect(txPartial.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            amountContributed: 60,
+            purchased: false,
+          }),
+        })
+      );
+
+      // Duplicate webhook with same $40 refund -> idempotent no-op
+      const txDuplicate = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue({ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }),
+          findUnique: jest.fn().mockResolvedValue({ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }),
+          update: jest.fn(),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...fundItem,
+            amountContributed: 60,
+            purchased: false,
+            contributors: [{ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }],
+          }),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txDuplicate));
+
+      const dupRes = await registryRepository.reconcileStripeAdjustment!({
+        stripeChargeId: 'ch_refund_1',
+        refundedCents: 4000,
+      });
+      expect(dupRes.matched).toBe(true);
+      expect(dupRes.changed).toBe(false);
+      expect(txDuplicate.contributor.update).not.toHaveBeenCalled();
+
+      // Full refund ($100) -> status REFUNDED, item amountContributed = 0
+      const txFull = {
+        contributor: {
+          findFirst: jest.fn().mockResolvedValue({ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }),
+          findUnique: jest.fn().mockResolvedValue({ ...stripeContrib, refundedAmount: 40, status: 'CONFIRMED' }),
+          update: jest.fn().mockResolvedValue({ ...stripeContrib, refundedAmount: 100, status: 'REFUNDED' }),
+          findMany: jest.fn().mockResolvedValue([{ ...stripeContrib, refundedAmount: 100, status: 'REFUNDED' }]),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...fundItem,
+            contributors: [{ ...stripeContrib, refundedAmount: 100, status: 'REFUNDED' }],
+          }),
+          update: jest.fn().mockImplementation(({ data }) =>
+            Promise.resolve({
+              ...fundItem,
+              ...data,
+              contributors: [{ ...stripeContrib, refundedAmount: 100, status: 'REFUNDED' }],
+            })
+          ),
+        },
+        snapshotVersion: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txFull));
+
+      const fullRes = await registryRepository.reconcileStripeAdjustment!({
+        stripeChargeId: 'ch_refund_1',
+        refundedCents: 10000,
+        forceFullReversal: true,
+      });
+      expect(fullRes.changed).toBe(true);
+      expect(fullRes.contributor?.status).toBe('REFUNDED');
+      expect(txFull.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            amountContributed: 0,
+            purchased: false,
+          }),
+        })
+      );
     });
   });
 });

@@ -21,6 +21,10 @@ export {
   BatchCreateRegistryItemsSchema,
   translateSnapshotToActive,
   PublicAddressCollectSchema,
+  ContributorStatusEnum,
+  GuestClaimQuerySchema,
+  GuestClaimActionSchema,
+  AdminContributorActionSchema,
 } from './schemas';
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
@@ -32,6 +36,10 @@ export type {
   ThankYouTemplateTokens,
   RegistryShippingAddress,
   OrderTrackingDetails,
+  GuestClaimActions,
+  ContributorRecord,
+  ContributorLifecycleResult,
+  StripeLedgerReconciliationResult,
 } from './types';
 export {
   THANK_YOU_TEMPLATES,
@@ -55,7 +63,24 @@ export type {
   ItemType,
   BatchScrapeUrlsDTO,
   BatchCreateRegistryItemsDTO,
+  ContributorStatus,
 } from './schemas';
+export {
+  signContributorActionToken,
+  verifyContributorActionToken,
+} from './lib/contributorToken';
+export type {
+  ContributorActionScope,
+  ContributorActionTokenPayload,
+} from './lib/contributorToken';
+export { maskRegistryItem, sanitizeRegistryItem } from './lib/masking';
+export {
+  dispatchContributionNotifications,
+  dispatchConfirmedContributionAlert,
+  dispatchPoliteReminderNotification,
+  dispatchLedgerAdjustmentNotification,
+} from './notifications';
+export { GET as registryClaimGET, POST as registryClaimPOST } from './api/claim';
 export { InvitationCodeAdminService } from './invitation-code.admin.service';
 export { RegistryItemAdminService } from './admin.service';
 export { useRegistry } from './hooks/useRegistry';
@@ -75,6 +100,8 @@ export { POST as registryScrapePOST } from './api/scrape';
 export { POST as registryBatchScrapePOST } from './api/batch-scrape';
 export { GuestSessionProvider, GuestSessionContext, useGuestSession } from './context/GuestSessionContext';
 export type { GuestSessionState, GuestSessionContextType, GuestSessionStatus } from './context/GuestSessionContext';
+export { ContributorLifecycleBadge } from './components/ContributorLifecycleBadge';
+export type { ContributorLifecycleBadgeProps } from './components/ContributorLifecycleBadge';
 export { SessionRecoveryModal } from './components/SessionRecoveryModal';
 export type { SessionRecoveryModalProps } from './components/SessionRecoveryModal';
 export { RegistryPreviewTable } from './components/RegistryPreviewTable';
