@@ -104,4 +104,48 @@ describe('tokenizeSafeLinks', () => {
     expect(plainText).toContain('Evil JS');
     expect(plainText).toContain('Unsafe Anchor');
   });
+
+  it('iteratively strips nested multi-character script, style, comment, and HTML tag injection payloads', () => {
+    const nestedMalicious = [
+      '<scr<script>inner()</script>ipt>outerEvil()</script >',
+      '<sty<style>.a{}</style>le>.b{color:red}</style\t\n bar>',
+      '<img<img src="x"> src="y" onerror="alert(1)">',
+      '<!-- <script>commented()</script> -->',
+      '<a href="https://safe.example.com">Safe <scr<script>x()</script>ipt>nested()</script> <b<i>>Label</b></a>',
+      'java<script>drop()</script>script:alert(9)',
+      'JAVASCRIPT:alert(10)',
+      'Please contact us.',
+    ].join(' ');
+
+    const tokens = tokenizeSafeLinks(nestedMalicious);
+    const serialized = JSON.stringify(tokens);
+
+    expect(serialized).not.toContain('<');
+    expect(serialized).not.toContain('>');
+    expect(serialized).not.toContain('inner');
+    expect(serialized).not.toContain('outerEvil');
+    expect(serialized).not.toContain('nested');
+    expect(serialized).not.toContain('onerror');
+    expect(serialized).not.toContain('commented');
+    expect(serialized).not.toContain('javascript:');
+    expect(serialized).not.toContain('JAVASCRIPT:');
+    expect(serialized).not.toContain('alert(');
+
+    expect(tokens).toEqual([
+      {
+        type: 'text',
+        value: '    ',
+      },
+      {
+        type: 'link',
+        label: 'Safe  Label',
+        href: 'https://safe.example.com',
+        isExternal: true,
+      },
+      {
+        type: 'text',
+        value: '   Please contact us.',
+      },
+    ]);
+  });
 });

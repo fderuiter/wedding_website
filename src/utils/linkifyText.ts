@@ -5,9 +5,8 @@ export type SafeLinkToken =
   | { type: 'link'; label: string; href: string; isExternal: boolean };
 
 const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
-const SCRIPT_OR_STYLE_BLOCK_RE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi;
-const HTML_ANCHOR_RE = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
-const RAW_HTML_TAG_RE = /<\/?[a-zA-Z][^>]*>/g;
+const HTML_ANCHOR_RE = /<a\b[^<>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>]+))[^<>]*>([\s\S]*?)<\/a\s*>/gi;
+const RAW_HTML_TAG_RE = /<\/?[a-zA-Z!?][^<>]*>/g;
 const UNSAFE_SCHEME_PREFIX_RE = /^(?:javascript|data|vbscript)\s*:/i;
 const BARE_EMAIL_EXACT_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
@@ -24,41 +23,122 @@ const LINK_CANDIDATE_RE = new RegExp(
   [
     // Group 1 (label), Group 2 (target): Markdown link [label](target)
     '\\[([^\\]\\n]{1,200})\\]\\(([^)\\s]{1,2000})\\)',
-    // Group 3: Unsafe inline scheme token to strip
+    // Unsafe inline scheme token to strip
     '\\b(?:javascript|data|vbscript):[^\\s<>]*',
-    // Group 4: Explicit http(s), mailto, or tel URI
+    // Explicit http(s), mailto, or tel URI
     '(?:https?:\\/\\/|mailto:|tel:)[^\\s<>]+',
-    // Group 5: Bare email address
+    // Bare email address
     '\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b',
-    // Group 6: Formatted phone number (+1 (555) 234-5678, (555) 234-5678, 555-234-5678)
+    // Formatted phone number (+1 (555) 234-5678, (555) 234-5678, 555-234-5678)
     '(?:\\+\\d{1,3}[\\s.-]?)?(?:\\(\\d{3}\\)|\\b\\d{3})[\\s.-]\\d{3}[\\s.-]\\d{4}\\b',
-    // Group 7 (prefix), Group 8 (internal path or hash anchor)
+    // Group 3 (prefix), Group 4 (internal path or hash anchor)
     '(^|[\\s(])((?:\\/[a-zA-Z0-9][a-zA-Z0-9\\-/_?#=&]*)|(?:#[a-zA-Z][a-zA-Z0-9\\-_]*))',
   ].join('|'),
-  'g'
+  'gi'
 );
+
+function isHtmlTagDelimiter(ch: string | undefined): boolean {
+  return (
+    ch === '>' ||
+    ch === '/' ||
+    ch === ' ' ||
+    ch === '\t' ||
+    ch === '\n' ||
+    ch === '\r' ||
+    ch === '\f'
+  );
+}
+
+function stripElementBlocksOnce(value: string, tagName: 'script' | 'style'): string {
+  const openPrefix = `<${tagName}`;
+  const closePrefix = `</${tagName}`;
+  const lower = value.toLowerCase();
+  let cursor = 0;
+  let result = '';
+
+  while (cursor < value.length) {
+    const openStart = lower.indexOf(openPrefix, cursor);
+    if (openStart === -1) {
+      result += value.slice(cursor);
+      break;
+    }
+
+    if (!isHtmlTagDelimiter(lower[openStart + openPrefix.length])) {
+      result += value.slice(cursor, openStart + openPrefix.length);
+      cursor = openStart + openPrefix.length;
+      continue;
+    }
+
+    const openEnd = lower.indexOf('>', openStart + openPrefix.length);
+    if (openEnd === -1) {
+      result += value.slice(cursor);
+      break;
+    }
+
+    let searchCloseFrom = openEnd + 1;
+    let closeEnd = -1;
+    while (searchCloseFrom < value.length) {
+      const candidateClose = lower.indexOf(closePrefix, searchCloseFrom);
+      if (candidateClose === -1) {
+        break;
+      }
+      if (isHtmlTagDelimiter(lower[candidateClose + closePrefix.length])) {
+        closeEnd = lower.indexOf('>', candidateClose + closePrefix.length);
+        break;
+      }
+      searchCloseFrom = candidateClose + closePrefix.length;
+    }
+
+    if (closeEnd === -1) {
+      result += value.slice(cursor);
+      break;
+    }
+
+    result += value.slice(cursor, openStart);
+    cursor = closeEnd + 1;
+  }
+
+  return result;
+}
+
+function stripHtmlTagsIteratively(value: string): string {
+  let sanitized = value;
+  let previous: string;
+  do {
+    previous = sanitized;
+    sanitized = sanitized.replace(RAW_HTML_TAG_RE, '');
+  } while (sanitized !== previous);
+  return sanitized.replace(/[<>]/g, '');
+}
 
 function stripRawHtml(input: string): string {
   if (!input) return '';
+
+  let sanitized = input.replace(CONTROL_CHARS_RE, '');
+  let previous: string;
+  do {
+    previous = sanitized;
+    sanitized = stripElementBlocksOnce(stripElementBlocksOnce(sanitized, 'script'), 'style');
+  } while (sanitized !== previous);
+
   // Convert safe-looking <a href="...">label</a> into markdown [label](href) before stripping remaining HTML tags,
   // while discarding unsafe hrefs so raw HTML tags never survive into the output.
-  const convertedAnchors = input
-    .replace(CONTROL_CHARS_RE, '')
-    .replace(SCRIPT_OR_STYLE_BLOCK_RE, '')
-    .replace(HTML_ANCHOR_RE, (_full, dqHref, sqHref, bareHref, innerHtml) => {
+  const convertedAnchors = sanitized.replace(
+    HTML_ANCHOR_RE,
+    (_full, dqHref, sqHref, bareHref, innerHtml) => {
       const rawHref = String(dqHref ?? sqHref ?? bareHref ?? '').trim();
-      const cleanLabel = String(innerHtml ?? '')
-        .replace(RAW_HTML_TAG_RE, '')
-        .replace(/[<>[\]]/g, '')
+      const cleanLabel = stripHtmlTagsIteratively(String(innerHtml ?? ''))
+        .replace(/[[\]]/g, '')
         .trim();
       const safeHref = resolveCandidateHref(rawHref);
       if (!safeHref) {
         return cleanLabel;
       }
       return cleanLabel ? `[${cleanLabel}](${safeHref})` : safeHref;
-    });
+    }
+  );
 
-  return convertedAnchors.replace(RAW_HTML_TAG_RE, '').replace(/[<>]/g, '');
+  return stripHtmlTagsIteratively(convertedAnchors);
 }
 
 function splitTrailingPunctuation(raw: string): { core: string; trailing: string } {
