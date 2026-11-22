@@ -37,7 +37,7 @@ npm run test:cov
 
 Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
 
-1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci --legacy-peer-deps`).
+1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci`).
 2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
 3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
 4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.

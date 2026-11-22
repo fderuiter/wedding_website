@@ -222,6 +222,8 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const errors: string[] = [];
 
   const requiredFiles = [
+    '.nvmrc',
+    '.npmrc',
     '.env.example',
     '.env.test',
     'prisma.config.ts',
@@ -241,6 +243,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
     'AGENTS.md',
@@ -256,6 +259,8 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     return errors;
   }
 
+  const nvmrcRaw = fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8');
+  const npmrcRaw = fs.readFileSync(path.join(repoRoot, '.npmrc'), 'utf8');
   const envExampleRaw = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
   const envTestRaw = fs.readFileSync(path.join(repoRoot, '.env.test'), 'utf8');
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
@@ -268,6 +273,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
+  const pretestMjsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/pretest.mjs'), 'utf8');
   const a11yReportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/a11y-report.mjs'), 'utf8');
   const seedRaw = fs.readFileSync(path.join(repoRoot, 'scripts/seed.ts'), 'utf8');
   const verifyDocSyncRaw = fs.readFileSync(
@@ -276,6 +282,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   );
   const readmeRaw = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const devSetupRaw = fs.readFileSync(path.join(repoRoot, 'docs/developer-setup.md'), 'utf8');
+  const versioningRaw = fs.readFileSync(path.join(repoRoot, 'docs/versioning.md'), 'utf8');
   const contributingRaw = fs.readFileSync(path.join(repoRoot, '.github/CONTRIBUTING.md'), 'utf8');
   const testingRaw = fs.readFileSync(path.join(repoRoot, '.github/TESTING.md'), 'utf8');
   const agentsRaw = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
@@ -376,7 +383,129 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
 
-  const pkg = JSON.parse(packageJsonRaw) as { scripts?: Record<string, string> };
+  const pkg = JSON.parse(packageJsonRaw) as {
+    scripts?: Record<string, string>;
+    engines?: Record<string, string>;
+    devEngines?: {
+      runtime?: { name?: string; version?: string; onFail?: string };
+      packageManager?: { name?: string; version?: string; onFail?: string };
+    };
+    devDependencies?: Record<string, string>;
+  };
+
+  // Validate Node.js 22 LTS & npm@10.9.x toolchain parity across .nvmrc, .npmrc, package.json, pretest.mjs, and setup/versioning docs
+  const nvmrcTrimmed = nvmrcRaw.trim();
+  const nvmrcMajorMatch = nvmrcTrimmed.match(/^v?(\d+)(?:\.\d+\.\d+)?$/);
+  const expectedNodeMajor = nvmrcMajorMatch ? nvmrcMajorMatch[1] : '22';
+  if (!nvmrcMajorMatch || expectedNodeMajor !== '22') {
+    errors.push(`.nvmrc: Must pin Node.js 22 LTS major ("22"), found "${nvmrcTrimmed}"`);
+  }
+  if (!/^engine-strict\s*=\s*true\s*$/m.test(npmrcRaw)) {
+    errors.push('.npmrc: Must set "engine-strict=true" at the repository root');
+  }
+  const parseMajorFromRange = (range?: string): string | null => {
+    if (!range) return null;
+    const match = range.trim().match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\b|$)/i);
+    return match ? match[1] : null;
+  };
+  if (parseMajorFromRange(pkg.engines?.node) !== expectedNodeMajor) {
+    errors.push(
+      `package.json: "engines.node" ("${pkg.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+    );
+  }
+  if (parseMajorFromRange(pkg.engines?.npm) !== '10' || !pkg.engines?.npm?.includes('10.9')) {
+    errors.push(
+      `package.json: "engines.npm" ("${pkg.engines?.npm ?? ''}") must target npm ^10.9.0`
+    );
+  }
+  if (
+    pkg.devEngines?.runtime?.name !== 'node' ||
+    parseMajorFromRange(pkg.devEngines?.runtime?.version) !== expectedNodeMajor ||
+    pkg.devEngines?.runtime?.onFail !== 'error'
+  ) {
+    errors.push(
+      `package.json: "devEngines.runtime" must enforce Node.js ${expectedNodeMajor} with onFail: "error"`
+    );
+  }
+  if (
+    pkg.devEngines?.packageManager?.name !== 'npm' ||
+    parseMajorFromRange(pkg.devEngines?.packageManager?.version) !== '10' ||
+    !pkg.devEngines?.packageManager?.version?.includes('10.9') ||
+    pkg.devEngines?.packageManager?.onFail !== 'error'
+  ) {
+    errors.push(
+      'package.json: "devEngines.packageManager" must enforce npm ^10.9.0 with onFail: "error"'
+    );
+  }
+  if (parseMajorFromRange(pkg.devDependencies?.['@types/node']) !== expectedNodeMajor) {
+    errors.push(
+      `package.json: "@types/node" ("${pkg.devDependencies?.['@types/node'] ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+    );
+  }
+  if (pretestMjsRaw.includes('--legacy-peer-deps')) {
+    errors.push('scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI');
+  }
+  if (testingRaw.includes('--legacy-peer-deps')) {
+    errors.push('.github/TESTING.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap');
+  }
+  for (const [docLabel, docText] of [
+    ['README.md', readmeRaw],
+    ['docs/developer-setup.md', devSetupRaw],
+    ['AGENTS.md', agentsRaw],
+  ] as const) {
+    if (!docText.includes('.nvmrc')) {
+      errors.push(`${docLabel}: Must reference ".nvmrc" for Node.js ${expectedNodeMajor} LTS alignment`);
+    }
+    if (!docText.includes('10.9')) {
+      errors.push(`${docLabel}: Must reference "npm@10.9.x" matching package.json devEngines`);
+    }
+    if (!/\bnpm\s+ci\b/.test(docText)) {
+      errors.push(`${docLabel}: Must prescribe deterministic "npm ci" dependency installation`);
+    }
+    if (
+      new RegExp(`\\bNode\\.js\\s+v?(?!${expectedNodeMajor}\\b)\\d+(?:\\.x)?(?:\\s+LTS|\\+)`).test(
+        docText
+      )
+    ) {
+      errors.push(
+        `${docLabel}: Node.js major version does not match .nvmrc (expected Node.js ${expectedNodeMajor} LTS)`
+      );
+    }
+  }
+  const readmeInstallSection = extractMarkdownSection(
+    readmeRaw,
+    /^###\s+Installation\b/,
+    /^###?\s+/
+  );
+  if (!/\bnpm\s+ci\b/.test(readmeInstallSection) || /\bnpm\s+install\b/.test(readmeInstallSection)) {
+    errors.push(
+      'README.md: Installation section must prescribe "npm ci" rather than "npm install"'
+    );
+  }
+  const devSetupInstallSection = extractMarkdownSection(
+    devSetupRaw,
+    /^##\s+2\.\s+Cloning the Repository & Installing Dependencies\b/,
+    /^##\s+/
+  );
+  if (
+    !/\bnpm\s+ci\b/.test(devSetupInstallSection) ||
+    /\bnpm\s+install\b/.test(devSetupInstallSection)
+  ) {
+    errors.push(
+      'docs/developer-setup.md: Cloning the Repository & Installing Dependencies section must prescribe "npm ci" rather than "npm install"'
+    );
+  }
+  if (
+    !versioningRaw.includes(`node:${expectedNodeMajor}-bookworm-slim`) ||
+    /\bnode:\d+-alpine\b/.test(versioningRaw) ||
+    new RegExp(`\\bnode:(?!${expectedNodeMajor}-bookworm-slim\\b)\\d+-bookworm-slim\\b`).test(
+      versioningRaw
+    )
+  ) {
+    errors.push(
+      `docs/versioning.md: Must cite "node:${expectedNodeMajor}-bookworm-slim" (not stale alpine or mismatched Node.js major)`
+    );
+  }
   const scripts = pkg.scripts ?? {};
   const dbSeedCmd = scripts['db:seed'] ?? '';
   if (!/\bdotenv\s+-c\s+development\s+--\s+tsx\s+scripts\/seed\.ts\b/.test(dbSeedCmd)) {

@@ -48,7 +48,7 @@ Every release entry in `CHANGELOG.md` MUST include an explicit header indicating
 - Added optional `showAddToCalendar` toggle to `AppConfig` schema.
 
 ### 🐳 Deployment & Infrastructure Changes
-- Updated Docker base image to `node:22-alpine`.
+- Updated Docker base image digest for `node:22-bookworm-slim`.
 
 ### ⚠️ Breaking Changes & Migration Guide
 - None (All schema changes are backwards-compatible additions with defaults).

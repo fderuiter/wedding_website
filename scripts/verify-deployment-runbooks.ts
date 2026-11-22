@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
-import { parseDocument } from 'yaml';
+import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -654,6 +654,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   const errors: string[] = [];
 
   const requiredFiles = [
+    '.nvmrc',
     'package.json',
     'prisma.config.ts',
     'prisma/schema.prisma',
@@ -673,7 +674,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    '.github/dependabot.yml',
     '.github/workflows/ci.yml',
+    '.github/workflows/storybook.yml',
     '.github/workflows/deploy.yml',
     '.github/workflows/deploy-provider.yml',
     '.github/workflows/publish-artifact.yml',
@@ -692,7 +695,15 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
 
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
   const prismaMajor = getPrismaMajorVersion(packageJsonRaw);
-  const packageJson = JSON.parse(packageJsonRaw) as { scripts?: Record<string, string> };
+  const packageJson = JSON.parse(packageJsonRaw) as {
+    scripts?: Record<string, string>;
+    engines?: Record<string, string>;
+    devEngines?: {
+      runtime?: { name?: string; version?: string; onFail?: string };
+      packageManager?: { name?: string; version?: string; onFail?: string };
+    };
+    devDependencies?: Record<string, string>;
+  };
 
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
   const { urlEnvKey, shadowUrlEnvKey } = parsePrismaConfigEnvVars(prismaConfigRaw);
@@ -1143,6 +1154,199 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
   if (!dockerMd.includes('uploads_data') || !dockerMd.includes('/app/public/uploads')) {
     errors.push('docs/deployment/docker-vps.md: Must document `uploads_data` volume mounted at `/app/public/uploads`');
+  }
+
+  // Verify Node.js 22 LTS toolchain parity across .nvmrc, Dockerfile, package.json, runtime/deployment docs, workflows, and Dependabot
+  const nvmrcRaw = fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8').trim();
+  const nvmrcMajorMatch = nvmrcRaw.match(/^v?(\d+)(?:\.\d+\.\d+)?$/);
+  const expectedNodeMajor = nvmrcMajorMatch ? nvmrcMajorMatch[1] : '22';
+  if (!nvmrcMajorMatch || expectedNodeMajor !== '22') {
+    errors.push(`.nvmrc: Must pin Node.js 22 LTS major ("22"), found "${nvmrcRaw}"`);
+  }
+
+  const expectedDockerBaseRegex = new RegExp(
+    `^FROM\\s+node:${expectedNodeMajor}-bookworm-slim@sha256:[a-fA-F0-9]{64}\\b`,
+    'm'
+  );
+  const mismatchedDockerNodeRegex = new RegExp(
+    `^FROM\\s+node:(?!${expectedNodeMajor}-bookworm-slim(?:@|\\s|$))[^\\s]+`,
+    'm'
+  );
+  if (!expectedDockerBaseRegex.test(dockerfileRaw) || mismatchedDockerNodeRegex.test(dockerfileRaw)) {
+    errors.push(
+      `Dockerfile: Must pin \`node:${expectedNodeMajor}-bookworm-slim@sha256:<64-hex>\` matching .nvmrc (Node.js ${expectedNodeMajor} LTS)`
+    );
+  }
+
+  const extractSemverMajor = (range?: string): string | null => {
+    if (!range) return null;
+    const match = range.trim().match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\b|$)/i);
+    return match ? match[1] : null;
+  };
+  if (extractSemverMajor(packageJson.engines?.node) !== expectedNodeMajor) {
+    errors.push(
+      `package.json: \`engines.node\` ("${packageJson.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+    );
+  }
+  if (
+    packageJson.devEngines?.runtime?.name !== 'node' ||
+    extractSemverMajor(packageJson.devEngines?.runtime?.version) !== expectedNodeMajor ||
+    packageJson.devEngines?.runtime?.onFail !== 'error'
+  ) {
+    errors.push(
+      `package.json: \`devEngines.runtime\` must enforce Node.js ${expectedNodeMajor} with \`onFail: "error"\` matching .nvmrc`
+    );
+  }
+  if (extractSemverMajor(packageJson.devDependencies?.['@types/node']) !== expectedNodeMajor) {
+    errors.push(
+      `package.json: \`devDependencies["@types/node"]\` ("${packageJson.devDependencies?.['@types/node'] ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+    );
+  }
+
+  const staleDocNodeLtsRegex = new RegExp(
+    `\\bNode\\.js\\s+v?(?!${expectedNodeMajor}\\b)\\d+(?:\\.x)?\\s+LTS\\b`
+  );
+  const staleDocNodeImageRegex = new RegExp(
+    `\\bnode:(?!${expectedNodeMajor}-bookworm-slim\\b)\\d+-(?:bookworm-slim|alpine)\\b`
+  );
+  if (
+    !runtimeContractMd.includes(`v${expectedNodeMajor}.x LTS`) ||
+    !runtimeContractMd.includes(`node:${expectedNodeMajor}-bookworm-slim`) ||
+    staleDocNodeLtsRegex.test(runtimeContractMd) ||
+    staleDocNodeImageRegex.test(runtimeContractMd)
+  ) {
+    errors.push(
+      `docs/runtime-contract.md: Must specify Node.js v${expectedNodeMajor}.x LTS and \`node:${expectedNodeMajor}-bookworm-slim\` matching .nvmrc`
+    );
+  }
+
+  const deploymentOverviewMd = runbookContents.get('docs/deployment/README.md') ?? '';
+  for (const [docLabel, docContent] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+  ] as const) {
+    if (
+      !docContent.includes(`Node.js v${expectedNodeMajor}.x LTS`) ||
+      staleDocNodeLtsRegex.test(docContent)
+    ) {
+      errors.push(
+        `${docLabel}: Must specify \`Node.js v${expectedNodeMajor}.x LTS\` matching .nvmrc`
+      );
+    }
+  }
+
+  const workflowsCheckDir = path.join(repoRoot, '.github/workflows');
+  const workflowYamlEntries = fs
+    .readdirSync(workflowsCheckDir)
+    .filter((entry) => entry.endsWith('.yml') || entry.endsWith('.yaml'))
+    .sort();
+  let setupNodeStepCount = 0;
+  for (const wfEntry of workflowYamlEntries) {
+    const wfRelPath = `.github/workflows/${wfEntry}`;
+    const wfDoc = parseDocument(fs.readFileSync(path.join(workflowsCheckDir, wfEntry), 'utf8'), {
+      version: '1.2',
+    });
+    const jobsNode: unknown = isMap(wfDoc.contents) ? wfDoc.contents.get('jobs', true) : null;
+    if (!isMap(jobsNode)) {
+      continue;
+    }
+    for (const jobPair of jobsNode.items) {
+      const jobKey = isScalar(jobPair.key) ? String(jobPair.key.value) : 'unknown';
+      const jobNode: unknown = jobPair.value;
+      if (!isMap(jobNode)) {
+        continue;
+      }
+      const stepsNode: unknown = jobNode.get('steps', true);
+      if (!isSeq(stepsNode)) {
+        continue;
+      }
+      for (const stepItem of stepsNode.items) {
+        if (!isMap(stepItem)) {
+          continue;
+        }
+        const usesNode: unknown = stepItem.get('uses', true);
+        if (
+          !isScalar(usesNode) ||
+          typeof usesNode.value !== 'string' ||
+          !usesNode.value.trim().startsWith('actions/setup-node@')
+        ) {
+          continue;
+        }
+        setupNodeStepCount += 1;
+        const withNode: unknown = stepItem.get('with', true);
+        const versionFileNode: unknown = isMap(withNode)
+          ? withNode.get('node-version-file', true)
+          : undefined;
+        const hardcodedVersionNode: unknown = isMap(withNode)
+          ? withNode.get('node-version', true)
+          : undefined;
+        const versionFileVal =
+          isScalar(versionFileNode) && typeof versionFileNode.value === 'string'
+            ? versionFileNode.value.trim()
+            : '';
+        if (versionFileVal !== '.nvmrc' || hardcodedVersionNode !== undefined) {
+          errors.push(
+            `${wfRelPath} (job "${jobKey}"): \`actions/setup-node\` must set \`node-version-file: '.nvmrc'\` without hardcoded \`node-version\``
+          );
+        }
+      }
+    }
+  }
+  if (setupNodeStepCount === 0) {
+    errors.push('.github/workflows: Expected at least one `actions/setup-node` step referencing `.nvmrc`');
+  }
+
+  const dependabotDoc = parseDocument(
+    fs.readFileSync(path.join(repoRoot, '.github/dependabot.yml'), 'utf8'),
+    { version: '1.2' }
+  );
+  const hasDependabotMajorIgnore = (ecosystem: string, dependencyName: string): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== ecosystem) {
+        continue;
+      }
+      const ignoreNode: unknown = updateEntry.get('ignore', true);
+      if (!isSeq(ignoreNode)) {
+        continue;
+      }
+      for (const ignoreRule of ignoreNode.items) {
+        if (!isMap(ignoreRule)) {
+          continue;
+        }
+        const depNode: unknown = ignoreRule.get('dependency-name', true);
+        const typesNode: unknown = ignoreRule.get('update-types', true);
+        if (!isScalar(depNode) || String(depNode.value).trim() !== dependencyName || !isSeq(typesNode)) {
+          continue;
+        }
+        const hasMajorType = typesNode.items.some(
+          (item) => isScalar(item) && String(item.value).trim() === 'version-update:semver-major'
+        );
+        if (hasMajorType) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (!hasDependabotMajorIgnore('docker', 'node')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `node` under `docker` ecosystem'
+    );
+  }
+  if (!hasDependabotMajorIgnore('npm', '@types/node')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
+    );
   }
 
   // Verify standalone /uploads/* rewrite and nosniff upload route contract

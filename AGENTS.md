@@ -4,7 +4,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
 
 ## 1. Environment Bootstrap
 
-- **Node.js:** v22+
+- **Node.js & npm:** Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](.npmrc) and `devEngines` in [`package.json`](package.json); run `nvm use` if `nvm` is available).
 - **Install dependencies:**
   ```bash
   CI=true npm ci
