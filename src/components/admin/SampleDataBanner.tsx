@@ -30,6 +30,7 @@ export function SampleDataBanner() {
             if (data.counts.seating) parts.push(`${data.counts.seating} tables`);
             if (data.counts.weddingParty) parts.push(`${data.counts.weddingParty} party members`);
             if (data.counts.attractions) parts.push(`${data.counts.attractions} attractions`);
+            if (data.counts.faqs) parts.push(`${data.counts.faqs} FAQs`);
             setCountsSummary(parts.join(', '));
           }
         }

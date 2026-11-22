@@ -25,6 +25,7 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
   const createdRegistryIds: string[] = [];
   const createdInvitationIds: string[] = [];
   const createdTableIds: string[] = [];
+  const createdFaqIds: string[] = [];
 
   async function makeAdminRequest() {
     const now = Date.now();
@@ -49,10 +50,14 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     await prisma.registryItem.deleteMany({});
     await prisma.invitationCode.deleteMany({});
     await prisma.seatingTable.deleteMany({});
+    await prisma.contentNode.deleteMany({ where: { type: 'FAQ' } });
   });
 
   afterAll(async () => {
     await purgeSampleData();
+    if (createdFaqIds.length > 0) {
+      await prisma.contentNode.deleteMany({ where: { id: { in: createdFaqIds } } });
+    }
     if (createdRegistryIds.length > 0) {
       await prisma.registryItem.deleteMany({ where: { id: { in: createdRegistryIds } } });
     }
@@ -88,10 +93,10 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
       },
     });
 
-    // Populate sample data for all modules
+    // Populate sample data for all modules including starter FAQs
     await generateSampleData({
       archetype: 'classic',
-      modules: ['registry', 'guests', 'seating'],
+      modules: ['registry', 'guests', 'seating', 'faqs'],
     });
 
     // Warm up connection pool once, then measure milestone detection latency
@@ -107,14 +112,15 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
 
     const sampleOnlyBody = await resWithOnlySample.json();
     expect(sampleOnlyBody.completedCount).toBe(1);
-    expect(sampleOnlyBody.pendingCount).toBe(3);
+    expect(sampleOnlyBody.pendingCount).toBe(4);
     expect(sampleOnlyBody.allComplete).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'wedding-details')?.completed).toBe(true);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'guest-list')?.completed).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'registry')?.completed).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'seating-layout')?.completed).toBe(false);
+    expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'faq-setup')?.completed).toBe(false);
 
-    // Add real non-sample records for guest list, registry, and seating
+    // Add real non-sample records for guest list, registry, seating, and Wedding Q&A
     const media = await prisma.media.create({
       data: {
         url: '/images/custom-gift.jpg',
@@ -155,11 +161,25 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     });
     createdInvitationIds.push(guest.id);
 
+    const realFaq = await prisma.contentNode.create({
+      data: {
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'What is the dress code?',
+          answer: 'Cocktail attire.',
+          category: 'Attire',
+          isVisible: true,
+        },
+      },
+    });
+    createdFaqIds.push(realFaq.id);
+
     clearReactTestCache();
     const resAllReal = await GET(await makeAdminRequest(), {});
     const allRealBody = await resAllReal.json();
 
-    expect(allRealBody.completedCount).toBe(4);
+    expect(allRealBody.completedCount).toBe(5);
     expect(allRealBody.pendingCount).toBe(0);
     expect(allRealBody.allComplete).toBe(true);
     expect(allRealBody.milestones.every((m: OnboardingMilestone) => m.completed)).toBe(true);

@@ -29,6 +29,9 @@ jest.mock('@/lib/prisma', () => ({
     seatingTable: {
       count: jest.fn(),
     },
+    contentNode: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
@@ -90,6 +93,23 @@ describe('GET /api/admin/onboarding-milestones', () => {
     (prisma.invitationCode.count as jest.Mock).mockResolvedValue(0);
     (prisma.registryItem.count as jest.Mock).mockResolvedValue(0);
     (prisma.seatingTable.count as jest.Mock).mockResolvedValue(0);
+    (prisma.contentNode.findMany as jest.Mock).mockResolvedValue([
+      {
+        data: {
+          question: 'Sample FAQ?',
+          answer: 'Sample answer',
+          isSample: true,
+          isVisible: true,
+        },
+      },
+      {
+        data: {
+          question: 'Hidden Draft FAQ?',
+          answer: 'Hidden answer',
+          isVisible: false,
+        },
+      },
+    ]);
 
     const res = await GET(makeRequest(true), {});
     expect(res.status).toBe(200);
@@ -98,13 +118,17 @@ describe('GET /api/admin/onboarding-milestones', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.completedCount).toBe(0);
-    expect(body.pendingCount).toBe(4);
-    expect(body.totalCount).toBe(4);
+    expect(body.pendingCount).toBe(5);
+    expect(body.totalCount).toBe(5);
     expect(body.allComplete).toBe(false);
 
     expect(prisma.invitationCode.count).toHaveBeenCalledWith({ where: { isSample: false } });
     expect(prisma.registryItem.count).toHaveBeenCalledWith({ where: { isSample: false } });
     expect(prisma.seatingTable.count).toHaveBeenCalledWith({ where: { isSample: false } });
+    expect(prisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: { type: 'FAQ' },
+      select: { data: true },
+    });
 
     expect(body.milestones).toEqual([
       expect.objectContaining({
@@ -131,6 +155,12 @@ describe('GET /api/admin/onboarding-milestones', () => {
         completed: false,
         href: '/admin/dashboard/seating-chart',
       }),
+      expect.objectContaining({
+        id: 'faq-setup',
+        title: 'Wedding Q&A (FAQs)',
+        completed: false,
+        href: '/admin/dashboard/content',
+      }),
     ]);
   });
 
@@ -145,20 +175,22 @@ describe('GET /api/admin/onboarding-milestones', () => {
     (prisma.invitationCode.count as jest.Mock).mockResolvedValue(5);
     (prisma.registryItem.count as jest.Mock).mockResolvedValue(0);
     (prisma.seatingTable.count as jest.Mock).mockResolvedValue(2);
+    (prisma.contentNode.findMany as jest.Mock).mockResolvedValue([]);
 
     const res = await GET(makeRequest(true), {});
     const body = await res.json();
 
     expect(body.completedCount).toBe(2);
-    expect(body.pendingCount).toBe(2);
+    expect(body.pendingCount).toBe(3);
     expect(body.allComplete).toBe(false);
     expect(body.milestones.find((m: OnboardingMilestone) => m.id === 'wedding-details')?.completed).toBe(false);
     expect(body.milestones.find((m: OnboardingMilestone) => m.id === 'guest-list')?.completed).toBe(true);
     expect(body.milestones.find((m: OnboardingMilestone) => m.id === 'registry')?.completed).toBe(false);
     expect(body.milestones.find((m: OnboardingMilestone) => m.id === 'seating-layout')?.completed).toBe(true);
+    expect(body.milestones.find((m: OnboardingMilestone) => m.id === 'faq-setup')?.completed).toBe(false);
   });
 
-  it('reports allComplete=true when all four milestones are satisfied with non-sample data', async () => {
+  it('reports allComplete=true when all five milestones are satisfied with non-sample data', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     mockGetAppConfig.mockResolvedValue({
       id: 'global',
@@ -171,14 +203,23 @@ describe('GET /api/admin/onboarding-milestones', () => {
     (prisma.invitationCode.count as jest.Mock).mockResolvedValue(12);
     (prisma.registryItem.count as jest.Mock).mockResolvedValue(8);
     (prisma.seatingTable.count as jest.Mock).mockResolvedValue(4);
+    (prisma.contentNode.findMany as jest.Mock).mockResolvedValue([
+      {
+        data: {
+          question: 'What is the dress code?',
+          answer: 'Cocktail attire.',
+          isVisible: true,
+        },
+      },
+    ]);
 
     const res = await GET(makeRequest(true), {});
     const body = await res.json();
 
     expect(body.success).toBe(true);
-    expect(body.completedCount).toBe(4);
+    expect(body.completedCount).toBe(5);
     expect(body.pendingCount).toBe(0);
-    expect(body.totalCount).toBe(4);
+    expect(body.totalCount).toBe(5);
     expect(body.allComplete).toBe(true);
     expect(body.milestones.every((m: OnboardingMilestone) => m.completed)).toBe(true);
   });
@@ -196,20 +237,30 @@ describe('GET /api/admin/onboarding-milestones', () => {
     } as unknown as AppConfigDTO);
     (prisma.invitationCode.count as jest.Mock).mockResolvedValue(12);
     (prisma.seatingTable.count as jest.Mock).mockResolvedValue(4);
+    (prisma.contentNode.findMany as jest.Mock).mockResolvedValue([
+      {
+        data: {
+          question: 'Is parking available?',
+          answer: 'Yes, free on-site parking.',
+          isVisible: true,
+        },
+      },
+    ]);
 
     const res = await GET(makeRequest(true), {});
     expect(res.status).toBe(200);
     const body = await res.json();
 
     expect(prisma.registryItem.count).not.toHaveBeenCalled();
-    expect(body.totalCount).toBe(3);
-    expect(body.completedCount).toBe(3);
+    expect(body.totalCount).toBe(4);
+    expect(body.completedCount).toBe(4);
     expect(body.pendingCount).toBe(0);
     expect(body.allComplete).toBe(true);
     expect(body.milestones.map((m: OnboardingMilestone) => m.id)).toEqual([
       'wedding-details',
       'guest-list',
       'seating-layout',
+      'faq-setup',
     ]);
   });
 });

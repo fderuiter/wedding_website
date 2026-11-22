@@ -347,5 +347,110 @@ describe('HomePageClient', () => {
     const results = await axe(footer);
     expect(results).toHaveNoViolations();
   });
+
+  test('hides "Questions You Probably Have" publicly when zero visible FAQs exist or all FAQs are hidden', () => {
+    const hiddenOnlyFaqs = [
+      {
+        id: 'faq-hidden-1',
+        type: 'FAQ' as const,
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'Unpublished draft FAQ?',
+          answer: 'Hidden until ready.',
+          isVisible: false,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+
+    const { container, rerender } = render(<HomePageClient config={mockConfig} contentNodes={[]} />);
+    expect(screen.queryByText('Questions You Probably Have')).not.toBeInTheDocument();
+    expect(screen.queryByText('More FAQs coming soon!')).not.toBeInTheDocument();
+    expect(container.querySelector('#faq')).toBeNull();
+
+    rerender(<HomePageClient config={mockConfig} contentNodes={hiddenOnlyFaqs as any} />);
+    expect(screen.queryByText('Questions You Probably Have')).not.toBeInTheDocument();
+    expect(container.querySelector('#faq')).toBeNull();
+  });
+
+  test('renders preview-only empty FAQ guidance inside an admin preview iframe when zero visible FAQs exist', () => {
+    const originalParent = window.parent;
+    Object.defineProperty(window, 'parent', {
+      configurable: true,
+      value: {} as Window,
+    });
+
+    try {
+      render(<HomePageClient config={mockConfig} contentNodes={[]} />);
+      expect(screen.getByText('Questions You Probably Have')).toBeInTheDocument();
+      expect(screen.getByTestId('faq-admin-preview-empty')).toHaveTextContent(
+        /Add at least one visible FAQ in the Content Hub to publish this section on your live homepage/i
+      );
+    } finally {
+      Object.defineProperty(window, 'parent', {
+        configurable: true,
+        value: originalParent,
+      });
+    }
+  });
+
+  test('renders visible FAQs sorted by JSONB displayOrder regardless of Homepage tag and passes axe', async () => {
+    const faqNodes = [
+      {
+        id: 'faq-second',
+        type: 'FAQ' as const,
+        tags: ['FAQ'],
+        data: {
+          question: 'Second Ordered Question?',
+          answer: 'Visit [Wedding Registry](/registry) for details.',
+          category: 'Registry',
+          displayOrder: 2,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'faq-first',
+        type: 'FAQ' as const,
+        tags: [],
+        data: {
+          question: 'First Ordered Question?',
+          answer: 'Shuttle details at https://shuttle.example.com.',
+          category: 'Travel',
+          displayOrder: 0,
+          isVisible: true,
+        },
+        createdAt: new Date('2026-01-05T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-05T00:00:00.000Z'),
+      },
+    ];
+
+    const { container } = render(
+      <HomePageClient config={mockConfig} contentNodes={faqNodes as any} />
+    );
+
+    const faqSection = container.querySelector('#faq') as HTMLElement;
+    expect(faqSection).toBeInTheDocument();
+    expect(within(faqSection).getByText('Questions You Probably Have')).toBeInTheDocument();
+
+    const triggers = [
+      within(faqSection).getByRole('button', { name: /First Ordered Question\?/i }),
+      within(faqSection).getByRole('button', { name: /Second Ordered Question\?/i }),
+    ];
+    expect(
+      triggers[0].compareDocumentPosition(triggers[1]) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    fireEvent.click(triggers[1]);
+    expect(within(faqSection).getByRole('link', { name: 'Wedding Registry' })).toHaveAttribute(
+      'href',
+      '/registry'
+    );
+
+    const results = await axe(faqSection);
+    expect(results).toHaveNoViolations();
+  });
 });
 

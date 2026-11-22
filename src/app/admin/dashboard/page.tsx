@@ -55,6 +55,15 @@ const OVERVIEW_WORKFLOWS: OverviewWorkflowCard[] = [
     actionLabel: 'Manage Sub-Events',
   },
   {
+    id: 'content',
+    title: 'Content Hub & Wedding Q&A',
+    description:
+      'Publish guest FAQs, organize day-of logistics, and customize homepage Q&A display order.',
+    href: '/admin/dashboard/content',
+    icon: 'HelpCircle',
+    actionLabel: 'Manage FAQs & Content',
+  },
+  {
     id: 'media',
     title: 'Media Library',
     description:

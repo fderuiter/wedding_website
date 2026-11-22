@@ -51,6 +51,14 @@ interface SampleAttractionPreset {
   roomRate?: string;
 }
 
+interface SampleFaqPreset {
+  question: string;
+  answer: string;
+  category: string;
+  categoryTags: string[];
+  keywords: string[];
+}
+
 export interface ArchetypePreset {
   id: ArchetypeId;
   name: string;
@@ -60,6 +68,7 @@ export interface ArchetypePreset {
   seatingTables: SampleSeatingPreset[];
   weddingParty: SampleWeddingPartyPreset[];
   attractions: SampleAttractionPreset[];
+  faqs: SampleFaqPreset[];
 }
 
 export const ARCHETYPE_PRESETS: Record<ArchetypeId, ArchetypePreset> = {
@@ -237,6 +246,40 @@ export const ARCHETYPE_PRESETS: Record<ArchetypeId, ArchetypePreset> = {
         longitude: -87.6350,
       },
     ],
+    faqs: [
+      {
+        question: 'What is the dress code for the celebration?',
+        answer:
+          'Cocktail or formal attire is kindly requested. Check the weekend schedule on the homepage for event-specific attire notes.',
+        category: 'Attire',
+        categoryTags: ['Attire', 'Ceremony'],
+        keywords: ['dress code', 'formal', 'cocktail'],
+      },
+      {
+        question: 'When is the RSVP deadline?',
+        answer:
+          'Please submit your attendance and meal preferences in the [Guest Portal](/guest) at least four weeks before the wedding date.',
+        category: 'RSVP',
+        categoryTags: ['RSVP'],
+        keywords: ['deadline', 'dietary', 'rsvp'],
+      },
+      {
+        question: 'Can I bring a plus-one or children?',
+        answer:
+          'Due to venue capacity, invitations specify all named household guests and allocated plus-ones on your [Guest Portal](/guest) profile.',
+        category: 'Guests',
+        categoryTags: ['Guests', 'RSVP'],
+        keywords: ['plus one', 'kids', 'children'],
+      },
+      {
+        question: 'Where should out-of-town guests stay?',
+        answer:
+          'Discounted group rates are available at our partner hotel listed in the [Local Guide](/things-to-do) and #accommodations section.',
+        category: 'Travel',
+        categoryTags: ['Travel', 'Accommodations'],
+        keywords: ['hotel', 'room block', 'parking'],
+      },
+    ],
   },
   destination: {
     id: 'destination',
@@ -359,6 +402,40 @@ export const ARCHETYPE_PRESETS: Record<ArchetypeId, ArchetypePreset> = {
         longitude: -80.1950,
       },
     ],
+    faqs: [
+      {
+        question: 'Which airport and resort transfers should we book?',
+        answer:
+          'Fly into the nearest international airport and check our [Local Guide](/things-to-do) for resort shuttle options and transfer timing.',
+        category: 'Travel',
+        categoryTags: ['Travel', 'Resort'],
+        keywords: ['airport', 'shuttle', 'transfer'],
+      },
+      {
+        question: 'What should we pack for beachside events?',
+        answer:
+          'Resort cocktail attire is recommended—breathable linen, sundresses, and block heels or dress sandals work best on coastal walkways.',
+        category: 'Attire',
+        categoryTags: ['Attire', 'Resort'],
+        keywords: ['beach', 'linen', 'sandals'],
+      },
+      {
+        question: 'How do we reserve rooms in the resort block?',
+        answer:
+          'Use the group promo code in #accommodations or visit the [Local Guide](/things-to-do) before the resort booking cutoff date.',
+        category: 'Accommodations',
+        categoryTags: ['Travel', 'Accommodations'],
+        keywords: ['resort', 'promo code', 'suite'],
+      },
+      {
+        question: 'When should we RSVP for welcome drinks and excursions?',
+        answer:
+          'Please confirm attendance for each weekend event in the [Guest Portal](/guest) at least six weeks prior to departure.',
+        category: 'RSVP',
+        categoryTags: ['RSVP', 'Schedule'],
+        keywords: ['welcome drinks', 'excursion', 'rsvp'],
+      },
+    ],
   },
   romantic: {
     id: 'romantic',
@@ -478,6 +555,40 @@ export const ARCHETYPE_PRESETS: Record<ArchetypeId, ArchetypePreset> = {
         directions: '88 Valley Road',
         latitude: 38.0050,
         longitude: -122.0050,
+      },
+    ],
+    faqs: [
+      {
+        question: 'Will the ceremony and reception take place outdoors?',
+        answer:
+          'Weather permitting, our ceremony will be held on the garden lawn followed by dinner under the pavilion. Block heels or flats are recommended for grass paths.',
+        category: 'Venue',
+        categoryTags: ['Venue', 'Attire'],
+        keywords: ['garden', 'outdoor', 'shoes'],
+      },
+      {
+        question: 'Is parking or shuttle service available at the venue?',
+        answer:
+          'Complimentary on-site parking is available near the main entrance, and shuttle details from partner inns are posted in #accommodations.',
+        category: 'Travel',
+        categoryTags: ['Travel', 'Venue'],
+        keywords: ['parking', 'shuttle', 'directions'],
+      },
+      {
+        question: 'How can we share dietary restrictions or food allergies?',
+        answer:
+          'Enter any allergies or meal preferences directly on your RSVP card in the [Guest Portal](/guest) so our catering team can prepare safely.',
+        category: 'RSVP',
+        categoryTags: ['RSVP', 'Dining'],
+        keywords: ['allergy', 'dietary', 'vegetarian', 'gluten-free'],
+      },
+      {
+        question: 'Where can we view the gift registry?',
+        answer:
+          'Your presence is the greatest gift! If you wish to browse our curated wish list or experience funds, visit our [Wedding Registry](/registry).',
+        category: 'Registry',
+        categoryTags: ['Registry'],
+        keywords: ['gifts', 'registry', 'funds'],
       },
     ],
   },
