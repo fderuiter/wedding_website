@@ -218,7 +218,10 @@ describe('verify-setup-guides contract check', () => {
     const pkgPath = path.join(tempDir, 'package.json');
     fs.writeFileSync(
       pkgPath,
-      fs.readFileSync(pkgPath, 'utf8').replace('    "pretest:cov": "npm run pretest",\n', '')
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace('    "pretest:cov": "npm run pretest",\n', '')
+        .replace('    "test:e2e:smoke": "playwright test --grep @smoke",\n', '')
     );
 
     const preCommitPath = path.join(tempDir, '.githooks/pre-commit');
@@ -242,6 +245,7 @@ describe('verify-setup-guides contract check', () => {
       expect.arrayContaining([
         expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
         expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
+        expect.stringContaining('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"'),
         '.githooks/pre-commit: Must enforce check:static sub-script "check:runbooks"',
         expect.stringContaining('Commit Your Changes claims "twelve" sequential workspace checks, expected "eleven"'),
         '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',

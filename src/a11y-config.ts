@@ -5,9 +5,10 @@ export const a11yConfig = {
     'landmark-main-is-top-level': { enabled: true },
     'landmark-no-duplicate-main': { enabled: true },
     'landmark-unique': { enabled: true },
+    'target-size': { enabled: true },
   },
   runOnly: {
     type: 'tag',
-    values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']
+    values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']
   }
 };

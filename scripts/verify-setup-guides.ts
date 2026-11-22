@@ -457,19 +457,36 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
 
-  const a11yJestIdx = a11yReportRaw.search(/['"]npm['"]\s*,\s*\[\s*['"]test['"]\s*\]/);
-  const a11ySeedIdx = a11yReportRaw.indexOf('scripts/seed.ts');
-  const a11yPlaywrightIdx = a11yReportRaw.search(
-    /['"]npx['"]\s*,\s*\[\s*['"]playwright['"]\s*,\s*['"]test['"]\s*\]/
+  if (!/node\s+scripts\/a11y-report\.mjs\s+--unit\b/.test(scripts['test:a11y:unit'] ?? '')) {
+    errors.push(
+      'package.json: "test:a11y:unit" must invoke "node scripts/a11y-report.mjs --unit"'
+    );
+  }
+  if (!/\bplaywright\s+test\b/.test(scripts['test:e2e'] ?? '')) {
+    errors.push('package.json: Missing "test:e2e" Playwright runner script');
+  }
+  if (!/\bplaywright\s+test\b.*--grep\s+@smoke\b/.test(scripts['test:e2e:smoke'] ?? '')) {
+    errors.push('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"');
+  }
+
+  const runA11ySuiteBody = a11yReportRaw.split('export function runA11ySuite')[1] ?? '';
+  const hasCoverageFalseUnitPass =
+    a11yReportRaw.includes('\'--coverage=false\'') &&
+    a11yReportRaw.includes('\'--runTestsByPath\'');
+  const a11yJestIdx = runA11ySuiteBody.indexOf('runA11yUnit(');
+  const a11ySeedIdx = runA11ySuiteBody.indexOf('scripts/seed.ts');
+  const a11yPlaywrightIdx = runA11ySuiteBody.search(
+    /['"]npx['"]\s*,\s*\[\s*['"]playwright['"]\s*,\s*['"]test['"]\s*,\s*['"]--grep['"]\s*,\s*['"]@a11y['"]\s*\]/
   );
   if (
+    !hasCoverageFalseUnitPass ||
     a11yJestIdx === -1 ||
     a11ySeedIdx === -1 ||
     a11yPlaywrightIdx === -1 ||
     !(a11yJestIdx < a11ySeedIdx && a11ySeedIdx < a11yPlaywrightIdx)
   ) {
     errors.push(
-      'scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts" after "npm test" and before "npx playwright test"'
+      'scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts" after runA11yUnit and before "npx playwright test --grep @a11y"'
     );
   }
 

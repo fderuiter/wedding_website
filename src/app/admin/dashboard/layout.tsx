@@ -41,14 +41,18 @@ export default async function AdminDashboardLayout({
 
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] flex flex-col">
-      <header aria-label="Admin Dashboard" className="bg-white dark:bg-gray-800 shadow p-4">
+      <div role="region" aria-label="Admin Dashboard" className="bg-white dark:bg-gray-800 shadow p-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-bold text-primary">Admin Control Panel</h1>
           <AdminNav items={visibleNavItems} />
         </div>
-      </header>
+      </div>
       <SampleDataBanner />
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6">
+      <main
+        id="main-content"
+        aria-label="Admin Dashboard Content"
+        className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6"
+      >
         {children}
       </main>
     </div>

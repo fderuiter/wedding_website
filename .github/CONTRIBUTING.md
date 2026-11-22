@@ -56,8 +56,8 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (production app, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.
-     - `npx playwright test` - Run Playwright E2E and smoke tests against the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
-     - `npm run test:a11y` - Run Jest tests, reseed `wedding_test` (`npx tsx scripts/seed.ts`), run Playwright accessibility checks, and generate summary reports.
+     - `npm run test:e2e` / `npm run test:e2e:smoke` (`npx playwright test`) - Run Playwright E2E or `@smoke`-tagged browser tests in bundled Chromium against `http://localhost:3000` and the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
+     - `npm run test:a11y:unit` & `npm run test:a11y` - Run targeted `src/` `jest-axe` component suites (`--unit`), or chain component checks, `wedding_test` reseeding (`npx tsx scripts/seed.ts`), and `@a11y` Playwright WCAG 2.2 AA audits (`--run`) to generate `test-results/a11y-summary.md`.
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash
