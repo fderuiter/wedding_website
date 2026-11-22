@@ -65,4 +65,91 @@ describe('prisma singleton behavior', () => {
 
     consoleSpy.mockRestore();
   });
+
+  test('configures Pool defaults (max=5, connectionTimeoutMillis=10000) and passes { schema } to PrismaPg while honoring URI overrides', async () => {
+    const originalDbUrl = process.env.DATABASE_URL;
+    const poolCalls: unknown[] = [];
+    const adapterCalls: unknown[] = [];
+
+    try {
+      await jest.isolateModulesAsync(async () => {
+        process.env.DATABASE_URL = 'postgresql://wedding:wedding123@localhost:5432/wedding_test';
+        jest.doMock('pg', () => ({
+          Pool: jest.fn().mockImplementation((cfg: unknown) => {
+            poolCalls.push(cfg);
+            return { end: jest.fn().mockResolvedValue(undefined) };
+          }),
+        }));
+        jest.doMock('@prisma/adapter-pg', () => ({
+          PrismaPg: jest.fn().mockImplementation((_pool: unknown, opts: unknown) => {
+            adapterCalls.push(opts);
+            return {};
+          }),
+        }));
+        jest.doMock('@prisma/client', () => ({
+          PrismaClient: jest.fn().mockImplementation(() => ({
+            $disconnect: jest.fn().mockResolvedValue(undefined),
+          })),
+        }));
+
+        await import('../prisma');
+      });
+
+      expect(poolCalls[0]).toMatchObject({
+        host: 'localhost',
+        port: 5432,
+        database: 'wedding_test',
+        max: 5,
+        connectionTimeoutMillis: 10000,
+        ssl: false,
+      });
+      expect(adapterCalls[0]).toEqual({ schema: 'public' });
+
+      delete (global as unknown as { pgPool?: unknown }).pgPool;
+      delete globalForPrisma.prisma;
+
+      await jest.isolateModulesAsync(async () => {
+        process.env.DATABASE_URL =
+          'postgresql://wedding:wedding123@/wedding_db?host=/cloudsql/proj:us-central1:db&schema=tenant_ceremony&connection_limit=3&connect_timeout=14&socket_timeout=9';
+        jest.doMock('pg', () => ({
+          Pool: jest.fn().mockImplementation((cfg: unknown) => {
+            poolCalls.push(cfg);
+            return { end: jest.fn().mockResolvedValue(undefined) };
+          }),
+        }));
+        jest.doMock('@prisma/adapter-pg', () => ({
+          PrismaPg: jest.fn().mockImplementation((_pool: unknown, opts: unknown) => {
+            adapterCalls.push(opts);
+            return {};
+          }),
+        }));
+        jest.doMock('@prisma/client', () => ({
+          PrismaClient: jest.fn().mockImplementation(() => ({
+            $disconnect: jest.fn().mockResolvedValue(undefined),
+          })),
+        }));
+
+        await import('../prisma');
+      });
+
+      expect(poolCalls[1]).toMatchObject({
+        host: '/cloudsql/proj:us-central1:db',
+        database: 'wedding_db',
+        max: 3,
+        connectionTimeoutMillis: 14000,
+        query_timeout: 9000,
+      });
+      expect(adapterCalls[1]).toEqual({ schema: 'tenant_ceremony' });
+    } finally {
+      if (originalDbUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = originalDbUrl;
+      }
+      delete (global as unknown as { pgPool?: unknown }).pgPool;
+      jest.dontMock('pg');
+      jest.dontMock('@prisma/adapter-pg');
+      jest.dontMock('@prisma/client');
+    }
+  });
 });

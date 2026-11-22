@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { env } from '@/env';
+import { buildPostgresRuntimeConfig } from '@/lib/postgresPool';
 
 interface GlobalPrismaState {
   prisma?: PrismaClient;
@@ -18,12 +19,9 @@ const globalForPrisma = globalThis as unknown as GlobalPrismaState;
 
 const createPrismaRuntime = (): { prisma: PrismaClient; pool: Pool } => {
   console.log('DEBUG [createPrismaClient]: Initializing PostgreSQL database client');
-  const connectionString = env.DATABASE_URL;
-  const pool = new Pool({
-    connectionString,
-    connectionTimeoutMillis: 3000,
-  });
-  const adapter = new PrismaPg(pool);
+  const { poolConfig, adapterOptions } = buildPostgresRuntimeConfig(env.DATABASE_URL);
+  const pool = new Pool(poolConfig);
+  const adapter = new PrismaPg(pool, adapterOptions);
   const client = new PrismaClient({ adapter });
   return { prisma: client, pool };
 };

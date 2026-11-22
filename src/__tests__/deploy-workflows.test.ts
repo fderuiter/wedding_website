@@ -955,4 +955,40 @@ process.exit(0);
     expect(confirmedMigrateRes.status).toBe(0);
     expect(fs.readFileSync(callLogFile, 'utf8')).toContain('npx prisma migrate deploy');
   });
+
+  it('rejects empty-host TCP URIs without ?host=/... and accepts Cloud SQL socket URIs in db-migrate.yml Verify DATABASE_URL secret', () => {
+    const verifySecretScript = extractStepRunScript(dbMigrateYml, 'Verify DATABASE_URL secret');
+    expect(verifySecretScript).not.toContain('${{');
+
+    const secretToken = 'CI_SUPER_SECRET_DB_TOKEN_88';
+    const invalidUrls = [
+      'postgres://',
+      `postgresql://wedding:${secretToken}@/wedding_db`,
+      `postgresql://wedding:${secretToken}@:5432/wedding_db`,
+      `postgresql://wedding:${secretToken}@/wedding_db?host=/`,
+      `postgresql://wedding:${secretToken}@/wedding_db?host=relative`,
+    ];
+
+    for (const badUrl of invalidUrls) {
+      const res = runBashStep(verifySecretScript, {
+        TARGET_ENV: 'production',
+        DATABASE_URL: badUrl,
+      });
+      expect(res.status).toBe(1);
+      const combined = res.stdout + res.stderr;
+      expect(combined).toContain('Invalid format for DATABASE_URL');
+      expect(combined).not.toContain(secretToken);
+    }
+
+    for (const validSocketUrl of [
+      'postgresql://wedding_user:STRONG_PASSWORD@localhost/wedding_db?host=/cloudsql/proj:us-central1:wedding-db',
+      'postgresql://wedding_user:STRONG_PASSWORD@/wedding_db?host=/cloudsql/proj:us-central1:wedding-db',
+    ]) {
+      const okRes = runBashStep(verifySecretScript, {
+        TARGET_ENV: 'production',
+        DATABASE_URL: validSocketUrl,
+      });
+      expect(okRes.status).toBe(0);
+    }
+  });
 });

@@ -29,9 +29,9 @@ Google Cloud Run provides a managed, serverless execution environment for contai
     Create a database instance on Neon or Supabase and enable connection pooling.
 
 ### Connection String Format
-*   **Cloud SQL Unix Socket Connection**:
+*   **Cloud SQL Unix Socket Connection** (include `localhost` as the authority host so Prisma CLI and runtime validation resolve the `?host=/cloudsql/...` socket path cleanly; legacy empty-host `@/` socket URIs are automatically normalized to `@localhost` at runtime and in `prisma.config.ts`):
     ```env
-    DATABASE_URL="postgresql://wedding_user:STRONG_PASSWORD@/wedding_db?host=/cloudsql/YOUR_PROJECT_ID:us-central1:wedding-db"
+    DATABASE_URL="postgresql://wedding_user:STRONG_PASSWORD@localhost/wedding_db?host=/cloudsql/YOUR_PROJECT_ID:us-central1:wedding-db"
     ```
 *   **Direct TCP Connection (Neon / Supabase)**:
     ```env

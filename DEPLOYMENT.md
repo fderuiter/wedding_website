@@ -359,15 +359,19 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
   - **Standard URI Format**: `postgresql://[user]:[password]@[host]:[port]/[database]?sslmode=[mode]`
   - **Example (Local PostgreSQL)**: `postgresql://wedding:wedding123@localhost:5432/wedding`
   - **Example (Cloud Host with SSL)**: `postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/wedding?sslmode=require`
+  - **Example (Cloud SQL / Unix Domain Socket)**: `postgresql://wedding_user:STRONG_PASSWORD@localhost/wedding_db?host=/cloudsql/YOUR_PROJECT_ID:us-central1:wedding-db` *(specify `@localhost` in the authority segment for Prisma CLI compatibility; legacy empty-host `@/` socket URIs with a valid `?host=/...` path are normalized to `@localhost` automatically)*
+  - **URI Schema, Pool & Timeout Flags**: Runtime `pg.Pool` and `@prisma/adapter-pg` honor `?schema=` (default `public`), `?connection_limit=` (default `max=5`, keeping three instances safely below `db-f1-micro`'s `max_connections=25`), `?connect_timeout=` / `?pool_timeout=` in seconds (default `10s` / `10000ms` to tolerate serverless cold wakes), `?socket_timeout=` in seconds, and `?statement_timeout=` in milliseconds.
 - **`POSTGRES_URL_NON_POOLING`** (Optional — `datasource.shadowDatabaseUrl` in `prisma.config.ts`): Direct, unpooled connection string used by Prisma for shadow database creation during local `prisma migrate dev`. It is **not** read automatically by `prisma migrate deploy`, though operators can store a direct PostgreSQL URL in `POSTGRES_URL_NON_POOLING` and pass it via an explicit `DATABASE_URL` override when running `prisma migrate deploy`.
   - **Example**: `postgresql://user:pass@ep-example-direct.us-east-1.aws.neon.tech/wedding_shadow?sslmode=require`
 
 ### SSL/TLS Configuration Behavior
-- **Default Behavior**: Standard `pg.Pool` automatically interprets SSL parameters passed in the `DATABASE_URL` query string.
-- **`sslmode` Options**:
-  - `sslmode=require`: Mandatory for cloud-hosted database providers (e.g., AWS RDS, GCP Cloud SQL, Supabase, Neon, Railway, Azure DB for PostgreSQL).
-  - `sslmode=prefer` / `sslmode=disable`: Typical for local Docker or development environments.
-  - Custom TLS Certificates: If your host requires custom CA certificates, configure `NODE_EXTRA_CA_CERTS` or pass formatted SSL parameters according to node-postgres specifications.
+- **libpq-Compatible Resolution**: Runtime `src/lib/prisma.ts` resolves `sslmode` and `ssl` query parameters according to standard PostgreSQL `libpq` semantics rather than aliasing `prefer`/`require` to `verify-full`.
+- **Supported TLS Modes**:
+  - `sslmode=disable` (or `ssl=false` / `ssl=0`): Connects over plaintext TCP or Unix domain sockets without TLS negotiation.
+  - `sslmode=prefer`: Attempts TLS encryption first and automatically falls back to plaintext when connecting to a PostgreSQL server without SSL enabled (such as local `postgres:15-alpine` containers).
+  - `sslmode=require` or `ssl=true`: Enforces encrypted TLS transport and accepts self-signed server certificates unless `sslrootcert` is explicitly configured. Recommended for managed cloud databases (Neon, Supabase, Render, Railway).
+  - `sslmode=verify-ca`: Enforces strict CA certificate chain verification against `sslrootcert` (or the system trust store) without hostname matching.
+  - `sslmode=verify-full`: Enforces both strict CA certificate chain validation (`sslrootcert` or system trust store) and server hostname/SAN verification.
 
 ### Connection Pooling vs. Direct Migration Connections
 - **Application Runtime (`DATABASE_URL`)**:

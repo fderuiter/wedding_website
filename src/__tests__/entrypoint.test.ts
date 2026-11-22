@@ -110,4 +110,63 @@ describe('docker-entrypoint.sh', () => {
       },
     );
   });
+
+  it('rejects empty-host TCP URIs that omit a valid ?host=/... socket path without leaking credentials', (done) => {
+    const secret = 'TOP_SECRET_DB_PASSWORD_77';
+    execFile(
+      ENTRYPOINT_PATH,
+      ['echo', 'booted'],
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: `postgresql://wedding:${secret}@/wedding_db`,
+        },
+      },
+      (error, stdout, stderr) => {
+        expect(error).not.toBeNull();
+        expect(error?.code).toBe(1);
+        const output = stdout + stderr;
+        expect(output).toContain('ERROR: Invalid format for DATABASE_URL.');
+        expect(output).not.toContain(secret);
+        expect(output).not.toContain('booted');
+        done();
+      },
+    );
+  });
+
+  it('accepts and normalizes @/ Cloud SQL Unix socket URIs to @localhost before running migrations and booting', (done) => {
+    const tempWorkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entrypoint-socket-'));
+    const localBinDir = path.join(tempWorkDir, 'node_modules', '.bin');
+    fs.mkdirSync(localBinDir, { recursive: true });
+    const stubPrismaPath = path.join(localBinDir, 'prisma');
+    fs.writeFileSync(
+      stubPrismaPath,
+      '#!/bin/sh\necho "PRISMA_SEES_HOST=$(printf %s "$DATABASE_URL" | sed -E "s|^[^@]+@([^/?]+).*|\\1|")"\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    const socketShorthandUrl =
+      'postgresql://wedding_user:STRONG_PASSWORD@/wedding_db?host=/cloudsql/my-proj:us-central1:wedding-db';
+
+    execFile(
+      ENTRYPOINT_PATH,
+      ['node', '-e', 'process.stdout.write("APP_HOST=" + new URL(process.env.DATABASE_URL).hostname + "\\n")'],
+      {
+        cwd: tempWorkDir,
+        env: {
+          ...process.env,
+          DATABASE_URL: socketShorthandUrl,
+          RUN_MIGRATIONS: 'true',
+        },
+      },
+      (error, stdout, stderr) => {
+        fs.rmSync(tempWorkDir, { recursive: true, force: true });
+        expect(error).toBeNull();
+        const output = stdout + stderr;
+        expect(output).toContain('PRISMA_SEES_HOST=localhost');
+        expect(output).toContain('APP_HOST=localhost');
+        done();
+      },
+    );
+  });
 });
