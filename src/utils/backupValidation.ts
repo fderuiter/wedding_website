@@ -1,10 +1,19 @@
 import { z } from 'zod';
-import { AppConfigSchema, FeatureSchema, PhotoDataSchema, RawUpdateAppConfigSchema } from '@/features/content';
+import {
+  AppConfigSchema,
+  FeatureSchema,
+  PhotoDataSchema,
+  RawUpdateAppConfigSchema,
+} from '@/features/content';
 import { ModuleConfigSchema, resolveModuleConfig } from '@/lib/modules';
 import { isSafeMediaOrPhotoUrl } from '@/utils/validationPrimitives';
 import { WeddingPartyMemberSchema } from '@/features/wedding-party';
 import { AttractionSchema } from '@/features/attractions';
-import { RegistryItemSchema, RegistryItemBaseSchema, ContributorSchema } from '@/features/registry';
+import {
+  RegistryItemSchema,
+  RegistryItemBaseSchema,
+  ContributorSchema,
+} from '@/features/registry';
 
 export interface PathDiagnostic {
   path: string;
@@ -12,13 +21,14 @@ export interface PathDiagnostic {
 }
 
 export function formatZodIssues(error: z.ZodError): PathDiagnostic[] {
-  return error.issues.map(issue => ({
+  return error.issues.map((issue) => ({
     path: issue.path.length > 0 ? issue.path.join('.') : 'root',
     message: issue.message,
   }));
 }
 
-const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_DATE_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
 
 export function reviveDates(root: any): any {
   if (root === null || root === undefined) return root;
@@ -63,7 +73,7 @@ export function reviveDates(root: any): any {
 }
 
 // AppConfig database-aligned schema (unknown/virtual DTO keys are stripped automatically by z.object)
-const BackupAppConfigSchema = z.object({
+export const BackupAppConfigSchema = z.object({
   // System-level metadata fields (Required)
   id: z.string().min(1).max(255),
   createdAt: z.date(),
@@ -118,7 +128,9 @@ const BackupAppConfigSchema = z.object({
   features: z.array(FeatureSchema).optional(),
   modules: ModuleConfigSchema.partial()
     .optional()
-    .transform((val) => (val === undefined ? undefined : resolveModuleConfig(val))),
+    .transform((val) =>
+      val === undefined ? undefined : resolveModuleConfig(val),
+    ),
   timezone: RawUpdateAppConfigSchema.shape.timezone.optional(),
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
@@ -129,16 +141,16 @@ const BackupAppConfigSchema = z.object({
 
   // Non-secret delivery & broadcast configuration columns
   emailProvider: z.string().max(100).optional(),
-  smtpHost: z.string().max(255).optional(),
-  smtpPort: z.number().int().min(1).max(65535).optional(),
-  smtpUser: z.string().max(255).optional(),
-  smtpFrom: z.string().max(255).optional(),
-  smtpSecure: z.boolean().optional(),
-  resendFrom: z.string().max(255).optional(),
-  sendgridFrom: z.string().max(255).optional(),
-  smsProvider: z.string().max(100).optional(),
-  twilioAccountSid: z.string().max(255).optional(),
-  twilioFromNumber: z.string().max(100).optional(),
+  smtpHost: z.string().max(255).nullable().optional(),
+  smtpPort: z.number().int().min(1).max(65535).nullable().optional(),
+  smtpUser: z.string().max(255).nullable().optional(),
+  smtpFrom: z.string().max(255).nullable().optional(),
+  smtpSecure: z.boolean().nullable().optional(),
+  resendFrom: z.string().max(255).nullable().optional(),
+  sendgridFrom: z.string().max(255).nullable().optional(),
+  smsProvider: z.string().max(100).nullable().optional(),
+  twilioAccountSid: z.string().max(255).nullable().optional(),
+  twilioFromNumber: z.string().max(100).nullable().optional(),
   broadcastBatchSize: z.number().int().min(1).max(10000).optional(),
   broadcastBatchDelayMs: z.number().int().min(0).max(3600000).optional(),
   shippingRecipientName: z.string().max(255).optional(),
@@ -163,7 +175,9 @@ const BackupAppConfigSchema = z.object({
 // Media database-aligned schema
 const BackupMediaSchema = z.object({
   id: z.string().min(1).max(255),
-  url: z.string().refine(isSafeMediaOrPhotoUrl, { message: 'Invalid media URL format' }),
+  url: z
+    .string()
+    .refine(isSafeMediaOrPhotoUrl, { message: 'Invalid media URL format' }),
   altText: z.string().nullable().optional(),
   isDecorative: z.boolean().optional(),
   isSample: z.boolean().optional(),
@@ -235,7 +249,9 @@ const BackupRegistryItemSchema = z.object({
 
   // Optional/Nullable fields
   itemType: z.string().max(100).optional(),
-  paymentHandleType: RegistryItemSchema.shape.paymentHandleType.nullable().optional(),
+  paymentHandleType: RegistryItemSchema.shape.paymentHandleType
+    .nullable()
+    .optional(),
   paymentHandle: RegistryItemSchema.shape.paymentHandle.nullable().optional(),
   vendorUrl: RegistryItemSchema.shape.vendorUrl.nullable().optional(),
   isGroupGift: RegistryItemSchema.shape.isGroupGift.optional(),
@@ -248,7 +264,7 @@ const BackupRegistryItemSchema = z.object({
 });
 
 // Contributor database-aligned schema
-const BackupContributorSchema = z.object({
+export const BackupContributorSchema = z.object({
   // System-level metadata fields (Required)
   id: z.string().min(1).max(255),
   createdAt: z.date(),
@@ -281,50 +297,56 @@ const BackupContributorSchema = z.object({
 });
 
 // ContentNode database-aligned schema
-const BackupContentNodeSchema = z.object({
-  // System-level metadata fields (Required)
-  id: z.string().min(1).max(255),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+const BackupContentNodeSchema = z
+  .object({
+    // System-level metadata fields (Required)
+    id: z.string().min(1).max(255),
+    createdAt: z.date(),
+    updatedAt: z.date(),
 
-  // Database-required columns (No defaults, not nullable)
-  type: z.string().min(1).max(255),
-  tags: z.array(z.string().max(255)),
-  data: z.record(z.string(), z.unknown()),
-}).superRefine((node, ctx) => {
-  if (node.type === 'Photo') {
-    if (!node.data || typeof node.data !== 'object' || Array.isArray(node.data)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['data'],
-        message: 'Photo node data must be an object',
-      });
-      return;
-    }
-    const parsed = PhotoDataSchema.safeParse(node.data);
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
+    // Database-required columns (No defaults, not nullable)
+    type: z.string().min(1).max(255),
+    tags: z.array(z.string().max(255)),
+    data: z.record(z.string(), z.unknown()),
+  })
+  .superRefine((node, ctx) => {
+    if (node.type === 'Photo') {
+      if (
+        !node.data ||
+        typeof node.data !== 'object' ||
+        Array.isArray(node.data)
+      ) {
         ctx.addIssue({
           code: 'custom',
-          path: ['data', ...issue.path],
-          message: issue.message,
+          path: ['data'],
+          message: 'Photo node data must be an object',
         });
+        return;
       }
+      const parsed = PhotoDataSchema.safeParse(node.data);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['data', ...issue.path],
+            message: issue.message,
+          });
+        }
+      }
+    } else if (
+      node.data &&
+      typeof node.data === 'object' &&
+      !Array.isArray(node.data) &&
+      typeof node.data.url === 'string' &&
+      !isSafeMediaOrPhotoUrl(node.data.url)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['data', 'url'],
+        message: 'Invalid URL format',
+      });
     }
-  } else if (
-    node.data &&
-    typeof node.data === 'object' &&
-    !Array.isArray(node.data) &&
-    typeof node.data.url === 'string' &&
-    !isSafeMediaOrPhotoUrl(node.data.url)
-  ) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['data', 'url'],
-      message: 'Invalid URL format',
-    });
-  }
-});
+  });
 
 // SeatingTable database-aligned schema
 const BackupSeatingTableSchema = z.object({

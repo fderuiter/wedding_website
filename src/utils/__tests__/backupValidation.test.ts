@@ -1,4 +1,21 @@
-import { DatabaseBackupSchema } from '../backupValidation';
+import fs from 'node:fs';
+import path from 'node:path';
+import {
+  BackupAppConfigSchema,
+  BackupContributorSchema,
+  DatabaseBackupSchema,
+  reviveDates,
+} from '../backupValidation';
+import {
+  APP_CONFIG_BACKUP_KEYS,
+  APP_CONFIG_SECRET_KEYS,
+  sanitizeAppConfigForBackup,
+} from '@/lib/appConfigBackup';
+import {
+  AppConfigSchema,
+  translateAppConfigSnapshot,
+} from '@/features/content';
+import { translateContributorSnapshot } from '@/features/registry';
 
 describe('DatabaseBackupSchema Validation Tests', () => {
   const getValidBackup = () => ({
@@ -38,7 +55,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         id: 'member-1',
         name: 'Jane Doe',
         role: 'Maid of Honor',
-        bio: 'Jane is Alice\'s sister.',
+        bio: "Jane is Alice's sister.",
         photoId: 'photo-1',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -248,14 +265,23 @@ describe('DatabaseBackupSchema Validation Tests', () => {
           id: 'photo-valid',
           type: 'Photo',
           tags: ['gallery'],
-          data: { url: '/uploads/photos/guest.jpg', status: 'APPROVED', isVisible: true },
+          data: {
+            url: '/uploads/photos/guest.jpg',
+            status: 'APPROVED',
+            isVisible: true,
+          },
           createdAt: new Date(),
           updatedAt: new Date(),
         },
       ];
       expect(() => DatabaseBackupSchema.parse(validBackup)).not.toThrow();
 
-      for (const badUrl of ['/../canary-outside-public.txt', '/%2e%2e/canary-outside-public.txt', '/uploads\\evil.jpg', '/uploads/evil.jpg\0']) {
+      for (const badUrl of [
+        '/../canary-outside-public.txt',
+        '/%2e%2e/canary-outside-public.txt',
+        '/uploads\\evil.jpg',
+        '/uploads/evil.jpg\0',
+      ]) {
         const invalidBackup: Record<string, unknown> = getValidBackup();
         invalidBackup.contentNode = [
           {
@@ -299,7 +325,9 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       expect(parsed.appConfig?.[0].rsvpOpen).toBe(false);
       expect(parsed.appConfig?.[0].rsvpDeadlineDate).toBe('2026-08-15');
       expect(parsed.appConfig?.[0].rsvpGracePeriodHours).toBe(48);
-      expect(parsed.appConfig?.[0].rsvpClosedMessage).toBe('RSVPs closed — email us!');
+      expect(parsed.appConfig?.[0].rsvpClosedMessage).toBe(
+        'RSVPs closed — email us!',
+      );
     });
 
     test('rejects invalid grace period hours or invalid cutoff calendar dates in backups', () => {
@@ -310,6 +338,324 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       const badDate: any = getValidBackup();
       badDate.appConfig[0].rsvpDeadlineDate = '2026-02-30';
       expect(() => DatabaseBackupSchema.parse(badDate)).toThrow();
+    });
+  });
+
+  describe('Nullable Outbound Messaging Delivery Columns', () => {
+    const NULLABLE_DELIVERY_KEYS = [
+      'smtpHost',
+      'smtpPort',
+      'smtpUser',
+      'smtpFrom',
+      'smtpSecure',
+      'resendFrom',
+      'sendgridFrom',
+      'smsProvider',
+      'twilioAccountSid',
+      'twilioFromNumber',
+    ] as const;
+
+    test('accepts null values across all 10 SQL-nullable outbound messaging columns during pre-flight and revived backup parsing', () => {
+      const backup: Record<string, any> = getValidBackup();
+      for (const key of NULLABLE_DELIVERY_KEYS) {
+        backup.appConfig[0][key] = null;
+      }
+
+      const serialized = JSON.stringify(backup);
+      const revived = reviveDates(JSON.parse(serialized));
+      const parsed = DatabaseBackupSchema.parse(revived);
+
+      for (const key of NULLABLE_DELIVERY_KEYS) {
+        expect(parsed.appConfig[0][key]).toBeNull();
+      }
+    });
+  });
+
+  describe('Prisma Schema Parity Guards (AppConfig & Contributor)', () => {
+    interface ParsedPrismaField {
+      name: string;
+      type: string;
+      nullable: boolean;
+    }
+
+    function parsePrismaScalarFields(modelName: string): ParsedPrismaField[] {
+      const schemaPath = path.resolve(process.cwd(), 'prisma/schema.prisma');
+      const schemaSource = fs.readFileSync(schemaPath, 'utf8');
+      const modelRegex = new RegExp(
+        `model\\s+${modelName}\\s*\\{([\\s\\S]*?)\\n\\}`,
+        'm',
+      );
+      const match = schemaSource.match(modelRegex);
+      if (!match) {
+        throw new Error(`Model ${modelName} not found in prisma/schema.prisma`);
+      }
+
+      const scalarTypes = new Set([
+        'String',
+        'Int',
+        'Float',
+        'Boolean',
+        'DateTime',
+        'Json',
+      ]);
+      const fields: ParsedPrismaField[] = [];
+
+      for (const rawLine of match[1].split('\n')) {
+        const line = rawLine.replace(/\/\/.*$/, '').trim();
+        if (!line || line.startsWith('@@')) continue;
+        const tokens = line.split(/\s+/);
+        if (tokens.length < 2) continue;
+        const [fieldName, rawType] = tokens;
+        const nullable = rawType.endsWith('?');
+        const cleanType = rawType.replace(/[?\[\]]/g, '');
+        if (!scalarTypes.has(cleanType)) continue;
+        fields.push({ name: fieldName, type: cleanType, nullable });
+      }
+      return fields;
+    }
+
+    test('APP_CONFIG_BACKUP_KEYS + APP_CONFIG_SECRET_KEYS match prisma/schema.prisma AppConfig 1:1', () => {
+      const prismaFields = parsePrismaScalarFields('AppConfig');
+      const prismaNames = prismaFields.map((f) => f.name).sort();
+      const combinedKeys = [
+        ...APP_CONFIG_BACKUP_KEYS,
+        ...APP_CONFIG_SECRET_KEYS,
+      ].sort();
+
+      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(79);
+      expect(APP_CONFIG_SECRET_KEYS).toHaveLength(4);
+      expect(combinedKeys).toEqual(prismaNames);
+
+      const overlap = APP_CONFIG_BACKUP_KEYS.filter((k) =>
+        (APP_CONFIG_SECRET_KEYS as readonly string[]).includes(k),
+      );
+      expect(overlap).toEqual([]);
+    });
+
+    test('sanitizeAppConfigForBackup retains all 79 non-secret columns and strips secrets and virtual DTO keys', () => {
+      const fullParsedDto = AppConfigSchema.parse({
+        id: 'global',
+        subdomain: 'couple',
+        multisiteEnabled: true,
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        brideName: 'Alex',
+        groomName: 'Taylor',
+        weddingDate: new Date('2026-06-20T00:00:00.000Z'),
+        baseUrl: 'https://wedding.example.com',
+        venueName: 'Garden',
+        venueAddress: '123 Main',
+        venueCity: 'Chicago',
+        venueState: 'IL',
+        venueZip: '60601',
+        latitude: 41.88,
+        longitude: -87.63,
+        storyText: 'Story',
+        venueDescription: 'Venue',
+        travelAdvice: 'Travel',
+        heroTitle: 'Hero',
+        heroSubtitle: 'Sub',
+        seoTitle: 'SEO',
+        seoDescription: 'Desc',
+        faviconUrl: '/favicon.png',
+        ogImageUrl: '/og.jpg',
+        brandMonogram: 'A&T',
+        brandLogoUrl: '/logo.svg',
+        brandLogoAlt: 'Logo',
+        heroImageUrl: '/hero.jpg',
+        heroImageAlt: 'Hero alt',
+        brandWatermarkUrl: '/wm.svg',
+        brandWatermarkAlt: 'WM alt',
+        badgeGraphicUrl: '/badge.svg',
+        badgeGraphicAlt: 'Badge alt',
+        seoKeywords: 'keywords',
+        isRsvpOpen: true,
+        smtpPass: 'secret-smtp',
+        resendApiKey: 'secret-resend',
+        sendgridApiKey: 'secret-sendgrid',
+        twilioAuthToken: 'secret-twilio',
+        features: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const sanitized = sanitizeAppConfigForBackup(
+        fullParsedDto as unknown as Record<string, unknown>,
+      );
+      expect(Object.keys(sanitized).sort()).toEqual(
+        [...APP_CONFIG_BACKUP_KEYS].sort(),
+      );
+      for (const secretKey of APP_CONFIG_SECRET_KEYS) {
+        expect(sanitized[secretKey]).toBeUndefined();
+      }
+      for (const virtualKey of [
+        'multisiteEnabled',
+        'isRsvpOpen',
+        'typographyScale',
+        'spacingScale',
+        'borderTreatment',
+        'brandDimensions',
+        'brandLogoWidth',
+        'brandLogoHeight',
+        'brandHeroHeight',
+        'brandWatermarkWidth',
+        'brandWatermarkOpacity',
+        'brandBadgeSize',
+        'fontHeading',
+        'fontBody',
+        'fontMono',
+      ]) {
+        expect(sanitized[virtualKey]).toBeUndefined();
+      }
+    });
+
+    test('BackupAppConfigSchema and BackupContributorSchema match Prisma columns and SQL nullability', () => {
+      const appConfigFields = parsePrismaScalarFields('AppConfig');
+      expect(Object.keys(BackupAppConfigSchema.shape).sort()).toEqual(
+        appConfigFields.map((f) => f.name).sort(),
+      );
+
+      for (const field of appConfigFields) {
+        if (field.nullable) {
+          const schemaField =
+            BackupAppConfigSchema.shape[
+              field.name as keyof typeof BackupAppConfigSchema.shape
+            ];
+          const res = schemaField.safeParse(null);
+          expect({
+            model: 'AppConfig',
+            field: field.name,
+            success: res.success,
+          }).toEqual({
+            model: 'AppConfig',
+            field: field.name,
+            success: true,
+          });
+        }
+      }
+
+      const contributorFields = parsePrismaScalarFields('Contributor');
+      expect(Object.keys(BackupContributorSchema.shape).sort()).toEqual(
+        contributorFields.map((f) => f.name).sort(),
+      );
+
+      for (const field of contributorFields) {
+        if (field.nullable) {
+          const schemaField =
+            BackupContributorSchema.shape[
+              field.name as keyof typeof BackupContributorSchema.shape
+            ];
+          const res = schemaField.safeParse(null);
+          expect({
+            model: 'Contributor',
+            field: field.name,
+            success: res.success,
+          }).toEqual({
+            model: 'Contributor',
+            field: field.name,
+            success: true,
+          });
+        }
+      }
+    });
+
+    test('translateAppConfigSnapshot and translateContributorSnapshot cover every mutable Prisma column and keep omitted fields undefined on update', () => {
+      const appConfigFields = parsePrismaScalarFields('AppConfig');
+      const expectedMutableNonSecretAppConfig = appConfigFields
+        .map((f) => f.name)
+        .filter(
+          (name) =>
+            !['id', 'createdAt', 'updatedAt'].includes(name) &&
+            !(APP_CONFIG_SECRET_KEYS as readonly string[]).includes(name),
+        )
+        .sort();
+
+      const emptyAppTranslated = translateAppConfigSnapshot({}, 'global');
+      expect(emptyAppTranslated).not.toBeNull();
+      expect(Object.keys(emptyAppTranslated!.update)).toEqual([]);
+      expect(
+        Object.keys(emptyAppTranslated!.create)
+          .filter((k) => k !== 'id')
+          .sort(),
+      ).toEqual(expectedMutableNonSecretAppConfig);
+
+      const populatedSnapshot: Record<string, unknown> = {};
+      for (const col of expectedMutableNonSecretAppConfig) {
+        if (col === 'latitude' || col === 'longitude') {
+          populatedSnapshot[col] = 12.34;
+        } else if (col === 'weddingDate') {
+          populatedSnapshot[col] = '2026-06-20T00:00:00.000Z';
+        } else if (
+          col === 'showCountdown' ||
+          col === 'showAddToCalendar' ||
+          col === 'rsvpOpen' ||
+          col === 'smtpSecure'
+        ) {
+          populatedSnapshot[col] = true;
+        } else if (
+          col === 'rsvpGracePeriodHours' ||
+          col === 'smtpPort' ||
+          col === 'broadcastBatchSize' ||
+          col === 'broadcastBatchDelayMs'
+        ) {
+          populatedSnapshot[col] = 24;
+        } else if (col === 'features') {
+          populatedSnapshot[col] = [];
+        } else if (col === 'modules' || col === 'themeTokens') {
+          populatedSnapshot[col] = {};
+        } else if (col === 'rsvpDeadlineDate') {
+          populatedSnapshot[col] = '2026-08-15';
+        } else {
+          populatedSnapshot[col] = 'val';
+        }
+      }
+      for (const secretKey of APP_CONFIG_SECRET_KEYS) {
+        populatedSnapshot[secretKey] = 'non-empty-secret';
+      }
+
+      const fullAppTranslated = translateAppConfigSnapshot(
+        populatedSnapshot,
+        'global',
+      );
+      expect(Object.keys(fullAppTranslated!.update).sort()).toEqual(
+        [
+          ...expectedMutableNonSecretAppConfig,
+          ...APP_CONFIG_SECRET_KEYS,
+        ].sort(),
+      );
+
+      const contributorFields = parsePrismaScalarFields('Contributor');
+      const expectedMutableContributor = contributorFields
+        .map((f) => f.name)
+        .filter((name) => !['id', 'createdAt', 'updatedAt'].includes(name))
+        .sort();
+
+      const emptyContributorTranslated = translateContributorSnapshot(
+        {},
+        { entityId: 'contrib-1' },
+      );
+      expect(emptyContributorTranslated).not.toBeNull();
+      expect(Object.keys(emptyContributorTranslated!.update)).toEqual([]);
+      expect(
+        Object.keys(emptyContributorTranslated!.create)
+          .filter((k) => k !== 'id')
+          .sort(),
+      ).toEqual(expectedMutableContributor);
+    });
+
+    test('client-reachable backup validation and key modules do not import server-only modules', () => {
+      for (const relFile of [
+        'src/lib/appConfigBackup.ts',
+        'src/utils/backupValidation.ts',
+      ]) {
+        const content = fs.readFileSync(
+          path.resolve(process.cwd(), relFile),
+          'utf8',
+        );
+        expect(content).not.toMatch(
+          /from\s+['"](\.\/prisma|@\/lib\/prisma|@prisma\/client|next\/headers)['"]/,
+        );
+      }
     });
   });
 });
