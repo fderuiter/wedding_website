@@ -1,5 +1,6 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
+import { getOrLoadRequestAppConfig } from './requestContext';
 import {
   AppConfigSchema,
   PublicAppConfigSchema,
@@ -679,32 +680,65 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
   }
 }
 
-/**
- * Load the application configuration following deterministic precedence:
- * Level 1: Environment Variable Overrides (`SITE_*` env vars)
- * Level 2: Database Configuration (`AppConfig` row from DB)
- * Level 3: Application Generic Defaults (`APP_DEFAULTS`)
- *
- * @param idOrSubdomain - Profile ID or Subdomain identifier
- * @returns The resolved and validated AppConfigDTO
- */
-export const getAppConfig = cache(async function getAppConfig(
-  idOrSubdomain?: string,
-): Promise<AppConfigDTO> {
+function normalizeRawDbConfig(raw: Record<string, unknown>): Record<string, unknown> {
+  const definedEntries: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value !== undefined) {
+      definedEntries[key] = value;
+    }
+  }
+
+  let parsedThemeTokens = definedEntries.themeTokens;
+  if (typeof parsedThemeTokens === 'string') {
+    try {
+      const decoded = JSON.parse(parsedThemeTokens);
+      parsedThemeTokens =
+        decoded && typeof decoded === 'object' && !Array.isArray(decoded) ? decoded : {};
+    } catch {
+      parsedThemeTokens = {};
+    }
+  }
+
+  const rawModules =
+    typeof definedEntries.modules === 'object' &&
+    definedEntries.modules !== null &&
+    !Array.isArray(definedEntries.modules)
+      ? (definedEntries.modules as Record<string, unknown>)
+      : {};
+
+  return {
+    ...definedEntries,
+    timezone:
+      typeof definedEntries.timezone === 'string' && definedEntries.timezone.trim()
+        ? definedEntries.timezone
+        : 'America/Chicago',
+    themeTokens:
+      parsedThemeTokens && typeof parsedThemeTokens === 'object' && !Array.isArray(parsedThemeTokens)
+        ? parsedThemeTokens
+        : {},
+    modules: {
+      ...(typeof definedEntries.showCountdown === 'boolean'
+        ? { countdown: definedEntries.showCountdown }
+        : {}),
+      ...(typeof definedEntries.showAddToCalendar === 'boolean'
+        ? { addToCalendar: definedEntries.showAddToCalendar }
+        : {}),
+      ...rawModules,
+    },
+  };
+}
+
+async function resolveAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
   const isStaticExport =
     process.env.STATIC_EXPORT === 'true' ||
     process.env.STATIC_EXPORT === '1' ||
     process.env.npm_lifecycle_event === 'build:export';
 
-  let dbConfig: AppConfigDTO | null = null;
+  let dbConfig: Record<string, unknown> | null = null;
   const multisite = isMultisiteEnabled();
 
   if (isStaticExport) {
-    dbConfig = AppConfigSchema.parse({
-      ...STATIC_MOCK_CONFIG,
-      latitude: coordinateSchema.parse(STATIC_MOCK_CONFIG.latitude),
-      longitude: coordinateSchema.parse(STATIC_MOCK_CONFIG.longitude),
-    });
+    dbConfig = normalizeRawDbConfig(STATIC_MOCK_CONFIG as unknown as Record<string, unknown>);
   } else {
     try {
       let rawDbConfig = null;
@@ -733,69 +767,50 @@ export const getAppConfig = cache(async function getAppConfig(
       }
 
       if (!rawDbConfig) {
-        dbConfig = AppConfigSchema.parse(
-          await prisma.appConfig.upsert({
-            where: { id: 'global' },
-            update: {},
-            create: {
-              id: 'global',
-              partner1Name: '',
-              partner2Name: '',
-              brideName: '',
-              groomName: '',
-              baseUrl: '',
-              venueName: '',
-              venueAddress: '',
-              venueCity: '',
-              venueState: '',
-              venueZip: '',
-              latitude: 0,
-              longitude: 0,
-              venueDescription: '',
-              seoDescription: '',
-              contactEmail: '',
-              photoAlbumUrl: '',
-              faviconUrl: '/assets/favicon.png',
-              ogImageUrl: '/images/placeholder.png',
-              seoKeywords: '',
-              colorPrimary: '#B91C1C',
-              colorSecondary: '#B45309',
-              themePreset: 'classic',
-              themeTokens: {},
-              modules: DEFAULT_MODULE_CONFIG,
-              timezone: 'UTC',
-              showCountdown: true,
-              showAddToCalendar: true,
-              rsvpOpen: true,
-              rsvpDeadlineDate: '',
-              rsvpGracePeriodHours: 0,
-              rsvpClosedMessage: '',
-            },
-          }),
-        );
-      } else {
-        const rawModules =
-          typeof (rawDbConfig as Record<string, unknown>).modules ===
-            'object' &&
-          (rawDbConfig as Record<string, unknown>).modules !== null &&
-          !Array.isArray((rawDbConfig as Record<string, unknown>).modules)
-            ? ((rawDbConfig as Record<string, unknown>).modules as Record<
-              string,
-              unknown
-            >)
-            : {};
-        dbConfig = AppConfigSchema.parse({
-          ...rawDbConfig,
-          modules: {
-            ...(typeof rawDbConfig.showCountdown === 'boolean'
-              ? { countdown: rawDbConfig.showCountdown }
-              : {}),
-            ...(typeof rawDbConfig.showAddToCalendar === 'boolean'
-              ? { addToCalendar: rawDbConfig.showAddToCalendar }
-              : {}),
-            ...rawModules,
+        const upsertedConfig = await prisma.appConfig.upsert({
+          where: { id: 'global' },
+          update: {},
+          create: {
+            id: 'global',
+            partner1Name: '',
+            partner2Name: '',
+            brideName: '',
+            groomName: '',
+            baseUrl: '',
+            venueName: '',
+            venueAddress: '',
+            venueCity: '',
+            venueState: '',
+            venueZip: '',
+            latitude: 0,
+            longitude: 0,
+            venueDescription: '',
+            seoDescription: '',
+            contactEmail: '',
+            photoAlbumUrl: '',
+            faviconUrl: '/assets/favicon.png',
+            ogImageUrl: '/images/placeholder.png',
+            seoKeywords: '',
+            colorPrimary: '#B91C1C',
+            colorSecondary: '#B45309',
+            themePreset: 'classic',
+            themeTokens: {},
+            modules: DEFAULT_MODULE_CONFIG,
+            timezone: 'UTC',
+            showCountdown: true,
+            showAddToCalendar: true,
+            rsvpOpen: true,
+            rsvpDeadlineDate: '',
+            rsvpGracePeriodHours: 0,
+            rsvpClosedMessage: '',
           },
         });
+        dbConfig =
+          upsertedConfig && typeof upsertedConfig === 'object'
+            ? normalizeRawDbConfig(upsertedConfig as unknown as Record<string, unknown>)
+            : null;
+      } else {
+        dbConfig = normalizeRawDbConfig(rawDbConfig as unknown as Record<string, unknown>);
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'production') {
@@ -810,11 +825,12 @@ export const getAppConfig = cache(async function getAppConfig(
   }
 
   const envOverrides = getEnvConfigOverrides();
-  const activePreset =
-    envOverrides.themePreset ||
-    dbConfig?.themePreset ||
-    APP_DEFAULTS.themePreset;
-  const previousDbPreset = dbConfig?.themePreset;
+  const dbThemePreset =
+    typeof dbConfig?.themePreset === 'string'
+      ? (dbConfig.themePreset as AppConfigDTO['themePreset'])
+      : undefined;
+  const activePreset = envOverrides.themePreset || dbThemePreset || APP_DEFAULTS.themePreset;
+  const previousDbPreset = dbThemePreset;
 
   // Deterministic Precedence: Sparse DB Custom Overrides < Sparse Env Overrides
   // Preset defaults stay in presets.ts so changing presets never carries stale defaults forward
@@ -860,9 +876,13 @@ export const getAppConfig = cache(async function getAppConfig(
   };
 
   const partner1Name =
-    mergedConfig.partner1Name || mergedConfig.brideName || '';
+    (typeof mergedConfig.partner1Name === 'string' && mergedConfig.partner1Name) ||
+    (typeof mergedConfig.brideName === 'string' && mergedConfig.brideName) ||
+    '';
   const partner2Name =
-    mergedConfig.partner2Name || mergedConfig.groomName || '';
+    (typeof mergedConfig.partner2Name === 'string' && mergedConfig.partner2Name) ||
+    (typeof mergedConfig.groomName === 'string' && mergedConfig.groomName) ||
+    '';
 
   try {
     return AppConfigSchema.parse({
@@ -886,4 +906,24 @@ export const getAppConfig = cache(async function getAppConfig(
     }
     throw err;
   }
-});
+}
+
+const getReactCachedAppConfig = cache(resolveAppConfig);
+
+/**
+ * Load the application configuration following deterministic precedence:
+ * Level 1: Environment Variable Overrides (`SITE_*` env vars)
+ * Level 2: Database Configuration (`AppConfig` row from DB)
+ * Level 3: Application Generic Defaults (`APP_DEFAULTS`)
+ *
+ * @param idOrSubdomain - Profile ID or Subdomain identifier
+ * @returns The resolved and validated AppConfigDTO
+ */
+export async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
+  const cacheKey = idOrSubdomain ?? '__default__';
+  const requestScoped = getOrLoadRequestAppConfig(cacheKey, () => resolveAppConfig(idOrSubdomain));
+  if (requestScoped) {
+    return requestScoped;
+  }
+  return getReactCachedAppConfig(idOrSubdomain);
+}
