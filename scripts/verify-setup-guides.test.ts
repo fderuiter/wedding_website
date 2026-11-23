@@ -42,6 +42,17 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
   }
 
   const readmeDirs = [
+    '.githooks',
+    '.github',
+    '.storybook',
+    'assets',
+    'docs',
+    'docs-portal',
+    'e2e',
+    'eslint-rules',
+    'prisma',
+    'public',
+    'scripts',
     'src/app',
     'src/components',
     'src/core',
@@ -51,11 +62,6 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'src/mocks',
     'src/testing',
     'src/utils',
-    'prisma',
-    'public',
-    'e2e',
-    'scripts',
-    'docs',
   ];
   for (const relDir of readmeDirs) {
     fs.mkdirSync(path.join(destRoot, relDir), { recursive: true });
@@ -383,6 +389,34 @@ describe('verify-setup-guides contract check', () => {
         'scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI',
         'README.md: Installation section must prescribe "npm ci" rather than "npm install"',
         'docs/versioning.md: Must cite "node:22-bookworm-slim" (not stale alpine or mismatched Node.js major)',
+      ])
+    );
+  });
+
+  it('rejects duplicate h1 headings, missing or broken Table of Contents entries, and undocumented root directories while ignoring build/cache folders', () => {
+    fs.mkdirSync(path.join(tempDir, 'node_modules'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, '.next'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, '.swc'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'coverage'), { recursive: true });
+    expect(verifySetupGuides(tempDir)).toEqual([]);
+
+    fs.mkdirSync(path.join(tempDir, 'packages'), { recursive: true });
+
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      `# NOTE CURRENTLY UNDER MAINTAINANCE\n\n${fs
+        .readFileSync(readmePath, 'utf8')
+        .replace('    *   [Linting & Testing](#linting--testing)\n', '    *   [Stale Section](#stale-section)\n')}`
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'README.md: Must contain exactly one top-level "#" (h1) heading, found 2',
+        'README.md: Table of Contents is missing entry for "Linting & Testing" (#linting--testing)',
+        'README.md: Table of Contents links to nonexistent heading "#stale-section"',
+        'README.md: Project Structure is missing root directory "packages"',
       ])
     );
   });

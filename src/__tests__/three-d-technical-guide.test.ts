@@ -11,6 +11,7 @@ import {
   ARCHITECTURAL_DOCS,
   escapeVueMustache,
   prependGeneratedPortalComment,
+  prependPortalFrontmatterTitle,
   rewriteMarkdownLinks,
 } from '../../scripts/generate-portal';
 
@@ -202,9 +203,13 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
 
     // If docs-portal has been staged (e.g. via pretest.mjs or generate-portal.ts), verify exact synchronization
     const stagedPortalFile = path.join(rootDir, 'docs-portal/features/3d-technical-guide.md');
+    const mapping = ARCHITECTURAL_DOCS.find(doc => doc.src === guideRelPath)!;
     if (fs.existsSync(stagedPortalFile)) {
       expect(fs.readFileSync(stagedPortalFile, 'utf8')).toBe(
-        prependGeneratedPortalComment(staged, guideRelPath)
+        prependGeneratedPortalComment(
+          prependPortalFrontmatterTitle(staged, mapping.title),
+          guideRelPath
+        )
       );
     }
   });
