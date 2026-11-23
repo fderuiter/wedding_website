@@ -16,15 +16,18 @@ class CustomEnvironment extends JSDOMEnvironment {
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
     const { MessageChannel, MessagePort } = require('node:worker_threads');
+    const BaseMessageChannel = globalThis.MessageChannel || MessageChannel;
     this._messageChannels = [];
     const trackedChannels = this._messageChannels;
-    this.global.MessageChannel = class TrackedMessageChannel extends MessageChannel {
+    this.global.MessageChannel = class TrackedMessageChannel extends BaseMessageChannel {
       constructor() {
         super();
         trackedChannels.push(this);
       }
     };
-    if (typeof this.global.MessagePort === 'undefined') this.global.MessagePort = MessagePort;
+    if (typeof this.global.MessagePort === 'undefined') {
+      this.global.MessagePort = globalThis.MessagePort || MessagePort;
+    }
     const { setImmediate, clearImmediate } = require('node:timers');
     if (typeof this.global.setImmediate === 'undefined') this.global.setImmediate = setImmediate;
     if (typeof this.global.clearImmediate === 'undefined') this.global.clearImmediate = clearImmediate;

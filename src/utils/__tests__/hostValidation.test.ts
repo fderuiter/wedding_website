@@ -1,5 +1,6 @@
 import {
   isHostAllowed,
+  isHostSyntaxValid,
   getValidatedCanonicalUrl,
   resolveRequestOrigin,
 } from '../hostValidation';
@@ -13,6 +14,53 @@ describe('Host Validation Utility', () => {
     '*.wedding.example',
     'wedding.example.com',
   ];
+
+  describe('isHostSyntaxValid', () => {
+    it('accepts valid domains, internal probe hosts, loopback IPs, and IPv6 literals', () => {
+      expect(isHostSyntaxValid('wedding.example.com')).toBe(true);
+      expect(isHostSyntaxValid('wedding.example.com.')).toBe(true);
+      expect(isHostSyntaxValid('healthcheck.railway.app')).toBe(true);
+      expect(isHostSyntaxValid('169.254.1.1:3000')).toBe(true);
+      expect(isHostSyntaxValid('127.0.0.1:3000')).toBe(true);
+      expect(isHostSyntaxValid('localhost:8080')).toBe(true);
+      expect(isHostSyntaxValid('[::1]')).toBe(true);
+      expect(isHostSyntaxValid('[::1]:3000')).toBe(true);
+    });
+
+    it('rejects empty, whitespace, comma-separated, CRLF, or malformed Host headers', () => {
+      expect(isHostSyntaxValid(null)).toBe(false);
+      expect(isHostSyntaxValid(undefined)).toBe(false);
+      expect(isHostSyntaxValid('')).toBe(false);
+      expect(isHostSyntaxValid('   ')).toBe(false);
+      expect(isHostSyntaxValid(' localhost')).toBe(false);
+      expect(isHostSyntaxValid('localhost ')).toBe(false);
+      expect(isHostSyntaxValid('wedding.example evil.com')).toBe(false);
+      expect(isHostSyntaxValid('wedding.example, evil.com')).toBe(false);
+      expect(isHostSyntaxValid('localhost\r\nX-Injected: evil')).toBe(false);
+      expect(isHostSyntaxValid('localhost\nHost: evil.com')).toBe(false);
+      expect(isHostSyntaxValid('localhost\r\n')).toBe(false);
+      expect(isHostSyntaxValid('wedding.example/admin')).toBe(false);
+      expect(isHostSyntaxValid('user@wedding.example')).toBe(false);
+      expect(isHostSyntaxValid('wedding.example?probe=1')).toBe(false);
+      expect(isHostSyntaxValid('wedding.example#frag')).toBe(false);
+      expect(isHostSyntaxValid('.')).toBe(false);
+      expect(isHostSyntaxValid('..')).toBe(false);
+      expect(isHostSyntaxValid('.example.com')).toBe(false);
+      expect(isHostSyntaxValid(':3000')).toBe(false);
+      expect(isHostSyntaxValid('[::1')).toBe(false);
+      expect(isHostSyntaxValid('[]')).toBe(false);
+      expect(isHostSyntaxValid('[::1]extra')).toBe(false);
+    });
+
+    it('rejects empty, zero, out-of-range, or non-numeric ports', () => {
+      expect(isHostSyntaxValid('127.0.0.1:')).toBe(false);
+      expect(isHostSyntaxValid('127.0.0.1:0')).toBe(false);
+      expect(isHostSyntaxValid('127.0.0.1:65536')).toBe(false);
+      expect(isHostSyntaxValid('127.0.0.1:abc')).toBe(false);
+      expect(isHostSyntaxValid('[::1]:0')).toBe(false);
+      expect(isHostSyntaxValid('[::1]:70000')).toBe(false);
+    });
+  });
 
   describe('isHostAllowed with environment configuration', () => {
     it('evaluates host against environment allowed hosts when custom rules are omitted', () => {
