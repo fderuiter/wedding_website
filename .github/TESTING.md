@@ -47,7 +47,7 @@ Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`,
 2. **Accessibility Violation Reset:** Resets `test-results/jest-a11y-violations.json` to `[]` before every Jest run so component-level `jest-axe` assertions report only current violations.
 3. **Test Environment Isolation, `CI=true` Preservation & `TEST_DATABASE_URL` Override:** Both `scripts/pretest.mjs` and [jest.setup.js](../jest.setup.js) honor explicit `TEST_DATABASE_URL` overrides (when targeting a custom PostgreSQL instance) or preserve the caller's `DATABASE_URL` when `CI=true`, while still loading test defaults from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`). Locally (when neither `CI=true` nor `TEST_DATABASE_URL` is set), they clear parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and target the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
 4. **TCP Readiness Probing & Conditional PostgreSQL Container Startup:** Probes TCP readiness on the host and port parsed from `DATABASE_URL` (`node:net`) before invoking Docker Compose. When a PostgreSQL listener already accepts connections (such as GitHub Actions `services.db` or an active local database) or when `CI=true`, `docker compose up -d db` is skipped. Locally, when the target port is offline and Docker (`docker info`) is running, it starts the container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully.
-5. **Cached Migration Synchronization & Conditional Prisma Client Generation:** Ensures isolated test databases (`wedding_test`) exist and tracks `prisma/schema.prisma`, `prisma/migrations/`, and target database URL state in `node_modules/.cache/pretest-state.json`, skipping repeated `npx prisma migrate deploy` (which automatically resets unbaselined `prisma db push` schemas on Prisma error `P3005` and retries once) and `npm run prisma:generate` executions when committed migrations and `node_modules/.prisma/client` are already up to date. Documentation portal staging is intentionally omitted from preflight and handled directly by dedicated portal suites ([`src/__tests__/generate-portal.test.ts`](../src/__tests__/generate-portal.test.ts)) and `npm run docs:build`.
+5. **Cached Migration Synchronization & Conditional Prisma Client Generation:** Ensures isolated test databases (`wedding_test`) exist and tracks `prisma/schema.prisma`, `prisma/migrations/`, and target database URL state in `node_modules/.cache/pretest-state.json`, skipping repeated `npx prisma migrate deploy` (which automatically resets unbaselined `prisma db push` schemas on Prisma error `P3005` and retries once) and `npm run prisma:generate` executions when committed migrations and `node_modules/.prisma/client` are already up to date (including skipping duplicate generation after `postinstall` in CI). Documentation portal staging is intentionally omitted from preflight and handled directly by dedicated portal suites ([`src/__tests__/generate-portal.test.ts`](../src/__tests__/generate-portal.test.ts)) and `npm run docs:build`.
 
 ## Test Structure & Architecture
 
@@ -89,7 +89,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   npm test
   npm run test:cov
   ```
-  `npm test` runs cached preflight automation followed by `jest --runInBand` without coverage instrumentation, while `npm run test:cov` runs `jest --coverage --runInBand` to generate `coverage/lcov.info` and enforce global coverage thresholds.
+  `npm test` runs cached preflight automation followed by `jest --runInBand` without coverage instrumentation, while `npm run test:cov` runs `jest --coverage --maxWorkers=1` to generate `coverage/lcov.info` and enforce global coverage thresholds.
 
 - **Playwright End-to-End & Smoke Tests:**
   ```bash
@@ -106,13 +106,13 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (49 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (53 src/ suites, no Docker required):
   npm run test:a11y:unit
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 49 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 53 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -157,7 +157,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run build-storybook
   ```
-  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml). Use `npm run storybook` for interactive component development.
+  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) and manual [.github/workflows/storybook.yml](workflows/storybook.yml) workflow (both installing dependencies with `npm ci --ignore-scripts`). Use `npm run storybook` for interactive component development.
 
 - **Complete Quality Gate:**
   ```bash

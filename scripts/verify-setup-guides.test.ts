@@ -537,8 +537,8 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(pkgPath, 'utf8')
         .replace(
-          '"postinstall": "prisma generate && npx tsx scripts/generate-docs.ts && node scripts/pretest.mjs --record-install-state"',
-          '"postinstall": "prisma generate && npx tsx scripts/generate-docs.ts"'
+          '"postinstall": "prisma generate && node scripts/pretest.mjs --record-install-state"',
+          '"postinstall": "prisma generate"'
         )
     );
 

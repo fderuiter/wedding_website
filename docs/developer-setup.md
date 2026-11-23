@@ -31,7 +31,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The postinstall lifecycle hook automatically runs `prisma generate` to compile the Prisma Client, updates architecture documentation, and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
+   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
 
 ---
 

@@ -37,6 +37,7 @@ const config = {
   testEnvironment: './jsdom-env.cjs',
   testEnvironmentOptions: { url: 'http://localhost/' },
   testTimeout: isCoverageRun ? 15000 : 10000,
+  workerIdleMemoryLimit: '1024MB',
   collectCoverage: process.env.COLLECT_COVERAGE === 'true' && !hasCoverageDisableFlag,
   coverageDirectory: 'coverage',
   coverageReporters: includeHtmlCoverage
