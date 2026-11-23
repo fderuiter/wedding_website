@@ -109,11 +109,13 @@ const requestSignedSessionCache = new WeakMap<
 >();
 
 /**
- * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie
- * without performing database lookups (Edge-compatible). Prefers `__Host-` cookies and checks
- * every matching `Cookie` entry until HMAC verification succeeds.
+ * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie,
+ * returning both the matched cookie token string and its verified payload while caching per
+ * `NextRequest` instance. Prefers `__Host-` cookies and checks every matching `Cookie` entry.
  */
-export async function getSignedGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
+export async function getSignedGuestInviteSessionWithToken(
+  req?: NextRequest
+): Promise<{ token: string; payload: GuestInviteSessionPayload } | null> {
   const candidates = await readRequestCookieCandidates(GUEST_INVITE_COOKIE, req, {
     suppressErrors: true,
   });
@@ -138,7 +140,7 @@ export async function getSignedGuestInviteSession(req?: NextRequest): Promise<Gu
       try {
         const payload = await cached;
         if (payload && (!payload.exp || payload.exp >= Date.now())) {
-          return payload;
+          return { token: cookieValue, payload };
         }
       } catch {
         // Fall through to next matching cookie candidate
@@ -148,9 +150,19 @@ export async function getSignedGuestInviteSession(req?: NextRequest): Promise<Gu
 
     const payload = await verifyGuestInviteSessionToken(cookieValue);
     if (payload) {
-      return payload;
+      return { token: cookieValue, payload };
     }
   }
 
   return null;
+}
+
+/**
+ * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie
+ * without performing database lookups (Edge-compatible). Prefers `__Host-` cookies and checks
+ * every matching `Cookie` entry until HMAC verification succeeds.
+ */
+export async function getSignedGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
+  const verified = await getSignedGuestInviteSessionWithToken(req);
+  return verified ? verified.payload : null;
 }

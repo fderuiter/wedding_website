@@ -419,6 +419,7 @@ describe('Broadcast API Routes', () => {
     mockIsAllowedSmtpPort.mockImplementation(actualValidationPrimitives.isAllowedSmtpPort);
     const badPortReq = new NextRequest('http://localhost/api/admin/broadcast/test-connection', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'email',
         provider: 'smtp',

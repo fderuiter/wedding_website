@@ -363,6 +363,7 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     const cleanImportRes = await importBackup(
       new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(exportedJson),
       }),
     );
@@ -399,6 +400,7 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     const preserveImportRes = await importBackup(
       new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(exportedJson),
       }),
     );
@@ -483,6 +485,7 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     const res = await importBackup(
       new NextRequest('http://localhost/api/admin/maintenance/import', {
         method: 'POST',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify(legacyV1Backup),
       }),
     );

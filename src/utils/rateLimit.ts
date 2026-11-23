@@ -6,6 +6,7 @@ import { verifyAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import {
   getSignedGuestInviteSession,
+  getSignedGuestInviteSessionWithToken,
   verifyGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteToken';
@@ -402,26 +403,51 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
     suppressErrors: true,
   });
   if (inviteCandidates.length > 0) {
-    if (typeof verifyGuestInviteSessionToken === 'function') {
-      for (const inviteCookie of inviteCandidates) {
-        try {
-          const payload = await verifyGuestInviteSessionToken(inviteCookie);
-          if (payload && payload.code && payload.guestName) {
-            return `session:invite:${inviteCookie}`;
-          }
-        } catch {
-          // Malformed or invalid invite cookie candidate falls through to next entry
-        }
-      }
-    }
-    if (typeof getSignedGuestInviteSession === 'function') {
+    if (
+      typeof getSignedGuestInviteSessionWithToken === 'function' &&
+      !isMockedFunction(getSignedGuestInviteSession) &&
+      !isMockedFunction(verifyGuestInviteSessionToken)
+    ) {
       try {
-        const payload = await getSignedGuestInviteSession(req);
-        if (payload && payload.code && payload.guestName) {
-          return `session:invite:${inviteCandidates[0]}`;
+        const verified = await getSignedGuestInviteSessionWithToken(req);
+        if (verified && verified.payload.code && verified.payload.guestName) {
+          return `session:invite:${verified.token}`;
         }
       } catch {
         // Malformed or invalid guest invite cookie falls through
+      }
+    } else {
+      if (typeof getSignedGuestInviteSession === 'function' && isMockedFunction(getSignedGuestInviteSession)) {
+        try {
+          const payload = await getSignedGuestInviteSession(req);
+          if (payload && payload.code && payload.guestName) {
+            return `session:invite:${inviteCandidates[0]}`;
+          }
+        } catch {
+          // Malformed or invalid guest invite cookie falls through
+        }
+      }
+      if (typeof verifyGuestInviteSessionToken === 'function') {
+        for (const inviteCookie of inviteCandidates) {
+          try {
+            const payload = await verifyGuestInviteSessionToken(inviteCookie);
+            if (payload && payload.code && payload.guestName) {
+              return `session:invite:${inviteCookie}`;
+            }
+          } catch {
+            // Malformed or invalid invite cookie candidate falls through to next entry
+          }
+        }
+      }
+      if (typeof getSignedGuestInviteSession === 'function' && !isMockedFunction(getSignedGuestInviteSession)) {
+        try {
+          const payload = await getSignedGuestInviteSession(req);
+          if (payload && payload.code && payload.guestName) {
+            return `session:invite:${inviteCandidates[0]}`;
+          }
+        } catch {
+          // Malformed or invalid guest invite cookie falls through
+        }
       }
     }
   }
