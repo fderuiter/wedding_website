@@ -147,6 +147,13 @@ function ActiveDemoProvider({ children }: { children: React.ReactNode }) {
     void queryClient.invalidateQueries({ queryKey: ['admin-wedding-party'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-attractions'] });
     void queryClient.invalidateQueries({ queryKey: ['admin-invitation-codes'] });
+    void queryClient.invalidateQueries({ queryKey: ['schedule'] });
+    void queryClient.invalidateQueries({ queryKey: ['photos'] });
+    void queryClient.invalidateQueries({ queryKey: ['sub-events'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-sub-events'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-content'] });
+    void queryClient.invalidateQueries({ queryKey: ['admin-media'] });
+    void queryClient.invalidateQueries({ queryKey: ['thank-you-notes'] });
     void queryClient.invalidateQueries({ queryKey: ADMIN_SEATING_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ADMIN_ONBOARDING_MILESTONES_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ADMIN_SAMPLE_DATA_QUERY_KEY });
