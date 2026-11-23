@@ -195,33 +195,67 @@ export function buildArchetypeSeedSnapshot(
 
   const tableIdByName = new Map(seatingTable.map((t) => [t.name, t.id]));
 
-  const invitationCode: DemoInvitationCodeRecord[] = preset.guests.map((guest, idx) => ({
-    id: `inv-${resolvedArchetype}-${idx + 1}`,
-    code: guest.code,
-    guestName: guest.guestName,
-    email: `guest${idx + 1}@example.org`,
-    addressLine1: `${100 + idx * 12} Maple Street`,
-    addressLine2: null,
-    city: meta.venueCity,
-    state: meta.venueState,
-    zipCode: meta.venueZip,
-    country: 'US',
-    dietaryNotes: idx === 0 ? 'Vegetarian' : idx === 1 ? 'Gluten-free' : '',
-    plusOneAllocations: guest.plusOnesAllowed ?? 0,
-    plusOneFirstName: (guest.plusOnesAllowed ?? 0) > 0 ? 'Sam' : null,
-    plusOneLastName: (guest.plusOnesAllowed ?? 0) > 0 ? 'Guest' : null,
-    householdName: guest.householdName,
-    partyGroup: guest.partyGroup,
-    partyTags: [...guest.partyTags],
-    extraFields: null,
-    used: idx < 2,
-    usedAt: idx < 2 ? nowIso : null,
-    tableId: guest.seatTableName ? (tableIdByName.get(guest.seatTableName) ?? null) : null,
-    seatNumber: guest.seatNumber ?? null,
-    isSample: false,
-    createdAt: nowIso,
-    updatedAt: nowIso,
-  }));
+  const tableById = new Map(seatingTable.map((t) => [t.id, t]));
+  const occupiedSeatsByTable = new Map<string, Set<number>>();
+  for (const guest of preset.guests) {
+    const resolvedTableId = guest.seatTableName
+      ? (tableIdByName.get(guest.seatTableName) ?? null)
+      : null;
+    if (resolvedTableId && typeof guest.seatNumber === 'number') {
+      const set = occupiedSeatsByTable.get(resolvedTableId) ?? new Set<number>();
+      set.add(guest.seatNumber);
+      occupiedSeatsByTable.set(resolvedTableId, set);
+    }
+  }
+
+  const invitationCode: DemoInvitationCodeRecord[] = preset.guests.map((guest, idx) => {
+    const resolvedTableId = guest.seatTableName
+      ? (tableIdByName.get(guest.seatTableName) ?? null)
+      : null;
+    const primarySeat = guest.seatNumber ?? null;
+    const plusOneCount = guest.plusOnesAllowed ?? 0;
+    const plusOneSeatNumbers: number[] = [];
+    if (resolvedTableId && primarySeat !== null && plusOneCount > 0) {
+      const tableCap = tableById.get(resolvedTableId)?.capacity ?? 8;
+      const used = occupiedSeatsByTable.get(resolvedTableId) ?? new Set<number>([primarySeat]);
+      occupiedSeatsByTable.set(resolvedTableId, used);
+      for (let s = 1; s <= tableCap && plusOneSeatNumbers.length < plusOneCount; s += 1) {
+        if (!used.has(s)) {
+          used.add(s);
+          plusOneSeatNumbers.push(s);
+        }
+      }
+    }
+
+    return {
+      id: `inv-${resolvedArchetype}-${idx + 1}`,
+      code: guest.code,
+      guestName: guest.guestName,
+      email: `guest${idx + 1}@example.org`,
+      addressLine1: `${100 + idx * 12} Maple Street`,
+      addressLine2: null,
+      city: meta.venueCity,
+      state: meta.venueState,
+      zipCode: meta.venueZip,
+      country: 'US',
+      dietaryNotes: idx === 0 ? 'Vegetarian' : idx === 1 ? 'Gluten-free' : '',
+      plusOneAllocations: plusOneCount,
+      plusOneFirstName: plusOneCount > 0 ? 'Sam' : null,
+      plusOneLastName: plusOneCount > 0 ? 'Guest' : null,
+      householdName: guest.householdName,
+      partyGroup: guest.partyGroup,
+      partyTags: [...guest.partyTags],
+      extraFields: null,
+      used: idx < 2,
+      usedAt: idx < 2 ? nowIso : null,
+      tableId: resolvedTableId,
+      seatNumber: primarySeat,
+      plusOneSeatNumbers,
+      isSample: false,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+  });
 
   const contributor: DemoContributorRecord[] = [];
   const seededFundItem = registryItem[2] ?? registryItem[0];

@@ -121,10 +121,22 @@ export interface DemoContentNodeRecord {
   updatedAt: string;
 }
 
+export type DemoSeatingTableShape =
+  | 'round'
+  | 'rectangular'
+  | 'square'
+  | 'head'
+  | 'sweetheart'
+  | 'dance-floor'
+  | 'bar'
+  | 'dj'
+  | 'buffet'
+  | 'cake';
+
 export interface DemoSeatingTableRecord {
   id: string;
   name: string;
-  shape: 'round' | 'rectangular' | 'square' | 'head' | 'sweetheart';
+  shape: DemoSeatingTableShape;
   capacity: number;
   x: number;
   y: number;
@@ -159,6 +171,7 @@ export interface DemoInvitationCodeRecord {
   usedAt: string | null;
   tableId: string | null;
   seatNumber: number | null;
+  plusOneSeatNumbers: number[];
   isSample: boolean;
   createdAt: string;
   updatedAt: string;

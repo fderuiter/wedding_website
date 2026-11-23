@@ -251,13 +251,47 @@ export function toAttractionDto(
   };
 }
 
+export function toInvitationSubEventRsvps(
+  snapshot: StaticDemoSnapshot,
+  invitationCodeId: string,
+): Array<Record<string, unknown>> {
+  const subEventTitleById = new Map(snapshot.subEvent.map((ev) => [ev.id, ev.title]));
+  return snapshot.subEventRsvp
+    .filter((rsvp) => rsvp.invitationCodeId === invitationCodeId)
+    .map((rsvp) => ({
+      id: rsvp.id,
+      subEventId: rsvp.subEventId,
+      subEventTitle: subEventTitleById.get(rsvp.subEventId) ?? 'Event',
+      status:
+        rsvp.status === 'attending' || rsvp.status === 'declined'
+          ? rsvp.status
+          : 'pending',
+      plusOneCount: rsvp.plusOneCount ?? 0,
+      plusOneNames: Array.isArray(rsvp.plusOneNames) ? rsvp.plusOneNames : [],
+      mealSelections: Array.isArray(rsvp.mealSelections) ? rsvp.mealSelections : [],
+      dietaryNotes: rsvp.dietaryNotes ?? null,
+      customAnswers:
+        rsvp.customAnswers && typeof rsvp.customAnswers === 'object'
+          ? rsvp.customAnswers
+          : {},
+      updatedAt: rsvp.updatedAt,
+    }));
+}
+
 export function toSeatingTableDto(
   snapshot: StaticDemoSnapshot,
   table: DemoSeatingTableRecord,
 ): Record<string, unknown> {
   const invitationCodes = snapshot.invitationCode
     .filter((inv) => inv.tableId === table.id)
-    .sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+    .sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999))
+    .map((inv) => ({
+      ...inv,
+      plusOneSeatNumbers: Array.isArray(inv.plusOneSeatNumbers)
+        ? inv.plusOneSeatNumbers
+        : [],
+      subEventRsvps: toInvitationSubEventRsvps(snapshot, inv.id),
+    }));
   return {
     ...table,
     invitationCodes,
@@ -273,6 +307,10 @@ export function toInvitationCodeDto(
     : null;
   return {
     ...invite,
+    plusOneSeatNumbers: Array.isArray(invite.plusOneSeatNumbers)
+      ? invite.plusOneSeatNumbers
+      : [],
+    subEventRsvps: toInvitationSubEventRsvps(snapshot, invite.id),
     table: table
       ? {
         id: table.id,

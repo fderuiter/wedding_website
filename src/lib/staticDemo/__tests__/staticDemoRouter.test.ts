@@ -616,4 +616,92 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     expect(importRes?.status).toBe(200);
     expect(store.getSnapshot().appConfig[0].venueCity).toBe('Minneapolis');
   });
+
+  it('supports floorplan landmarks, inline party seat assignments, and all caterer export formats', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    // Create a 0-capacity dance-floor landmark
+    const landmarkRes = await router('http://localhost:3000/api/admin/seating-tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Grand Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        x: 320,
+        y: 220,
+      }),
+    });
+    expect(landmarkRes?.status).toBe(201);
+    const landmarkJson = await landmarkRes!.json();
+    const landmark = landmarkJson.data ?? landmarkJson;
+    expect(landmark.shape).toBe('dance-floor');
+    expect(landmark.capacity).toBe(0);
+
+    // Reject assigning a guest to a landmark
+    const guestWithPlusOne = store
+      .getSnapshot()
+      .invitationCode.find((inv) => inv.plusOneAllocations > 0)!;
+    const badAssignRes = await router('http://localhost:3000/api/admin/seating/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        invitationCodeId: guestWithPlusOne.id,
+        tableId: landmark.id,
+        seatNumber: 1,
+      }),
+    });
+    expect(badAssignRes?.status).toBe(400);
+
+    // Assign guest with plus-one to a real guest table and verify plusOneSeatNumbers
+    const guestTable = store
+      .getSnapshot()
+      .seatingTable.find((t) => t.capacity > 0)!;
+    const assignRes = await router('http://localhost:3000/api/admin/seating/assign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        invitationCodeId: guestWithPlusOne.id,
+        tableId: guestTable.id,
+        seatNumber: 1,
+        plusOneSeatNumbers: [2],
+      }),
+    });
+    expect(assignRes?.status).toBe(200);
+    const assignedJson = await assignRes!.json();
+    const assignedGuest = assignedJson.data ?? assignedJson;
+    expect(assignedGuest.id).toBe(guestWithPlusOne.id);
+    expect(assignedGuest.seatNumber).toBe(1);
+    expect(assignedGuest.plusOneSeatNumbers).toEqual([2]);
+
+    // Verify all 5 caterer / floorplan export formats succeed and omit landmarks
+    const rosterRes = await router('http://localhost:3000/api/admin/seating/export');
+    expect(rosterRes?.status).toBe(200);
+    expect(rosterRes?.headers.get('content-disposition')).toContain('seating-roster-');
+    const rosterText = await rosterRes!.text();
+    expect(rosterText).toContain('Plus-One Seats');
+    expect(rosterText).toContain('Table Meal Counts');
+    expect(rosterText).not.toContain('Grand Dance Floor');
+
+    const mealsRes = await router(
+      'http://localhost:3000/api/admin/seating/export?format=meals',
+    );
+    expect(mealsRes?.status).toBe(200);
+    expect(mealsRes?.headers.get('content-disposition')).toContain(
+      'seating-meal-counts-',
+    );
+    const mealsText = await mealsRes!.text();
+    expect(mealsText).toContain('Entree Counts');
+    expect(mealsText).toContain('TOTAL');
+    expect(mealsText).not.toContain('Grand Dance Floor');
+
+    for (const pdfFormat of ['pdf', 'place-cards', 'escort-cards'] as const) {
+      const pdfRes = await router(
+        `http://localhost:3000/api/admin/seating/export?format=${pdfFormat}`,
+      );
+      expect(pdfRes?.status).toBe(200);
+      expect(pdfRes?.headers.get('content-type')).toBe('application/pdf');
+    }
+  });
 });

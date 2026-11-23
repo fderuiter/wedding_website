@@ -27,6 +27,8 @@ import {
   recalculateRegistryItemTotals,
   toAdminConfigDto,
   toContributorDto,
+  toInvitationCodeDto,
+  toInvitationSubEventRsvps,
   toPhotoDto,
   toPublicConfigDto,
   toRegistryItemDto,
@@ -35,9 +37,11 @@ import {
   buildBackupExportPayload,
   buildInvitationCodesCsv,
   buildSeatingCsv,
+  buildSeatingMealCountsCsv,
   buildSimplePdfBytes,
   buildStoredZipBytes,
   buildThankYouNotesCsv,
+  isDemoLandmarkShape,
 } from '../exporters';
 import { createCompactUploadThumbnail } from '../svgAssets';
 
@@ -438,6 +442,7 @@ export async function handleAdminWorkflowRoutes(
               isSample: true,
               tableId: null,
               seatNumber: null,
+              plusOneSeatNumbers: [],
             });
             counts.guests += 1;
           }
@@ -995,30 +1000,75 @@ export async function handleAdminWorkflowRoutes(
   if (pathname === '/api/admin/invitation-codes/catalog' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const search = searchParams.get('search')?.trim().toLowerCase() || '';
+    const orderBy = searchParams.get('orderBy')?.trim() || 'createdAt';
+    const orderDir =
+      searchParams.get('orderDir')?.trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
     const limit = Math.min(
       1000,
       Math.max(1, parseInt(searchParams.get('limit') || '1000', 10) || 1000),
     );
-    const filtered = snapshot.invitationCode.filter((inv) => {
-      if (!search) return true;
-      return (
-        inv.guestName.toLowerCase().includes(search) ||
-        inv.code.toLowerCase().includes(search) ||
-        (inv.householdName ?? '').toLowerCase().includes(search) ||
-        (inv.email ?? '').toLowerCase().includes(search)
-      );
-    });
+    const filtered = snapshot.invitationCode
+      .filter((inv) => {
+        if (!search) return true;
+        return (
+          inv.guestName.toLowerCase().includes(search) ||
+          inv.code.toLowerCase().includes(search) ||
+          (inv.householdName ?? '').toLowerCase().includes(search) ||
+          (inv.partyGroup ?? '').toLowerCase().includes(search) ||
+          (inv.dietaryNotes ?? '').toLowerCase().includes(search) ||
+          (inv.email ?? '').toLowerCase().includes(search)
+        );
+      })
+      .slice()
+      .sort((a, b) => {
+        const valA =
+          orderBy === 'code'
+            ? a.code
+            : orderBy === 'guestName'
+              ? a.guestName
+              : orderBy === 'id'
+                ? a.id
+                : a.createdAt;
+        const valB =
+          orderBy === 'code'
+            ? b.code
+            : orderBy === 'guestName'
+              ? b.guestName
+              : orderBy === 'id'
+                ? b.id
+                : b.createdAt;
+        const cmp = String(valA).localeCompare(String(valB));
+        return orderDir === 'asc' ? cmp : -cmp;
+      });
     const total = filtered.length;
     const totalPages = Math.max(1, Math.ceil(total / limit));
-    const items = filtered.slice((page - 1) * limit, page * limit);
-    return wrapMiddlewareJson({
-      items,
-      total,
-      page,
-      limit,
-      totalPages,
-    });
+    const items = filtered
+      .slice((page - 1) * limit, page * limit)
+      .map((inv) => ({
+        ...inv,
+        plusOneSeatNumbers: Array.isArray(inv.plusOneSeatNumbers)
+          ? inv.plusOneSeatNumbers
+          : [],
+        subEventRsvps: toInvitationSubEventRsvps(snapshot, inv.id),
+      }));
+    return wrapMiddlewareJson(
+      {
+        items,
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+      {
+        headers: {
+          'X-Total-Count': String(total),
+          'X-Page': String(page),
+          'X-Limit': String(limit),
+          'X-Total-Pages': String(totalPages),
+        },
+      },
+    );
   }
 
   if (
@@ -1215,6 +1265,7 @@ export async function handleAdminWorkflowRoutes(
           usedAt: null,
           tableId: null,
           seatNumber: null,
+          plusOneSeatNumbers: [],
           isSample: false,
           createdAt: nowIso,
           updatedAt: nowIso,
@@ -1291,6 +1342,9 @@ export async function handleAdminWorkflowRoutes(
         if (!primary.tableId && sec.tableId) {
           primary.tableId = sec.tableId;
           primary.seatNumber = sec.seatNumber;
+          primary.plusOneSeatNumbers = Array.isArray(sec.plusOneSeatNumbers)
+            ? [...sec.plusOneSeatNumbers]
+            : [];
           seatTransferred = true;
         }
         primary.partyTags = Array.from(
@@ -1754,11 +1808,83 @@ export async function handleAdminWorkflowRoutes(
   // --- Seating Chart Workflows ---
   if (pathname === '/api/admin/seating/assign' && method === 'POST') {
     const body = await readJsonBody(request);
+    const snapshotBefore = store.getSnapshot();
+
+    const computePartyChairs = (
+      snap: StaticDemoSnapshot,
+      inv: DemoInvitationCodeRecord,
+    ): number => {
+      const rsvps = snap.subEventRsvp.filter((r) => r.invitationCodeId === inv.id);
+      if (rsvps.length > 0 && rsvps.every((r) => r.status === 'declined')) {
+        return 1;
+      }
+      const maxRsvpPlusOnes = rsvps.reduce(
+        (max, r) => (r.status === 'declined' ? max : Math.max(max, r.plusOneCount ?? 0)),
+        0,
+      );
+      return 1 + Math.max(maxRsvpPlusOnes, inv.plusOneAllocations ?? 0);
+    };
+
+    const collectOccupiedSeats = (
+      snap: StaticDemoSnapshot,
+      tableId: string,
+      excludedIds: Set<string>,
+    ): Set<number> => {
+      const occupied = new Set<number>();
+      for (const inv of snap.invitationCode) {
+        if (inv.tableId !== tableId || excludedIds.has(inv.id)) continue;
+        if (typeof inv.seatNumber === 'number' && inv.seatNumber > 0) {
+          occupied.add(inv.seatNumber);
+        }
+        if (Array.isArray(inv.plusOneSeatNumbers)) {
+          for (const s of inv.plusOneSeatNumbers) {
+            if (typeof s === 'number' && s > 0) occupied.add(s);
+          }
+        }
+      }
+      return occupied;
+    };
+
+    const targetTableCheckId =
+      typeof body.tableId === 'string' && body.tableId ? body.tableId : null;
+    if (targetTableCheckId) {
+      const targetTbl = snapshotBefore.seatingTable.find(
+        (t) => t.id === targetTableCheckId,
+      );
+      if (!targetTbl) {
+        return errorJson(400, 'Validation Error: Table not found.');
+      }
+      if (isDemoLandmarkShape(targetTbl.shape) || targetTbl.capacity <= 0) {
+        return errorJson(
+          400,
+          `Validation Error: Cannot assign guests to landmark "${targetTbl.name}".`,
+        );
+      }
+    }
+
+    if (Array.isArray(body.assignments)) {
+      for (const raw of body.assignments) {
+        if (!raw || typeof raw !== 'object') continue;
+        const entryTableId =
+          typeof (raw as Record<string, unknown>).tableId === 'string'
+            ? ((raw as Record<string, unknown>).tableId as string)
+            : '';
+        if (!entryTableId) continue;
+        const tbl = snapshotBefore.seatingTable.find((t) => t.id === entryTableId);
+        if (tbl && (isDemoLandmarkShape(tbl.shape) || tbl.capacity <= 0)) {
+          return errorJson(
+            400,
+            `Validation Error: Cannot assign guests to landmark "${tbl.name}".`,
+          );
+        }
+      }
+    }
+
     const result = store.mutate((draft) => {
       const nowIso = new Date().toISOString();
 
       if (Array.isArray(body.assignments)) {
-        const updated: DemoInvitationCodeRecord[] = [];
+        const updated: Array<Record<string, unknown>> = [];
         for (const raw of body.assignments) {
           if (!raw || typeof raw !== 'object') continue;
           const entry = raw as Record<string, unknown>;
@@ -1766,44 +1892,78 @@ export async function handleAdminWorkflowRoutes(
             (i) => i.id === entry.invitationCodeId,
           );
           if (!inv) continue;
-          inv.tableId =
+          const nextTableId =
             typeof entry.tableId === 'string' && entry.tableId
               ? entry.tableId
               : null;
+          inv.tableId = nextTableId;
           inv.seatNumber =
-            typeof entry.seatNumber === 'number' ? entry.seatNumber : null;
+            nextTableId && typeof entry.seatNumber === 'number'
+              ? entry.seatNumber
+              : null;
+          inv.plusOneSeatNumbers =
+            nextTableId && Array.isArray(entry.plusOneSeatNumbers)
+              ? entry.plusOneSeatNumbers.filter(
+                (n): n is number =>
+                  typeof n === 'number' && Number.isInteger(n) && n > 0,
+              )
+              : [];
           inv.updatedAt = nowIso;
-          updated.push({ ...inv });
+          updated.push(toInvitationCodeDto(draft, inv));
         }
-        return { assignedCount: updated.length, records: updated };
+        return {
+          kind: 'batch' as const,
+          payload: {
+            assignedCount: updated.length,
+            updatedGuests: updated,
+            records: updated,
+          },
+        };
       }
 
       if (Array.isArray(body.invitationCodeIds)) {
         const tableId =
           typeof body.tableId === 'string' && body.tableId ? body.tableId : null;
-        const updated: DemoInvitationCodeRecord[] = [];
-        const occupied = new Set(
-          draft.invitationCode
-            .filter((i) => i.tableId === tableId && i.seatNumber !== null)
-            .map((i) => i.seatNumber as number),
+        const batchIds = body.invitationCodeIds.filter(
+          (id): id is string => typeof id === 'string',
         );
+        const batchSet = new Set(batchIds);
+        const updated: Array<Record<string, unknown>> = [];
+        const occupied = tableId
+          ? collectOccupiedSeats(draft, tableId, batchSet)
+          : new Set<number>();
         let nextSeat = 1;
-        for (const id of body.invitationCodeIds) {
-          if (typeof id !== 'string') continue;
+        for (const id of batchIds) {
           const inv = draft.invitationCode.find((i) => i.id === id);
           if (!inv) continue;
           inv.tableId = tableId;
           if (tableId) {
+            const needed = computePartyChairs(draft, inv);
             while (occupied.has(nextSeat)) nextSeat += 1;
             inv.seatNumber = nextSeat;
             occupied.add(nextSeat);
+            const plusSeats: number[] = [];
+            for (let p = 1; p < needed; p += 1) {
+              while (occupied.has(nextSeat)) nextSeat += 1;
+              plusSeats.push(nextSeat);
+              occupied.add(nextSeat);
+            }
+            inv.plusOneSeatNumbers = plusSeats;
           } else {
             inv.seatNumber = null;
+            inv.plusOneSeatNumbers = [];
           }
           inv.updatedAt = nowIso;
-          updated.push({ ...inv });
+          updated.push(toInvitationCodeDto(draft, inv));
         }
-        return { assignedCount: updated.length, records: updated };
+        return {
+          kind: 'batch' as const,
+          payload: {
+            assignedCount: updated.length,
+            updatedGuests: updated,
+            records: updated,
+          },
+        };
       }
 
       const invitationCodeId =
@@ -1814,73 +1974,164 @@ export async function handleAdminWorkflowRoutes(
         typeof body.tableId === 'string' && body.tableId ? body.tableId : null;
       inv.tableId = tableId;
       if (tableId) {
-        if (typeof body.seatNumber === 'number') {
+        const occupied = collectOccupiedSeats(
+          draft,
+          tableId,
+          new Set([inv.id]),
+        );
+        if (typeof body.seatNumber === 'number' && body.seatNumber > 0) {
           inv.seatNumber = body.seatNumber;
+          occupied.add(body.seatNumber);
         } else {
-          const occupied = new Set(
-            draft.invitationCode
-              .filter(
-                (i) =>
-                  i.id !== inv.id &&
-                  i.tableId === tableId &&
-                  i.seatNumber !== null,
-              )
-              .map((i) => i.seatNumber as number),
-          );
           let seat = 1;
           while (occupied.has(seat)) seat += 1;
           inv.seatNumber = seat;
+          occupied.add(seat);
+        }
+
+        if (Array.isArray(body.plusOneSeatNumbers)) {
+          inv.plusOneSeatNumbers = body.plusOneSeatNumbers.filter(
+            (n): n is number =>
+              typeof n === 'number' &&
+              Number.isInteger(n) &&
+              n > 0 &&
+              n !== inv.seatNumber,
+          );
+        } else {
+          const plusOneCount = Math.max(0, computePartyChairs(draft, inv) - 1);
+          const plusSeats: number[] = [];
+          let candidate = 1;
+          for (let p = 0; p < plusOneCount; p += 1) {
+            while (occupied.has(candidate)) candidate += 1;
+            plusSeats.push(candidate);
+            occupied.add(candidate);
+          }
+          inv.plusOneSeatNumbers = plusSeats;
         }
       } else {
         inv.seatNumber = null;
+        inv.plusOneSeatNumbers = [];
       }
       inv.updatedAt = nowIso;
       pushAuditVersion(draft, 'InvitationCode', inv.id, inv);
       return {
-        invitationCode: { ...inv },
-        assignedCount: 1,
+        kind: 'single' as const,
+        payload: {
+          ...toInvitationCodeDto(draft, inv),
+          invitationCode: { ...inv },
+          assignedCount: 1,
+        },
       };
     });
 
     if (!result) {
       return errorJson(404, 'Guest invitation not found');
     }
-    return wrapMiddlewareJson(result);
+    return wrapMiddlewareJson(result.payload);
   }
 
   if (pathname === '/api/admin/seating/auto-assign' && method === 'POST') {
+    const body = await readJsonBody(request);
+    const includePending = body.includePending !== false;
+    const filterGroup =
+      typeof body.partyGroup === 'string' && body.partyGroup.trim()
+        ? body.partyGroup.trim().toLowerCase()
+        : null;
+    const filterTags = Array.isArray(body.partyTags)
+      ? body.partyTags
+        .filter((t): t is string => typeof t === 'string' && Boolean(t.trim()))
+        .map((t) => t.trim().toLowerCase())
+      : [];
+
     const result = store.mutate((draft) => {
       const nowIso = new Date().toISOString();
-      const unseated = draft.invitationCode.filter((i) => !i.tableId);
-      const assignedGuests: DemoInvitationCodeRecord[] = [];
+      const guestTables = draft.seatingTable.filter(
+        (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0,
+      );
+
+      const getPartyChairs = (inv: DemoInvitationCodeRecord): number => {
+        const rsvps = draft.subEventRsvp.filter((r) => r.invitationCodeId === inv.id);
+        const maxRsvpPlusOnes = rsvps.reduce(
+          (max, r) =>
+            r.status === 'declined' ? max : Math.max(max, r.plusOneCount ?? 0),
+          0,
+        );
+        return 1 + Math.max(maxRsvpPlusOnes, inv.plusOneAllocations ?? 0);
+      };
+
+      const isEligible = (inv: DemoInvitationCodeRecord): boolean => {
+        if (
+          inv.partyTags.some(
+            (tag) => tag.trim().toLowerCase() === 'address-collection',
+          )
+        ) {
+          return false;
+        }
+        const rsvps = draft.subEventRsvp.filter((r) => r.invitationCodeId === inv.id);
+        if (rsvps.length > 0 && rsvps.every((r) => r.status === 'declined')) {
+          return false;
+        }
+        const isAttending =
+          rsvps.some((r) => r.status === 'attending') || Boolean(inv.used);
+        if (!includePending && !isAttending) {
+          return false;
+        }
+        if (filterGroup && (inv.partyGroup ?? '').trim().toLowerCase() !== filterGroup) {
+          return false;
+        }
+        if (
+          filterTags.length > 0 &&
+          !inv.partyTags.some((t) => filterTags.includes(t.trim().toLowerCase()))
+        ) {
+          return false;
+        }
+        return true;
+      };
+
+      const unseated = draft.invitationCode.filter(
+        (i) => !i.tableId && isEligible(i),
+      );
+      const assignedGuests: Array<Record<string, unknown>> = [];
 
       for (const guest of unseated) {
-        let placed = false;
-        for (const table of draft.seatingTable) {
+        const neededChairs = getPartyChairs(guest);
+        for (const table of guestTables) {
           const seatedHere = draft.invitationCode.filter(
             (i) => i.tableId === table.id,
           );
-          if (seatedHere.length < table.capacity) {
-            const taken = new Set(
-              seatedHere
-                .map((i) => i.seatNumber)
-                .filter((n): n is number => typeof n === 'number'),
-            );
+          const usedChairsCount = seatedHere.reduce(
+            (sum, i) => sum + getPartyChairs(i),
+            0,
+          );
+          if (usedChairsCount + neededChairs <= table.capacity) {
+            const taken = new Set<number>();
+            for (const occ of seatedHere) {
+              if (typeof occ.seatNumber === 'number') taken.add(occ.seatNumber);
+              for (const s of occ.plusOneSeatNumbers ?? []) {
+                if (typeof s === 'number') taken.add(s);
+              }
+            }
             let seat = 1;
             while (taken.has(seat)) seat += 1;
             guest.tableId = table.id;
             guest.seatNumber = seat;
+            taken.add(seat);
+            const plusSeats: number[] = [];
+            for (let p = 1; p < neededChairs; p += 1) {
+              while (taken.has(seat)) seat += 1;
+              plusSeats.push(seat);
+              taken.add(seat);
+            }
+            guest.plusOneSeatNumbers = plusSeats;
             guest.updatedAt = nowIso;
-            assignedGuests.push({ ...guest });
-            placed = true;
+            assignedGuests.push(toInvitationCodeDto(draft, guest));
             break;
           }
         }
-        if (!placed) break;
       }
 
       const remainingUnassigned = draft.invitationCode.filter(
-        (i) => !i.tableId,
+        (i) => !i.tableId && isEligible(i),
       ).length;
       return {
         assignedCount: assignedGuests.length,
@@ -1895,14 +2146,23 @@ export async function handleAdminWorkflowRoutes(
   if (pathname === '/api/admin/seating/export' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const format = (searchParams.get('format') || 'csv').toLowerCase();
+    const guestTables = snapshot.seatingTable.filter(
+      (t) => !isDemoLandmarkShape(t.shape) && t.capacity > 0,
+    );
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
     if (format === 'pdf') {
-      const lines = snapshot.seatingTable.flatMap((t) => {
+      const lines = guestTables.flatMap((t) => {
         const guests = snapshot.invitationCode.filter((i) => i.tableId === t.id);
         return [
           `${t.name} (${guests.length}/${t.capacity} seated):`,
-          ...guests.map(
-            (g) => `  Seat ${g.seatNumber ?? '-'}: ${g.guestName}`,
-          ),
+          ...guests.map((g) => {
+            const po =
+              Array.isArray(g.plusOneSeatNumbers) && g.plusOneSeatNumbers.length > 0
+                ? ` (+1 seats: ${g.plusOneSeatNumbers.join(', ')})`
+                : '';
+            return `  Seat ${g.seatNumber ?? '-'}: ${g.guestName}${po}`;
+          }),
         ];
       });
       const pdf = buildSimplePdfBytes('Reception Seating Chart', lines);
@@ -1910,9 +2170,54 @@ export async function handleAdminWorkflowRoutes(
         'Content-Disposition': 'attachment; filename="seating-chart.pdf"',
       });
     }
-    const csv = buildSeatingCsv(snapshot.seatingTable, snapshot.invitationCode);
+
+    if (format === 'place-cards' || format === 'escort-cards') {
+      const cardTitle =
+        format === 'place-cards'
+          ? 'Reception Place Cards'
+          : 'Reception Escort Cards';
+      const filename =
+        format === 'place-cards'
+          ? 'seating-place-cards.pdf'
+          : 'seating-escort-cards.pdf';
+      const lines = guestTables.flatMap((t) => {
+        const guests = snapshot.invitationCode.filter((i) => i.tableId === t.id);
+        return guests.flatMap((g) => {
+          const baseLine = `${g.guestName} - ${t.name}, Seat ${g.seatNumber ?? '-'}`;
+          const companionSeats = Array.isArray(g.plusOneSeatNumbers)
+            ? g.plusOneSeatNumbers
+            : [];
+          const companionName =
+            [g.plusOneFirstName, g.plusOneLastName].filter(Boolean).join(' ') ||
+            `${g.guestName} Guest`;
+          return [
+            baseLine,
+            ...companionSeats.map(
+              (s) => `${companionName} - ${t.name}, Seat ${s}`,
+            ),
+          ];
+        });
+      });
+      const pdf = buildSimplePdfBytes(cardTitle, lines);
+      return binaryResponse(pdf, 'application/pdf', {
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      });
+    }
+
+    if (format === 'meals' || format === 'meal-counts') {
+      const mealCsv = buildSeatingMealCountsCsv(snapshot);
+      return binaryResponse(mealCsv, 'text/csv; charset=utf-8', {
+        'Content-Disposition': `attachment; filename="seating-meal-counts-${dateStamp}.csv"`,
+      });
+    }
+
+    const csv = buildSeatingCsv(
+      snapshot.seatingTable,
+      snapshot.invitationCode,
+      snapshot,
+    );
     return binaryResponse(csv, 'text/csv; charset=utf-8', {
-      'Content-Disposition': 'attachment; filename="seating-chart.csv"',
+      'Content-Disposition': `attachment; filename="seating-roster-${dateStamp}.csv"`,
     });
   }
 
@@ -2773,13 +3078,30 @@ export async function handleAdminWorkflowRoutes(
           }
           break;
         }
-        case 'InvitationCode':
+        case 'InvitationCode': {
+          const rawInv = payload as unknown as StaticDemoSnapshot['invitationCode'][number];
+          const validTableId =
+            rawInv.tableId &&
+            draft.seatingTable.some(
+              (t) => t.id === rawInv.tableId && !isDemoLandmarkShape(t.shape),
+            )
+              ? rawInv.tableId
+              : null;
           upsertById(draft.invitationCode, {
-            ...(payload as unknown as StaticDemoSnapshot['invitationCode'][number]),
+            ...rawInv,
+            tableId: validTableId,
+            seatNumber: validTableId ? (rawInv.seatNumber ?? null) : null,
+            plusOneSeatNumbers:
+              validTableId && Array.isArray(rawInv.plusOneSeatNumbers)
+                ? rawInv.plusOneSeatNumbers.filter(
+                  (n): n is number => typeof n === 'number' && Number.isInteger(n),
+                )
+                : [],
             id: version.entityId,
             updatedAt: nowIso,
           });
           break;
+        }
         case 'SeatingTable':
           upsertById(draft.seatingTable, {
             ...(payload as unknown as StaticDemoSnapshot['seatingTable'][number]),
@@ -2910,7 +3232,32 @@ export async function handleAdminWorkflowRoutes(
         ? (parsedBackup.seatingTable as StaticDemoSnapshot['seatingTable'])
         : current.seatingTable,
       invitationCode: Array.isArray(parsedBackup.invitationCode)
-        ? (parsedBackup.invitationCode as StaticDemoSnapshot['invitationCode'])
+        ? (() => {
+          const nextTables = Array.isArray(parsedBackup.seatingTable)
+            ? (parsedBackup.seatingTable as StaticDemoSnapshot['seatingTable'])
+            : current.seatingTable;
+          const validTableIds = new Set(
+            nextTables
+              .filter((t) => !isDemoLandmarkShape(t.shape))
+              .map((t) => t.id),
+          );
+          return (
+            parsedBackup.invitationCode as StaticDemoSnapshot['invitationCode']
+          ).map((inv) => {
+            const hasValidTable = Boolean(inv.tableId && validTableIds.has(inv.tableId));
+            return {
+              ...inv,
+              tableId: hasValidTable ? inv.tableId : null,
+              seatNumber: hasValidTable ? (inv.seatNumber ?? null) : null,
+              plusOneSeatNumbers:
+                hasValidTable && Array.isArray(inv.plusOneSeatNumbers)
+                  ? inv.plusOneSeatNumbers.filter(
+                    (n): n is number => typeof n === 'number' && Number.isInteger(n),
+                  )
+                  : [],
+            };
+          });
+        })()
         : current.invitationCode,
       weddingPartyMember: Array.isArray(parsedBackup.weddingPartyMember)
         ? (parsedBackup.weddingPartyMember as StaticDemoSnapshot['weddingPartyMember'])

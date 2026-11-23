@@ -4,6 +4,7 @@ import type {
   DemoInvitationCodeRecord,
   DemoRegistryItemRecord,
   DemoSeatingTableRecord,
+  DemoSeatingTableShape,
   DemoSubEventRecord,
   DemoWeddingPartyMemberRecord,
   NormalizedDemoRequest,
@@ -24,7 +25,28 @@ import {
   toSeatingTableDto,
   toWeddingPartyDto,
 } from '../dtoMappers';
+import { isDemoLandmarkShape } from '../exporters';
 import { createDemoSvgDataUrl } from '../svgAssets';
+
+const VALID_DEMO_TABLE_SHAPES = new Set<DemoSeatingTableShape>([
+  'round',
+  'rectangular',
+  'square',
+  'head',
+  'sweetheart',
+  'dance-floor',
+  'bar',
+  'dj',
+  'buffet',
+  'cake',
+]);
+
+function normalizePositiveSeatList(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (n): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0,
+  );
+}
 
 type AdminEntitySlug =
   | 'content-nodes'
@@ -296,6 +318,10 @@ function createEntityRecord(
         usedAt: body.used ? nowIso : null,
         tableId: typeof body.tableId === 'string' && body.tableId ? body.tableId : null,
         seatNumber: typeof body.seatNumber === 'number' ? body.seatNumber : null,
+        plusOneSeatNumbers:
+          typeof body.tableId === 'string' && body.tableId
+            ? normalizePositiveSeatList(body.plusOneSeatNumbers)
+            : [],
         isSample: false,
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -306,13 +332,34 @@ function createEntityRecord(
     }
     case 'seating-tables': {
       const shapeRaw = typeof body.shape === 'string' ? body.shape : 'round';
-      const shape: DemoSeatingTableRecord['shape'] =
-        shapeRaw === 'rectangular' ||
-        shapeRaw === 'square' ||
-        shapeRaw === 'head' ||
-        shapeRaw === 'sweetheart'
-          ? shapeRaw
-          : 'round';
+      const shape: DemoSeatingTableShape = VALID_DEMO_TABLE_SHAPES.has(
+        shapeRaw as DemoSeatingTableShape,
+      )
+        ? (shapeRaw as DemoSeatingTableShape)
+        : 'round';
+      const isLandmark = isDemoLandmarkShape(shape);
+      const defaultWidth =
+        shape === 'dance-floor'
+          ? 200
+          : shape === 'rectangular' || shape === 'head' || shape === 'buffet' || shape === 'bar'
+            ? 180
+            : shape === 'sweetheart' || shape === 'cake'
+              ? 100
+              : 120;
+      const defaultHeight =
+        shape === 'dance-floor'
+          ? 200
+          : shape === 'head' || shape === 'bar' || shape === 'buffet'
+            ? 80
+            : shape === 'dj'
+              ? 90
+              : shape === 'sweetheart' || shape === 'cake'
+                ? 100
+                : 120;
+      const parsedCapacity = Number(body.capacity);
+      const capacity = isLandmark
+        ? 0
+        : Math.max(1, Number.isFinite(parsedCapacity) && parsedCapacity >= 1 ? Math.floor(parsedCapacity) : 8);
       const record: DemoSeatingTableRecord = {
         id: generateDemoId('table'),
         name:
@@ -320,11 +367,11 @@ function createEntityRecord(
             ? body.name.trim()
             : `Table ${draft.seatingTable.length + 1}`,
         shape,
-        capacity: Math.max(1, Number(body.capacity ?? 8) || 8),
-        x: Number(body.x ?? 180) || 180,
-        y: Number(body.y ?? 180) || 180,
-        width: Number(body.width ?? 120) || 120,
-        height: Number(body.height ?? 120) || 120,
+        capacity,
+        x: Number.isFinite(Number(body.x)) ? Number(body.x) : 180,
+        y: Number.isFinite(Number(body.y)) ? Number(body.y) : 180,
+        width: Number(body.width ?? defaultWidth) || defaultWidth,
+        height: Number(body.height ?? defaultHeight) || defaultHeight,
         rotation: Number(body.rotation ?? 0) || 0,
         isSample: false,
         createdAt: nowIso,
@@ -487,8 +534,19 @@ function updateEntityRecordById(
       if (patch.zipCode !== undefined) inv.zipCode = typeof patch.zipCode === 'string' ? patch.zipCode : null;
       if (patch.country !== undefined) inv.country = typeof patch.country === 'string' ? patch.country : null;
       if (typeof patch.used === 'boolean') inv.used = patch.used;
-      if (patch.tableId !== undefined) inv.tableId = typeof patch.tableId === 'string' ? patch.tableId : null;
+      if (patch.tableId !== undefined) {
+        inv.tableId = typeof patch.tableId === 'string' ? patch.tableId : null;
+        if (!inv.tableId) {
+          inv.seatNumber = null;
+          inv.plusOneSeatNumbers = [];
+        }
+      }
       if (patch.seatNumber !== undefined) inv.seatNumber = typeof patch.seatNumber === 'number' ? patch.seatNumber : null;
+      if (patch.plusOneSeatNumbers !== undefined) {
+        inv.plusOneSeatNumbers = inv.tableId
+          ? normalizePositiveSeatList(patch.plusOneSeatNumbers)
+          : [];
+      }
       inv.updatedAt = nowIso;
       pushAuditVersion(draft, 'InvitationCode', inv.id, inv);
       return toInvitationCodeDto(draft, inv);
@@ -498,15 +556,23 @@ function updateEntityRecordById(
       if (!tbl) return null;
       if (typeof patch.name === 'string' && patch.name.trim()) tbl.name = patch.name.trim();
       if (
-        patch.shape === 'round' ||
-        patch.shape === 'rectangular' ||
-        patch.shape === 'square' ||
-        patch.shape === 'head' ||
-        patch.shape === 'sweetheart'
+        typeof patch.shape === 'string' &&
+        VALID_DEMO_TABLE_SHAPES.has(patch.shape as DemoSeatingTableShape)
       ) {
-        tbl.shape = patch.shape;
+        tbl.shape = patch.shape as DemoSeatingTableShape;
       }
-      if (patch.capacity !== undefined) tbl.capacity = Math.max(1, Number(patch.capacity) || tbl.capacity);
+      if (isDemoLandmarkShape(tbl.shape)) {
+        tbl.capacity = 0;
+        for (const inv of draft.invitationCode) {
+          if (inv.tableId === tbl.id) {
+            inv.tableId = null;
+            inv.seatNumber = null;
+            inv.plusOneSeatNumbers = [];
+          }
+        }
+      } else if (patch.capacity !== undefined) {
+        tbl.capacity = Math.max(1, Number(patch.capacity) || tbl.capacity || 8);
+      }
       if (patch.x !== undefined) tbl.x = Number(patch.x);
       if (patch.y !== undefined) tbl.y = Number(patch.y);
       if (patch.width !== undefined) tbl.width = Number(patch.width) || tbl.width;
@@ -594,6 +660,7 @@ function deleteEntityRecordById(
         if (inv.tableId === id) {
           inv.tableId = null;
           inv.seatNumber = null;
+          inv.plusOneSeatNumbers = [];
         }
       }
       pushAuditVersion(draft, entityType, id, { deleted: true, previous: removed });
