@@ -1,14 +1,29 @@
-let serviceMap: Record<string, any> | null = null;
+import type { ZodType } from 'zod';
 
-async function getServiceMap(): Promise<Record<string, any>> {
+interface AdminEntityRegistration {
+  service: any;
+  createSchema?: ZodType;
+  updateSchema?: ZodType;
+}
+
+let serviceMap: Record<string, AdminEntityRegistration> | null = null;
+
+async function getServiceMap(): Promise<Record<string, AdminEntityRegistration>> {
   if (!serviceMap) {
     const [
-      { ContentNodeAdminService },
-      { WeddingPartyAdminService },
-      { AttractionAdminService },
-      { RegistryItemAdminService, InvitationCodeAdminService },
-      { SeatingTableAdminService },
-      { SubEventAdminService },
+      { ContentNodeAdminService, ContentNodeInputSchema, ContentNodeUpdateInputSchema },
+      { WeddingPartyAdminService, WeddingPartyInputSchema, WeddingPartyUpdateInputSchema },
+      { AttractionAdminService, AttractionCreateInputSchema, AttractionInputSchema },
+      {
+        RegistryItemAdminService,
+        RegistryItemCreateInputSchema,
+        RegistryItemInputSchema,
+        InvitationCodeAdminService,
+        InvitationCodeInputSchema,
+        InvitationCodeUpdateInputSchema,
+      },
+      { SeatingTableAdminService, SeatingTableInputSchema, SeatingTableUpdateInputSchema },
+      { SubEventAdminService, SubEventInputSchema, SubEventUpdateInputSchema },
     ] = await Promise.all([
       import('@/features/content'),
       import('@/features/wedding-party'),
@@ -19,13 +34,41 @@ async function getServiceMap(): Promise<Record<string, any>> {
     ]);
 
     serviceMap = {
-      [ContentNodeAdminService.ENTITY_KEY]: new ContentNodeAdminService(),
-      [WeddingPartyAdminService.ENTITY_KEY]: new WeddingPartyAdminService(),
-      [AttractionAdminService.ENTITY_KEY]: new AttractionAdminService(),
-      [RegistryItemAdminService.ENTITY_KEY]: new RegistryItemAdminService(),
-      [InvitationCodeAdminService.ENTITY_KEY]: new InvitationCodeAdminService(),
-      [SeatingTableAdminService.ENTITY_KEY]: new SeatingTableAdminService(),
-      [SubEventAdminService.ENTITY_KEY]: new SubEventAdminService(),
+      [ContentNodeAdminService.ENTITY_KEY]: {
+        service: new ContentNodeAdminService(),
+        createSchema: ContentNodeInputSchema,
+        updateSchema: ContentNodeUpdateInputSchema,
+      },
+      [WeddingPartyAdminService.ENTITY_KEY]: {
+        service: new WeddingPartyAdminService(),
+        createSchema: WeddingPartyInputSchema,
+        updateSchema: WeddingPartyUpdateInputSchema,
+      },
+      [AttractionAdminService.ENTITY_KEY]: {
+        service: new AttractionAdminService(),
+        createSchema: AttractionCreateInputSchema,
+        updateSchema: AttractionInputSchema,
+      },
+      [RegistryItemAdminService.ENTITY_KEY]: {
+        service: new RegistryItemAdminService(),
+        createSchema: RegistryItemCreateInputSchema,
+        updateSchema: RegistryItemInputSchema,
+      },
+      [InvitationCodeAdminService.ENTITY_KEY]: {
+        service: new InvitationCodeAdminService(),
+        createSchema: InvitationCodeInputSchema,
+        updateSchema: InvitationCodeUpdateInputSchema,
+      },
+      [SeatingTableAdminService.ENTITY_KEY]: {
+        service: new SeatingTableAdminService(),
+        createSchema: SeatingTableInputSchema,
+        updateSchema: SeatingTableUpdateInputSchema,
+      },
+      [SubEventAdminService.ENTITY_KEY]: {
+        service: new SubEventAdminService(),
+        createSchema: SubEventInputSchema,
+        updateSchema: SubEventUpdateInputSchema,
+      },
     };
   }
   return serviceMap;
@@ -33,9 +76,9 @@ async function getServiceMap(): Promise<Record<string, any>> {
 
 export async function getEntityService(entityKey: string) {
   const map = await getServiceMap();
-  const service = map[entityKey];
-  if (!service) return null;
+  const entry = map[entityKey];
+  if (!entry) return null;
 
-  return { service };
+  return entry;
 }
 

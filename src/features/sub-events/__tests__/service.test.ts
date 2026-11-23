@@ -1128,6 +1128,168 @@ describe('SubEventService', () => {
       expect(matrix.subEvents[0].allowedInvitationCodeIds).toHaveLength(135);
       expect(matrix.subEvents[0].allowedInvitationCodeIds).toContain('inv-135');
     });
+
+    it('runs count, scalar findMany, and one $queryRaw metadata query concurrently and matches fallback output', async () => {
+      const startTime = new Date('2026-09-18T18:00:00.000Z');
+      const endTime = new Date('2026-09-18T21:00:00.000Z');
+
+      const rawClient: any = {
+        invitationCode: {
+          count: jest.fn().mockResolvedValue(2),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'inv-1',
+              code: 'VIP01',
+              guestName: 'Alice Smith',
+              householdName: 'Smith Family',
+              partyGroup: 'Bridal Party',
+              partyTags: ['VIP', 'Bridal Party'],
+            },
+            {
+              id: 'inv-2',
+              code: 'FRD02',
+              guestName: 'Bob Jones',
+              householdName: 'Jones Family',
+              partyGroup: 'Friends',
+              partyTags: ['Friends'],
+            },
+          ]),
+        },
+        subEvent: {
+          findMany: jest.fn(),
+        },
+        $queryRaw: jest.fn().mockResolvedValue([
+          {
+            subEvents: [
+              {
+                id: 'se-1',
+                title: 'Rehearsal Dinner',
+                description: 'Private dinner',
+                startTime: '2026-09-18T18:00:00.000Z',
+                endTime: '2026-09-18T21:00:00.000Z',
+                locationName: 'Oak Room',
+                location: '100 Main St',
+                category: 'Dining',
+                isPrivate: true,
+                mealOptions: [{ id: 'm-1', label: 'Salmon', dietaryTags: ['gluten-free'] }],
+                customQuestions: [],
+                allowedInvitationCodeIds: ['inv-1', 'inv-99'],
+              },
+              {
+                id: 'se-2',
+                title: 'Farewell Brunch',
+                description: '',
+                startTime: null,
+                endTime: null,
+                locationName: '',
+                location: '',
+                category: '',
+                isPrivate: true,
+                mealOptions: [],
+                customQuestions: [],
+                allowedInvitationCodeIds: ['inv-1'],
+              },
+            ],
+            partyGroups: ['Friends', 'Bridal Party'],
+            householdNames: ['Smith Family', 'Jones Family'],
+            partyTags: [' VIP ', 'Friends', 'Bridal Party'],
+          },
+        ]),
+      };
+
+      const rawService = new SubEventService(rawClient);
+      const rawMatrix = await rawService.getAccessMatrix({ page: 1, limit: 25 });
+
+      expect(rawClient.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(rawClient.invitationCode.count).toHaveBeenCalledTimes(1);
+      expect(rawClient.invitationCode.findMany).toHaveBeenCalledTimes(1);
+      expect(rawClient.subEvent.findMany).not.toHaveBeenCalled();
+
+      const scalarSelect = rawClient.invitationCode.findMany.mock.calls[0][0].select;
+      expect(scalarSelect).not.toHaveProperty('subEventAccesses');
+
+      expect(rawMatrix.invitationCodes[0].allowedSubEventIds).toEqual(['se-1', 'se-2']);
+      expect(rawMatrix.invitationCodes[1].allowedSubEventIds).toEqual([]);
+      expect(rawMatrix.subEvents[0].allowedInvitationCodeIds).toEqual(['inv-1', 'inv-99']);
+      expect(rawMatrix.filterOptions).toEqual({
+        partyTags: ['Bridal Party', 'Friends', 'VIP'],
+        partyGroups: ['Bridal Party', 'Friends'],
+        householdNames: ['Jones Family', 'Smith Family'],
+      });
+
+      // Verify identical output through the fallback path when $queryRaw is absent
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-1',
+          title: 'Rehearsal Dinner',
+          description: 'Private dinner',
+          startTime,
+          endTime,
+          locationName: 'Oak Room',
+          location: '100 Main St',
+          category: 'Dining',
+          isPrivate: true,
+          mealOptions: [{ id: 'm-1', label: 'Salmon', dietaryTags: ['gluten-free'] }],
+          customQuestions: [],
+          accesses: [{ invitationCodeId: 'inv-1' }, { invitationCodeId: 'inv-99' }],
+        },
+        {
+          id: 'se-2',
+          title: 'Farewell Brunch',
+          description: '',
+          startTime: null,
+          endTime: null,
+          locationName: '',
+          location: '',
+          category: '',
+          isPrivate: true,
+          mealOptions: [],
+          customQuestions: [],
+          accesses: [{ invitationCodeId: 'inv-1' }],
+        },
+      ]);
+      mockPrisma.invitationCode.count.mockResolvedValue(2);
+      mockPrisma.invitationCode.findMany.mockImplementation((args: any) => {
+        if (args?.distinct?.includes('partyGroup')) {
+          return Promise.resolve([{ partyGroup: 'Friends' }, { partyGroup: 'Bridal Party' }]);
+        }
+        if (args?.distinct?.includes('householdName')) {
+          return Promise.resolve([
+            { householdName: 'Smith Family' },
+            { householdName: 'Jones Family' },
+          ]);
+        }
+        if (args?.select && Object.keys(args.select).length === 1 && args.select.partyTags) {
+          return Promise.resolve([
+            { partyTags: [' VIP ', 'Bridal Party'] },
+            { partyTags: ['Friends'] },
+          ]);
+        }
+        return Promise.resolve([
+          {
+            id: 'inv-1',
+            code: 'VIP01',
+            guestName: 'Alice Smith',
+            householdName: 'Smith Family',
+            partyGroup: 'Bridal Party',
+            partyTags: ['VIP', 'Bridal Party'],
+            subEventAccesses: [{ subEventId: 'se-2' }, { subEventId: 'se-1' }],
+          },
+          {
+            id: 'inv-2',
+            code: 'FRD02',
+            guestName: 'Bob Jones',
+            householdName: 'Jones Family',
+            partyGroup: 'Friends',
+            partyTags: ['Friends'],
+            subEventAccesses: [],
+          },
+        ]);
+      });
+
+      const fallbackMatrix = await service.getAccessMatrix({ page: 1, limit: 25 });
+      expect(rawMatrix).toEqual(fallbackMatrix);
+    });
   });
 
   describe('RSVP deadline, silent grace period, and manual lock enforcement', () => {
@@ -1695,6 +1857,90 @@ describe('SubEventService', () => {
 
       const matrix = await service.getAccessMatrix({ page: 1, limit: 25 });
       expect(matrix.invitationCodes[0].eventRsvps?.['se-rec']).toEqual({
+        status: 'attending',
+        plusOneCount: 2,
+        plusOneNames: ['Child One', 'Child Two'],
+        dietaryNotes: 'No peanuts',
+        meals: [
+          { attendee: 'Parent Guest', optionId: 'm-adult', label: 'Filet', dietaryTags: [] },
+          { attendee: 'Child One', optionId: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
+          { attendee: 'Child Two', optionId: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
+        ],
+        answers: [{ questionId: 'q-chair', prompt: 'High chair?', answer: 'Yes' }],
+      });
+    });
+
+    it('projects eventRsvps via $queryRaw rsvpsByInvitationCodeId without relation selects', async () => {
+      const rawClient: any = {
+        invitationCode: {
+          count: jest.fn().mockResolvedValue(1),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'inv-real',
+              code: 'REAL01',
+              guestName: 'Parent Guest',
+              householdName: 'Parent Family',
+              partyGroup: 'Family',
+              partyTags: [],
+              used: true,
+              dietaryNotes: 'No peanuts',
+              plusOneFirstName: 'Child',
+              plusOneLastName: 'One',
+              extraFields: {},
+            },
+          ]),
+        },
+        subEvent: {
+          findMany: jest.fn(),
+        },
+        $queryRaw: jest.fn().mockResolvedValue([
+          {
+            subEvents: [
+              {
+                id: 'se-rec',
+                title: 'Reception',
+                description: '',
+                startTime: null,
+                endTime: null,
+                locationName: '',
+                location: '',
+                category: 'Reception',
+                isPrivate: false,
+                mealOptions: [
+                  { id: 'm-adult', label: 'Filet', dietaryTags: [] },
+                  { id: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
+                ],
+                customQuestions: [{ id: 'q-chair', prompt: 'High chair?', type: 'text' }],
+                allowedInvitationCodeIds: [],
+              },
+            ],
+            partyGroups: ['Family'],
+            householdNames: ['Parent Family'],
+            partyTags: [],
+            rsvpsByInvitationCodeId: {
+              'inv-real': [
+                {
+                  subEventId: 'se-rec',
+                  status: 'attending',
+                  plusOneCount: 2,
+                  dietaryNotes: 'No peanuts',
+                  mealSelections: ['m-adult', 'm-kids', 'm-kids'],
+                  customAnswers: { 'q-chair': 'Yes' },
+                  plusOneNames: ['Child One', 'Child Two'],
+                },
+              ],
+            },
+          },
+        ]),
+      };
+
+      const rawService = new SubEventService(rawClient);
+      const rawMatrix = await rawService.getAccessMatrix({ page: 1, limit: 25 });
+
+      const scalarSelect = rawClient.invitationCode.findMany.mock.calls[0][0].select;
+      expect(scalarSelect).not.toHaveProperty('subEventAccesses');
+      expect(scalarSelect).not.toHaveProperty('subEventRsvps');
+      expect(rawMatrix.invitationCodes[0].eventRsvps?.['se-rec']).toEqual({
         status: 'attending',
         plusOneCount: 2,
         plusOneNames: ['Child One', 'Child Two'],

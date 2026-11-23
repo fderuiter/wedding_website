@@ -267,7 +267,7 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             }
           }
           const maxAttendingPlusOnes = dbRsvps.reduce(
-            (max: number, r: any) =>
+            (max: number, r) =>
               r.status === 'attending' ? Math.max(max, Math.max(0, r.plusOneCount ?? 0)) : max,
             0
           );

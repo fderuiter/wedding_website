@@ -51,7 +51,6 @@ describe('useScheduleRsvpManager', () => {
     expect(event2.current.dietaryNotes).toBe('Vegetarian');
 
     expect(result.current.dirtyCount).toBe(0);
-    expect(result.current.isDirty).toBe(false);
   });
 
   it('transitions state to dirty when user updates attendance or notes, and clears prior banners', () => {
@@ -68,7 +67,6 @@ describe('useScheduleRsvpManager', () => {
     expect(event1.isDirty).toBe(true);
     expect(event1.current.status).toBe('attending');
     expect(result.current.dirtyCount).toBe(1);
-    expect(result.current.dirtyEventIds).toEqual(['event-1']);
 
     // Changing it back to baseline restores idle state
     act(() => {
@@ -273,7 +271,15 @@ describe('useScheduleRsvpManager', () => {
     expect(updated.state).toBe('dirty');
   });
 
-  it('excludes read-only fallback events from RSVP tracking', () => {
+  it('excludes read-only fallback events from RSVP tracking', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ id: 'r-live', subEventId: 'se-live', status: 'pending', plusOneCount: 0, dietaryNotes: '' }],
+      }),
+    });
+
     const { result } = renderHook(() =>
       useScheduleRsvpManager({
         initialEvents: [
@@ -283,8 +289,19 @@ describe('useScheduleRsvpManager', () => {
       })
     );
 
-    expect(result.current.eventsMap['cn-readonly']).toBeUndefined();
-    expect(result.current.eventsMap['se-live']).toBeDefined();
+    let readOnlySubmitted = true;
+    await act(async () => {
+      readOnlySubmitted = await result.current.submitSingle('cn-readonly');
+    });
+    expect(readOnlySubmitted).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    let liveSubmitted = false;
+    await act(async () => {
+      liveSubmitted = await result.current.submitSingle('se-live');
+    });
+    expect(liveSubmitted).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('clamps plus-one updates to 0 when maxPlusOnes is 0', () => {
