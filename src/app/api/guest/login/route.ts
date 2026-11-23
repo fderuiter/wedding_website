@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { signGuestToken, verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
+import {
+  signGuestInviteSessionToken,
+  verifyGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteSession';
+import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
@@ -49,9 +54,22 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       (trimmedCode.length > 0 && trimmedCode !== passcode && safeComparePasscode(trimmedCode, expectedPasscode)));
 
   if (matchesSharedPasscode) {
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
+    let token: string | null = null;
+    if (typeof readRequestCookie === 'function' && typeof verifyGuestToken === 'function') {
+      const existingToken = await readRequestCookie(GUEST_COOKIE, req, { suppressErrors: true });
+      if (existingToken) {
+        const existingPayload = await verifyGuestToken(existingToken);
+        if (existingPayload && existingPayload.guest === true) {
+          token = existingToken;
+        }
+      }
+    }
+
+    if (!token) {
+      const iat = Date.now();
+      const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+      token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
+    }
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     response.cookies.set(GUEST_COOKIE, token, {
@@ -93,14 +111,36 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       });
     }
 
-    const iat = Date.now();
-    const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const inviteToken = await signGuestInviteSessionToken({
-      code: invite.code,
-      guestName: invite.guestName,
-      iat,
-      exp,
-    });
+    let inviteToken: string | null = null;
+    if (
+      typeof readRequestCookie === 'function' &&
+      typeof verifyGuestInviteSessionToken === 'function'
+    ) {
+      const existingInviteCookie = await readRequestCookie(GUEST_INVITE_COOKIE, req, {
+        suppressErrors: true,
+      });
+      if (existingInviteCookie) {
+        const existingInvitePayload = await verifyGuestInviteSessionToken(existingInviteCookie);
+        if (
+          existingInvitePayload &&
+          existingInvitePayload.code.trim().toUpperCase() === invite.code.trim().toUpperCase() &&
+          existingInvitePayload.guestName === invite.guestName
+        ) {
+          inviteToken = existingInviteCookie;
+        }
+      }
+    }
+
+    if (!inviteToken) {
+      const iat = Date.now();
+      const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
+      inviteToken = await signGuestInviteSessionToken({
+        code: invite.code,
+        guestName: invite.guestName,
+        iat,
+        exp,
+      });
+    }
 
     const response = NextResponse.json({
       success: true,

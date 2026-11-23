@@ -69,6 +69,7 @@ export const GET = withApiMiddleware(
     limit: 30,
     windowMs: 60 * 1000,
     keyPrefix: 'registry-claim-preview',
+    scope: 'ip',
   }
 );
 
@@ -135,5 +136,6 @@ export const POST = withApiMiddleware(
     limit: 20,
     windowMs: 60 * 1000,
     keyPrefix: 'registry-claim-mutate',
+    scope: 'ip',
   }
 );
