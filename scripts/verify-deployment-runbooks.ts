@@ -1802,7 +1802,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  for (const requiredCiJob of ['storybook-build', 'deploy-docs']) {
+  for (const requiredCiJob of ['demo-export', 'storybook-build', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
     }

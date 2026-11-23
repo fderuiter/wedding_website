@@ -1074,27 +1074,44 @@ function resolveProseFileToken(
   return path.resolve(rootDir, decoded);
 }
 
+const ALLOWLISTED_PORTAL_SHOWCASE_ROUTES = new Set(['demo', 'storybook']);
+
+function normalizePortalRouteRel(
+  cleanRoute: string,
+  sourceAbsPath: string,
+  portalDir: string
+): string {
+  if (cleanRoute.startsWith('/')) {
+    return cleanRoute
+      .replace(/^\/+/, '')
+      .replace(/\.(?:html|md)$/, '')
+      .replace(/\/+$/, '');
+  }
+  const resolvedFromSource = path.resolve(path.dirname(sourceAbsPath), cleanRoute);
+  return path
+    .relative(portalDir, resolvedFromSource)
+    .replace(/\\/g, '/')
+    .replace(/\.(?:html|md)$/, '')
+    .replace(/\/+$/, '');
+}
+
+function isAllowlistedPortalShowcaseRoute(
+  cleanRoute: string,
+  sourceAbsPath: string,
+  rootDir: string
+): boolean {
+  const portalDir = path.join(rootDir, 'docs-portal');
+  const routeRel = normalizePortalRouteRel(cleanRoute, sourceAbsPath, portalDir);
+  return ALLOWLISTED_PORTAL_SHOWCASE_ROUTES.has(routeRel);
+}
+
 function resolvePortalRouteToSourceFile(
   cleanRoute: string,
   sourceAbsPath: string,
   rootDir: string
 ): string | null {
   const portalDir = path.join(rootDir, 'docs-portal');
-  let routeRel: string;
-
-  if (cleanRoute.startsWith('/')) {
-    routeRel = cleanRoute
-      .replace(/^\/+/, '')
-      .replace(/\.(?:html|md)$/, '')
-      .replace(/\/+$/, '');
-  } else {
-    const resolvedFromSource = path.resolve(path.dirname(sourceAbsPath), cleanRoute);
-    routeRel = path
-      .relative(portalDir, resolvedFromSource)
-      .replace(/\\/g, '/')
-      .replace(/\.(?:html|md)$/, '')
-      .replace(/\/+$/, '');
-  }
+  const routeRel = normalizePortalRouteRel(cleanRoute, sourceAbsPath, portalDir);
 
   if (routeRel.startsWith('..')) {
     return null;
@@ -1303,6 +1320,19 @@ export function validateLinkTarget(
       });
       return;
     }
+  }
+
+  if (isAllowlistedPortalShowcaseRoute(cleanTarget, sourceAbsPath, rootDir)) {
+    if (fragment) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `docs-portal/${cleanTarget.replace(/^\/+/, '')}#${fragment}`,
+      });
+    }
+    return;
   }
 
   const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);

@@ -86,9 +86,23 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('branches: [ main ]');
     expect(onSection).toContain('pull_request:');
 
-    for (const jobId of ['verify:', 'unit-test:', 'build:', 'container-arm64:', 'e2e-test:', 'deploy-docs:']) {
+    for (const jobId of [
+      'verify:',
+      'unit-test:',
+      'build:',
+      'container-arm64:',
+      'storybook-build:',
+      'demo-export:',
+      'e2e-test:',
+      'deploy-docs:',
+    ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
+    expect(ciWorkflow).toContain('needs: [verify, demo-export, storybook-build]');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/demo/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/storybook/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/.nojekyll');
     expect(ciWorkflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');

@@ -625,6 +625,81 @@ jobs:
             ${{ runner.os }}-storybook-${{ hashFiles('package-lock.json') }}-
       - name: Build static Storybook showcase
         run: npm run build-storybook
+      - name: Upload Storybook Static Showcase Artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: storybook-static
+          path: storybook-static/
+          if-no-files-found: error
+          retention-days: 7
+
+  demo-export:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      demo_base_path: ${{ steps.base-path.outputs.demo_base }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve Pages base path
+        id: base-path
+        env:
+          GH_REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          OWNER="${GH_REPO%%/*}"
+          REPO="${GH_REPO#*/}"
+          PAGES_BASE="/${REPO}"
+          if [ "${REPO,,}" = "${OWNER,,}.github.io" ] || [ -f "CNAME" ] || [ -f "public/CNAME" ] || [ -f "docs-portal/public/CNAME" ]; then
+            PAGES_BASE=""
+          elif PAGES_JSON=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GH_REPO}/pages" 2>/dev/null); then
+            RESOLVED_BASE=$(printf '%s' "$PAGES_JSON" | node -e '
+              const fs = require("node:fs");
+              const data = JSON.parse(fs.readFileSync(0, "utf8"));
+              if (data.cname) {
+                process.stdout.write("");
+              } else if (data.html_url) {
+                const pathname = new URL(data.html_url).pathname.replace(/\/+$/, "");
+                process.stdout.write(pathname);
+              }
+            ')
+            PAGES_BASE="$RESOLVED_BASE"
+          fi
+          NORMALIZED_PAGES_BASE=$(printf '%s' "$PAGES_BASE" | sed 's:/*$::')
+          DEMO_BASE="${NORMALIZED_PAGES_BASE}/demo"
+          echo "pages_base=${NORMALIZED_PAGES_BASE}" >> "$GITHUB_OUTPUT"
+          echo "demo_base=${DEMO_BASE}" >> "$GITHUB_OUTPUT"
+      - name: Cache Next.js static export build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-demo-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'scripts/build-export.mjs', 'src/**/*.ts', 'src/**/*.tsx', 'src/**/*.css') }}
+          restore-keys: |
+            ${{ runner.os }}-demo-export-${{ steps.base-path.outputs.demo_base }}-${{ hashFiles('package-lock.json') }}-
+      - name: Build static demo showcase
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base-path.outputs.demo_base }}
+        run: npm run build:export
+      - name: Verify static demo export output
+        run: test -f out/index.html
+      - name: Upload Static Demo Showcase Artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo-static
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
 
   e2e-test:
     needs: build
@@ -869,7 +944,7 @@ jobs:
           fi
 
   deploy-docs:
-    needs: verify
+    needs: [verify, demo-export, storybook-build]
     if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -894,6 +969,44 @@ jobs:
         env:
           VITEPRESS_BASE: ${{ steps.pages.outputs.base_path }}
         run: npm run docs:build
+      - name: Download Static Demo Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo-static
+          path: docs-portal/.vitepress/dist/demo
+      - name: Align demo base path with Pages configuration
+        env:
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          BUILT_DEMO_BASE: ${{ needs.demo-export.outputs.demo_base_path }}
+        run: |
+          NORMALIZED_PAGES_BASE=$(printf '%s' "$PAGES_BASE_PATH" | sed 's:/*$::')
+          EXPECTED_DEMO_BASE="${NORMALIZED_PAGES_BASE}/demo"
+          if [ "$BUILT_DEMO_BASE" != "$EXPECTED_DEMO_BASE" ]; then
+            echo "Rebuilding static demo for Pages base path: ${EXPECTED_DEMO_BASE}"
+            NEXT_PUBLIC_BASE_PATH="$EXPECTED_DEMO_BASE" npm run build:export
+            rm -rf docs-portal/.vitepress/dist/demo
+            mkdir -p docs-portal/.vitepress/dist/demo
+            cp -R out/. docs-portal/.vitepress/dist/demo/
+            rm -rf out
+          fi
+      - name: Download Storybook Static Showcase Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: storybook-static
+          path: docs-portal/.vitepress/dist/storybook
+      - name: Add .nojekyll and verify unified Pages bundle
+        run: |
+          touch docs-portal/.vitepress/dist/.nojekyll
+          for required_file in \
+            docs-portal/.vitepress/dist/index.html \
+            docs-portal/.vitepress/dist/demo/index.html \
+            docs-portal/.vitepress/dist/storybook/index.html \
+            docs-portal/.vitepress/dist/.nojekyll; do
+            if [ ! -f "$required_file" ]; then
+              echo "Error: Missing required Pages artifact file: $required_file" >&2
+              exit 1
+            fi
+          done
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
