@@ -22,6 +22,11 @@ on:
         description: 'OCI Image Tag or Commit SHA (resolved to digest if image_digest is omitted)'
         required: false
         type: string
+      source_ref:
+        description: 'Optional expected OIDC provenance source ref override (refs/heads/main or refs/tags/v*)'
+        required: false
+        default: ''
+        type: string
       provider:
         description: 'Hosting Provider Adapter'
         required: true
@@ -51,12 +56,22 @@ on:
         required: false
         default: ''
         type: string
+      commit_sha:
+        description: 'Optional 40-character commit SHA to check out and anchor rollback history against (defaults to github.sha)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       environment:
         description: 'Target Deployment Environment'
         required: false
         default: 'production'
+        type: string
+      commit_sha:
+        description: 'Optional 40-character commit SHA to check out and anchor rollback history against (defaults to github.sha)'
+        required: false
+        default: ''
         type: string
       image_digest:
         description: 'Immutable OCI Image Digest (sha256:<64-hex>) to deploy'
@@ -65,6 +80,11 @@ on:
       image_tag:
         description: 'OCI Image Tag or Commit SHA (resolved to digest if image_digest is omitted)'
         required: false
+        type: string
+      source_ref:
+        description: 'Optional expected OIDC provenance source ref override (refs/heads/main or refs/tags/v*)'
+        required: false
+        default: ''
         type: string
       provider:
         description: 'Hosting Provider Adapter'
@@ -140,6 +160,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
       actions: read
     environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}
     outputs:
@@ -151,15 +172,27 @@ jobs:
       image_uri: ${{ steps.resolve.outputs.image_uri }}
       attestation_status: ${{ steps.provenance.outputs.attestation_status }}
     steps:
+      - name: Validate Commit SHA Input
+        id: validate-sha
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.commit_sha }}
+          fetch-depth: 2
 
       - name: Resolve Artifact Image URI
         id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           RAW_DIGEST: ${{ inputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
@@ -167,6 +200,11 @@ jobs:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
             echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
             exit 1
@@ -250,13 +288,17 @@ jobs:
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
+          EXPLICIT_REF="false"
           if [ -n "${INPUT_SOURCE_REF:-}" ]; then
             EXPECTED_SOURCE_REF="$INPUT_SOURCE_REF"
+            EXPLICIT_REF="true"
           elif [[ "${RAW_TAG:-}" =~ ^v[0-9][a-zA-Z0-9_.-]*$ ]]; then
             EXPECTED_SOURCE_REF="refs/tags/${RAW_TAG}"
+            EXPLICIT_REF="true"
           else
             EXPECTED_SOURCE_REF="refs/heads/main"
           fi
@@ -271,8 +313,29 @@ jobs:
             --owner "$REPO_OWNER" \
             --signer-workflow "$SIGNER_WORKFLOW" \
             --source-ref "$EXPECTED_SOURCE_REF"; then
-            echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}', signer workflow '${SIGNER_WORKFLOW}', and source ref '${EXPECTED_SOURCE_REF}'). Blocking deployment."
-            exit 1
+            VERIFIED_FALLBACK="false"
+            if [ "$EXPLICIT_REF" = "false" ] && { [ -z "${RAW_TAG:-}" ] || [[ "${RAW_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; }; then
+              if ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
+                --owner "$REPO_OWNER" \
+                --signer-workflow "$SIGNER_WORKFLOW" \
+                --format json 2>/dev/null); then
+                CERT_SOURCE_REF=$(printf '%s' "$ATTESTATION_JSON" | jq -r '.[0].verificationResult.signature.certificate.sourceRepositoryRef // empty')
+                if [[ "$CERT_SOURCE_REF" =~ ^refs/tags/v[0-9][a-zA-Z0-9_.-]*$ ]]; then
+                  if gh attestation verify "oci://${IMAGE_URI}" \
+                    --owner "$REPO_OWNER" \
+                    --signer-workflow "$SIGNER_WORKFLOW" \
+                    --source-ref "$CERT_SOURCE_REF"; then
+                    EXPECTED_SOURCE_REF="$CERT_SOURCE_REF"
+                    VERIFIED_FALLBACK="true"
+                  fi
+                fi
+              fi
+            fi
+
+            if [ "$VERIFIED_FALLBACK" != "true" ]; then
+              echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}', signer workflow '${SIGNER_WORKFLOW}', and source ref '${EXPECTED_SOURCE_REF}'). Blocking deployment."
+              exit 1
+            fi
           fi
           echo "source_ref=${EXPECTED_SOURCE_REF}" >> "$GITHUB_OUTPUT"
           echo "attestation_status=verified" >> "$GITHUB_OUTPUT"
@@ -290,7 +353,11 @@ jobs:
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
           if git remote get-url origin >/dev/null 2>&1; then
-            git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+            if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+              git fetch --unshallow --tags origin +refs/heads/main:refs/remotes/origin/main
+            else
+              git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+            fi
           fi
 
           if ! git show-ref --verify --quiet refs/remotes/origin/main; then
@@ -525,7 +592,8 @@ jobs:
           CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
           INCOMING_TAG: ${{ inputs.image_tag || '' }}
           INCOMING_DIGEST: ${{ steps.resolve.outputs.image_digest }}
-          CURRENT_SHA: ${{ github.sha }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -534,6 +602,16 @@ jobs:
           AUTH_PROJECT_ID: ${{ steps.gcp-auth-oidc.outputs.project_id || steps.gcp-auth-key.outputs.project_id }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ]; then
+            if [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+              echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+              exit 1
+            fi
+            CURRENT_SHA="$INPUT_COMMIT_SHA"
+          else
+            CURRENT_SHA="${CURRENT_SHA:-${GITHUB_SHA:-}}"
+          fi
+
           PREVIOUS_IMAGE_TAG=""
           PREVIOUS_IMAGE_DIGEST=""
           TAG_SOURCE="none"
@@ -543,7 +621,7 @@ jobs:
             if [ -z "$candidate" ]; then
               return 1
             fi
-            if [ "$candidate" = "latest" ] || [ "$candidate" = "$CURRENT_SHA" ] || [ "$candidate" = "$INCOMING_TAG" ]; then
+            if [ "$candidate" = "latest" ] || { [ -n "${CURRENT_SHA:-}" ] && [ "${candidate,,}" = "${CURRENT_SHA,,}" ]; } || [ "$candidate" = "$INCOMING_TAG" ]; then
               return 1
             fi
             if [[ ! "$candidate" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
@@ -633,35 +711,83 @@ jobs:
 
           if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
             API_BASE="${GITHUB_API_URL:-https://api.github.com}"
-            RUNS_JSON=$(curl -fsSL \
+            DEPLOYMENTS_JSON=$(curl -fsSL \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?status=success&per_page=10" 2>/dev/null || true)
-            if [ -n "$RUNS_JSON" ]; then
-              RUN_SHA=$(printf '%s' "$RUNS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '[.workflow_runs[]? | .head_sha | select(. != null and . != "" and . != "latest" and . != $sha and . != $tag and test("^[a-fA-F0-9]{40}$"))] | .[0] // empty' 2>/dev/null || true)
-              if is_valid_previous_tag "$RUN_SHA"; then
-                PREVIOUS_IMAGE_TAG="$RUN_SHA"
-                TAG_SOURCE="workflow-runs"
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments?environment=${EFFECTIVE_ENV}&per_page=20" 2>/dev/null || true)
+            if [ -n "$DEPLOYMENTS_JSON" ]; then
+              CANDIDATE_DEPLOYMENTS=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg env "$EFFECTIVE_ENV" --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '
+                if type == "array" then
+                  .[]
+                  | select(
+                      ((.environment // $env) == $env) and
+                      (.id != null) and
+                      (.sha != null) and
+                      (.sha != "") and
+                      ((.sha | ascii_downcase) != ($sha | ascii_downcase)) and
+                      (.sha != $tag) and
+                      (.sha | test("^[a-fA-F0-9]{40}$"))
+                    )
+                  | "\(.id)\t\(.sha)"
+                else
+                  empty
+                end
+              ' 2>/dev/null || true)
+
+              if [ -n "$CANDIDATE_DEPLOYMENTS" ]; then
+                while IFS=$'\t' read -r DEPLOY_ID DEPLOY_SHA; do
+                  if [ -z "$DEPLOY_ID" ] || [ -z "$DEPLOY_SHA" ]; then
+                    continue
+                  fi
+                  if ! is_valid_previous_tag "$DEPLOY_SHA"; then
+                    continue
+                  fi
+                  STATUSES_JSON=$(curl -fsSL \
+                    -H "Accept: application/vnd.github+json" \
+                    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                    "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${DEPLOY_ID}/statuses?per_page=10" 2>/dev/null || true)
+                  if [ -n "$STATUSES_JSON" ]; then
+                    HAS_SUCCESS=$(printf '%s' "$STATUSES_JSON" | jq -r '
+                      if type == "array" then
+                        ([.[]? | select(.state != null and .state != "inactive") | .state] | .[0] // "") == "success"
+                      else
+                        false
+                      end
+                    ' 2>/dev/null || true)
+                    if [ "$HAS_SUCCESS" = "true" ]; then
+                      PREVIOUS_IMAGE_TAG="$DEPLOY_SHA"
+                      TAG_SOURCE="github-deployments"
+                      break
+                    fi
+                  fi
+                done <<< "$CANDIDATE_DEPLOYMENTS"
               fi
             fi
           fi
 
           if [ -z "$PREVIOUS_IMAGE_TAG" ]; then
-            GIT_PREV_SHA=$(git rev-parse --verify HEAD^1 2>/dev/null || true)
+            GIT_REF_TARGET="${CURRENT_SHA:-HEAD}"
+            GIT_PREV_SHA=$(git rev-parse --verify "${GIT_REF_TARGET}^1" 2>/dev/null || true)
             if is_valid_previous_tag "$GIT_PREV_SHA"; then
               PREVIOUS_IMAGE_TAG="$GIT_PREV_SHA"
               TAG_SOURCE="git-parent-sha"
             fi
           fi
 
-          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${CURRENT_SHA:-}" ]; then
             API_BASE="${GITHUB_API_URL:-https://api.github.com}"
             COMMITS_JSON=$(curl -fsSL \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               "${API_BASE}/repos/${GITHUB_REPOSITORY}/commits?sha=${CURRENT_SHA}&per_page=2" 2>/dev/null || true)
             if [ -n "$COMMITS_JSON" ]; then
-              API_PREV_SHA=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '[.[].sha | select(. != null and . != "" and . != $sha and . != $tag and test("^[a-fA-F0-9]{40}$"))] | .[0] // empty' 2>/dev/null || true)
+              API_PREV_SHA=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '
+                if type == "array" then
+                  ([.[0]?.parents[0]?.sha, .[].sha] | map(select(. != null and . != "" and ((. | ascii_downcase) != ($sha | ascii_downcase)) and . != $tag and test("^[a-fA-F0-9]{40}$")))) | .[0] // empty
+                else
+                  empty
+                end
+              ' 2>/dev/null || true)
               if is_valid_previous_tag "$API_PREV_SHA"; then
                 PREVIOUS_IMAGE_TAG="$API_PREV_SHA"
                 TAG_SOURCE="github-commits-api"

@@ -524,7 +524,6 @@ jobs:
         env:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
-          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
           PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |

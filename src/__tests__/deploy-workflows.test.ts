@@ -117,12 +117,19 @@ if (args[0] === 'attestation' && args[1] === 'verify') {
     console.error('Error: failed to verify attestation');
     process.exit(1);
   }
+  const sourceRefIdx = args.indexOf('--source-ref');
+  const requestedSourceRef = sourceRefIdx >= 0 ? args[sourceRefIdx + 1] : '';
+  if (process.env.MOCK_MAIN_REF_FAIL === 'true' && requestedSourceRef === 'refs/heads/main') {
+    console.error('Error: certificate sourceRepositoryRef mismatch for refs/heads/main');
+    process.exit(1);
+  }
   if (args.includes('--format') && args.includes('json')) {
     process.stdout.write(JSON.stringify([{
       verificationResult: {
         signature: {
           certificate: {
             sourceRepositoryDigest: process.env.MOCK_ATTESTATION_SHA || '0123456789abcdef0123456789abcdef01234567',
+            sourceRepositoryRef: process.env.MOCK_ATTESTATION_SOURCE_REF || 'refs/heads/main',
           },
         },
       },
@@ -222,6 +229,7 @@ process.exit(1);
 
   it('passes workflow inputs and GH_TOKEN strictly via env blocks without ${{ ... }} inside deploy-provider.yml run scripts', () => {
     const stepNames = [
+      'Validate Commit SHA Input',
       'Resolve Artifact Image URI',
       'Verify Artifact Provenance Attestation',
       'Resolve Standalone Promotion Commit & Main Ancestry',
@@ -423,8 +431,12 @@ process.exit(1);
     expect(cloudRunDoc).toContain('gh attestation verify');
     expect(deploymentDoc).toContain('vars.SERVICE_URL');
     expect(deploymentDoc).toContain('secrets.SERVICE_URL');
+    expect(deploymentDoc).toContain('commit_sha');
+    expect(deploymentDoc).toContain('deployments: read');
     expect(cloudRunDoc).toContain('vars.SERVICE_URL');
     expect(cloudRunDoc).toContain('secrets.SERVICE_URL');
+    expect(cloudRunDoc).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(cloudRunDoc).toContain('deployments: read');
   });
 
   it('resolves vars.SERVICE_URL, cloudrun url, and secrets.SERVICE_URL in order without exporting secret-only fallback to $GITHUB_OUTPUT', () => {
@@ -1133,13 +1145,54 @@ process.exit(0);
     );
 
     const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
       jobs?: {
         deploy?: {
-          steps?: Array<{ name?: string; if?: string; with?: { script?: string } }>;
+          steps?: Array<{ id?: string; name?: string; if?: string; env?: Record<string, string>; with?: { script?: string } }>;
         };
       };
     };
+    expect(deployProviderDoc.on?.workflow_dispatch?.inputs).toHaveProperty('source_ref');
+    expect(deployProviderDoc.on?.workflow_call?.inputs).toHaveProperty('source_ref');
+
     const steps = deployProviderDoc.jobs?.deploy?.steps ?? [];
+    const provenanceMeta = steps.find((s) => s.id === 'provenance');
+    expect(provenanceMeta?.env?.INPUT_SOURCE_REF).toBe('${{ inputs.source_ref }}');
+
+    const provenanceScript = extractStepRunScript(deployProviderYml, 'Verify Artifact Provenance Attestation');
+    fs.writeFileSync(outputFile, '');
+    const taggedDigestRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+      IMAGE_DIGEST: VALID_DIGEST,
+      RAW_TAG: '',
+      INPUT_SOURCE_REF: '',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_MAIN_REF_FAIL: 'true',
+      MOCK_ATTESTATION_SOURCE_REF: 'refs/tags/v1.4.2',
+    });
+    expect(taggedDigestRes.status).toBe(0);
+    expect(fs.readFileSync(outputFile, 'utf8')).toContain('source_ref=refs/tags/v1.4.2');
+
+    // Unauthorized feature-branch sourceRepositoryRef in certificate is rejected fail-closed
+    fs.writeFileSync(outputFile, '');
+    const branchDigestRes = runBashStep(provenanceScript, {
+      GH_TOKEN: 'ghs_test_token',
+      IMAGE_URI: `ghcr.io/ownerorg/wedding_website@${VALID_DIGEST}`,
+      IMAGE_DIGEST: VALID_DIGEST,
+      RAW_TAG: '',
+      INPUT_SOURCE_REF: '',
+      REPO_OWNER: 'OwnerOrg',
+      SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+      MOCK_MAIN_REF_FAIL: 'true',
+      MOCK_ATTESTATION_SOURCE_REF: 'refs/heads/feature-bypass',
+    });
+    expect(branchDigestRes.status).not.toBe(0);
+
     const gateStep = steps.find((s) => s.name === 'Verify Standalone CI & Database Migration Status');
     expect(gateStep?.if).toBe("github.event_name == 'workflow_dispatch' && !inputs.dry_run");
     expect(gateStep?.with?.script).toBeDefined();

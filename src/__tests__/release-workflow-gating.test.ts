@@ -76,6 +76,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const publishWorkflow = readWorkflow('publish-artifact.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
   const migrateWorkflow = readWorkflow('db-migrate.yml');
+  const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
+  const rollbackWorkflow = readWorkflow('rollback.yml');
 
   it('preserves CI workflow triggers, job names, upstream action-pin verification, and zero-secret execution', () => {
     expect(ciWorkflow).toContain('name: CI');
@@ -116,11 +118,13 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('commit_sha:');
   });
 
-  it('scopes top-level permissions to contents: read and restricts write/actions permissions to individual jobs', () => {
+  it('scopes top-level permissions to contents: read and restricts write/actions/deployments permissions to individual jobs', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
       ['deploy.yml', deployWorkflow],
       ['db-migrate.yml', migrateWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
     ] as const) {
       const topPermissions = extractTopLevelSection(content, 'permissions');
       expect({ name, topPermissions }).toEqual({
@@ -164,6 +168,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     const actionsReadMatches = deployWorkflow.match(/actions:\s*read/g) ?? [];
     expect(actionsReadMatches).toHaveLength(6);
     expect(deployWorkflow).toMatch(/ci-gate:[\s\S]*?permissions:\n\s+actions: read/);
+
+    // deployments: read lives strictly at job scope in caller jobs and deploy-provider.yml
+    expect(deployWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(4);
+    expect(deployProviderWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
+    expect(rollbackWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
 
     // Shared release concurrency group prevents v* tag and main runs from racing on :latest or BuildKit caches
     const publishConcurrency = extractTopLevelSection(publishWorkflow, 'concurrency');
@@ -215,15 +224,36 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     // Resolved SHA aligned in schema-compatibility only on workflow_run after ancestry check (preventing default-branch cache poisoning on workflow_dispatch) and passed to workflow calls
     expect(deployWorkflow).not.toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toMatch(
-      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run'[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
+      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| inputs\.image_tag != ''[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
     );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(
+      deployWorkflow.match(/commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/g) ?? []
+    ).toHaveLength(7);
+    expect(deployWorkflow).toMatch(
+      /staging-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /staging-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*staging-deploy-provider,\s*staging-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /production-deploy-provider:[\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
+    expect(deployWorkflow).toMatch(
+      /production-rollback:[\s\S]*?needs:\s*\[ci-gate,\s*publish-artifact,\s*production-deploy-provider,\s*production-verify-deployment\][\s\S]*?commit_sha:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}/
+    );
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
 
     expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(deployProviderWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(deployProviderWorkflow).toContain('fetch-depth: 2');
+    expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
+    expect(rollbackWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(rollbackWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
+    expect(rollbackWorkflow).toContain("commit_sha: ${{ inputs.commit_sha || '' }}");
   });
 
   it('passes event fields and inputs via env variables with zero direct ${{ ... }} interpolation in run scripts', () => {
@@ -231,6 +261,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       ['deploy.yml', deployWorkflow],
       ['publish-artifact.yml', publishWorkflow],
       ['db-migrate.yml', migrateWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
     ] as const) {
       const runBlocks = extractRunBlocks(content);
       expect(runBlocks.length).toBeGreaterThan(0);
@@ -758,7 +790,6 @@ process.exit(1);
           GITHUB_OUTPUT: outputFile,
           IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
           DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
-          TAG_NAME: 'v0.1.0',
           PRIMARY_URI: 'ghcr.io/fderuiter/wedding_website:v0.1.0',
           TAGS: 'ghcr.io/fderuiter/wedding_website:v0.1.0,fderuiter/wedding-website:v0.1.0',
           OMIT_DOCKERHUB_ARM64: 'true',
