@@ -46,6 +46,7 @@ jobs:
   preflight:
     name: Verify Main Ancestry & CI Status
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       actions: read
@@ -100,6 +101,122 @@ jobs:
 
           echo "resolved_sha=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "Verified target commit ${RESOLVED_SHA} is an ancestor of origin/main."
+
+      - name: Poll Active CI Runs & Verify Passing CI Status
+        id: verify-ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          RESOLVED_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+        run: |
+          if [[ ! "$RESOLVED_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid target commit SHA '${RESOLVED_SHA}'."
+            exit 1
+          fi
+
+          API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+          MAX_TIMEOUT="${CI_POLL_TIMEOUT_SECONDS:-2400}"
+          POLL_INTERVAL="${CI_POLL_INTERVAL_SECONDS:-15}"
+          if [ "${EVENT_NAME:-}" = "push" ]; then
+            INITIAL_GRACE="${CI_INITIAL_GRACE_SECONDS:-30}"
+          else
+            INITIAL_GRACE="${CI_INITIAL_GRACE_SECONDS:-0}"
+          fi
+
+          AUTH_ARGS=()
+          if [ -n "${GH_TOKEN:-}" ]; then
+            AUTH_ARGS=(-H "Authorization: Bearer ${GH_TOKEN}")
+          fi
+
+          START_TIME=$(date +%s)
+          OBSERVED_ACTIVE_IDS=""
+
+          while true; do
+            NOW=$(date +%s)
+            ELAPSED=$((NOW - START_TIME))
+
+            if ! RUNS_JSON=$(curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${AUTH_ARGS[@]}" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RESOLVED_SHA}&per_page=100"); then
+              echo "::error::Failed to query ci.yml workflow runs for commit '${RESOLVED_SHA}' in '${GITHUB_REPOSITORY}'."
+              exit 1
+            fi
+
+            MATCHED_RUNS=$(printf '%s' "$RUNS_JSON" | jq -c \
+              --arg sha "$RESOLVED_SHA" \
+              --arg repo "$GITHUB_REPOSITORY" '
+              [
+                .workflow_runs[]?
+                | select((.head_sha // "" | ascii_downcase) == ($sha | ascii_downcase))
+                | select((.head_repository == null) or ((.head_repository.full_name // "" | ascii_downcase) == ($repo | ascii_downcase)))
+              ]
+            ')
+
+            TOTAL_COUNT=$(printf '%s' "$MATCHED_RUNS" | jq 'length')
+            ACTIVE_IDS=$(printf '%s' "$MATCHED_RUNS" | jq -r '[.[] | select(.status != "completed") | (.id | tostring)] | join(",")')
+
+            if [ -n "$ACTIVE_IDS" ]; then
+              IFS=',' read -r -a CURRENT_ACTIVE <<< "$ACTIVE_IDS"
+              for run_id in "${CURRENT_ACTIVE[@]}"; do
+                [ -z "$run_id" ] && continue
+                case ",${OBSERVED_ACTIVE_IDS}," in
+                  *",${run_id},"*) ;;
+                  *) OBSERVED_ACTIVE_IDS="${OBSERVED_ACTIVE_IDS:+${OBSERVED_ACTIVE_IDS},}${run_id}" ;;
+                esac
+              done
+
+              if [ "$ELAPSED" -ge "$MAX_TIMEOUT" ]; then
+                echo "::error::Timed out after ${MAX_TIMEOUT}s waiting for active ci.yml run(s) [${ACTIVE_IDS}] for commit '${RESOLVED_SHA}'."
+                exit 1
+              fi
+
+              echo "Waiting for active ci.yml run(s) [${ACTIVE_IDS}] on commit ${RESOLVED_SHA} (elapsed: ${ELAPSED}s)..."
+              sleep "$POLL_INTERVAL"
+              continue
+            fi
+
+            if [ "$TOTAL_COUNT" -eq 0 ] && [ "$ELAPSED" -lt "$INITIAL_GRACE" ]; then
+              echo "No ci.yml workflow runs registered yet for pushed commit ${RESOLVED_SHA}; retrying in ${POLL_INTERVAL}s (elapsed: ${ELAPSED}s)..."
+              sleep "$POLL_INTERVAL"
+              continue
+            fi
+
+            if [ -n "$OBSERVED_ACTIVE_IDS" ]; then
+              WAITED_SUCCESS_ID=$(printf '%s' "$MATCHED_RUNS" | jq -r \
+                --arg ids ",${OBSERVED_ACTIVE_IDS}," '
+                [
+                  .[]
+                  | select(.status == "completed" and .conclusion == "success")
+                  | ("," + (.id | tostring) + ",") as $needle
+                  | select($ids | contains($needle))
+                  | (.id | tostring)
+                ][0] // empty
+              ')
+              if [ -z "$WAITED_SUCCESS_ID" ]; then
+                echo "::error::Active ci.yml workflow run(s) [${OBSERVED_ACTIVE_IDS}] for commit '${RESOLVED_SHA}' completed without success. Blocking artifact build and provenance signing."
+                exit 1
+              fi
+              VERIFIED_RUN_ID="$WAITED_SUCCESS_ID"
+            else
+              VERIFIED_RUN_ID=$(printf '%s' "$MATCHED_RUNS" | jq -r '
+                [.[] | select(.status == "completed" and .conclusion == "success") | (.id | tostring)][0] // empty
+              ')
+            fi
+
+            if [ -z "$VERIFIED_RUN_ID" ]; then
+              echo "::error::No completed successful ci.yml workflow run found for commit '${RESOLVED_SHA}' in '${GITHUB_REPOSITORY}'. Blocking artifact build and provenance signing."
+              exit 1
+            fi
+
+            echo "Verified passing ci.yml run (ID: ${VERIFIED_RUN_ID}) for commit ${RESOLVED_SHA}."
+            echo "### 🟢 Pre-Publish CI Verification Gate" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Target Commit SHA:** \`${RESOLVED_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Verified CI Run ID:** \`${VERIFIED_RUN_ID}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **CI Status:** \`VERIFIED\`" >> "$GITHUB_STEP_SUMMARY"
+            break
+          done
 
       - name: Verify Successful CI Run for Commit
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -161,7 +278,12 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Validate Commit SHA Input
+        id: meta
         env:
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
@@ -169,6 +291,8 @@ jobs:
             echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
             exit 1
           fi
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -239,6 +363,10 @@ jobs:
           platforms: ${{ matrix.platform }}
           provenance: false
           sbom: false
+          labels: |
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+          annotations: |
+            manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
           outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
@@ -322,7 +450,7 @@ jobs:
         env:
           SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-${{ matrix.arch }}
-        run: node scripts/test-container.mjs
+        run: node scripts/test-container.mjs --container-migration
 
       - name: Compress Verified OCI Archive & Export Digest
         env:
@@ -375,10 +503,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
+          fetch-depth: 0
 
       - name: Compute Image Tag & Targets
         id: meta
         env:
+          EVENT_NAME: ${{ github.event_name }}
           RAW_INPUT_TAG: ${{ inputs.tag_name }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -407,11 +537,54 @@ jobs:
             TAG_NAME="${RESOLVED_SHA}"
           fi
 
+          semver_lt() {
+            local lhs="${1%%+*}"
+            local rhs="${2%%+*}"
+            local l_maj l_min l_pat r_maj r_min r_pat
+            if [[ ! "$lhs" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              return 1
+            fi
+            l_maj="${BASH_REMATCH[1]}"
+            l_min="${BASH_REMATCH[2]}"
+            l_pat="${BASH_REMATCH[3]}"
+            if [[ ! "$rhs" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              return 1
+            fi
+            r_maj="${BASH_REMATCH[1]}"
+            r_min="${BASH_REMATCH[2]}"
+            r_pat="${BASH_REMATCH[3]}"
+            if (( 10#$l_maj != 10#$r_maj )); then
+              (( 10#$l_maj < 10#$r_maj ))
+              return $?
+            fi
+            if (( 10#$l_min != 10#$r_min )); then
+              (( 10#$l_min < 10#$r_min ))
+              return $?
+            fi
+            (( 10#$l_pat < 10#$r_pat ))
+            return $?
+          }
+
+          STABLE_SEMVER_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\+[0-9A-Za-z.-]+)?$'
           PUBLISH_LATEST="false"
-          if [ -z "$RAW_INPUT_TAG" ] && [ -z "$INPUT_COMMIT_SHA" ]; then
-            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
-              PUBLISH_LATEST="true"
-            elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ] && [[ "${GITHUB_REF_NAME}" != *-* ]]; then
+          if [ -z "$RAW_INPUT_TAG" ] &&
+             [ -z "$INPUT_COMMIT_SHA" ] &&
+             [ "${EVENT_NAME:-push}" != "workflow_dispatch" ] &&
+             [ "${EVENT_NAME:-push}" != "workflow_call" ] &&
+             [[ "${GITHUB_REF}" == refs/tags/v* ]] &&
+             [ -n "${GITHUB_REF_NAME}" ] &&
+             [[ "${GITHUB_REF_NAME}" =~ $STABLE_SEMVER_PATTERN ]]; then
+            IS_HIGHEST_STABLE="true"
+            while IFS= read -r existing_tag; do
+              [ -z "$existing_tag" ] && continue
+              if [[ "$existing_tag" =~ $STABLE_SEMVER_PATTERN ]]; then
+                if semver_lt "${GITHUB_REF_NAME}" "$existing_tag"; then
+                  IS_HIGHEST_STABLE="false"
+                  break
+                fi
+              fi
+            done < <(git tag -l 'v*' 2>/dev/null || true)
+            if [ "$IS_HIGHEST_STABLE" = "true" ]; then
               PUBLISH_LATEST="true"
             fi
           fi
@@ -443,7 +616,9 @@ jobs:
 
           echo "image_repository=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
           echo "dockerhub_repository=${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "resolved_sha=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
@@ -525,8 +700,17 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
           PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
+          REVISION: ${{ steps.meta.outputs.revision }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
         run: |
+          RAW_REVISION="${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}"
+          SOURCE_REVISION=$(printf '%s' "$RAW_REVISION" | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::Missing or invalid 40-character source revision '${SOURCE_REVISION}' for multi-platform OCI index metadata."
+            exit 1
+          fi
+
           for required_arch in amd64 arm64; do
             if [ ! -f "/tmp/digests/${required_arch}.digest" ]; then
               echo "::error::Missing verified digest file for architecture '${required_arch}'."
@@ -548,6 +732,7 @@ jobs:
           GHCR_TAG_ARGS=()
           DOCKERHUB_TAG_ARGS=()
           DOCKERHUB_PRIMARY_URI=""
+          ANNOTATION_ARGS=("--annotation" "index:org.opencontainers.image.revision=${SOURCE_REVISION}")
 
           for tag_ref in "${ALL_TAGS[@]}"; do
             [ -z "$tag_ref" ] && continue
@@ -563,6 +748,7 @@ jobs:
 
           docker buildx imagetools create \
             "${GHCR_TAG_ARGS[@]}" \
+            "${ANNOTATION_ARGS[@]}" \
             "${IMAGE_REPOSITORY}@${AMD64_DIGEST}" \
             "${IMAGE_REPOSITORY}@${ARM64_DIGEST}"
 
@@ -580,10 +766,17 @@ jobs:
             fi
           done
 
+          RECORDED_REVISION=$(printf '%s' "$RAW_INDEX" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' | tr '[:upper:]' '[:lower:]')
+          if [ "$RECORDED_REVISION" != "$SOURCE_REVISION" ]; then
+            echo "::error::Published multi-platform index '${PRIMARY_URI}' revision annotation '${RECORDED_REVISION}' does not match verified source revision '${SOURCE_REVISION}'."
+            exit 1
+          fi
+
           DOCKERHUB_INDEX_DIGEST=""
           if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
             docker buildx imagetools create \
               "${DOCKERHUB_TAG_ARGS[@]}" \
+              "${ANNOTATION_ARGS[@]}" \
               "${DOCKERHUB_REPOSITORY}@${AMD64_DIGEST}" \
               "${DOCKERHUB_REPOSITORY}@${ARM64_DIGEST}"
 
@@ -600,6 +793,12 @@ jobs:
                 exit 1
               fi
             done
+
+            DOCKERHUB_RECORDED_REVISION=$(printf '%s' "$DOCKERHUB_RAW_INDEX" | jq -r '.annotations["org.opencontainers.image.revision"] // empty' | tr '[:upper:]' '[:lower:]')
+            if [ "$DOCKERHUB_RECORDED_REVISION" != "$SOURCE_REVISION" ]; then
+              echo "::error::Published multi-platform index '${DOCKERHUB_PRIMARY_URI}' revision annotation '${DOCKERHUB_RECORDED_REVISION}' does not match verified source revision '${SOURCE_REVISION}'."
+              exit 1
+            fi
           fi
 
           echo "digest=${INDEX_DIGEST}" >> "$GITHUB_OUTPUT"

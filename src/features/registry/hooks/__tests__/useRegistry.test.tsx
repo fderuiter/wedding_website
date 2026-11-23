@@ -97,7 +97,7 @@ describe('useRegistry', () => {
     expect(result.current.isModalOpen).toBe(true);
   });
 
-  it('should not open modal for purchased item', async () => {
+  it('should open modal in read-only mode for purchased item', async () => {
     const { result } = renderHook(() => useRegistry(), { wrapper: wrapper(queryClient) });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     const item = result.current.items[1];
@@ -106,8 +106,8 @@ describe('useRegistry', () => {
       result.current.handleCardClick(item);
     });
 
-    expect(result.current.selectedItem).toBeNull();
-    expect(result.current.isModalOpen).toBe(false);
+    expect(result.current.selectedItem).toEqual(item);
+    expect(result.current.isModalOpen).toBe(true);
   });
 
   it('should handle modal close', async () => {

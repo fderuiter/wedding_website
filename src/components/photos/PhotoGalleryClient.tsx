@@ -6,6 +6,7 @@ import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
 import { MediaImage } from '@/components/MediaImage';
 import { Button } from '@/components/ui/Button';
+import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { triggerNativeExportDownload } from '@/utils/exportDownload';
 import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
@@ -113,9 +114,6 @@ export function PhotoGalleryClient({
   const lightboxModalRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
 
-  const tabCuratedRef = useRef<HTMLButtonElement | null>(null);
-  const tabGuestRef = useRef<HTMLButtonElement | null>(null);
-
   const curatedPhotos = photos.filter((p) => p.category === 'curated');
   const guestPhotos = photos.filter((p) => p.category === 'guest' || p.isGuestUpload);
   const visiblePhotos = activeTab === 'curated' ? curatedPhotos : guestPhotos;
@@ -191,27 +189,6 @@ export function PhotoGalleryClient({
   const handleTabChange = (tab: PhotoCategory) => {
     setActiveTab(tab);
     setSelectedPhotoIndex(null);
-  };
-
-  const handleTabKeyDown = (e: React.KeyboardEvent, currentTab: PhotoCategory) => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      e.preventDefault();
-      const nextTab: PhotoCategory = currentTab === 'curated' ? 'guest' : 'curated';
-      handleTabChange(nextTab);
-      if (nextTab === 'curated') {
-        tabCuratedRef.current?.focus();
-      } else {
-        tabGuestRef.current?.focus();
-      }
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      handleTabChange('curated');
-      tabCuratedRef.current?.focus();
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      handleTabChange('guest');
-      tabGuestRef.current?.focus();
-    }
   };
 
   const handleDownload = async (
@@ -366,77 +343,38 @@ export function PhotoGalleryClient({
     <div className="space-y-8" data-hydrated={isHydrated}>
       {/* Accessible Tab Bar and Live Slideshow Launcher */}
       <div className="flex flex-wrap items-center justify-center gap-3 border-b border-stone-200 dark:border-stone-800 pb-4 mb-6">
-        <div
-          role="tablist"
+        <SegmentedTabs<PhotoCategory>
+          variant="pills"
           aria-label="Photo gallery views"
           data-testid="photo-gallery-tabs"
-          className="flex flex-wrap items-center justify-center gap-3"
-        >
-          <button
-            ref={tabCuratedRef}
-            id="tab-curated"
-            role="tab"
-            type="button"
-            aria-selected={activeTab === 'curated'}
-            aria-controls="tabpanel-curated"
-            tabIndex={activeTab === 'curated' ? 0 : -1}
-            onClick={() => handleTabChange('curated')}
-            onKeyDown={(e) => handleTabKeyDown(e, 'curated')}
-            data-testid="tab-curated"
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-              activeTab === 'curated'
-                ? 'bg-primary text-white shadow-md'
-                : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            <Icon name="Camera" className="w-4 h-4" />
-            <span>Curated Album</span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                activeTab === 'curated'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
-              }`}
-            >
-              {curatedPhotos.length}
-            </span>
-          </button>
-
-          <button
-            ref={tabGuestRef}
-            id="tab-guest"
-            role="tab"
-            type="button"
-            aria-selected={activeTab === 'guest'}
-            aria-controls="tabpanel-guest"
-            tabIndex={activeTab === 'guest' ? 0 : -1}
-            onClick={() => handleTabChange('guest')}
-            onKeyDown={(e) => handleTabKeyDown(e, 'guest')}
-            data-testid="tab-guest"
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-              activeTab === 'guest'
-                ? 'bg-primary text-white shadow-md'
-                : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white'
-            }`}
-          >
-            <Icon name="Upload" className="w-4 h-4" />
-            <span>Guest Uploads</span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                activeTab === 'guest'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
-              }`}
-            >
-              {guestPhotos.length}
-            </span>
-          </button>
-        </div>
+          value={activeTab}
+          onChange={handleTabChange}
+          tabs={[
+            {
+              value: 'curated',
+              id: 'tab-curated',
+              panelId: 'tabpanel-curated',
+              'data-testid': 'tab-curated',
+              icon: <Icon name="Camera" className="w-4 h-4 shrink-0" />,
+              label: 'Curated Album',
+              count: curatedPhotos.length,
+            },
+            {
+              value: 'guest',
+              id: 'tab-guest',
+              panelId: 'tabpanel-guest',
+              'data-testid': 'tab-guest',
+              icon: <Icon name="Upload" className="w-4 h-4 shrink-0" />,
+              label: 'Guest Uploads',
+              count: guestPhotos.length,
+            },
+          ]}
+        />
 
         <Link
           href="/photos/slideshow"
           data-testid="launch-slideshow-link"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 hover:bg-stone-100 dark:hover:bg-stone-800 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2"
         >
           <Icon name="Monitor" className="w-4 h-4" />
           <span>Live Slideshow</span>
@@ -486,7 +424,7 @@ export function PhotoGalleryClient({
                 {isAllSelectedInView ? 'Deselect All' : 'Select All Photos'}
               </Button>
               {visibleSelectedCount > 0 && (
-                <span className="text-xs text-stone-500 dark:text-stone-400">
+                <span className="text-xs text-[var(--color-muted-text,#4b5563)]">
                   ({visibleSelectedCount} of {visiblePhotos.length} selected)
                 </span>
               )}
@@ -568,7 +506,10 @@ export function PhotoGalleryClient({
                         alt={photo.title || `Curated photo ${index + 1}`}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none"
+                      >
                         <span className="text-xs font-medium text-white truncate">
                           {photo.title || `Curated photo ${index + 1}`}
                         </span>
@@ -583,14 +524,14 @@ export function PhotoGalleryClient({
               data-testid="curated-photos-empty-state"
               className="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/30 p-8 text-center flex flex-col items-center justify-center space-y-3"
             >
-              <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
+              <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-[var(--color-muted-text,#4b5563)]">
                 <Icon name="ImageOff" className="w-8 h-8" />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">
                   No curated photos yet
                 </h3>
-                <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm">
+                <p className="text-sm text-[var(--color-muted-text,#4b5563)] mt-1 max-w-sm">
                   Curated wedding photos will appear here once published.
                 </p>
               </div>
@@ -690,6 +631,7 @@ export function PhotoGalleryClient({
                       </button>
 
                       <div
+                        aria-hidden="true"
                         className={`absolute inset-x-0 bottom-0 z-10 bg-stone-950/90 px-3 py-2 pointer-events-none transition-opacity ${
                           hasCustomAttribution
                             ? 'opacity-100'
@@ -717,14 +659,14 @@ export function PhotoGalleryClient({
                 data-testid="guest-photos-empty-state"
                 className="rounded-2xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/30 p-8 text-center flex flex-col items-center justify-center space-y-3"
               >
-                <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
+                <div className="p-3 rounded-full bg-stone-200/60 dark:bg-stone-800 text-[var(--color-muted-text,#4b5563)]">
                   <Icon name="ImageOff" className="w-8 h-8" />
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-stone-800 dark:text-stone-200">
                     No guest photos yet
                   </h3>
-                  <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm">
+                  <p className="text-sm text-[var(--color-muted-text,#4b5563)] mt-1 max-w-sm">
                     Be the first to share your favorite memories from the celebration using the upload section above!
                   </p>
                 </div>
@@ -750,12 +692,22 @@ export function PhotoGalleryClient({
           >
             {/* Position Counter Indicator */}
             <div
-              className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-black/50 text-white text-sm font-medium tracking-wide"
-              data-testid="lightbox-counter"
+              role="status"
               aria-live="polite"
-              aria-label={`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}`}
+              aria-atomic="true"
+              className="absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full bg-stone-950/90 text-white text-sm font-medium tracking-wide"
+              data-testid="lightbox-counter"
             >
-              {selectedPhotoIndex + 1} / {visiblePhotos.length}
+              <span aria-hidden="true">
+                {selectedPhotoIndex + 1} / {visiblePhotos.length}
+              </span>
+              <span className="sr-only">
+                {`Photo ${selectedPhotoIndex + 1} of ${visiblePhotos.length}${
+                  currentPhoto.caption || currentPhoto.title
+                    ? `: ${currentPhoto.caption || currentPhoto.title}`
+                    : ''
+                }`}
+              </span>
             </div>
 
             {/* Close Button */}
@@ -763,7 +715,7 @@ export function PhotoGalleryClient({
               ref={closeBtnRef}
               type="button"
               onClick={() => setSelectedPhotoIndex(null)}
-              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+              className="absolute top-4 right-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
               aria-label="Close photo preview"
               data-testid="lightbox-close-btn"
             >
@@ -775,7 +727,7 @@ export function PhotoGalleryClient({
               type="button"
               onClick={handlePrev}
               disabled={!hasMultiplePhotos}
-              className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+              className="absolute left-2 sm:left-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
               aria-label="Previous photo"
               data-testid="lightbox-prev-btn"
             >
@@ -787,7 +739,7 @@ export function PhotoGalleryClient({
               type="button"
               onClick={handleNext}
               disabled={!hasMultiplePhotos}
-              className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
+              className="absolute right-2 sm:right-4 z-10 p-2 rounded-full bg-stone-950/90 text-white hover:bg-stone-900 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition"
               aria-label="Next photo"
               data-testid="lightbox-next-btn"
             >
@@ -805,6 +757,7 @@ export function PhotoGalleryClient({
 
             {(currentPhoto.caption || currentPhoto.title) && (
               <div
+                aria-hidden="true"
                 className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center bg-stone-950/90 border border-white/10 px-4 py-2 rounded-2xl max-w-md pointer-events-none shadow-lg"
                 data-testid="lightbox-caption"
               >

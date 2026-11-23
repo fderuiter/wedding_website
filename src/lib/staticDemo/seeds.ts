@@ -661,6 +661,7 @@ export function buildArchetypeSeedSnapshot(
     timezone: meta.timezone,
     showCountdown: true,
     showAddToCalendar: true,
+    setupCompleted: true,
     rsvpOpen: true,
     rsvpDeadlineDate: '',
     rsvpGracePeriodHours: 0,

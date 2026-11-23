@@ -283,6 +283,9 @@ export function createDemoStore(options: CreateDemoStoreOptions = {}): StaticDem
           storage.removeItem(storageKey);
           storage.removeItem('wedding_setup_wizard_draft');
           storage.removeItem('admin_onboarding_checklist_collapsed');
+          if (typeof window !== 'undefined') {
+            window.sessionStorage?.removeItem('setup_wizard_draft');
+          }
         } catch {
           // Ignore storage removal errors
         }
@@ -304,6 +307,9 @@ export function createDemoStore(options: CreateDemoStoreOptions = {}): StaticDem
     setSetupMode: (enabled: boolean): StaticDemoSnapshot => {
       const draft = cloneSnapshot(state);
       draft.isSetupMode = enabled;
+      if (draft.appConfig[0]) {
+        draft.appConfig[0].setupCompleted = !enabled;
+      }
       draft.updatedAt = new Date().toISOString();
       state = persistSnapshot(draft);
       notify();

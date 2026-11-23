@@ -2,6 +2,7 @@ import { isValidArchetypeId, buildArchetypeSeedSnapshot } from '../seeds';
 import type {
   DemoBroadcastMessageRecord,
   DemoBroadcastRecipientRecord,
+  DemoContributorRecord,
   DemoInvitationCodeRecord,
   DemoRsvpStatus,
   DemoSubEventRsvpRecord,
@@ -137,11 +138,14 @@ export async function handleAdminWorkflowRoutes(
   if (pathname === '/api/admin/setup') {
     if (method === 'GET') {
       const snapshot = store.getSnapshot();
+      const config = getActiveAppConfig(snapshot);
       const initialized = !snapshot.isSetupMode;
+      const setupCompleted = initialized && config.setupCompleted !== false;
       return wrapMiddlewareJson({
         success: true,
         initialized,
-        requiresSetup: !initialized,
+        setupCompleted,
+        requiresSetup: !initialized || !setupCompleted,
       });
     }
 
@@ -156,13 +160,25 @@ export async function handleAdminWorkflowRoutes(
         body.contactEmail !== undefined;
 
       if (!hasConfigPayload) {
-        const snapshot = store.mutate((draft) => {
+        const outcome = store.mutate((draft) => {
           draft.isAdminAuthenticated = true;
-          return draft;
+          const config = getActiveAppConfig(draft);
+          if (typeof body.setupCompleted === 'boolean') {
+            config.setupCompleted = body.setupCompleted;
+            if (body.setupCompleted) {
+              draft.isSetupMode = false;
+            }
+            config.updatedAt = new Date().toISOString();
+          }
+          const initialized = !draft.isSetupMode;
+          const setupCompleted = initialized && config.setupCompleted !== false;
+          return { initialized, setupCompleted };
         });
         return wrapMiddlewareJson({
           success: true,
-          initialized: !snapshot.isSetupMode,
+          initialized: outcome.initialized,
+          setupCompleted: outcome.setupCompleted,
+          requiresSetup: !outcome.initialized || !outcome.setupCompleted,
         });
       }
 
@@ -183,6 +199,9 @@ export async function handleAdminWorkflowRoutes(
         return errorJson(400, 'Both partner names are required.');
       }
 
+      const requestedSetupCompleted =
+        typeof body.setupCompleted === 'boolean' ? body.setupCompleted : true;
+
       const updatedConfig = store.mutate((draft) => {
         const config = getActiveAppConfig(draft);
         const nowIso = new Date().toISOString();
@@ -196,23 +215,26 @@ export async function handleAdminWorkflowRoutes(
         if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
           config.baseUrl = body.baseUrl.trim();
         }
-        if (typeof body.contactEmail === 'string' && body.contactEmail.trim()) {
+        if (typeof body.contactEmail === 'string') {
           config.contactEmail = body.contactEmail.trim();
         }
-        if (typeof body.venueName === 'string' && body.venueName.trim()) {
+        if (typeof body.venueName === 'string') {
           config.venueName = body.venueName.trim();
         }
-        if (typeof body.venueAddress === 'string' && body.venueAddress.trim()) {
+        if (typeof body.venueAddress === 'string') {
           config.venueAddress = body.venueAddress.trim();
         }
-        if (typeof body.venueCity === 'string' && body.venueCity.trim()) {
+        if (typeof body.venueCity === 'string') {
           config.venueCity = body.venueCity.trim();
         }
-        if (typeof body.venueState === 'string' && body.venueState.trim()) {
+        if (typeof body.venueState === 'string') {
           config.venueState = body.venueState.trim();
         }
-        if (typeof body.venueZip === 'string' && body.venueZip.trim()) {
+        if (typeof body.venueZip === 'string') {
           config.venueZip = body.venueZip.trim();
+        }
+        if (typeof body.timezone === 'string' && body.timezone.trim()) {
+          config.timezone = body.timezone.trim();
         }
         if (typeof body.themePreset === 'string' && body.themePreset.trim()) {
           config.themePreset = body.themePreset.trim();
@@ -228,6 +250,10 @@ export async function handleAdminWorkflowRoutes(
             ? body.heroTitle.trim()
             : `${partner1Name} & ${partner2Name}`;
         config.seoTitle = `${partner1Name} & ${partner2Name} Wedding`;
+        config.setupCompleted = requestedSetupCompleted;
+        if (requestedSetupCompleted) {
+          draft.isSetupMode = false;
+        }
         config.updatedAt = nowIso;
         draft.isAdminAuthenticated = true;
         pushAuditVersion(draft, 'AppConfig', config.id, config, 'Setup Wizard');
@@ -237,7 +263,9 @@ export async function handleAdminWorkflowRoutes(
       return wrapMiddlewareJson({
         success: true,
         initialized: true,
+        ...updatedConfig,
         config: updatedConfig,
+        setupCompleted: requestedSetupCompleted,
       });
     }
   }
@@ -246,13 +274,24 @@ export async function handleAdminWorkflowRoutes(
   if (pathname === '/api/admin/onboarding-milestones' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const config = getActiveAppConfig(snapshot);
+    const rawVenueName = (config.venueName || '').trim();
+    const normalizedVenueName = rawVenueName.toUpperCase();
+    const hasVenueName =
+      Boolean(rawVenueName) &&
+      normalizedVenueName !== 'TBD' &&
+      normalizedVenueName !== 'TBD VENUE';
+    const hasWeddingDate =
+      Boolean(config.weddingDate?.trim()) &&
+      !Number.isNaN(new Date(config.weddingDate).getTime());
     const weddingDetailsCompleted =
       !snapshot.isSetupMode &&
       Boolean(
         config.partner1Name.trim() &&
           config.partner2Name.trim() &&
           config.baseUrl.trim(),
-      );
+      ) &&
+      hasWeddingDate &&
+      hasVenueName;
     const guestListCompleted = snapshot.invitationCode.some((i) => !i.isSample);
     const registryCompleted = snapshot.registryItem.some((r) => !r.isSample);
     const seatingCompleted = snapshot.seatingTable.some((t) => !t.isSample);
@@ -268,7 +307,8 @@ export async function handleAdminWorkflowRoutes(
       {
         id: 'wedding-details',
         title: 'Wedding Details',
-        description: 'Verify partner names and your public website URL.',
+        description:
+          'Verify partner names, wedding date, venue details, and your public website URL.',
         completed: weddingDetailsCompleted,
         href: '/admin/dashboard/settings',
         actionLabel: weddingDetailsCompleted
@@ -1876,7 +1916,136 @@ export async function handleAdminWorkflowRoutes(
     });
   }
 
-  // --- Thank-You Notes & Contributor Actions ---
+  // --- Registry Item Unclaim & Thank-You Notes & Contributor Actions ---
+  const registryUnclaimMatch = pathname.match(
+    /^\/api\/admin\/registry\/items\/([^/]+)\/unclaim$/,
+  );
+  if (registryUnclaimMatch && method === 'POST') {
+    const itemId = decodeURIComponent(registryUnclaimMatch[1]).trim();
+    if (!itemId) {
+      return errorJson(400, 'Registry item ID is required');
+    }
+
+    const unclaimed = store.mutate((draft) => {
+      const item = draft.registryItem.find((r) => r.id === itemId);
+      if (!item) return null;
+      const nowIso = new Date().toISOString();
+      for (const c of draft.contributor) {
+        if (
+          c.registryItemId === itemId &&
+          (c.status === 'RESERVED' || c.status === 'CONFIRMED')
+        ) {
+          c.status = 'CANCELLED';
+          c.updatedAt = nowIso;
+        }
+      }
+      item.purchased = false;
+      item.purchaserName = null;
+      item.amountContributed = 0;
+      item.updatedAt = nowIso;
+      recalculateRegistryItemTotals(draft, item.id);
+      pushAuditVersion(draft, 'RegistryItem', item.id, item);
+      return toRegistryItemDto(draft, item);
+    });
+
+    if (!unclaimed) {
+      return errorJson(404, 'Registry item not found');
+    }
+    return wrapMiddlewareJson({ item: unclaimed });
+  }
+
+  if (pathname === '/api/admin/thank-you-notes' && method === 'POST') {
+    const body = await readJsonBody(request);
+    const donorName = typeof body.name === 'string' ? body.name.trim() : '';
+    const rawAmount = Number(body.amount);
+    if (!donorName) {
+      return errorJson(400, 'Validation Error: Donor name is required');
+    }
+    if (!Number.isFinite(rawAmount) || rawAmount <= 0) {
+      return errorJson(400, 'Validation Error: Gift amount must be greater than 0');
+    }
+
+    const rawStatus =
+      typeof body.thankYouStatus === 'string' ? body.thankYouStatus.trim() : 'Unsent';
+    const normalizedStatus =
+      rawStatus.toLowerCase() === 'sent'
+        ? 'Sent'
+        : rawStatus.toLowerCase().replace(/_/g, ' ') === 'not needed'
+          ? 'Not Needed'
+          : 'Unsent';
+
+    const createdItem = store.mutate((draft) => {
+      const nowIso = new Date().toISOString();
+      const dateStr =
+        typeof body.date === 'string' &&
+        body.date.trim() &&
+        !Number.isNaN(new Date(body.date).getTime())
+          ? new Date(body.date).toISOString()
+          : nowIso;
+      const registryItemId =
+        typeof body.registryItemId === 'string' && body.registryItemId.trim()
+          ? body.registryItemId.trim()
+          : null;
+      const invitationCodeId =
+        typeof body.invitationCodeId === 'string' && body.invitationCodeId.trim()
+          ? body.invitationCodeId.trim()
+          : null;
+
+      const created: DemoContributorRecord = {
+        id: generateDemoId('contrib'),
+        name: donorName,
+        email:
+          typeof body.email === 'string' && body.email.trim()
+            ? body.email.trim()
+            : null,
+        isPlusOne: false,
+        amount: Math.round(rawAmount * 100) / 100,
+        refundedAmount: 0,
+        status: 'CONFIRMED',
+        coverFee: false,
+        feeAmount: 0,
+        date: dateStr,
+        message:
+          typeof body.message === 'string' && body.message.trim()
+            ? body.message.trim()
+            : null,
+        thankYouStatus: normalizedStatus,
+        thankYouSentAt: normalizedStatus === 'Sent' ? nowIso : null,
+        thankYouNote:
+          typeof body.thankYouNote === 'string' && body.thankYouNote.trim()
+            ? body.thankYouNote.trim()
+            : null,
+        stripePaymentIntentId: null,
+        stripeChargeId: null,
+        transactionTimestamp: dateStr,
+        confirmationEmailSentAt: null,
+        alertEmailSentAt: null,
+        reminderEmailSentAt: null,
+        retailerOrderNumber: null,
+        carrier: null,
+        trackingNumber: null,
+        registryItemId,
+        invitationCodeId,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      draft.contributor.unshift(created);
+      if (registryItemId) {
+        recalculateRegistryItemTotals(draft, registryItemId);
+      }
+      pushAuditVersion(draft, 'Contributor', created.id, created);
+      return toContributorDto(draft, created, { includeRelations: true });
+    });
+
+    return wrapMiddlewareJson(
+      {
+        success: true,
+        item: createdItem,
+      },
+      { status: 201 },
+    );
+  }
+
   if (pathname === '/api/admin/thank-you-notes' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const statusParam = (searchParams.get('status') || 'all').trim().toLowerCase();
@@ -2055,6 +2224,12 @@ export async function handleAdminWorkflowRoutes(
         c.thankYouNote =
           typeof body.thankYouNote === 'string' ? body.thankYouNote : null;
       }
+      if (body.invitationCodeId !== undefined) {
+        c.invitationCodeId =
+          typeof body.invitationCodeId === 'string' && body.invitationCodeId.trim()
+            ? body.invitationCodeId.trim()
+            : null;
+      }
       c.updatedAt = nowIso;
       pushAuditVersion(draft, 'Contributor', c.id, c);
       return toContributorDto(draft, c, { includeRelations: true });
@@ -2124,10 +2299,118 @@ export async function handleAdminWorkflowRoutes(
     return wrapMiddlewareJson(result);
   }
 
+  const contributorIdMatch = pathname.match(/^\/api\/admin\/contributors\/([^/]+)$/);
+  if (contributorIdMatch) {
+    const contributorId = decodeURIComponent(contributorIdMatch[1]).trim();
+    if (!contributorId) {
+      return errorJson(400, 'Contributor ID is required');
+    }
+
+    if (method === 'PATCH') {
+      const body = await readJsonBody(request);
+      const updated = store.mutate((draft) => {
+        const contributor = draft.contributor.find((c) => c.id === contributorId);
+        if (!contributor) return null;
+        const nowIso = new Date().toISOString();
+
+        if (typeof body.name === 'string' && body.name.trim()) {
+          contributor.name = body.name.trim();
+        }
+        if (body.email !== undefined) {
+          contributor.email =
+            typeof body.email === 'string' && body.email.trim()
+              ? body.email.trim()
+              : null;
+        }
+        if (typeof body.amount === 'number' && Number.isFinite(body.amount) && body.amount >= 0) {
+          contributor.amount = Math.round(body.amount * 100) / 100;
+        }
+        if (
+          body.status === 'RESERVED' ||
+          body.status === 'CONFIRMED' ||
+          body.status === 'CANCELLED' ||
+          body.status === 'REFUNDED'
+        ) {
+          contributor.status = body.status;
+        }
+        if (body.message !== undefined) {
+          contributor.message =
+            typeof body.message === 'string' && body.message.trim()
+              ? body.message.trim()
+              : null;
+        }
+        contributor.updatedAt = nowIso;
+        const item = contributor.registryItemId
+          ? recalculateRegistryItemTotals(draft, contributor.registryItemId)
+          : null;
+        pushAuditVersion(draft, 'Contributor', contributor.id, contributor);
+        return {
+          contributor: toContributorDto(draft, contributor),
+          item: item ? toRegistryItemDto(draft, item) : null,
+        };
+      });
+
+      if (!updated) {
+        return errorJson(404, 'Contributor not found');
+      }
+      return wrapMiddlewareJson(updated);
+    }
+
+    if (method === 'DELETE') {
+      const deleted = store.mutate((draft) => {
+        const idx = draft.contributor.findIndex((c) => c.id === contributorId);
+        if (idx < 0) return null;
+        const [removed] = draft.contributor.splice(idx, 1);
+        const item = removed.registryItemId
+          ? recalculateRegistryItemTotals(draft, removed.registryItemId)
+          : null;
+        pushAuditVersion(draft, 'Contributor', contributorId, {
+          deleted: true,
+          previous: removed,
+        });
+        return {
+          deletedId: contributorId,
+          item: item ? toRegistryItemDto(draft, item) : null,
+        };
+      });
+
+      if (!deleted) {
+        return errorJson(404, 'Contributor not found');
+      }
+      return wrapMiddlewareJson(deleted);
+    }
+  }
+
   // --- Broadcasts & Cron ---
   if (pathname === '/api/admin/broadcast/history' && method === 'GET') {
+    let limit = 50;
+    if (searchParams.has('limit')) {
+      const rawLimit = searchParams.get('limit');
+      if (rawLimit === null || rawLimit.trim() === '' || !/^-?\d+$/.test(rawLimit.trim())) {
+        return errorJson(400, 'Invalid limit parameter');
+      }
+      const parsedLimit = parseInt(rawLimit.trim(), 10);
+      if (parsedLimit <= 0) {
+        return errorJson(400, 'Invalid limit parameter');
+      }
+      limit = Math.min(parsedLimit, 100);
+    }
+
+    let page = 1;
+    if (searchParams.has('page')) {
+      const rawPage = searchParams.get('page');
+      if (rawPage === null || rawPage.trim() === '' || !/^-?\d+$/.test(rawPage.trim())) {
+        return errorJson(400, 'Invalid page parameter');
+      }
+      const parsedPage = parseInt(rawPage.trim(), 10);
+      if (parsedPage < 1) {
+        return errorJson(400, 'Invalid page parameter');
+      }
+      page = parsedPage;
+    }
+
     const snapshot = store.getSnapshot();
-    const history = [...snapshot.broadcastMessage]
+    const sorted = [...snapshot.broadcastMessage]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map((msg) => ({
         ...msg,
@@ -2135,7 +2418,28 @@ export async function handleAdminWorkflowRoutes(
           (r) => r.broadcastId === msg.id,
         ),
       }));
-    return wrapMiddlewareJson(history);
+    const total = sorted.length;
+    const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
+    const paged = sorted.slice((page - 1) * limit, page * limit);
+
+    const headers: Record<string, string> = {
+      'X-Total-Count': String(total),
+      'X-Page': String(page),
+      'X-Limit': String(limit),
+      'X-Total-Pages': String(totalPages),
+      'X-Per-Page': String(limit),
+      'X-Current-Page': String(page),
+      'X-Has-Next-Page': String(page < totalPages),
+      'X-Has-Prev-Page': String(page > 1),
+      'Access-Control-Expose-Headers':
+        'X-Total-Count, X-Page, X-Limit, X-Total-Pages, X-Per-Page, X-Current-Page, X-Has-Next-Page, X-Has-Prev-Page, X-Next-Cursor',
+    };
+    const lastEntry = paged[paged.length - 1];
+    if (lastEntry && (paged.length === limit || page < totalPages)) {
+      headers['X-Next-Cursor'] = lastEntry.id;
+    }
+
+    return wrapMiddlewareJson(paged, { headers });
   }
 
   if (pathname === '/api/admin/broadcast/preview' && method === 'POST') {
@@ -2332,6 +2636,23 @@ export async function handleAdminWorkflowRoutes(
         ? wrapMiddlewareJson(updated)
         : errorJson(404, 'Scheduled broadcast not found');
     }
+  }
+
+  const broadcastDetailMatch = pathname.match(/^\/api\/admin\/broadcast\/([^/]+)$/);
+  if (broadcastDetailMatch && method === 'GET') {
+    const id = decodeURIComponent(broadcastDetailMatch[1]).trim();
+    if (!id) {
+      return errorJson(400, 'Broadcast ID is required.');
+    }
+    const snapshot = store.getSnapshot();
+    const msg = snapshot.broadcastMessage.find((m) => m.id === id);
+    if (!msg) {
+      return errorJson(404, 'Broadcast message not found.');
+    }
+    return wrapMiddlewareJson({
+      ...msg,
+      recipients: snapshot.broadcastRecipient.filter((r) => r.broadcastId === msg.id),
+    });
   }
 
   if (pathname === '/api/cron/broadcasts' && (method === 'GET' || method === 'POST')) {

@@ -184,4 +184,59 @@ describe('SegmentedTabs', () => {
     expect(onChange).toHaveBeenCalledWith('third');
     expect(thirdTab).toHaveFocus();
   });
+
+  it('renders pills variant with opaque inverse count badges, icons, and data-testid hooks with zero axe violations', async () => {
+    function PillsDemo() {
+      const [active, setActive] = useState<'curated' | 'guest'>('curated');
+      return (
+        <div>
+          <SegmentedTabs
+            variant="pills"
+            aria-label="Photo gallery views"
+            data-testid="photo-gallery-tabs"
+            value={active}
+            onChange={setActive}
+            tabs={[
+              {
+                value: 'curated',
+                id: 'tab-curated',
+                panelId: 'tabpanel-curated',
+                'data-testid': 'tab-curated',
+                label: 'Curated Album',
+                count: 16,
+              },
+              {
+                value: 'guest',
+                id: 'tab-guest',
+                panelId: 'tabpanel-guest',
+                'data-testid': 'tab-guest',
+                label: 'Guest Uploads',
+                count: 4,
+              },
+            ]}
+          />
+          <SegmentedTabPanel id={`tabpanel-${active}`} tabId={`tab-${active}`}>
+            <p>Active view: {active}</p>
+          </SegmentedTabPanel>
+        </div>
+      );
+    }
+
+    const { container } = render(<PillsDemo />);
+    const curatedTab = screen.getByTestId('tab-curated');
+    const guestTab = screen.getByTestId('tab-guest');
+
+    expect(screen.getByTestId('photo-gallery-tabs')).toHaveAttribute('role', 'tablist');
+    expect(curatedTab).toHaveAttribute('aria-selected', 'true');
+    expect(curatedTab).toHaveTextContent('16');
+    expect(guestTab).toHaveTextContent('4');
+
+    const activeBadge = curatedTab.querySelector('[data-testid="tab-count-badge"]');
+    const inactiveBadge = guestTab.querySelector('[data-testid="tab-count-badge"]');
+    expect(activeBadge).toHaveClass('bg-[var(--badge-inverse-bg,#ffffff)]');
+    expect(activeBadge).toHaveClass('text-[var(--badge-inverse-text,#991b1b)]');
+    expect(inactiveBadge).toHaveClass('bg-stone-200');
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

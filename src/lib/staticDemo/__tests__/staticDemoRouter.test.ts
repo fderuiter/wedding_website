@@ -192,8 +192,24 @@ function buildOpenApiRequestInit(
     body = { urls: ['https://shop.example.org/espresso-cup'] };
   } else if (resolvedPath === '/api/registry/items/batch') {
     body = { action: 'update', ids: [firstItem?.id ?? '1'], data: { category: 'Kitchen' } };
+  } else if (resolvedPath === '/api/admin/thank-you-notes' && method === 'POST') {
+    body = {
+      name: 'Offline Gift Donor',
+      amount: 120,
+      thankYouStatus: 'Unsent',
+    };
+  } else if (resolvedPath.endsWith('/unclaim')) {
+    body = { confirmVerifiedPayment: true };
   } else if (resolvedPath.startsWith('/api/admin/contributors/')) {
-    body = { action: 'confirm' };
+    if (resolvedPath.endsWith('/action')) {
+      body = { action: 'confirm' };
+    } else if (method === 'PATCH') {
+      body = { name: 'Updated Donor', amount: 75, status: 'CONFIRMED' };
+    } else if (method === 'DELETE') {
+      body = { confirmVerifiedPayment: true };
+    } else {
+      body = { action: 'confirm' };
+    }
   } else if (resolvedPath === '/api/admin/invitation-codes/merge') {
     body = {
       primaryId: firstInvite?.id ?? 'inv-1',
@@ -338,7 +354,10 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
             let idVal = '1';
             if (resolvedPath.startsWith('/api/schedule/')) {
               idVal = snap.subEvent[0]?.id ?? 'sub-1';
-            } else if (resolvedPath.startsWith('/api/registry/items/')) {
+            } else if (
+              resolvedPath.startsWith('/api/registry/items/') ||
+              resolvedPath.startsWith('/api/admin/registry/items/')
+            ) {
               idVal = snap.registryItem[0]?.id ?? '1';
             } else if (resolvedPath.startsWith('/api/media/')) {
               idVal = snap.media[0]?.id ?? 'm-1';
@@ -350,7 +369,7 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
               idVal = snap.contributor[0]?.id ?? 'c-1';
             } else if (resolvedPath.startsWith('/api/admin/contributors/')) {
               idVal = snap.contributor[0]?.id ?? 'c-1';
-            } else if (resolvedPath.startsWith('/api/admin/broadcast/schedule/')) {
+            } else if (resolvedPath.startsWith('/api/admin/broadcast/')) {
               idVal = snap.broadcastMessage[0]?.id ?? 'b-1';
             } else if (resolvedPath.startsWith('/api/admin/versions/')) {
               idVal = snap.snapshotVersion[0]?.id ?? 'v-1';

@@ -71,6 +71,7 @@ export interface DemoAppConfigRecord {
   timezone: string;
   showCountdown: boolean;
   showAddToCalendar: boolean;
+  setupCompleted: boolean;
   rsvpOpen: boolean;
   rsvpDeadlineDate: string;
   rsvpGracePeriodHours: number;

@@ -48,6 +48,30 @@ describe('Admin Login Page', () => {
     });
   });
 
+  it('redirects to /admin/setup when login indicates requiresSetup is true', async () => {
+    const push = jest.fn();
+    (useRouter as jest.Mock).mockReturnValue({ push });
+
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ isAdmin: true, requiresSetup: true }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), {
+      target: { value: 'secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/admin/setup');
+    });
+  });
+
   it('shows error message on failed login', async () => {
     const push = jest.fn();
     (useRouter as jest.Mock).mockReturnValue({ push });

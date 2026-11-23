@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import {
   getAppConfig,
   toPublicAppConfig,
   sanitizeAppConfigForBackup,
   isSiteInitialized,
+  isSetupCompleted,
 } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
@@ -26,10 +29,14 @@ import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
 
+type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
+  modules?: unknown;
+};
+
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
 
 function fallbackVenueField(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : 'TBD';
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
 function normalizeOptionalName(value: unknown): unknown {
@@ -71,10 +78,12 @@ function isReservedBaseUrl(url: string): boolean {
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
   const initialized = isSiteInitialized(config);
+  const setupCompleted = isSetupCompleted(config);
   return NextResponse.json({
     success: true,
     initialized,
-    requiresSetup: !initialized,
+    setupCompleted,
+    requiresSetup: !initialized || !setupCompleted,
   });
 });
 
@@ -83,9 +92,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const initialized = isSiteInitialized(config);
   const isAdmin = await isAdminRequest(req);
 
-  let body: any = {};
+  let rawBody: unknown = {};
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     // Body can be empty if only headers/cookies sent
   }
@@ -97,27 +106,40 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   // First-run setup authorization check
   if (!initialized && !isAdmin) {
-    const password = body.password;
-    if (!password) {
-      throw new ApiError(401, 'Admin password is required for setup.');
+    const rawPassword =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>).password
+        : undefined;
+    if (!rawPassword || typeof rawPassword !== 'string') {
+      throw new ApiError(
+        401,
+        !rawPassword
+          ? 'Admin password is required for setup.'
+          : 'Invalid admin password.',
+      );
     }
     const adminPassword = env.ADMIN_PASSWORD;
     if (!adminPassword) {
       throw new ApiError(500, 'Admin password not configured in environment.');
     }
-    const isMatch = await verifyPassword(password, adminPassword);
+    const isMatch = await verifyPassword(rawPassword, adminPassword);
     if (!isMatch) {
       throw new ApiError(401, 'Invalid admin password.');
     }
   }
 
-  const setupBodyResult = AdminSetupSchema.safeParse(body);
+  const setupBodyResult = AdminSetupSchema.safeParse(rawBody);
   if (!setupBodyResult.success) {
     throw new ApiError(
       400,
       `Validation Error: ${formatZodError(setupBodyResult.error)}`,
     );
   }
+
+  const body: SetupRequestPayload = {
+    ...(rawBody as Record<string, unknown>),
+    ...setupBodyResult.data,
+  };
 
   // Determine if this request is submitting site setup configuration
   const hasConfigPayload =
@@ -129,14 +151,51 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     body.contactEmail !== undefined;
 
   if (!hasConfigPayload) {
+    if (initialized && isAdmin && typeof body.setupCompleted === 'boolean') {
+      await prisma.appConfig.upsert({
+        where: { id: 'global' },
+        update: { setupCompleted: body.setupCompleted },
+        create: { id: 'global', setupCompleted: body.setupCompleted },
+      });
+
+      try {
+        revalidatePath('/', 'layout');
+        revalidatePath('/admin/setup');
+        revalidatePath('/admin/dashboard');
+      } catch {
+        // Ignore in non-Next runtime/test environments
+      }
+
+      const iat = Date.now();
+      const exp = iat + 60 * 60 * 8 * 1000;
+      const token = await signAdminToken({ isAdmin: true, iat, exp });
+      const response = NextResponse.json({
+        success: true,
+        initialized: true,
+        setupCompleted: body.setupCompleted,
+        requiresSetup: !body.setupCompleted,
+      });
+      setAdminAuthCookie(response, token);
+      return response;
+    }
+
     // Auth-only check for step 1
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
     const token = await signAdminToken({ isAdmin: true, iat, exp });
-    const response = NextResponse.json({ success: true, initialized });
+    const completed = isSetupCompleted(config);
+    const response = NextResponse.json({
+      success: true,
+      initialized,
+      setupCompleted: completed,
+      requiresSetup: !initialized || !completed,
+    });
     setAdminAuthCookie(response, token);
     return response;
   }
+
+  const requestedSetupCompleted =
+    typeof body.setupCompleted === 'boolean' ? body.setupCompleted : true;
 
   // Validate setup configuration payload
   const normalizedSetupConfig = {
@@ -199,6 +258,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     showCountdown: body.showCountdown ?? config.showCountdown ?? true,
     showAddToCalendar:
       body.showAddToCalendar ?? config.showAddToCalendar ?? true,
+    setupCompleted: requestedSetupCompleted,
     modules: body.modules ?? config.modules,
     subdomain: body.subdomain || null,
   };
@@ -265,7 +325,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: sanitizeAppConfigForBackup(parsedUpdatedConfig) as any,
+      data: sanitizeAppConfigForBackup(
+        parsedUpdatedConfig,
+      ) as Prisma.InputJsonValue,
       author: 'Admin (Setup)',
     },
   });
@@ -283,6 +345,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   try {
     revalidatePath('/', 'layout');
+    revalidatePath('/admin/setup');
+    revalidatePath('/admin/dashboard');
   } catch {
     // Ignore in non-Next runtime/test environments
   }
@@ -294,6 +358,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const response = NextResponse.json({
     success: true,
     ...toPublicAppConfig(parsedUpdatedConfig),
+    setupCompleted: parsedUpdatedConfig.setupCompleted !== false,
   });
   setAdminAuthCookie(response, token);
   return response;

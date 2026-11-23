@@ -5,9 +5,9 @@ import {
 } from '@/features/registry';
 import type { BroadcastChannel, BroadcastTargetFilters } from './types';
 
-export const ADDRESS_COLLECTION_TAG = 'address-collection';
+const ADDRESS_COLLECTION_TAG = 'address-collection';
 
-export function hasAddressCollectionTag(tags: unknown): boolean {
+function hasAddressCollectionTag(tags: unknown): boolean {
   return (
     Array.isArray(tags) &&
     tags.some(
@@ -16,7 +16,7 @@ export function hasAddressCollectionTag(tags: unknown): boolean {
   );
 }
 
-export function parseGuestExtraFields(extraFields: unknown): Record<string, unknown> {
+function parseGuestExtraFields(extraFields: unknown): Record<string, unknown> {
   if (!extraFields) return {};
   if (typeof extraFields === 'string') {
     try {
@@ -61,7 +61,7 @@ export function hasBroadcastChannelContact(
   return Boolean(getGuestPhone(guest));
 }
 
-export function matchesGuestSearchQuery(item: Record<string, any>, rawQuery: string): boolean {
+function matchesGuestSearchQuery(item: Record<string, any>, rawQuery: string): boolean {
   const query = rawQuery.trim().toLowerCase();
   if (!query) return true;
 

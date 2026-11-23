@@ -320,6 +320,8 @@ export function completeStaticDemoSetup(): void {
   activeStore.mutate((draft) => {
     draft.isSetupMode = false;
     draft.isAdminAuthenticated = true;
+    const cfg = getActiveAppConfig(draft);
+    cfg.setupCompleted = true;
   });
 }
 

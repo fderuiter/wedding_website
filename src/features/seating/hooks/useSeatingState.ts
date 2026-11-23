@@ -1,9 +1,15 @@
 'use client';
 
-import { useReducer, useEffect, useCallback, useMemo } from 'react';
+import { useReducer, useEffect, useCallback, useContext, useMemo } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 import { useToast } from '@/components/ui/ToastProvider';
+import {
+  ADMIN_SEATING_QUERY_KEY,
+  invalidateSeatingAndMilestoneCaches,
+  subscribeToAdminCacheSync,
+} from '@/lib/adminCacheSync';
 import {
   repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
@@ -803,6 +809,7 @@ function dedupeById<T extends { id?: string }>(items: T[]): T[] {
 export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatingStateReturn {
   const { autoFetch = true } = options;
   const [state, dispatch] = useReducer(seatingReducer, initialSeatingState);
+  const queryClient = useContext(QueryClientContext);
   const toast = useOptionalToast();
 
   // Derived synchronous unassigned guests collection (excludes declined RSVPs and address-collection rows)
@@ -880,10 +887,20 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
   }, []);
 
   useEffect(() => {
-    if (autoFetch) {
-      fetchData();
+    if (!autoFetch) {
+      return;
     }
-  }, [autoFetch, fetchData]);
+    void fetchData();
+    const unsubscribe = subscribeToAdminCacheSync(
+      queryClient,
+      ['seating', 'sample-data'],
+      [ADMIN_SEATING_QUERY_KEY, ['admin-invitation-codes']],
+      () => {
+        void fetchData();
+      }
+    );
+    return unsubscribe;
+  }, [autoFetch, fetchData, queryClient]);
 
   // Synchronously processes auto-assignment results into both table and guest collections
   const applyAutoAssignResult = useCallback(
@@ -1339,6 +1356,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             type: 'UPDATE_TABLE',
             payload: updatedTable,
           });
+          invalidateSeatingAndMilestoneCaches(queryClient);
           return true;
         } else {
           const defaultX = (state.tables.length % 4) * 180 + 40;
@@ -1363,6 +1381,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             type: 'CREATE_TABLE',
             payload: createdTable,
           });
+          invalidateSeatingAndMilestoneCaches(queryClient);
           return true;
         }
       } catch (err: unknown) {
@@ -1371,7 +1390,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         return false;
       }
     },
-    [state.tables.length, toast]
+    [state.tables.length, toast, queryClient]
   );
 
   const deleteTable = useCallback(
@@ -1398,6 +1417,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           method: 'DELETE',
         });
         if (!res.ok) throw new Error('Failed to delete table');
+        invalidateSeatingAndMilestoneCaches(queryClient);
         return true;
       } catch (err: unknown) {
         dispatch({
@@ -1413,7 +1433,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         return false;
       }
     },
-    [state.tables, state.guests, state.undoStack, toast]
+    [state.tables, state.guests, state.undoStack, toast, queryClient]
   );
 
   const updateTablePosition = useCallback(
@@ -1517,5 +1537,3 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     updateTableRotation,
   };
 }
-
-export const useSeatingChartState = useSeatingState;
