@@ -10,21 +10,31 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'prisma.config.ts',
     'prisma/schema.prisma',
     'Dockerfile',
+    'docker-entrypoint.sh',
     'docker-compose.yml',
     'docker-compose.ci.yml',
+    'docker-compose.rollout.yml',
     'next.config.ts',
     'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/lib/modules.ts',
     'src/middleware.ts',
     'src/app/api/uploads/[...path]/route.ts',
+    'src/app/api/admin/maintenance/export/route.ts',
+    'scripts/preflight-env.ts',
+    'ARCHITECTURE.md',
+    'CHANGELOG.md',
     'DEPLOYMENT.md',
+    'docs/upgrading.md',
+    'docs/versioning.md',
     'docs/runtime-contract.md',
     'docs/deployment/README.md',
     'docs/deployment/vercel.md',
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    'scripts/generate-docs.ts',
     '.github/dependabot.yml',
   ];
 
@@ -41,6 +51,15 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
   for (const entry of fs.readdirSync(workflowsSrc)) {
     if (entry.endsWith('.yml') || entry.endsWith('.yaml')) {
       fs.copyFileSync(path.join(workflowsSrc, entry), path.join(workflowsDest, entry));
+    }
+  }
+
+  const migrationsSrc = path.join(srcRoot, 'prisma/migrations');
+  const migrationsDest = path.join(destRoot, 'prisma/migrations');
+  fs.mkdirSync(migrationsDest, { recursive: true });
+  for (const entry of fs.readdirSync(migrationsSrc, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      fs.mkdirSync(path.join(migrationsDest, entry.name), { recursive: true });
     }
   }
 }
@@ -298,12 +317,18 @@ describe('verify-deployment-runbooks', () => {
         "if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
       );
     fs.writeFileSync(deployProviderPath, brokenWorkflow);
+    const expectedLine =
+      brokenWorkflow
+        .split(/\r?\n/)
+        .findIndex((line) =>
+          line.includes("if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')")
+        ) + 1;
 
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          '.github/workflows/deploy-provider.yml:247: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
+          `.github/workflows/deploy-provider.yml:${expectedLine}: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)`
         ),
       ])
     );
@@ -316,6 +341,7 @@ describe('verify-deployment-runbooks', () => {
       fs
         .readFileSync(composePath, 'utf8')
         .replace('127.0.0.1:${DB_PORT:-5432}:5432', '${DB_PORT:-5432}:5432')
+        .replace(/\$\{CONTAINER_DATABASE_URL:-/g, '${DATABASE_URL:-')
         .replace('${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}', '${ADMIN_PASSWORD:-scrypt:c2FsdA==:aGFzaA==}')
         .replace('E2E_TEST: ${E2E_TEST:-false}', 'E2E_TEST: ${E2E_TEST:-true}')
         .replace('      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}\n', '')
@@ -339,6 +365,12 @@ describe('verify-deployment-runbooks', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining('docker-compose.yml: `db` service must bind PostgreSQL strictly to loopback'),
+        expect.stringContaining(
+          'docker-compose.yml: `migration` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
+        ),
+        expect.stringContaining(
+          'docker-compose.yml: `app` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
+        ),
         expect.stringContaining('docker-compose.yml: Must require explicit operator value via ${ADMIN_PASSWORD:?...}'),
         expect.stringContaining('docker-compose.yml: Must not contain invalid 4-byte placeholder hash'),
         expect.stringContaining('docker-compose.yml: `app` service must set `E2E_TEST: ${E2E_TEST:-false}`'),
@@ -413,17 +445,46 @@ describe('verify-deployment-runbooks', () => {
     expect(JSON.stringify(errors)).not.toContain('STRONG_PASSWORD');
   });
 
-  it('rejects Node.js major version drift across Dockerfile, setup-node workflows, runtime docs, and dependabot.yml', () => {
+  it('rejects Node.js and PostgreSQL major version drift across Dockerfile, compose, workflows, generate-docs.ts, runtime/architecture docs, and dependabot.yml', () => {
     const dockerfilePath = path.join(tempDir, 'Dockerfile');
     fs.writeFileSync(
       dockerfilePath,
       fs.readFileSync(dockerfilePath, 'utf8').replace('node:22-bookworm-slim@', 'node:26-bookworm-slim@')
     );
 
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs.readFileSync(composePath, 'utf8').replace('postgres:15-alpine@', 'postgres:18-alpine@')
+    );
+
     const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
     fs.writeFileSync(
       storybookWorkflowPath,
       fs.readFileSync(storybookWorkflowPath, 'utf8').replace("node-version-file: '.nvmrc'", 'node-version: 22')
+    );
+
+    const publishWorkflowPath = path.join(tempDir, '.github/workflows/publish-artifact.yml');
+    fs.writeFileSync(
+      publishWorkflowPath,
+      fs
+        .readFileSync(publishWorkflowPath, 'utf8')
+        .replace(
+          / {6}- uses: actions\/setup-node@[^\n]+\n {8}with:\n {10}node-version-file: '\.nvmrc'\n\n/,
+          ''
+        )
+    );
+
+    const generateDocsPath = path.join(tempDir, 'scripts/generate-docs.ts');
+    fs.writeFileSync(
+      generateDocsPath,
+      fs.readFileSync(generateDocsPath, 'utf8').replace("'22.x'", "'26.x'")
+    );
+
+    const architecturePath = path.join(tempDir, 'ARCHITECTURE.md');
+    fs.writeFileSync(
+      architecturePath,
+      fs.readFileSync(architecturePath, 'utf8').replace('- **Node.js**: v22.x', '- **Node.js**: v26.x')
     );
 
     const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
@@ -435,7 +496,10 @@ describe('verify-deployment-runbooks', () => {
     const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
     fs.writeFileSync(
       dependabotPath,
-      fs.readFileSync(dependabotPath, 'utf8').replace('@types/node', '@types/legacy-node')
+      fs
+        .readFileSync(dependabotPath, 'utf8')
+        .replace('@types/node', '@types/legacy-node')
+        .replace('dependency-name: "postgres"', 'dependency-name: "legacy-postgres"')
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
@@ -443,12 +507,309 @@ describe('verify-deployment-runbooks', () => {
       expect.arrayContaining([
         expect.stringContaining('Dockerfile: Must pin `node:22-bookworm-slim@sha256:<64-hex>` matching .nvmrc'),
         expect.stringContaining(
+          'docker-compose.yml: `db` service must pin `postgres:15-alpine@sha256:<64-hex>` to preserve `db_data` volume compatibility'
+        ),
+        expect.stringContaining(
           ".github/workflows/storybook.yml (job \"build\"): `actions/setup-node` must set `node-version-file: '.nvmrc'`"
         ),
+        expect.stringContaining(
+          '.github/workflows/publish-artifact.yml (job "build"): Workflow job invokes node/npm/npx without `actions/setup-node` bound to `.nvmrc`'
+        ),
+        expect.stringContaining(
+          'scripts/generate-docs.ts: `generateEnvSpecs` must specify Node.js `22.x` matching .nvmrc'
+        ),
+        expect.stringContaining('ARCHITECTURE.md: Must specify `- **Node.js**: v22.x` matching .nvmrc'),
         expect.stringContaining('docs/runtime-contract.md: Must specify Node.js v22.x LTS and `node:22-bookworm-slim`'),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `postgres` under `docker-compose` ecosystem'
+        ),
         expect.stringContaining(
           '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
         ),
+      ])
+    );
+  });
+
+  it('rejects --command="npx" on Cloud Run jobs, unguarded DATABASE_URL overrides on docker compose run, and missing /usr/local/etc/npmrc in Dockerfile', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--args="./node_modules/.bin/prisma,migrate,deploy"',
+          '--command="npx" \\\n    --args="prisma,migrate,deploy"'
+        )
+    );
+
+    const dockerPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerPath,
+      `${fs.readFileSync(dockerPath, 'utf8')}\nUnguarded Compose override: \`docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration\`\n`
+    );
+
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs.readFileSync(dockerfilePath, 'utf8').replace('/usr/local/etc/npmrc', '/tmp/unused-npmrc')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Cloud Run job command'
+        ),
+        expect.stringContaining('must not override ENTRYPOINT with `--command`'),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
+        ),
+        expect.stringContaining(
+          'docs/deployment/docker-vps.md: `docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration` overrides DATABASE_URL on `docker compose run` without unsetting or clearing POSTGRES_URL_NON_POOLING'
+        ),
+        expect.stringContaining(
+          'Dockerfile: Must write `update-notifier=false` to `/usr/local/etc/npmrc`'
+        ),
+      ])
+    );
+  });
+
+  it('rejects invalid Cloud Run --startup-probe-* / --liveness-probe-* flags and Host overrides in container healthchecks', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30',
+          '--startup-probe-request-path=/api/health --liveness-probe-request-path=/api/live'
+        )
+    );
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      `${fs.readFileSync(runtimeContractPath, 'utf8')}\nLegacy flag: \`--startup-probe-request-path=/api/health\`\n`
+    );
+
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs
+        .readFileSync(dockerfilePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const rolloutComposePath = path.join(tempDir, 'docker-compose.rollout.yml');
+    fs.writeFileSync(
+      rolloutComposePath,
+      fs
+        .readFileSync(rolloutComposePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Invalid Cloud Run CLI flag "--startup-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Invalid Cloud Run CLI flag "--liveness-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document `--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30`'
+        ),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Invalid Cloud Run CLI flag "--startup-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'docker-compose.rollout.yml: `app-standby` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+      ])
+    );
+  });
+
+  it('rejects missing webhook wire docs, missing release_ref promotion alignment, omitted CI verify scripts, and storybook.yml cache drift', () => {
+    const dockerPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerPath,
+      fs
+        .readFileSync(dockerPath, 'utf8')
+        .replace(/\$\{X-Deploy-Timestamp\}\.\$\{PAYLOAD\}/g, 'REMOVED_HMAC_FORMULA')
+        .replace(/DEPLOY_WEBHOOK_SECRET/g, 'REMOVED_WEBHOOK_SECRET')
+    );
+
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    fs.writeFileSync(
+      deploymentPath,
+      fs
+        .readFileSync(deploymentPath, 'utf8')
+        .replace(/check:setup-guides/g, 'removed-setup-check')
+        .replace(/check:spec-contracts/g, 'removed-spec-check')
+        .replace(/release_ref/g, 'removed_ref_input')
+    );
+
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs.readFileSync(gcpPath, 'utf8').replace(/release_ref/g, 'removed_ref_input')
+    );
+
+    const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
+    fs.writeFileSync(
+      storybookWorkflowPath,
+      fs
+        .readFileSync(storybookWorkflowPath, 'utf8')
+        .replace('node_modules/.cache/storybook\n', '')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/docker-vps.md: Signed webhook adapter documentation is missing "DEPLOY_WEBHOOK_SECRET"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/docker-vps.md: Must document timestamp-prefixed HMAC formula `${X-Deploy-Timestamp}.${PAYLOAD}`'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: `verify` (`ci.yml`) job overview omits CI verification script "check:setup-guides"'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: `verify` (`ci.yml`) job overview omits CI verification script "check:spec-contracts"'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Must document `release_ref` and `target_sha` commit resolution'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document `release_ref` and `target_sha` commit resolution'
+        ),
+        expect.stringContaining(
+          '.github/workflows/storybook.yml: `actions/cache` must cache "node_modules/.cache/storybook"'
+        ),
+      ])
+    );
+  });
+
+  it('fails with remediation hints when Prisma migrations, envSchema keys, or docker-compose :? guards drift from CHANGELOG.md and docs/upgrading.md', () => {
+    fs.mkdirSync(path.join(tempDir, 'prisma/migrations/20261215000000_add_shuttle_manifest'), {
+      recursive: true,
+    });
+
+    const envTsPath = path.join(tempDir, 'src/env.ts');
+    fs.writeFileSync(
+      envTsPath,
+      fs
+        .readFileSync(envTsPath, 'utf8')
+        .replace(
+          "NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),",
+          "NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),\n  SHUTTLE_API_KEY: z.string().optional(),"
+        )
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(
+          'STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}',
+          'STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}\n      SHUTTLE_API_KEY: ${SHUTTLE_API_KEY:?SHUTTLE_API_KEY is required}'
+        )
+        .replace('  uploads_data:', '  uploads_data:\n  archive_data:')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CHANGELOG.md: Migration count drift'),
+        expect.stringContaining('20261215000000_add_shuttle_manifest'),
+        expect.stringContaining('Added runtime environment variable "SHUTTLE_API_KEY" in src/env.ts is missing'),
+        expect.stringContaining('CHANGELOG.md: Docker Compose mandatory `:?` secret guard "SHUTTLE_API_KEY"'),
+        expect.stringContaining('docs/upgrading.md: Docker Compose mandatory `:?` secret guard "SHUTTLE_API_KEY"'),
+        expect.stringContaining('CHANGELOG.md: Persistent Docker Compose volume "archive_data"'),
+        expect.stringContaining('docs/upgrading.md: Persistent Docker Compose volume "archive_data"'),
+        expect.stringContaining('Remediation:'),
+      ])
+    );
+  });
+
+  it('rejects Adopter Action Required: No, ModuleConfigSchema / BACKUP_SCHEMA_VERSION drift, and missing preflight/rollback steps in docs/upgrading.md', () => {
+    const changelogPath = path.join(tempDir, 'CHANGELOG.md');
+    fs.writeFileSync(
+      changelogPath,
+      fs
+        .readFileSync(changelogPath, 'utf8')
+        .replace('> **Adopter Action Required**: Yes', '> **Adopter Action Required**: No')
+    );
+
+    const exportRoutePath = path.join(tempDir, 'src/app/api/admin/maintenance/export/route.ts');
+    fs.writeFileSync(
+      exportRoutePath,
+      fs
+        .readFileSync(exportRoutePath, 'utf8')
+        .replace("const BACKUP_SCHEMA_VERSION = '2.0';", "const BACKUP_SCHEMA_VERSION = '3.0';")
+    );
+
+    const modulesPath = path.join(tempDir, 'src/lib/modules.ts');
+    fs.writeFileSync(
+      modulesPath,
+      fs
+        .readFileSync(modulesPath, 'utf8')
+        .replace('interactive3D: z.boolean().default(true),', 'interactive3D: z.boolean().default(true),\n  photoBooth: z.boolean().default(true),')
+    );
+
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace(/preflight-env\.ts/g, 'verify-env-docs.ts')
+        .replace(/preflight:env/g, 'check:env-docs')
+        .replace(/RUN_MIGRATIONS=true/g, 'LEGACY_MIGRATE=1')
+        .replace(
+          /docker run -d --name app-rollback[\s\S]*?wedding-website:previous/,
+          'docker run -d --name app-rollback --env-file .env wedding-website:latest'
+        )
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Sets `Adopter Action Required: No` despite'),
+        expect.stringContaining('CHANGELOG.md: Backup schema version drift — src/app/api/admin/maintenance/export/route.ts sets BACKUP_SCHEMA_VERSION="3.0"'),
+        expect.stringContaining('docs/upgrading.md: Backup schema version drift — expected `schemaVersion: "3.0"`'),
+        expect.stringContaining('CHANGELOG.md: Module toggle contract drift with src/lib/modules.ts'),
+        expect.stringContaining('docs/upgrading.md: Module toggle contract drift with src/lib/modules.ts'),
+        expect.stringContaining('docs/upgrading.md: Step 7 must invoke the local operator `.env` preflight CLI'),
+        expect.stringContaining('docs/upgrading.md: Standalone Docker upgrade track must document `RUN_MIGRATIONS=true`'),
+        expect.stringContaining('docs/upgrading.md: Rollback `docker run` command lacks host port mapping'),
+        expect.stringContaining('docs/upgrading.md: Rollback `docker run` command lacks Compose network attachment'),
+        expect.stringContaining('docs/upgrading.md: Rollback `docker run` command must not deploy mutable :latest tag'),
       ])
     );
   });

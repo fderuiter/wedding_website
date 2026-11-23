@@ -27,17 +27,18 @@ describe('CsvImportWizardModal Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    window.sessionStorage.clear();
     global.fetch = jest.fn();
   });
 
-  const renderModal = (isOpen = true) => {
+  const renderModal = (isOpen = true, existingCodes = ['EXISTING1']) => {
     return render(
       <ToastProvider>
         <CsvImportWizardModal
           isOpen={isOpen}
           onClose={mockOnClose}
           onImportComplete={mockOnImportComplete}
-          existingCodes={['EXISTING1']}
+          existingCodes={existingCodes}
         />
       </ToastProvider>
     );
@@ -134,7 +135,7 @@ describe('CsvImportWizardModal Component', () => {
     const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
 
-    // Step 2: Column Remapping
+    // Step 2: Column Remapping (unmapped extra columns default to unchecked and require opt-in)
     await waitFor(() => {
       expect(screen.getByText(/2. Map Columns/i)).toBeInTheDocument();
       expect(screen.getByDisplayValue('Guest Name')).toBeInTheDocument();
@@ -143,6 +144,11 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByDisplayValue('Dietary Allergies')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Plus Ones')).toBeInTheDocument();
     });
+
+    const customGroupCheckbox = screen.getByLabelText('Custom Group') as HTMLInputElement;
+    expect(customGroupCheckbox).not.toBeChecked();
+    fireEvent.click(customGroupCheckbox);
+    expect(customGroupCheckbox).toBeChecked();
 
     const continueBtn = screen.getByText(/Continue to Review/i);
     fireEvent.click(continueBtn);
@@ -1336,7 +1342,7 @@ describe('CsvImportWizardModal Component', () => {
     });
 
     const toggle = screen.getByLabelText(
-      /Consolidate rows sharing a Household or Party onto one invitation/i
+      /Consolidate rows sharing a Household Name onto one invitation/i
     );
     fireEvent.click(toggle);
 
@@ -1350,6 +1356,7 @@ describe('CsvImportWizardModal Component', () => {
     expect(screen.getByDisplayValue('Jane Doe')).toBeInTheDocument();
     expect(screen.getByDisplayValue('John')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Doe')).toBeInTheDocument();
+    expect(screen.getByText('Companions: John Doe, Tommy Doe')).toBeInTheDocument();
     expect(screen.getByLabelText('Plus-One Allocation for row 1')).toHaveValue(2);
     expect(screen.getByLabelText('Dietary Notes for row 1')).toHaveValue(
       'Vegetarian; Nut Allergy; Dairy Free'
@@ -1593,4 +1600,535 @@ describe('CsvImportWizardModal Component', () => {
       URL.revokeObjectURL = originalRevokeObjectURL;
     }
   }, 15000);
+
+  test('omits plusOneAllocations when plusOneCol is unmapped, maps phoneCol and plusOneNameCol, and leaves RSVP summary columns unchecked', async () => {
+    window.sessionStorage.clear();
+    let capturedBatchBody: any = null;
+    (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+      const parsedBody = init?.body ? JSON.parse(init.body as string) : {};
+      if (url.includes('/api/admin/invitation-codes/validate')) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: {
+              total: 1,
+              validCount: 1,
+              invalidCount: 0,
+              duplicateCount: 1,
+              updatedCount: 1,
+              skippedCount: 0,
+              createdCount: 0,
+            },
+            rows: [
+              {
+                rowIndex: 1,
+                guestName: 'Jane Doe',
+                code: 'JANE2026',
+                isValid: true,
+                errors: [],
+                warnings: [],
+                actionOutcome: 'update',
+              },
+            ],
+          }),
+        };
+      }
+      if (url.includes('/api/admin/invitation-codes/batch')) {
+        capturedBatchBody = parsedBody;
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            count: 1,
+            imported: 0,
+            skipped: 0,
+            updated: 1,
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    renderModal(true, ['JANE2026']);
+
+    const csvData = [
+      'Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Address Line 1,City,State,ZIP Code,Country,Meal Selections,Custom Answers,Attendance',
+      'Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,"\'+1 (555) 234-5678","John Doe, Tommy Doe",123 Main St,Boston,MA,02101,USA,"Jane: Salmon","Song: Hey Ya",Attending',
+    ].join('\n');
+    const file = new File([csvData], 'roundtrip-partial.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    fireEvent.change(screen.getByLabelText(/Click to select CSV file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Phone Number Column/i)).toHaveValue('Phone Number');
+    });
+
+    expect(screen.getByLabelText(/^Plus-One Name Column/i)).toHaveValue('Plus-One Name');
+    expect(screen.getByLabelText(/^Dietary Notes \/ Allergies/i)).toHaveValue('');
+    expect(screen.getByLabelText(/^Plus-One Allocations Column/i)).toHaveValue('');
+    expect(screen.getByLabelText('Meal Selections')).not.toBeChecked();
+    expect(screen.getByLabelText('Custom Answers')).not.toBeChecked();
+    expect(screen.getByLabelText('Attendance')).not.toBeChecked();
+    expect(screen.getByLabelText('RSVP Link')).not.toBeChecked();
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Duplicate Action/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Duplicate Action/i), {
+      target: { value: 'update' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Commit Import \(1 rows\)/i })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Commit Import \(1 rows\)/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+    });
+
+    expect(capturedBatchBody).not.toBeNull();
+    expect(capturedBatchBody.collisionStrategy).toBe('update');
+    expect(capturedBatchBody.records).toHaveLength(1);
+    expect('plusOneAllocations' in capturedBatchBody.records[0]).toBe(false);
+    expect(capturedBatchBody.records[0]).toEqual({
+      guestName: 'Jane Doe',
+      code: 'JANE2026',
+      email: 'jane@example.com',
+      addressLine1: '123 Main St',
+      city: 'Boston',
+      state: 'MA',
+      zipCode: '02101',
+      country: 'USA',
+      plusOneFirstName: 'John',
+      plusOneLastName: 'Doe',
+      extraFields: {
+        plusOneNames: ['John Doe', 'Tommy Doe'],
+        phone: '+15552345678',
+      },
+    });
+  });
+
+  test('enabling consolidation without householdNameCol never groups rows by Party Group (Bride / Groom)', async () => {
+    window.sessionStorage.clear();
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('offline'));
+
+    renderModal(true);
+
+    const csvData = [
+      'Guest Name,Party Group,Email',
+      'Alice BrideSide,Bride,alice@example.com',
+      'Beth BrideSide,Bride,beth@example.com',
+      'Carl GroomSide,Groom,carl@example.com',
+    ].join('\n');
+    const file = new File([csvData], 'sides.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    fireEvent.change(screen.getByLabelText(/Click to select CSV file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Party Side \/ Group Column/i)).toHaveValue('Party Group');
+      expect(screen.getByLabelText(/^Household Name Column/i)).toHaveValue('');
+    });
+
+    fireEvent.click(
+      screen.getByLabelText(/Consolidate rows sharing a Household Name onto one invitation/i)
+    );
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Total: 3/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue('Alice BrideSide')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Beth BrideSide')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Carl GroomSide')).toBeInTheDocument();
+  });
+
+  test('guards unsaved drafts and failedRows on Escape or backdrop click via useDirtyConfirmClose while closing cleanly when Step 4 failedRows is empty', async () => {
+    window.sessionStorage.clear();
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (url.includes('/api/admin/invitation-codes/validate')) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: {
+              total: 2,
+              validCount: 1,
+              invalidCount: 1,
+              duplicateCount: 0,
+              updatedCount: 0,
+              skippedCount: 0,
+              createdCount: 1,
+            },
+            rows: [
+              { rowIndex: 1, guestName: 'Valid Guest', code: 'VAL01', isValid: true, errors: [], warnings: [] },
+              { rowIndex: 2, guestName: '', code: 'BAD01', isValid: false, errors: ['Guest name is required.'], warnings: [] },
+            ],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          count: 1,
+          imported: 1,
+          skipped: 0,
+          updated: 0,
+        }),
+      };
+    });
+
+    render(
+      <ToastProvider>
+        <CsvImportWizardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onImportComplete={mockOnImportComplete}
+        />
+      </ToastProvider>
+    );
+
+    const csvData = 'Guest Name,Invitation Code\nValid Guest,VAL01\n,BAD01';
+    const file = new File([csvData], 'dirty-guard.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    fireEvent.change(screen.getByLabelText(/Click to select CSV file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Continue to Review/i)).toBeInTheDocument();
+      expect(window.sessionStorage.getItem('csv_import_wizard_draft')).not.toBeNull();
+    });
+
+    // Pressing Escape on Step 2 prompts confirmation instead of clearing draft immediately
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    const alertDialog = await screen.findByRole('alertdialog');
+    expect(alertDialog).toHaveTextContent(/unsaved changes/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('csv_import_wizard_draft')).not.toBeNull();
+
+    // Advance to Step 3 and commit valid row while leaving 1 failedRow on Step 4
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Import Valid Rows (1)' })).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import Valid Rows (1)' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+      expect(screen.getByText(/1 invalid row was skipped/i)).toBeInTheDocument();
+    });
+
+    // Escape on Step 4 when failedRows is non-empty also prompts confirmation
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await screen.findByRole('alertdialog');
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    // Confirming discard clears draft and invokes onClose
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+    });
+    expect(window.sessionStorage.getItem('csv_import_wizard_draft')).toBeNull();
+  });
+
+  test('renders all 20 Step 2 column mapping selects in visual order with uniform dark-mode classes, empty-option labels, and SET_COLUMN_MAPPING updates', async () => {
+    window.sessionStorage.clear();
+
+    const expectedControls = [
+      {
+        id: 'map-guest-name',
+        label: 'Guest Name Column (Required)',
+        field: 'guestNameCol',
+        emptyOption: '-- Select Column --',
+        header: 'Col_01',
+        sampleValue: 'Clara Oswald',
+      },
+      {
+        id: 'map-guest-first-name',
+        label: 'Guest First Name Column (Optional)',
+        field: 'guestFirstNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_02',
+        sampleValue: 'Clara',
+      },
+      {
+        id: 'map-guest-last-name',
+        label: 'Guest Last Name Column (Optional)',
+        field: 'guestLastNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_03',
+        sampleValue: 'Oswald',
+      },
+      {
+        id: 'map-invitation-code',
+        label: 'Invitation Code Column (Optional)',
+        field: 'codeCol',
+        emptyOption: '-- Auto-Generate Blank Codes --',
+        header: 'Col_04',
+        sampleValue: 'CLARA100',
+      },
+      {
+        id: 'map-email',
+        label: 'Email Address Column (Optional)',
+        field: 'emailCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_05',
+        sampleValue: 'clara@example.com',
+      },
+      {
+        id: 'map-phone',
+        label: 'Phone Number Column (Optional)',
+        field: 'phoneCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_06',
+        sampleValue: '+15551234567',
+      },
+      {
+        id: 'map-dietary-notes',
+        label: 'Dietary Notes / Allergies (Optional)',
+        field: 'dietaryNotesCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_07',
+        sampleValue: 'No Peanuts',
+      },
+      {
+        id: 'map-address-line1',
+        label: 'Address Line 1 Column (Optional)',
+        field: 'addressLine1Col',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_08',
+        sampleValue: '742 Evergreen Terrace',
+      },
+      {
+        id: 'map-address-line2',
+        label: 'Address Line 2 Column (Optional)',
+        field: 'addressLine2Col',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_09',
+        sampleValue: 'Apt 4B',
+      },
+      {
+        id: 'map-city',
+        label: 'City Column (Optional)',
+        field: 'cityCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_10',
+        sampleValue: 'Springfield',
+      },
+      {
+        id: 'map-state',
+        label: 'State / Province Column (Optional)',
+        field: 'stateCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_11',
+        sampleValue: 'IL',
+      },
+      {
+        id: 'map-zip-code',
+        label: 'ZIP / Postal Code Column (Optional)',
+        field: 'zipCodeCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_12',
+        sampleValue: '62704',
+      },
+      {
+        id: 'map-country',
+        label: 'Country Column (Optional)',
+        field: 'countryCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_13',
+        sampleValue: 'USA',
+      },
+      {
+        id: 'map-plus-ones',
+        label: 'Plus-One Allocations Column (Optional)',
+        field: 'plusOneCol',
+        emptyOption: '-- Default to 0 --',
+        header: 'Col_14',
+        sampleValue: '1',
+      },
+      {
+        id: 'map-plus-one-name',
+        label: 'Plus-One Name Column (Optional)',
+        field: 'plusOneNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_15',
+        sampleValue: 'Danny Pink',
+      },
+      {
+        id: 'map-plus-one-first-name',
+        label: 'Plus-One First Name Column (Optional)',
+        field: 'plusOneFirstNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_16',
+        sampleValue: 'Danny',
+      },
+      {
+        id: 'map-plus-one-last-name',
+        label: 'Plus-One Last Name Column (Optional)',
+        field: 'plusOneLastNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_17',
+        sampleValue: 'Pink',
+      },
+      {
+        id: 'map-household-name',
+        label: 'Household Name Column (Optional)',
+        field: 'householdNameCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_18',
+        sampleValue: 'Oswald Household',
+      },
+      {
+        id: 'map-party-group',
+        label: 'Party Side / Group Column (Optional)',
+        field: 'partyGroupCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_19',
+        sampleValue: 'Bride Side',
+      },
+      {
+        id: 'map-party-tags',
+        label: 'Party Tags Column (Optional)',
+        field: 'partyTagsCol',
+        emptyOption: '-- Unmapped --',
+        header: 'Col_20',
+        sampleValue: 'VIP, Tardis',
+      },
+    ] as const;
+
+    const headers = [...expectedControls.map((c) => c.header), 'Custom_Note'];
+    const rowValues = [
+      ...expectedControls.map((c) => (c.sampleValue.includes(',') ? `"${c.sampleValue}"` : c.sampleValue)),
+      'Window Seat',
+    ];
+    const csvData = `${headers.join(',')}\n${rowValues.join(',')}`;
+    const file = Object.assign(new File([csvData], 'all-columns.csv', { type: 'text/csv' }), {
+      _content: csvData,
+    });
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        summary: {
+          total: 1,
+          validCount: 1,
+          invalidCount: 0,
+          duplicateCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          createdCount: 1,
+        },
+        rows: [
+          {
+            rowIndex: 1,
+            guestName: 'Clara Oswald',
+            code: 'CLARA100',
+            email: 'clara@example.com',
+            isValid: true,
+            errors: [],
+            warnings: [],
+          },
+        ],
+      }),
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <CsvImportWizardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onImportComplete={mockOnImportComplete}
+        />
+      </ToastProvider>
+    );
+
+    const fileInput = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Guest Name Column (Required)')).toBeInTheDocument();
+    });
+
+    const renderedSelects = Array.from(document.body.querySelectorAll('select'));
+    expect(renderedSelects).toHaveLength(20);
+    expect(renderedSelects.map((el) => el.id)).toEqual(expectedControls.map((c) => c.id));
+
+    for (const control of expectedControls) {
+      const selectEl = screen.getByLabelText(control.label) as HTMLSelectElement;
+      expect(selectEl).toHaveAttribute('id', control.id);
+      expect(selectEl).toHaveClass('text-gray-900', 'dark:text-zinc-100');
+
+      const emptyOptionEl = selectEl.querySelector('option[value=""]');
+      expect(emptyOptionEl).not.toBeNull();
+      expect(emptyOptionEl).toHaveTextContent(control.emptyOption);
+
+      fireEvent.change(selectEl, { target: { value: '' } });
+      expect(selectEl).toHaveValue('');
+
+      fireEvent.change(selectEl, { target: { value: control.header } });
+      expect(selectEl).toHaveValue(control.header);
+    }
+
+    const savedDraftRaw = window.sessionStorage.getItem('csv_import_wizard_draft');
+    expect(savedDraftRaw).not.toBeNull();
+    const savedDraft = JSON.parse(savedDraftRaw!);
+    for (const control of expectedControls) {
+      expect(savedDraft[control.field]).toBe(control.header);
+    }
+
+    // Only unmapped Custom_Note remains in extra metadata checkboxes
+    expect(screen.getByLabelText('Custom_Note')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Col_01')).not.toBeInTheDocument();
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    // Confirm mapping into Step 3 and verify mapped row fields propagate
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('3. Review & Validate')).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText('Guest Name for row 1')).toHaveValue('Clara Oswald');
+    expect(screen.getByLabelText('Invitation Code for row 1')).toHaveValue('CLARA100');
+    expect(screen.getByLabelText('Email for row 1')).toHaveValue('clara@example.com');
+    expect(screen.getByLabelText('Phone Number for row 1')).toHaveValue('+15551234567');
+    expect(screen.getByLabelText('Dietary Notes for row 1')).toHaveValue('No Peanuts');
+    expect(screen.getByLabelText('Address Line 1 for row 1')).toHaveValue('742 Evergreen Terrace');
+    expect(screen.getByLabelText('Address Line 2 for row 1')).toHaveValue('Apt 4B');
+    expect(screen.getByLabelText('City for row 1')).toHaveValue('Springfield');
+    expect(screen.getByLabelText('State for row 1')).toHaveValue('IL');
+    expect(screen.getByLabelText('ZIP Code for row 1')).toHaveValue('62704');
+    expect(screen.getByLabelText('Country for row 1')).toHaveValue('USA');
+    expect(screen.getByLabelText('Plus-One Allocation for row 1')).toHaveValue(1);
+    expect(screen.getByLabelText('Plus-One First Name for row 1')).toHaveValue('Danny');
+    expect(screen.getByLabelText('Plus-One Last Name for row 1')).toHaveValue('Pink');
+    expect(screen.getByLabelText('Household Name for row 1')).toHaveValue('Oswald Household');
+    expect(screen.getByLabelText('Party Group for row 1')).toHaveValue('Bride Side');
+    expect(screen.getByLabelText('Party Tags for row 1')).toHaveValue('VIP, Tardis');
+  });
 });

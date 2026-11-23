@@ -1,5 +1,13 @@
 import { headers } from 'next/headers';
-import { toPublicAppConfig, toAdminAppConfig, isMultisiteEnabled, APP_DEFAULTS, getAppConfig } from '../config';
+import {
+  toPublicAppConfig,
+  toUnauthenticatedAppConfig,
+  toAdminAppConfig,
+  isMultisiteEnabled,
+  isSiteInitialized,
+  APP_DEFAULTS,
+  getAppConfig,
+} from '../config';
 import type { AdminAppConfig } from '../config';
 import { PublicAppConfigSchema } from '@/features/content';
 import { prisma } from '../prisma';
@@ -457,6 +465,208 @@ describe('Configuration System Layers & Precedence', () => {
 
     await expect(getAppConfig('global')).rejects.toThrow(/Production Configuration Validation Failure/);
   });
+
+  it('skips empty and whitespace-only SITE_* strings across all 32 keys without ZodError or SetupWizard resets', async () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    process.env.E2E_TEST = 'false';
+
+    const all32SiteKeys = [
+      'SITE_PARTNER1_NAME',
+      'SITE_PARTNER2_NAME',
+      'SITE_BRIDE_NAME',
+      'SITE_GROOM_NAME',
+      'SITE_WEDDING_DATE',
+      'SITE_BASE_URL',
+      'SITE_VENUE_NAME',
+      'SITE_VENUE_ADDRESS',
+      'SITE_VENUE_CITY',
+      'SITE_VENUE_STATE',
+      'SITE_VENUE_ZIP',
+      'SITE_LATITUDE',
+      'SITE_LONGITUDE',
+      'SITE_TIMEZONE',
+      'SITE_COLOR_PRIMARY',
+      'SITE_COLOR_SECONDARY',
+      'SITE_THEME_PRESET',
+      'SITE_THEME_TOKENS',
+      'SITE_SHOW_COUNTDOWN',
+      'SITE_SHOW_ADD_TO_CALENDAR',
+      'SITE_SEO_TITLE',
+      'SITE_SEO_DESCRIPTION',
+      'SITE_BRAND_MONOGRAM',
+      'SITE_BRAND_LOGO_URL',
+      'SITE_BRAND_LOGO_ALT',
+      'SITE_HERO_IMAGE_URL',
+      'SITE_HERO_IMAGE_ALT',
+      'SITE_BRAND_WATERMARK_URL',
+      'SITE_BRAND_WATERMARK_ALT',
+      'SITE_BADGE_GRAPHIC_URL',
+      'SITE_BADGE_GRAPHIC_ALT',
+      'SITE_CONTACT_EMAIL',
+    ] as const;
+
+    const dbWeddingDate = new Date('2027-09-18T17:00:00.000Z');
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      id: 'global',
+      partner1Name: 'Alex',
+      partner2Name: 'Jordan',
+      brideName: 'Alex',
+      groomName: 'Jordan',
+      weddingDate: dbWeddingDate,
+      baseUrl: 'https://celebration.mydomain.com',
+      venueName: 'Grand Conservatory',
+      venueAddress: '100 Garden Way',
+      venueCity: 'Minneapolis',
+      venueState: 'MN',
+      venueZip: '55401',
+      latitude: 44.9778,
+      longitude: -93.265,
+      colorPrimary: '#4A5D4E',
+      colorSecondary: '#D4AF37',
+      themePreset: 'modern',
+      themeTokens: { '--btn-radius': '10px' },
+      timezone: 'America/Chicago',
+      showCountdown: true,
+      showAddToCalendar: true,
+      contactEmail: 'couple@mydomain.com',
+      subdomain: null,
+    });
+
+    const globalWithStore = globalThis as typeof globalThis & {
+      globalFallbackStore?: Map<string, unknown>;
+    };
+
+    for (const blankValue of ['', '   \t\n  ']) {
+      globalWithStore.globalFallbackStore?.clear();
+      for (const key of all32SiteKeys) {
+        process.env[key] = blankValue;
+      }
+
+      const resolved = await getAppConfig('global');
+      expect(resolved.partner1Name).toBe('Alex');
+      expect(resolved.partner2Name).toBe('Jordan');
+      expect(resolved.brideName).toBe('Alex');
+      expect(resolved.groomName).toBe('Jordan');
+      expect(resolved.weddingDate.toISOString()).toBe(dbWeddingDate.toISOString());
+      expect(resolved.baseUrl).toBe('https://celebration.mydomain.com');
+      expect(resolved.venueName).toBe('Grand Conservatory');
+      expect(resolved.venueAddress).toBe('100 Garden Way');
+      expect(resolved.venueCity).toBe('Minneapolis');
+      expect(resolved.venueState).toBe('MN');
+      expect(resolved.venueZip).toBe('55401');
+      expect(resolved.latitude).toBe(44.9778);
+      expect(resolved.longitude).toBe(-93.265);
+      expect(resolved.colorPrimary).toBe('#4A5D4E');
+      expect(resolved.colorSecondary).toBe('#D4AF37');
+      expect(resolved.themePreset).toBe('modern');
+      expect(resolved.themeTokens).toEqual({ '--btn-radius': '10px' });
+      expect(resolved.timezone).toBe('America/Chicago');
+      expect(resolved.showCountdown).toBe(true);
+      expect(resolved.showAddToCalendar).toBe(true);
+      expect(resolved.contactEmail).toBe('couple@mydomain.com');
+      expect(isSiteInitialized(resolved)).toBe(true);
+    }
+  });
+
+  it('trims surrounding whitespace across all 32 non-empty SITE_* overrides and rejects non-empty malformed coordinates', async () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    process.env.E2E_TEST = 'false';
+
+    const globalWithStore = globalThis as typeof globalThis & {
+      globalFallbackStore?: Map<string, unknown>;
+    };
+    globalWithStore.globalFallbackStore?.clear();
+
+    (prisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+      ...baseConfig,
+      id: 'global',
+      timezone: 'UTC',
+      showCountdown: true,
+      showAddToCalendar: false,
+      subdomain: null,
+    });
+
+    process.env.SITE_BRIDE_NAME = '  Legacy Bride  ';
+    process.env.SITE_GROOM_NAME = '  Legacy Groom  ';
+    process.env.SITE_PARTNER1_NAME = '  Taylor  ';
+    process.env.SITE_PARTNER2_NAME = '  Morgan  ';
+    process.env.SITE_WEDDING_DATE = '  2027-10-16T18:30:00.000Z  ';
+    process.env.SITE_BASE_URL = '  https://celebrate.mydomain.com  ';
+    process.env.SITE_VENUE_NAME = '  Botanical Pavilion  ';
+    process.env.SITE_VENUE_ADDRESS = '  500 Conservatory Ave  ';
+    process.env.SITE_VENUE_CITY = '  Saint Paul  ';
+    process.env.SITE_VENUE_STATE = '  MN  ';
+    process.env.SITE_VENUE_ZIP = '  55102  ';
+    process.env.SITE_LATITUDE = '  44.9537  ';
+    process.env.SITE_LONGITUDE = '  -93.0900  ';
+    process.env.SITE_TIMEZONE = '  America/Chicago  ';
+    process.env.SITE_COLOR_PRIMARY = '  #2E4A3E  ';
+    process.env.SITE_COLOR_SECONDARY = '  #C9A227  ';
+    process.env.SITE_THEME_PRESET = '  romantic  ';
+    process.env.SITE_THEME_TOKENS = '  {"--btn-radius":"16px"}  ';
+    process.env.SITE_SHOW_COUNTDOWN = '  FALSE  ';
+    process.env.SITE_SHOW_ADD_TO_CALENDAR = '  TRUE  ';
+    process.env.SITE_SEO_TITLE = '  Taylor & Morgan Celebration  ';
+    process.env.SITE_SEO_DESCRIPTION = '  Weekend schedule and travel details  ';
+    process.env.SITE_BRAND_MONOGRAM = '  T&M  ';
+    process.env.SITE_BRAND_LOGO_URL = '  /assets/custom-logo.svg  ';
+    process.env.SITE_BRAND_LOGO_ALT = '  Taylor and Morgan crest  ';
+    process.env.SITE_HERO_IMAGE_URL = '  /assets/custom-hero.jpg  ';
+    process.env.SITE_HERO_IMAGE_ALT = '  Conservatory courtyard  ';
+    process.env.SITE_BRAND_WATERMARK_URL = '  /assets/custom-watermark.svg  ';
+    process.env.SITE_BRAND_WATERMARK_ALT = '  Botanical watermark  ';
+    process.env.SITE_BADGE_GRAPHIC_URL = '  /assets/custom-badge.svg  ';
+    process.env.SITE_BADGE_GRAPHIC_ALT = '  Weekend badge  ';
+    process.env.SITE_CONTACT_EMAIL = '  hosts@mydomain.com  ';
+
+    const resolved = await getAppConfig('global');
+    expect(resolved.partner1Name).toBe('Taylor');
+    expect(resolved.partner2Name).toBe('Morgan');
+    expect(resolved.brideName).toBe('Taylor');
+    expect(resolved.groomName).toBe('Morgan');
+    expect(resolved.weddingDate.toISOString()).toBe('2027-10-16T18:30:00.000Z');
+    expect(resolved.baseUrl).toBe('https://celebrate.mydomain.com');
+    expect(resolved.venueName).toBe('Botanical Pavilion');
+    expect(resolved.venueAddress).toBe('500 Conservatory Ave');
+    expect(resolved.venueCity).toBe('Saint Paul');
+    expect(resolved.venueState).toBe('MN');
+    expect(resolved.venueZip).toBe('55102');
+    expect(resolved.latitude).toBe(44.9537);
+    expect(resolved.longitude).toBe(-93.09);
+    expect(resolved.timezone).toBe('America/Chicago');
+    expect(resolved.colorPrimary).toBe('#2E4A3E');
+    expect(resolved.colorSecondary).toBe('#C9A227');
+    expect(resolved.themePreset).toBe('romantic');
+    expect(resolved.themeTokens).toEqual({ '--btn-radius': '16px' });
+    expect(resolved.showCountdown).toBe(false);
+    expect(resolved.showAddToCalendar).toBe(true);
+    expect(resolved.seoTitle).toBe('Taylor & Morgan Celebration');
+    expect(resolved.seoDescription).toBe('Weekend schedule and travel details');
+    expect(resolved.brandMonogram).toBe('T&M');
+    expect(resolved.brandLogoUrl).toBe('/assets/custom-logo.svg');
+    expect(resolved.brandLogoAlt).toBe('Taylor and Morgan crest');
+    expect(resolved.heroImageUrl).toBe('/assets/custom-hero.jpg');
+    expect(resolved.heroImageAlt).toBe('Conservatory courtyard');
+    expect(resolved.brandWatermarkUrl).toBe('/assets/custom-watermark.svg');
+    expect(resolved.brandWatermarkAlt).toBe('Botanical watermark');
+    expect(resolved.badgeGraphicUrl).toBe('/assets/custom-badge.svg');
+    expect(resolved.badgeGraphicAlt).toBe('Weekend badge');
+    expect(resolved.contactEmail).toBe('hosts@mydomain.com');
+
+    // When SITE_PARTNER1_NAME / SITE_PARTNER2_NAME are blank, trimmed legacy SITE_BRIDE_NAME / SITE_GROOM_NAME apply
+    globalWithStore.globalFallbackStore?.clear();
+    process.env.SITE_PARTNER1_NAME = '   ';
+    process.env.SITE_PARTNER2_NAME = '';
+    const legacyResolved = await getAppConfig('global');
+    expect(legacyResolved.partner1Name).toBe('Legacy Bride');
+    expect(legacyResolved.partner2Name).toBe('Legacy Groom');
+
+    // Padded malformed coordinate still triggers strict production validation failure
+    globalWithStore.globalFallbackStore?.clear();
+    process.env.SITE_LATITUDE = '  invalid-latitude  ';
+    await expect(getAppConfig('global')).rejects.toThrow(/Production Configuration Validation Failure/);
+  });
 });
 
 describe('Single-Site vs Multi-Site Config Resolution', () => {
@@ -678,5 +888,216 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     const admin = toAdminAppConfig(rawWithGrace);
     expect(admin.rsvpGracePeriodHours).toBe(48);
     expect(admin.rsvpOpen).toBe(true);
+  });
+
+  describe('hidden section redaction and unauthenticated layout gating', () => {
+    it('redacts title and content on hidden features in toPublicAppConfig while preserving visible features and raw admin features', () => {
+      const configWithHiddenFeatures = {
+        ...baseConfig,
+        features: [
+          {
+            id: 'story',
+            type: 'story',
+            title: 'Our Story',
+            content: 'Public story intro',
+            visible: true,
+          },
+          {
+            id: 'custom-secret',
+            type: 'custom',
+            title: 'Secret Afterparty Draft',
+            content: 'Private speakeasy code 9942',
+            visible: false,
+          },
+        ],
+      };
+
+      const pub = toPublicAppConfig(configWithHiddenFeatures);
+      expect(pub.features).toEqual([
+        {
+          id: 'story',
+          type: 'story',
+          title: 'Our Story',
+          content: 'Public story intro',
+          visible: true,
+        },
+        {
+          id: 'custom-secret',
+          type: 'custom',
+          title: '',
+          content: '',
+          visible: false,
+        },
+      ]);
+
+      const admin = toAdminAppConfig(configWithHiddenFeatures);
+      expect(admin.features).toEqual([
+        {
+          id: 'story',
+          type: 'story',
+          title: 'Our Story',
+          content: 'Public story intro',
+          visible: true,
+        },
+        {
+          id: 'custom-secret',
+          type: 'custom',
+          title: 'Secret Afterparty Draft',
+          content: 'Private speakeasy code 9942',
+          visible: false,
+        },
+      ]);
+    });
+
+    it('retains redacted hidden placeholder entries when all features are hidden so empty-array fallbacks do not trigger', () => {
+      const allHiddenConfig = {
+        ...baseConfig,
+        features: JSON.stringify([
+          {
+            id: 'details',
+            type: 'details',
+            title: 'Unpublished Details',
+            content: 'Hidden ceremony schedule',
+            visible: false,
+          },
+          {
+            id: 'venue',
+            type: 'venue',
+            title: 'Unpublished Venue',
+            content: 'Hidden venue gate code',
+            visible: false,
+          },
+        ]),
+      };
+
+      const pub = toPublicAppConfig(allHiddenConfig);
+      expect(pub.features).toHaveLength(2);
+      expect(pub.features).toEqual([
+        {
+          id: 'details',
+          type: 'details',
+          title: '',
+          content: '',
+          visible: false,
+        },
+        {
+          id: 'venue',
+          type: 'venue',
+          title: '',
+          content: '',
+          visible: false,
+        },
+      ]);
+    });
+
+    it('clears gated event details in toUnauthenticatedAppConfig while preserving branding, theme tokens, modules, contactEmail, timezone, and RSVP fields', () => {
+      const richConfig = {
+        ...baseConfig,
+        partner1Name: 'Taylor',
+        partner2Name: 'Morgan',
+        brideName: 'Taylor',
+        groomName: 'Morgan',
+        brandMonogram: 'T & M',
+        brandLogoUrl: '/uploads/logo.png',
+        brandLogoAlt: 'Couple monogram',
+        heroImageUrl: '/uploads/hero.jpg',
+        heroImageAlt: 'Sunset portrait',
+        brandWatermarkUrl: '/uploads/watermark.png',
+        brandWatermarkAlt: 'Floral crest',
+        badgeGraphicUrl: '/uploads/badge.png',
+        badgeGraphicAlt: 'Wax seal',
+        photoAlbumUrl: 'https://photos.example.invalid/private-album',
+        venueName: 'Secret Estate',
+        venueAddress: '742 Hidden Lane',
+        venueCity: 'Asheville',
+        venueState: 'NC',
+        venueZip: '28801',
+        latitude: 35.5951,
+        longitude: -82.5515,
+        venueDescription: 'Gate code 4815 at north entrance',
+        storyText: 'Private couple story narrative',
+        travelAdvice: 'Private shuttle pickup instructions',
+        heroTitle: 'Secret Garden Weekend',
+        heroSubtitle: 'Private estate celebration',
+        colorPrimary: '#1E3A8A',
+        colorSecondary: '#D97706',
+        themePreset: 'editorial',
+        themeTokens: { '--color-accent': '#0F766E' },
+        contactEmail: 'hosts@wedding.example',
+        timezone: 'America/New_York',
+        rsvpOpen: true,
+        rsvpDeadlineDate: '2099-09-01',
+        rsvpClosedMessage: 'Please email hosts for late RSVP updates.',
+        modules: {
+          registry: true,
+          groupGifting: false,
+          weather: true,
+          weddingParty: true,
+          attractions: false,
+          gallery: true,
+          countdown: true,
+          addToCalendar: false,
+          interactive3D: false,
+        },
+        features: [
+          {
+            id: 'story',
+            type: 'story',
+            title: 'Private Story Heading',
+            content: 'Private story section body',
+            visible: true,
+          },
+          {
+            id: 'hidden-draft',
+            type: 'custom',
+            title: 'Hidden Draft Title',
+            content: 'Hidden draft body',
+            visible: false,
+          },
+        ],
+      };
+
+      const unauth = toUnauthenticatedAppConfig(richConfig);
+
+      // Gated fields are cleared
+      expect(unauth.photoAlbumUrl).toBe('');
+      expect(unauth.venueName).toBe('');
+      expect(unauth.venueAddress).toBe('');
+      expect(unauth.venueCity).toBe('');
+      expect(unauth.venueState).toBe('');
+      expect(unauth.venueZip).toBe('');
+      expect(unauth.latitude).toBe(0);
+      expect(unauth.longitude).toBe(0);
+      expect(unauth.venueDescription).toBe('');
+      expect(unauth.storyText).toBe('');
+      expect(unauth.travelAdvice).toBe('');
+      expect(unauth.heroTitle).toBe('');
+      expect(unauth.heroSubtitle).toBe('');
+      expect(unauth.features).toEqual([]);
+
+      // Branding, theme, modules, contactEmail, timezone, and RSVP fields are preserved
+      expect(unauth.partner1Name).toBe('Taylor');
+      expect(unauth.partner2Name).toBe('Morgan');
+      expect(unauth.brideName).toBe('Taylor');
+      expect(unauth.groomName).toBe('Morgan');
+      expect(unauth.brandMonogram).toBe('T & M');
+      expect(unauth.brandLogoUrl).toBe('/uploads/logo.png');
+      expect(unauth.brandLogoAlt).toBe('Couple monogram');
+      expect(unauth.heroImageUrl).toBe('/uploads/hero.jpg');
+      expect(unauth.brandWatermarkUrl).toBe('/uploads/watermark.png');
+      expect(unauth.badgeGraphicUrl).toBe('/uploads/badge.png');
+      expect(unauth.colorPrimary).toBe('#1E3A8A');
+      expect(unauth.colorSecondary).toBe('#D97706');
+      expect(unauth.themePreset).toBe('editorial');
+      expect(unauth.themeTokens).toEqual({ '--color-accent': '#0F766E' });
+      expect(unauth.contactEmail).toBe('hosts@wedding.example');
+      expect(unauth.timezone).toBe('America/New_York');
+      expect(unauth.rsvpOpen).toBe(true);
+      expect(unauth.isRsvpOpen).toBe(true);
+      expect(unauth.rsvpDeadlineDate).toBe('2099-09-01');
+      expect(unauth.rsvpClosedMessage).toBe('Please email hosts for late RSVP updates.');
+      expect(unauth.modules.registry).toBe(true);
+      expect(unauth.modules.attractions).toBe(false);
+    });
   });
 });

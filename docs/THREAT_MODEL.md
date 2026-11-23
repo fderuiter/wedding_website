@@ -33,7 +33,7 @@ This application is a reusable, self-hostable wedding website template built on 
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
-[Perimeter Control: Edge Middleware (`src/middleware.ts` — `isHostAllowed` Host Validation)]
+[Perimeter Control: Edge Middleware (`src/middleware.ts` — `isHostAllowed` & Probe `isHostSyntaxValid`)]
                                        |
                                        v
 [Scheduled Cron Gate: Edge Middleware (`/api/cron/*` `Authorization: Bearer <CRON_SECRET>`)]
@@ -62,7 +62,7 @@ This application is a reusable, self-hostable wedding website template built on 
 
 ### Active Security Controls
 
-1. **Perimeter Host Validation**: All incoming requests are filtered against `ALLOWED_HOSTS` in Edge Middleware (`src/middleware.ts`) before routing, preventing HTTP Host Header poisoning and cache poisoning.
+1. **Perimeter Host Validation**: Incoming requests to all application routes, webhooks, scheduled cron endpoints, uploads, and non-read-only probe methods are filtered against `ALLOWED_HOSTS` (`isHostAllowed` in `src/utils/hostValidation.ts`) in Edge Middleware (`src/middleware.ts`) before routing, preventing HTTP Host Header poisoning and cache poisoning. Stateless read-only (`GET` and `HEAD`) health probes (`/api/live`, `/api/health`, and `/api/ready`, which never read `Host` or construct URLs and return `Cache-Control: no-store`) enforce syntactic `Host` validation (`isHostSyntaxValid`) to block empty, whitespace, comma-separated, CRLF, and invalid-port headers while permitting orchestrator/internal probe hosts (e.g., `healthcheck.railway.app`, pod IPs, and loopback).
 2. **Scheduled Cron Bearer Authentication**: Edge Middleware (`src/middleware.ts`) intercepts `/api/cron` and `/api/cron/*` routes prior to cookie authentication and validates `Authorization: Bearer <CRON_SECRET>` using constant-time byte comparison (`timingSafeEqualJS`), rejecting unauthorized requests with `401 Unauthorized` in production (allowing non-empty Bearer tokens without `CRON_SECRET` only in non-production environments).
 3. **Password, Token, & Two-Tier Guest Session Revocation Security**:
    - `ADMIN_PASSWORD` hashed using native `scrypt` with random salt.
