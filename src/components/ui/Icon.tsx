@@ -52,12 +52,24 @@ export type IconName =
   | 'ImageOff'
   | 'Star';
 
-interface IconProps extends React.SVGProps<SVGSVGElement> {
+interface IconProps extends React.ComponentPropsWithRef<'svg'> {
   name: IconName;
   size?: number | string;
 }
 
-export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, width, height, className, 'aria-hidden': ariaHidden, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledby, role, ...props }, ref) => {
+export function Icon({
+  name,
+  size,
+  width,
+  height,
+  className,
+  'aria-hidden': ariaHidden,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledby,
+  role,
+  ref,
+  ...props
+}: IconProps) {
   const hasLabel = Boolean(ariaLabel || ariaLabelledby);
   const resolvedAriaHidden = ariaHidden !== undefined ? ariaHidden : hasLabel ? undefined : 'true';
   const resolvedRole = role ?? (hasLabel ? 'img' : undefined);
@@ -460,6 +472,4 @@ export const Icon = React.forwardRef<SVGSVGElement, IconProps>(({ name, size, wi
     default:
       return null;
   }
-});
-
-Icon.displayName = 'Icon';
+}

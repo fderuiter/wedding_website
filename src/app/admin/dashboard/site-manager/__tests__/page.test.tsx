@@ -13,11 +13,10 @@ jest.mock('framer-motion', () => {
     __esModule: true,
     motion: new Proxy({}, {
       get: (_target, tag) => {
-        const Component = React.forwardRef(({ children, ...props }: any, ref: any) => {
+        function MotionComponent({ children, ref, ...props }: any) {
           return React.createElement(tag as string, { ref, ...props }, children);
-        });
-        Component.displayName = `MotionComponent_${String(tag)}`;
-        return Component;
+        }
+        return MotionComponent;
       },
     }),
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,

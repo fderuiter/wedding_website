@@ -666,111 +666,251 @@ export function githubSlugify(str: string): string {
     .replace(/ /g, '-');
 }
 
+const COMMONMARK_FENCE_RE = /^\s{0,3}(`{3,}|~{3,})(.*)$/;
+
+export interface MarkdownFenceState {
+  inFence: boolean;
+  fenceChar: string;
+  fenceLen: number;
+}
+
+export type FenceTransitionResult =
+  | { kind: 'open'; infoString: string }
+  | { kind: 'close' }
+  | { kind: 'inside' }
+  | { kind: 'outside' };
+
+export function stepMarkdownFence(
+  rawLine: string,
+  state: MarkdownFenceState
+): FenceTransitionResult {
+  const fenceMatch = rawLine.match(COMMONMARK_FENCE_RE);
+  if (fenceMatch) {
+    const marker = fenceMatch[1];
+    const rest = fenceMatch[2];
+    const ch = marker[0];
+    const len = marker.length;
+    if (!state.inFence) {
+      if (!(ch === '`' && rest.includes('`'))) {
+        state.inFence = true;
+        state.fenceChar = ch;
+        state.fenceLen = len;
+        return { kind: 'open', infoString: rest };
+      }
+    } else if (ch === state.fenceChar && len >= state.fenceLen && /^\s*$/.test(rest)) {
+      state.inFence = false;
+      state.fenceChar = '';
+      state.fenceLen = 0;
+      return { kind: 'close' };
+    }
+  }
+
+  return state.inFence ? { kind: 'inside' } : { kind: 'outside' };
+}
+
+export type FrontmatterScanMode = 'none' | 'skip' | 'collect';
+export type HtmlCommentScanMode = 'none' | 'strip' | 'pad';
+
+export interface ScannedMermaidBlock {
+  fenceStartLine: number;
+  code: string;
+}
+
+export interface MarkdownScanOptions {
+  frontmatterMode?: FrontmatterScanMode;
+  htmlCommentMode?: HtmlCommentScanMode;
+  onFrontmatter?: (_lines: string[]) => void;
+  onFenceBoundary?: () => void;
+  onMermaidBlock?: (_block: ScannedMermaidBlock) => void;
+}
+
+export function scanMarkdownDocument(
+  content: string,
+  onLine: (_line: string, _lineNumber: number) => void,
+  options: MarkdownScanOptions = {}
+): void {
+  const frontmatterMode = options.frontmatterMode ?? 'none';
+  const htmlCommentMode = options.htmlCommentMode ?? 'none';
+
+  const lines = content.split(/\r?\n/);
+  const fenceState: MarkdownFenceState = { inFence: false, fenceChar: '', fenceLen: 0 };
+
+  let inFrontmatter = false;
+  const frontmatterLines: string[] = [];
+  let inMermaidFence = false;
+  let mermaidFenceStartLine = 0;
+  let mermaidLines: string[] = [];
+  let inHtmlComment = false;
+
+  lines.forEach((rawLine, index) => {
+    const lineNum = index + 1;
+
+    if (frontmatterMode !== 'none') {
+      if (index === 0 && rawLine.trim() === '---') {
+        inFrontmatter = true;
+        return;
+      }
+      if (inFrontmatter) {
+        if (rawLine.trim() === '---' || rawLine.trim() === '...') {
+          inFrontmatter = false;
+          if (frontmatterMode === 'collect') {
+            options.onFrontmatter?.(frontmatterLines);
+          }
+        } else if (frontmatterMode === 'collect') {
+          frontmatterLines.push(rawLine);
+        }
+        return;
+      }
+    }
+
+    const fenceStep = stepMarkdownFence(rawLine, fenceState);
+    if (fenceStep.kind === 'open') {
+      if (options.onMermaidBlock) {
+        const infoLang = fenceStep.infoString.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+        if (infoLang === 'mermaid' || infoLang === 'mmd') {
+          inMermaidFence = true;
+          mermaidFenceStartLine = lineNum;
+          mermaidLines = [];
+        }
+      }
+      options.onFenceBoundary?.();
+      return;
+    }
+    if (fenceStep.kind === 'close') {
+      if (inMermaidFence) {
+        options.onMermaidBlock?.({
+          fenceStartLine: mermaidFenceStartLine,
+          code: mermaidLines.join('\n'),
+        });
+        inMermaidFence = false;
+        mermaidFenceStartLine = 0;
+        mermaidLines = [];
+      }
+      options.onFenceBoundary?.();
+      return;
+    }
+    if (fenceStep.kind === 'inside') {
+      if (inMermaidFence) {
+        mermaidLines.push(rawLine);
+      }
+      return;
+    }
+
+    let lineText = rawLine;
+    if (htmlCommentMode !== 'none') {
+      if (inHtmlComment) {
+        const endIdx = lineText.indexOf('-->');
+        if (endIdx === -1) {
+          return;
+        }
+        lineText =
+          htmlCommentMode === 'pad'
+            ? ' '.repeat(endIdx + 3) + lineText.slice(endIdx + 3)
+            : lineText.slice(endIdx + 3);
+        inHtmlComment = false;
+      }
+      while (lineText.includes('<!--')) {
+        const startIdx = lineText.indexOf('<!--');
+        const endIdx = lineText.indexOf('-->', startIdx + 4);
+        if (endIdx === -1) {
+          lineText = lineText.slice(0, startIdx);
+          inHtmlComment = true;
+          break;
+        }
+        lineText =
+          htmlCommentMode === 'pad'
+            ? lineText.slice(0, startIdx) +
+              ' '.repeat(endIdx + 3 - startIdx) +
+              lineText.slice(endIdx + 3)
+            : lineText.slice(0, startIdx) + lineText.slice(endIdx + 3);
+      }
+    }
+
+    onLine(lineText, lineNum);
+  });
+
+  if (inMermaidFence) {
+    options.onMermaidBlock?.({
+      fenceStartLine: mermaidFenceStartLine,
+      code: mermaidLines.join('\n'),
+    });
+  }
+}
+
+export function transformNonFencedMarkdownLines(
+  content: string,
+  transformLine: (_line: string, _lineNumber: number) => string
+): string {
+  const chunks = content.match(/[^\r\n]*(?:\r?\n|$)/g) || [];
+  const fenceState: MarkdownFenceState = { inFence: false, fenceChar: '', fenceLen: 0 };
+
+  return chunks
+    .map((chunk, idx) => {
+      if (!chunk) {
+        return '';
+      }
+      const lineMatch = chunk.match(/^([^\r\n]*)(\r?\n?)$/);
+      const line = lineMatch ? lineMatch[1] : chunk;
+      const eol = lineMatch ? lineMatch[2] : '';
+
+      if (stepMarkdownFence(line, fenceState).kind !== 'outside') {
+        return chunk;
+      }
+
+      return transformLine(line, idx + 1) + eol;
+    })
+    .join('');
+}
+
 export function extractMarkdownHeadings(content: string): MarkdownHeading[] {
   const headings: MarkdownHeading[] = [];
   const vpCounts = new Map<string, number>();
   const ghCounts = new Map<string, number>();
 
-  const lines = content.split(/\r?\n/);
-  let inFrontmatter = false;
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
-  let inHtmlComment = false;
-
-  lines.forEach((rawLine, index) => {
-    if (index === 0 && rawLine.trim() === '---') {
-      inFrontmatter = true;
-      return;
-    }
-    if (inFrontmatter) {
-      if (rawLine.trim() === '---' || rawLine.trim() === '...') {
-        inFrontmatter = false;
-      }
-      return;
-    }
-
-    const fenceMatch = rawLine.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      const rest = fenceMatch[2];
-      const ch = marker[0];
-      const len = marker.length;
-      if (!inFence) {
-        if (!(ch === '`' && rest.includes('`'))) {
-          inFence = true;
-          fenceChar = ch;
-          fenceLen = len;
-          return;
-        }
-      } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
-        inFence = false;
-        fenceChar = '';
-        fenceLen = 0;
+  scanMarkdownDocument(
+    content,
+    (line, lineNum) => {
+      const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
+      if (!headingMatch) {
         return;
       }
-    }
 
-    if (inFence) {
-      return;
-    }
+      const level = headingMatch[1].length;
+      const headingRaw = headingMatch[2].trim();
+      const customIdMatch = headingRaw.match(/\s*\{#([^}]+)\}\s*$/);
 
-    let line = rawLine;
-    if (inHtmlComment) {
-      const endIdx = line.indexOf('-->');
-      if (endIdx === -1) {
-        return;
+      let baseVp: string;
+      let baseGh: string;
+      if (customIdMatch) {
+        baseVp = customIdMatch[1];
+        baseGh = customIdMatch[1];
+      } else {
+        const plain = stripInlineMarkdown(headingRaw);
+        baseVp = vitepressSlugify(plain);
+        baseGh = githubSlugify(plain);
       }
-      line = line.slice(endIdx + 3);
-      inHtmlComment = false;
+
+      const vpSeen = vpCounts.get(baseVp) || 0;
+      vpCounts.set(baseVp, vpSeen + 1);
+      const vitepressSlug = vpSeen === 0 ? baseVp : `${baseVp}-${vpSeen}`;
+
+      const ghSeen = ghCounts.get(baseGh) || 0;
+      ghCounts.set(baseGh, ghSeen + 1);
+      const githubSlug = ghSeen === 0 ? baseGh : `${baseGh}-${ghSeen}`;
+
+      headings.push({
+        line: lineNum,
+        level,
+        rawText: headingRaw,
+        githubSlug,
+        vitepressSlug,
+      });
+    },
+    {
+      frontmatterMode: 'skip',
+      htmlCommentMode: 'strip',
     }
-    while (line.includes('<!--')) {
-      const startIdx = line.indexOf('<!--');
-      const endIdx = line.indexOf('-->', startIdx + 4);
-      if (endIdx === -1) {
-        line = line.slice(0, startIdx);
-        inHtmlComment = true;
-        break;
-      }
-      line = line.slice(0, startIdx) + line.slice(endIdx + 3);
-    }
-
-    const headingMatch = line.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
-    if (!headingMatch) {
-      return;
-    }
-
-    const level = headingMatch[1].length;
-    const headingRaw = headingMatch[2].trim();
-    const customIdMatch = headingRaw.match(/\s*\{#([^}]+)\}\s*$/);
-
-    let baseVp: string;
-    let baseGh: string;
-    if (customIdMatch) {
-      baseVp = customIdMatch[1];
-      baseGh = customIdMatch[1];
-    } else {
-      const plain = stripInlineMarkdown(headingRaw);
-      baseVp = vitepressSlugify(plain);
-      baseGh = githubSlugify(plain);
-    }
-
-    const vpSeen = vpCounts.get(baseVp) || 0;
-    vpCounts.set(baseVp, vpSeen + 1);
-    const vitepressSlug = vpSeen === 0 ? baseVp : `${baseVp}-${vpSeen}`;
-
-    const ghSeen = ghCounts.get(baseGh) || 0;
-    ghCounts.set(baseGh, ghSeen + 1);
-    const githubSlug = ghSeen === 0 ? baseGh : `${baseGh}-${ghSeen}`;
-
-    headings.push({
-      line: index + 1,
-      level,
-      rawText: headingRaw,
-      githubSlug,
-      vitepressSlug,
-    });
-  });
+  );
 
   return headings;
 }
@@ -987,18 +1127,28 @@ function resolvePortalRouteToSourceFile(
   return null;
 }
 
-function validateStandardOrPortalLinkTarget(
+export type QueryTargetMode = 'skip' | 'error';
+export type PortalRouteMode = 'none' | 'always' | 'root-fallback';
+export type IntraFileAnchorMode = 'direct' | 'markdown-only';
+
+export interface LinkTargetValidationOptions {
+  queryTargetMode: QueryTargetMode;
+  portalRouteMode: PortalRouteMode;
+  intraFileAnchorMode: IntraFileAnchorMode;
+}
+
+export function validateLinkTarget(
   rawTarget: string,
   sourceAbsPath: string,
   relSource: string,
   lineNum: number,
   linkText: string,
-  isPortalRoute: boolean,
+  options: LinkTargetValidationOptions,
   errors: LinkError[],
-  rootDir: string,
-  lineCountCache: Map<string, number>,
-  headingSlugCache: Map<string, Set<string>>
-) {
+  rootDir: string = ROOT_DIR,
+  lineCountCache: Map<string, number> = new Map(),
+  headingSlugCache: Map<string, Set<string>> = new Map()
+): void {
   const trimmed = rawTarget.trim();
   if (!trimmed) {
     errors.push({
@@ -1017,9 +1167,10 @@ function validateStandardOrPortalLinkTarget(
 
   if (trimmed.startsWith('#')) {
     const fragment = trimmed.slice(1);
+    const requiresMdSource = options.intraFileAnchorMode === 'markdown-only';
     if (
       !fragment ||
-      !sourceAbsPath.endsWith('.md') ||
+      (requiresMdSource && !sourceAbsPath.endsWith('.md')) ||
       !validateFragmentOnFile(sourceAbsPath, fragment, lineCountCache, headingSlugCache)
     ) {
       errors.push({
@@ -1033,6 +1184,7 @@ function validateStandardOrPortalLinkTarget(
     return;
   }
 
+  // Repository GitHub URL (blob / tree) — validated strictly offline against local repo
   const repoMatch = trimmed.match(REPO_GITHUB_URL_RE);
   if (repoMatch) {
     const refKind = repoMatch[1];
@@ -1092,6 +1244,7 @@ function validateStandardOrPortalLinkTarget(
     return;
   }
 
+  // Skip external third-party URLs (strictly offline)
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return;
   }
@@ -1102,76 +1255,80 @@ function validateStandardOrPortalLinkTarget(
   const cleanTarget = safeDecodeURIComponent(beforeHash.split('?')[0]);
 
   if (!cleanTarget) {
-    errors.push({
-      sourceFile: relSource,
-      line: lineNum,
-      linkText,
-      targetPath: trimmed,
-      resolvedPath: relSource,
-    });
-    return;
-  }
-
-  if (isPortalRoute) {
-    const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);
-    if (!resolvedPortalFile) {
+    if (options.queryTargetMode === 'error') {
       errors.push({
         sourceFile: relSource,
         line: lineNum,
         linkText,
         targetPath: trimmed,
-        resolvedPath: `docs-portal/${cleanTarget.replace(/^\/+/, '')}`,
+        resolvedPath: relSource,
       });
+    }
+    return;
+  }
+
+  if (options.portalRouteMode !== 'always') {
+    const fileDir = path.dirname(sourceAbsPath);
+    const resolvedPath = cleanTarget.startsWith('/')
+      ? path.resolve(rootDir, cleanTarget.slice(1))
+      : path.resolve(fileDir, cleanTarget);
+    const relResolved = path.relative(rootDir, resolvedPath).replace(/\\/g, '/');
+
+    if (fs.existsSync(resolvedPath)) {
+      if (fragment) {
+        const stat = fs.statSync(resolvedPath);
+        if (
+          !stat.isFile() ||
+          !validateFragmentOnFile(resolvedPath, fragment, lineCountCache, headingSlugCache)
+        ) {
+          errors.push({
+            sourceFile: relSource,
+            line: lineNum,
+            linkText,
+            targetPath: trimmed,
+            resolvedPath: `${relResolved}#${fragment}`,
+          });
+        }
+      }
       return;
     }
 
-    if (
-      fragment &&
-      !validateFragmentOnFile(resolvedPortalFile, fragment, lineCountCache, headingSlugCache)
-    ) {
-      const relPortalFile = path.relative(rootDir, resolvedPortalFile).replace(/\\/g, '/');
+    if (!(options.portalRouteMode === 'root-fallback' && cleanTarget.startsWith('/'))) {
       errors.push({
         sourceFile: relSource,
         line: lineNum,
         linkText,
         targetPath: trimmed,
-        resolvedPath: `${relPortalFile}#${fragment}`,
+        resolvedPath: relResolved,
       });
+      return;
     }
-    return;
   }
 
-  const fileDir = path.dirname(sourceAbsPath);
-  const resolvedPath = cleanTarget.startsWith('/')
-    ? path.resolve(rootDir, cleanTarget.slice(1))
-    : path.resolve(fileDir, cleanTarget);
-  const relResolved = path.relative(rootDir, resolvedPath).replace(/\\/g, '/');
-
-  if (!fs.existsSync(resolvedPath)) {
+  const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);
+  if (!resolvedPortalFile) {
     errors.push({
       sourceFile: relSource,
       line: lineNum,
       linkText,
       targetPath: trimmed,
-      resolvedPath: relResolved,
+      resolvedPath: `docs-portal/${cleanTarget.replace(/^\/+/, '')}`,
     });
     return;
   }
 
-  if (fragment) {
-    const stat = fs.statSync(resolvedPath);
-    if (
-      !stat.isFile() ||
-      !validateFragmentOnFile(resolvedPath, fragment, lineCountCache, headingSlugCache)
-    ) {
-      errors.push({
-        sourceFile: relSource,
-        line: lineNum,
-        linkText,
-        targetPath: trimmed,
-        resolvedPath: `${relResolved}#${fragment}`,
-      });
-    }
+  if (
+    fragment &&
+    !validateFragmentOnFile(resolvedPortalFile, fragment, lineCountCache, headingSlugCache)
+  ) {
+    const relPortalFile = path.relative(rootDir, resolvedPortalFile).replace(/\\/g, '/');
+    errors.push({
+      sourceFile: relSource,
+      line: lineNum,
+      linkText,
+      targetPath: trimmed,
+      resolvedPath: `${relPortalFile}#${fragment}`,
+    });
   }
 }
 
@@ -1192,6 +1349,11 @@ function checkFrontmatterLinks(
   const lineCounter = new LineCounter();
   const doc = parseDocument(fmContent, { lineCounter });
   const isPortalDoc = relSource === 'docs-portal' || relSource.startsWith('docs-portal/');
+  const frontmatterOptions: LinkTargetValidationOptions = {
+    queryTargetMode: 'error',
+    portalRouteMode: isPortalDoc ? 'always' : 'none',
+    intraFileAnchorMode: 'markdown-only',
+  };
 
   function visitYamlNode(node: unknown) {
     if (isMap(node)) {
@@ -1230,13 +1392,13 @@ function checkFrontmatterLinks(
               ? String(pair.value.value)
               : '';
 
-          validateStandardOrPortalLinkTarget(
+          validateLinkTarget(
             rawVal,
             filePath,
             relSource,
             fileLine,
             contextLabel,
-            isPortalDoc,
+            frontmatterOptions,
             errors,
             rootDir,
             lineCountCache,
@@ -1279,6 +1441,11 @@ export function checkVitePressConfigLinks(
   }
 
   const sf = ts.createSourceFile(configAbs, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const configOptions: LinkTargetValidationOptions = {
+    queryTargetMode: 'error',
+    portalRouteMode: 'always',
+    intraFileAnchorMode: 'markdown-only',
+  };
 
   function getPropertyKeyName(nameNode: ts.PropertyName): string | null {
     if (ts.isIdentifier(nameNode) || ts.isStringLiteral(nameNode) || ts.isNoSubstitutionTemplateLiteral(nameNode)) {
@@ -1302,13 +1469,13 @@ export function checkVitePressConfigLinks(
         if (ts.isPropertyAssignment(prop) && getPropertyKeyName(prop.name) === 'link') {
           const lineNum = sf.getLineAndCharacterOfPosition(prop.initializer.getStart(sf)).line + 1;
           if (ts.isStringLiteral(prop.initializer) || ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
-            validateStandardOrPortalLinkTarget(
+            validateLinkTarget(
               prop.initializer.text,
               configAbs,
               configRel,
               lineNum,
               itemLabel,
-              true,
+              configOptions,
               errors,
               rootDir,
               lineCountCache,
@@ -1422,31 +1589,132 @@ export function checkLinksInFile(
     return;
   }
 
-  const lines = content.split(/\r?\n/);
   const fileDir = path.dirname(filePath);
   const isPortalDoc = relSource === 'docs-portal' || relSource.startsWith('docs-portal/');
+  const bodyLinkOptions: LinkTargetValidationOptions = {
+    queryTargetMode: 'skip',
+    portalRouteMode: isPortalDoc ? 'root-fallback' : 'none',
+    intraFileAnchorMode: 'direct',
+  };
 
-  let inFrontmatter = false;
-  const frontmatterLines: string[] = [];
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
-  let inMermaidFence = false;
-  let mermaidFenceStartLine = 0;
-  let mermaidLines: string[] = [];
-  let inHtmlComment = false;
   let paragraphCandidates: FileCandidate[] = [];
 
-  lines.forEach((rawLine, index) => {
-    const lineNum = index + 1;
+  scanMarkdownDocument(
+    content,
+    (lineText, lineNum) => {
+      if (!lineText.trim() || /^\s{0,3}#{1,6}\s+/.test(lineText)) {
+        paragraphCandidates = [];
+      }
 
-    if (index === 0 && rawLine.trim() === '---') {
-      inFrontmatter = true;
-      return;
-    }
-    if (inFrontmatter) {
-      if (rawLine.trim() === '---' || rawLine.trim() === '...') {
-        inFrontmatter = false;
+      const { links, codeSpans } = scanLinksAndCodeInLine(lineText, lineNum);
+
+      for (const link of links) {
+        validateLinkTarget(
+          link.rawTarget,
+          filePath,
+          relSource,
+          lineNum,
+          link.linkText,
+          bodyLinkOptions,
+          errors,
+          rootDir,
+          lineCountCache,
+          headingSlugCache
+        );
+      }
+
+      // Collect file-like references on this line for parenthetical (L<start>-L<end>) validation
+      const lineCandidates: FileCandidate[] = [];
+      for (const span of codeSpans) {
+        const trimmed = span.text.trim();
+        if (FILE_TOKEN_RE.test(trimmed)) {
+          lineCandidates.push({ rawPath: trimmed, position: span.startIndex });
+        }
+      }
+      for (const link of links) {
+        const extracted = extractFilePathFromLinkTarget(link.rawTarget, fileDir, rootDir);
+        if (extracted) {
+          lineCandidates.push({
+            rawPath: path.relative(rootDir, extracted).replace(/\\/g, '/'),
+            position: link.startIndex,
+          });
+        }
+      }
+      lineCandidates.sort((a, b) => a.position - b.position);
+
+      // Mask out inline code spans and markdown links before scanning prose for (L<start>-L<end>)
+      const chars = lineText.split('');
+      for (const span of codeSpans) {
+        for (let c = span.startIndex; c < span.endIndex && c < chars.length; c++) {
+          chars[c] = ' ';
+        }
+      }
+      for (const link of links) {
+        for (let c = link.startIndex; c < link.endIndex && c < chars.length; c++) {
+          chars[c] = ' ';
+        }
+      }
+      const proseOnly = chars.join('');
+
+      PAREN_LINE_CITATION_RE.lastIndex = 0;
+      let parenMatch: RegExpExecArray | null;
+      while ((parenMatch = PAREN_LINE_CITATION_RE.exec(proseOnly)) !== null) {
+        const citationText = parenMatch[0];
+        const startLine = parseInt(parenMatch[1], 10);
+        const endLine =
+          parenMatch[2] !== undefined ? parseInt(parenMatch[2], 10) : startLine;
+        const matchPos = parenMatch.index;
+
+        const precedingOnLine = lineCandidates.filter(c => c.position < matchPos);
+        const chosenCandidate =
+          precedingOnLine.length > 0
+            ? precedingOnLine[precedingOnLine.length - 1]
+            : paragraphCandidates.length > 0
+              ? paragraphCandidates[paragraphCandidates.length - 1]
+              : null;
+
+        if (!chosenCandidate) {
+          continue;
+        }
+
+        const resolvedTarget = resolveProseFileToken(
+          chosenCandidate.rawPath,
+          fileDir,
+          rootDir
+        );
+        const relResolved = path.relative(rootDir, resolvedTarget).replace(/\\/g, '/');
+
+        if (!fs.existsSync(resolvedTarget) || !fs.statSync(resolvedTarget).isFile()) {
+          errors.push({
+            sourceFile: relSource,
+            line: lineNum,
+            linkText: chosenCandidate.rawPath,
+            targetPath: `${chosenCandidate.rawPath} ${citationText}`,
+            resolvedPath: `${relResolved} ${citationText}`,
+          });
+          continue;
+        }
+
+        const totalLines = getFileLineCount(resolvedTarget, lineCountCache);
+        if (!isValidLineRange(startLine, endLine, totalLines)) {
+          errors.push({
+            sourceFile: relSource,
+            line: lineNum,
+            linkText: chosenCandidate.rawPath,
+            targetPath: `${chosenCandidate.rawPath} ${citationText}`,
+            resolvedPath: `${relResolved} ${citationText} (file has ${totalLines} lines)`,
+          });
+        }
+      }
+
+      if (lineCandidates.length > 0) {
+        paragraphCandidates.push(...lineCandidates);
+      }
+    },
+    {
+      frontmatterMode: 'collect',
+      htmlCommentMode: 'pad',
+      onFrontmatter: frontmatterLines => {
         checkFrontmatterLinks(
           frontmatterLines,
           filePath,
@@ -1456,345 +1724,19 @@ export function checkLinksInFile(
           lineCountCache,
           headingSlugCache
         );
-      } else {
-        frontmatterLines.push(rawLine);
-      }
-      return;
-    }
-
-    const fenceMatch = rawLine.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      const rest = fenceMatch[2];
-      const ch = marker[0];
-      const len = marker.length;
-      if (!inFence) {
-        if (!(ch === '`' && rest.includes('`'))) {
-          inFence = true;
-          fenceChar = ch;
-          fenceLen = len;
-          const infoLang = rest.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-          if (infoLang === 'mermaid' || infoLang === 'mmd') {
-            inMermaidFence = true;
-            mermaidFenceStartLine = lineNum;
-            mermaidLines = [];
-          }
-          paragraphCandidates = [];
-          return;
-        }
-      } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
-        if (inMermaidFence) {
-          mermaidBlocks.push({
-            sourceFile: relSource,
-            fenceStartLine: mermaidFenceStartLine,
-            code: mermaidLines.join('\n'),
-          });
-          inMermaidFence = false;
-          mermaidFenceStartLine = 0;
-          mermaidLines = [];
-        }
-        inFence = false;
-        fenceChar = '';
-        fenceLen = 0;
+      },
+      onFenceBoundary: () => {
         paragraphCandidates = [];
-        return;
-      }
-    }
-
-    if (inFence) {
-      if (inMermaidFence) {
-        mermaidLines.push(rawLine);
-      }
-      return;
-    }
-
-    let lineText = rawLine;
-    if (inHtmlComment) {
-      const endIdx = lineText.indexOf('-->');
-      if (endIdx === -1) {
-        return;
-      }
-      lineText = ' '.repeat(endIdx + 3) + lineText.slice(endIdx + 3);
-      inHtmlComment = false;
-    }
-    while (lineText.includes('<!--')) {
-      const startIdx = lineText.indexOf('<!--');
-      const endIdx = lineText.indexOf('-->', startIdx + 4);
-      if (endIdx === -1) {
-        lineText = lineText.slice(0, startIdx);
-        inHtmlComment = true;
-        break;
-      }
-      lineText =
-        lineText.slice(0, startIdx) +
-        ' '.repeat(endIdx + 3 - startIdx) +
-        lineText.slice(endIdx + 3);
-    }
-
-    if (!lineText.trim() || /^\s{0,3}#{1,6}\s+/.test(lineText)) {
-      paragraphCandidates = [];
-    }
-
-    const { links, codeSpans } = scanLinksAndCodeInLine(lineText, lineNum);
-
-    for (const link of links) {
-      const rawTarget = link.rawTarget;
-      if (!rawTarget) {
-        errors.push({
+      },
+      onMermaidBlock: ({ fenceStartLine, code }) => {
+        mermaidBlocks.push({
           sourceFile: relSource,
-          line: lineNum,
-          linkText: link.linkText,
-          targetPath: rawTarget,
-          resolvedPath: relSource,
+          fenceStartLine,
+          code,
         });
-        continue;
-      }
-
-      if (rawTarget.startsWith('mailto:') || rawTarget.startsWith('tel:')) {
-        continue;
-      }
-
-      // Intra-file anchor (#anchor or #L<start>-L<end>)
-      if (rawTarget.startsWith('#')) {
-        const fragment = rawTarget.slice(1);
-        if (
-          !fragment ||
-          !validateFragmentOnFile(filePath, fragment, lineCountCache, headingSlugCache)
-        ) {
-          errors.push({
-            sourceFile: relSource,
-            line: lineNum,
-            linkText: link.linkText,
-            targetPath: rawTarget,
-            resolvedPath: `${relSource}${rawTarget}`,
-          });
-        }
-        continue;
-      }
-
-      // Repository GitHub URL (blob / tree) — validated strictly offline against local repo
-      const repoMatch = rawTarget.match(REPO_GITHUB_URL_RE);
-      if (repoMatch) {
-        const refKind = repoMatch[1];
-        const repoRel = safeDecodeURIComponent(repoMatch[2]).replace(/\/+$/, '');
-        const fragment = repoMatch[3] || '';
-        const resolvedRepoPath = repoRel ? path.resolve(rootDir, repoRel) : rootDir;
-        const relResolved = path.relative(rootDir, resolvedRepoPath).replace(/\\/g, '/');
-
-        if (!fs.existsSync(resolvedRepoPath)) {
-          errors.push({
-            sourceFile: relSource,
-            line: lineNum,
-            linkText: link.linkText,
-            targetPath: rawTarget,
-            resolvedPath: relResolved,
-          });
-          continue;
-        }
-
-        const stat = fs.statSync(resolvedRepoPath);
-        if (refKind === 'tree') {
-          if (!stat.isDirectory() || LINE_FRAGMENT_RE.test(fragment)) {
-            errors.push({
-              sourceFile: relSource,
-              line: lineNum,
-              linkText: link.linkText,
-              targetPath: rawTarget,
-              resolvedPath: `${relResolved}${fragment ? '#' + fragment : ''}`,
-            });
-          }
-          continue;
-        }
-
-        if (!stat.isFile()) {
-          errors.push({
-            sourceFile: relSource,
-            line: lineNum,
-            linkText: link.linkText,
-            targetPath: rawTarget,
-            resolvedPath: relResolved,
-          });
-          continue;
-        }
-
-        if (
-          fragment &&
-          !validateFragmentOnFile(
-            resolvedRepoPath,
-            fragment,
-            lineCountCache,
-            headingSlugCache
-          )
-        ) {
-          errors.push({
-            sourceFile: relSource,
-            line: lineNum,
-            linkText: link.linkText,
-            targetPath: rawTarget,
-            resolvedPath: `${relResolved}#${fragment}`,
-          });
-        }
-        continue;
-      }
-
-      // Skip external third-party URLs (strictly offline)
-      if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://')) {
-        continue;
-      }
-
-      const hashIdx = rawTarget.indexOf('#');
-      const beforeHash = hashIdx === -1 ? rawTarget : rawTarget.slice(0, hashIdx);
-      const fragment = hashIdx === -1 ? '' : rawTarget.slice(hashIdx + 1);
-      const cleanTarget = safeDecodeURIComponent(beforeHash.split('?')[0]);
-
-      if (!cleanTarget) {
-        continue;
-      }
-
-      const resolvedPath = cleanTarget.startsWith('/')
-        ? path.resolve(rootDir, cleanTarget.slice(1))
-        : path.resolve(fileDir, cleanTarget);
-      const relResolved = path.relative(rootDir, resolvedPath).replace(/\\/g, '/');
-
-      if (!fs.existsSync(resolvedPath)) {
-        if (isPortalDoc && cleanTarget.startsWith('/')) {
-          validateStandardOrPortalLinkTarget(
-            rawTarget,
-            filePath,
-            relSource,
-            lineNum,
-            link.linkText,
-            true,
-            errors,
-            rootDir,
-            lineCountCache,
-            headingSlugCache
-          );
-          continue;
-        }
-        errors.push({
-          sourceFile: relSource,
-          line: lineNum,
-          linkText: link.linkText,
-          targetPath: rawTarget,
-          resolvedPath: relResolved,
-        });
-        continue;
-      }
-
-      if (fragment) {
-        const stat = fs.statSync(resolvedPath);
-        if (
-          !stat.isFile() ||
-          !validateFragmentOnFile(resolvedPath, fragment, lineCountCache, headingSlugCache)
-        ) {
-          errors.push({
-            sourceFile: relSource,
-            line: lineNum,
-            linkText: link.linkText,
-            targetPath: rawTarget,
-            resolvedPath: `${relResolved}#${fragment}`,
-          });
-        }
-      }
+      },
     }
-
-    // Collect file-like references on this line for parenthetical (L<start>-L<end>) validation
-    const lineCandidates: FileCandidate[] = [];
-    for (const span of codeSpans) {
-      const trimmed = span.text.trim();
-      if (FILE_TOKEN_RE.test(trimmed)) {
-        lineCandidates.push({ rawPath: trimmed, position: span.startIndex });
-      }
-    }
-    for (const link of links) {
-      const extracted = extractFilePathFromLinkTarget(link.rawTarget, fileDir, rootDir);
-      if (extracted) {
-        lineCandidates.push({
-          rawPath: path.relative(rootDir, extracted).replace(/\\/g, '/'),
-          position: link.startIndex,
-        });
-      }
-    }
-    lineCandidates.sort((a, b) => a.position - b.position);
-
-    // Mask out inline code spans and markdown links before scanning prose for (L<start>-L<end>)
-    const chars = lineText.split('');
-    for (const span of codeSpans) {
-      for (let c = span.startIndex; c < span.endIndex && c < chars.length; c++) {
-        chars[c] = ' ';
-      }
-    }
-    for (const link of links) {
-      for (let c = link.startIndex; c < link.endIndex && c < chars.length; c++) {
-        chars[c] = ' ';
-      }
-    }
-    const proseOnly = chars.join('');
-
-    PAREN_LINE_CITATION_RE.lastIndex = 0;
-    let parenMatch: RegExpExecArray | null;
-    while ((parenMatch = PAREN_LINE_CITATION_RE.exec(proseOnly)) !== null) {
-      const citationText = parenMatch[0];
-      const startLine = parseInt(parenMatch[1], 10);
-      const endLine =
-        parenMatch[2] !== undefined ? parseInt(parenMatch[2], 10) : startLine;
-      const matchPos = parenMatch.index;
-
-      const precedingOnLine = lineCandidates.filter(c => c.position < matchPos);
-      const chosenCandidate =
-        precedingOnLine.length > 0
-          ? precedingOnLine[precedingOnLine.length - 1]
-          : paragraphCandidates.length > 0
-            ? paragraphCandidates[paragraphCandidates.length - 1]
-            : null;
-
-      if (!chosenCandidate) {
-        continue;
-      }
-
-      const resolvedTarget = resolveProseFileToken(
-        chosenCandidate.rawPath,
-        fileDir,
-        rootDir
-      );
-      const relResolved = path.relative(rootDir, resolvedTarget).replace(/\\/g, '/');
-
-      if (!fs.existsSync(resolvedTarget) || !fs.statSync(resolvedTarget).isFile()) {
-        errors.push({
-          sourceFile: relSource,
-          line: lineNum,
-          linkText: chosenCandidate.rawPath,
-          targetPath: `${chosenCandidate.rawPath} ${citationText}`,
-          resolvedPath: `${relResolved} ${citationText}`,
-        });
-        continue;
-      }
-
-      const totalLines = getFileLineCount(resolvedTarget, lineCountCache);
-      if (!isValidLineRange(startLine, endLine, totalLines)) {
-        errors.push({
-          sourceFile: relSource,
-          line: lineNum,
-          linkText: chosenCandidate.rawPath,
-          targetPath: `${chosenCandidate.rawPath} ${citationText}`,
-          resolvedPath: `${relResolved} ${citationText} (file has ${totalLines} lines)`,
-        });
-      }
-    }
-
-    if (lineCandidates.length > 0) {
-      paragraphCandidates.push(...lineCandidates);
-    }
-  });
-
-  if (inMermaidFence) {
-    mermaidBlocks.push({
-      sourceFile: relSource,
-      fenceStartLine: mermaidFenceStartLine,
-      code: mermaidLines.join('\n'),
-    });
-  }
+  );
 }
 
 export async function checkDocLinks(
