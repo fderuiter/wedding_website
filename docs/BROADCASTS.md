@@ -32,7 +32,7 @@ The broadcast domain (`src/features/broadcast/`, public barrel [src/features/bro
 
 ## Provider Adapters (`MultiChannelMessagingProvider`)
 
-`MultiChannelMessagingProvider` ([src/features/broadcast/providers/index.ts](../src/features/broadcast/providers/index.ts#L749-L1054)) resolves provider credentials from `AppConfig` (stored in PostgreSQL and masked in `/api/admin/settings` via `toAdminAppConfig` in [src/lib/config.ts](../src/lib/config.ts#L588-L646)):
+`MultiChannelMessagingProvider` ([src/features/broadcast/providers/index.ts](../src/features/broadcast/providers/index.ts#L749-L1054)) resolves provider credentials from `AppConfig` (stored in PostgreSQL and masked in `/api/admin/settings` via `toAdminAppConfig` in [src/lib/config.ts](../src/lib/config.ts#L529-L587)):
 
 | Channel | `AppConfig` Provider Value | Implementation | Network Behavior |
 | --- | --- | --- | --- |

@@ -14,6 +14,8 @@
 /.next-export/
 /.turbo/
 /out/
+/.api-backup-export
+next-env.d.ts
 
 # Production
 /build

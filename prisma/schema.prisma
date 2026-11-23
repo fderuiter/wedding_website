@@ -382,3 +382,14 @@ model BroadcastRecipient {
   @@index([broadcastId, status])
 }
 
+model AuthLockout {
+  keyHash   String   @id
+  count     Int      @default(1)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
+

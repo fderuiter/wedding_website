@@ -35,8 +35,16 @@ async function getSecret(): Promise<string> {
 
 interface GuestTokenPayload {
   guest: boolean;
+  jti?: string;
   iat?: number;
   exp?: number;
+}
+
+function createPerLoginTokenId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export async function signGuestToken(payload: GuestTokenPayload): Promise<string> {
@@ -44,7 +52,11 @@ export async function signGuestToken(payload: GuestTokenPayload): Promise<string
   if (!secret) {
     throw new Error('Guest auth secret is not configured');
   }
-  return signCompactToken(payload, secret);
+  const normalizedPayload: GuestTokenPayload = {
+    ...payload,
+    jti: payload.jti ?? createPerLoginTokenId(),
+  };
+  return signCompactToken(normalizedPayload, secret);
 }
 
 export async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {

@@ -164,4 +164,47 @@ describe('Sample Data Generator & Purge', () => {
     await prisma.invitationCode.delete({ where: { id: realGuest.id } });
     await prisma.media.delete({ where: { id: realMedia.id } });
   });
+
+  test('generateSampleData seeds photos, sub-events, contributors, and media from shared builder and purges cleanly', async () => {
+    const result = await generateSampleData({
+      archetype: 'classic',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.createdCounts.photos).toBe(ARCHETYPE_PRESETS.classic.photos.length);
+    expect(result.createdCounts.subEvents).toBe(
+      ARCHETYPE_PRESETS.classic.subEvents.length
+    );
+
+    const status = await getSampleDataStatus();
+    expect(status.hasSampleData).toBe(true);
+    expect(status.counts.photos).toBe(ARCHETYPE_PRESETS.classic.photos.length);
+    expect(status.counts.subEvents).toBe(ARCHETYPE_PRESETS.classic.subEvents.length);
+
+    const contributors = await prisma.contributor.findMany({
+      where: { registryItem: { isSample: true } },
+    });
+    expect(contributors.length).toBeGreaterThan(0);
+
+    const seededReception = await prisma.subEvent.findUnique({
+      where: { id: 'sample-subevent-classic-reception' },
+      include: { rsvps: true },
+    });
+    expect(seededReception).not.toBeNull();
+    expect(Array.isArray(seededReception?.mealOptions)).toBe(true);
+    expect((seededReception?.mealOptions as unknown[]).length).toBeGreaterThan(0);
+    expect(seededReception?.rsvps.length).toBeGreaterThan(0);
+
+    await purgeSampleData();
+
+    const afterPurge = await getSampleDataStatus();
+    expect(afterPurge.hasSampleData).toBe(false);
+    expect(afterPurge.counts.photos).toBe(0);
+    expect(afterPurge.counts.subEvents).toBe(0);
+
+    const remainingSampleMedia = await prisma.media.count({
+      where: { isSample: true },
+    });
+    expect(remainingSampleMedia).toBe(0);
+  });
 });
