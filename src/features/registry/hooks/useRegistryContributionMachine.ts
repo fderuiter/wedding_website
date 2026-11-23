@@ -78,6 +78,7 @@ export interface UseRegistryContributionMachineReturn {
   isSubmitting: boolean;
   isSuccess: boolean;
   isSubmitDisabled: boolean;
+  invitationCodeInputRef: React.RefObject<HTMLInputElement | null>;
 
   // Form values
   contributorName: string;
@@ -198,6 +199,8 @@ export function useRegistryContributionMachine({
 
   // AbortController for cancelling in-flight validation requests
   const abortControllerRef = useRef<AbortController | null>(null);
+  const invitationCodeInputRef = useRef<HTMLInputElement | null>(null);
+  const [codeFailureCount, setCodeFailureCount] = useState(0);
 
   const currentSessionKey =
     isSessionVerified && sessionCode ? `${sessionCode}:${sessionGuestName || ''}` : null;
@@ -403,6 +406,7 @@ export function useRegistryContributionMachine({
       const code = codeToVerify.trim().toUpperCase();
       if (!code) {
         setCodeError('Please enter an invitation code.');
+        setCodeFailureCount((count) => count + 1);
         return false;
       }
 
@@ -426,6 +430,7 @@ export function useRegistryContributionMachine({
         }
         setPhase('idle');
         setCodeError('Invalid invitation code.');
+        setCodeFailureCount((count) => count + 1);
         return false;
       }
 
@@ -468,6 +473,7 @@ export function useRegistryContributionMachine({
         } else {
           setPhase('idle');
           setCodeError('Invalid invitation code.');
+          setCodeFailureCount((count) => count + 1);
           return false;
         }
       } catch (err: unknown) {
@@ -477,6 +483,7 @@ export function useRegistryContributionMachine({
         setPhase('idle');
         const msg = err instanceof Error ? err.message : 'Invalid invitation code.';
         setCodeError(msg || 'Invalid invitation code.');
+        setCodeFailureCount((count) => count + 1);
         return false;
       } finally {
         if (abortControllerRef.current === controller) {
@@ -873,6 +880,13 @@ export function useRegistryContributionMachine({
     ]
   );
 
+  useEffect(() => {
+    if (codeFailureCount === 0 || phase !== 'idle' || !codeError) {
+      return;
+    }
+    invitationCodeInputRef.current?.focus();
+  }, [codeFailureCount, phase, codeError]);
+
   // Deterministic flags
   const isValidatingCode = phase === 'validating_code';
   const isCodeLocked = phase === 'code_locked';
@@ -886,6 +900,7 @@ export function useRegistryContributionMachine({
     isSubmitting,
     isSuccess,
     isSubmitDisabled,
+    invitationCodeInputRef,
 
     contributorName,
     email,

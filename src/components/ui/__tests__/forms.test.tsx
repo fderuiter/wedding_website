@@ -446,3 +446,129 @@ test('Form primitives report zero jest-axe accessibility violations', async () =
   expect(results).toHaveNoViolations();
 });
 
+test('FormGroup synchronizes required state across Label, Input, Textarea, Select, and Checkbox with aria-hidden visual asterisk', async () => {
+  const { container } = render(
+    <div>
+      <FormGroup required>
+        <Label data-testid="name-label">Your Name</Label>
+        <Input data-testid="name-input" autoComplete="name" />
+      </FormGroup>
+      <FormGroup required>
+        <Label data-testid="notes-label">Dietary Notes</Label>
+        <Textarea data-testid="notes-textarea" />
+      </FormGroup>
+      <FormGroup required>
+        <Label data-testid="meal-label">Meal Choice</Label>
+        <Select data-testid="meal-select" defaultValue="fish">
+          <option value="fish">Salmon</option>
+          <option value="veg">Risotto</option>
+        </Select>
+      </FormGroup>
+      <FormGroup required className="flex items-center gap-2">
+        <Checkbox data-testid="terms-checkbox" />
+        <Label data-testid="terms-label">Confirm Attendance</Label>
+      </FormGroup>
+    </div>
+  );
+
+  for (const testId of ['name-input', 'notes-textarea', 'meal-select', 'terms-checkbox']) {
+    const control = screen.getByTestId(testId);
+    expect(control).toBeRequired();
+    expect(control).toHaveAttribute('aria-required', 'true');
+  }
+
+  for (const labelId of ['name-label', 'notes-label', 'meal-label', 'terms-label']) {
+    const label = screen.getByTestId(labelId);
+    expect(label).toHaveAttribute('data-required', 'true');
+    const hiddenAsterisk = label.querySelector('[aria-hidden="true"]');
+    expect(hiddenAsterisk).not.toBeNull();
+    expect(hiddenAsterisk).toHaveTextContent('*');
+  }
+
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('Control-level required prop sets aria-required="true" and synchronizes data-required onto Label', () => {
+  render(
+    <FormGroup>
+      <Label data-testid="code-label">Invitation Code</Label>
+      <Input data-testid="code-input" required />
+    </FormGroup>
+  );
+
+  const input = screen.getByTestId('code-input');
+  const label = screen.getByTestId('code-label');
+
+  expect(input).toBeRequired();
+  expect(input).toHaveAttribute('aria-required', 'true');
+  expect(label).toHaveAttribute('data-required', 'true');
+  expect(screen.getByLabelText('Invitation Code')).toBe(input);
+});
+
+test('Busy mode sets readOnly and aria-busy on text inputs without dropping focus and guards Select and Checkbox interactions', async () => {
+  const onSelectChange = jest.fn();
+  const onCheckboxChange = jest.fn();
+
+  const BusyFormHarness = ({ busy }: { busy: boolean }) => (
+    <div>
+      <FormGroup busy={busy}>
+        <Label>Passcode</Label>
+        <Input data-testid="busy-input" type="password" defaultValue="secret12" />
+      </FormGroup>
+      <FormGroup busy={busy}>
+        <Label>Personal Message</Label>
+        <Textarea data-testid="busy-textarea" defaultValue="Best wishes" />
+      </FormGroup>
+      <FormGroup busy={busy}>
+        <Label>Quantity</Label>
+        <Select data-testid="busy-select" defaultValue="1" onChange={onSelectChange}>
+          <option value="1">1</option>
+          <option value="2">2</option>
+        </Select>
+      </FormGroup>
+      <FormGroup busy={busy}>
+        <Checkbox data-testid="busy-checkbox" onChange={onCheckboxChange} />
+        <Label>Cover Fee</Label>
+      </FormGroup>
+    </div>
+  );
+
+  const { container, rerender } = render(<BusyFormHarness busy={false} />);
+
+  const input = screen.getByTestId('busy-input') as HTMLInputElement;
+  input.focus();
+  expect(document.activeElement).toBe(input);
+
+  rerender(<BusyFormHarness busy={true} />);
+
+  // Active text input keeps focus and sets readOnly + aria-busy instead of native disabled
+  expect(document.activeElement).toBe(input);
+  expect(input).not.toBeDisabled();
+  expect(input).toHaveAttribute('readonly');
+  expect(input).toHaveAttribute('aria-busy', 'true');
+
+  const textarea = screen.getByTestId('busy-textarea');
+  expect(textarea).not.toBeDisabled();
+  expect(textarea).toHaveAttribute('readonly');
+  expect(textarea).toHaveAttribute('aria-busy', 'true');
+
+  const select = screen.getByTestId('busy-select');
+  expect(select).not.toBeDisabled();
+  expect(select).toHaveAttribute('aria-busy', 'true');
+  expect(select).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.change(select, { target: { value: '2' } });
+  fireEvent.keyDown(select, { key: 'ArrowDown' });
+  expect(onSelectChange).not.toHaveBeenCalled();
+
+  const checkbox = screen.getByTestId('busy-checkbox');
+  expect(checkbox).not.toBeDisabled();
+  expect(checkbox).toHaveAttribute('aria-busy', 'true');
+  expect(checkbox).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(checkbox);
+  fireEvent.keyDown(checkbox, { key: ' ' });
+  expect(onCheckboxChange).not.toHaveBeenCalled();
+
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+

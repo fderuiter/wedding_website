@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Icon, IconName } from '@/components/ui/Icon';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
+import { Heading } from '@/components/ui/Layout';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
@@ -133,7 +134,9 @@ const Forecast: React.FC = () => {
         role="alert"
       >
         <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
-        <h2 className="text-xl font-bold">Unable to Load Weather</h2>
+        <Heading as="h2" variant="none" unstyledColor className="text-xl font-bold">
+          Unable to Load Weather
+        </Heading>
         <p className="text-base text-red-500 font-medium">
           Failed to load forecast. Please try again later.
         </p>

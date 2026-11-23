@@ -28,6 +28,11 @@ import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
+import {
+  cleanOptionalSetupText,
+  resolveSetupCopyField,
+  synthesizeSetupStarterCopy,
+} from '@/lib/setupCopy';
 import { geocodeBestMatch } from '@/lib/geocoding';
 import { hasValidCoordinates } from '@/utils/maps';
 
@@ -36,10 +41,6 @@ type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
 };
 
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
-
-function fallbackVenueField(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
-}
 
 function normalizeOptionalName(value: unknown): unknown {
   if (typeof value !== 'string') return value;
@@ -198,6 +199,31 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const requestedSetupCompleted =
     typeof body.setupCompleted === 'boolean' ? body.setupCompleted : true;
+  const resolvedPartner1 =
+    (normalizeOptionalName(body.partner1Name) as string | undefined) ||
+    (normalizeOptionalName(body.brideName) as string | undefined) ||
+    '';
+  const resolvedPartner2 =
+    (normalizeOptionalName(body.partner2Name) as string | undefined) ||
+    (normalizeOptionalName(body.groomName) as string | undefined) ||
+    '';
+  const resolvedWeddingDate = body.weddingDate ?? new Date().toISOString();
+  const resolvedTimezone = body.timezone ?? 'America/Chicago';
+  const cleanedVenueName = cleanOptionalSetupText(body.venueName);
+  const cleanedVenueAddress = cleanOptionalSetupText(body.venueAddress);
+  const cleanedVenueCity = cleanOptionalSetupText(body.venueCity);
+  const cleanedVenueState = cleanOptionalSetupText(body.venueState);
+  const cleanedVenueZip = cleanOptionalSetupText(body.venueZip);
+
+  const starterCopy = synthesizeSetupStarterCopy({
+    partner1Name: resolvedPartner1,
+    partner2Name: resolvedPartner2,
+    weddingDate: resolvedWeddingDate,
+    timezone: resolvedTimezone,
+    venueName: cleanedVenueName,
+    venueCity: cleanedVenueCity,
+    venueState: cleanedVenueState,
+  });
 
   // Validate setup configuration payload
   const normalizedSetupConfig = {
@@ -205,7 +231,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     partner2Name: normalizeOptionalName(body.partner2Name),
     brideName: normalizeOptionalName(body.brideName),
     groomName: normalizeOptionalName(body.groomName),
-    weddingDate: body.weddingDate ?? new Date().toISOString(),
+    weddingDate: resolvedWeddingDate,
     baseUrl:
       typeof body.baseUrl === 'string'
         ? body.baseUrl.trim()
@@ -218,20 +244,20 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
             : body.contactEmail,
       }
       : {}),
-    venueName: fallbackVenueField(body.venueName),
-    venueAddress: fallbackVenueField(body.venueAddress),
-    venueCity: fallbackVenueField(body.venueCity),
-    venueState: fallbackVenueField(body.venueState),
-    venueZip: fallbackVenueField(body.venueZip),
+    venueName: cleanedVenueName,
+    venueAddress: cleanedVenueAddress,
+    venueCity: cleanedVenueCity,
+    venueState: cleanedVenueState,
+    venueZip: cleanedVenueZip,
     latitude: body.latitude ?? 0,
     longitude: body.longitude ?? 0,
-    storyText: body.storyText ?? '',
-    venueDescription: body.venueDescription ?? '',
-    travelAdvice: body.travelAdvice ?? '',
-    heroTitle: body.heroTitle ?? '',
-    heroSubtitle: body.heroSubtitle ?? '',
-    seoTitle: body.seoTitle ?? '',
-    seoDescription: body.seoDescription ?? '',
+    storyText: resolveSetupCopyField(body.storyText, starterCopy.storyText, 'storyText'),
+    venueDescription: cleanOptionalSetupText(body.venueDescription),
+    travelAdvice: cleanOptionalSetupText(body.travelAdvice),
+    heroTitle: resolveSetupCopyField(body.heroTitle, starterCopy.heroTitle, 'heroTitle'),
+    heroSubtitle: resolveSetupCopyField(body.heroSubtitle, starterCopy.heroSubtitle, 'heroSubtitle'),
+    seoTitle: resolveSetupCopyField(body.seoTitle, starterCopy.seoTitle, 'seo'),
+    seoDescription: resolveSetupCopyField(body.seoDescription, starterCopy.seoDescription, 'seo'),
     faviconUrl: body.faviconUrl ?? '/assets/favicon.png',
     ogImageUrl: body.ogImageUrl ?? '/images/sunset-embrace.jpg',
     brandMonogram: body.brandMonogram,

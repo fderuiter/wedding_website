@@ -37,6 +37,11 @@ import { sanitizeUrl } from '@/utils/validation';
 import { MediaImage } from '@/components/MediaImage';
 import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 import { withBasePath } from '@/lib/basePath';
+import {
+  cleanOptionalSetupText,
+  formatCleanVenueParts,
+  synthesizeSetupStarterCopy,
+} from '@/lib/setupCopy';
 
 function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   if (!rawUrl || typeof rawUrl !== 'string') return undefined;
@@ -47,15 +52,6 @@ function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   }
   const safe = sanitizeUrl(url);
   return safe ? `url("${withBasePath(safe)}")` : undefined;
-}
-
-function cleanDisplayVenueField(value?: string | null): string {
-  if (!value || typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  const upper = trimmed.toUpperCase();
-  if (upper === 'TBD' || upper === 'TBD VENUE') return '';
-  return trimmed;
 }
 
 function splitParagraphs(text?: string | null): string[] {
@@ -265,25 +261,52 @@ export default function HomePageClient({
     });
   }, [hasGuestHelpProvider, syncLiveConfig, visibleFaqNodes]);
 
-  const logisticsNodes = contentNodes
-    .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
-    .map(n => n.data);
-
-  const cleanVenueName = cleanDisplayVenueField(config.venueName);
-  const cleanVenueAddress = cleanDisplayVenueField(config.venueAddress);
-  const cleanVenueCity = cleanDisplayVenueField(config.venueCity);
-  const cleanVenueState = cleanDisplayVenueField(config.venueState);
-  const ceremonyVenueLine = [cleanVenueName, cleanVenueAddress].filter(Boolean).join(' · ');
-  const locationSummary = [cleanVenueCity, cleanVenueState].filter(Boolean).join(', ');
   const partner1Display = (config.partner1Name || config.brideName || '').trim();
   const partner2Display = (config.partner2Name || config.groomName || '').trim();
+  const cleanVenue = formatCleanVenueParts({
+    venueName: config.venueName,
+    venueAddress: config.venueAddress,
+    venueCity: config.venueCity,
+    venueState: config.venueState,
+    venueZip: config.venueZip,
+  });
+  const starterCopy = synthesizeSetupStarterCopy({
+    partner1Name: partner1Display,
+    partner2Name: partner2Display,
+    weddingDate: config.weddingDate,
+    timezone: config.timezone,
+    venueName: cleanVenue.venueName,
+    venueCity: cleanVenue.venueCity,
+    venueState: cleanVenue.venueState,
+  });
+
   const defaultHeroTitle =
     partner1Display && partner2Display
       ? `${partner1Display} & ${partner2Display}`
       : 'Celebrate With Us';
-  const defaultHeroSubtitle = locationSummary
-    ? `Join us as we celebrate our wedding on ${formattedDate} in ${locationSummary}.`
+  const defaultHeroSubtitle = cleanVenue.cityState
+    ? `Join us as we celebrate our wedding on ${formattedDate} in ${cleanVenue.cityState}.`
     : `Join us as we celebrate our wedding on ${formattedDate}.`;
+
+  const rawHeroTitle = config.heroTitle?.trim() || '';
+  const isLegacyPastHeroTitle = rawHeroTitle.toLowerCase() === 'we tied the knot!';
+  const resolvedHeroTitle =
+    rawHeroTitle && !(isLegacyPastHeroTitle && starterCopy.isUpcoming)
+      ? rawHeroTitle
+      : starterCopy.isUpcoming
+        ? starterCopy.heroTitle
+        : defaultHeroTitle;
+  const resolvedHeroSubtitle =
+    config.heroSubtitle?.trim() ||
+    (!starterCopy.isUpcoming && isLegacyPastHeroTitle
+      ? `Thank you for celebrating with us on ${formattedDate}${cleanVenue.cityState ? `, in ${cleanVenue.cityState}` : ''}. We're so grateful for all the love and support from our family and friends.`
+      : starterCopy.isUpcoming
+        ? starterCopy.heroSubtitle
+        : defaultHeroSubtitle);
+
+  const logisticsNodes = contentNodes
+    .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
+    .map(n => n.data);
 
   let features = config.features || [];
 
@@ -302,15 +325,22 @@ export default function HomePageClient({
     if (!feature.visible) return null;
 
     switch (feature.type) {
-      case 'story':
+      case 'story': {
+        const cleanedStory = cleanOptionalSetupText(config.storyText);
+        const storyParagraphs = splitParagraphs(cleanedStory || starterCopy.storyText);
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="text-center type-h2 text-primary">{feature.title || 'Our Story'}</h2>
-            {config.storyText.split('\n\n').map((paragraph, i) => (
-              <p key={i} className="type-body">{paragraph}</p>
-            ))}
+            {storyParagraphs.length > 0 ? (
+              storyParagraphs.map((paragraph, i) => (
+                <p key={i} className="type-body">{paragraph}</p>
+              ))
+            ) : (
+              <p className="text-center text-gray-600 dark:text-gray-300">Story details coming soon...</p>
+            )}
           </motion.section>
         );
+      }
       case 'details': {
         const hasStructuredSchedule = contentNodes.some(
           n => n.type === 'Schedule' || (n.type === 'Logistics' && (n.data as any)?.startTime) || (n.data as any)?.startTime
@@ -337,7 +367,7 @@ export default function HomePageClient({
           <div key={feature.id} id="schedule" className="scroll-mt-24">
             <motion.section id={innerSectionId} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
               <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
-              <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
+              <div className="text-center text-gray-600 dark:text-gray-300">Details coming soon...</div>
             </motion.section>
           </div>
         );
@@ -349,17 +379,17 @@ export default function HomePageClient({
                 <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
                   <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
                   <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                    <li>{detailsNode.ceremonyTime}</li>
-                    {ceremonyVenueLine && <li>{ceremonyVenueLine}</li>}
-                    {locationSummary && <li>{locationSummary}</li>}
+                    {detailsNode.ceremonyTime && <li>{detailsNode.ceremonyTime}</li>}
+                    {cleanVenue.venueWithAddress && <li>{cleanVenue.venueWithAddress}</li>}
+                    {cleanVenue.cityState && <li>{cleanVenue.cityState}</li>}
                   </ul>
                 </div>
                 <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
                   <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
                   <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                    <li>{detailsNode.receptionTime}</li>
-                    <li>{detailsNode.receptionDetails}</li>
-                    <li>{detailsNode.receptionAttire}</li>
+                    {detailsNode.receptionTime && <li>{detailsNode.receptionTime}</li>}
+                    {detailsNode.receptionDetails && <li>{detailsNode.receptionDetails}</li>}
+                    {detailsNode.receptionAttire && <li>{detailsNode.receptionAttire}</li>}
                   </ul>
                 </div>
               </div>
@@ -399,7 +429,7 @@ export default function HomePageClient({
                 ))}
               </div>
             ) : !accNode?.description ? (
-              <div className="text-center text-gray-500 dark:text-gray-400">Accommodation details coming soon...</div>
+              <div className="text-center text-gray-600 dark:text-gray-300">Accommodation details coming soon...</div>
             ) : null}
           </motion.section>
         );
@@ -415,12 +445,15 @@ export default function HomePageClient({
           longitude: config.longitude,
           directions: fullVenueLocation,
         });
-        const venueParagraphs = splitParagraphs(config.venueDescription);
+        const hasVenueLocationSummary = Boolean(
+          venueDisplayName || venueStreetLine || venueDirectionsUrl
+        );
+        const venueParagraphs = splitParagraphs(cleanOptionalSetupText(config.venueDescription));
 
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="type-h2 text-primary">{feature.title || 'About Our Venue'}</h2>
-            {(venueDisplayName || venueStreetLine || venueDirectionsUrl) && (
+            {hasVenueLocationSummary && (
               <div
                 data-testid="venue-location-summary"
                 className="mx-auto max-w-xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 shadow-[var(--shadow-md)] space-y-3"
@@ -446,14 +479,18 @@ export default function HomePageClient({
                 )}
               </div>
             )}
-            {venueParagraphs.map((paragraph, i) => (
-              <p key={i} className="mx-auto max-w-xl type-body">{paragraph}</p>
-            ))}
+            {venueParagraphs.length > 0 ? (
+              venueParagraphs.map((paragraph, i) => (
+                <p key={i} className="mx-auto max-w-xl type-body">{paragraph}</p>
+              ))
+            ) : !hasVenueLocationSummary ? (
+              <div className="text-center text-gray-600 dark:text-gray-300">Venue details coming soon...</div>
+            ) : null}
           </motion.section>
         );
       }
       case 'travel': {
-        const travelParagraphs = splitParagraphs(config.travelAdvice);
+        const travelParagraphs = splitParagraphs(cleanOptionalSetupText(config.travelAdvice));
         const travelNodes = logisticsNodes.filter(n => !n.ceremonyTitle && !n.title?.includes('Accommodations'));
         const hasTravelContent = travelParagraphs.length > 0 || travelNodes.length > 0;
         const isAttractionsEnabled = isFeatureEnabled('attractions', config.modules);
@@ -480,7 +517,7 @@ export default function HomePageClient({
               </div>
             )}
             {!hasTravelContent && (
-              <div className="text-center text-gray-500 dark:text-gray-400">Travel details coming soon...</div>
+              <div className="text-center text-gray-600 dark:text-gray-300">Travel details coming soon...</div>
             )}
             {isAttractionsEnabled && (
               <div className="pt-2">
@@ -538,13 +575,13 @@ export default function HomePageClient({
   const hasValidWeddingDate = !isNaN(weddingDateObj.getTime());
   const calendarEvent = formatScheduleEventToCalendarEvent(
     {
-      title: config.heroTitle || defaultHeroTitle,
+      title: resolvedHeroTitle || 'Wedding',
       startTime: hasValidWeddingDate ? weddingDateObj.toISOString() : undefined,
       endTime: hasValidWeddingDate
         ? new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString()
         : undefined,
       location: formatFullVenueLocation(config),
-      description: config.heroSubtitle || defaultHeroSubtitle,
+      description: resolvedHeroSubtitle || defaultHeroSubtitle,
     },
     undefined,
     config.timezone
@@ -587,10 +624,10 @@ export default function HomePageClient({
                 />
               )}
               <motion.h1 className="mb-6 type-display text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
-                {config.heroTitle || defaultHeroTitle}
+                {resolvedHeroTitle}
               </motion.h1>
               <motion.p className="mb-4 type-body" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
-                {config.heroSubtitle || defaultHeroSubtitle}
+                {resolvedHeroSubtitle}
               </motion.p>
               {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
                 <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
@@ -621,7 +658,7 @@ export default function HomePageClient({
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-600 dark:text-gray-400">
             <p>
               © {new Date().getFullYear()} {partner1Display} &amp; {partner2Display}
-              {cleanVenueState ? ` • Designed with ❤️ in ${cleanVenueState}` : ''}
+              {cleanVenue.venueState ? ` • Designed with ❤️ in ${cleanVenue.venueState}` : ''}
             </p>
             <p>We look forward to celebrating with you!</p>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">

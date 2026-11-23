@@ -1,7 +1,11 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { SessionRecoveryModal } from '../SessionRecoveryModal';
 import { GuestSessionProvider } from '../../context/GuestSessionContext';
 import { apiClient } from '@/lib/apiClient';
+
+expect.extend(toHaveNoViolations);
 
 jest.mock('@/lib/apiClient', () => ({
   apiClient: {
@@ -80,5 +84,54 @@ describe('SessionRecoveryModal', () => {
     await waitFor(() => {
       expect(screen.getByText(/Invalid invitation code/i)).toBeInTheDocument();
     });
+  });
+
+  it('exposes required and aria-required="true", hides the visual asterisk with aria-hidden="true", retains focus during async verification, and passes jest-axe', async () => {
+    let resolveVerify: ((value: { valid: boolean }) => void) | null = null;
+    (apiClient.get as jest.Mock)
+      .mockResolvedValueOnce({ isVerified: false })
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ valid: boolean }>((resolve) => {
+            resolveVerify = resolve;
+          })
+      );
+
+    const { container } = render(
+      <GuestSessionProvider>
+        <SessionRecoveryModal isOpen={true} />
+      </GuestSessionProvider>
+    );
+
+    const input = screen.getByLabelText(/Invitation Code/i) as HTMLInputElement;
+    const label = container.querySelector('label[for="recovery-invitation-code"]');
+
+    expect(input).toBeRequired();
+    expect(input).toHaveAttribute('aria-required', 'true');
+    expect(label).not.toBeNull();
+    const hiddenAsterisk = label?.querySelector('[aria-hidden="true"]');
+    expect(hiddenAsterisk).not.toBeNull();
+    expect(hiddenAsterisk).toHaveTextContent('*');
+
+    input.focus();
+    fireEvent.change(input, { target: { value: 'WRONG123' } });
+    fireEvent.submit(input.closest('form')!);
+
+    // Input uses readOnly + aria-busy instead of disabled and retains focus
+    expect(input).not.toBeDisabled();
+    expect(input).toHaveAttribute('readonly');
+    expect(input).toHaveAttribute('aria-busy', 'true');
+    expect(document.activeElement).toBe(input);
+
+    resolveVerify!({ valid: false });
+
+    const alertMsg = await screen.findByRole('alert');
+    expect(alertMsg).toHaveTextContent(/Invalid invitation code/i);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', alertMsg.id);
+    expect(input).not.toHaveAttribute('readonly');
+    expect(document.activeElement).toBe(input);
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

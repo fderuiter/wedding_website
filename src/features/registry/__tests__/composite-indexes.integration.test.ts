@@ -16,9 +16,23 @@ describe('Composite & Foreign Key Indexes Verification', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString });
+    await pool.query('TRUNCATE TABLE "SnapshotVersion";');
+    await pool.query(`
+      INSERT INTO "SnapshotVersion" ("id", "entityType", "entityId", "data", "author", "createdAt")
+      SELECT
+        md5(g::text),
+        CASE WHEN g % 5 = 0 THEN 'RegistryItem' ELSE 'AppConfig' END,
+        CASE WHEN g = 5 THEN '00000000-0000-0000-0000-000000000000' ELSE 'entity-' || (g % 10)::text END,
+        '{}'::jsonb,
+        'Admin',
+        NOW() - (g || ' minutes')::interval
+      FROM generate_series(1, 100) AS g;
+    `);
+    await pool.query('ANALYZE "SnapshotVersion";');
   });
 
   afterAll(async () => {
+    await pool.query('TRUNCATE TABLE "SnapshotVersion";');
     await pool.end();
   });
 

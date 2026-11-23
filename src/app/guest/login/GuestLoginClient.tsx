@@ -1,6 +1,8 @@
 'use client';
 
 import { Suspense } from 'react';
+import { Button } from '@/components/ui/Button';
+import { FormGroup, FormMessage, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { motion, Variants } from 'framer-motion';
 import { useTheme } from '@/components/ThemeProvider';
@@ -43,6 +45,7 @@ function GuestLoginForm() {
     loading,
     showHelp,
     isLoginDisabled,
+    passcodeInputRef,
     handleLogin,
     setPasscode,
     setShowPasscode,
@@ -68,71 +71,82 @@ function GuestLoginForm() {
           </p>
         </div>
 
-        {error && (
-          <motion.p
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            id="login-error"
-            role="alert"
-            className="text-red-600 dark:text-primary-text text-sm font-medium bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 p-3 rounded-xl text-center"
-          >
-            {error}
-          </motion.p>
-        )}
+        <FormGroup
+          state={error ? 'error' : 'default'}
+          busy={loading}
+          className="flex flex-col gap-2 space-y-0"
+        >
+          {error && (
+            <FormMessage
+              id="login-error"
+              className="mt-0 mb-3 text-red-700 dark:text-red-200 text-sm font-medium bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800/50 p-3 rounded-xl text-center"
+            >
+              {error}
+            </FormMessage>
+          )}
 
-        <div className="flex flex-col gap-2">
-          <label htmlFor="passcode" className="block text-gray-700 dark:text-gray-300 font-semibold text-sm ml-1">
+          <Label htmlFor="passcode" className="ml-1 dark:text-gray-200">
             Passcode or Invitation Code
-          </label>
+          </Label>
           <div className="relative group">
-            <input
+            <Input
+              ref={passcodeInputRef}
               type={showPasscode ? 'text' : 'password'}
               id="passcode"
+              name="passcode"
               value={passcode}
               onChange={(e) => setPasscode(e.target.value)}
-              disabled={isLoginDisabled}
-              className="border border-gray-200 dark:border-gray-400 p-4 rounded-2xl w-full focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none focus-visible:ring-offset-2 bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              busy={loading}
               required
-              autoComplete="off"
+              autoComplete="current-password"
               placeholder="Enter passcode or invitation code"
-              aria-invalid={error ? 'true' : undefined}
-              aria-describedby={error ? 'login-error' : undefined}
+              style={{ borderRadius: '1rem' }}
+              className="h-auto p-4 rounded-2xl bg-gray-50/50 dark:bg-gray-700/50 text-lg text-gray-800 dark:text-gray-100 pr-12 transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
             />
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setShowPasscode(!showPasscode)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-primary dark:text-gray-300 dark:hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-full p-1"
+              className="absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 p-1 rounded-full text-gray-500 hover:text-primary dark:text-gray-300 dark:hover:text-primary"
               aria-label={showPasscode ? 'Hide code' : 'Show code'}
             >
               {showPasscode ? <Icon name="EyeOff" size={22} /> : <Icon name="Eye" size={22} />}
-            </button>
+            </Button>
           </div>
           <div className="flex justify-end pt-1">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setShowHelp(true)}
               aria-expanded={showHelp}
               aria-controls="guest-help-drawer"
-              className="text-xs sm:text-sm font-medium text-primary hover:underline dark:text-primary-light transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg px-1 py-0.5"
+              className="h-auto text-xs sm:text-sm font-medium text-primary hover:underline hover:bg-transparent dark:text-primary-light rounded-lg px-1 py-0.5"
             >
               Need help finding your code?
-            </button>
+            </Button>
           </div>
-        </div>
+        </FormGroup>
 
-        <button
+        <Button
           type="submit"
-          className="w-full bg-primary bg-gradient-to-r from-primary to-secondary text-white px-6 py-4 rounded-2xl font-bold text-lg shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center overflow-hidden relative"
-          disabled={isLoginDisabled}
+          variant="primary"
+          size="lg"
+          aria-disabled={isLoginDisabled}
           aria-busy={loading}
+          style={{ borderRadius: '1rem', fontWeight: 700 }}
+          className="w-full h-auto bg-primary bg-gradient-to-r from-primary to-secondary text-white px-6 py-4 rounded-2xl font-bold text-lg shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 transition-all active:scale-[0.98]"
         >
-          <span className={loading ? 'opacity-0' : 'opacity-100'}>Access Portal</span>
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Icon name="Loader2" className="animate-spin h-6 w-6" aria-hidden="true" />
-            </div>
+          {loading ? (
+            <>
+              <Icon name="Loader2" className="animate-spin mr-2 h-5 w-5 shrink-0" aria-hidden="true" />
+              <span>Signing in...</span>
+            </>
+          ) : (
+            <span>Access Portal</span>
           )}
-        </button>
+        </Button>
       </form>
 
       <Overlay

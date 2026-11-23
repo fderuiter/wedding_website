@@ -458,14 +458,14 @@ function SeatingChartAdminContent() {
               return (
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 flex-wrap">
+                    <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 flex-wrap">
                       {selectedTable.name}
                       <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
                         {selectedIsLandmark
                           ? `(Landmark · ${getSeatingShapeLabel(selectedTable.shape)}, 0 seats)`
                           : `(${selectedTable.shape}, ${selectedTable.capacity} capacity, ${selectedTableSeatedHeadcount} seated)`}
                       </span>
-                    </h3>
+                    </h2>
                     {!selectedIsLandmark && selectedTableSeatedHeadcount > 0 && selectedMealSummary && (
                       <p
                         data-testid="inspector-meal-summary"

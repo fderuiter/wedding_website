@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SetupWizard from '../SetupWizard';
@@ -290,8 +290,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
 
     // Change theme preset and brand colors
-    const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
-    fireEvent.change(presetSelect, { target: { value: 'romantic' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Romantic Preset/i }));
     fireEvent.change(screen.getByLabelText(/Primary Color Code/i), { target: { value: '#9F1239' } });
     fireEvent.change(screen.getByLabelText(/Secondary Color Code/i), { target: { value: '#78350F' } });
 
@@ -708,7 +707,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     });
   });
 
-  test('allows completing Step 2 with empty or whitespace venue fields using empty-string fallback, pre-wedding hero copy, and setupCompleted false', async () => {
+  test('allows completing Step 2 with empty or whitespace venue fields using clean empty strings, date-aware copy, live client preview, and setupCompleted false', async () => {
     let savedPayload: Record<string, unknown> | null = null;
     let callCount = 0;
     global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
@@ -751,11 +750,21 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(venueNameInput).toHaveAttribute('placeholder', 'Optional');
     expect(venueCityInput).toHaveAttribute('placeholder', 'Optional');
     expect(venueStateInput).toHaveAttribute('placeholder', 'Optional');
-
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
-    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2026-12-31' } });
+    fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2028-12-31' } });
     fireEvent.change(screen.getByLabelText(/Site URL/i), { target: { value: 'https://alexandsam.com' } });
+
+    // Live Step 2 preview card updates immediately with partner names, formatted date, and Desktop/Mobile toggle
+    const livePreview = screen.getByTestId('step2-live-preview');
+    expect(livePreview).toHaveTextContent('Alex & Sam');
+    expect(livePreview).toHaveTextContent('December 31, 2028');
+    expect(livePreview).not.toHaveTextContent('TBD');
+
+    const viewportFrame = screen.getByTestId('step2-preview-frame');
+    expect(viewportFrame).toHaveAttribute('data-viewport', 'desktop');
+    fireEvent.click(screen.getByRole('button', { name: /Mobile \(375px\)/i }));
+    expect(viewportFrame).toHaveAttribute('data-viewport', 'mobile');
 
     // Leave venue inputs as empty or whitespace
     fireEvent.change(venueNameInput, { target: { value: '   ' } });
@@ -776,7 +785,9 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(payload.venueAddress).toBe('');
     expect(payload.venueZip).toBe('');
     expect(payload.heroTitle).toBe('Alex & Sam');
-    expect(payload.heroSubtitle).toBe('');
+    expect(String(payload.heroSubtitle)).not.toContain('Tied the Knot');
+    expect(String(payload.heroSubtitle)).toContain('December 31, 2028');
+    expect(payload.storyText).not.toBe('Our story...');
     expect(payload.setupCompleted).toBe(false);
     expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/admin/setup');
     replaceStateSpy.mockRestore();
@@ -1226,8 +1237,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       expect(introCopy).toHaveClass('dark:text-gray-200');
       expect(screen.queryByLabelText(/Container Max Width/i)).not.toBeInTheDocument();
 
-      const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
-      fireEvent.change(presetSelect, { target: { value: 'romantic' } });
+      fireEvent.click(screen.getByRole('radio', { name: /Romantic Preset/i }));
 
       const primaryInput = screen.getByLabelText(/Primary Color Code/i);
       fireEvent.change(primaryInput, { target: { value: '#be123c' } });
@@ -1243,6 +1253,23 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
 
       const axeResults = await axe(container);
       expect(axeResults).toHaveNoViolations();
+
+      // Verify keyboard arrow navigation on Step 2 viewport toggle
+      const viewportGroup = screen.getByRole('group', { name: /Step 2 preview viewport/i });
+      const desktopBtn = within(viewportGroup).getByRole('button', { name: /^Desktop$/i });
+      const mobileBtn = within(viewportGroup).getByRole('button', { name: /Mobile \(375px\)/i });
+      const previewFrame = screen.getByTestId('step2-preview-frame');
+
+      desktopBtn.focus();
+      fireEvent.keyDown(desktopBtn, { key: 'ArrowRight' });
+      expect(mobileBtn).toHaveFocus();
+      expect(mobileBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(previewFrame).toHaveAttribute('data-viewport', 'mobile');
+
+      fireEvent.keyDown(mobileBtn, { key: 'ArrowLeft' });
+      expect(desktopBtn).toHaveFocus();
+      expect(desktopBtn).toHaveAttribute('aria-pressed', 'true');
+      expect(previewFrame).toHaveAttribute('data-viewport', 'desktop');
     } finally {
       headStyle.remove();
       document.documentElement.className = '';
