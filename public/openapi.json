@@ -758,6 +758,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -927,6 +935,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -1112,6 +1128,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -3565,6 +3589,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -3740,6 +3772,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -3974,6 +4014,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -13830,6 +13878,14 @@
                       "APPROVED",
                       "REJECTED"
                     ]
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "description": "Single-photo moderation decision when the target photo ID is supplied in the URL path. Requires either action ('approve' | 'reject') or status ('APPROVED' | 'REJECTED').",
@@ -14698,6 +14754,14 @@
                           "APPROVED",
                           "REJECTED"
                         ]
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       }
                     },
                     "description": "Single-photo moderation payload for the moderation queue endpoint. Requires a target photo identifier (id, nodeId, or photoId) and a moderation decision (action or status).",
@@ -21209,6 +21273,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 }
               }
@@ -21254,6 +21326,14 @@
                         },
                         "publishToGallery": {
                           "type": "boolean",
+                          "nullable": true
+                        },
+                        "caption": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "uploaderName": {
+                          "type": "string",
                           "nullable": true
                         },
                         "createdAt": {
@@ -21875,6 +21955,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -21924,6 +22012,14 @@
                         },
                         "publishToGallery": {
                           "type": "boolean",
+                          "nullable": true
+                        },
+                        "caption": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "uploaderName": {
+                          "type": "string",
                           "nullable": true
                         },
                         "createdAt": {
@@ -23491,6 +23587,14 @@
                       "publishToGallery": {
                         "type": "boolean"
                       },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
                       "createdAt": {
                         "anyOf": [
                           {
@@ -24040,6 +24144,14 @@
                             },
                             "publishToGallery": {
                               "type": "boolean"
+                            },
+                            "caption": {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "uploaderName": {
+                              "type": "string",
+                              "maxLength": 100
                             },
                             "createdAt": {
                               "anyOf": [
@@ -24699,6 +24811,14 @@
                       },
                       "publishToGallery": {
                         "type": "boolean"
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       },
                       "createdAt": {
                         "anyOf": [

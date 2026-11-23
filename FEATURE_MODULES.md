@@ -80,7 +80,7 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L271-L348) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L448-L494))**:
+- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L319-L400) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L500-L550))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
   - Hides homepage hotel block cards and the `/things-to-do` local guide link when `attractions` is disabled, hides the homepage photo gallery link when `gallery` is disabled, and hides the 3D experience callout when `interactive3D` is disabled.

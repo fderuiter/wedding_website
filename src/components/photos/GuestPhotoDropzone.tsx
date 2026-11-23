@@ -36,7 +36,7 @@ export interface UploadStatus {
   filename: string;
   size: number;
   progress: number;
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'staged' | 'pending' | 'uploading' | 'success' | 'error';
   errorMessage?: string;
   url?: string;
   file?: File;
@@ -47,15 +47,30 @@ export interface UploadStatus {
 
 interface GuestPhotoDropzoneProps {
   onUploadSuccess?: (photo: UploadedPhoto) => void;
+  defaultUploaderName?: string;
+  dropzoneRef?: React.Ref<HTMLDivElement>;
   className?: string;
 }
 
-export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDropzoneProps) {
+export function GuestPhotoDropzone({
+  onUploadSuccess,
+  defaultUploaderName,
+  dropzoneRef,
+  className,
+}: GuestPhotoDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploads, setUploads] = useState<UploadStatus[]>([]);
-  const [uploaderName, setUploaderName] = useState('');
+  const [uploaderName, setUploaderName] = useState(() => defaultUploaderName?.trim() ?? '');
   const [caption, setCaption] = useState('');
+  const hasEditedUploaderNameRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const trimmedDefault = defaultUploaderName?.trim() ?? '';
+    if (trimmedDefault && !hasEditedUploaderNameRef.current) {
+      setUploaderName(trimmedDefault);
+    }
+  }, [defaultUploaderName]);
 
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const uploadsRef = useRef<UploadStatus[]>(uploads);
@@ -274,8 +289,6 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
 
     if (fileArray.length === 0) return;
 
-    const capturedUploaderName = uploaderName.trim() || undefined;
-    const capturedCaption = caption.trim() || undefined;
     const newStatuses: UploadStatus[] = [];
 
     fileArray.forEach((file) => {
@@ -292,8 +305,6 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           errorMessage: validationError,
           file,
           order: uploadCounterRef.current++,
-          uploaderName: capturedUploaderName,
-          caption: capturedCaption,
         });
       } else {
         newStatuses.push({
@@ -301,11 +312,9 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           filename: file.name,
           size: file.size,
           progress: 0,
-          status: 'pending',
+          status: 'staged',
           file,
           order: uploadCounterRef.current++,
-          uploaderName: capturedUploaderName,
-          caption: capturedCaption,
         });
       }
     });
@@ -315,9 +324,30 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       uploadsRef.current = next;
       return next;
     });
+  }, [validateFile]);
 
+  const handleConfirmStagedUploads = useCallback(() => {
+    const confirmedUploaderName = uploaderName.trim() || undefined;
+    const confirmedCaption = caption.trim() || undefined;
+
+    setUploads((prev) => {
+      const next = prev.map((item) =>
+        item.status === 'staged'
+          ? {
+            ...item,
+            status: 'pending' as const,
+            uploaderName: confirmedUploaderName,
+            caption: confirmedCaption,
+          }
+          : item
+      );
+      uploadsRef.current = next;
+      return next;
+    });
+
+    setCaption('');
     processQueueRef.current();
-  }, [validateFile, uploaderName, caption]);
+  }, [uploaderName, caption]);
 
   const handleRetry = useCallback((uploadId: string) => {
     const item = uploadsRef.current.find((u) => u.id === uploadId);
@@ -437,7 +467,10 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             type="text"
             maxLength={100}
             value={uploaderName}
-            onChange={(e) => setUploaderName(e.target.value)}
+            onChange={(e) => {
+              hasEditedUploaderNameRef.current = true;
+              setUploaderName(e.target.value);
+            }}
             placeholder="e.g. Aunt Clara"
             data-testid="guest-photo-uploader-name"
             className="w-full rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)] focus:border-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2"
@@ -483,6 +516,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       />
 
       <div
+        ref={dropzoneRef}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -520,6 +554,39 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           </p>
         </div>
       </div>
+
+      {uploads.some((item) => item.status === 'staged') && (
+        <div
+          className="mt-4 p-4 rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-stone-50 dark:bg-stone-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          data-testid="staged-uploads-bar"
+        >
+          <div className="text-sm text-stone-800 dark:text-stone-100">
+            <p className="font-semibold">
+              {uploads.filter((item) => item.status === 'staged').length === 1
+                ? '1 photo staged and ready to upload'
+                : `${uploads.filter((item) => item.status === 'staged').length} photos staged and ready to upload`}
+            </p>
+            <p className="text-xs text-[var(--color-muted-text,#4b5563)] mt-0.5">
+              Confirm your name and optional caption above before uploading.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleConfirmStagedUploads}
+            data-testid="confirm-upload-btn"
+            className="gap-2 shrink-0"
+          >
+            <Icon name="Upload" className="w-4 h-4 shrink-0" />
+            <span>
+              {uploads.filter((item) => item.status === 'staged').length === 1
+                ? 'Upload 1 Photo'
+                : `Upload ${uploads.filter((item) => item.status === 'staged').length} Photos`}
+            </span>
+          </Button>
+        </div>
+      )}
+
 
       {uploads.length > 0 && (
         <div className="mt-6 space-y-3" data-testid="upload-progress-container">
@@ -561,6 +628,14 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    {item.status === 'staged' && (
+                      <span
+                        className="text-xs text-[var(--color-primary-text,var(--color-primary,#B91C1C))] flex items-center gap-1 font-medium"
+                        data-testid="upload-staged-badge"
+                      >
+                        Ready to upload
+                      </span>
+                    )}
                     {item.status === 'pending' && (
                       <span
                         role="status"
