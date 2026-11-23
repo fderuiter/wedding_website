@@ -75,8 +75,10 @@ describe('AddressLookupInput', () => {
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveClass('min-h-11');
 
-    // Open listbox state passes axe
-    expect(await axe(container)).toHaveNoViolations();
+    // Open listbox state (including visible Clear button) passes axe with label-content-name-mismatch enabled
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
 
     // Initial lookup highlights first option automatically; ArrowDown moves to option 1 -> Home -> End -> Enter
     expect(options[0]).toHaveAttribute('aria-selected', 'true');

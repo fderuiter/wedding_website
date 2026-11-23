@@ -1099,7 +1099,9 @@ describe('InteractiveTimeline Component', () => {
       expect(dirLink).toHaveAttribute('target', '_blank');
       expect(dirLink).toHaveAttribute('rel', 'noopener noreferrer');
 
-      expect(await axe(container)).toHaveNoViolations();
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
     });
   });
 });

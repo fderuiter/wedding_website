@@ -159,6 +159,7 @@ describe('coordinate, venue formatting, and distance helpers', () => {
   it('formats street and full venue locations while filtering placeholder values', () => {
     expect(isNonPlaceholderVenueText('TBD')).toBe(false);
     expect(isNonPlaceholderVenueText('N/A')).toBe(false);
+    expect(isNonPlaceholderVenueText('00000')).toBe(false);
     expect(isNonPlaceholderVenueText('500 Floral Way')).toBe(true);
 
     const fullParts: VenueAddressParts = {

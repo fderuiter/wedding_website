@@ -840,7 +840,7 @@ export default function InteractiveTimeline({
                           {eventDirectionsUrl && (
                             <AccessibleExternalLink
                               href={eventDirectionsUrl}
-                              aria-label={`Get directions to ${fullEventLocation}`}
+                              srContext={`to ${fullEventLocation}`}
                               className="inline-flex items-center gap-1.5 min-h-11 min-w-11 px-2.5 py-1 rounded-md font-semibold text-[var(--color-primary-text)] dark:text-red-300 underline underline-offset-2 hover:opacity-80 transition-opacity"
                             >
                               <Icon name="MapPin" size={16} />

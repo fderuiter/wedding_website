@@ -275,7 +275,7 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({
                 <div>
                   <AccessibleExternalLink
                     href={venueDirectionsUrl}
-                    aria-label={`Directions to ${venueTitle}`}
+                    srContext={`to ${venueTitle}`}
                   >
                     Directions
                   </AccessibleExternalLink>

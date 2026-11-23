@@ -28,6 +28,7 @@ const VENUE_PLACEHOLDERS = new Set([
   'pending',
   'tbd venue',
   'unknown',
+  '00000',
 ]);
 
 /**

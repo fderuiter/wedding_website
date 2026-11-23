@@ -367,7 +367,7 @@ export default function HomePageClient({
                   <div className="pt-1">
                     <AccessibleExternalLink
                       href={venueDirectionsUrl}
-                      aria-label={`Get directions to ${venueDisplayName || venueStreetLine || 'wedding venue'}`}
+                      srContext={`to ${venueDisplayName || venueStreetLine || 'wedding venue'}`}
                       className="btn-secondary inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 min-h-11 min-w-11 font-semibold"
                     >
                       <Icon name="MapPin" className="h-5 w-5" />

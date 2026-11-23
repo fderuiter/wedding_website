@@ -548,7 +548,9 @@ describe('HomePageClient', () => {
     // Accommodations hotel card displays distance from venue
     expect(screen.getByTestId('venue-distance-badge')).toHaveTextContent('1.4 mi from venue');
 
-    expect(await axe(venueSection)).toHaveNoViolations();
+    expect(
+      await axe(venueSection, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
   });
 });
 

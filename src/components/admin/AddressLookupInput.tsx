@@ -305,7 +305,7 @@ export function AddressLookupInput({
           <Button
             type="button"
             variant="ghost"
-            aria-label="Clear address search"
+            srContext="address search"
             onClick={() => {
               abortControllerRef.current?.abort();
               setQuery('');
