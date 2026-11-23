@@ -581,12 +581,10 @@ jobs:
         run: npm run build-storybook
 
   e2e-test:
-    needs: [build, unit-test]
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
     env:
       GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
     services:
@@ -615,12 +613,6 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: next-build-artifact
-      - name: Download Jest A11y Violations
-        continue-on-error: true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: jest-a11y-violations
-          path: test-results
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -647,13 +639,144 @@ jobs:
           GUEST_PASSCODE: playwright-e2e-guest-passcode
           GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
         run: npx playwright test
-
-      - name: Generate A11y Report
+      - name: Upload Playwright A11y Violations
         if: always()
-        run: node scripts/a11y-report.mjs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-a11y-violations
+          path: test-results/playwright-a11y-violations.json
+          if-no-files-found: warn
 
+  container-e2e-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps
+      - name: Install Playwright Operating System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps
+      - name: Download Docker Container Image Artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wedding-website-container
+          path: /tmp
+      - name: Load Docker Image
+        run: |
+          if ! command -v zstd >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+          fi
+          if [ -f /tmp/wedding-website-image.tar.zst ]; then
+            zstd -dc /tmp/wedding-website-image.tar.zst | docker load
+            rm -f /tmp/wedding-website-image.tar.zst
+          elif [ -f wedding-website-image.tar.zst ]; then
+            zstd -dc wedding-website-image.tar.zst | docker load
+            rm -f wedding-website-image.tar.zst
+          else
+            echo "Error: Compressed Docker image archive (.tar.zst) not found!"
+            exit 1
+          fi
+      - name: Start local test database and application container
+        timeout-minutes: 10
+        env:
+          DB_USER: wedding
+          DB_PASSWORD: wedding123
+          DB_NAME: wedding
+          DB_PORT: "5433"
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
+          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
+          E2E_TEST: "true"
+        run: |
+          lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
+      - name: Wait for application container to be ready
+        timeout-minutes: 2
+        run: |
+          echo "Waiting for application container on port 3000..."
+          timeout 120 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
+          echo "Application container is responsive!"
+      - name: Seed local test container database
+        timeout-minutes: 1
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5433/wedding
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+        run: |
+          npm run db:seed
+      - name: Run Playwright smoke tests against container
+        timeout-minutes: 3
+        env:
+          TEST_CONTAINER: "true"
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
+          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
+        run: npm run test:e2e:smoke
+      - name: Print container logs on failure
+        if: failure()
+        env:
+          DB_PASSWORD: wedding123
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
+          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
+        run: |
+          echo "=== App Container Logs ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app || true
+          echo "=== DB Container Logs ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs db || true
+      - name: Clean up containers
+        if: always()
+        env:
+          DB_PASSWORD: wedding123
+          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
+          GUEST_PASSCODE: playwright-e2e-guest-passcode
+          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v || true
+
+  a11y-report:
+    needs: [unit-test, e2e-test]
+    if: '!cancelled()'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+      - name: Download Jest A11y Violations
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: jest-a11y-violations
+          path: test-results
+      - name: Download Playwright A11y Violations
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: playwright-a11y-violations
+          path: test-results
+      - name: Generate A11y Report
+        run: node scripts/a11y-report.mjs
       - name: Post A11y Report to PR
-        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: "!cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -692,96 +815,12 @@ jobs:
             } catch (err) {
               console.warn('Failed to post A11y report via GitHub API:', err);
             }
-
       - name: Write A11y Report to Job Summary
-        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        if: '!cancelled()'
         run: |
           if [ -f "test-results/a11y-summary.md" ]; then
-            cat test-results/a11y-summary.md >> $GITHUB_STEP_SUMMARY
+            cat test-results/a11y-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      - name: Download Docker Container Image Artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: wedding-website-container
-          path: /tmp
-
-      - name: Load Docker Image
-        run: |
-          if ! command -v zstd >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
-          fi
-          if [ -f /tmp/wedding-website-image.tar.zst ]; then
-            zstd -dc /tmp/wedding-website-image.tar.zst | docker load
-            rm -f /tmp/wedding-website-image.tar.zst
-          elif [ -f wedding-website-image.tar.zst ]; then
-            zstd -dc wedding-website-image.tar.zst | docker load
-            rm -f wedding-website-image.tar.zst
-          else
-            echo "Error: Compressed Docker image archive (.tar.zst) not found!"
-            exit 1
-          fi
-
-      - name: Start local test database and application container
-        timeout-minutes: 10
-        env:
-          DB_USER: wedding
-          DB_PASSWORD: wedding123
-          DB_NAME: wedding
-          DB_PORT: "5433"
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-          E2E_TEST: "true"
-        run: |
-          lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d app
-
-      - name: Wait for application container to be ready
-        timeout-minutes: 2
-        run: |
-          echo "Waiting for application container on port 3000..."
-          timeout 120 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
-          echo "Application container is responsive!"
-
-      - name: Seed local test container database
-        timeout-minutes: 1
-        env:
-          DATABASE_URL: postgresql://wedding:wedding123@localhost:5433/wedding
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-        run: |
-          npm run db:seed
-
-      - name: Run Playwright smoke tests against container
-        timeout-minutes: 3
-        env:
-          TEST_CONTAINER: "true"
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: npx playwright test
-
-      - name: Print container logs on failure
-        if: failure()
-        env:
-          DB_PASSWORD: wedding123
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: |
-          echo "=== App Container Logs ==="
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs app || true
-          echo "=== DB Container Logs ==="
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs db || true
-
-      - name: Clean up containers
-        if: always()
-        env:
-          DB_PASSWORD: wedding123
-          ADMIN_PASSWORD: scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==
-          GUEST_PASSCODE: playwright-e2e-guest-passcode
-          GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v || true
 
   deploy-docs:
     needs: verify

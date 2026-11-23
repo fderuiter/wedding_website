@@ -142,7 +142,7 @@ This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](s
 4. Runs `npx playwright test --grep @a11y` in bundled Chromium against `http://localhost:3000` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists unfiltered route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
 5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if the component pass failed, seeding failed, Playwright failed, or `totalViolations > 0`.
 
-To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (as done in CI after downloading artifacts):
+To regenerate `test-results/a11y-summary.md` from existing JSON artifacts without re-running the test suites (matching the dedicated `a11y-report` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which depends on `unit-test` and `e2e-test` with `if: '!cancelled()'`, downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks any missing suite artifact as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY`):
 
 ```bash
 node scripts/a11y-report.mjs
@@ -167,7 +167,7 @@ node scripts/a11y-report.mjs
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
 - **Production Next.js Build:** `npm run build`
 - **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs), layering [`docker-compose.ci.yml`](docker-compose.ci.yml)). **Warning:** Both smoke test scripts run `docker compose down -v` (with `-f docker-compose.yml -f docker-compose.ci.yml`), which deletes local Docker Compose PostgreSQL volumes (`db_data`).
-- **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`) against `http://localhost:3000` in bundled Chromium (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
+- **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`, targeting fast `@smoke` specs in [`e2e/meta.spec.ts`](e2e/meta.spec.ts) and [`e2e/skip-link.spec.ts`](e2e/skip-link.spec.ts) while excluding slow route crawlers and violation-recording specs) against `http://localhost:3000` in bundled Chromium (in CI, `e2e-test` and `container-e2e-smoke` start in parallel right after `build`; locally, Playwright automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset — stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)
 
 ## 6. Repository Conventions & Guardrails
 
