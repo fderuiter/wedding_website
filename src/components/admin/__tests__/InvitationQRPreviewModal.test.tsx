@@ -190,4 +190,56 @@ describe('InvitationQRPreviewModal Component', () => {
       HTMLCanvasElement.prototype.getContext = originalGetContext;
     }
   });
+
+  it('resolves personalized QR portal URL from AppConfig.baseUrl when configured', async () => {
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['admin-settings', 'global'], {
+      baseUrl: 'https://celebrate.example.org/',
+    });
+    queryClient.setQueryData(['admin-profiles-list'], []);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <InvitationQRPreviewModal {...defaultProps} />
+      </QueryClientProvider>
+    );
+
+    const urlInput = screen.getByLabelText(
+      'Personalized Guest Portal URL (RSVP & Address)'
+    ) as HTMLInputElement;
+    expect(urlInput.value).toBe('https://celebrate.example.org/guest?code=PEMBERLEY26');
+  });
+
+  it('combines AppConfig.baseUrl with NEXT_PUBLIC_BASE_PATH without duplicating subpath prefixes', async () => {
+    const prevBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    try {
+      const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(['admin-settings', 'global'], {
+        baseUrl: 'https://celebrate.example.org/wedding_website/demo/',
+      });
+      queryClient.setQueryData(['admin-profiles-list'], []);
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <InvitationQRPreviewModal {...defaultProps} />
+        </QueryClientProvider>
+      );
+
+      const urlInput = screen.getByLabelText(
+        'Personalized Guest Portal URL (RSVP & Address)'
+      ) as HTMLInputElement;
+      expect(urlInput.value).toBe(
+        'https://celebrate.example.org/wedding_website/demo/guest?code=PEMBERLEY26'
+      );
+    } finally {
+      if (prevBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = prevBasePath;
+      }
+    }
+  });
 });

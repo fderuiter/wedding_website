@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { parseDocument } from 'yaml';
+import { isMap, isPair, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
 
 interface Violation {
   filePath: string;
@@ -35,6 +35,282 @@ const VERSION_COMMENT_REGEX = /^v\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?(?:\s.*)?$/;
 const DEFAULT_GITHUB_API_BASE_URL = 'https://api.github.com';
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 15000;
 
+function getNodeLineNumber(node: unknown, lineCounter: LineCounter): number {
+  if (
+    node &&
+    typeof node === 'object' &&
+    'range' in node &&
+    Array.isArray((node as { range?: unknown }).range) &&
+    typeof (node as { range: [number] }).range[0] === 'number'
+  ) {
+    return lineCounter.linePos((node as { range: [number] }).range[0]).line;
+  }
+  return 1;
+}
+
+function getScalarString(node: unknown): string | null {
+  if (isScalar(node) && typeof node.value === 'string') {
+    return node.value;
+  }
+  return null;
+}
+
+function workflowTriggersOnPullRequest(onNode: unknown): boolean {
+  if (isScalar(onNode)) {
+    return onNode.value === 'pull_request';
+  }
+  if (isSeq(onNode)) {
+    return onNode.items.some(
+      (item) => isScalar(item) && item.value === 'pull_request'
+    );
+  }
+  if (isMap(onNode)) {
+    return onNode.items.some(
+      (pair) => isPair(pair) && isScalar(pair.key) && pair.key.value === 'pull_request'
+    );
+  }
+  return false;
+}
+
+function conditionExcludesPullRequest(ifValue: string | null): boolean {
+  if (!ifValue) return false;
+  const normalized = ifValue.replace(/\s+/g, ' ').trim();
+  if (
+    /github\.event_name\s*!=\s*['"]pull_request['"]/.test(normalized) ||
+    /['"]pull_request['"]\s*!=\s*github\.event_name/.test(normalized)
+  ) {
+    return true;
+  }
+
+  const eqMatches = [
+    ...normalized.matchAll(/github\.event_name\s*==\s*['"]([^'"]+)['"]/g),
+    ...normalized.matchAll(/['"]([^'"]+)['"]\s*==\s*github\.event_name/g),
+  ];
+  if (eqMatches.length > 0) {
+    return eqMatches.every((m) => m[1] !== 'pull_request');
+  }
+
+  return false;
+}
+
+function permissionsHaveWriteScope(permissionsNode: unknown): boolean {
+  if (isScalar(permissionsNode)) {
+    return permissionsNode.value === 'write-all';
+  }
+  if (isMap(permissionsNode)) {
+    return permissionsNode.items.some(
+      (pair) =>
+        isPair(pair) &&
+        isScalar(pair.value) &&
+        typeof pair.value.value === 'string' &&
+        pair.value.value.trim() === 'write'
+    );
+  }
+  return false;
+}
+
+function evaluateAstPolicies(
+  doc: ReturnType<typeof parseDocument>,
+  lineCounter: LineCounter,
+  lines: string[],
+  relPath: string,
+  fileName: string,
+  violations: Violation[]
+): void {
+  if (!isMap(doc.contents)) {
+    return;
+  }
+
+  const addAstViolation = (
+    node: unknown,
+    actionRef: string,
+    reason: string
+  ): void => {
+    const lineNumber = getNodeLineNumber(node, lineCounter);
+    violations.push({
+      filePath: relPath,
+      lineNumber,
+      lineContent: (lines[lineNumber - 1] ?? '').trim(),
+      actionRef,
+      reason,
+    });
+  };
+
+  const onNode: unknown = doc.contents.get('on', true);
+  const hasPullRequestTrigger = workflowTriggersOnPullRequest(onNode);
+  const topPermissionsNode: unknown = doc.contents.get('permissions', true);
+
+  // Rule: rollback_environment must not appear under workflow_dispatch.inputs outside rollback.yml
+  if (fileName !== 'rollback.yml' && isMap(onNode)) {
+    const dispatchNode: unknown = onNode.get('workflow_dispatch', true);
+    if (isMap(dispatchNode)) {
+      const inputsNode: unknown = dispatchNode.get('inputs', true);
+      if (isMap(inputsNode)) {
+        for (const pair of inputsNode.items) {
+          if (
+            isPair(pair) &&
+            isScalar(pair.key) &&
+            pair.key.value === 'rollback_environment'
+          ) {
+            addAstViolation(
+              pair.key,
+              'workflow_dispatch.inputs.rollback_environment',
+              '"rollback_environment" must not be exposed on workflow_dispatch inputs; restrict rollback environment overrides to workflow_call or rollback.yml.'
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const jobsNode: unknown = doc.contents.get('jobs', true);
+  if (!isMap(jobsNode)) {
+    return;
+  }
+
+  for (const jobPair of jobsNode.items) {
+    if (!isPair(jobPair) || !isScalar(jobPair.key) || !isMap(jobPair.value)) {
+      continue;
+    }
+    const jobId = String(jobPair.key.value);
+    const jobMap = jobPair.value;
+    const jobIf = getScalarString(jobMap.get('if', true));
+    const jobExcludesPr = conditionExcludesPullRequest(jobIf);
+
+    const jobPermissionsNode: unknown = jobMap.has('permissions')
+      ? jobMap.get('permissions', true)
+      : topPermissionsNode;
+    const jobHasWritePermissions = permissionsHaveWriteScope(jobPermissionsNode);
+
+    // Rule: jobs.<id>.environment referencing rollback_environment outside rollback.yml must guard on workflow_call
+    if (fileName !== 'rollback.yml' && jobMap.has('environment')) {
+      const envNode: unknown = jobMap.get('environment', true);
+      const envExpr = isScalar(envNode)
+        ? getScalarString(envNode)
+        : isMap(envNode)
+          ? getScalarString(envNode.get('name', true))
+          : null;
+      if (
+        envExpr &&
+        envExpr.includes('rollback_environment') &&
+        !/github\.event_name\s*==\s*['"]workflow_call['"]/.test(envExpr)
+      ) {
+        addAstViolation(
+          envNode,
+          `jobs.${jobId}.environment`,
+          `Job "${jobId}" environment references rollback_environment without guarding on "github.event_name == 'workflow_call'".`
+        );
+      }
+    }
+
+    const stepsNode: unknown = jobMap.get('steps', true);
+    if (!isSeq(stepsNode)) {
+      continue;
+    }
+
+    for (const stepNode of stepsNode.items) {
+      if (!isMap(stepNode)) {
+        continue;
+      }
+
+      const usesNode: unknown = stepNode.get('uses', true);
+      const usesRaw = getScalarString(usesNode)?.trim() ?? '';
+      const stepIf = getScalarString(stepNode.get('if', true));
+      const stepExcludesPr = jobExcludesPr || conditionExcludesPullRequest(stepIf);
+      const withNode: unknown = stepNode.get('with', true);
+      const runNode: unknown = stepNode.get('run', true);
+      const runScript = getScalarString(runNode);
+
+      // Rule 1: Every actions/checkout step must set with.persist-credentials: false
+      if (
+        usesRaw === 'actions/checkout' ||
+        usesRaw.startsWith('actions/checkout@')
+      ) {
+        const persistCredsNode: unknown = isMap(withNode)
+          ? withNode.get('persist-credentials', true)
+          : undefined;
+        const hasPersistFalse =
+          isScalar(persistCredsNode) && persistCredsNode.value === false;
+        if (!hasPersistFalse) {
+          addAstViolation(
+            usesNode ?? stepNode,
+            usesRaw,
+            'actions/checkout must set "with.persist-credentials: false" to avoid persisting GITHUB_TOKEN in .git/config.'
+          );
+        }
+      }
+
+      // Rule 2a: crazy-max/ghaction-github-runtime must be guarded against pull_request
+      if (
+        hasPullRequestTrigger &&
+        (usesRaw === 'crazy-max/ghaction-github-runtime' ||
+          usesRaw.startsWith('crazy-max/ghaction-github-runtime@')) &&
+        !stepExcludesPr
+      ) {
+        addAstViolation(
+          usesNode ?? stepNode,
+          usesRaw,
+          'crazy-max/ghaction-github-runtime must be guarded with "if: github.event_name != \'pull_request\'" in pull_request workflows.'
+        );
+      }
+
+      // Rule 2b: Jobs running npm ci / npm install on pull_request must not hold write permissions
+      if (
+        hasPullRequestTrigger &&
+        !stepExcludesPr &&
+        jobHasWritePermissions &&
+        runScript &&
+        /\bnpm\s+(?:ci|install|i)\b/.test(runScript)
+      ) {
+        addAstViolation(
+          runNode ?? stepNode,
+          `jobs.${jobId}.permissions`,
+          `Job "${jobId}" executes npm install/ci on pull_request while holding write permissions; drop write scopes before running package scripts.`
+        );
+      }
+
+      // Rule 4: Release cache isolation & safe tar extraction in publish-artifact.yml
+      if (fileName === 'publish-artifact.yml') {
+        if (
+          usesRaw === 'actions/cache' ||
+          usesRaw.startsWith('actions/cache@')
+        ) {
+          const keyVal = isMap(withNode)
+            ? getScalarString(withNode.get('key', true))?.trim() ?? ''
+            : '';
+          if (!keyVal.startsWith('release-')) {
+            addAstViolation(
+              usesNode ?? stepNode,
+              usesRaw,
+              'actions/cache in publish-artifact.yml must use a "release-" namespaced cache key.'
+            );
+          }
+          if (isMap(withNode) && withNode.has('restore-keys')) {
+            addAstViolation(
+              withNode.get('restore-keys', true) ?? usesNode ?? stepNode,
+              usesRaw,
+              'actions/cache in publish-artifact.yml must omit prefix "restore-keys" to enforce exact hash-locked cache hits.'
+            );
+          }
+        }
+
+        if (
+          runScript &&
+          /\btar\b[^\n]*(?:\s-[a-zA-Z]*x[a-zA-Z]*\b|\s--extract\b)/.test(runScript) &&
+          (!runScript.includes('--no-same-owner') ||
+            !runScript.includes('--no-same-permissions'))
+        ) {
+          addAstViolation(
+            runNode ?? stepNode,
+            `jobs.${jobId}.tar`,
+            'tar archive extraction in publish-artifact.yml must pass "--no-same-owner --no-same-permissions".'
+          );
+        }
+      }
+    }
+  }
+}
+
 function checkWorkflowFile(
   filePath: string,
   violations: Violation[],
@@ -42,10 +318,16 @@ function checkWorkflowFile(
   baseDir: string = process.cwd()
 ): void {
   const relPath = path.relative(baseDir, filePath).replace(/\\/g, '/');
+  const fileName = path.basename(filePath);
   const content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split(/\r?\n/);
 
-  const doc = parseDocument(content, { version: '1.2', strict: true });
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(content, {
+    version: '1.2',
+    strict: true,
+    lineCounter,
+  });
   for (const err of doc.errors) {
     const lineNumber = err.linePos?.[0]?.line ?? 1;
     const summary = err.message.split(/\r?\n/)[0].trim();
@@ -68,6 +350,10 @@ function checkWorkflowFile(
       actionRef: warn.code,
       reason: `YAML 1.2 warning (${warn.code}): ${summary}`,
     });
+  }
+
+  if (doc.errors.length === 0) {
+    evaluateAstPolicies(doc, lineCounter, lines, relPath, fileName, violations);
   }
 
   lines.forEach((line, index) => {

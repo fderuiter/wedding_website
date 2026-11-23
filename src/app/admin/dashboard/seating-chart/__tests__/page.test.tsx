@@ -5,43 +5,9 @@ import { useSeatingState } from '@/features/seating';
 
 // Mock useSeatingState
 jest.mock('@/features/seating', () => {
-  const {
-    FloorplanCanvas,
-    UnassignedGuestPanel,
-    TableModal,
-    PrintableFloorplan,
-    resolveDetailedSeatAssignments,
-    resolveSeatAssignments,
-    ADDRESS_COLLECTION_TAG,
-    computeTableMealCounts,
-    getDietaryBadges,
-    getGuestAttendanceStatus,
-    getGuestCompanionNames,
-    getGuestPartySize,
-    getGuestPlusOneNamesList,
-    getGuestsHeadcount,
-    getSeatingShapeLabel,
-    isGuestEligibleForSeating,
-    isLandmarkTable,
-  } = jest.requireActual('@/features/seating');
+  const actual = jest.requireActual('@/features/seating');
   return {
-    FloorplanCanvas,
-    UnassignedGuestPanel,
-    TableModal,
-    PrintableFloorplan,
-    resolveDetailedSeatAssignments,
-    resolveSeatAssignments,
-    ADDRESS_COLLECTION_TAG,
-    computeTableMealCounts,
-    getDietaryBadges,
-    getGuestAttendanceStatus,
-    getGuestCompanionNames,
-    getGuestPartySize,
-    getGuestPlusOneNamesList,
-    getGuestsHeadcount,
-    getSeatingShapeLabel,
-    isGuestEligibleForSeating,
-    isLandmarkTable,
+    ...actual,
     useSeatingState: jest.fn(),
   };
 });
@@ -559,5 +525,87 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     await waitFor(() => {
       expect(mockDeleteTable).toHaveBeenCalledWith('table-1');
     });
+  });
+
+  test('supports single-pointer nudge controls and Place Table mode in Selected Table Inspector, clear search button, and Seat Household label-in-name', () => {
+    const householdGuests = [
+      {
+        id: 'hh-1',
+        guestName: 'Clara Oswald',
+        code: 'HH01',
+        householdName: 'Oswald Family',
+        tableId: null,
+        seatNumber: null,
+        used: true,
+        extraFields: { attending: true },
+      },
+      {
+        id: 'hh-2',
+        guestName: 'Danny Pink',
+        code: 'HH02',
+        householdName: 'Oswald Family',
+        tableId: null,
+        seatNumber: null,
+        used: true,
+        extraFields: { attending: true },
+      },
+    ];
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [mockTable],
+      allGuests: householdGuests,
+      unassignedGuests: householdGuests,
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: jest.fn(),
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: jest.fn(),
+      undoLastBatchAction: jest.fn(),
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    // WCAG 2.5.3 Label in Name: Seat Household accessible name starts with visible text "Seat Household"
+    const seatHouseholdBtn = screen.getByRole('button', { name: /^Seat Household/i });
+    expect(seatHouseholdBtn).toHaveAccessibleName('Seat Household for Oswald Family (2 guests)');
+
+    // Global guest search input & >=24x24px clear button
+    const searchInput = screen.getByLabelText(/Search all guests across floorplan and unassigned list/i);
+    fireEvent.change(searchInput, { target: { value: 'Clara' } });
+    const clearBtn = screen.getByRole('button', { name: 'Clear search query' });
+    expect(clearBtn.className).toContain('!h-7');
+    expect(clearBtn.className).toContain('!w-7');
+    fireEvent.click(clearBtn);
+    expect((searchInput as HTMLInputElement).value).toBe('');
+
+    // Select table to reveal both floating and inspector position controls
+    const tableNode = screen.getByRole('button', { name: /Table 1 - Head Table, shape round/i });
+    fireEvent.click(tableNode);
+
+    const inspectorControls = screen.getByTestId('inspector-position-controls');
+    expect(within(inspectorControls).getByTestId('inspector-coordinates')).toHaveTextContent('X: 100, Y: 100');
+
+    // Single-pointer directional nudges from Inspector summary bar
+    fireEvent.click(within(inspectorControls).getByRole('button', { name: 'Nudge Table 1 - Head Table right' }));
+    expect(mockUpdateTablePosition).toHaveBeenCalledWith('table-1', 120, 100);
+    fireEvent.click(within(inspectorControls).getByRole('button', { name: 'Nudge Table 1 - Head Table down' }));
+    expect(mockUpdateTablePosition).toHaveBeenCalledWith('table-1', 100, 120);
+
+    // Toggle Place Table mode via pressed state and Escape to exit cleanly
+    const placeBtn = within(inspectorControls).getByRole('button', { name: /^Place Table/i });
+    expect(placeBtn).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(placeBtn);
+    expect(placeBtn).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(placeBtn).toHaveAttribute('aria-pressed', 'false');
   });
 });

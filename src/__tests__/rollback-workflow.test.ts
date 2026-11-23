@@ -2117,5 +2117,210 @@ process.exit(1);
         expect(res.summary).toContain(`**Failed Stage:** \`${tc.expectedStage}\``);
       }
     });
+
+    it('blocks rollback preflight when previous_digest matches CURRENT_SHA or lacks a prior successful deployment in target_environment, and succeeds when verified', async () => {
+      const verifyDeploymentScript = extractStepRunScript(
+        rollbackYml,
+        'Verify Rollback Digest Deployment History'
+      );
+      const recordFailureScript = extractStepRunScript(
+        rollbackYml,
+        'Record Preflight Failure Stage'
+      );
+
+      const healthySha = '1111111111111111111111111111111111111111';
+      const failingSha = '2222222222222222222222222222222222222222';
+      const healthyDigest =
+        'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const failingDigest =
+        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const unpromotedDigest =
+        'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-verify-dep-bin-'));
+      fs.writeFileSync(
+        path.join(binDir, 'gh'),
+        `#!/usr/bin/env bash
+if [[ "$1" == "attestation" && "$2" == "verify" ]]; then
+  if [[ "$3" == *"${failingDigest}"* ]]; then
+    printf '[{"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"${failingSha}"}}}}]'
+    exit 0
+  fi
+  if [[ "$3" == *"${healthyDigest}"* ]]; then
+    printf '[{"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"${healthySha}"}}}}]'
+    exit 0
+  fi
+fi
+exit 1
+`,
+        { mode: 0o755 }
+      );
+      fs.writeFileSync(
+        path.join(binDir, 'docker'),
+        `#!/usr/bin/env bash
+if [[ "$1" == "login" ]]; then
+  exit 0
+fi
+if [[ "$1" == "buildx" && "$2" == "imagetools" && "$3" == "inspect" ]]; then
+  if [[ "$*" == *"--raw"* ]]; then
+    if [[ "$*" == *"${failingDigest}"* ]]; then
+      printf '{"annotations":{"org.opencontainers.image.revision":"${failingSha}"}}'
+      exit 0
+    fi
+    printf '{"annotations":{"org.opencontainers.image.revision":"${healthySha}"}}'
+    exit 0
+  fi
+  if [[ "$*" == *":${failingSha}"* ]]; then
+    printf '${failingDigest}\\n'
+    exit 0
+  fi
+fi
+exit 1
+`,
+        { mode: 0o755 }
+      );
+
+      const deployments = [
+        {
+          id: 702,
+          sha: failingSha,
+          environment: 'production',
+          payload: {
+            commit_sha: failingSha,
+            image_tag: failingSha,
+            image_digest: failingDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'failure' }],
+        },
+        {
+          id: 701,
+          sha: healthySha,
+          environment: 'production',
+          payload: {
+            commit_sha: healthySha,
+            image_tag: 'v1.2.2',
+            image_digest: healthyDigest,
+            dry_run: false,
+          },
+          // Superseded by auto_inactive: true on newer deployment, while retaining prior 'success'
+          statuses: [{ state: 'inactive' }, { state: 'success' }],
+        },
+        {
+          id: 700,
+          sha: '3333333333333333333333333333333333333333',
+          environment: 'staging',
+          payload: {
+            commit_sha: '3333333333333333333333333333333333333333',
+            image_tag: 'v1.2.3-rc1',
+            image_digest: unpromotedDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'success' }],
+        },
+      ];
+
+      const apiServer = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        res.setHeader('Content-Type', 'application/json');
+        if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/deployments') {
+          const envFilter = url.searchParams.get('environment') || '';
+          const matched = deployments.filter((d) => !envFilter || d.environment === envFilter);
+          res.writeHead(200);
+          res.end(JSON.stringify(matched));
+          return;
+        }
+        const statusMatch = url.pathname.match(
+          /^\/repos\/example\/wedding_website\/deployments\/(\d+)\/statuses$/
+        );
+        if (req.method === 'GET' && statusMatch) {
+          const id = Number(statusMatch[1]);
+          const found = deployments.find((d) => d.id === id);
+          res.writeHead(200);
+          res.end(JSON.stringify(found?.statuses ?? []));
+          return;
+        }
+        res.writeHead(404);
+        res.end(JSON.stringify({ message: 'not found' }));
+      });
+
+      await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()));
+      const addr = apiServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const apiBase = `http://127.0.0.1:${port}`;
+
+      try {
+        // 1. Rejects previous_digest built from CURRENT_SHA
+        const sameShaRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: failingDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(sameShaRes.status).toBe(1);
+        expect(sameShaRes.stdout + sameShaRes.stderr).toContain('failing commit SHA');
+
+        // 2. Rejects staging-only / never-deployed digest when targeting production
+        const unpromotedRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: unpromotedDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(unpromotedRes.status).toBe(1);
+        expect(unpromotedRes.stdout + unpromotedRes.stderr).toContain(
+          "has no prior successful GitHub Deployment in environment 'production'"
+        );
+
+        // 3. Accepts healthy prior production deployment digest (even after auto_inactive)
+        const healthyRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: healthyDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(healthyRes.status).toBe(0);
+        expect(healthyRes.outputs.verified_deployment_id).toBe('701');
+        expect(healthyRes.outputs.verified_digest).toBe(healthyDigest);
+
+        // 4. Record Preflight Failure Stage reports Rollback Digest Deployment Verification
+        const failureStageRes = runBashStep(recordFailureScript, {
+          VALIDATE_OUTCOME: 'success',
+          VERIFY_DEPLOYMENT_OUTCOME: 'failure',
+          DB_CHECK_OUTCOME: 'skipped',
+        });
+        expect(failureStageRes.status).toBe(0);
+        expect(failureStageRes.outputs.failed_stage).toBe(
+          'Rollback Digest Deployment Verification'
+        );
+      } finally {
+        await new Promise<void>((resolve) => apiServer.close(() => resolve()));
+        fs.rmSync(binDir, { recursive: true, force: true });
+      }
+    });
   });
 });

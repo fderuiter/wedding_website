@@ -36,11 +36,6 @@ on:
           - google-cloud-run
           - docker-host
           - generic-webhook
-      rollback_environment:
-        description: 'Optional unguarded GitHub Environment override for rollback secret resolution'
-        required: false
-        default: ''
-        type: string
       dry_run:
         description: 'Run provider adapter in explicit dry-run validation mode'
         required: false
@@ -174,7 +169,7 @@ jobs:
       attestations: read
       deployments: write
       id-token: write
-    environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}
+    environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || inputs.environment || 'production' }}
     outputs:
       service_url: ${{ steps.resolve-url.outputs.service_url }}
       is_dry_run: ${{ steps.resolve-url.outputs.is_dry_run }}
@@ -200,6 +195,7 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
           fetch-depth: 2
+          persist-credentials: false
 
       - name: Resolve Artifact Image URI
         id: resolve
@@ -210,7 +206,7 @@ jobs:
           RAW_DIGEST: ${{ inputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
-          ROLLBACK_ENV: ${{ inputs.rollback_environment }}
+          ROLLBACK_ENV: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || '' }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
@@ -475,11 +471,20 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
+          GIT_AUTH_ARGS=()
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+            ORIGIN_SERVER="${BASH_REMATCH[0]}"
+            BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+          fi
+
           if git remote get-url origin >/dev/null 2>&1; then
             if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
-              git fetch --unshallow --tags origin +refs/heads/main:refs/remotes/origin/main
+              git "${GIT_AUTH_ARGS[@]}" fetch --unshallow --tags origin +refs/heads/main:refs/remotes/origin/main
             else
-              git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+              git "${GIT_AUTH_ARGS[@]}" fetch --tags origin +refs/heads/main:refs/remotes/origin/main
             fi
           fi
 
@@ -512,7 +517,7 @@ jobs:
 
           if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
             if git remote get-url origin >/dev/null 2>&1; then
-              git fetch --no-tags origin "$TARGET_SHA" || true
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$TARGET_SHA" || true
             fi
           fi
 
@@ -537,8 +542,9 @@ jobs:
           TARGET_ENV: ${{ inputs.environment || 'production' }}
         with:
           script: |
-            const targetSha = process.env.TARGET_SHA;
-            const targetEnv = process.env.TARGET_ENV || 'production';
+            const targetSha = (process.env.TARGET_SHA || '').trim();
+            const normalizedTargetSha = targetSha.toLowerCase();
+            const targetEnv = (process.env.TARGET_ENV || 'production').trim();
             const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
 
             const ciRuns = await github.paginate(
@@ -556,7 +562,7 @@ jobs:
             const successfulCiRun = ciRuns.find(
               (run) =>
                 run.conclusion === 'success' &&
-                run.head_sha === targetSha &&
+                (run.head_sha || '').toLowerCase() === normalizedTargetSha &&
                 (!run.head_repository || run.head_repository.full_name === fullRepo)
             );
 
@@ -566,6 +572,43 @@ jobs:
               );
               return;
             }
+
+            const jobMatchesTargetEnvironment = (job) => {
+              if (!job || job.conclusion !== 'success') return false;
+              const jobName = typeof job.name === 'string' ? job.name : '';
+              const isMigrationJob =
+                jobName === 'Execute Database Migrations' ||
+                jobName.endsWith(' / Execute Database Migrations');
+              if (!isMigrationJob) return false;
+
+              const steps = Array.isArray(job.steps) ? job.steps : [];
+              const confirmStep = steps.find(
+                (s) => s && s.name === 'Verify Manual Migration Confirmation'
+              );
+              if (confirmStep && confirmStep.conclusion !== 'success') {
+                return false;
+              }
+
+              const envSteps = steps.filter(
+                (s) =>
+                  s &&
+                  typeof s.name === 'string' &&
+                  s.name.startsWith('Record Target Environment (')
+              );
+              if (envSteps.length > 0) {
+                return envSteps.some(
+                  (s) =>
+                    s.name === `Record Target Environment (${targetEnv})` &&
+                    s.conclusion === 'success'
+                );
+              }
+
+              if (typeof job.environment === 'string' && job.environment.length > 0) {
+                return job.environment === targetEnv;
+              }
+
+              return false;
+            };
 
             const migrateRuns = await github.paginate(
               github.rest.actions.listWorkflowRuns,
@@ -579,22 +622,77 @@ jobs:
               }
             );
 
-            const successfulMigrateRun = migrateRuns.find(
+            const candidateMigrateRuns = migrateRuns.filter(
               (run) =>
                 run.conclusion === 'success' &&
-                run.head_sha === targetSha &&
+                (run.head_sha || '').toLowerCase() === normalizedTargetSha &&
                 (!run.head_repository || run.head_repository.full_name === fullRepo)
             );
 
-            if (!successfulMigrateRun) {
+            let verifiedMigrateRun = null;
+            for (const run of candidateMigrateRuns) {
+              if (!github.rest.actions.listJobsForWorkflowRun) {
+                break;
+              }
+              const jobs = await github.paginate(
+                github.rest.actions.listJobsForWorkflowRun,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: run.id,
+                  per_page: 100,
+                }
+              );
+              if (Array.isArray(jobs) && jobs.some(jobMatchesTargetEnvironment)) {
+                verifiedMigrateRun = run;
+                break;
+              }
+            }
+
+            if (!verifiedMigrateRun && github.rest.actions.listJobsForWorkflowRun) {
+              const deployRuns = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: 'deploy.yml',
+                  head_sha: targetSha,
+                  status: 'completed',
+                  per_page: 100,
+                }
+              );
+              for (const run of deployRuns) {
+                if (
+                  (run.head_sha || '').toLowerCase() !== normalizedTargetSha ||
+                  (run.head_repository && run.head_repository.full_name !== fullRepo)
+                ) {
+                  continue;
+                }
+                const jobs = await github.paginate(
+                  github.rest.actions.listJobsForWorkflowRun,
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id,
+                    per_page: 100,
+                  }
+                );
+                if (Array.isArray(jobs) && jobs.some(jobMatchesTargetEnvironment)) {
+                  verifiedMigrateRun = run;
+                  break;
+                }
+              }
+            }
+
+            if (!verifiedMigrateRun) {
               core.setFailed(
-                `Standalone live promotion blocked: no completed successful db-migrate.yml workflow run found for commit ${targetSha} (${targetEnv}) in ${fullRepo}. Run deploy.yml or db-migrate.yml before promoting container revisions.`
+                `Standalone live promotion blocked: no completed successful db-migrate.yml workflow run found for commit ${targetSha} (${targetEnv}) in ${fullRepo}. Run deploy.yml or db-migrate.yml for '${targetEnv}' before promoting container revisions.`
               );
               return;
             }
 
             core.info(
-              `Verified CI run #${successfulCiRun.run_number} and database migration run #${successfulMigrateRun.run_number} for commit ${targetSha}.`
+              `Verified CI run #${successfulCiRun.run_number} and database migration run #${verifiedMigrateRun.run_number} (${targetEnv}) for commit ${targetSha}.`
             );
 
       - name: Verify Selected Provider Credentials
