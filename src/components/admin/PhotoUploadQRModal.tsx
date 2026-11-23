@@ -285,9 +285,9 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
           <div className="no-print bg-stone-50 dark:bg-zinc-800/80 p-4 rounded-xl border border-stone-200 dark:border-zinc-700 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-bold text-stone-900 dark:text-white">
+                <h3 className="text-base font-bold text-stone-900 dark:text-white">
                   Print Reception Table Cards or Avery Labels
-                </h2>
+                </h3>
                 <p className="text-xs text-stone-600 dark:text-stone-400">
                   Admin navigation and modal chrome are automatically hidden when printing.
                 </p>

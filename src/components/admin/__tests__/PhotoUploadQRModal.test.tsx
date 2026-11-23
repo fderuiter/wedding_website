@@ -147,10 +147,11 @@ describe('PhotoUploadQRModal Component', () => {
     expect(select.value).toBe('avery_5160');
     expect(screen.getAllByTestId('qr-label-card')).toHaveLength(30);
 
-    // Accessibility check in print mode (including WCAG 2.5.3 label-content-name-mismatch)
+    // Accessibility check in print mode (including WCAG 2.5.3 label-content-name-mismatch & heading-order)
     const results = await axe(container, {
       rules: {
         'label-content-name-mismatch': { enabled: true },
+        'heading-order': { enabled: true },
       },
     });
     expect(results).toHaveNoViolations();

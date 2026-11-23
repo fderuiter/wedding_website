@@ -165,22 +165,12 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
       });
 
       // 6. Rotate QR token from Admin Media Dashboard -> invalidates old QR link and existing scoped session while preserving full guest & admin access
-      const fullGuestContext = await browser.newContext();
-      await seedGuestAuthCookies(fullGuestContext);
-      const fullGuestPage = await fullGuestContext.newPage();
-
       await adminPage.getByTestId('open-photo-qr-modal-btn').click();
       await adminPage.getByTestId('rotate-photo-qr-token-btn').click();
       // Confirm accessible danger alertdialog
       await adminPage.getByRole('alertdialog').getByRole('button', { name: 'Confirm' }).click();
 
       await expect(urlInput).not.toHaveValue(initialSignedUrl);
-
-      // Old QR link redirects to /guest/login in a fresh unauthenticated context
-      const postRotateAnonContext = await browser.newContext();
-      const postRotateAnonPage = await postRotateAnonContext.newPage();
-      await postRotateAnonPage.goto(targetPathAndQuery, { waitUntil: 'domcontentloaded' });
-      await expect(postRotateAnonPage).toHaveURL(/\/guest\/login/);
 
       // Previously issued guest_photo_session cookie is rejected on upload (401) and /photos (redirects to /guest/login)
       const staleUploadRes = await qrGuestPage.request.post('/api/guest/photos/upload', {
@@ -196,14 +186,28 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
 
       await qrGuestPage.goto('/photos', { waitUntil: 'domcontentloaded' });
       await expect(qrGuestPage).toHaveURL(/\/guest\/login/);
+      await qrGuestContext.close();
+
+      // Old QR link redirects to /guest/login in a fresh unauthenticated context
+      const postRotateAnonContext = await browser.newContext();
+      try {
+        const postRotateAnonPage = await postRotateAnonContext.newPage();
+        await postRotateAnonPage.goto(targetPathAndQuery, { waitUntil: 'domcontentloaded' });
+        await expect(postRotateAnonPage).toHaveURL(/\/guest\/login/);
+      } finally {
+        await postRotateAnonContext.close();
+      }
 
       // Authenticated guest and admin retain uninterrupted access
-      await fullGuestPage.goto('/photos', { waitUntil: 'domcontentloaded' });
-      await expect(fullGuestPage).toHaveURL(/\/photos$/);
-
-      await postRotateAnonContext.close();
-      await fullGuestContext.close();
-      await qrGuestContext.close();
+      const fullGuestContext = await browser.newContext();
+      try {
+        await seedGuestAuthCookies(fullGuestContext);
+        const fullGuestPage = await fullGuestContext.newPage();
+        await fullGuestPage.goto('/photos', { waitUntil: 'domcontentloaded' });
+        await expect(fullGuestPage).toHaveURL(/\/photos$/);
+      } finally {
+        await fullGuestContext.close();
+      }
     } finally {
       for (const nodeId of uploadedNodeIds) {
         await adminPage.request.patch('/api/admin/photos/moderation', {
