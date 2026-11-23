@@ -146,6 +146,13 @@ const mockPrisma = prisma as unknown as {
 };
 const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
 
+function decodePdfText(raw: string): string {
+  const hexDecoded = Array.from(raw.matchAll(/<([0-9a-fA-F]+)>/g))
+    .map((m) => Buffer.from(m[1], 'hex').toString('latin1'))
+    .join('');
+  return `${raw}\n${hexDecoded}`;
+}
+
 describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -241,11 +248,14 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     const lines = csvText.trim().split('\n');
 
     expect(lines.length).toBe(5);
-    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes,Plus-One Name,Attendance,Meal Selections,Custom Answers');
-    expect(lines[1]).toBe('Table 1,ROUND,8,1,Alice Smith,CODE1,,,Attending,,');
-    expect(lines[2]).toBe('Table 1,ROUND,8,2,"Bob Jones, Jr.",CODE2,,,Attending,,');
-    expect(lines[3]).toBe('"Table 2 (""VIP"")",RECTANGLE,10,,(Unassigned Table),,,,,,');
-    expect(lines[4]).toBe('Unassigned,,,,Charlie Brown,CODE3,,,Pending,,');
+    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Dietary Notes,Plus-One Name,Plus-One Seats,Attendance,Meal Selections,Table Meal Counts,Custom Answers');
+    expect(lines[1]).toBe('Table 1,ROUND,8,1,Alice Smith,,,,Attending,,No entrée selected (2),');
+    expect(lines[2]).toBe('Table 1,ROUND,8,2,"Bob Jones, Jr.",,,,Attending,,No entrée selected (2),');
+    expect(lines[3]).toBe('"Table 2 (""VIP"")",RECTANGLE,10,,(Unassigned Table),,,,,,,');
+    expect(lines[4]).toBe('Unassigned,,,,Charlie Brown,,,,Pending,,,');
+    expect(csvText).not.toContain('CODE1');
+    expect(csvText).not.toContain('CODE2');
+    expect(csvText).not.toContain('CODE3');
 
     expect(mockPrisma.seatingTable.findMany).toHaveBeenCalledWith({
       include: {
@@ -272,7 +282,7 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
 
     expect(res.status).toBe(200);
     const csvText = await res.text();
-    expect(csvText).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes,Plus-One Name,Attendance,Meal Selections,Custom Answers\n');
+    expect(csvText).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Dietary Notes,Plus-One Name,Plus-One Seats,Attendance,Meal Selections,Table Meal Counts,Custom Answers\n');
   });
 
   it('executes seatingTable and invitationCode database queries concurrently', async () => {
@@ -352,8 +362,10 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     expect(res.headers.get('content-type')).toBe('application/pdf');
     expect(res.headers.get('content-disposition')).toContain('attachment; filename="seating-chart.pdf"');
 
-    const pdfText = await res.text();
+    const pdfText = decodePdfText(await res.text());
     expect(pdfText.startsWith('%PDF-')).toBe(true);
+    expect(pdfText).not.toContain('JL100');
+    expect(pdfText).not.toContain('SR200');
   });
 
   it('neutralizes formula injection trigger characters in CSV export fields', async () => {
@@ -393,9 +405,11 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes,Plus-One Name,Attendance,Meal Selections,Custom Answers');
-    expect(lines[1]).toBe('\'=SUM(1+1),\'\+SHAPE,10,1,"\'=cmd|""/C calc""!A0",\'-CODE100,,,Pending,,');
-    expect(lines[2]).toBe("Unassigned,,,,SingleQuoteAdmin,'\tTABCODE,,,Pending,,".replace('SingleQuoteAdmin', "'@AdminUser"));
+    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Dietary Notes,Plus-One Name,Plus-One Seats,Attendance,Meal Selections,Table Meal Counts,Custom Answers');
+    expect(lines[1]).toBe('\'=SUM(1+1),\'\+SHAPE,10,1,"\'=cmd|""/C calc""!A0",,,,Pending,,No entrée selected (1),');
+    expect(lines[2]).toBe('Unassigned,,,,SingleQuoteAdmin,,,,Pending,,,'.replace('SingleQuoteAdmin', "'@AdminUser"));
+    expect(csvText).not.toContain('CODE100');
+    expect(csvText).not.toContain('TABCODE');
   });
 
   it('serializes populated dietary notes and escapes special characters in CSV export', async () => {
@@ -469,19 +483,22 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Invitation Code,Dietary Notes,Plus-One Name,Attendance,Meal Selections,Custom Answers');
+    expect(lines[0]).toBe('Table Name,Table Shape,Capacity,Seat Number,Guest Name,Dietary Notes,Plus-One Name,Plus-One Seats,Attendance,Meal Selections,Table Meal Counts,Custom Answers');
     // Populated dietary notes with comma escaped in quotes
-    expect(lines[1]).toBe('Garden Terrace,RECTANGLE,6,1,Taylor Morgan,TM01,"Gluten-Free, Peanut Allergy",,Pending,,');
+    expect(lines[1]).toBe('Garden Terrace,RECTANGLE,6,1,Taylor Morgan,"Gluten-Free, Peanut Allergy",,,Pending,,No entrée selected (3),');
     // Populated dietary notes with internal quotes escaped as ""
-    expect(lines[2]).toBe('Garden Terrace,RECTANGLE,6,2,Jordan Casey,JC02,"Strict ""Vegan"" Only",,Pending,,');
+    expect(lines[2]).toBe('Garden Terrace,RECTANGLE,6,2,Jordan Casey,"Strict ""Vegan"" Only",,,Pending,,No entrée selected (3),');
     // Empty string dietary notes
-    expect(lines[3]).toBe('Garden Terrace,RECTANGLE,6,3,Morgan Smith,MS03,,,Pending,,');
+    expect(lines[3]).toBe('Garden Terrace,RECTANGLE,6,3,Morgan Smith,,,,Pending,,No entrée selected (3),');
     // Empty table record
-    expect(lines[4]).toBe('Empty Table,ROUND,8,,(Unassigned Table),,,,,,');
+    expect(lines[4]).toBe('Empty Table,ROUND,8,,(Unassigned Table),,,,,,,');
     // Unassigned guest with dietary notes
-    expect(lines[5]).toBe('Unassigned,,,,Riley Reed,RR04,Shellfish Allergy,,Pending,,');
+    expect(lines[5]).toBe('Unassigned,,,,Riley Reed,Shellfish Allergy,,,Pending,,,');
     // Unassigned guest with null dietary notes
-    expect(lines[6]).toBe('Unassigned,,,,Sam Dakota,SD05,,,Pending,,');
+    expect(lines[6]).toBe('Unassigned,,,,Sam Dakota,,,,Pending,,,');
+    expect(csvText).not.toContain('TM01');
+    expect(csvText).not.toContain('JC02');
+    expect(csvText).not.toContain('RR04');
   });
 
   it('excludes declined RSVPs and address-collection rows from CSV and PDF exports', async () => {
@@ -594,6 +611,7 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
             guestName: 'Jane Doe',
             code: 'JANE26',
             seatNumber: 1,
+            plusOneSeatNumbers: [2],
             tableId: 't-main',
             dietaryNotes: 'No shellfish',
             used: true,
@@ -606,15 +624,103 @@ describe('Seating Export API Route (GET /api/admin/seating/export)', () => {
           },
         ],
       },
+      {
+        id: 't-landmark',
+        name: 'Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        invitationCodes: [],
+      },
     ] as any);
     mockPrisma.invitationCode.findMany.mockResolvedValue([]);
 
     const req = new NextRequest('http://localhost:3000/api/admin/seating/export');
     const res = await GET(req);
-    const lines = (await res.text()).trim().split('\n');
+    const csvText = await res.text();
+    const lines = csvText.trim().split('\n');
 
+    expect(lines).toHaveLength(2);
     expect(lines[1]).toBe(
-      'Table 1,ROUND,8,1,Jane Doe,JANE26,No shellfish,John Doe,Attending,Jane Doe: Herb Salmon (gluten-free); John Doe: Short Rib,Shuttle?: Yes'
+      'Table 1,ROUND,8,1,Jane Doe,No shellfish,John Doe,2,Attending,Jane Doe: Herb Salmon (gluten-free); John Doe: Short Rib,"Herb Salmon: 1, Short Rib: 1",Shuttle?: Yes'
     );
+    expect(csvText).not.toContain('JANE26');
+    expect(csvText).not.toContain('Dance Floor');
+  });
+
+  it('exports caterer meal counts CSV per table (?format=meals) and printable Avery place/escort cards without leaking guest.code', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    mockPrisma.seatingTable.findMany.mockResolvedValue([
+      {
+        id: 't-caterer',
+        name: 'Garden Table',
+        shape: 'round',
+        capacity: 6,
+        invitationCodes: [
+          {
+            id: 'g-party',
+            guestName: 'Clara Oswald',
+            code: 'SECRET-CLARA-99',
+            seatNumber: 1,
+            plusOneSeatNumbers: [2],
+            tableId: 't-caterer',
+            dietaryNotes: 'Gluten-Free',
+            used: true,
+            extraFields: {
+              attending: true,
+              plusOneNames: ['Danny Pink'],
+              mealSelections: [
+                { attendeeName: 'Clara Oswald', mealOptionLabel: 'Herb Salmon', dietaryTags: ['gluten-free'] },
+                { attendeeName: 'Danny Pink', mealOptionLabel: 'Filet Mignon' },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: 't-dj',
+        name: 'DJ Booth',
+        shape: 'dj',
+        capacity: 0,
+        invitationCodes: [],
+      },
+    ] as any);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([]);
+
+    // 1. Meal counts CSV (?format=meals)
+    const mealsRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=meals'));
+    expect(mealsRes.status).toBe(200);
+    expect(mealsRes.headers.get('content-type')).toContain('text/csv');
+    expect(mealsRes.headers.get('content-disposition')).toContain('seating-meal-counts-');
+    const mealsCsv = await mealsRes.text();
+    expect(mealsCsv).toContain('Table Name,Table Shape,Capacity,Seated Guests,Entree Counts,Dietary Counts');
+    expect(mealsCsv).toContain('Garden Table,round,6,2,"Filet Mignon: 1, Herb Salmon: 1",GF: 1');
+    expect(mealsCsv).not.toContain('DJ Booth');
+    expect(mealsCsv).not.toContain('SECRET-CLARA-99');
+
+    // 2. Avery Place Cards PDF (?format=place-cards)
+    const placeRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=place-cards'));
+    expect(placeRes.status).toBe(200);
+    expect(placeRes.headers.get('content-type')).toBe('application/pdf');
+    expect(placeRes.headers.get('content-disposition')).toContain('seating-place-cards.pdf');
+    const placePdf = decodePdfText(await placeRes.text());
+    expect(placePdf.startsWith('%PDF-')).toBe(true);
+    expect(placePdf).toContain('Clara Oswald');
+    expect(placePdf).toContain('Danny Pink');
+    expect(placePdf).toContain('Herb Salmon');
+    expect(placePdf).toContain('Filet Mignon');
+    expect(placePdf).not.toContain('SECRET-CLARA-99');
+
+    // 3. Avery Escort Cards PDF (?format=escort-cards)
+    const escortRes = await GET(new NextRequest('http://localhost:3000/api/admin/seating/export?format=escort-cards'));
+    expect(escortRes.status).toBe(200);
+    expect(escortRes.headers.get('content-type')).toBe('application/pdf');
+    expect(escortRes.headers.get('content-disposition')).toContain('seating-escort-cards.pdf');
+    const escortPdf = decodePdfText(await escortRes.text());
+    expect(escortPdf.startsWith('%PDF-')).toBe(true);
+    expect(escortPdf).toContain('Clara Oswald');
+    expect(escortPdf).toContain('Danny Pink');
+    expect(escortPdf).toContain('Garden Table');
+    expect(escortPdf).not.toContain('SECRET-CLARA-99');
   });
 });
