@@ -29,6 +29,7 @@ import {
   type BatchInvitationCodeRecord,
   type InvitationCollisionStrategy,
 } from '@/utils/invitationValidation';
+import { withBasePath } from '@/lib/basePath';
 
 interface CsvImportWizardModalProps {
   isOpen: boolean;
@@ -1703,7 +1704,7 @@ export function CsvImportWizardModal({
       try {
         const payload = buildBatchImportPayload(rows, strategy);
 
-        const res = await fetch('/api/admin/invitation-codes/validate', {
+        const res = await fetch(withBasePath('/api/admin/invitation-codes/validate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -2008,7 +2009,7 @@ export function CsvImportWizardModal({
     try {
       const payload = buildBatchImportPayload(validEditableRows, latest.collisionStrategy);
 
-      const res = await fetch('/api/admin/invitation-codes/batch', {
+      const res = await fetch(withBasePath('/api/admin/invitation-codes/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

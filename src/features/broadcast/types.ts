@@ -24,6 +24,8 @@ export interface BroadcastTemplateContext {
   householdName?: string;
   weddingDate?: string;
   venueName?: string;
+  venueLocation?: string;
+  coupleNames?: string;
   [key: string]: any;
 }
 
@@ -93,6 +95,7 @@ export interface BroadcastHistoryItem {
   status: string;
   totalRecipients: number;
   sentCount: number;
+  viewedCount?: number;
   failedCount: number;
   scheduledFor?: Date | string | null;
   sentAt?: Date | string | null;

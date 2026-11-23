@@ -6,6 +6,7 @@ import { QueryClientContext } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { cn } from '@/utils/cn';
+import { withBasePath } from '@/lib/basePath';
 import {
   ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
   subscribeToAdminCacheSync,
@@ -67,7 +68,7 @@ export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps
 
     async function loadMilestones() {
       try {
-        const res = await fetch('/api/admin/onboarding-milestones');
+        const res = await fetch(withBasePath('/api/admin/onboarding-milestones'));
         if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
         const raw = await res.json();
         if (cancelled) return;

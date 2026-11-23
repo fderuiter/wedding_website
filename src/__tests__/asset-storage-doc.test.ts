@@ -142,7 +142,7 @@ describe('docs/ASSET_STORAGE.md Contract & Portal Staging Suite', () => {
       },
       {
         relPath: 'src/app/metadata.ts',
-        symbolPattern: /getLocalImageDimensions\(ogImageUrl\)/,
+        symbolPattern: /getLocalImageDimensions\(unprefixedOgImageUrl\)/,
       },
     ];
 

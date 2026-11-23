@@ -205,6 +205,37 @@ describe('Admin Photo Moderation Routes', () => {
       expect(mockContentService.moderatePhoto).toHaveBeenCalledWith('p1', 'approve', 'Admin');
     });
 
+    it('forwards inline caption and uploaderName overrides when approving a photo', async () => {
+      (mockContentService.moderatePhoto as jest.Mock).mockResolvedValueOnce({
+        id: 'p1',
+        data: {
+          status: 'APPROVED',
+          isVisible: true,
+          caption: 'Polished Caption',
+          uploaderName: 'Cousin Leo',
+        },
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/photos/moderation', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: 'p1',
+          action: 'approve',
+          caption: 'Polished Caption',
+          uploaderName: 'Cousin Leo',
+        }),
+      });
+      const res = await patchModerationQueue(req);
+      const json = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(json.success).toBe(true);
+      expect(mockContentService.moderatePhoto).toHaveBeenCalledWith('p1', 'approve', 'Admin', {
+        caption: 'Polished Caption',
+        uploaderName: 'Cousin Leo',
+      });
+    });
+
     it('rejects photo using nodeId and status APPROVED/REJECTED', async () => {
       (mockContentService.moderatePhoto as jest.Mock).mockResolvedValueOnce(true);
 

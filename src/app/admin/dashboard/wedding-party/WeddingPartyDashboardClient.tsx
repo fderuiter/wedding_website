@@ -11,6 +11,7 @@ import { WeddingPartyEditorForm, WeddingPartyCard } from '@/components/admin/Wed
 import { Button } from '@/components/ui/Button';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { useToast } from '@/components/ui/ToastProvider';
+import { withBasePath } from '@/lib/basePath';
 
 interface WeddingPartyDashboardContentProps {
   members: WeddingPartyMemberDTO[];
@@ -44,7 +45,7 @@ function WeddingPartyDashboardContent({
     let cancelled = false;
     const loadPartnerNames = async () => {
       try {
-        const res = await fetch('/api/admin/settings');
+        const res = await fetch(withBasePath('/api/admin/settings'));
         if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
         const raw = await res.json();
         if (cancelled) return;

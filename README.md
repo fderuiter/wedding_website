@@ -42,7 +42,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
     *   "Add to Calendar" (`.ics` and Google Calendar) generation and live wedding countdown widgets.
 *   **Custom Gift Registry, Cash Funds & Checkout:**
     *   **Physical Gifts & Dedicated Funds:** Configure `PHYSICAL` gifts alongside `CASH_FUND` and `EXPERIENCE_FUND` items in [`src/features/registry/components/RegistryItemForm.tsx`](./src/features/registry/components/RegistryItemForm.tsx), complete with optional peer-to-peer payment handles (`Venmo`, `PayPal`, `Cash App`, `Zelle`, or `Custom`).
-    *   **Stripe Card Checkout & Group Gifting:** Accept direct card contributions via **Stripe** `PaymentIntent` flows with optional processing-fee coverage (`calculateContributionAmounts` in [`src/features/registry/api/payment-intent.ts`](./src/features/registry/api/payment-intent.ts#L73-L75)), or let multiple guests fund shared group gifts with real-time progress bars.
+    *   **Stripe Card Checkout & Group Gifting:** Accept direct card contributions via **Stripe** `PaymentIntent` flows with optional processing-fee coverage (`calculateContributionAmounts` in [`src/features/registry/api/payment-intent.ts`](./src/features/registry/api/payment-intent.ts#L96-L98)), or let multiple guests fund shared group gifts with real-time progress bars.
     *   **Single, Batch URL & CSV Imports:** Pre-fill product metadata via single-URL Open Graph/retailer scraping, ingest up to **20** store URLs in parallel (`BatchUrlScraper`), or import external registry spreadsheets via CSV (`CsvRegistryImport`) in [`src/features/registry/pages/add-item.tsx`](./src/features/registry/pages/add-item.tsx).
     *   **Filtering & Sorting:** Guests can browse registry items by category, price range, availability, and "Most Wanted" highlights.
 *   **Guest Households, RSVPs, Seating & Broadcasts:**
@@ -79,7 +79,7 @@ For detailed onboarding, local setup workflows, and testing runbooks, see the [D
 
 ### Prerequisites
 
-*   **Node.js & npm**: Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
+*   **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
 *   **Git**: For version control.
 *   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`docker compose up -d db` after `cp .env.example .env`, binding `127.0.0.1:5432:5432` with user `wedding`, password `wedding123`, database `wedding` via [`docker-compose.yml`](./docker-compose.yml) and [`docker-compose.ci.yml`](./docker-compose.ci.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
 

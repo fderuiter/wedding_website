@@ -1,4 +1,10 @@
-import { maskRegistryItem, sanitizeRegistryItem, sanitizeRegistryItems } from '../lib/masking';
+import {
+  maskContributor,
+  maskRegistryItem,
+  sanitizeContributor,
+  sanitizeRegistryItem,
+  sanitizeRegistryItems,
+} from '../lib/masking';
 
 describe('Registry Payload Masking and Sanitization', () => {
   const sampleItem = {
@@ -189,5 +195,48 @@ describe('Registry Payload Masking and Sanitization', () => {
         date: 'Anonymous',
       });
     }
+  });
+
+  test('sanitizeContributor and maskContributor strip contributor postal address and email timestamp fields', () => {
+    const rawContributor = {
+      id: 'c-pii-1',
+      name: 'Taylor Donor',
+      email: 'taylor@example.com',
+      addressLine1: '100 Secret Lane',
+      addressLine2: 'Suite 4',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78701',
+      country: 'USA',
+      thankYouEmailSentAt: '2026-08-05T12:00:00.000Z',
+      confirmationEmailSentAt: '2026-08-04T12:05:00.000Z',
+      alertEmailSentAt: '2026-08-04T12:05:01.000Z',
+      reminderEmailSentAt: '2026-08-06T12:00:00.000Z',
+      invitationCodeId: 'inv-secret',
+      invitationCode: { id: 'inv-secret', code: 'SECRET', addressLine1: '100 Secret Lane' },
+      amount: 125,
+      date: '2026-08-04T12:00:00.000Z',
+    };
+
+    const sanitized = sanitizeContributor(rawContributor);
+    expect(sanitized.name).toBe('Taylor Donor');
+    expect(sanitized.amount).toBe(125);
+    expect(sanitized.email).toBeUndefined();
+    expect(sanitized.addressLine1).toBeUndefined();
+    expect(sanitized.addressLine2).toBeUndefined();
+    expect(sanitized.city).toBeUndefined();
+    expect(sanitized.state).toBeUndefined();
+    expect(sanitized.zipCode).toBeUndefined();
+    expect(sanitized.country).toBeUndefined();
+    expect(sanitized.thankYouEmailSentAt).toBeUndefined();
+    expect(sanitized.invitationCode).toBeUndefined();
+    expect(sanitized.invitationCodeId).toBe('inv-secret');
+
+    const masked = maskContributor(rawContributor);
+    expect(masked).toEqual({
+      name: 'Anonymous',
+      amount: 'Anonymous',
+      date: 'Anonymous',
+    });
   });
 });

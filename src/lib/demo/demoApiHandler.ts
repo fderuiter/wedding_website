@@ -6,7 +6,12 @@ import {
   hasCustomStoryText,
   hasNonPlaceholderVenueDetails,
 } from '@/lib/setupCopy';
-import type { InvitationCodeDTO, RegistryItem } from '@/features/registry';
+import { formatCurrency } from '@/utils/intl';
+import type {
+  InvitationCodeDTO,
+  RegistryItem,
+  ThankYouTemplateTokens,
+} from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
@@ -38,6 +43,40 @@ function nextDemoEntityId(prefix: string): string {
 
 function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
+}
+
+function escapeDemoHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDemoThankYouText(
+  template: string,
+  tokens: ThankYouTemplateTokens
+): string {
+  const guestName = tokens.guestName?.trim() || 'Friend';
+  const giftName = tokens.giftName?.trim() || 'wedding gift';
+  const formattedAmount =
+    typeof tokens.amount === 'number'
+      ? formatCurrency(tokens.amount)
+      : tokens.amount?.trim() || '$0.00';
+
+  return template
+    .replace(/\{\{\s*guestName\s*\}\}/g, guestName)
+    .replace(/\{\{\s*giftName\s*\}\}/g, giftName)
+    .replace(/\{\{\s*amount\s*\}\}/g, formattedAmount);
+}
+
+function formatDemoEmailHtml(text: string): string {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((p) => `<p style="margin:0 0 16px;">${escapeDemoHtml(p).replace(/\n/g, '<br />')}</p>`)
+    .join('');
+  return `<div style="font-family:Georgia,serif;color:#1f2937;line-height:1.6;">${paragraphs}</div>`;
 }
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -400,6 +439,12 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       carrier: typeof body.carrier === 'string' ? body.carrier : undefined,
       trackingNumber:
         typeof body.trackingNumber === 'string' ? body.trackingNumber : undefined,
+      addressLine1: typeof body.addressLine1 === 'string' ? body.addressLine1 : undefined,
+      addressLine2: typeof body.addressLine2 === 'string' ? body.addressLine2 : undefined,
+      city: typeof body.city === 'string' ? body.city : undefined,
+      state: typeof body.state === 'string' ? body.state : undefined,
+      zipCode: typeof body.zipCode === 'string' ? body.zipCode : undefined,
+      country: typeof body.country === 'string' ? body.country : undefined,
     });
     if (!updated) {
       return jsonResponse({ error: 'Registry item not found.' }, 404);
@@ -779,14 +824,27 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
 
   if (path === '/api/admin/invitation-codes/catalog' || path === '/api/admin/invitation-codes') {
     if (method === 'GET') {
-      const guests = getActiveArchetypeDataset().guests;
+      const search = (url.searchParams.get('search') || '').trim().toLowerCase();
+      const limitParam = Number(url.searchParams.get('limit') || '0');
+      let guests = getActiveArchetypeDataset().guests;
+      if (search) {
+        guests = guests.filter(
+          (g) =>
+            g.guestName.toLowerCase().includes(search) ||
+            (g.householdName || '').toLowerCase().includes(search) ||
+            g.code.toLowerCase().includes(search) ||
+            (g.email || '').toLowerCase().includes(search) ||
+            (g.city || '').toLowerCase().includes(search)
+        );
+      }
+      const limited = limitParam > 0 ? guests.slice(0, limitParam) : guests;
       return jsonResponse({
         success: true,
         data: {
-          items: guests,
+          items: limited,
           total: guests.length,
           page: 1,
-          limit: Math.max(50, guests.length),
+          limit: limitParam > 0 ? limitParam : Math.max(50, guests.length),
           totalPages: 1,
         },
       });
@@ -1218,8 +1276,11 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       ? body.ids.filter((id): id is string => typeof id === 'string')
       : [];
     const nextStatus =
-      body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
-        ? body.thankYouStatus
+      body.thankYouStatus === 'Sent' ||
+      body.thankYouStatus === 'Not Needed' ||
+      body.status === 'Sent' ||
+      body.status === 'Not Needed'
+        ? ((body.thankYouStatus || body.status) as 'Sent' | 'Not Needed')
         : 'Unsent';
     if (ids.length > 0) {
       const idSet = new Set(ids);
@@ -1236,45 +1297,244 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     return jsonResponse({ success: true, updatedCount: ids.length });
   }
 
-  if (path.startsWith('/api/admin/thank-you-notes/') && (method === 'PATCH' || method === 'PUT')) {
-    const noteId = decodeURIComponent(path.slice('/api/admin/thank-you-notes/'.length));
+  if (
+    path.startsWith('/api/admin/thank-you-notes/') &&
+    path.endsWith('/send-email') &&
+    method === 'POST'
+  ) {
+    const noteId = decodeURIComponent(
+      path.slice('/api/admin/thank-you-notes/'.length, -'/send-email'.length)
+    );
     const body = await parseJsonBody(init);
-    const nextStatus =
-      body.thankYouStatus === 'Sent' || body.thankYouStatus === 'Not Needed'
-        ? body.thankYouStatus
-        : 'Unsent';
+    const mode = body.mode === 'test' || body.mode === 'send' ? body.mode : 'preview';
+    const dataset = getActiveArchetypeDataset();
+    let foundContributor: RegistryItem['contributors'][number] | null = null;
+    let foundItem: RegistryItem | null = null;
+    for (const regItem of dataset.registryItems) {
+      const match = (regItem.contributors || []).find((c) => c.id === noteId);
+      if (match) {
+        foundContributor = match;
+        foundItem = regItem;
+        break;
+      }
+    }
+    if (!foundContributor) {
+      return jsonResponse({ error: 'Contributor record not found' }, 404);
+    }
+
+    const linkedGuest = foundContributor.invitationCodeId
+      ? dataset.guests.find((g) => g.id === foundContributor.invitationCodeId) ?? null
+      : null;
+    const demoState = getDemoState();
+    const presetConfig = ARCHETYPE_PRESETS[demoState.archetype].siteConfig;
+    const p1 = demoState.configOverrides.partner1Name || presetConfig.partner1Name;
+    const p2 = demoState.configOverrides.partner2Name || presetConfig.partner2Name;
+    const contactEmail = demoState.configOverrides.contactEmail || presetConfig.contactEmail;
+
+    const rawBody = typeof body.body === 'string' ? body.body.trim() : '';
+    const renderedText = formatDemoThankYouText(rawBody, {
+      guestName: foundContributor.name,
+      giftName: foundItem?.name || 'Wedding Gift',
+      amount: foundContributor.amount,
+    });
+    const rawSubject =
+      typeof body.subject === 'string' && body.subject.trim()
+        ? body.subject.trim()
+        : `Thank you from ${p1} & ${p2}!`;
+    const safeSubject = rawSubject.replace(/[\r\n]+/g, ' ').trim();
+    const overrideEmail =
+      typeof body.recipientEmail === 'string' && body.recipientEmail.trim()
+        ? body.recipientEmail.trim()
+        : null;
+    const resolvedRecipient =
+      overrideEmail || foundContributor.email || linkedGuest?.email || null;
+
+    if (mode === 'preview') {
+      return jsonResponse({
+        mode: 'preview',
+        to: resolvedRecipient,
+        testRecipient: contactEmail || null,
+        subject: safeSubject,
+        textBody: renderedText,
+        htmlBody: formatDemoEmailHtml(renderedText),
+      });
+    }
+
+    if (mode === 'test') {
+      const targetTestEmail = contactEmail || 'couple-demo@example.com';
+      return jsonResponse({
+        mode: 'test',
+        to: targetTestEmail,
+        subject: `[TEST] ${safeSubject}`,
+        messageId: `demo-test-${Date.now()}`,
+      });
+    }
+
+    if (!resolvedRecipient) {
+      return jsonResponse(
+        { error: 'Contributor has no email address on file. Please provide a recipient email.' },
+        400
+      );
+    }
+    const nowIso = new Date().toISOString();
     mutateActiveDataset((current) => ({
       ...current,
       registryItems: current.registryItems.map((item) => ({
         ...item,
         contributors: (item.contributors || []).map((c) =>
-          c.id === noteId ? { ...c, thankYouStatus: nextStatus } : c
+          c.id === noteId
+            ? {
+              ...c,
+              ...(overrideEmail && !c.email ? { email: overrideEmail } : {}),
+              thankYouStatus: 'Sent',
+              thankYouSentAt: c.thankYouSentAt || nowIso,
+              thankYouEmailSentAt: nowIso,
+              thankYouNote: renderedText,
+            }
+            : c
         ),
       })),
     }));
-    return jsonResponse({ success: true, id: noteId, thankYouStatus: nextStatus });
+    return jsonResponse({
+      mode: 'send',
+      to: resolvedRecipient,
+      subject: safeSubject,
+      messageId: `demo-send-${Date.now()}`,
+      thankYouStatus: 'Sent',
+      thankYouSentAt: foundContributor.thankYouSentAt || nowIso,
+      thankYouEmailSentAt: nowIso,
+    });
+  }
+
+  if (path.startsWith('/api/admin/thank-you-notes/') && (method === 'PATCH' || method === 'PUT')) {
+    const noteId = decodeURIComponent(path.slice('/api/admin/thank-you-notes/'.length));
+    const body = await parseJsonBody(init);
+    mutateActiveDataset((current) => {
+      let targetInviteId: string | null | undefined;
+      let syncedAddress: Record<string, string> | null = null;
+      const nextRegistryItems = current.registryItems.map((item) => ({
+        ...item,
+        contributors: (item.contributors || []).map((c) => {
+          if (c.id !== noteId) return c;
+          const nextStatus =
+            body.thankYouStatus === 'Sent' ||
+            body.thankYouStatus === 'Not Needed' ||
+            body.thankYouStatus === 'Unsent'
+              ? body.thankYouStatus
+              : (c.thankYouStatus ?? 'Unsent');
+          const resolvedInviteId =
+            body.invitationCodeId === null
+              ? null
+              : typeof body.invitationCodeId === 'string'
+                ? body.invitationCodeId
+                : (c.invitationCodeId ?? null);
+          targetInviteId = resolvedInviteId;
+          const nextContrib = {
+            ...c,
+            thankYouStatus: nextStatus,
+            ...(body.thankYouNote === null || typeof body.thankYouNote === 'string'
+              ? { thankYouNote: body.thankYouNote }
+              : {}),
+            ...(body.thankYouSentAt === null || typeof body.thankYouSentAt === 'string'
+              ? { thankYouSentAt: body.thankYouSentAt }
+              : {}),
+            invitationCodeId: resolvedInviteId,
+            ...(body.addressLine1 === null || typeof body.addressLine1 === 'string'
+              ? { addressLine1: body.addressLine1 || null }
+              : {}),
+            ...(body.addressLine2 === null || typeof body.addressLine2 === 'string'
+              ? { addressLine2: body.addressLine2 || null }
+              : {}),
+            ...(body.city === null || typeof body.city === 'string'
+              ? { city: body.city || null }
+              : {}),
+            ...(body.state === null || typeof body.state === 'string'
+              ? { state: body.state || null }
+              : {}),
+            ...(body.zipCode === null || typeof body.zipCode === 'string'
+              ? { zipCode: body.zipCode || null }
+              : {}),
+            ...(body.country === null || typeof body.country === 'string'
+              ? { country: body.country || null }
+              : {}),
+          };
+          if (body.syncAddressToGuest && resolvedInviteId) {
+            syncedAddress = {
+              addressLine1: nextContrib.addressLine1 || '',
+              addressLine2: nextContrib.addressLine2 || '',
+              city: nextContrib.city || '',
+              state: nextContrib.state || '',
+              zipCode: nextContrib.zipCode || '',
+              country: nextContrib.country || '',
+            };
+          }
+          return nextContrib;
+        }),
+      }));
+      const nextGuests =
+        syncedAddress && targetInviteId
+          ? current.guests.map((g) => (g.id === targetInviteId ? { ...g, ...syncedAddress } : g))
+          : current.guests;
+      return {
+        ...current,
+        registryItems: nextRegistryItems,
+        guests: nextGuests,
+      };
+    });
+    return jsonResponse({ success: true, id: noteId });
   }
 
   if (path === '/api/admin/thank-you-notes' && method === 'GET') {
     const dataset = getActiveArchetypeDataset();
+    const guestById = new Map(dataset.guests.map((g) => [g.id, g]));
     const items = dataset.registryItems.flatMap((registryItem) =>
-      (registryItem.contributors || []).map((contributor) => ({
-        id: contributor.id,
-        name: contributor.name,
-        email: contributor.email ?? null,
-        message: contributor.message ?? null,
-        amount: contributor.amount,
-        refundedAmount: contributor.refundedAmount ?? 0,
-        status: contributor.status ?? 'CONFIRMED',
-        date: contributor.date || new Date().toISOString(),
-        thankYouStatus: contributor.thankYouStatus || 'Unsent',
-        registryItemId: registryItem.id,
-        registryItem: {
-          id: registryItem.id,
-          name: registryItem.name,
-          category: registryItem.category,
-        },
-      }))
+      (registryItem.contributors || []).map((contributor) => {
+        const linked = contributor.invitationCodeId
+          ? guestById.get(contributor.invitationCodeId) ?? null
+          : null;
+        return {
+          id: contributor.id,
+          name: contributor.name,
+          email: contributor.email ?? null,
+          addressLine1: contributor.addressLine1 ?? null,
+          addressLine2: contributor.addressLine2 ?? null,
+          city: contributor.city ?? null,
+          state: contributor.state ?? null,
+          zipCode: contributor.zipCode ?? null,
+          country: contributor.country ?? null,
+          message: contributor.message ?? null,
+          amount: contributor.amount,
+          refundedAmount: contributor.refundedAmount ?? 0,
+          status: contributor.status ?? 'CONFIRMED',
+          date: contributor.date || new Date().toISOString(),
+          thankYouStatus: contributor.thankYouStatus || 'Unsent',
+          thankYouSentAt: contributor.thankYouSentAt ?? null,
+          thankYouEmailSentAt: contributor.thankYouEmailSentAt ?? null,
+          thankYouNote: contributor.thankYouNote ?? null,
+          invitationCodeId: contributor.invitationCodeId ?? null,
+          invitationCode: linked
+            ? {
+              id: linked.id,
+              code: linked.code,
+              guestName: linked.guestName,
+              email: linked.email ?? null,
+              householdName: linked.householdName ?? null,
+              addressLine1: linked.addressLine1 ?? null,
+              addressLine2: linked.addressLine2 ?? null,
+              city: linked.city ?? null,
+              state: linked.state ?? null,
+              zipCode: linked.zipCode ?? null,
+              country: linked.country ?? null,
+            }
+            : null,
+          registryItemId: registryItem.id,
+          registryItem: {
+            id: registryItem.id,
+            name: registryItem.name,
+            category: registryItem.category,
+          },
+        };
+      })
     );
     const sent = items.filter((i) => i.thankYouStatus === 'Sent').length;
     const notNeeded = items.filter((i) => i.thankYouStatus === 'Not Needed').length;

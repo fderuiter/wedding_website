@@ -331,17 +331,21 @@ describe('Edge-enforced Guest Passcode Gate', () => {
       expect(cookieHeader).toContain(GUEST_COOKIE);
     });
 
-    it('returns 200 and sets guest_invite_session cookie for a valid personal invitation code (case-insensitive)', async () => {
+    it('returns 200, sets guest_invite_session cookie, and transitions SENT BroadcastRecipient rows to VIEWED for a valid personal invitation code (case-insensitive)', async () => {
       const prismaWithInvite = prisma as unknown as {
         invitationCode?: { findFirst: jest.Mock };
+        broadcastRecipient?: { updateMany: jest.Mock };
       };
       const originalInvitationCode = prismaWithInvite.invitationCode;
+      const originalBroadcastRecipient = prismaWithInvite.broadcastRecipient;
       const findFirstMock = jest.fn().mockResolvedValue({
         id: 'inv-123',
         code: 'LOVE2026',
         guestName: 'Jordan Lee',
       });
+      const updateManyMock = jest.fn().mockResolvedValue({ count: 1 });
       prismaWithInvite.invitationCode = { findFirst: findFirstMock };
+      prismaWithInvite.broadcastRecipient = { updateMany: updateManyMock };
 
       try {
         const req = new NextRequest('http://localhost/api/guest/login', {
@@ -361,12 +365,22 @@ describe('Edge-enforced Guest Passcode Gate', () => {
             isSample: false,
           },
         });
+        expect(updateManyMock).toHaveBeenCalledWith({
+          where: {
+            invitationCodeId: 'inv-123',
+            status: 'SENT',
+          },
+          data: {
+            status: 'VIEWED',
+          },
+        });
 
         const cookieHeader = res.headers.get('set-cookie');
         expect(cookieHeader).toContain(GUEST_INVITE_COOKIE);
         expect(cookieHeader).not.toContain(`${GUEST_COOKIE}=`);
       } finally {
         prismaWithInvite.invitationCode = originalInvitationCode;
+        prismaWithInvite.broadcastRecipient = originalBroadcastRecipient;
       }
     });
 

@@ -616,4 +616,92 @@ describe('MediaDashboardPage', () => {
     expect(slideshowLink).toBeInTheDocument();
     expect(slideshowLink).toHaveAttribute('href', '/photos/slideshow');
   });
+
+  it('allows editing inline caption and uploaderName on pending moderation cards before approving and in Media Edit form', async () => {
+    mockGet.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/admin/photos/moderation')) {
+        return {
+          photos: [
+            {
+              id: 'pending-edit-1',
+              createdAt: '2026-06-20T21:15:00.000Z',
+              data: {
+                url: '/uploads/photos/sparklers.jpg',
+                title: 'Sparkler exit!',
+                caption: 'Raw guest caption',
+                uploaderName: 'Aunt Clara',
+                status: 'PENDING',
+              },
+            },
+          ],
+        };
+      }
+      return [
+        {
+          id: 'media-guest-1',
+          url: '/uploads/photos/approved-dance.jpg',
+          altText: 'Dance Floor',
+          caption: 'Initial Dance Caption',
+          uploaderName: 'Cousin Leo',
+          isDecorative: false,
+          publishToGallery: true,
+        },
+      ];
+    });
+    mockPatch.mockResolvedValue({ success: true });
+    mockPut.mockResolvedValue({
+      id: 'media-guest-1',
+      url: '/uploads/photos/approved-dance.jpg',
+      altText: 'Dance Floor',
+      isDecorative: false,
+      publishToGallery: true,
+    });
+
+    render(<MediaDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pending-count-badge')).toHaveTextContent('1');
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-moderation-drawer'));
+
+    const modCaptionInput = screen.getByTestId('pending-caption-input-pending-edit-1') as HTMLInputElement;
+    const modUploaderInput = screen.getByTestId('pending-uploader-input-pending-edit-1') as HTMLInputElement;
+    expect(modCaptionInput.value).toBe('Raw guest caption');
+    expect(modUploaderInput.value).toBe('Aunt Clara');
+
+    fireEvent.change(modCaptionInput, { target: { value: 'Edited Sparkler Send-Off' } });
+    fireEvent.change(modUploaderInput, { target: { value: 'Clara & Joe' } });
+    fireEvent.click(screen.getByTestId('approve-photo-pending-edit-1'));
+
+    await waitFor(() => {
+      expect(mockPatch).toHaveBeenCalledWith('/api/admin/photos/moderation', {
+        id: 'pending-edit-1',
+        action: 'approve',
+        caption: 'Edited Sparkler Send-Off',
+        uploaderName: 'Clara & Joe',
+      });
+    });
+
+    // Also verify Media Edit form exposes and persists/clears Caption and Uploader Name
+    fireEvent.click(screen.getByRole('button', { name: 'Edit media: Dance Floor' }));
+    const mediaCaptionInput = screen.getByTestId('media-caption-input') as HTMLInputElement;
+    const mediaUploaderInput = screen.getByTestId('media-uploader-input') as HTMLInputElement;
+    expect(mediaCaptionInput.value).toBe('Initial Dance Caption');
+    expect(mediaUploaderInput.value).toBe('Cousin Leo');
+
+    fireEvent.change(mediaCaptionInput, { target: { value: '' } });
+    fireEvent.change(mediaUploaderInput, { target: { value: 'Leo & Maya' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith(
+        '/api/media/media-guest-1',
+        expect.objectContaining({
+          caption: '',
+          uploaderName: 'Leo & Maya',
+        })
+      );
+    });
+  });
 });

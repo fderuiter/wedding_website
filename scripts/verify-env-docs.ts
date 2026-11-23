@@ -1203,15 +1203,41 @@ export function validateRuntimeContract(
     }
   }
 
-  if (operatorSet.has('RUN_MIGRATIONS')) {
+  const hasExecutionSection = /^##\s+\d+\.\s+Node\.js/m.test(docContent);
+  const hasDatabaseSection = /^##\s+\d+\.\s+Database Specification/m.test(docContent);
+  const hasLifecycleProbesSection = /^##\s+\d+\.\s+Application Lifecycle & Probes/m.test(docContent);
+
+  if (/\bv20(?:\.x)?\b/i.test(docContent) || (hasExecutionSection && !docContent.includes('>=22.22.1 <23.0.0'))) {
+    errors.push(
+      `${docName}: Must specify Node.js v22.x LTS range ">=22.22.1 <23.0.0" without any false v20.x floor`
+    );
+  }
+
+  if (
+    /\/opt\/prisma-cli[^\n]*packaged under\s+`\/app`/i.test(docContent) ||
+    (hasExecutionSection &&
+      (!/outside\s+`\/app`\s+at\s+`\/opt\/prisma-cli`|`\/opt\/prisma-cli`[^\n]*outside\s+`\/app`/i.test(
+        docContent
+      ) ||
+        !docContent.includes('scripts/generate-password-hash.mjs')))
+  ) {
+    errors.push(
+      `${docName}: Must document /opt/prisma-cli outside /app and scripts/generate-password-hash.mjs (rather than packaging /opt/prisma-cli or the full scripts/ tree under /app)`
+    );
+  }
+
+  if (operatorSet.has('RUN_MIGRATIONS') || hasLifecycleProbesSection) {
     const runMigrationsRow = rowsByKey.get('RUN_MIGRATIONS');
     const desc = runMigrationsRow?.descriptionCell ?? '';
-    if (
-      runMigrationsRow &&
-      (!/\btrue\b/.test(desc) || !/(?:`1`|RUN_MIGRATIONS=1|\bor\s+1\b)/.test(desc))
-    ) {
+    const tableMissing =
+      Boolean(runMigrationsRow) &&
+      (!/\btrue\b/.test(desc) || !/(?:`1`|RUN_MIGRATIONS=1|\bor\s+1\b)/.test(desc));
+    const lifecycleMissing =
+      hasLifecycleProbesSection &&
+      (!docContent.includes('RUN_MIGRATIONS=true') || !docContent.includes('RUN_MIGRATIONS=1'));
+    if (tableMissing || lifecycleMissing) {
       errors.push(
-        `Incomplete RUN_MIGRATIONS contract in ${docName}: must document that both "true" and "1" (RUN_MIGRATIONS=1) are accepted`
+        `Incomplete RUN_MIGRATIONS contract in ${docName}: Must document both RUN_MIGRATIONS=true and RUN_MIGRATIONS=1 across the RUN_MIGRATIONS table entry and Migration Phase`
       );
     }
   }
@@ -1219,13 +1245,21 @@ export function validateRuntimeContract(
   if (operatorSet.has('E2E_TEST')) {
     const e2eRow = rowsByKey.get('E2E_TEST');
     const e2eDesc = e2eRow?.descriptionCell ?? '';
+    const adminPasswordDesc = rowsByKey.get('ADMIN_PASSWORD')?.descriptionCell ?? '';
+    const guestPasscodeDesc = rowsByKey.get('GUEST_PASSCODE')?.descriptionCell ?? '';
+    const guestSessionSecretDesc = rowsByKey.get('GUEST_SESSION_SECRET')?.descriptionCell ?? '';
     const mentionsFallbackBypass =
       /E2E_FALLBACK_/i.test(docContent) &&
       /E2E_FALLBACK_|fallback[- ]secret|blocklist/i.test(e2eDesc) &&
+      /\bE2E_TEST=true\b/.test(e2eDesc) &&
       /\bsrc\/env\.ts\b/.test(e2eDesc);
-    if (e2eRow && !mentionsFallbackBypass) {
+    const credentialRowsMentionBypass =
+      (!rowsByKey.has('ADMIN_PASSWORD') || adminPasswordDesc.includes('E2E_TEST=true')) &&
+      (!rowsByKey.has('GUEST_PASSCODE') || guestPasscodeDesc.includes('E2E_TEST=true')) &&
+      (!rowsByKey.has('GUEST_SESSION_SECRET') || guestSessionSecretDesc.includes('E2E_TEST=true'));
+    if ((e2eRow && !mentionsFallbackBypass) || !credentialRowsMentionBypass) {
       errors.push(
-        `Incomplete E2E_TEST security warning in ${docName}: must document that E2E_TEST=true disables NODE_ENV=production E2E_FALLBACK_* secret blocklists in src/env.ts`
+        `Incomplete E2E_TEST security warning in ${docName}: Must disclose the E2E_TEST=true production credential blocklist bypass (E2E_FALLBACK_* in src/env.ts)`
       );
     }
   }
@@ -1264,6 +1298,27 @@ export function validateRuntimeContract(
         `Outdated validation contract for ${siteKey} in ${docName}: must document that blank/whitespace values are ignored via readNonEmptySiteEnv while non-empty malformed values fail schema validation`
       );
     }
+  }
+
+  if (
+    hasLifecycleProbesSection &&
+    (!/HTTP 503[\s\S]{0,400}?"status":\s*"degraded"[\s\S]{0,200}?"database":\s*"disconnected"[\s\S]{0,200}?"timestamp"/i.test(
+      docContent
+    ) ||
+      !docContent.includes('"error": "Database connection failed"'))
+  ) {
+    errors.push(
+      `${docName}: Must document preserved status, database, timestamp, and sanitized "Database connection failed" fields on GET /api/health HTTP 503 responses`
+    );
+  }
+
+  if (
+    (hasDatabaseSection || hasLifecycleProbesSection) &&
+    (!docContent.includes('globalForPrisma') || !docContent.includes('5000ms'))
+  ) {
+    errors.push(
+      `${docName}: Must document src/lib/prisma.ts globalForPrisma caching and 5000ms shutdown drain safety timer`
+    );
   }
 
   return errors;

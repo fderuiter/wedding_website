@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { withBasePath } from '@/lib/basePath';
 
 export interface SlideshowPhoto {
   id?: string;
@@ -15,6 +16,7 @@ export interface SlideshowPhoto {
   uploaderName?: string;
   isGuestUpload?: boolean;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 interface ReceptionSlideshowClientProps {
@@ -62,17 +64,20 @@ export function ReceptionSlideshowClient({
   const headerRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
 
-  // Derive initial timestamp cursor from provided initial photos
+  // Derive initial timestamp cursor from provided initial photos (preferring updatedAt over createdAt)
   const initialLatestTimestamp = useMemo(() => {
     if (!initialPhotos || !Array.isArray(initialPhotos)) return null;
     let maxMs = -Infinity;
     let maxIso: string | null = null;
     for (const item of initialPhotos) {
-      if (typeof item !== 'string' && item.createdAt) {
-        const ms = new Date(item.createdAt).getTime();
-        if (!isNaN(ms) && ms > maxMs) {
-          maxMs = ms;
-          maxIso = item.createdAt;
+      if (typeof item !== 'string') {
+        const cursorValue = item.updatedAt || item.createdAt;
+        if (cursorValue) {
+          const ms = new Date(cursorValue).getTime();
+          if (!isNaN(ms) && ms > maxMs) {
+            maxMs = ms;
+            maxIso = cursorValue;
+          }
         }
       }
     }
@@ -94,10 +99,11 @@ export function ReceptionSlideshowClient({
   // Derive resolved upload URL
   const resolvedUploadUrl = useMemo(() => {
     if (uploadUrl) return uploadUrl;
+    const photosPath = withBasePath('/photos?tab=guest');
     if (typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}/photos`;
+      return `${window.location.origin}${photosPath}`;
     }
-    return '/photos';
+    return photosPath;
   }, [uploadUrl]);
 
   // Helper to determine whether an element is an interactive control in the slideshow
@@ -237,47 +243,98 @@ export function ReceptionSlideshowClient({
     try {
       const cursor = latestTimestampRef.current;
       const endpoint = cursor ? `/api/photos?since=${encodeURIComponent(cursor)}` : '/api/photos';
-      const response = await fetch(endpoint);
+      const response = await fetch(withBasePath(endpoint));
       if (!response.ok) return;
 
       const data = await response.json();
       if (data?.photos && Array.isArray(data.photos) && data.photos.length > 0) {
-        for (const p of data.photos) {
-          if (p.createdAt) {
-            const ms = new Date(p.createdAt).getTime();
+        for (const p of data.photos as SlideshowPhoto[]) {
+          const cursorValue = p.updatedAt || p.createdAt;
+          if (cursorValue) {
+            const ms = new Date(cursorValue).getTime();
             if (!isNaN(ms)) {
-              const currentMs = latestTimestampRef.current ? new Date(latestTimestampRef.current).getTime() : -Infinity;
+              const currentMs = latestTimestampRef.current
+                ? new Date(latestTimestampRef.current).getTime()
+                : -Infinity;
               if (ms > currentMs) {
-                latestTimestampRef.current = p.createdAt;
+                latestTimestampRef.current = cursorValue;
               }
             }
           }
         }
 
+        const mapPolledSlide = (p: SlideshowPhoto): SlideshowPhoto => {
+          const caption = p.caption?.trim() || undefined;
+          const uploaderName = p.uploaderName?.trim() || undefined;
+          const explicitTitle = p.title?.trim() || undefined;
+          const explicitAltText = p.altText?.trim() || undefined;
+          return {
+            id: p.id,
+            url: p.url,
+            title:
+              explicitTitle ||
+              caption ||
+              explicitAltText ||
+              (uploaderName ? `Photo by ${uploaderName}` : 'Reception Photo'),
+            altText: explicitAltText || caption || explicitTitle,
+            ...(caption ? { caption } : {}),
+            ...(uploaderName ? { uploaderName } : {}),
+            isGuestUpload: Boolean(p.isGuestUpload),
+            createdAt: p.createdAt,
+            ...(p.updatedAt ? { updatedAt: p.updatedAt } : {}),
+          };
+        };
+
         setPhotos((prev) => {
-          const existingUrls = new Set(prev.map((p) => p.url));
-          const newPhotos: SlideshowPhoto[] = data.photos
+          const incomingById = new Map<string, SlideshowPhoto>();
+          const incomingByUrl = new Map<string, SlideshowPhoto>();
+
+          for (const raw of data.photos as SlideshowPhoto[]) {
+            if (!raw?.url || failedUrls.has(raw.url) || failedUrlsRef.current.has(raw.url)) {
+              continue;
+            }
+            const normalized = mapPolledSlide(raw);
+            if (normalized.id) {
+              incomingById.set(normalized.id, normalized);
+            }
+            incomingByUrl.set(normalized.url, normalized);
+          }
+
+          let didUpdateExisting = false;
+          const refreshedPrev = prev.map((existing) => {
+            const updated =
+              (existing.id ? incomingById.get(existing.id) : undefined) ||
+              incomingByUrl.get(existing.url);
+            if (!updated) {
+              return existing;
+            }
+            didUpdateExisting = true;
+            return {
+              ...existing,
+              ...updated,
+              caption: updated.caption,
+              uploaderName: updated.uploaderName,
+            };
+          });
+
+          const existingIds = new Set(
+            refreshedPrev.map((p) => p.id).filter((id): id is string => Boolean(id))
+          );
+          const existingUrls = new Set(refreshedPrev.map((p) => p.url));
+
+          const newPhotos: SlideshowPhoto[] = (data.photos as SlideshowPhoto[])
             .filter(
-              (p: SlideshowPhoto) =>
-                p.url &&
+              (p) =>
+                p?.url &&
+                (!p.id || !existingIds.has(p.id)) &&
                 !existingUrls.has(p.url) &&
                 !failedUrls.has(p.url) &&
                 !failedUrlsRef.current.has(p.url)
             )
-            .map((p: SlideshowPhoto) => ({
-              id: p.id,
-              url: p.url,
-              title: p.caption || p.title || p.altText || (p.uploaderName ? `Photo by ${p.uploaderName}` : 'Reception Photo'),
-              altText: p.altText || p.caption || p.title,
-              ...(p.caption ? { caption: p.caption } : {}),
-              ...(p.uploaderName ? { uploaderName: p.uploaderName } : {}),
-              isGuestUpload: Boolean(p.isGuestUpload),
-              createdAt: p.createdAt,
-            }));
+            .map(mapPolledSlide);
 
-          if (newPhotos.length > 0) {
-            // Append newly approved photos to the slideshow queue
-            return [...prev, ...newPhotos];
+          if (didUpdateExisting || newPhotos.length > 0) {
+            return [...refreshedPrev, ...newPhotos];
           }
           return prev;
         });
@@ -410,7 +467,7 @@ export function ReceptionSlideshowClient({
       {activePhoto && (
         <div
           className="absolute inset-0 bg-cover bg-center filter blur-3xl opacity-25 scale-110 pointer-events-none transition-all duration-1000 ease-in-out"
-          style={{ backgroundImage: `url(${activePhoto.url})` }}
+          style={{ backgroundImage: `url(${withBasePath(activePhoto.url)})` }}
           aria-hidden="true"
         />
       )}
@@ -468,7 +525,7 @@ export function ReceptionSlideshowClient({
           <div className="relative max-w-full max-h-full flex flex-col items-center justify-center">
             <img
               key={activePhoto.url}
-              src={activePhoto.url}
+              src={withBasePath(activePhoto.url)}
               alt={activePhoto.altText || activePhoto.title || `Reception photo ${safeIndex + 1}`}
               className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl transition-opacity duration-700 ease-in-out"
               data-testid="slideshow-image"

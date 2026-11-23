@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useShareItem } from '../hooks/useShareItem';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * Props for the RegistryCard component.
@@ -127,7 +128,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
-          style={{ backgroundImage: `url("${item.image?.url || '/images/placeholder.png'}")` }}
+          style={{ backgroundImage: `url("${withBasePath(item.image?.url || '/images/placeholder.png')}")` }}
           aria-hidden="true"
         />
         {/* Main Image Layer */}

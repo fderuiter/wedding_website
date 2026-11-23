@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { validateRegistryItemRow, parseRegistryPrice } from '../utils/csv';
+import { withBasePath } from '@/lib/basePath';
 
 export interface PreviewRegistryItem {
   id: string;
@@ -158,11 +159,11 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
                       {item.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={item.imageUrl}
+                          src={withBasePath(item.imageUrl)}
                           alt={item.imageAlt || item.name || 'Product preview'}
                           className="h-full w-full object-cover"
                           onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src = '/images/placeholder.png';
+                            (e.currentTarget as HTMLImageElement).src = withBasePath('/images/placeholder.png');
                           }}
                         />
                       ) : (
