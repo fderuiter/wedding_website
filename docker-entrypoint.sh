@@ -103,9 +103,9 @@ export DATABASE_URL="$NORMALIZED_DATABASE_URL"
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."
   if [ -x "./node_modules/.bin/prisma" ]; then
-    ./node_modules/.bin/prisma migrate deploy
+    env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
   elif command -v prisma >/dev/null 2>&1; then
-    prisma migrate deploy
+    env -u POSTGRES_URL_NON_POOLING prisma migrate deploy
   else
     echo "ERROR: Local Prisma CLI binary not found at ./node_modules/.bin/prisma."
     exit 1
@@ -113,5 +113,10 @@ if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
 else
   echo "Skipping automatic container database migration (decoupled to explicit CI/CD migration step)."
 fi
+
+if [[ "${1:-}" == *"prisma"* ]] && [ "${2:-}" = "migrate" ]; then
+  unset POSTGRES_URL_NON_POOLING
+fi
+
 echo "Starting application..."
 exec "$@"

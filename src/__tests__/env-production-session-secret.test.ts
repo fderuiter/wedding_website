@@ -211,6 +211,12 @@ describe('Production Boot Guest Session Secret Validation', () => {
       });
       expect(buildRes.status).toBe(0);
 
+      const nextPhaseRes = runEnvBoot({
+        NODE_ENV: 'production',
+        NEXT_PHASE: 'phase-production-build',
+      });
+      expect(nextPhaseRes.status).toBe(0);
+
       const exportRes = runEnvBoot({
         NODE_ENV: 'production',
         STATIC_EXPORT: 'true',
@@ -224,6 +230,68 @@ describe('Production Boot Guest Session Secret Validation', () => {
         ['scripts/preflight-migration-summary.ts']
       );
       expect(preflightRes.status).toBe(0);
+    });
+
+    it('permits .env.example guest placeholders during npm_lifecycle_event=build with a valid admin hash or dummy template hash', () => {
+      const withValidAdminRes = runEnvBoot({
+        NODE_ENV: 'production',
+        npm_lifecycle_event: 'build',
+        DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding?schema=public',
+        ADMIN_PASSWORD: validAdminPassword,
+        ALLOWED_HOSTS: 'localhost,127.0.0.1,*.localhost,wedding.example,*.wedding.example',
+        GUEST_PASSCODE: 'your-unique-guest-passcode',
+        GUEST_SESSION_SECRET: 'your-dedicated-guest-session-secret',
+      });
+      expect(withValidAdminRes.status).toBe(0);
+
+      const withTemplateDefaultsRes = runEnvBoot({
+        NODE_ENV: 'production',
+        npm_lifecycle_event: 'build',
+        DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding?schema=public',
+        ADMIN_PASSWORD:
+          'scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
+        ALLOWED_HOSTS: 'localhost,127.0.0.1,*.localhost,wedding.example,*.wedding.example',
+        GUEST_PASSCODE: 'your-unique-guest-passcode',
+        GUEST_SESSION_SECRET: 'your-dedicated-guest-session-secret',
+      });
+      expect(withTemplateDefaultsRes.status).toBe(0);
+    });
+
+    it('rejects .env.example guest placeholders at production runtime and permits E2E fallbacks only when E2E_TEST=true', () => {
+      const templatePasscodeRes = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: 'your-unique-guest-passcode',
+        GUEST_SESSION_SECRET: valid32Secret,
+      });
+      expect(templatePasscodeRes.status).not.toBe(0);
+      expect(templatePasscodeRes.stderr).toContain(
+        'GUEST_PASSCODE must not use a placeholder or E2E fallback passcode in production'
+      );
+
+      const templateSecretRes = runEnvBoot({
+        NODE_ENV: 'production',
+        ADMIN_PASSWORD: validAdminPassword,
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: validGuestPasscode,
+        GUEST_SESSION_SECRET: 'your-dedicated-guest-session-secret',
+      });
+      expect(templateSecretRes.status).not.toBe(0);
+      expect(templateSecretRes.stderr).toContain(
+        'GUEST_SESSION_SECRET must not use a placeholder or E2E fallback secret in production'
+      );
+
+      const e2eRuntimeRes = runEnvBoot({
+        NODE_ENV: 'production',
+        E2E_TEST: 'true',
+        ADMIN_PASSWORD:
+          'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==',
+        DATABASE_URL: validDatabaseUrl,
+        GUEST_PASSCODE: 'playwright-e2e-guest-passcode',
+        GUEST_SESSION_SECRET: 'playwright-e2e-session-secret-32-chars-min',
+      });
+      expect(e2eRuntimeRes.status).toBe(0);
     });
   });
 

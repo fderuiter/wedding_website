@@ -117,6 +117,34 @@ function parseTrustProxy(val: unknown): boolean | number {
   return false;
 }
 
+// Conditionally skip production secret placeholder validation during build (e.g., for Next.js compilation or Prisma generation)
+const isEdge = process.env.NEXT_RUNTIME === 'edge';
+const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
+const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
+  arg.includes('seed') ||
+  arg.includes('generate-') ||
+  arg.includes('check-') ||
+  arg.includes('verify-') ||
+  arg.includes('preflight-')
+));
+
+const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
+                       process.env.STATIC_EXPORT === '1' ||
+                       process.env.npm_lifecycle_event === 'build:export';
+
+const isBuildTime = isEdge ||
+                    isStaticExport ||
+                    process.env.NEXT_PHASE === 'phase-production-build' ||
+                    process.env.npm_lifecycle_event === 'build' ||
+                    process.env.npm_lifecycle_event === 'build:docker' ||
+                    process.env.npm_lifecycle_event === 'build:export' ||
+                    process.env.npm_lifecycle_event === 'prebuild' ||
+                    process.env.npm_lifecycle_event === 'prisma:generate' ||
+                    process.env.npm_lifecycle_event === 'db:seed' ||
+                    isScriptRun ||
+                    process.env.NODE_ENV === 'test' ||
+                    process.env.JEST_WORKER_ID !== undefined;
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').transform(stripEnvQuotes).refine(val => {
@@ -193,7 +221,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().optional().transform(val => normalizeOptionalEnv(val)),
   STRIPE_WEBHOOK_SECRET: z.string().optional().transform(val => normalizeOptionalEnv(val)),
 }).superRefine((data, ctx) => {
-  if (data.NODE_ENV === 'production') {
+  if (data.NODE_ENV === 'production' && !isBuildTime) {
     const isE2ETestMode = process.env.E2E_TEST === 'true';
     const trimmedAdminHash = data.ADMIN_PASSWORD?.trim() ?? '';
     if (
@@ -336,34 +364,6 @@ const envSchema = z.object({
     });
   }
 });
-
-// Conditionally skip validation during build (e.g., for Prisma generation without secrets)
-// Some CI setups might use NEXT_PHASE or just npm_lifecycle_event.
-const isEdge = process.env.NEXT_RUNTIME === 'edge';
-const procArgv = (!isEdge && typeof process !== 'undefined' && Array.isArray(process['argv'])) ? process['argv'] : [];
-const isScriptRun = procArgv.some((arg: unknown) => typeof arg === 'string' && (
-  arg.includes('seed') ||
-  arg.includes('generate-') ||
-  arg.includes('check-') ||
-  arg.includes('verify-') ||
-  arg.includes('preflight-')
-));
-
-const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
-                       process.env.STATIC_EXPORT === '1' ||
-                       process.env.npm_lifecycle_event === 'build:export';
-
-const isBuildTime = isEdge ||
-                    isStaticExport ||
-                    process.env.npm_lifecycle_event === 'build' ||
-                    process.env.npm_lifecycle_event === 'build:docker' ||
-                    process.env.npm_lifecycle_event === 'build:export' ||
-                    process.env.npm_lifecycle_event === 'prebuild' ||
-                    process.env.npm_lifecycle_event === 'prisma:generate' ||
-                    process.env.npm_lifecycle_event === 'db:seed' ||
-                    isScriptRun ||
-                    process.env.NODE_ENV === 'test' ||
-                    process.env.JEST_WORKER_ID !== undefined;
 
 // In production runtime, strictly require valid environment variables
 if (process.env.NODE_ENV === 'production' && !isBuildTime && process.env.NEXT_RUNTIME !== 'edge') {

@@ -2,15 +2,38 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
+import {
+  DragDropContext,
+  Droppable,
+  Draggable,
+  type DraggableProvidedDragHandleProps,
+  type DropResult,
+} from '@hello-pangea/dnd';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
-import { ContributorLifecycleBadge, useRegistryCapabilities } from '@/features/registry';
+import {
+  ContributorLifecycleBadge,
+  useRegistryCapabilities,
+  type RegistryItem,
+} from '@/features/registry';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
 import { formatCurrency, formatDate } from '@/utils/intl';
+
+type RegistryLayoutVariant = 'desktop' | 'mobile';
+
+interface PreparedRegistryItem {
+  item: RegistryItem;
+  index: number;
+  isPriority: boolean;
+  groupIndex: number;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  itemLabel: string;
+  isUnconfiguredFund: boolean;
+}
 
 function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallback<T> {
   return (node: T | null) => {
@@ -130,6 +153,170 @@ const ContributionsList = ({
   );
 };
 
+const RegistryItemDragHandle = ({
+  dragHandleProps,
+  itemLabel,
+}: {
+  dragHandleProps: DraggableProvidedDragHandleProps | null | undefined;
+  itemLabel: string;
+}) => (
+  <div
+    {...dragHandleProps}
+    aria-label={`Reorder ${itemLabel}`}
+    className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
+  >
+    <Icon name="DragHandle" className="h-5 w-5" />
+  </div>
+);
+
+const RegistryItemMoveButtons = ({
+  itemLabel,
+  canMoveUp,
+  canMoveDown,
+  onMove,
+}: {
+  itemLabel: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMove: (_direction: 'up' | 'down') => void;
+}) => (
+  <>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      aria-label={`Move ${itemLabel} up`}
+      disabled={!canMoveUp}
+      onClick={(e) => {
+        e.stopPropagation();
+        onMove('up');
+      }}
+    >
+      <Icon name="ArrowUp" className="h-4 w-4" />
+    </Button>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      aria-label={`Move ${itemLabel} down`}
+      disabled={!canMoveDown}
+      onClick={(e) => {
+        e.stopPropagation();
+        onMove('down');
+      }}
+    >
+      <Icon name="ArrowDown" className="h-4 w-4" />
+    </Button>
+  </>
+);
+
+const RegistryItemPriorityToggle = ({
+  itemName,
+  isPriority,
+  onToggle,
+}: {
+  itemName: string;
+  isPriority: boolean;
+  onToggle: () => void;
+}) => (
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    pressed={isPriority}
+    aria-label={itemName ? `Most Wanted: ${itemName}` : 'Most Wanted: unnamed item'}
+    onClick={(e) => {
+      e.stopPropagation();
+      onToggle();
+    }}
+    className={
+      isPriority
+        ? 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:border-amber-600'
+        : ''
+    }
+  >
+    <Icon
+      name="Star"
+      className={isPriority ? 'h-4 w-4 fill-current mr-1' : 'h-4 w-4 mr-1'}
+    />
+    Most Wanted
+  </Button>
+);
+
+const RegistryItemBadges = ({
+  itemId,
+  isSample,
+  isUnconfiguredFund,
+  variant,
+}: {
+  itemId: string;
+  isSample?: boolean;
+  isUnconfiguredFund: boolean;
+  variant: RegistryLayoutVariant;
+}) => {
+  const badgeLayoutClass =
+    variant === 'desktop'
+      ? 'ml-2 inline-flex items-center text-xs font-medium px-2 py-0.5 rounded'
+      : 'px-2 py-1 rounded-full font-medium';
+
+  return (
+    <>
+      {isSample && (
+        <span
+          className={`${badgeLayoutClass} bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700`}
+        >
+          Sample
+        </span>
+      )}
+      {isUnconfiguredFund && (
+        <span
+          data-testid={variant === 'desktop' ? `unconfigured-fund-badge-${itemId}` : undefined}
+          className={`${badgeLayoutClass} bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200 border border-red-300 dark:border-red-700`}
+        >
+          Checkout Disabled
+        </span>
+      )}
+    </>
+  );
+};
+
+const RegistryItemActions = ({
+  itemName,
+  variant,
+  onEdit,
+  onDelete,
+}: {
+  itemName: string;
+  variant: RegistryLayoutVariant;
+  onEdit: () => void;
+  onDelete: (_event: React.MouseEvent<HTMLButtonElement>) => void;
+}) => {
+  const buttonClassName = variant === 'mobile' ? 'flex-1' : undefined;
+
+  return (
+    <>
+      <Button
+        className={buttonClassName}
+        variant="secondary"
+        size="sm"
+        aria-label={itemName ? 'Edit registry item: ' + itemName : 'Edit unnamed item'}
+        onClick={onEdit}
+      >
+        Edit
+      </Button>
+      <Button
+        className={buttonClassName}
+        variant="danger"
+        size="sm"
+        aria-label={itemName ? 'Delete registry item: ' + itemName : 'Delete unnamed item'}
+        onClick={onDelete}
+      >
+        Delete
+      </Button>
+    </>
+  );
+};
+
 /**
  * @page AdminRegistryPage
  * @description Dedicated admin view for managing wedding gift registry items, priority ordering,
@@ -211,6 +398,23 @@ export default function AdminRegistryPage() {
     (item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND' || item.isGroupGift) &&
     !(item.paymentHandle && item.paymentHandle.trim());
   const unconfiguredFunds = safeItems.filter(isUnconfiguredFundItem);
+
+  const preparedItems: PreparedRegistryItem[] = orderedItems.map((item, index) => {
+    const isPriority = Boolean(item.isMostWanted);
+    const groupLength = isPriority ? mostWantedItems.length : standardItems.length;
+    const groupIndex = isPriority ? index : index - mostWantedItems.length;
+
+    return {
+      item,
+      index,
+      isPriority,
+      groupIndex,
+      canMoveUp: groupIndex > 0,
+      canMoveDown: groupIndex < groupLength - 1,
+      itemLabel: item.name || item.id,
+      isUnconfiguredFund: isUnconfiguredFundItem(item),
+    };
+  });
 
   const { containerRef: desktopContainerRef, captureFocusTarget: captureDesktopFocus } = useFocusSuccessor<HTMLTableSectionElement>();
   const { containerRef: mobileContainerRef, captureFocusTarget: captureMobileFocus } = useFocusSuccessor<HTMLDivElement>();
@@ -294,6 +498,32 @@ export default function AdminRegistryPage() {
       await toggleMostWanted(item.id, nextMostWanted);
     } catch {
       // Rollback and error feedback are handled by useAdminRegistry hook
+    }
+  };
+
+  const handleDeleteItem = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    itemId: string,
+    variant: RegistryLayoutVariant
+  ) => {
+    const container = event.currentTarget.closest<HTMLElement>(
+      variant === 'desktop' ? 'tr' : '.rounded-xl'
+    );
+    if (!(await confirm('Are you sure you want to delete this item?'))) return;
+
+    if (container) {
+      if (variant === 'desktop') {
+        captureDesktopFocus(container);
+      } else {
+        captureMobileFocus(container);
+      }
+    }
+
+    try {
+      await remove(itemId);
+      addToast('Item deleted successfully.', 'success');
+    } catch {
+      // Error is handled by useAdminRegistry hook
     }
   };
 
@@ -382,13 +612,16 @@ export default function AdminRegistryPage() {
                       ref={mergeRefs(desktopContainerRef, droppableProvided.innerRef)}
                       {...droppableProvided.droppableProps}
                     >
-                      {orderedItems.map((item, index) => {
-                        const isPriority = Boolean(item.isMostWanted);
-                        const groupItems = isPriority ? mostWantedItems : standardItems;
-                        const groupIndex = isPriority ? index : index - mostWantedItems.length;
-                        const itemLabel = item.name || item.id;
-
-                        return (
+                      {preparedItems.map(
+                        ({
+                          item,
+                          index,
+                          isPriority,
+                          canMoveUp,
+                          canMoveDown,
+                          itemLabel,
+                          isUnconfiguredFund,
+                        }) => (
                           <Draggable key={item.id} draggableId={item.id} index={index}>
                             {(draggableProvided) => (
                               <TableRow
@@ -397,80 +630,33 @@ export default function AdminRegistryPage() {
                               >
                                 <TableCell>
                                   <div className="flex items-center gap-1">
-                                    <div
-                                      {...draggableProvided.dragHandleProps}
-                                      aria-label={`Reorder ${itemLabel}`}
-                                      className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
-                                    >
-                                      <Icon name="DragHandle" className="h-5 w-5" />
-                                    </div>
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      aria-label={`Move ${itemLabel} up`}
-                                      disabled={groupIndex === 0}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        void handleMoveItem(index, 'up');
-                                      }}
-                                    >
-                                      <Icon name="ArrowUp" className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      aria-label={`Move ${itemLabel} down`}
-                                      disabled={groupIndex === groupItems.length - 1}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        void handleMoveItem(index, 'down');
-                                      }}
-                                    >
-                                      <Icon name="ArrowDown" className="h-4 w-4" />
-                                    </Button>
+                                    <RegistryItemDragHandle
+                                      dragHandleProps={draggableProvided.dragHandleProps}
+                                      itemLabel={itemLabel}
+                                    />
+                                    <RegistryItemMoveButtons
+                                      itemLabel={itemLabel}
+                                      canMoveUp={canMoveUp}
+                                      canMoveDown={canMoveDown}
+                                      onMove={(direction) => void handleMoveItem(index, direction)}
+                                    />
                                   </div>
                                 </TableCell>
                                 <TableCell className="font-semibold">
                                   {item.name}
-                                  {item.isSample && (
-                                    <span className="ml-2 inline-flex items-center text-xs font-medium px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
-                                      Sample
-                                    </span>
-                                  )}
-                                  {isUnconfiguredFundItem(item) && (
-                                    <span
-                                      data-testid={`unconfigured-fund-badge-${item.id}`}
-                                      className="ml-2 inline-flex items-center text-xs font-medium px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200 border border-red-300 dark:border-red-700"
-                                    >
-                                      Checkout Disabled
-                                    </span>
-                                  )}
+                                  <RegistryItemBadges
+                                    itemId={item.id}
+                                    isSample={item.isSample}
+                                    isUnconfiguredFund={isUnconfiguredFund}
+                                    variant="desktop"
+                                  />
                                 </TableCell>
                                 <TableCell>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    pressed={Boolean(item.isMostWanted)}
-                                    aria-label={item.name ? `Most Wanted: ${item.name}` : 'Most Wanted: unnamed item'}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      void handleTogglePriority(item);
-                                    }}
-                                    className={
-                                      item.isMostWanted
-                                        ? 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:border-amber-600'
-                                        : ''
-                                    }
-                                  >
-                                    <Icon
-                                      name="Star"
-                                      className={item.isMostWanted ? 'h-4 w-4 fill-current mr-1' : 'h-4 w-4 mr-1'}
-                                    />
-                                    Most Wanted
-                                  </Button>
+                                  <RegistryItemPriorityToggle
+                                    itemName={item.name}
+                                    isPriority={isPriority}
+                                    onToggle={() => void handleTogglePriority(item)}
+                                  />
                                 </TableCell>
                                 <TableCell>{formatCurrency(item.price)}</TableCell>
                                 <TableCell>{item.purchased ? 'Yes' : 'No'}</TableCell>
@@ -482,42 +668,18 @@ export default function AdminRegistryPage() {
                                   />
                                 </TableCell>
                                 <TableCell className="space-x-2">
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    aria-label={item.name ? 'Edit registry item: ' + item.name : 'Edit unnamed item'}
-                                    onClick={() => router.push(`/registry/edit-item/${item.id}`)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    variant="danger"
-                                    size="sm"
-                                    aria-label={item.name ? 'Delete registry item: ' + item.name : 'Delete unnamed item'}
-                                    onClick={async (e) => {
-                                      const row = e.currentTarget.closest('tr');
-                                      if (!(await confirm('Are you sure you want to delete this item?'))) return;
-
-                                      if (row) {
-                                        captureDesktopFocus(row as HTMLElement);
-                                      }
-
-                                      try {
-                                        await remove(item.id);
-                                        addToast('Item deleted successfully.', 'success');
-                                      } catch {
-                                        // Error is handled by useAdminRegistry hook
-                                      }
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
+                                  <RegistryItemActions
+                                    itemName={item.name}
+                                    variant="desktop"
+                                    onEdit={() => router.push(`/registry/edit-item/${item.id}`)}
+                                    onDelete={(e) => void handleDeleteItem(e, item.id, 'desktop')}
+                                  />
                                 </TableCell>
                               </TableRow>
                             )}
                           </Draggable>
-                        );
-                      })}
+                        )
+                      )}
                       {droppableProvided.placeholder}
                     </TableBody>
                   )}
@@ -536,13 +698,16 @@ export default function AdminRegistryPage() {
                 ref={mergeRefs(mobileContainerRef, droppableProvided.innerRef)}
                 {...droppableProvided.droppableProps}
               >
-                {orderedItems.map((item, index) => {
-                  const isPriority = Boolean(item.isMostWanted);
-                  const groupItems = isPriority ? mostWantedItems : standardItems;
-                  const groupIndex = isPriority ? index : index - mostWantedItems.length;
-                  const itemLabel = item.name || item.id;
-
-                  return (
+                {preparedItems.map(
+                  ({
+                    item,
+                    index,
+                    isPriority,
+                    canMoveUp,
+                    canMoveDown,
+                    itemLabel,
+                    isUnconfiguredFund,
+                  }) => (
                     <Draggable key={item.id} draggableId={item.id} index={index}>
                       {(draggableProvided) => (
                         <div
@@ -552,78 +717,40 @@ export default function AdminRegistryPage() {
                         >
                           <div className="flex justify-between items-center mb-2 gap-2">
                             <div className="flex items-center gap-2">
-                              <div
-                                {...draggableProvided.dragHandleProps}
-                                aria-label={`Reorder ${itemLabel}`}
-                                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-grab active:cursor-grabbing focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded p-1 transition-colors"
-                              >
-                                <Icon name="DragHandle" className="h-5 w-5" />
-                              </div>
+                              <RegistryItemDragHandle
+                                dragHandleProps={draggableProvided.dragHandleProps}
+                                itemLabel={itemLabel}
+                              />
                               <span className="font-bold text-lg text-primary">{item.name}</span>
                             </div>
                             <span className="text-sm font-semibold">{formatCurrency(item.price)}</span>
                           </div>
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                             <div className="flex flex-wrap gap-2 text-xs">
-                              {item.isSample && (
-                                <span className="px-2 py-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300 dark:border-amber-700 font-medium">Sample</span>
-                              )}
-                              {isUnconfiguredFundItem(item) && (
-                                <span className="px-2 py-1 rounded-full bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-200 border border-red-300 dark:border-red-700 font-medium">
-                                  Checkout Disabled
-                                </span>
-                              )}
-                              <span className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{item.purchased ? 'Claimed' : 'Available'}</span>
+                              <RegistryItemBadges
+                                itemId={item.id}
+                                isSample={item.isSample}
+                                isUnconfiguredFund={isUnconfiguredFund}
+                                variant="mobile"
+                              />
+                              <span
+                                className={`px-2 py-1 rounded-full ${item.purchased ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}
+                              >
+                                {item.purchased ? 'Claimed' : 'Available'}
+                              </span>
                             </div>
                             <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                pressed={Boolean(item.isMostWanted)}
-                                aria-label={item.name ? `Most Wanted: ${item.name}` : 'Most Wanted: unnamed item'}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleTogglePriority(item);
-                                }}
-                                className={
-                                  item.isMostWanted
-                                    ? 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:border-amber-600'
-                                    : ''
-                                }
-                              >
-                                <Icon
-                                  name="Star"
-                                  className={item.isMostWanted ? 'h-4 w-4 fill-current mr-1' : 'h-4 w-4 mr-1'}
-                                />
-                                Most Wanted
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                aria-label={`Move ${itemLabel} up`}
-                                disabled={groupIndex === 0}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleMoveItem(index, 'up');
-                                }}
-                              >
-                                <Icon name="ArrowUp" className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                aria-label={`Move ${itemLabel} down`}
-                                disabled={groupIndex === groupItems.length - 1}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleMoveItem(index, 'down');
-                                }}
-                              >
-                                <Icon name="ArrowDown" className="h-4 w-4" />
-                              </Button>
+                              <RegistryItemPriorityToggle
+                                itemName={item.name}
+                                isPriority={isPriority}
+                                onToggle={() => void handleTogglePriority(item)}
+                              />
+                              <RegistryItemMoveButtons
+                                itemLabel={itemLabel}
+                                canMoveUp={canMoveUp}
+                                canMoveDown={canMoveDown}
+                                onMove={(direction) => void handleMoveItem(index, direction)}
+                              />
                             </div>
                           </div>
                           <div className="mb-2">
@@ -637,44 +764,18 @@ export default function AdminRegistryPage() {
                             </div>
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <Button
-                              className="flex-1"
-                              variant="secondary"
-                              size="sm"
-                              aria-label={item.name ? 'Edit registry item: ' + item.name : 'Edit unnamed item'}
-                              onClick={() => router.push(`/registry/edit-item/${item.id}`)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              className="flex-1"
-                              variant="danger"
-                              size="sm"
-                              aria-label={item.name ? 'Delete registry item: ' + item.name : 'Delete unnamed item'}
-                              onClick={async (e) => {
-                                const card = e.currentTarget.closest('.rounded-xl');
-                                if (!(await confirm('Are you sure you want to delete this item?'))) return;
-
-                                if (card) {
-                                  captureMobileFocus(card as HTMLElement);
-                                }
-
-                                try {
-                                  await remove(item.id);
-                                  addToast('Item deleted successfully.', 'success');
-                                } catch {
-                                  // Error is handled by useAdminRegistry hook
-                                }
-                              }}
-                            >
-                              Delete
-                            </Button>
+                            <RegistryItemActions
+                              itemName={item.name}
+                              variant="mobile"
+                              onEdit={() => router.push(`/registry/edit-item/${item.id}`)}
+                              onDelete={(e) => void handleDeleteItem(e, item.id, 'mobile')}
+                            />
                           </div>
                         </div>
                       )}
                     </Draggable>
-                  );
-                })}
+                  )
+                )}
                 {droppableProvided.placeholder}
               </div>
             )}
