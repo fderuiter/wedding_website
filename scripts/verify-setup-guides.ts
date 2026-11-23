@@ -85,13 +85,191 @@ function extractMarkdownSection(
   return out.join('\n');
 }
 
+const IGNORED_ROOT_DIRECTORIES = new Set([
+  '.git',
+  'node_modules',
+  '.pnp',
+  '.yarn',
+  'coverage',
+  '.next',
+  '.swc',
+  '.turbo',
+  'out',
+  'build',
+  'dist',
+  'storybook-static',
+  'logs',
+  '.vscode',
+  '.idea',
+  '.vercel',
+  '.jules',
+  '.Jules',
+  'test-results',
+  'playwright-report',
+  '.cache',
+  '.eslintcache',
+  '.parcel-cache',
+  '.tmp',
+  'tmp',
+]);
+
+interface ReadmeHeadingInfo {
+  level: number;
+  text: string;
+  slug: string;
+}
+
+function slugifyGithubHeading(rawHeading: string): string {
+  const plain = rawHeading
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_~]/g, '')
+    .trim();
+  return plain
+    .toLowerCase()
+    .replace(/[\uFE00-\uFE0F\u200D]/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}_\- ]/gu, '')
+    .replace(/ /g, '-');
+}
+
+function extractReadmeHeadings(readmeContent: string): ReadmeHeadingInfo[] {
+  const headings: ReadmeHeadingInfo[] = [];
+  const slugCounts = new Map<string, number>();
+  const lines = readmeContent.split(/\r?\n/);
+  let inFrontmatter = false;
+  let inFence = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+  let inHtmlComment = false;
+
+  lines.forEach((rawLine, index) => {
+    if (index === 0 && rawLine.trim() === '---') {
+      inFrontmatter = true;
+      return;
+    }
+    if (inFrontmatter) {
+      if (rawLine.trim() === '---' || rawLine.trim() === '...') {
+        inFrontmatter = false;
+      }
+      return;
+    }
+
+    const fenceMatch = rawLine.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      const rest = fenceMatch[2];
+      const ch = marker[0];
+      const len = marker.length;
+      if (!inFence) {
+        if (!(ch === '`' && rest.includes('`'))) {
+          inFence = true;
+          fenceChar = ch;
+          fenceLen = len;
+          return;
+        }
+      } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
+        inFence = false;
+        fenceChar = '';
+        fenceLen = 0;
+        return;
+      }
+    }
+
+    if (inFence) {
+      return;
+    }
+
+    let line = rawLine;
+    if (inHtmlComment) {
+      const endIdx = line.indexOf('-->');
+      if (endIdx === -1) {
+        return;
+      }
+      line = line.slice(endIdx + 3);
+      inHtmlComment = false;
+    }
+    while (line.includes('<!--')) {
+      const startIdx = line.indexOf('<!--');
+      const endIdx = line.indexOf('-->', startIdx + 4);
+      if (endIdx === -1) {
+        line = line.slice(0, startIdx);
+        inHtmlComment = true;
+        break;
+      }
+      line = line.slice(0, startIdx) + line.slice(endIdx + 3);
+    }
+
+    const match = line.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
+    if (!match) {
+      return;
+    }
+
+    const level = match[1].length;
+    const text = match[2].trim();
+    const baseSlug = slugifyGithubHeading(text);
+    const seen = slugCounts.get(baseSlug) ?? 0;
+    slugCounts.set(baseSlug, seen + 1);
+    const slug = seen === 0 ? baseSlug : `${baseSlug}-${seen}`;
+
+    headings.push({ level, text, slug });
+  });
+
+  return headings;
+}
+
+function extractReadmeTocAnchors(readmeContent: string): string[] {
+  const tocSection = extractMarkdownSection(
+    readmeContent,
+    /^##\s+Table of Contents\b/,
+    /^##\s+/
+  );
+  const anchors: string[] = [];
+  const linkRegex = /\[[^\]]+\]\(#([^)\s]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = linkRegex.exec(tocSection)) !== null) {
+    anchors.push(match[1].trim());
+  }
+  return anchors;
+}
+
+function collectGitignoredRootDirs(repoRoot: string): Set<string> {
+  const ignored = new Set<string>(IGNORED_ROOT_DIRECTORIES);
+  const gitignorePath = path.join(repoRoot, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    return ignored;
+  }
+
+  const lines = fs.readFileSync(gitignorePath, 'utf8').split(/\r?\n/);
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) {
+      continue;
+    }
+    const normalized = trimmed.replace(/^\/+/, '').replace(/\/+\*?$/, '');
+    if (normalized && !normalized.includes('/') && !normalized.includes('*')) {
+      ignored.add(normalized);
+    }
+  }
+
+  return ignored;
+}
+
+function discoverTrackedRootDirectories(repoRoot: string): string[] {
+  const ignoredRootDirs = collectGitignoredRootDirs(repoRoot);
+  return fs
+    .readdirSync(repoRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !ignoredRootDirs.has(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function extractReadmeProjectStructurePaths(readmeContent: string): string[] {
   const section = extractMarkdownSection(readmeContent, /^##\s+Project Structure\b/, /^##\s+/);
   const paths: string[] = [];
   for (const line of section.split(/\r?\n/)) {
     const match = line.match(/^\s*[*-]\s+`([^`]+)`\s*:/);
     if (match) {
-      paths.push(match[1].trim());
+      paths.push(match[1].trim().replace(/^\.\/+/, '').replace(/\/+$/, ''));
     }
   }
   return paths;
@@ -653,6 +831,38 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   // 3. README.md & docs/developer-setup.md onboarding contract checks
+  const readmeHeadings = extractReadmeHeadings(readmeRaw);
+  const readmeH1Headings = readmeHeadings.filter((heading) => heading.level === 1);
+  if (readmeH1Headings.length !== 1) {
+    errors.push(
+      `README.md: Must contain exactly one top-level "#" (h1) heading, found ${readmeH1Headings.length}`
+    );
+  }
+
+  const readmeTocAnchors = extractReadmeTocAnchors(readmeRaw);
+  if (readmeTocAnchors.length === 0) {
+    errors.push('README.md: Missing "## Table of Contents" anchor entries');
+  } else {
+    const tocAnchorSet = new Set(readmeTocAnchors);
+    const allHeadingSlugs = new Set(readmeHeadings.map((heading) => heading.slug));
+    const expectedTocHeadings = readmeHeadings.filter(
+      (heading) =>
+        (heading.level === 2 || heading.level === 3) && heading.slug !== 'table-of-contents'
+    );
+    for (const heading of expectedTocHeadings) {
+      if (!tocAnchorSet.has(heading.slug)) {
+        errors.push(
+          `README.md: Table of Contents is missing entry for "${heading.text}" (#${heading.slug})`
+        );
+      }
+    }
+    for (const anchor of readmeTocAnchors) {
+      if (!allHeadingSlugs.has(anchor)) {
+        errors.push(`README.md: Table of Contents links to nonexistent heading "#${anchor}"`);
+      }
+    }
+  }
+
   const readmeStructurePaths = extractReadmeProjectStructurePaths(readmeRaw);
   if (readmeStructurePaths.length === 0) {
     errors.push('README.md: Missing directory entries under "## Project Structure"');
@@ -660,6 +870,14 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   for (const relDir of readmeStructurePaths) {
     if (!fs.existsSync(path.join(repoRoot, relDir))) {
       errors.push(`README.md: Project Structure lists nonexistent path "${relDir}"`);
+    }
+  }
+  const documentedRootDirs = new Set(
+    readmeStructurePaths.map((relDir) => relDir.split('/')[0]).filter(Boolean)
+  );
+  for (const rootDirName of discoverTrackedRootDirectories(repoRoot)) {
+    if (!documentedRootDirs.has(rootDirName)) {
+      errors.push(`README.md: Project Structure is missing root directory "${rootDirName}"`);
     }
   }
 

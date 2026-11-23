@@ -389,7 +389,7 @@ export function stagePortalDoc(
   let content = fs.readFileSync(srcPath, 'utf8');
   content = rewriteMarkdownLinks(content, doc.src, rootDir);
   content = escapeVueMustache(content);
-  content = prependGeneratedPortalComment(content, doc.src);
+  content = prependGeneratedPortalComment(prependPortalFrontmatterTitle(content, doc.title), doc.src);
 
   if (fs.existsSync(destPath)) {
     const existing = fs.readFileSync(destPath, 'utf8');
@@ -400,6 +400,17 @@ export function stagePortalDoc(
 
   fs.writeFileSync(destPath, content, 'utf8');
   return true;
+}
+
+export function prependPortalFrontmatterTitle(content: string, title: string): string {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle || /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(content)) {
+    return content;
+  }
+  const yamlTitle = /[:#[\]{}&*!|>'"%@`]|^\s|\s$|\r|\n/.test(trimmedTitle)
+    ? JSON.stringify(trimmedTitle)
+    : trimmedTitle;
+  return `---\ntitle: ${yamlTitle}\n---\n${content}`;
 }
 
 function stageOpenApiAsset(
