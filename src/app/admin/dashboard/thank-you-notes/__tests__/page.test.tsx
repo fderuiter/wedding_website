@@ -690,4 +690,136 @@ describe('ThankYouNotesPage', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('displays contributor lifecycle badges and handles Confirm, Polite Reminder, and Void actions without deleting history', async () => {
+    const lifecycleItems = [
+      {
+        id: 'c-reserved',
+        name: 'Jordan Reserved',
+        email: 'jordan@example.com',
+        amount: 120,
+        refundedAmount: 0,
+        status: 'RESERVED',
+        date: '2026-06-05T12:00:00.000Z',
+        thankYouStatus: 'Unsent',
+        registryItem: { id: 'r1', name: 'Stand Mixer', category: 'Kitchen' },
+      },
+      {
+        id: 'c-confirmed',
+        name: 'Sam Confirmed',
+        email: 'sam@example.com',
+        amount: 200,
+        refundedAmount: 40,
+        status: 'CONFIRMED',
+        date: '2026-06-06T12:00:00.000Z',
+        thankYouStatus: 'Sent',
+        registryItem: { id: 'r2', name: 'Honeymoon Fund', category: 'Travel' },
+      },
+      {
+        id: 'c-cancelled',
+        name: 'Morgan Cancelled',
+        email: 'morgan@example.com',
+        amount: 80,
+        refundedAmount: 0,
+        status: 'CANCELLED',
+        date: '2026-06-07T12:00:00.000Z',
+        thankYouStatus: 'Not Needed',
+        registryItem: { id: 'r3', name: 'Linen Set', category: 'Home' },
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: lifecycleItems,
+            metrics: {
+              total: 3,
+              sent: 1,
+              unsent: 1,
+              notNeeded: 1,
+              thanked: 2,
+              completionPercentage: 67,
+            },
+            pagination: {
+              page: 1,
+              pageSize: 50,
+              totalItems: 3,
+              totalPages: 1,
+            },
+          }),
+        });
+      }
+      if (url.startsWith('/api/admin/contributors/') && options?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { action: JSON.parse(String(options.body)).action },
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Jordan Reserved')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Reserved')).toBeInTheDocument();
+    expect(screen.getByText('Confirmed')).toBeInTheDocument();
+    expect(screen.getByText('Partial Refund (-$40.00)')).toBeInTheDocument();
+    expect(screen.getByText('Cancelled')).toBeInTheDocument();
+
+    // Cancelled contributor does not expose Void button, preserving history safely
+    expect(
+      screen.queryByRole('button', { name: 'Void contribution from Morgan Cancelled' })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send polite reminder to Jordan Reserved' }));
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-reserved/action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'remind' }),
+        })
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm contribution from Jordan Reserved' }));
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-reserved/action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'confirm' }),
+        })
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Void contribution from Sam Confirmed' }));
+    const confirmDialogBtn = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmDialogBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-confirmed/action',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ action: 'void' }),
+        })
+      );
+    });
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

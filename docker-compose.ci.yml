@@ -10,10 +10,16 @@ services:
       POSTGRES_DB: ${DB_NAME:-wedding}
 
   migration:
+    build:
+      cache_from:
+        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}}
 
   app:
+    build:
+      cache_from:
+        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://${DB_USER:-wedding}:${DB_PASSWORD:-wedding123}@db:5432/${DB_NAME:-wedding}}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==}

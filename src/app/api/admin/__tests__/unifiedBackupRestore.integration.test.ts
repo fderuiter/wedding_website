@@ -629,10 +629,13 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
           name: 'Casey Rivera',
           email: 'casey@example.com',
           amount: 350,
+          refundedAmount: 50,
+          status: 'RESERVED',
           date: '2026-07-01T10:00:00.000Z',
           thankYouStatus: 'Sent',
           confirmationEmailSentAt: '2026-07-01T10:01:00.000Z',
           alertEmailSentAt: '2026-07-01T10:01:05.000Z',
+          reminderEmailSentAt: '2026-07-02T10:00:00.000Z',
           retailerOrderNumber: 'AMZ-112-999',
           carrier: 'FedEx',
           trackingNumber: '777123456789',
@@ -653,11 +656,16 @@ describe('Unified 15-Model Backup, Restore & Rollback PostgreSQL Integration', (
     const restoredContrib = await prisma.contributor.findUniqueOrThrow({
       where: { id: 'contrib-tracking-rollback' },
     });
+    expect(restoredContrib.refundedAmount).toBe(50);
+    expect(restoredContrib.status).toBe('RESERVED');
     expect(restoredContrib.confirmationEmailSentAt?.toISOString()).toBe(
       '2026-07-01T10:01:00.000Z',
     );
     expect(restoredContrib.alertEmailSentAt?.toISOString()).toBe(
       '2026-07-01T10:01:05.000Z',
+    );
+    expect(restoredContrib.reminderEmailSentAt?.toISOString()).toBe(
+      '2026-07-02T10:00:00.000Z',
     );
     expect(restoredContrib.retailerOrderNumber).toBe('AMZ-112-999');
     expect(restoredContrib.carrier).toBe('FedEx');

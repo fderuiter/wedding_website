@@ -1,5 +1,14 @@
 import { registryRepository } from './repository';
-import type { IRegistryRepository, RegistryItem, GetItemsOptions, PaginatedRegistryItems, CreateRegistryItemInput } from './types';
+import type {
+  ContributorLifecycleResult,
+  ContributorRecord,
+  CreateRegistryItemInput,
+  GetItemsOptions,
+  IRegistryRepository,
+  PaginatedRegistryItems,
+  RegistryItem,
+  StripeLedgerReconciliationResult,
+} from './types';
 
 /**
  * Handles business logic for registry-related operations.
@@ -112,6 +121,82 @@ class RegistryService {
       return registryRepository.claimContributorEmailSend(contributorId, kind);
     }
     return false;
+  }
+
+  /**
+   * Confirms a RESERVED contributor claim and returns the updated contributor and item.
+   */
+  async confirmContribution(
+    contributorId: string,
+    author: string = 'Guest'
+  ): Promise<ContributorLifecycleResult> {
+    if (typeof this.repository.confirmContribution === 'function') {
+      return this.repository.confirmContribution(contributorId, author);
+    }
+    return registryRepository.confirmContribution!(contributorId, author);
+  }
+
+  /**
+   * Cancels a RESERVED contributor claim (guest action) and recalculates item capacity.
+   */
+  async cancelReservedContribution(
+    contributorId: string,
+    author: string = 'Guest'
+  ): Promise<ContributorLifecycleResult> {
+    if (typeof this.repository.cancelReservedContribution === 'function') {
+      return this.repository.cancelReservedContribution(contributorId, author);
+    }
+    return registryRepository.cancelReservedContribution!(contributorId, author);
+  }
+
+  /**
+   * Voids a contributor claim non-destructively (admin action) and recalculates item capacity.
+   */
+  async voidContribution(
+    contributorId: string,
+    author: string = 'Admin'
+  ): Promise<ContributorLifecycleResult> {
+    if (typeof this.repository.voidContribution === 'function') {
+      return this.repository.voidContribution(contributorId, author);
+    }
+    return registryRepository.voidContribution!(contributorId, author);
+  }
+
+  /**
+   * Retrieves a contributor alongside its parent RegistryItem.
+   */
+  async getContributorWithItem(
+    contributorId: string
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItem | null } | null> {
+    if (typeof this.repository.getContributorWithItem === 'function') {
+      return this.repository.getContributorWithItem(contributorId);
+    }
+    return registryRepository.getContributorWithItem!(contributorId);
+  }
+
+  /**
+   * Records that a polite reminder email was sent for a RESERVED contributor.
+   */
+  async markContributorReminderSent(contributorId: string): Promise<ContributorRecord> {
+    if (typeof this.repository.markContributorReminderSent === 'function') {
+      return this.repository.markContributorReminderSent(contributorId);
+    }
+    return registryRepository.markContributorReminderSent!(contributorId);
+  }
+
+  /**
+   * Reconciles a Stripe partial/full refund or dispute idempotently against the contributor ledger.
+   */
+  async reconcileStripeAdjustment(params: {
+    stripeChargeId?: string | null;
+    stripePaymentIntentId?: string | null;
+    refundedCents: number;
+    forceFullReversal?: boolean;
+  }): Promise<StripeLedgerReconciliationResult> {
+    if (typeof this.repository.reconcileStripeAdjustment === 'function') {
+      return this.repository.reconcileStripeAdjustment(params);
+    }
+    return registryRepository.reconcileStripeAdjustment!(params);
   }
 }
 

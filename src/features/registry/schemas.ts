@@ -97,6 +97,9 @@ export const RegistryQuerySchema = z.object({
 
 export type RegistryQueryParams = z.infer<typeof RegistryQuerySchema>;
 
+export const ContributorStatusEnum = z.enum(['RESERVED', 'CONFIRMED', 'CANCELLED', 'REFUNDED']);
+export type ContributorStatus = z.infer<typeof ContributorStatusEnum>;
+
 export const ContributorSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
@@ -105,6 +108,12 @@ export const ContributorSchema = z.object({
   amount: z.coerce
     .number({ message: 'Contribution amount must be a positive number.' })
     .positive('Contribution amount must be a positive number.'),
+  refundedAmount: z.coerce
+    .number()
+    .min(0, 'Refunded amount cannot be negative.')
+    .optional()
+    .default(0),
+  status: ContributorStatusEnum.optional().default('CONFIRMED'),
   coverFee: z.boolean().optional().default(false),
   feeAmount: z.coerce.number().optional().default(0),
   message: z.string().nullable().optional(),
@@ -138,6 +147,11 @@ export const ContributorSchema = z.object({
     .transform((d) => new Date(d).toISOString())
     .nullable()
     .optional(),
+  reminderEmailSentAt: z
+    .union([z.string(), z.date()])
+    .transform((d) => new Date(d).toISOString())
+    .nullable()
+    .optional(),
   registryItemId: z.string().nullable().optional(),
   registryItem: z
     .object({
@@ -162,6 +176,18 @@ export const ContributorSchema = z.object({
     })
     .nullable()
     .optional(),
+});
+
+export const GuestClaimQuerySchema = z.object({
+  token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),
+});
+
+export const GuestClaimActionSchema = z.object({
+  token: z.string({ message: 'Missing or invalid claim token.' }).trim().min(1, 'Missing or invalid claim token.'),
+});
+
+export const AdminContributorActionSchema = z.object({
+  action: z.enum(['confirm', 'remind', 'void']),
 });
 
 export const UpdateThankYouNoteSchema = z.object({
@@ -437,11 +463,12 @@ const CONTRIBUTOR_NULLABLE_DATE_COLUMNS = [
   'transactionTimestamp',
   'confirmationEmailSentAt',
   'alertEmailSentAt',
+  'reminderEmailSentAt',
 ] as const;
 
 /**
  * Translate a persisted `Contributor` snapshot into separate Prisma `update`
- * and `create` payloads across all 21 mutable columns while keeping omitted
+ * and `create` payloads across all 24 mutable columns while keeping omitted
  * (`undefined`) fields `undefined` on `update` to preserve live DB values.
  */
 export function translateContributorSnapshot(
@@ -488,6 +515,32 @@ export function translateContributorSnapshot(
     create.amount = resolvedAmount;
   } else {
     create.amount = 0;
+  }
+
+  if (
+    snapshotData.refundedAmount !== undefined &&
+    snapshotData.refundedAmount !== null
+  ) {
+    const parsedRefund = Number(snapshotData.refundedAmount);
+    const resolvedRefundedAmount =
+      Number.isFinite(parsedRefund) && parsedRefund >= 0 ? parsedRefund : 0;
+    update.refundedAmount = resolvedRefundedAmount;
+    create.refundedAmount = resolvedRefundedAmount;
+  } else {
+    create.refundedAmount = 0;
+  }
+
+  if (snapshotData.status !== undefined && snapshotData.status !== null) {
+    const parsedStatus = ContributorStatusEnum.safeParse(
+      String(snapshotData.status),
+    );
+    const resolvedContributorStatus = parsedStatus.success
+      ? parsedStatus.data
+      : 'CONFIRMED';
+    update.status = resolvedContributorStatus;
+    create.status = resolvedContributorStatus;
+  } else {
+    create.status = 'CONFIRMED';
   }
 
   if (snapshotData.coverFee !== undefined && snapshotData.coverFee !== null) {

@@ -52,7 +52,17 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       'FROM base AS prisma-cli',
       'WORKDIR /opt/prisma-cli',
       'FROM base AS builder',
-      'COPY . .',
+      'COPY package.json package-lock.json .npmrc ./',
+      'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
+      '    npm ci --ignore-scripts',
+      'COPY prisma ./prisma',
+      'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./',
+      'COPY assets ./assets',
+      'COPY public ./public',
+      'COPY src ./src',
+      'COPY scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
+      'RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \\',
+      '    npm run build:docker',
       'FROM base AS runner',
       'RUN addgroup --system --gid 1001 nodejs && \\',
       '    adduser --system --uid 1001 --ingroup nodejs nextjs',
@@ -65,6 +75,11 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       'CMD ["node", "server.js"]',
       '',
     ].join('\n')
+  );
+
+  fs.writeFileSync(
+    path.join(targetDir, '.dockerignore'),
+    ['node_modules', '.next', '.dockerignore', 'Dockerfile', 'docker-compose*.yml', ''].join('\n')
   );
 
   fs.writeFileSync(
@@ -81,6 +96,22 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '    image: wedding-website:latest',
       '    build:',
       '      context: .',
+      '',
+    ].join('\n')
+  );
+
+  fs.writeFileSync(
+    path.join(targetDir, 'docker-compose.ci.yml'),
+    [
+      'services:',
+      '  migration:',
+      '    build:',
+      '      cache_from:',
+      '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
+      '  app:',
+      '    build:',
+      '      cache_from:',
+      '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
       '',
     ].join('\n')
   );
@@ -462,6 +493,144 @@ describe('check-docker-build', () => {
           filePath: 'package.json',
           imageRef: 'engines.node',
           reason: expect.stringContaining('does not match .nvmrc ("22")'),
+        }),
+      ])
+    );
+  });
+
+  it('rejects premature prisma copy before npm ci, COPY . ., missing explicit builder inputs, and docker-entrypoint.sh in builder', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'Dockerfile'),
+      [
+        '# syntax=docker/dockerfile:1',
+        `FROM node:22-bookworm-slim@${NODE_DIGEST} AS base`,
+        'WORKDIR /app',
+        'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\',
+        '    --mount=type=cache,target=/var/lib/apt,sharing=locked \\',
+        '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
+        '    apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates tini',
+        'FROM base AS prisma-cli',
+        'WORKDIR /opt/prisma-cli',
+        'FROM base AS builder',
+        'COPY package.json package-lock.json ./',
+        'COPY prisma ./prisma',
+        'RUN npm ci',
+        'COPY . .',
+        'COPY docker-entrypoint.sh ./',
+        'RUN npm run build:docker',
+        'FROM base AS runner',
+        'RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 --ingroup nodejs nextjs',
+        'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
+        'COPY --from=builder /app/prisma.config.ts ./prisma.config.ts',
+        'RUN ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true',
+        'HEALTHCHECK CMD node -e "fetch(\'http://127.0.0.1:3000/api/live\')"',
+        'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]',
+        'CMD ["node", "server.js"]',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'prisma',
+          reason: expect.stringContaining('before "npm ci --ignore-scripts"'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/root/.npm',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'npm ci --ignore-scripts',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'COPY . .',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'docker-entrypoint.sh',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/app/.next/cache',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'assets',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'tsconfig.build.json',
+        }),
+      ])
+    );
+  });
+
+  it('enforces Dockerfile exclusion in .dockerignore and GHA cache isolation in docker-compose.ci.yml', () => {
+    fs.writeFileSync(
+      path.join(tempDir, '.dockerignore'),
+      ['node_modules', '.next', 'docker-entrypoint.sh', ''].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '      cache_from:',
+        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.ci.yml'),
+      [
+        'services:',
+        '  migration:',
+        '    environment:',
+        '      DATABASE_URL: postgres://wedding:wedding123@db:5432/wedding',
+        '  app:',
+        '    build:',
+        '      cache_from:',
+        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64}',
+        '      cache_to:',
+        '        - type=gha,scope=${GHA_CACHE_SCOPE:-app-amd64},mode=max',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.dockerignore',
+          imageRef: 'Dockerfile',
+        }),
+        expect.objectContaining({
+          filePath: '.dockerignore',
+          imageRef: 'docker-entrypoint.sh',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'type=gha',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.ci.yml',
+          imageRef: 'migration.build.cache_from',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.ci.yml',
+          imageRef: 'app.build.cache_to',
         }),
       ])
     );

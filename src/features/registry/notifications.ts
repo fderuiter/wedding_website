@@ -3,6 +3,7 @@ import { getAppConfig } from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { formatCurrency } from '@/utils/intl';
+import { signContributorActionToken } from './lib/contributorToken';
 import { registryRepository } from './repository';
 import { registryService } from './service';
 import type { IRegistryRepository } from './types';
@@ -17,6 +18,8 @@ interface ContributorCandidate {
   name?: string;
   email?: string | null;
   amount?: number;
+  refundedAmount?: number;
+  status?: string;
   coverFee?: boolean;
   feeAmount?: number;
   message?: string | null;
@@ -32,6 +35,11 @@ interface ItemSnapshot {
   id?: string;
   name?: string;
   itemType?: string;
+  price?: number;
+  quantity?: number;
+  amountContributed?: number;
+  purchased?: boolean;
+  vendorUrl?: string | null;
   isGroupGift?: boolean;
   paymentHandle?: string | null;
   paymentHandleType?: string | null;
@@ -57,6 +65,7 @@ interface DispatchContributionNotificationsParams {
   config?: Record<string, any> | null;
   requestUrl?: string;
   repository?: IRegistryRepository;
+  isReservation?: boolean;
 }
 
 function isEmailProviderConfigured(config: Record<string, any> | null | undefined): boolean {
@@ -258,6 +267,9 @@ function buildGuestConfirmationEmail(options: {
   referenceId: string;
   formattedDate: string;
   registryUrl: string;
+  isReserved?: boolean;
+  confirmActionUrl?: string;
+  cancelActionUrl?: string;
   escapeHtmlEntities: (text: string) => string;
   sanitizeEmailSubject: (subject: string) => string;
 }): { subject: string; body: string } {
@@ -275,6 +287,9 @@ function buildGuestConfirmationEmail(options: {
     referenceId,
     formattedDate,
     registryUrl,
+    isReserved = false,
+    confirmActionUrl,
+    cancelActionUrl,
     escapeHtmlEntities,
     sanitizeEmailSubject,
   } = options;
@@ -284,7 +299,9 @@ function buildGuestConfirmationEmail(options: {
   const subject = sanitizeEmailSubject(
     isSelfReportedFundTransfer
       ? `Gift Transfer Recorded: ${itemName}`
-      : `Gift Confirmation: ${itemName}`
+      : isReserved
+        ? `Gift Reservation Recorded: ${itemName}`
+        : `Gift Confirmation: ${itemName}`
   );
 
   const safeGuestName = escapeHtmlEntities(contributorName || 'Friend');
@@ -332,6 +349,28 @@ function buildGuestConfirmationEmail(options: {
     `;
   }
 
+  let reservationActionsBlock = '';
+  if (isReserved && confirmActionUrl && cancelActionUrl) {
+    const safeConfirmUrl = escapeHtmlEntities(confirmActionUrl);
+    const safeCancelUrl = escapeHtmlEntities(cancelActionUrl);
+    reservationActionsBlock = `
+      <div style="margin:16px 0;padding:16px;background-color:#eff6ff;border:1px solid #93c5fd;border-radius:8px;color:#1e3a8a;">
+        <p style="margin:0 0 8px 0;font-weight:700;">Confirm or Cancel Your Reservation</p>
+        <p style="margin:0 0 12px 0;">
+          We are holding this gift for you so other guests do not buy a duplicate. Once you finish your purchase or payment, please confirm below, or cancel if your plans change.
+        </p>
+        <div>
+          <a href="${safeConfirmUrl}" style="display:inline-block;margin-right:10px;margin-bottom:6px;padding:10px 16px;background-color:#15803d;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">
+            Confirm Gift Sent
+          </a>
+          <a href="${safeCancelUrl}" style="display:inline-block;margin-bottom:6px;padding:10px 16px;background-color:#ffffff;color:#991b1b;border:1px solid #dc2626;text-decoration:none;border-radius:6px;font-weight:600;">
+            Cancel Reservation
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
   const body = `
     <div style="font-family:system-ui,-apple-system,sans-serif;max-width:600px;margin:0 auto;color:#1f2937;line-height:1.5;">
       <h2 style="margin:0 0 12px 0;color:#111827;">Thank you for your gift, ${safeGuestName}!</h2>
@@ -339,10 +378,13 @@ function buildGuestConfirmationEmail(options: {
         ${
           isSelfReportedFundTransfer
             ? `We recorded your self-reported contribution toward <strong>${safeItemName}</strong>.`
-            : `Your gift toward <strong>${safeItemName}</strong> has been confirmed.`
+            : isReserved
+              ? `We reserved your gift claim for <strong>${safeItemName}</strong> while you complete your purchase.`
+              : `Your gift toward <strong>${safeItemName}</strong> has been confirmed.`
         }
       </p>
       ${transferReminderBlock}
+      ${reservationActionsBlock}
       <table style="width:100%;border-collapse:collapse;margin:16px 0;background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
         <tbody>
           <tr>
@@ -593,6 +635,36 @@ export async function dispatchContributionNotifications(
     const baseUrl = resolveBaseUrl(activeConfig, requestUrl);
     const registryUrl = `${baseUrl}/registry`;
     const dashboardUrl = `${baseUrl}/admin/dashboard/thank-you-notes`;
+    const isReserved =
+      Boolean(params.isReservation) ||
+      (typeof savedContributor.status === 'string' &&
+        savedContributor.status.toUpperCase() === 'RESERVED');
+
+    let confirmActionUrl: string | undefined;
+    let cancelActionUrl: string | undefined;
+    if (isReserved && savedContributor.id) {
+      try {
+        const [confirmToken, cancelToken] = await Promise.all([
+          signContributorActionToken({
+            contributorId: savedContributor.id,
+            action: 'confirm',
+          }),
+          signContributorActionToken({
+            contributorId: savedContributor.id,
+            action: 'cancel',
+          }),
+        ]);
+        const claimPrefix = baseUrl ? `${baseUrl}/guest/claim` : '/guest/claim';
+        confirmActionUrl = `${claimPrefix}?token=${encodeURIComponent(confirmToken)}`;
+        cancelActionUrl = `${claimPrefix}?token=${encodeURIComponent(cancelToken)}`;
+      } catch (tokenErr: unknown) {
+        logger.warn('Unable to sign contributor claim action links', {
+          itemId,
+          contributorId: savedContributor.id,
+          reason: tokenErr instanceof Error ? tokenErr.message : 'Token signing failed',
+        });
+      }
+    }
 
     const sensitiveLiterals = [
       guestEmailRaw,
@@ -630,6 +702,9 @@ export async function dispatchContributionNotifications(
             feeAmount,
             totalCharged,
             stripePaymentIntentId,
+            isReserved,
+            confirmActionUrl,
+            cancelActionUrl,
             referenceId,
             formattedDate,
             registryUrl,
@@ -662,7 +737,7 @@ export async function dispatchContributionNotifications(
       }
     }
 
-    if (hasValidCoupleEmail) {
+    if (hasValidCoupleEmail && !isReserved) {
       try {
         const claimedAlertEmail = await claimSendTimestamp(
           savedContributor,
@@ -730,6 +805,430 @@ export async function dispatchContributionNotifications(
         contribution.name,
         contribution.message,
       ]),
+    });
+  }
+}
+
+/**
+ * Dispatches the delayed couple alert email once a RESERVED gift claim is confirmed
+ * by either the guest (via signed confirmation form) or an admin.
+ */
+export async function dispatchConfirmedContributionAlert(params: {
+  contributor: ContributorCandidate;
+  item?: ItemSnapshot | null;
+  config?: Record<string, any> | null;
+  requestUrl?: string;
+  repository?: IRegistryRepository;
+}): Promise<void> {
+  const { contributor, item, requestUrl, repository } = params;
+
+  try {
+    const activeConfig = params.config ?? (await getAppConfig());
+    if (!isEmailProviderConfigured(activeConfig)) {
+      return;
+    }
+
+    const coupleEmailRaw =
+      typeof activeConfig.contactEmail === 'string' ? activeConfig.contactEmail.trim() : '';
+    if (!isValidEmail(coupleEmailRaw)) {
+      return;
+    }
+
+    const dbClient = (repository as any)?.client ?? prisma;
+    const claimedAlertEmail = await claimSendTimestamp(
+      contributor,
+      'alert',
+      repository,
+      dbClient
+    );
+    if (!claimedAlertEmail) {
+      return;
+    }
+
+    const providerName = String(activeConfig.emailProvider || 'smtp').trim().toLowerCase();
+    const contributorName = (contributor.name || 'Anonymous Guest').trim();
+    const itemName = (item?.name || 'Registry Gift').trim();
+    const itemType = item?.itemType || 'PHYSICAL';
+    const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
+    const isGroupGift = Boolean(item?.isGroupGift);
+    const isPayableGroupGift = Boolean(isFund || isGroupGift);
+    const effectiveHandle = resolveEffectivePaymentHandle(
+      {
+        paymentHandle: item?.paymentHandle,
+        paymentHandleType: item?.paymentHandleType,
+      },
+      activeConfig
+    );
+    const paymentHandle = effectiveHandle.paymentHandle || '';
+    const paymentHandleType = effectiveHandle.paymentHandleType || '';
+    const baseAmount = typeof contributor.amount === 'number' ? contributor.amount : 0;
+    const stripePaymentIntentId = contributor.stripePaymentIntentId ?? null;
+    const coverFee = Boolean(contributor.coverFee);
+    const feeAmount =
+      stripePaymentIntentId && coverFee
+        ? typeof contributor.feeAmount === 'number' && contributor.feeAmount > 0
+          ? contributor.feeAmount
+          : Math.round(baseAmount * 0.025 * 100) / 100
+        : 0;
+
+    let paymentTypeLabel = 'Physical Gift Claim';
+    if (stripePaymentIntentId) {
+      paymentTypeLabel = 'Card Checkout';
+    } else if (isPayableGroupGift && paymentHandle) {
+      paymentTypeLabel = paymentHandleType
+        ? `Direct Transfer (${paymentHandleType})`
+        : 'Direct Transfer';
+    } else if (isGroupGift) {
+      paymentTypeLabel = 'Group Gift Contribution';
+    }
+
+    const baseUrl = resolveBaseUrl(activeConfig, requestUrl);
+    const dashboardUrl = `${baseUrl}/admin/dashboard/thank-you-notes`;
+    const sensitiveLiterals = [
+      coupleEmailRaw,
+      contributor.email,
+      contributorName,
+      contributor.message,
+      contributor.retailerOrderNumber,
+      contributor.carrier,
+      contributor.trackingNumber,
+    ];
+
+    const {
+      MultiChannelMessagingProvider,
+      escapeHtmlEntities,
+      sanitizeEmailSubject,
+    } = await import('@/features/broadcast');
+    const messagingProvider = new MultiChannelMessagingProvider(activeConfig);
+
+    const { subject, body } = buildCoupleAlertEmail({
+      contributorName,
+      itemName,
+      baseAmount,
+      coverFee,
+      feeAmount,
+      paymentTypeLabel,
+      guestMessage: contributor.message ?? null,
+      retailerOrderNumber: contributor.retailerOrderNumber ?? null,
+      carrier: contributor.carrier ?? null,
+      trackingNumber: contributor.trackingNumber ?? null,
+      dashboardUrl,
+      escapeHtmlEntities,
+      sanitizeEmailSubject,
+    });
+
+    const result = await messagingProvider.sendEmail({
+      to: coupleEmailRaw,
+      subject,
+      body,
+    });
+    if (!result.success) {
+      logger.warn('Failed to send confirmed contribution couple alert email', {
+        itemId: item?.id,
+        contributorId: contributor.id,
+        recipientRole: 'couple',
+        provider: providerName,
+        reason: sanitizeProviderFailureReason(result.error, sensitiveLiterals),
+      });
+    }
+  } catch (err: unknown) {
+    logger.warn('Unexpected error sending confirmed contribution couple alert email', {
+      itemId: item?.id,
+      contributorId: contributor.id,
+      reason: sanitizeProviderFailureReason(err, [
+        contributor.email,
+        contributor.name,
+        contributor.message,
+      ]),
+    });
+  }
+}
+
+/**
+ * Sends a polite reminder email to a guest with an unverified RESERVED contribution,
+ * including fresh signed confirmation and cancellation links.
+ */
+export async function dispatchPoliteReminderNotification(params: {
+  contributor: ContributorCandidate;
+  item?: ItemSnapshot | null;
+  config?: Record<string, any> | null;
+  requestUrl?: string;
+}): Promise<{ sent: boolean; error?: string }> {
+  const { contributor, item, requestUrl } = params;
+  const guestEmailRaw = (contributor.email || '').trim();
+  if (!isValidEmail(guestEmailRaw)) {
+    return {
+      sent: false,
+      error: 'Contributor does not have a valid email address on file.',
+    };
+  }
+
+  if (!contributor.id) {
+    return {
+      sent: false,
+      error: 'Contributor identifier is required to generate reminder links.',
+    };
+  }
+
+  try {
+    const activeConfig = params.config ?? (await getAppConfig());
+    if (!isEmailProviderConfigured(activeConfig)) {
+      return {
+        sent: false,
+        error: 'Email provider is not configured on this deployment.',
+      };
+    }
+
+    const providerName = String(activeConfig.emailProvider || 'smtp').trim().toLowerCase();
+    const contributorName = (contributor.name || 'Guest').trim();
+    const itemName = (item?.name || 'Registry Gift').trim();
+    const baseAmount = typeof contributor.amount === 'number' ? contributor.amount : 0;
+    const itemType = item?.itemType || 'PHYSICAL';
+    const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
+    const isPayableGroupGift = Boolean(isFund || item?.isGroupGift);
+    const effectiveHandle = resolveEffectivePaymentHandle(
+      {
+        paymentHandle: item?.paymentHandle,
+        paymentHandleType: item?.paymentHandleType,
+      },
+      activeConfig
+    );
+    const paymentHandle = effectiveHandle.paymentHandle || '';
+    const paymentHandleType = effectiveHandle.paymentHandleType || '';
+    const paymentDeepLink =
+      isPayableGroupGift && paymentHandle && paymentHandleType
+        ? getPaymentUrl(paymentHandleType, paymentHandle)
+        : null;
+
+    const [confirmToken, cancelToken] = await Promise.all([
+      signContributorActionToken({ contributorId: contributor.id, action: 'confirm' }),
+      signContributorActionToken({ contributorId: contributor.id, action: 'cancel' }),
+    ]);
+
+    const baseUrl = resolveBaseUrl(activeConfig, requestUrl);
+    const claimPrefix = baseUrl ? `${baseUrl}/guest/claim` : '/guest/claim';
+    const confirmActionUrl = `${claimPrefix}?token=${encodeURIComponent(confirmToken)}`;
+    const cancelActionUrl = `${claimPrefix}?token=${encodeURIComponent(cancelToken)}`;
+
+    const {
+      MultiChannelMessagingProvider,
+      escapeHtmlEntities,
+      sanitizeEmailSubject,
+    } = await import('@/features/broadcast');
+    const messagingProvider = new MultiChannelMessagingProvider(activeConfig);
+
+    const safeName = escapeHtmlEntities(contributorName);
+    const safeItemName = escapeHtmlEntities(itemName);
+    const safeAmount = escapeHtmlEntities(formatCurrency(baseAmount));
+    const safeConfirmUrl = escapeHtmlEntities(confirmActionUrl);
+    const safeCancelUrl = escapeHtmlEntities(cancelActionUrl);
+    const safeHandle = escapeHtmlEntities(paymentHandle);
+    const safeHandleType = escapeHtmlEntities(paymentHandleType || 'Direct Transfer');
+    const safePaymentDeepLink = paymentDeepLink ? escapeHtmlEntities(paymentDeepLink) : '';
+    const safeVendorUrl = item?.vendorUrl ? escapeHtmlEntities(item.vendorUrl) : '';
+
+    const subject = sanitizeEmailSubject(`Friendly Reminder: Your Wedding Gift Reservation (${itemName})`);
+
+    const paymentReminderHtml =
+      isPayableGroupGift && paymentHandle
+        ? `
+          <div style="margin: 16px 0; padding: 14px 16px; background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <p style="margin: 0 0 6px; font-size: 14px; color: #334155;">
+              <strong>${safeHandleType}:</strong> ${safeHandle} (${safeAmount})
+            </p>
+            ${
+              safePaymentDeepLink
+                ? `<p style="margin: 0; font-size: 13px;"><a href="${safePaymentDeepLink}" style="color: #0f172a; font-weight: 600;">Open ${safeHandleType}</a></p>`
+                : ''
+            }
+          </div>
+        `
+        : safeVendorUrl
+          ? `
+            <p style="margin: 14px 0; font-size: 14px; color: #334155;">
+              Retailer listing: <a href="${safeVendorUrl}" style="color: #0f172a; font-weight: 600;">View item</a>
+            </p>
+          `
+          : '';
+
+    const body = `
+      <div style="font-family: Georgia, serif; color: #1e293b; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <h2 style="margin: 0 0 12px; font-size: 22px; color: #0f172a;">Checking in on your gift reservation</h2>
+        <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">
+          Hi ${safeName}, thank you again for reserving <strong>${safeItemName}</strong> (${safeAmount}) on our wedding registry!
+          We wanted to check in politely so we can keep our gift list accurate for other guests.
+        </p>
+        ${paymentReminderHtml}
+        <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #334155;">
+          If you have already sent your transfer or completed your order, please confirm below. If your plans changed, you can release the reservation with one click so another guest can choose it.
+        </p>
+        <div style="margin: 20px 0;">
+          <a href="${safeConfirmUrl}" style="display: inline-block; margin: 0 12px 8px 0; padding: 10px 18px; background-color: #0f172a; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">
+            Confirm Gift Sent
+          </a>
+          <a href="${safeCancelUrl}" style="display: inline-block; margin: 0 0 8px; padding: 10px 18px; background-color: #ffffff; color: #991b1b; border: 1px solid #fecaca; text-decoration: none; border-radius: 8px; font-size: 14px; font-weight: 600;">
+            Release Reservation
+          </a>
+        </div>
+      </div>
+    `.trim();
+
+    const result = await messagingProvider.sendEmail({
+      to: guestEmailRaw,
+      subject,
+      body,
+    });
+    if (!result.success) {
+      logger.warn('Failed to send registry polite reminder email', {
+        itemId: item?.id,
+        contributorId: contributor.id,
+        provider: providerName,
+        reason: sanitizeProviderFailureReason(result.error, [guestEmailRaw, contributorName]),
+      });
+      return {
+        sent: false,
+        error: 'Failed to send reminder email via configured provider.',
+      };
+    }
+
+    return { sent: true };
+  } catch (err: unknown) {
+    logger.warn('Unexpected error sending registry polite reminder email', {
+      itemId: item?.id,
+      contributorId: contributor.id,
+      reason: sanitizeProviderFailureReason(err, [guestEmailRaw, contributor.name]),
+    });
+    return {
+      sent: false,
+      error: 'Unexpected error sending reminder email.',
+    };
+  }
+}
+
+/**
+ * Notifies the couple when a Stripe refund or dispute adjusts a registry contribution
+ * and recalculates the parent gift item's ledger balance.
+ */
+export async function dispatchLedgerAdjustmentNotification(params: {
+  eventType: 'partial_refund' | 'refund' | 'dispute';
+  contributor: ContributorCandidate;
+  item?: ItemSnapshot | null;
+  refundedAmount: number;
+  config?: Record<string, any> | null;
+  requestUrl?: string;
+}): Promise<void> {
+  const { eventType, contributor, item, refundedAmount, requestUrl } = params;
+
+  try {
+    const activeConfig = params.config ?? (await getAppConfig());
+    if (!isEmailProviderConfigured(activeConfig)) {
+      return;
+    }
+
+    const coupleEmailRaw =
+      typeof activeConfig.contactEmail === 'string' ? activeConfig.contactEmail.trim() : '';
+    if (!isValidEmail(coupleEmailRaw)) {
+      return;
+    }
+
+    const providerName = String(activeConfig.emailProvider || 'smtp').trim().toLowerCase();
+    const contributorName = (contributor.name || 'Anonymous Guest').trim();
+    const itemName = (item?.name || 'Registry Gift').trim();
+    const originalAmount = typeof contributor.amount === 'number' ? contributor.amount : 0;
+    const clampedReversed = Math.min(originalAmount, Math.max(0, refundedAmount));
+    const netAmount = Math.max(0, Math.round((originalAmount - clampedReversed) * 100) / 100);
+    const updatedItemTotal =
+      typeof item?.amountContributed === 'number' ? item.amountContributed : netAmount;
+
+    const baseUrl = resolveBaseUrl(activeConfig, requestUrl);
+    const registryAdminUrl = `${baseUrl}/admin/dashboard/registry`;
+
+    const {
+      MultiChannelMessagingProvider,
+      escapeHtmlEntities,
+      sanitizeEmailSubject,
+    } = await import('@/features/broadcast');
+    const messagingProvider = new MultiChannelMessagingProvider(activeConfig);
+
+    const eventHeadline =
+      eventType === 'dispute'
+        ? 'Card Dispute Opened'
+        : eventType === 'refund'
+          ? 'Full Refund Processed'
+          : 'Partial Refund Processed';
+
+    const subject = sanitizeEmailSubject(`Registry Ledger Update: ${eventHeadline} — ${itemName}`);
+    const safeHeadline = escapeHtmlEntities(eventHeadline);
+    const safeContributor = escapeHtmlEntities(contributorName);
+    const safeItemName = escapeHtmlEntities(itemName);
+    const safeOriginal = escapeHtmlEntities(formatCurrency(originalAmount));
+    const safeReversed = escapeHtmlEntities(formatCurrency(clampedReversed));
+    const safeNet = escapeHtmlEntities(formatCurrency(netAmount));
+    const safeItemTotal = escapeHtmlEntities(formatCurrency(updatedItemTotal));
+    const safeAdminUrl = escapeHtmlEntities(registryAdminUrl);
+    const availabilityCopy = item?.purchased
+      ? 'Remains fulfilled'
+      : 'Reopened for guest contributions';
+
+    const body = `
+      <div style="font-family: Georgia, serif; color: #1e293b; max-width: 560px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <h2 style="margin: 0 0 12px; font-size: 22px; color: #0f172a;">${safeHeadline}</h2>
+        <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6; color: #334155;">
+          Stripe reported a ledger adjustment for <strong>${safeContributor}</strong> on <strong>${safeItemName}</strong>.
+          Your registry totals have been updated automatically while preserving your contributor history.
+        </p>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+          <table role="presentation" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 4px 0; color: #64748b;">Original Contribution</td>
+              <td style="padding: 4px 0; text-align: right; color: #0f172a;">${safeOriginal}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; color: #64748b;">Reversed / Refunded</td>
+              <td style="padding: 4px 0; text-align: right; color: #991b1b; font-weight: 600;">-${safeReversed}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; color: #64748b;">Net Contributor Amount</td>
+              <td style="padding: 4px 0; text-align: right; color: #0f172a; font-weight: 600;">${safeNet}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0 0; border-top: 1px solid #e2e8f0; color: #64748b;">Updated Gift Funding Total</td>
+              <td style="padding: 6px 0 0; border-top: 1px solid #e2e8f0; text-align: right; color: #0f172a; font-weight: 600;">${safeItemTotal}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; color: #64748b;">Gift Status</td>
+              <td style="padding: 4px 0; text-align: right; color: #334155;">${escapeHtmlEntities(availabilityCopy)}</td>
+            </tr>
+          </table>
+        </div>
+        <p style="margin: 0; font-size: 14px;">
+          <a href="${safeAdminUrl}" style="color: #0f172a; font-weight: 600; text-decoration: underline;">
+            Review Registry Ledger
+          </a>
+        </p>
+      </div>
+    `.trim();
+
+    const result = await messagingProvider.sendEmail({
+      to: coupleEmailRaw,
+      subject,
+      body,
+    });
+    if (!result.success) {
+      logger.warn('Failed to send registry ledger adjustment notification', {
+        itemId: item?.id,
+        contributorId: contributor.id,
+        eventType,
+        provider: providerName,
+        reason: sanitizeProviderFailureReason(result.error, [coupleEmailRaw, contributorName]),
+      });
+    }
+  } catch (err: unknown) {
+    logger.warn('Unexpected error sending registry ledger adjustment notification', {
+      itemId: item?.id,
+      contributorId: contributor.id,
+      eventType,
+      reason: sanitizeProviderFailureReason(err, [contributor.email, contributor.name]),
     });
   }
 }

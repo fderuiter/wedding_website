@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
-import { useRegistryCapabilities } from '@/features/registry';
+import { ContributorLifecycleBadge, useRegistryCapabilities } from '@/features/registry';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
@@ -27,28 +27,52 @@ function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallba
 
 const ContributionsList = ({
   contributors,
+  onContributorAction,
+  pendingContributorId,
 }: {
   contributors?: {
+    id?: string;
     name: string;
     amount: number;
+    refundedAmount?: number;
+    status?: string;
     date: string;
     stripeChargeId?: string | null;
     stripePaymentIntentId?: string | null;
     transactionTimestamp?: string | null;
+    reminderEmailSentAt?: string | null;
   }[];
+  onContributorAction?: (
+    contributorId: string,
+    contributorName: string,
+    action: 'confirm' | 'remind' | 'void'
+  ) => Promise<void>;
+  pendingContributorId?: string | null;
 }) => {
   if (!contributors || contributors.length === 0) {
     return <span className="text-gray-500 dark:text-gray-400">None</span>;
   }
   return (
-    <ul className="text-xs space-y-1.5">
+    <ul className="text-xs space-y-2">
       {contributors.map((c, idx) => {
         const transactionRef = c.stripeChargeId || c.stripePaymentIntentId;
+        const normalizedStatus = (c.status || 'CONFIRMED').toUpperCase();
+        const isInactive = normalizedStatus === 'CANCELLED' || normalizedStatus === 'REFUNDED';
+        const isRowBusy = Boolean(c.id && pendingContributorId === c.id);
+
         return (
-          <li key={idx} className="flex flex-col">
-            <span>
-              {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
-            </span>
+          <li key={c.id || idx} className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={isInactive ? 'line-through text-gray-500 dark:text-gray-400' : ''}>
+                {c.name} - {formatCurrency(c.amount)} on {formatDate(c.date)}
+              </span>
+              <ContributorLifecycleBadge
+                status={normalizedStatus}
+                amount={c.amount}
+                refundedAmount={c.refundedAmount}
+                contributorId={c.id}
+              />
+            </div>
             {transactionRef && (
               <span
                 data-testid={`verified-transaction-${idx}`}
@@ -57,6 +81,47 @@ const ContributionsList = ({
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
                 Verified Ref: {transactionRef}
               </span>
+            )}
+            {c.id && onContributorAction && !isInactive && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                {normalizedStatus === 'RESERVED' && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      disabled={isRowBusy}
+                      aria-label={`Confirm contribution from ${c.name}`}
+                      onClick={() => void onContributorAction(c.id!, c.name, 'confirm')}
+                      className="px-2 py-0.5 text-[11px] h-auto"
+                    >
+                      Confirm
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isRowBusy}
+                      aria-label={`Send polite reminder to ${c.name}`}
+                      onClick={() => void onContributorAction(c.id!, c.name, 'remind')}
+                      className="px-2 py-0.5 text-[11px] h-auto"
+                    >
+                      Polite Reminder
+                    </Button>
+                  </>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="danger"
+                  disabled={isRowBusy}
+                  aria-label={`Void contribution from ${c.name}`}
+                  onClick={() => void onContributorAction(c.id!, c.name, 'void')}
+                  className="px-2 py-0.5 text-[11px] h-auto"
+                >
+                  Void
+                </Button>
+              </div>
             )}
           </li>
         );
@@ -79,9 +144,46 @@ export default function AdminRegistryPage() {
     remove,
     reorderItems,
     toggleMostWanted,
+    performContributorAction,
   } = useAdminRegistry();
   const { addToast, confirm } = useToast();
   const [announcement, setAnnouncement] = useState<string>('');
+  const [pendingContributorId, setPendingContributorId] = useState<string | null>(null);
+
+  const handleContributorAction = async (
+    contributorId: string,
+    contributorName: string,
+    action: 'confirm' | 'remind' | 'void'
+  ) => {
+    if (action === 'void') {
+      const confirmed = await confirm(
+        `Void the contribution from ${contributorName}? This keeps the contributor record for history while reopening the gift balance.`
+      );
+      if (!confirmed) return;
+    }
+
+    setPendingContributorId(contributorId);
+    try {
+      await performContributorAction(contributorId, action);
+      const feedback =
+        action === 'confirm'
+          ? `Confirmed contribution from ${contributorName}.`
+          : action === 'remind'
+            ? `Sent polite reminder email to ${contributorName}.`
+            : `Voided contribution from ${contributorName}.`;
+      setAnnouncement(feedback);
+      addToast(feedback, 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to update contributor record.',
+        'error'
+      );
+    } finally {
+      setPendingContributorId(null);
+    }
+  };
 
   const safeItems = Array.isArray(items) ? items : [];
   const mostWantedItems = safeItems.filter((item) => Boolean(item.isMostWanted));
@@ -373,7 +475,11 @@ export default function AdminRegistryPage() {
                                 <TableCell>{formatCurrency(item.price)}</TableCell>
                                 <TableCell>{item.purchased ? 'Yes' : 'No'}</TableCell>
                                 <TableCell>
-                                  <ContributionsList contributors={item.contributors} />
+                                  <ContributionsList
+                                    contributors={item.contributors}
+                                    onContributorAction={handleContributorAction}
+                                    pendingContributorId={pendingContributorId}
+                                  />
                                 </TableCell>
                                 <TableCell className="space-x-2">
                                   <Button
@@ -523,7 +629,11 @@ export default function AdminRegistryPage() {
                           <div className="mb-2">
                             <span className="font-semibold">Contributions:</span>
                             <div className="ml-2 mt-1">
-                              <ContributionsList contributors={item.contributors} />
+                              <ContributionsList
+                                contributors={item.contributors}
+                                onContributorAction={handleContributorAction}
+                                pendingContributorId={pendingContributorId}
+                              />
                             </div>
                           </div>
                           <div className="flex gap-2 mt-2">
