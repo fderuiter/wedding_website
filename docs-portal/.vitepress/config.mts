@@ -11,7 +11,7 @@ export default withMermaid(
     title: 'Wedding Platform Docs',
     description: 'Architectural specifications, deployment topologies, security models, and API reference',
     base: normalizeBasePath(process.env.VITEPRESS_BASE),
-    ignoreDeadLinks: [/^\/demo(\/|$)/, /^\/storybook(\/|$)/],
+    ignoreDeadLinks: false,
     markdown: {
       languageAlias: {
         env: 'dotenv',

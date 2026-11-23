@@ -1,8 +1,8 @@
-import { Suspense, useMemo } from 'react';
+import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Text } from '@react-three/drei';
 import { useTheme } from '../../../components/ThemeProvider';
-import { withBasePath } from '@/utils/basePath';
+import { HEART_FONT_URL } from '../constants';
 
 export function Heart3D({
   scale,
@@ -82,34 +82,32 @@ export function Heart3D({
     <group scale={scale} rotation={[0, Math.PI, Math.PI]}>
       {(!shardSide || shardSide === 'left') && <mesh geometry={geom} material={gold} />}
       {(!shardSide || shardSide === 'right') && <mesh geometry={geom} material={silver} />}
-      <Suspense fallback={null}>
-        {(!shardSide || shardSide === 'left') && (
-          <Text
-            font={withBasePath('/fonts/Geist-Regular.ttf')}
-            position={[-1, 0.1, 0.71]}
-            fontSize={0.35}
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.015}
-            outlineColor={themeOutline}
-          >
-            {p1}
-          </Text>
-        )}
-        {(!shardSide || shardSide === 'right') && (
-          <Text
-            font={withBasePath('/fonts/Geist-Regular.ttf')}
-            position={[1, 0.1, 0.71]}
-            fontSize={0.35}
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.015}
-            outlineColor={themeOutline}
-          >
-            {p2}
-          </Text>
-        )}
-      </Suspense>
+      {(!shardSide || shardSide === 'left') && (
+        <Text
+          font={HEART_FONT_URL}
+          position={[-1, 0.1, 0.71]}
+          fontSize={0.35}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.015}
+          outlineColor={themeOutline}
+        >
+          {p1}
+        </Text>
+      )}
+      {(!shardSide || shardSide === 'right') && (
+        <Text
+          font={HEART_FONT_URL}
+          position={[1, 0.1, 0.71]}
+          fontSize={0.35}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.015}
+          outlineColor={themeOutline}
+        >
+          {p2}
+        </Text>
+      )}
     </group>
   );
 }

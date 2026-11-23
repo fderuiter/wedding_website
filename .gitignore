@@ -11,6 +11,7 @@
 
 # Next.js & Turbopack
 /.next/
+/.next-export/
 /.turbo/
 /out/
 out/

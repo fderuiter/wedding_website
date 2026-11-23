@@ -43,7 +43,7 @@ Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`,
 4. **Test Environment Isolation & Explicit `DATABASE_URL` Preservation:** Both `scripts/pretest.mjs` and [jest.setup.js](../jest.setup.js) preserve the caller's `DATABASE_URL` when `CI=true` is set or honor `TEST_DATABASE_URL` when targeting a custom PostgreSQL instance, while still loading test defaults from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`). Locally (when neither `CI=true` nor `TEST_DATABASE_URL` is set), they clear parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and target the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
 5. **TCP Readiness Probing & Conditional PostgreSQL Container Startup:** Probes TCP readiness on the host and port parsed from `DATABASE_URL` before invoking Docker Compose. When a PostgreSQL listener already accepts connections (such as GitHub Actions `services.db` or an active local database) or when `CI=true`, `docker compose up -d db` is skipped. Locally, when the target port is offline and Docker (`docker info`) is running, it starts the container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully.
 6. **Schema Synchronization & Conditional Prisma Generation:** Ensures `wedding_test` exists and applies committed forward-only migrations via `npx prisma migrate deploy` (automatically resetting the `public` schema on `wedding_test` and retrying once if prior local `prisma db push` state triggers Prisma error `P3005`), then runs `npm run prisma:generate` only when `node_modules/.prisma/client` is missing or older than `prisma/schema.prisma` (skipping duplicate generation after `postinstall` in CI).
-7. **Stage-Only Documentation Portal Sync:** Runs `npx tsx scripts/generate-portal.ts --stage-only` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links and stage `docs-portal/` (`docs-portal/development/`) without rerunning OpenAPI or architecture AST generators already executed by `postinstall`.
+7. **Stage-Only Documentation Portal Sync:** Runs `npx tsx scripts/generate-portal.ts --stage-only` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links and stage `docs-portal/` (`docs-portal/development/`) and `openapi.json` without rerunning OpenAPI or architecture AST generators during unit test setup.
 
 ## Test Structure & Architecture
 
@@ -99,13 +99,13 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (49 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (54 src/ suites, no Docker required):
   npm run test:a11y:unit
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 49 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 54 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -150,7 +150,13 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run build-storybook
   ```
-  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml). Use `npm run storybook` for interactive component development.
+  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) and manual [.github/workflows/storybook.yml](workflows/storybook.yml) workflow (both installing dependencies with `npm ci --ignore-scripts`). Use `npm run storybook` for interactive component development.
+
+- **Static HTML Showcase Build:**
+  ```bash
+  npm run build:export
+  ```
+  Compiles the database-free static HTML showcase (`output: 'export'`) inside an isolated staged workspace without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
 
 - **Complete Quality Gate:**
   ```bash
@@ -158,7 +164,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   # or
   npm run check:all
   ```
-  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal and Storybook static builds (`npm run docs:build`, `npm run build-storybook`), and unit/integration tests — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
+  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal, Storybook, and static HTML showcase builds (`npm run docs:build`, `npm run build-storybook`, `npm run build:export`), and unit/integration tests — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
 
 ## Writing New Tests
 

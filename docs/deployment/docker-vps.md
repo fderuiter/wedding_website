@@ -20,13 +20,13 @@ You can run PostgreSQL either alongside the application via Docker Compose or co
 *   **External PostgreSQL**: Ensure PostgreSQL v15+ is running and accessible over port `5432` with SSL/TLS enabled if remote. Set `CONTAINER_DATABASE_URL` directly in `.env` when orchestrating with `docker-compose.yml` (`migration`, `app`, and `app-standby` honor explicit `CONTAINER_DATABASE_URL` overrides automatically), or pass `DATABASE_URL` directly when running standalone `docker run`.
 
 ### Connection String Format
-Configure `DATABASE_URL` as a standard PostgreSQL URI (`datasource.url` in `prisma.config.ts`, used by both the Next.js runtime and `npx prisma migrate deploy`):
+Configure `DATABASE_URL` as an unquoted standard PostgreSQL URI (`datasource.url` in `prisma.config.ts`, used by both the Next.js runtime and `npx prisma migrate deploy`; leave values unquoted in `.env` so standalone `docker run --env-file .env` does not inject literal quote characters):
 ```env
-DATABASE_URL="postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer"
+DATABASE_URL=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer
 ```
 In `prisma.config.ts`, `POSTGRES_URL_NON_POOLING` is bound to `datasource.shadowDatabaseUrl` (used by `prisma migrate dev`), whereas `npx prisma migrate deploy` always reads `DATABASE_URL`. If `DATABASE_URL` connects through a transaction-mode pooler such as PgBouncer, pass an explicit `DATABASE_URL` override pointing to a direct PostgreSQL URL when running `prisma migrate deploy`:
 ```env
-POSTGRES_URL_NON_POOLING="postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=require"
+POSTGRES_URL_NON_POOLING=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=require
 ```
 
 ---
@@ -149,7 +149,10 @@ When running the image directly via `docker run` without Docker Compose's `migra
       uploads_data:
     ```
     If overriding `uploads_data` with a host bind mount (e.g., `./uploads:/app/public/uploads` or `-v /var/lib/wedding/uploads:/app/public/uploads` in standalone `docker run`), ensure host ownership/permissions allow writes by UID 1001 (`chown -R 1001:1001 ./uploads`).
-*   **S3 / Cloudflare R2 Object Storage (Recommended for Multi-Instance)**: Provide all four S3 environment variables (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`). The application will stream uploads directly to S3/R2 and serve them via `S3_PUBLIC_URL`.
+*   **S3 / Cloudflare R2 / Google Cloud Storage Object Storage (Recommended for Multi-Instance)**: Configure all six S3-compatible environment variables as needed (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_PUBLIC_URL`):
+    *   **Cloudflare R2**: Set `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, and `S3_PUBLIC_URL=https://assets.wedding.mydomain.com` (an R2 Custom Domain or public `https://pub-<id>.r2.dev` URL; private `*.r2.cloudflarestorage.com` endpoints require `S3_PUBLIC_URL`).
+    *   **Google Cloud Storage (S3 Interoperability)**: Enable Cloud Storage HMAC keys and set `S3_BUCKET`, `S3_REGION=us-central1` (matching your bucket region), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://storage.googleapis.com`, and optional `S3_PUBLIC_URL`.
+    *   **AWS S3**: Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (with `S3_ENDPOINT` omitted and `S3_PUBLIC_URL` optional for CloudFront).
 
 ---
 
@@ -216,16 +219,18 @@ sudo certbot --nginx -d wedding.mydomain.com
 git clone https://github.com/fderuiter/wedding_website.git /opt/wedding_website
 cd /opt/wedding_website
 
-# Generate a 16-byte salt / 64-byte scrypt hash for your admin password
-ADMIN_HASH=$(node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")
+# Build the container image and generate a 16-byte salt / 64-byte scrypt hash inside Docker (no host Node.js required)
+docker build -t wedding-website:latest .
+ADMIN_HASH=$(docker run --rm wedding-website:latest node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")
 GUEST_SECRET=$(openssl rand -hex 32)
 DB_SECRET=$(openssl rand -hex 24)
 
-# Configure required secrets and optional runtime settings in .env
+# Configure required secrets and runtime settings in .env (unquoted for `docker run --env-file` compatibility)
 cat <<EOF > .env
 DB_USER=wedding
 DB_PASSWORD=${DB_SECRET}
 DB_NAME=wedding
+DATABASE_URL=postgresql://wedding:${DB_SECRET}@db:5432/wedding?schema=public
 PORT=3000
 STANDBY_PORT=3001
 ADMIN_PASSWORD=${ADMIN_HASH}
@@ -263,14 +268,14 @@ Instead of building on the VPS, operators can pull attested multi-arch `ghcr.io`
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\\*\\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
 ```
 
-Verify live container status with `docker compose ps`. Continuous container liveness checks hit `/api/live` (`{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout and readiness checks query `/api/health` (returning HTTP `200 OK` when PostgreSQL is connected, or `/api/ready` for unwrapped readiness status):
+Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so loopback `127.0.0.1` probes succeed without `Host` header overrides even when `ALLOWED_HOSTS` lists only public domains. Continuous container liveness checks hit `/api/live` (`{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout and readiness checks query `/api/health` (returning HTTP `200 OK` when PostgreSQL is connected, or `/api/ready` for unwrapped readiness status):
 ```json
 {
   "success": true,
@@ -296,7 +301,7 @@ Verify live container status with `docker compose ps`. Continuous container live
        docker tag wedding-website:previous wedding-website:latest
        docker compose up -d --no-deps app
        ```
-   *   **Via Standalone `docker run` (Must attach Compose network and publish loopback port)**:
+   *   **Via Standalone `docker run` (Must attach Compose network, publish loopback port, and load `DATABASE_URL` directly from `--env-file .env`)**:
        ```bash
        docker compose stop app
        docker run -d --name app-rollback \
@@ -309,7 +314,6 @@ Verify live container status with `docker compose ps`. Continuous container live
            --tmpfs /app/.next/cache:uid=1001,gid=1001,mode=0755 \
            -v wedding_website_uploads_data:/app/public/uploads \
            --env-file .env \
-           -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \
            -e E2E_TEST=false \
            wedding-website:previous
        ```

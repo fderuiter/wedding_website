@@ -42,7 +42,7 @@ function isStaticExportBuild(): boolean {
 
 export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
   {
-    id: 'demo-photo-1',
+    id: '11111111-1111-4111-8111-111111111111',
     type: 'Photo',
     tags: ['curated', 'engagement'],
     data: {
@@ -59,7 +59,7 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
     updatedAt: new Date('2026-02-14T18:30:00.000Z'),
   },
   {
-    id: 'demo-photo-2',
+    id: '22222222-2222-4222-8222-222222222222',
     type: 'Photo',
     tags: ['curated', 'ceremony'],
     data: {
@@ -76,7 +76,7 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
     updatedAt: new Date('2026-02-15T16:00:00.000Z'),
   },
   {
-    id: 'demo-photo-3',
+    id: '33333333-3333-4333-8333-333333333333',
     type: 'Photo',
     tags: ['guest-upload', 'reception'],
     data: {
@@ -84,7 +84,7 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
       title: 'Champagne Reception Toast',
       altText: 'Raised champagne glasses during the welcome dinner toast',
       caption: 'Raising a glass to kick off the wedding weekend!',
-      uploaderName: 'Elena Vance',
+      uploaderName: 'Jordan Rivera',
       status: 'APPROVED',
       isVisible: true,
       publishToGallery: true,
@@ -93,7 +93,7 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
     updatedAt: new Date('2026-02-16T20:15:00.000Z'),
   },
   {
-    id: 'demo-photo-4',
+    id: '44444444-4444-4444-8444-444444444444',
     type: 'Photo',
     tags: ['guest-upload', 'candid'],
     data: {
@@ -101,7 +101,7 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
       title: 'Botanical Courtyard Walk',
       altText: 'Strolling along the botanical garden pathway',
       caption: 'Morning stroll through the conservatory courtyard.',
-      uploaderName: 'Marcus Thorne',
+      uploaderName: 'Cameron Brooks',
       status: 'APPROVED',
       isVisible: true,
       publishToGallery: true,
@@ -110,7 +110,7 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
     updatedAt: new Date('2026-02-17T11:20:00.000Z'),
   },
   {
-    id: 'demo-photo-5',
+    id: '55555555-5555-4555-8555-555555555555',
     type: 'Photo',
     tags: ['guest-upload', 'reception'],
     data: {
@@ -127,6 +127,24 @@ export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
     updatedAt: new Date('2026-02-18T22:05:00.000Z'),
   },
 ];
+
+function getStaticMockPhotoNodes(options?: GetNodesByTypeOptions): ContentNodeDTO[] {
+  let mockNodes = STATIC_MOCK_PUBLIC_PHOTOS.map((n) => parseStoredPhotoNode(n));
+  if (options?.since) {
+    const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+    if (!isNaN(sinceDate.getTime())) {
+      mockNodes = mockNodes.filter((n) => n.createdAt > sinceDate);
+    }
+  }
+  mockNodes.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  if (options?.limit !== undefined) {
+    const limit = Math.floor(Number(options.limit));
+    if (!isNaN(limit) && limit > 0) {
+      mockNodes = mockNodes.slice(0, limit > 100 ? 100 : limit);
+    }
+  }
+  return mockNodes;
+}
 
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
@@ -147,6 +165,16 @@ export class ContentRepository implements IContentRepository {
 
     const skip = (page - 1) * limit;
     const take = limit;
+
+    if (isStaticExportBuild()) {
+      return {
+        photos: [],
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+      };
+    }
 
     const where: any = {
       type: 'Photo',
@@ -196,6 +224,9 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
+    if (isStaticExportBuild()) {
+      return [];
+    }
     const target = isMultisiteEnabled() ? configIdOrSubdomain : 'global';
     let config = await this.client.appConfig.findUnique({ where: { id: target } });
     if (!config && isMultisiteEnabled()) {
@@ -226,6 +257,13 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getNodesByType(type: string, options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
+    if (isStaticExportBuild()) {
+      if (type !== 'Photo') {
+        return [];
+      }
+      return getStaticMockPhotoNodes(options);
+    }
+
     const where: any = { type };
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
@@ -251,22 +289,8 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getPublicPhotos(options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
-    if (this.client === prisma && isStaticExportBuild()) {
-      let items = STATIC_MOCK_PUBLIC_PHOTOS.map((n) => parseStoredPhotoNode(n));
-      if (options?.since) {
-        const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
-        if (!isNaN(sinceDate.getTime())) {
-          items = items.filter((n) => n.createdAt.getTime() > sinceDate.getTime());
-        }
-      }
-      items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      if (options?.limit !== undefined) {
-        const limit = Math.floor(Number(options.limit));
-        if (!isNaN(limit) && limit > 0) {
-          items = items.slice(0, Math.min(100, limit));
-        }
-      }
-      return items;
+    if (isStaticExportBuild()) {
+      return getStaticMockPhotoNodes(options);
     }
 
     let take: number | undefined;
@@ -376,7 +400,7 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getEntityBoundMediaIds(mediaIds: string[]): Promise<Set<string>> {
-    if (!mediaIds.length || !this.client.media?.findMany) {
+    if (isStaticExportBuild() || !mediaIds.length || !this.client.media?.findMany) {
       return new Set();
     }
 
@@ -410,6 +434,10 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getNodeById(id: string): Promise<ContentNodeDTO | null> {
+    if (isStaticExportBuild()) {
+      const match = STATIC_MOCK_PUBLIC_PHOTOS.find((n) => n.id === id);
+      return match ? parseStoredContentNode(match) : null;
+    }
     const node = await this.client.contentNode.findUnique({
       where: { id }
     });

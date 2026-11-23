@@ -176,13 +176,13 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     test.setTimeout(180000);
 
     // Stub any external third-party URLs so verification is 100% offline-deterministic
-    await context.route('**/*', async (route, request) => {
-      const parsed = new URL(request.url());
-      if (parsed.origin === origin || parsed.protocol === 'data:' || parsed.protocol === 'blob:') {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+    await context.route(/^https?:\/\/(?!127\.0\.0\.1(?::|\/|$)|localhost(?::|\/|$))/i, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/plain',
+        headers: { 'Access-Control-Allow-Origin': '*' },
+        body: '',
+      });
     });
 
     const monitors = attachStrictRuntimeMonitors(page);
@@ -296,6 +296,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     await page.getByTestId('demo-persona-admin').click();
     await page.waitForURL(`**${SUBPATH_PREFIX}/demo/admin/dashboard**`);
     await expect(page.locator('body')).toContainText('Dashboard');
+    await page.waitForLoadState('networkidle');
     await page.screenshot({ path: '/tmp/pages-demo-admin.png', animations: 'disabled' });
 
     const adminSubRoutes = [
@@ -321,6 +322,21 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       await expect(page.getByTestId('demo-toolbar')).toBeVisible();
       await page.waitForTimeout(350);
     }
+
+    // Verify lazy-loaded broadcast detail API endpoint in static demo runtime
+    const broadcastRecipientsCount = await page.evaluate(async () => {
+      const historyRes = await window.fetch('/wedding_website/demo/api/admin/broadcast/history?page=1&limit=10');
+      const history = (await historyRes.json()) as Array<{ id: string }>;
+      if (!Array.isArray(history) || history.length === 0) return -1;
+      const detailRes = await window.fetch(
+        `/wedding_website/demo/api/admin/broadcast/${encodeURIComponent(history[0].id)}`
+      );
+      const detail = (await detailRes.json()) as { id?: string; recipients?: unknown[] };
+      return detail.id === history[0].id && Array.isArray(detail.recipients)
+        ? detail.recipients.length
+        : -1;
+    });
+    expect(broadcastRecipientsCount).toBeGreaterThan(0);
 
     expect(monitors.pageErrors).toEqual([]);
     expect(monitors.failedResponses).toEqual([]);

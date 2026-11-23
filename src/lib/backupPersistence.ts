@@ -87,6 +87,7 @@ export const APP_CONFIG_BACKUP_KEYS = [
   'shippingDeliveryNotes',
   'defaultPaymentHandleType',
   'defaultPaymentHandle',
+  'setupCompleted',
   'createdAt',
   'updatedAt',
 ] as const;

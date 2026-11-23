@@ -369,7 +369,9 @@ export async function routeDemoApiRequest(
     }
     const updated = updateDemoState((draft) => {
       draft.isAdmin = true;
-      draft.setupWizardPreview = false;
+      if (body.setupCompleted === true) {
+        draft.setupWizardPreview = false;
+      }
       if (typeof body.partner1Name === 'string' && body.partner1Name.trim()) {
         draft.config.partner1Name = body.partner1Name.trim();
       }
@@ -2158,7 +2160,21 @@ export async function routeDemoApiRequest(
   }
 
   if (normalizedPath === '/api/admin/broadcast/history') {
-    return jsonResponse(state.broadcasts);
+    const page = Math.max(1, Number(searchParams.get('page') ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') ?? 50)));
+    const total = state.broadcasts.length;
+    const totalPages = limit > 0 ? Math.ceil(total / limit) : 0;
+    const paged = state.broadcasts.slice((page - 1) * limit, page * limit);
+    return jsonResponse(paged, 200, {
+      'X-Total-Count': String(total),
+      'X-Page': String(page),
+      'X-Limit': String(limit),
+      'X-Total-Pages': String(totalPages),
+      'X-Per-Page': String(limit),
+      'X-Current-Page': String(page),
+      'X-Has-Next-Page': String(page < totalPages),
+      'X-Has-Prev-Page': String(page > 1),
+    });
   }
 
   if (normalizedPath === '/api/admin/broadcast/preview' && method === 'POST') {
@@ -2238,6 +2254,16 @@ export async function routeDemoApiRequest(
       if (target) target.status = 'CANCELLED';
     });
     return jsonResponse({ success: true });
+  }
+
+  const broadcastDetailMatch = normalizedPath.match(/^\/api\/admin\/broadcast\/([^/]+)$/);
+  if (broadcastDetailMatch && method === 'GET') {
+    const targetId = decodeURIComponent(broadcastDetailMatch[1]);
+    const target = state.broadcasts.find((b) => b.id === targetId);
+    if (!target) {
+      return jsonResponse({ error: 'Broadcast message not found.' }, 404);
+    }
+    return jsonResponse(target);
   }
 
   if (normalizedPath === '/api/admin/maintenance/export') {

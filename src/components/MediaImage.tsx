@@ -109,5 +109,9 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
     }
   };
   
-  return <img src={url} alt={finalAlt} onError={handleError} {...props} />;
+  return (
+    <picture className="contents">
+      <img src={url} alt={finalAlt} onError={handleError} {...props} />
+    </picture>
+  );
 }

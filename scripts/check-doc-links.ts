@@ -1122,8 +1122,20 @@ function getVitePressIgnoredDeadLinkPatterns(rootDir: string): RegExp[] {
   return patterns;
 }
 
-function isIgnoredPortalDeadLink(cleanRoute: string, rootDir: string): boolean {
+function isIgnoredPortalDeadLink(
+  cleanRoute: string,
+  sourceAbsPath: string,
+  rootDir: string
+): boolean {
   const normalized = cleanRoute.startsWith('/') ? cleanRoute : `/${cleanRoute}`;
+  const portalRoot = path.join(rootDir, 'docs-portal') + path.sep;
+  if (
+    sourceAbsPath.startsWith(portalRoot) &&
+    /^\/(?:demo|storybook)\/?$/.test(normalized) &&
+    fs.existsSync(path.join(rootDir, 'scripts', 'build-pages-bundle.mjs'))
+  ) {
+    return true;
+  }
   const patterns = getVitePressIgnoredDeadLinkPatterns(rootDir);
   return patterns.some((re) => re.test(normalized));
 }
@@ -1361,7 +1373,7 @@ export function validateLinkTarget(
 
   const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);
   if (!resolvedPortalFile) {
-    if (!fragment && isIgnoredPortalDeadLink(cleanTarget, rootDir)) {
+    if (!fragment && isIgnoredPortalDeadLink(cleanTarget, sourceAbsPath, rootDir)) {
       return;
     }
     errors.push({

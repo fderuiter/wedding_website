@@ -210,15 +210,25 @@ describe('stateful demo store & API router', () => {
     expect(setJson.partner1Name).toBe('Sam');
     expect(setJson.partner2Name).toBe('Riley');
 
+    setSetupWizardPreview(true);
     const setupRes = await routeDemoApiRequest('http://localhost/api/admin/setup', {
       method: 'POST',
       body: JSON.stringify({
         partner1Name: 'Alex',
         partner2Name: 'Taylor',
         venueName: 'Conservatory Hall',
+        setupCompleted: false,
       }),
     });
     expect((await setupRes!.json()).success).toBe(true);
+    expect(getDemoState().setupWizardPreview).toBe(true);
+
+    const setupExitRes = await routeDemoApiRequest('http://localhost/api/admin/setup', {
+      method: 'POST',
+      body: JSON.stringify({ setupCompleted: true }),
+    });
+    expect((await setupExitRes!.json()).success).toBe(true);
+    expect(getDemoState().setupWizardPreview).toBe(false);
 
     // 3. Seating Chart (tables, assign, auto-assign, export)
     const tablesRes = await routeDemoApiRequest('http://localhost/api/admin/seating-tables');
@@ -270,7 +280,29 @@ describe('stateful demo store & API router', () => {
         body: '<p>See you Friday!</p>',
       }),
     });
-    expect((await bcastSend!.json()).success).toBe(true);
+    const bcastSendJson = await bcastSend!.json();
+    expect(bcastSendJson.success).toBe(true);
+
+    const bcastHistoryRes = await routeDemoApiRequest(
+      'http://localhost/api/admin/broadcast/history?page=1&limit=10'
+    );
+    expect(bcastHistoryRes?.headers.get('X-Total-Count')).toBeTruthy();
+    const bcastHistory = await bcastHistoryRes!.json();
+    expect(bcastHistory[0].id).toBe(bcastSendJson.broadcastId);
+
+    const bcastDetailRes = await routeDemoApiRequest(
+      `http://localhost/api/admin/broadcast/${encodeURIComponent(bcastSendJson.broadcastId)}`
+    );
+    expect(bcastDetailRes?.status).toBe(200);
+    const bcastDetail = await bcastDetailRes!.json();
+    expect(bcastDetail.id).toBe(bcastSendJson.broadcastId);
+    expect(Array.isArray(bcastDetail.recipients)).toBe(true);
+    expect(bcastDetail.recipients.length).toBeGreaterThan(0);
+
+    const bcastMissingRes = await routeDemoApiRequest(
+      'http://localhost/api/admin/broadcast/nonexistent-id'
+    );
+    expect(bcastMissingRes?.status).toBe(404);
 
     const verRes = await routeDemoApiRequest('http://localhost/api/admin/versions');
     const verJson = await verRes!.json();

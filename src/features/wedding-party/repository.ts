@@ -14,7 +14,7 @@ const STATIC_EXPORT_TIMESTAMP = new Date('2026-01-15T12:00:00.000Z');
 export const STATIC_MOCK_WEDDING_PARTY_MEMBERS: WeddingPartyMemberDTO[] = [
   {
     id: 'demo-party-1',
-    name: 'Elena Vance',
+    name: 'Jordan Rivera',
     role: 'Maid of Honor',
     bio: 'College roommate, fellow espresso enthusiast, and the calm strategist behind every celebration milestone.',
     side: 'BRIDE',
@@ -25,7 +25,7 @@ export const STATIC_MOCK_WEDDING_PARTY_MEMBERS: WeddingPartyMemberDTO[] = [
     photo: {
       id: 'demo-media-party-1',
       url: '/images/sample-party-1.jpg',
-      altText: 'Portrait of Elena Vance, Maid of Honor',
+      altText: 'Portrait of Jordan Rivera, Maid of Honor',
       isDecorative: false,
       isSample: false,
     },
@@ -34,8 +34,8 @@ export const STATIC_MOCK_WEDDING_PARTY_MEMBERS: WeddingPartyMemberDTO[] = [
   },
   {
     id: 'demo-party-2',
-    name: 'Marcus Thorne',
-    role: 'Best Man',
+    name: 'Cameron Brooks',
+    role: 'Best Person',
     bio: 'Childhood neighbor and hiking partner who has kept every speech equal parts heartfelt and unforgettable.',
     side: 'GROOM',
     link: null,
@@ -45,7 +45,7 @@ export const STATIC_MOCK_WEDDING_PARTY_MEMBERS: WeddingPartyMemberDTO[] = [
     photo: {
       id: 'demo-media-party-2',
       url: '/images/sample-party-2.jpg',
-      altText: 'Portrait of Marcus Thorne, Best Man',
+      altText: 'Portrait of Cameron Brooks, Best Person',
       isDecorative: false,
       isSample: false,
     },
@@ -93,12 +93,11 @@ export const STATIC_MOCK_WEDDING_PARTY_MEMBERS: WeddingPartyMemberDTO[] = [
     updatedAt: STATIC_EXPORT_TIMESTAMP,
   },
 ];
-
 export class WeddingPartyRepository {
   constructor(public client: any = prisma) {}
 
   async getMembers(): Promise<WeddingPartyMemberDTO[]> {
-    if (this.client === prisma && isStaticExportBuild()) {
+    if (isStaticExportBuild()) {
       return STATIC_MOCK_WEDDING_PARTY_MEMBERS.map((m) => WeddingPartyMemberSchema.parse(m));
     }
 
