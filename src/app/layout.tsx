@@ -168,7 +168,9 @@ export default async function RootLayout({
             <SetupWizard />
           ) : (
             <ToastProvider>
-              <RootLayoutClient config={layoutConfig} faqs={visibleFaqs}>{children}</RootLayoutClient>
+              <RootLayoutClient config={layoutConfig} faqs={visibleFaqs} isStaticExport={isStaticExport}>
+                {children}
+              </RootLayoutClient>
             </ToastProvider>
           )}
         </ThemeProvider>

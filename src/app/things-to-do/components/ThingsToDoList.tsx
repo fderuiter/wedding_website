@@ -7,6 +7,7 @@ import type { AttractionDTO } from '@/features/attractions';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import EmptyState from '@/components/EmptyState';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
@@ -19,7 +20,9 @@ const ThingsToDoMap = dynamic(() => import('./ThingsToDoMap'), {
 });
 
 const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAttractions, defaultCenter }) => {
-  const [attractions, setAttractions] = useState(initialAttractions);
+  const demo = useOptionalDemo();
+  const [draftAttractions, setDraftAttractions] = useState(initialAttractions);
+  const attractions = demo?.isDemoMode ? demo.activeDataset.attractions : draftAttractions;
 
   const {
     categories,
@@ -32,7 +35,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({ attractions: initialAtt
     if (typeof window !== 'undefined' && window !== window.parent) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'attractions') {
-          setAttractions(event.data.draftData);
+          setDraftAttractions(event.data.draftData);
         }
       };
       window.addEventListener('message', handleMessage);

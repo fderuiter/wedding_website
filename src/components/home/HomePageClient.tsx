@@ -24,6 +24,7 @@ import { useGuestHelp } from '@/components/guest/GuestHelpModal';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
 import { MediaImage } from '@/components/MediaImage';
@@ -93,9 +94,28 @@ export default function HomePageClient({
   contentNodes?: ContentNodeDTO[];
   attractions?: AttractionDTO[];
 }) {
-  const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
-  const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
-  const [attractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+  const demo = useOptionalDemo();
+  const [draftConfig, setConfig] = useState<PublicAppConfig>(initialConfig);
+  const [draftContentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
+  const [draftAttractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoConfigOverrides = demo?.configOverrides;
+  const demoLogisticsNodes = demo?.activeDataset.logisticsNodes;
+  const demoFaqs = demo?.activeDataset.faqs;
+
+  const config = useMemo<PublicAppConfig>(
+    () => (isDemoMode && demoConfigOverrides ? { ...draftConfig, ...demoConfigOverrides } : draftConfig),
+    [demoConfigOverrides, draftConfig, isDemoMode]
+  );
+  const contentNodes = useMemo<ContentNodeDTO[]>(
+    () =>
+      isDemoMode && demoLogisticsNodes && demoFaqs
+        ? [...demoLogisticsNodes, ...demoFaqs]
+        : draftContentNodes,
+    [demoFaqs, demoLogisticsNodes, draftContentNodes, isDemoMode]
+  );
+  const attractions = isDemoMode && demo ? demo.activeDataset.attractions : draftAttractions;
   const isAdminPreview = useSyncExternalStore(
     subscribePreviewNoop,
     getAdminPreviewClientSnapshot,

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { RegistryItem, OrderTrackingDetails, GuestClaimActions } from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
+import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
@@ -297,6 +298,29 @@ export function useRegistryContributionMachine({
         return false;
       }
 
+      if (isDemoRuntimeActive()) {
+        const matched = findDemoGuestByCode(code);
+        if (matched) {
+          setInvitationCodeState(matched.code);
+          if (matched.guestName) {
+            setContributorNameState(matched.guestName);
+          }
+          setDismissedSessionKey(null);
+          setPhase('code_locked');
+          setCodeError(null);
+          setSubmissionError(null);
+          setSession({
+            invitationCode: matched.code,
+            guestName: matched.guestName,
+            isVerified: true,
+          });
+          return true;
+        }
+        setPhase('idle');
+        setCodeError('Invalid invitation code.');
+        return false;
+      }
+
       // Abort previous in-flight validation requests
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -381,7 +405,9 @@ export function useRegistryContributionMachine({
       }
 
       if (val.length === 8) {
-        void verifyCode(val);
+        if (!isDemoRuntimeActive() || Boolean(findDemoGuestByCode(val))) {
+          void verifyCode(val);
+        }
       } else if (phase === 'validating_code') {
         setPhase('idle');
       }

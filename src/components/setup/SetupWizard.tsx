@@ -19,6 +19,7 @@ import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
 
@@ -77,7 +78,9 @@ function resolveStep2BackendErrorField(message: string): Step2ErrorField {
   return 'siteUrl';
 }
 
-function SetupWizardContent() {
+function SetupWizardContent({ onDemoComplete }: { onDemoComplete?: () => void }) {
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
   const {
     state,
     setStep,
@@ -124,8 +127,36 @@ function SetupWizardContent() {
   const setSelectedModules = (modules: string[]) => updateDraft({ selectedModules: modules });
 
   // Login
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(() => (isDemoMode ? 'demo-admin-2026' : ''));
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const seededDemoDefaultsRef = useRef(false);
+
+  useEffect(() => {
+    if (!isDemoMode || seededDemoDefaultsRef.current) return;
+    seededDemoDefaultsRef.current = true;
+    const patch: Record<string, unknown> = {};
+    if (!partner1Name) patch.partner1Name = demo?.configOverrides.partner1Name || 'Alex';
+    if (!partner2Name) patch.partner2Name = demo?.configOverrides.partner2Name || 'Taylor';
+    if (!weddingDate) patch.weddingDate = demo?.configOverrides.weddingDate || '2026-09-19';
+    if (!baseUrl) patch.baseUrl = 'https://ourwedding-showcase.org';
+    if (!venueName) patch.venueName = demo?.configOverrides.venueName || 'The Glasshouse Estate';
+    if (!venueCity) patch.venueCity = demo?.configOverrides.venueCity || 'Chicago';
+    if (!venueState) patch.venueState = demo?.configOverrides.venueState || 'IL';
+    if (Object.keys(patch).length > 0) {
+      updateDraft(patch);
+    }
+  }, [
+    isDemoMode,
+    partner1Name,
+    partner2Name,
+    weddingDate,
+    baseUrl,
+    venueName,
+    venueCity,
+    venueState,
+    demo?.configOverrides,
+    updateDraft,
+  ]);
 
   // Content Counts
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
@@ -169,10 +200,10 @@ function SetupWizardContent() {
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isDemoMode) {
       syncAdminLoginState();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isDemoMode]);
 
   useEffect(() => {
     if (step >= 2 && typeof setPreviewConfig === 'function') {
@@ -192,6 +223,19 @@ function SetupWizardContent() {
 
   const handleLogin = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isDemoMode && demo) {
+      demo.setSetupAuthenticated(true);
+      updateDraft({
+        partner1Name: partner1Name.trim() || demo.configOverrides.partner1Name || 'Alex',
+        partner2Name: partner2Name.trim() || demo.configOverrides.partner2Name || 'Taylor',
+        baseUrl:
+          !baseUrl.trim() || isDefaultUrl(baseUrl)
+            ? 'https://alexandtaylor2026.wedding'
+            : baseUrl,
+      });
+      loginSuccess();
+      return;
+    }
     startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
@@ -266,6 +310,25 @@ function SetupWizardContent() {
       contactEmail: trimmedContactEmail,
     });
 
+    if (isDemoMode && demo) {
+      demo.updateConfigOverrides({
+        partner1Name: trimmedPartner1,
+        partner2Name: trimmedPartner2,
+        weddingDate: weddingDate ? new Date(`${weddingDate}T16:00:00Z`) : new Date('2026-10-18T16:00:00Z'),
+        contactEmail: trimmedContactEmail,
+        venueName: venueName?.trim() || 'TBD',
+        venueCity: venueCity?.trim() || 'TBD',
+        venueState: venueState?.trim() || 'TBD',
+        timezone: timezone || 'America/Chicago',
+        themePreset,
+        colorPrimary,
+        colorSecondary,
+      });
+      demo.setSetupAuthenticated(true);
+      setStep(3);
+      return;
+    }
+
     startSubmit();
     try {
       const res = await fetch('/api/admin/setup', {
@@ -320,6 +383,11 @@ function SetupWizardContent() {
 
   const handleSampleDataSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isDemoMode && demo) {
+      demo.applySampleSelection(sampleArchetype, selectedModules);
+      setStep(4);
+      return;
+    }
     startSubmit();
     try {
       if (selectedModules.length > 0) {
@@ -351,7 +419,13 @@ function SetupWizardContent() {
         <Container>
           <Card className="max-w-md">
             <Heading as="h2" className="mb-4">Welcome to Your Wedding Site!</Heading>
-            <p className="mb-4 text-gray-700 dark:text-gray-200">Please enter the admin password configured in your environment to begin setup.</p>
+            {isDemoMode ? (
+              <p className="mb-4 text-gray-700 dark:text-gray-200">
+                <strong>Interactive Showcase Mode:</strong> Step through all 5 onboarding stages locally without server calls. A sample password is pre-filled—click Continue to begin.
+              </p>
+            ) : (
+              <p className="mb-4 text-gray-700 dark:text-gray-200">Please enter the admin password configured in your environment to begin setup.</p>
+            )}
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup state={error && step === 1 ? 'error' : 'default'}>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
@@ -477,9 +551,25 @@ function SetupWizardContent() {
                 />
               </div>
 
-              <Button type="submit" disabled={loading} variant="primary" className="w-full py-3">
-                {loading ? 'Saving...' : 'Next Step'}
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-3">
+                {isDemoMode && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={loading}
+                    onClick={() => {
+                      demo?.setSetupAuthenticated(false);
+                      setStep(1);
+                    }}
+                    className="py-3 px-6"
+                  >
+                    Back
+                  </Button>
+                )}
+                <Button type="submit" disabled={loading} variant="primary" className="flex-1 py-3">
+                  {loading ? 'Saving...' : 'Next Step'}
+                </Button>
+              </div>
             </form>
           </Card>
         </Container>
@@ -728,8 +818,14 @@ function SetupWizardContent() {
               </Button>
               <Button
                 onClick={() => {
-                  syncAdminLoginState();
                   clearPersistedState();
+                  if (isDemoMode && demo) {
+                    demo.setSetupAuthenticated(false);
+                    demo.setPersona('admin');
+                    onDemoComplete?.();
+                    return;
+                  }
+                  syncAdminLoginState();
                   window.location.href = '/admin/dashboard';
                 }}
                 variant="primary"
@@ -766,14 +862,14 @@ function SetupWizardContent() {
   );
 }
 
-export default function SetupWizard() {
+export default function SetupWizard({ onDemoComplete }: { onDemoComplete?: () => void } = {}) {
   const [queryClient] = useState(() => new QueryClient());
   const outerTheme = useTheme();
 
   const wizardTree = (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <SetupWizardContent />
+        <SetupWizardContent onDemoComplete={onDemoComplete} />
       </ToastProvider>
     </QueryClientProvider>
   );
