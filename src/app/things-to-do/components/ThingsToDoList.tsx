@@ -9,6 +9,7 @@ import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import EmptyState from '@/components/EmptyState';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
+import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
@@ -27,8 +28,13 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
   venue,
 }) => {
   const demo = useOptionalDemo();
-  const [draftAttractions, setDraftAttractions] = useState(initialAttractions);
-  const attractions = demo?.isDemoMode ? demo.activeDataset.attractions : draftAttractions;
+  const demoOverrides = useStaticDemoPageOverrides();
+  const [draftAttractions, setDraftAttractions] = useState<AttractionDTO[] | null>(null);
+  const attractions =
+    draftAttractions ??
+    (demo?.isDemoMode
+      ? demo.activeDataset.attractions
+      : (demoOverrides?.attractions ?? initialAttractions));
 
   const {
     categories,
@@ -85,6 +91,19 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
         longitude: -122.2869,
       };
     }
+  } else if (
+    demoOverrides?.config &&
+    Number.isFinite(demoOverrides.config.latitude) &&
+    Number.isFinite(demoOverrides.config.longitude) &&
+    (demoOverrides.config.latitude !== 0 || demoOverrides.config.longitude !== 0)
+  ) {
+    effectiveCenter = [demoOverrides.config.latitude, demoOverrides.config.longitude];
+    effectiveVenue = {
+      name: demoOverrides.config.venueName?.trim() || venue?.name || 'Wedding Venue',
+      address: demoOverrides.config.venueAddress?.trim() || venue?.address || '',
+      latitude: demoOverrides.config.latitude,
+      longitude: demoOverrides.config.longitude,
+    };
   }
 
   const venueCoords = effectiveVenue
