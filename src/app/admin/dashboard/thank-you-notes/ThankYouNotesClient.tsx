@@ -1336,7 +1336,7 @@ export default function ThankYouNotesPage() {
                       <TableCell className="font-semibold text-gray-900 dark:text-white align-top">
                         <div>{item.name}</div>
                         {(item.email || item.invitationCode?.email) && (
-                          <div className="text-xs text-gray-500 font-normal">
+                          <div className="text-xs text-muted-text font-normal">
                             {item.email || item.invitationCode?.email}
                           </div>
                         )}
@@ -1574,7 +1574,7 @@ export default function ThankYouNotesPage() {
                           {item.registryItem?.name || 'General Registry'}
                         </div>
                         {item.registryItem?.category && (
-                          <div className="text-xs text-gray-500">{item.registryItem.category}</div>
+                          <div className="text-xs text-muted-text">{item.registryItem.category}</div>
                         )}
                         {(item.retailerOrderNumber || item.carrier || item.trackingNumber) && (
                           <div
@@ -1610,7 +1610,7 @@ export default function ThankYouNotesPage() {
                         >
                           {formatCurrency(item.amount)}
                         </div>
-                        <div className="text-xs text-gray-500">{formatDate(item.date)}</div>
+                        <div className="text-xs text-muted-text">{formatDate(item.date)}</div>
                         <div className="mt-1">
                           <ContributorLifecycleBadge
                             status={item.status}
@@ -1716,7 +1716,7 @@ export default function ThankYouNotesPage() {
                               {item.thankYouNote ? (
                                 <span title={item.thankYouNote}>{item.thankYouNote}</span>
                               ) : (
-                                <span className="text-gray-400 italic">No note added</span>
+                                <span className="text-muted-text italic">No note added</span>
                               )}
                             </div>
                           </div>
