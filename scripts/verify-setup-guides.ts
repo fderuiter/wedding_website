@@ -420,6 +420,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     '.nvmrc',
     '.npmrc',
     '.env.example',
+    '.env.ci',
     '.env.test',
     'prisma.config.ts',
     'package.json',
@@ -460,6 +461,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const nvmrcRaw = fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8');
   const npmrcRaw = fs.readFileSync(path.join(repoRoot, '.npmrc'), 'utf8');
   const envExampleRaw = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+  const envCiRaw = fs.readFileSync(path.join(repoRoot, '.env.ci'), 'utf8');
   const envTestRaw = fs.readFileSync(path.join(repoRoot, '.env.test'), 'utf8');
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
@@ -528,6 +530,32 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       `.env.example: DATABASE_URL ("${envExampleDbUrl}") must default to "${expectedComposeDbPrefix}..." matching local setup guides and docker-compose.ci.yml`
     );
   }
+  if (envExample.active.has('NODE_ENV')) {
+    errors.push(
+      '.env.example: Must omit active NODE_ENV assignment (keep "# NODE_ENV=development" commented) so host processes default to development in src/env.ts'
+    );
+  }
+  if (!envExample.commented.has('NODE_ENV')) {
+    errors.push('.env.example: Commented placeholder "# NODE_ENV=development" is missing');
+  }
+  if (envExample.active.get('DB_PASSWORD') !== composeDb.dbPassword) {
+    errors.push(
+      `.env.example: Must define active DB_PASSWORD="${composeDb.dbPassword}" so bare "docker compose up -d db" works after copying .env.example to .env`
+    );
+  }
+
+  const envCi = parseEnvAssignments(envCiRaw);
+  for (const requiredCiKey of [
+    'DB_PASSWORD',
+    'ADMIN_PASSWORD',
+    'GUEST_PASSCODE',
+    'GUEST_SESSION_SECRET',
+    'E2E_TEST',
+  ] as const) {
+    if (!envCi.active.get(requiredCiKey)) {
+      errors.push(`.env.ci: Must define active disposable "${requiredCiKey}" default for clean-checkout Compose runs`);
+    }
+  }
 
   // Validate hardened docker-compose.yml required-secret guards and isolated docker-compose.ci.yml overrides
   for (const requiredSecret of ['DB_PASSWORD', 'ADMIN_PASSWORD', 'GUEST_PASSCODE', 'GUEST_SESSION_SECRET']) {
@@ -542,6 +570,17 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       );
     }
   }
+  if (
+    (composeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2 ||
+    /DATABASE_URL:\s*\$\{DATABASE_URL:-/.test(composeRaw)
+  ) {
+    errors.push(
+      'docker-compose.yml: Must scope migration and app DATABASE_URL overrides via ${CONTAINER_DATABASE_URL:-...} so host DATABASE_URL never leaks into containers'
+    );
+  }
+  if (!/^\s*NODE_ENV:\s*production\s*$/m.test(composeRaw)) {
+    errors.push('docker-compose.yml: Must pin app container NODE_ENV to production');
+  }
   if (!composeRaw.includes('127.0.0.1:${DB_PORT:-5432}:5432')) {
     errors.push('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432');
   }
@@ -550,22 +589,31 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
   if (
     !/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-wedding123\}/.test(ciComposeRaw) ||
-    !/E2E_TEST:\s*\$\{E2E_TEST:-true\}/.test(ciComposeRaw)
+    !/E2E_TEST:\s*\$\{E2E_TEST:-true\}/.test(ciComposeRaw) ||
+    (ciComposeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2
   ) {
     errors.push(
-      'docker-compose.ci.yml: Must isolate disposable CI database credentials and E2E_TEST: ${E2E_TEST:-true}'
+      'docker-compose.ci.yml: Must isolate disposable CI database credentials, ${CONTAINER_DATABASE_URL:-...} overrides, and E2E_TEST: ${E2E_TEST:-true}'
     );
   }
   for (const [scriptLabel, scriptRaw] of [
+    ['scripts/pretest.mjs', pretestMjsRaw],
     ['scripts/test-standalone.mjs', testStandaloneRaw],
     ['scripts/test-container.mjs', testContainerRaw],
+    ['playwright.config.ts', playwrightConfigRaw],
   ] as const) {
-    if (!scriptRaw.includes('docker-compose.ci.yml')) {
-      errors.push(`${scriptLabel}: Must invoke isolated "docker-compose.ci.yml" override manifest`);
+    if (!scriptRaw.includes('docker-compose.ci.yml') || !scriptRaw.includes('.env.ci')) {
+      errors.push(`${scriptLabel}: Must pass "--env-file .env.ci" with isolated "docker-compose.ci.yml" override manifest`);
     }
+  }
+  if (!/NODE_ENV:\s*process\.env\.CI\s*\?\s*'production'\s*:\s*'development'/.test(playwrightConfigRaw)) {
+    errors.push(
+      'playwright.config.ts: Must set webServer.env.NODE_ENV to "development" locally and "production" in CI'
+    );
   }
   for (const [label, rawText] of [
     ['.env.example', envExampleRaw],
+    ['.env.ci', envCiRaw],
     ['.env.test', envTestRaw],
     ['docker-compose.yml', composeRaw],
     ['docker-compose.ci.yml', ciComposeRaw],
@@ -964,6 +1012,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     for (const requiredVar of [
       'ADMIN_PASSWORD',
       'DATABASE_URL',
+      'DB_PASSWORD',
       'GUEST_PASSCODE',
       'GUEST_SESSION_SECRET',
       'ALLOWED_HOSTS',
@@ -971,6 +1020,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       if (!content.includes(requiredVar)) {
         errors.push(`${docLabel}: Missing required environment variable "${requiredVar}"`);
       }
+    }
+    if (/DB_PASSWORD=\S+\s+docker\s+compose\s+up\s+-d\s+db/.test(content)) {
+      errors.push(
+        `${docLabel}: Must prescribe bare "docker compose up -d db" without inline DB_PASSWORD prefix`
+      );
     }
     if (!content.includes('scripts/generate-password-hash.mjs')) {
       errors.push(`${docLabel}: Must reference "scripts/generate-password-hash.mjs"`);
@@ -1186,11 +1240,12 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (
       !content.includes('test-standalone.mjs') ||
       !content.includes('test-container.mjs') ||
-      !/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/.test(content) ||
+      !content.includes('.env.ci') ||
+      !/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
       !content.includes('npm run build')
     ) {
       errors.push(
-        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs in running "docker compose down -v"`
+        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in running "docker compose down -v"`
       );
     }
   }
