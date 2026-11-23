@@ -8,7 +8,7 @@ export class WeddingPartyAdminService extends BaseService<any> {
   static ENTITY_KEY = 'wedding-party';
   
   protected defaultQueryArgs = {
-    orderBy: { order: 'asc' },
+    orderBy: [{ order: 'asc' }],
     include: { photo: true }
   };
     

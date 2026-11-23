@@ -5,6 +5,7 @@ import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { getAppConfig, isSetupCompleted } from '@/lib/config';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
   const body = await req.json();
@@ -28,11 +29,19 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     throw new ApiError(401, 'Invalid password.');
   }
 
+  let requiresSetup = false;
+  try {
+    const config = await getAppConfig();
+    requiresSetup = !isSetupCompleted(config);
+  } catch {
+    requiresSetup = false;
+  }
+
   const iat = Date.now();
   const exp = iat + 60 * 60 * 8 * 1000;
   const token = await signAdminToken({ isAdmin: true, iat, exp });
 
-  const response = NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true, requiresSetup });
   setAdminAuthCookie(response, token);
   return response;
 });

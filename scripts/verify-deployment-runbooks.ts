@@ -1988,6 +1988,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   const ciDelegatesPostgresImageToCompose =
     ciWorkflowRaw.includes('docker-compose.yml') &&
     ciWorkflowRaw.includes('["services", "db", "image"]') &&
+    ciWorkflowRaw.includes('steps.resolve-db-image.outputs.db_image') &&
     ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
   if (
     (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
