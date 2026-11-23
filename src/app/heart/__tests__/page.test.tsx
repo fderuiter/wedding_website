@@ -1,6 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import HeartClient from '../HeartClient';
+import { HEART_FONT_URL } from '../constants';
+import nextConfig from '../../../../next.config';
 import { RigidBodyType } from '@dimforge/rapier3d-compat';
 import { getAppConfig } from '@/lib/config';
 
@@ -26,8 +28,13 @@ const mockMainBodyApi = mockCreateRigidBodyApi();
 const mockLeftBodyApi = mockCreateRigidBodyApi();
 const mockRightBodyApi = mockCreateRigidBodyApi();
 
+let canvasMountCount = 0;
+
 jest.mock('@react-three/fiber', () => ({
-  Canvas: ({ children }: { children: React.ReactNode }) => <div data-testid="canvas">{children}</div>,
+  Canvas: ({ children }: { children: React.ReactNode }) => {
+    canvasMountCount += 1;
+    return <div data-testid="canvas">{children}</div>;
+  },
   useFrame: jest.fn(),
   useThree: jest.fn(() => ({
     size: { width: 800, height: 600 },
@@ -36,9 +43,48 @@ jest.mock('@react-three/fiber', () => ({
 }));
 
 jest.mock('@react-three/drei', () => ({
-  Environment: () => null,
+  Environment: ({
+    children,
+    frames,
+    resolution,
+    preset,
+  }: {
+    children?: React.ReactNode;
+    frames?: number;
+    resolution?: number;
+    preset?: string;
+  }) => (
+    <div
+      data-testid="environment"
+      data-frames={frames}
+      data-resolution={resolution}
+      data-preset={preset}
+    >
+      {children}
+    </div>
+  ),
+  Lightformer: ({
+    form,
+    color,
+    intensity,
+  }: {
+    form?: string;
+    color?: string;
+    intensity?: number;
+  }) => (
+    <div
+      data-testid="lightformer"
+      data-form={form}
+      data-color={color}
+      data-intensity={intensity}
+    />
+  ),
   Html: ({ children }: { children: React.ReactNode }) => <div data-testid="html">{children}</div>,
-  Text: ({ children }: { children: React.ReactNode }) => <div data-testid="text">{children}</div>,
+  Text: ({ children, font }: { children: React.ReactNode; font?: string }) => (
+    <div data-testid="text" data-font={font}>
+      {children}
+    </div>
+  ),
   Points: ({ children, positions }: { children: React.ReactNode, positions: Float32Array }) => (
     <div data-testid="points" data-positions-length={positions ? positions.length : 0}>
       {children}
@@ -53,7 +99,17 @@ jest.mock('@react-three/postprocessing', () => ({
 }));
 
 jest.mock('@react-three/rapier', () => {
-  const RigidBodyMock = React.forwardRef(({ children, onContactForce, userData }: { children: React.ReactNode, onContactForce: (payload: any) => void, userData?: { id: string } }, ref: React.Ref<unknown>) => {
+  function RigidBodyMock({
+    children,
+    onContactForce,
+    userData,
+    ref,
+  }: {
+    children: React.ReactNode;
+    onContactForce?: (payload: any) => void;
+    userData?: { id: string };
+    ref?: React.Ref<unknown>;
+  }) {
     React.useEffect(() => {
       const targetApi =
         userData?.id === 'main'
@@ -77,8 +133,7 @@ jest.mock('@react-three/rapier', () => {
     }, [ref, onContactForce, userData?.id]);
 
     return <div data-testid="rigidbody">{children}</div>;
-  });
-  RigidBodyMock.displayName = 'RigidBody';
+  }
 
   return {
     Physics: ({ children }: { children: React.ReactNode }) => <div data-testid="physics">{children}</div>,
@@ -138,6 +193,7 @@ const HeartPage = () => <HeartClient partner1Name="Abbi" partner2Name="Fred" bri
 describe('HeartPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    canvasMountCount = 0;
     delete (window as any).__mockWebGLSupport;
     delete (window as any).__mockFps;
     mockMainBodyApi.__triggerContactForce = null;
@@ -260,8 +316,10 @@ describe('HeartPage', () => {
 
     render(<HeartPage />);
 
-    expect(await screen.findByTestId('webgl-fallback-container')).toBeInTheDocument();
-    const fallbackHeart = await screen.findByTestId('webgl-fallback-heart');
+    expect(canvasMountCount).toBe(0);
+    expect(screen.queryByTestId('canvas')).not.toBeInTheDocument();
+    expect(screen.getByTestId('webgl-fallback-container')).toBeInTheDocument();
+    const fallbackHeart = screen.getByTestId('webgl-fallback-heart');
     expect(fallbackHeart).toBeInTheDocument();
     expect(fallbackHeart).toHaveAttribute('role', 'button');
 
@@ -326,6 +384,11 @@ describe('HeartPage', () => {
     expect(frameCallback).not.toBeNull();
     expect(screen.getByTestId('effect-composer')).toBeInTheDocument();
     expect(screen.getByTestId('points')).toBeInTheDocument();
+    const initialEnvironment = screen.getByTestId('environment');
+    expect(initialEnvironment).toHaveAttribute('data-frames', '1');
+    expect(initialEnvironment).toHaveAttribute('data-resolution', '256');
+    expect(initialEnvironment).not.toHaveAttribute('data-preset');
+    expect(screen.getAllByTestId('lightformer').length).toBeGreaterThan(0);
 
     const mockState = {
       clock: {
@@ -366,12 +429,15 @@ describe('HeartPage', () => {
 
     expect(screen.queryByTestId('effect-composer')).not.toBeInTheDocument();
     expect(screen.queryByTestId('points')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('environment')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId('lightformer')).toHaveLength(0);
 
     const resetButton = screen.getByText('Reset');
     fireEvent.click(resetButton);
 
     expect(screen.getByTestId('effect-composer')).toBeInTheDocument();
     expect(screen.getByTestId('points')).toBeInTheDocument();
+    expect(screen.getByTestId('environment')).toBeInTheDocument();
 
     delete (window as any).__mockFps;
     useFrameMock.mockReset();
@@ -583,5 +649,23 @@ describe('HeartPage', () => {
 
       expect(screen.getByLabelText('Interactive 3D Heart. Status: Whole. Secret message revealed: I love you!')).toBeInTheDocument();
     });
+  });
+
+  it('passes HEART_FONT_URL to all partner Text meshes and allows blob: workers in next.config.ts CSP', async () => {
+    render(<HeartPage />);
+
+    const textMeshes = screen.getAllByTestId('text');
+    expect(textMeshes.length).toBeGreaterThanOrEqual(2);
+    for (const mesh of textMeshes) {
+      expect(mesh).toHaveAttribute('data-font', HEART_FONT_URL);
+    }
+
+    expect(typeof nextConfig.headers).toBe('function');
+    const routeHeaders = await nextConfig.headers!();
+    const globalRule = routeHeaders.find((entry) => entry.source === '/(.*)');
+    expect(globalRule).toBeDefined();
+    const cspHeader = globalRule?.headers.find((h) => h.key === 'Content-Security-Policy');
+    expect(cspHeader?.value).toContain("worker-src 'self' blob:");
+    expect(cspHeader?.value).toMatch(/script-src[^;]*\bblob:/);
   });
 });

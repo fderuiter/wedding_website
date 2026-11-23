@@ -3,7 +3,7 @@ import { ApiError } from '../ApiError';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 import { resetRateLimitsForTesting } from '../rateLimit';
-import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import { GUEST_INVITE_COOKIE, getGuestInviteSession, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
@@ -526,6 +526,41 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       const guestSessionRes = await middleware(guestSessionReq, {});
       expect(guestSessionRes.status).toBe(200);
       expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    test('reuses verified guest_invite_session across middleware and downstream handler without repeating database lookup', async () => {
+      mockFindUnique.mockResolvedValue({
+        id: 'active-inv-1',
+        code: 'REUSE2026',
+        guestName: 'Reusable Session Guest',
+        isSample: false,
+      });
+
+      const handler = jest.fn(async (incomingReq: NextRequest) => {
+        const session = await getGuestInviteSession(incomingReq);
+        return new Response(JSON.stringify({ code: session?.code }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+
+      const middleware = withApiMiddleware(handler);
+      const validToken = await signGuestInviteSessionToken({
+        code: 'REUSE2026',
+        guestName: 'Reusable Session Guest',
+      });
+      const req = new NextRequest('http://localhost/api/registry/contribute', {
+        method: 'POST',
+        headers: {
+          cookie: `${GUEST_INVITE_COOKIE}=${validToken}`,
+        },
+      });
+
+      const res = await middleware(req, {});
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.data.code).toBe('REUSE2026');
+      expect(mockFindUnique).toHaveBeenCalledTimes(1);
     });
   });
 });

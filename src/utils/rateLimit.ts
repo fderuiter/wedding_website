@@ -129,6 +129,9 @@ export function normalizeApiPathname(pathname: string): string {
   if (/^\/api\/admin\/broadcast\/schedule\/[^/]+$/.test(cleaned)) {
     return '/api/admin/broadcast/schedule/:id';
   }
+  if (/^\/api\/admin\/broadcast\/(?!(?:history|preview|retry|send|test-connection|test-send)$)[^/]+$/.test(cleaned)) {
+    return '/api/admin/broadcast/:id';
+  }
   if (/^\/api\/admin\/photos\/(?!moderation$)[^/]+$/.test(cleaned)) {
     return '/api/admin/photos/:id';
   }

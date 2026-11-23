@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useRef, useCallback, type FormEvent } from 'react';
+import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   notifyGuestSessionChanged,
@@ -59,8 +59,7 @@ export type GuestAddressPortalAction =
   | { type: 'SAVE_SUCCESS'; address: AddressFormData }
   | { type: 'SAVE_FAILURE'; error: string; isAuthError: boolean }
   | { type: 'SET_FIELD'; field: keyof AddressFormData; value: string }
-  | { type: 'SET_CODE'; code: string }
-  | { type: 'RESET_ERROR' };
+  | { type: 'SET_CODE'; code: string };
 
 export const initialAddressData: AddressFormData = {
   addressLine1: '',
@@ -263,13 +262,6 @@ export function guestAddressPortalReducer(
       return {
         ...state,
         code: action.code,
-        error: null,
-        codeGuidance: null,
-      };
-
-    case 'RESET_ERROR':
-      return {
-        ...state,
         error: null,
         codeGuidance: null,
       };
@@ -662,7 +654,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   }, []);
 
   const handleValidateCode = useCallback(
-    async (e?: FormEvent) => {
+    async (e?: SubmitEvent<HTMLFormElement>) => {
       if (e?.preventDefault) {
         e.preventDefault();
       }
@@ -683,7 +675,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   );
 
   const handleSaveAddress = useCallback(
-    async (e?: FormEvent) => {
+    async (e?: SubmitEvent<HTMLFormElement>) => {
       if (e?.preventDefault) {
         e.preventDefault();
       }
@@ -758,10 +750,6 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     dispatch({ type: 'SET_CODE', code });
   }, [dispatch]);
 
-  const resetError = useCallback(() => {
-    dispatch({ type: 'RESET_ERROR' });
-  }, [dispatch]);
-
   useEffect(() => {
     return subscribeGuestSessionChanged(() => {
       if (isInternalSessionEmitRef.current) return;
@@ -815,25 +803,14 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     }
   }, [cancelInFlightValidation, checkInitialSession, validateCode]);
 
-  const isDirty =
-    state.form.addressLine1 !== state.baseline.addressLine1 ||
-    state.form.addressLine2 !== state.baseline.addressLine2 ||
-    state.form.city !== state.baseline.city ||
-    state.form.state !== state.baseline.state ||
-    state.form.zipCode !== state.baseline.zipCode ||
-    state.form.country !== state.baseline.country;
-
   return {
     state,
-    dispatch,
     handleValidateCode,
     handleSaveAddress,
     handleSwitchHousehold,
     handleRetry,
     setField,
     setCode,
-    resetError,
-    isDirty,
     isLoading: state.isInitialLoading,
     isValidating: state.status === 'validating',
     isSaving: state.status === 'saving',

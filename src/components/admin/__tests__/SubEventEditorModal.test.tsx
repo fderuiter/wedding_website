@@ -302,4 +302,49 @@ describe('SubEventEditorModal & SubEventDeleteConfirmModal', () => {
     expect(onSave.mock.calls[0][0].startTime).toBe('2026-08-16T00:30:00.000Z');
     expect(onSave.mock.calls[0][0].endTime).toBe('2026-08-16T02:00:00.000Z');
   });
+
+  it('emits choiceRenames in edit mode when renaming existing multiple-choice options', async () => {
+    const onSave = jest.fn().mockResolvedValue({});
+    const eventWithChoices: EditableSubEvent = {
+      ...sampleEvents[0],
+      customQuestions: [
+        {
+          id: 'q-shuttle',
+          prompt: 'Shuttle preference',
+          type: 'choice',
+          required: true,
+          options: ['Yes, round-trip', 'No, driving'],
+        },
+      ],
+    };
+
+    render(
+      <ToastProvider>
+        <SubEventEditorModal
+          isOpen={true}
+          onClose={jest.fn()}
+          editingEvent={eventWithChoices}
+          onSave={onSave}
+        />
+      </ToastProvider>
+    );
+
+    fireEvent.change(screen.getByLabelText('Question 1 choice 1'), {
+      target: { value: 'Yes, hotel shuttle' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+
+    const savedPayload = onSave.mock.calls[0][0];
+    expect(savedPayload.customQuestions[0].options).toEqual(['Yes, hotel shuttle', 'No, driving']);
+    expect(savedPayload.choiceRenames).toEqual({
+      'q-shuttle': {
+        'Yes, round-trip': 'Yes, hotel shuttle',
+      },
+    });
+  });
 });

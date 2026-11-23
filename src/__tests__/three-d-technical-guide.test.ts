@@ -11,6 +11,7 @@ import {
   ARCHITECTURAL_DOCS,
   escapeVueMustache,
   prependGeneratedPortalComment,
+  prependPortalFrontmatterTitle,
   rewriteMarkdownLinks,
 } from '../../scripts/generate-portal';
 
@@ -99,7 +100,7 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
 
   it('documents /heart route gating, dual-clipped Heart3D geometry, shard reconstruction, forces, FPS tiers, WebGLFallback, and <Html> focus handoff', () => {
     // Updated PhysicsHeart bounds and no stale L26–L322 citation
-    expect(guideContent).toContain('L26-L328');
+    expect(guideContent).toContain('L27-L335');
     expect(guideContent).not.toMatch(/L26[-–—]L322/);
 
     // Route gating in src/app/heart/page.tsx
@@ -168,7 +169,7 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
 
     // Relative source links rewrite to GitHub blob URLs and staged doc links rewrite to VitePress routes
     expect(staged).toContain(
-      'https://github.com/fderuiter/wedding_website/blob/main/src/app/heart/HeartClient.tsx#L26-L328'
+      'https://github.com/fderuiter/wedding_website/blob/main/src/app/heart/HeartClient.tsx#L27-L335'
     );
     expect(staged).toContain(
       'https://github.com/fderuiter/wedding_website/blob/main/src/components/ThemeProvider.tsx#L438-L511'
@@ -202,9 +203,13 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
 
     // If docs-portal has been staged (e.g. via pretest.mjs or generate-portal.ts), verify exact synchronization
     const stagedPortalFile = path.join(rootDir, 'docs-portal/features/3d-technical-guide.md');
+    const mapping = ARCHITECTURAL_DOCS.find(doc => doc.src === guideRelPath)!;
     if (fs.existsSync(stagedPortalFile)) {
       expect(fs.readFileSync(stagedPortalFile, 'utf8')).toBe(
-        prependGeneratedPortalComment(staged, guideRelPath)
+        prependGeneratedPortalComment(
+          prependPortalFrontmatterTitle(staged, mapping.title),
+          guideRelPath
+        )
       );
     }
   });

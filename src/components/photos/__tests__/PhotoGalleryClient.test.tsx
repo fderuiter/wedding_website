@@ -1,22 +1,63 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { PhotoGalleryClient } from '../PhotoGalleryClient';
 import { ToastProvider } from '@/components/ui/ToastProvider';
+
+expect.extend(toHaveNoViolations);
 
 const originalFetch = global.fetch;
 
 describe('PhotoGalleryClient', () => {
+  let formSubmitSpy: jest.SpyInstance;
+  let anchorClickSpy: jest.SpyInstance;
+  let blobSpy: jest.Mock;
+  let lastDownloadHref = '';
+  let lastDownloadName = '';
+  let lastSubmittedFormFields: Array<{ name: string; value: string }> = [];
+
   beforeEach(() => {
     jest.clearAllMocks();
+    lastDownloadHref = '';
+    lastDownloadName = '';
+    lastSubmittedFormFields = [];
+    blobSpy = jest.fn();
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      blob: jest.fn().mockResolvedValue(new Blob(['fake zip bytes'], { type: 'application/zip' })),
+      status: 200,
+      blob: blobSpy,
     } as unknown as Response);
+
+    const origAnchorClick = HTMLAnchorElement.prototype.click;
+    anchorClickSpy = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        if (this.hasAttribute('download')) {
+          lastDownloadHref = this.getAttribute('href') ?? '';
+          lastDownloadName = this.getAttribute('download') ?? '';
+          return;
+        }
+        origAnchorClick.call(this);
+      });
+
+    formSubmitSpy = jest
+      .spyOn(HTMLFormElement.prototype, 'submit')
+      .mockImplementation(function (this: HTMLFormElement) {
+        lastSubmittedFormFields = Array.from(this.querySelectorAll('input')).map((input) => ({
+          name: input.name,
+          value: input.value,
+        }));
+      });
 
     if (typeof window !== 'undefined' && window.URL) {
       window.URL.createObjectURL = jest.fn().mockReturnValue('blob:http://localhost/test');
       window.URL.revokeObjectURL = jest.fn();
     }
+  });
+
+  afterEach(() => {
+    anchorClickSpy.mockRestore();
+    formSubmitSpy.mockRestore();
   });
 
   afterAll(() => {
@@ -51,18 +92,24 @@ describe('PhotoGalleryClient', () => {
     expect(screen.getByText('Export All Guest Photos (.zip)')).toBeInTheDocument();
   });
 
-  it('triggers zip export for all guest photos when button is clicked by admin', async () => {
+  it('triggers preflight check and native <a download> zip export for all guest photos without blob buffering', async () => {
     render(<PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />);
 
     const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
     fireEvent.click(exportBtn);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/media/export?tag=guest-upload');
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/media/export?tag=guest-upload&preflight=1&filename=guest-photos.zip'
+      );
+      expect(lastDownloadHref).toBe('/api/media/export?tag=guest-upload&filename=guest-photos.zip');
+      expect(lastDownloadName).toBe('guest-photos.zip');
     });
+    expect(blobSpy).not.toHaveBeenCalled();
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
   });
 
-  it('allows administrators to multi-select curated and guest photos and export using real UUIDs', async () => {
+  it('allows administrators to multi-select curated and guest photos and submit native hidden form export using real UUIDs', async () => {
     render(
       <PhotoGalleryClient
         isAdmin={true}
@@ -93,11 +140,25 @@ describe('PhotoGalleryClient', () => {
     fireEvent.click(exportSelectedBtn);
 
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/media/export', expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ ids: ['550e8400-e29b-41d4-a716-446655440000'] }),
-      }));
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/media/export',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            ids: ['550e8400-e29b-41d4-a716-446655440000'],
+            filename: 'selected-photos.zip',
+            preflight: true,
+          }),
+        })
+      );
+      expect(formSubmitSpy).toHaveBeenCalledTimes(1);
     });
+    expect(lastSubmittedFormFields).toEqual([
+      { name: 'ids', value: '550e8400-e29b-41d4-a716-446655440000' },
+      { name: 'filename', value: 'selected-photos.zip' },
+    ]);
+    expect(blobSpy).not.toHaveBeenCalled();
+    expect(window.URL.createObjectURL).not.toHaveBeenCalled();
   });
 
   describe('Photo Export Failure Notifications', () => {
@@ -130,33 +191,38 @@ describe('PhotoGalleryClient', () => {
         expect(exportBtn).not.toBeDisabled();
         expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
       });
+      expect(lastDownloadHref).toBe('');
       expect(window.URL.createObjectURL).not.toHaveBeenCalled();
     });
 
-    it('displays an error toast and resets export spinner when server returns HTTP 500', async () => {
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      } as unknown as Response);
+    it.each([401, 404, 500])(
+      'displays an error toast and resets export spinner when server preflight returns HTTP %i',
+      async (statusCode) => {
+        (global.fetch as jest.Mock).mockResolvedValueOnce({
+          ok: false,
+          status: statusCode,
+        } as unknown as Response);
 
-      render(
-        <ToastProvider>
-          <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />
-        </ToastProvider>
-      );
+        render(
+          <ToastProvider>
+            <PhotoGalleryClient initialPhotos={['/uploads/photo1.jpg']} isAdmin={true} />
+          </ToastProvider>
+        );
 
-      const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
-      fireEvent.click(exportBtn);
+        const exportBtn = screen.getByTestId('export-all-guest-photos-btn');
+        fireEvent.click(exportBtn);
 
-      const alertToast = await screen.findByRole('alert');
-      expect(alertToast).toHaveTextContent(/failed to export photos.*retry/i);
+        const alertToast = await screen.findByRole('alert');
+        expect(alertToast).toHaveTextContent(/failed to export photos.*retry/i);
 
-      await waitFor(() => {
-        expect(exportBtn).not.toBeDisabled();
-        expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
-      });
-      expect(window.URL.createObjectURL).not.toHaveBeenCalled();
-    });
+        await waitFor(() => {
+          expect(exportBtn).not.toBeDisabled();
+          expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
+        });
+        expect(lastDownloadHref).toBe('');
+        expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+      }
+    );
 
     it('displays an error toast and preserves selection when exporting selected photos fails', async () => {
       (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -181,6 +247,7 @@ describe('PhotoGalleryClient', () => {
         expect(exportSelectedBtn).not.toBeDisabled();
         expect(exportSelectedBtn).toHaveTextContent('Export Selected (1) (.zip)');
       });
+      expect(formSubmitSpy).not.toHaveBeenCalled();
     });
 
     it('handles export failure safely without crashing when rendered outside ToastProvider', async () => {
@@ -195,7 +262,9 @@ describe('PhotoGalleryClient', () => {
       fireEvent.click(exportBtn);
 
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith('/api/media/export?tag=guest-upload');
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/media/export?tag=guest-upload&preflight=1&filename=guest-photos.zip'
+        );
         expect(exportBtn).not.toBeDisabled();
         expect(exportBtn).toHaveTextContent('Export All Guest Photos (.zip)');
       });
@@ -726,5 +795,54 @@ describe('PhotoGalleryClient', () => {
 
     const tablist = screen.getByRole('tablist', { name: /photo gallery views/i });
     expect(tablist.contains(slideshowLink)).toBe(false);
+  });
+
+  it('eliminates redundant thumbnail/lightbox captions and generic aria-label violations under jest-axe', async () => {
+    const { container } = render(
+      <main>
+        <h1>Photo Gallery</h1>
+        <PhotoGalleryClient
+          initialPhotos={[
+            {
+              id: 'curated-a11y-1',
+              url: '/uploads/curated-vows.jpg',
+              title: 'Garden Vows',
+              isGuestUpload: false,
+            },
+            {
+              id: 'guest-a11y-1',
+              url: '/uploads/guest-toast.jpg',
+              caption: 'Champagne Toast',
+              uploaderName: 'Cousin Leo',
+              isGuestUpload: true,
+            },
+          ]}
+        />
+      </main>
+    );
+
+    // Curated view: thumbnail button keeps View <title> accessible name and MediaImage alt, while visual overlay is aria-hidden
+    const curatedThumb = screen.getByTestId('photo-thumbnail-0');
+    expect(curatedThumb).toHaveAttribute('aria-label', 'View Garden Vows');
+    expect(screen.getByAltText('Garden Vows')).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Open lightbox on curated photo: counter is polite role="status" without prohibited generic aria-label, caption is aria-hidden
+    fireEvent.click(curatedThumb);
+    const counter = screen.getByTestId('lightbox-counter');
+    expect(counter).toHaveAttribute('role', 'status');
+    expect(counter).toHaveAttribute('aria-live', 'polite');
+    expect(counter).toHaveAttribute('aria-atomic', 'true');
+    expect(counter).not.toHaveAttribute('aria-label');
+    expect(counter).toHaveTextContent('Photo 1 of 1: Garden Vows');
+    expect(screen.getByTestId('lightbox-caption')).toHaveAttribute('aria-hidden', 'true');
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Close lightbox and switch to Guest Uploads tab
+    fireEvent.click(screen.getByTestId('lightbox-close-btn'));
+    fireEvent.click(screen.getByTestId('tab-guest'));
+    const guestThumb = screen.getByTestId('photo-thumbnail-0');
+    expect(guestThumb).toHaveAttribute('aria-label', 'View Champagne Toast');
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

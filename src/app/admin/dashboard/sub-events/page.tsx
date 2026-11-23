@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useTheme } from '@/components/ThemeProvider';
@@ -17,6 +17,7 @@ import type {
   SubEventDTO,
   RsvpSummaryResponse,
   SubEventRsvpSummaryItem,
+  AccessMatrixGuestEventRsvp,
 } from '@/features/sub-events';
 
 type SubEvent = EditableSubEvent;
@@ -29,6 +30,7 @@ interface InvitationCode {
   partyGroup?: string | null;
   partyTags?: string[];
   allowedSubEventIds?: string[];
+  eventRsvps?: Record<string, AccessMatrixGuestEventRsvp>;
 }
 
 interface MatrixFilterOptions {
@@ -62,6 +64,29 @@ interface AccessMatrixSetters {
   setTotalPages: React.Dispatch<React.SetStateAction<number>>;
   setFilterOptions: React.Dispatch<React.SetStateAction<MatrixFilterOptions>>;
   setAccessMatrix: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
+}
+
+interface BatchSubEventAccessRequest {
+  subEventIds: string[];
+  action: 'grant' | 'revoke';
+  invitationCodeIds?: string[];
+  search?: string;
+  partyTags?: string[];
+  partyGroups?: string[];
+  householdName?: string[];
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return fallback;
 }
 
 async function requestAccessMatrix(query: AccessMatrixQuery): Promise<AccessMatrixSnapshot> {
@@ -167,6 +192,40 @@ async function requestSubEventsRsvpSummary(): Promise<Record<string, SubEventRsv
   }
 }
 
+async function executeAccessMatrixFetch(params: {
+  query: AccessMatrixQuery;
+  setters: AccessMatrixSetters;
+  setRsvpSummaryByEvent: React.Dispatch<
+    React.SetStateAction<Record<string, SubEventRsvpSummaryItem>>
+  >;
+  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  addToast: ReturnType<typeof useToast>['addToast'];
+  isCancelled?: () => boolean;
+}): Promise<void> {
+  const { query, setters, setRsvpSummaryByEvent, setIsLoading, addToast, isCancelled } = params;
+  try {
+    const [snapshot, summaryMap] = await Promise.all([
+      requestAccessMatrix(query),
+      requestSubEventsRsvpSummary(),
+    ]);
+    if (isCancelled?.()) return;
+    applyAccessMatrixSnapshot(snapshot, setters);
+    if (summaryMap) {
+      setRsvpSummaryByEvent(summaryMap);
+    }
+  } catch (err: unknown) {
+    if (!isCancelled?.()) {
+      notifyAccessMatrixError(err, addToast);
+    }
+  } finally {
+    if (!isCancelled?.()) {
+      setIsLoading(false);
+    }
+  }
+}
+
+const SEARCH_DEBOUNCE_MS = 250;
+
 function SubEventsMatrixPageContent() {
   const { addToast } = useToast();
   const { timezone } = useTheme();
@@ -184,6 +243,7 @@ function SubEventsMatrixPageContent() {
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string>('all');
   const [selectedHouseholdFilter, setSelectedHouseholdFilter] = useState<string>('all');
@@ -209,6 +269,8 @@ function SubEventsMatrixPageContent() {
   const [editingSubEvent, setEditingSubEvent] = useState<SubEvent | null>(null);
   const [deletingSubEvent, setDeletingSubEvent] = useState<SubEvent | null>(null);
 
+  const latestRequestIdRef = useRef<number>(0);
+
   const refreshRsvpSummary = useCallback(async () => {
     const summaryMap = await requestSubEventsRsvpSummary();
     if (summaryMap) {
@@ -216,62 +278,97 @@ function SubEventsMatrixPageContent() {
     }
   }, []);
 
-  const fetchMatrix = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [snapshot, summaryMap] = await Promise.all([
-        requestAccessMatrix({
-          page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
-        }),
-        requestSubEventsRsvpSummary(),
-      ]);
-      applyAccessMatrixSnapshot(snapshot, {
-        setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
-      });
-      if (summaryMap) {
-        setRsvpSummaryByEvent(summaryMap);
-      }
-    } catch (err: unknown) {
-      notifyAccessMatrixError(err, addToast);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, addToast]);
-
-  // Fetch matrix when page or filters or pageSize change
   useEffect(() => {
-    let cancelled = false;
-
-    void Promise.all([
-      requestAccessMatrix({
-        page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
-      }),
-      requestSubEventsRsvpSummary(),
-    ])
-      .then(([snapshot, summaryMap]) => {
-        if (cancelled) return;
-        applyAccessMatrixSnapshot(snapshot, {
-          setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
-        });
-        if (summaryMap) {
-          setRsvpSummaryByEvent(summaryMap);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          notifyAccessMatrixError(err, addToast);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      });
+    if (searchQuery === debouncedSearchQuery) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setIsLoading(true);
+      setDebouncedSearchQuery(searchQuery);
+      setCurrentPage(1);
+    }, SEARCH_DEBOUNCE_MS);
 
     return () => {
-      cancelled = true;
+      clearTimeout(timer);
     };
-  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, addToast]);
+  }, [searchQuery, debouncedSearchQuery]);
+
+  const matrixSetters = useMemo<AccessMatrixSetters>(
+    () => ({
+      setSubEvents,
+      setInvitationCodes,
+      setTotalRecords,
+      setTotalPages,
+      setFilterOptions,
+      setAccessMatrix,
+    }),
+    []
+  );
+
+  const fetchMatrix = useCallback(
+    async (overrides?: Partial<AccessMatrixQuery>) => {
+      const requestId = ++latestRequestIdRef.current;
+      setIsLoading(true);
+      await executeAccessMatrixFetch({
+        query: {
+          page: overrides?.page ?? currentPage,
+          limit: overrides?.limit ?? pageSize,
+          searchQuery: overrides?.searchQuery ?? debouncedSearchQuery,
+          selectedTagFilter: overrides?.selectedTagFilter ?? selectedTagFilter,
+          selectedGroupFilter: overrides?.selectedGroupFilter ?? selectedGroupFilter,
+          selectedHouseholdFilter: overrides?.selectedHouseholdFilter ?? selectedHouseholdFilter,
+        },
+        setters: matrixSetters,
+        setRsvpSummaryByEvent,
+        setIsLoading,
+        addToast,
+        isCancelled: () => latestRequestIdRef.current !== requestId,
+      });
+    },
+    [
+      currentPage,
+      pageSize,
+      debouncedSearchQuery,
+      selectedTagFilter,
+      selectedGroupFilter,
+      selectedHouseholdFilter,
+      matrixSetters,
+      addToast,
+    ]
+  );
+
+  // Fetch matrix when page, debounced search, filters, or pageSize change
+  useEffect(() => {
+    const requestId = ++latestRequestIdRef.current;
+    void executeAccessMatrixFetch({
+      query: {
+        page: currentPage,
+        limit: pageSize,
+        searchQuery: debouncedSearchQuery,
+        selectedTagFilter,
+        selectedGroupFilter,
+        selectedHouseholdFilter,
+      },
+      setters: matrixSetters,
+      setRsvpSummaryByEvent,
+      setIsLoading,
+      addToast,
+      isCancelled: () => latestRequestIdRef.current !== requestId,
+    });
+
+    return () => {
+      latestRequestIdRef.current += 1;
+    };
+  }, [
+    currentPage,
+    pageSize,
+    debouncedSearchQuery,
+    selectedTagFilter,
+    selectedGroupFilter,
+    selectedHouseholdFilter,
+    matrixSetters,
+    addToast,
+  ]);
 
   // Unique filter values
   const allTags = useMemo(() => {
@@ -330,15 +427,15 @@ function SubEventsMatrixPageContent() {
       }
       addToast('Sub-event access updated.', 'success');
       void refreshRsvpSummary();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Failed to update access. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Failed to update access. Reverted changes.'), 'error');
     }
   };
 
   // Bulk Column Toggle (for all currently filtered guests)
   const handleColumnToggle = async (subEventId: string, action: 'grant' | 'revoke') => {
-    const body: any = {
+    const body: BatchSubEventAccessRequest = {
       subEventIds: [subEventId],
       action,
     };
@@ -363,9 +460,15 @@ function SubEventsMatrixPageContent() {
         `Access ${action === 'grant' ? 'granted' : 'revoked'} for column across matching guests.`,
         'success'
       );
-      fetchMatrix();
-    } catch (e: any) {
-      addToast(e.message || 'Batch update failed.', 'error');
+      if (debouncedSearchQuery !== searchQuery) {
+        setIsLoading(true);
+        setDebouncedSearchQuery(searchQuery);
+        setCurrentPage(1);
+      } else {
+        void fetchMatrix({ searchQuery });
+      }
+    } catch (e: unknown) {
+      addToast(getErrorMessage(e, 'Batch update failed.'), 'error');
     }
   };
 
@@ -402,9 +505,9 @@ function SubEventsMatrixPageContent() {
         throw new Error(errJson.error || 'Batch row update failed');
       }
       addToast(`Row permissions ${action === 'grant' ? 'granted' : 'revoked'}.`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Failed to update row access. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Failed to update row access. Reverted changes.'), 'error');
     }
   };
 
@@ -444,9 +547,9 @@ function SubEventsMatrixPageContent() {
       }
 
       addToast(`Batch ${action} completed for ${selectedRowIds.length} selected guests.`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Batch update failed. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Batch update failed. Reverted changes.'), 'error');
     }
   };
 
@@ -455,6 +558,7 @@ function SubEventsMatrixPageContent() {
     try {
       if (editingId) {
         const updated = await updateSubEvent(editingId, payload);
+        await fetchMatrix();
         setSubEvents((prev) =>
           sortSubEventsBySchedule(
             prev.map((evt) =>
@@ -506,6 +610,7 @@ function SubEventsMatrixPageContent() {
   const handleConfirmDeleteSubEvent = async (target: SubEvent) => {
     try {
       await removeSubEvent(target.id);
+      await fetchMatrix();
       setSubEvents((prev) => prev.filter((evt) => evt.id !== target.id));
       setAccessMatrix((prev) => {
         const next: Record<string, string[]> = {};
@@ -514,6 +619,9 @@ function SubEventsMatrixPageContent() {
         });
         return next;
       });
+      if (editingSubEvent?.id === target.id) {
+        setEditingSubEvent(null);
+      }
       addToast('Sub-event deleted successfully.', 'success');
     } catch (err: unknown) {
       addToast(
@@ -570,9 +678,7 @@ function SubEventsMatrixPageContent() {
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCurrentPage(1);
                 setSelectedRowIds([]);
-                setIsLoading(true);
               }}
               className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary text-gray-900 dark:text-white"
             />
@@ -585,6 +691,7 @@ function SubEventsMatrixPageContent() {
               value={selectedTagFilter}
               onChange={(e) => {
                 setSelectedTagFilter(e.target.value);
+                setDebouncedSearchQuery(searchQuery);
                 setCurrentPage(1);
                 setSelectedRowIds([]);
                 setIsLoading(true);
@@ -607,6 +714,7 @@ function SubEventsMatrixPageContent() {
               value={selectedGroupFilter}
               onChange={(e) => {
                 setSelectedGroupFilter(e.target.value);
+                setDebouncedSearchQuery(searchQuery);
                 setCurrentPage(1);
                 setSelectedRowIds([]);
                 setIsLoading(true);
@@ -629,6 +737,7 @@ function SubEventsMatrixPageContent() {
               value={selectedHouseholdFilter}
               onChange={(e) => {
                 setSelectedHouseholdFilter(e.target.value);
+                setDebouncedSearchQuery(searchQuery);
                 setCurrentPage(1);
                 setSelectedRowIds([]);
                 setIsLoading(true);
@@ -653,13 +762,32 @@ function SubEventsMatrixPageContent() {
               variant="secondary"
               size="sm"
               onClick={() => {
+                const willTriggerEffectFetch =
+                  debouncedSearchQuery !== '' ||
+                  selectedTagFilter !== 'all' ||
+                  selectedGroupFilter !== 'all' ||
+                  selectedHouseholdFilter !== 'all' ||
+                  currentPage !== 1;
+
                 setSearchQuery('');
+                setDebouncedSearchQuery('');
                 setSelectedTagFilter('all');
                 setSelectedGroupFilter('all');
                 setSelectedHouseholdFilter('all');
                 setCurrentPage(1);
                 setSelectedRowIds([]);
-                setIsLoading(true);
+
+                if (willTriggerEffectFetch) {
+                  setIsLoading(true);
+                } else {
+                  void fetchMatrix({
+                    page: 1,
+                    searchQuery: '',
+                    selectedTagFilter: 'all',
+                    selectedGroupFilter: 'all',
+                    selectedHouseholdFilter: 'all',
+                  });
+                }
               }}
             >
               Clear Filters
@@ -675,6 +803,7 @@ function SubEventsMatrixPageContent() {
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
+              setDebouncedSearchQuery(searchQuery);
               setCurrentPage(1);
               setSelectedRowIds([]);
               setIsLoading(true);
@@ -695,11 +824,7 @@ function SubEventsMatrixPageContent() {
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">Loading sub-event access matrix...</div>
         ) : subEvents.length === 0 ? (
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            No sub-events created yet. Click "+ Create New Sub-Event" to get started.
-          </div>
-        ) : totalRecords === 0 ? (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            No invitation codes match your filter criteria.
+            No sub-events created yet. Click &quot;+ Create New Sub-Event&quot; to get started.
           </div>
         ) : (
           <Table
@@ -850,7 +975,16 @@ function SubEventsMatrixPageContent() {
             </thead>
 
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {paginatedCodes.map((code) => {
+              {paginatedCodes.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={2 + subEvents.length}
+                    className="p-12 text-center text-gray-500 dark:text-gray-400"
+                  >
+                    No invitation codes match your filter criteria.
+                  </td>
+                </tr>
+              ) : paginatedCodes.map((code) => {
                 const allowedIds = accessMatrix[code.id] || [];
                 const isSelectedRow = selectedRowIds.includes(code.id);
 
@@ -935,13 +1069,70 @@ function SubEventsMatrixPageContent() {
                     {/* Sub-Event Access Matrix Cells */}
                     {subEvents.map((evt) => {
                       const isAllowed = allowedIds.includes(evt.id);
+                      const guestEventRsvp = code.eventRsvps?.[evt.id];
+                      const rsvpStatusBadgeClasses =
+                        guestEventRsvp?.status === 'attending'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-800'
+                          : guestEventRsvp?.status === 'declined'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-800'
+                            : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800';
+                      const rsvpDetailsBlock = guestEventRsvp ? (
+                        <div
+                          className="mt-1.5 space-y-1 text-left text-[11px]"
+                          data-testid={`matrix-cell-rsvp-${code.id}-${evt.id}`}
+                        >
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded font-semibold border ${rsvpStatusBadgeClasses}`}
+                            >
+                              {guestEventRsvp.status.charAt(0).toUpperCase() +
+                                guestEventRsvp.status.slice(1)}
+                              {guestEventRsvp.status === 'attending' &&
+                              guestEventRsvp.plusOneCount > 0
+                                ? ` (+${guestEventRsvp.plusOneCount})`
+                                : ''}
+                            </span>
+                          </div>
+                          {guestEventRsvp.plusOneNames.length > 0 && (
+                            <div className="text-gray-600 dark:text-gray-300 text-center">
+                              +1: {guestEventRsvp.plusOneNames.join(', ')}
+                            </div>
+                          )}
+                          {guestEventRsvp.meals.length > 0 && (
+                            <div className="text-indigo-800 dark:text-indigo-200 bg-indigo-50/70 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/60">
+                              {guestEventRsvp.meals
+                                .map((sel) => {
+                                  const tags =
+                                    sel.dietaryTags.length > 0
+                                      ? ` (${sel.dietaryTags.join(', ')})`
+                                      : '';
+                                  return `${sel.attendee}: ${sel.label}${tags}`;
+                                })
+                                .join('; ')}
+                            </div>
+                          )}
+                          {guestEventRsvp.answers.length > 0 && (
+                            <div className="text-sky-800 dark:text-sky-200 bg-sky-50/70 dark:bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-200 dark:border-sky-800/60">
+                              {guestEventRsvp.answers
+                                .map((ans) => `${ans.prompt}: ${ans.answer}`)
+                                .join('; ')}
+                            </div>
+                          )}
+                          {guestEventRsvp.dietaryNotes && (
+                            <div className="text-amber-800 dark:text-amber-200 bg-amber-50/70 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">
+                              Dietary: {guestEventRsvp.dietaryNotes}
+                            </div>
+                          )}
+                        </div>
+                      ) : null;
 
                       if (!evt.isPrivate) {
                         return (
-                          <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center bg-gray-50/50 dark:bg-gray-800/50">
+                          <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center bg-gray-50/50 dark:bg-gray-800/50 align-middle">
                             <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
                               ✓ Public
                             </span>
+                            {rsvpDetailsBlock}
                           </td>
                         );
                       }
@@ -957,6 +1148,7 @@ function SubEventsMatrixPageContent() {
                               className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
                             />
                           </label>
+                          {rsvpDetailsBlock}
                         </td>
                       );
                     })}
@@ -1038,6 +1230,9 @@ function SubEventsMatrixPageContent() {
         editingEvent={editingSubEvent}
         onSave={handleSaveSubEvent}
         timezone={effectiveTimezone}
+        existingSubEvents={subEvents}
+        onSelectEdit={(evt) => setEditingSubEvent(evt)}
+        onRequestDelete={(evt) => setDeletingSubEvent(evt)}
       />
 
       <SubEventDeleteConfirmModal

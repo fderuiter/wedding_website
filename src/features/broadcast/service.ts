@@ -40,6 +40,7 @@ import {
   SendTestBroadcastInput,
   BroadcastTargetFilters,
   BroadcastHistoryItem,
+  BroadcastHistoryQueryOptions,
   DispatchResult,
   BroadcastChannel,
   BroadcastTemplateContext,
@@ -819,13 +820,52 @@ export class BroadcastService {
   }
 
   /**
-   * Retrieves broadcast history records.
+   * Retrieves bounded broadcast history summary records without recipient rows.
    */
-  static async getBroadcastHistory(): Promise<BroadcastHistoryItem[]> {
+  static async getBroadcastHistory(
+    options: BroadcastHistoryQueryOptions = {}
+  ): Promise<BroadcastHistoryItem[]> {
+    const rawLimit = options.limit ?? 50;
+    const take = Math.min(Math.max(1, Math.trunc(rawLimit)), 100);
+    const rawPage = options.page ?? 1;
+    const page = Math.max(1, Math.trunc(rawPage));
+    const skip =
+      options.skip !== undefined
+        ? Math.max(0, Math.trunc(options.skip))
+        : (page - 1) * take;
+
     return prisma.broadcastMessage.findMany({
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
+    }) as any;
+  }
+
+  /**
+   * Counts total broadcast history records for pagination metadata.
+   */
+  static async countBroadcastHistory(): Promise<number> {
+    if (typeof prisma.broadcastMessage.count === 'function') {
+      return prisma.broadcastMessage.count();
+    }
+    const rows = await prisma.broadcastMessage.findMany({ select: { id: true } });
+    return rows.length;
+  }
+
+  /**
+   * Retrieves a single broadcast message with its full body and ordered recipient delivery logs.
+   */
+  static async getBroadcastById(id: string): Promise<BroadcastHistoryItem | null> {
+    return prisma.broadcastMessage.findUnique({
+      where: { id },
       include: {
-        recipients: true,
+        recipients: {
+          orderBy: [
+            { status: 'asc' },
+            { guestName: 'asc' },
+            { createdAt: 'asc' },
+          ],
+        },
       },
     }) as any;
   }

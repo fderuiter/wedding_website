@@ -4,7 +4,7 @@ import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInv
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { readRequestCookie } from '@/core/auth/tokenCookieHelpers';
 
-export type GuestPortalSessionStatus = 'invitation' | 'passcode' | 'none';
+type GuestPortalSessionStatus = 'invitation' | 'passcode' | 'none';
 
 function isStaticExportBuild(): boolean {
   return (

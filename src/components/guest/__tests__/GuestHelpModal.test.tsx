@@ -279,6 +279,40 @@ describe('GuestHelpModal component & WAI-ARIA compliance', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
+  it('explains companion full names, structured entrée menus, custom prompts, and severe allergies in both open and closed RSVP states', () => {
+    const { rerender } = render(
+      <GuestHelpModal
+        isOpen={true}
+        onClose={jest.fn()}
+        initialCategory="dietary"
+        config={{ ...sampleConfig, rsvpOpen: true, isRsvpOpen: true }}
+      />
+    );
+
+    // Open RSVP state guidance
+    expect(screen.getByText(/Companion full names & entrée menus/i)).toBeInTheDocument();
+    expect(screen.getByText(/Kids Meal option for each guest/i)).toBeInTheDocument();
+    expect(screen.getByText(/Custom RSVP prompts & updating responses/i)).toBeInTheDocument();
+    expect(screen.getByText(/Allergy & cross-contamination notes/i)).toBeInTheDocument();
+
+    // Closed RSVP state guidance
+    rerender(
+      <GuestHelpModal
+        isOpen={true}
+        onClose={jest.fn()}
+        initialCategory="dietary"
+        config={{ ...sampleConfig, rsvpOpen: false, isRsvpOpen: false }}
+      />
+    );
+
+    expect(screen.getByText(/plus-one companion full names/i)).toBeInTheDocument();
+    expect(screen.getByText(/structured entrée or Kids Meal selections/i)).toBeInTheDocument();
+    expect(screen.getByText(/custom prompt answers/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/severe allergy and cross-contamination updates/i)
+    ).toBeInTheDocument();
+  });
+
   it('propagates live RSVP closed config overrides from GuestHelpTrigger to GuestHelpProvider', () => {
     render(
       <GuestHelpProvider

@@ -35,10 +35,17 @@ function extractPhoneNumber(extraFields: unknown): string {
   const record = parseExtraFieldsRecord(extraFields);
   if (!record) return '';
 
-  const candidate = [record.phone, record.mobile, record.phoneNumber].find(
+  const candidate = [
+    record.phone,
+    record.mobile,
+    record.phoneNumber,
+    record['Phone Number'],
+  ].find(
     (val) => (typeof val === 'string' && val.trim().length > 0) || typeof val === 'number'
   );
-  if (typeof candidate === 'string') return candidate;
+  if (typeof candidate === 'string') {
+    return candidate.trim().replace(/^'(?=[+\d(])/, '').trim();
+  }
   if (typeof candidate === 'number') return String(candidate);
 
   return '';
@@ -86,7 +93,12 @@ const HEADERS = [
   'Household Name',
   'Party Group',
   'Party Tags',
-  'Address',
+  'Address Line 1',
+  'Address Line 2',
+  'City',
+  'State',
+  'ZIP Code',
+  'Country',
   'Dietary Notes',
   'Plus Ones',
   'Status',
@@ -105,7 +117,12 @@ interface InvitationCodeExportRecord extends Record<string, unknown> {
   'Household Name': string;
   'Party Group': string;
   'Party Tags': string;
-  'Address': string;
+  'Address Line 1': string;
+  'Address Line 2': string;
+  'City': string;
+  'State': string;
+  'ZIP Code': string;
+  'Country': string;
   'Dietary Notes': string;
   'Plus Ones': number;
   'Status': string;
@@ -211,17 +228,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
   // Map to export format
   const exportRecords: InvitationCodeExportRecord[] = dbRecords.map((item) => {
     const plusOneName = formatGuestPlusOneNames(item);
-    const fullAddress = [
-      item.addressLine1,
-      item.addressLine2,
-      item.city,
-      item.state,
-      item.zipCode,
-      item.country,
-    ]
-      .filter(Boolean)
-      .join(', ');
-
     const rsvpLink = item.code ? `${baseUrl}/guest?code=${encodeURIComponent(item.code)}` : '';
     const phoneNumber = extractPhoneNumber(item.extraFields);
 
@@ -235,7 +241,12 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       'Household Name': item.householdName || '',
       'Party Group': item.partyGroup || '',
       'Party Tags': Array.isArray(item.partyTags) ? item.partyTags.join(', ') : '',
-      'Address': fullAddress,
+      'Address Line 1': item.addressLine1 || '',
+      'Address Line 2': item.addressLine2 || '',
+      'City': item.city || '',
+      'State': item.state || '',
+      'ZIP Code': item.zipCode || '',
+      'Country': item.country || '',
       'Dietary Notes': item.dietaryNotes || '',
       'Plus Ones': resolveExportPlusOneCount(item),
       'Status': item.used ? 'Redeemed' : 'Unused',
