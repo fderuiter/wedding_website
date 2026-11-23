@@ -510,6 +510,24 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const initialAttending = (await initialAttendingRes!.json()).data.global
       .attendingHouseholds as number;
 
+    const missingPostalRes = await router(
+      'http://localhost:3000/api/guest/address/public',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guestName: 'Missing Address Guest',
+        }),
+      },
+    );
+    expect(missingPostalRes?.status).toBe(400);
+
+    const catalogEntityRes = await router(
+      'http://localhost:3000/api/admin/invitation-codes?limit=1000',
+    );
+    expect(catalogEntityRes?.status).toBe(200);
+    expect(catalogEntityRes?.headers.get('X-Limit')).toBe('1000');
+
     const newAddrRes = await router(
       'http://localhost:3000/api/guest/address/public',
       {
@@ -522,19 +540,82 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
           city: 'Minneapolis',
           state: 'MN',
           zipCode: '55401',
+          notes: 'Gate code #4412',
         }),
       },
     );
     expect(newAddrRes?.status).toBe(201);
     const newAddrJson = await newAddrRes!.json();
     const newCode = newAddrJson.code ?? newAddrJson.data?.code;
+    const newInviteId = newAddrJson.data?.id as string;
     expect(typeof newCode).toBe('string');
+    expect(typeof newInviteId).toBe('string');
+    const savedCollectInvite = store
+      .getSnapshot()
+      .invitationCode.find((inv) => inv.id === newInviteId);
+    expect(savedCollectInvite?.dietaryNotes).toBeNull();
+    expect(savedCollectInvite?.extraFields?.householdNotes).toBe('Gate code #4412');
 
-    await router('http://localhost:3000/api/guest/login', {
+    // Unpromoted address-collection rows cannot authenticate as invited guests until promoted
+    const unpromotedLoginRes = await router('http://localhost:3000/api/guest/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: newCode }),
     });
+    expect(unpromotedLoginRes?.status).toBe(401);
+
+    const unpromotedValidateRes = await router(
+      `http://localhost:3000/api/registry/validate-code?code=${encodeURIComponent(newCode)}`,
+    );
+    expect(unpromotedValidateRes?.status).toBe(404);
+
+    // Even if a stale invite session references an unpromoted address-collection code, GET /api/guest/session rejects and clears it
+    store.mutate((draft) => {
+      draft.guestSession = {
+        code: newCode,
+        guestName: 'Avery Chen',
+        sessionType: 'invite',
+      };
+    });
+    const staleCollectSessionRes = await router('http://localhost:3000/api/guest/session');
+    expect(staleCollectSessionRes?.status).toBe(200);
+    const staleCollectSessionJson = await staleCollectSessionRes!.json();
+    expect(staleCollectSessionJson.data).toMatchObject({
+      status: 'none',
+      isVerified: false,
+      invitationCode: null,
+    });
+
+    const unpromotedLookupRes = await router(
+      'http://localhost:3000/api/guest/lookup',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'avery@example.org' }),
+      },
+    );
+    expect(unpromotedLookupRes?.status).toBe(404);
+
+    const promoteRes = await router(
+      'http://localhost:3000/api/admin/invitation-codes/batch',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: [newInviteId],
+          tags: ['address-collection'],
+          action: 'remove',
+        }),
+      },
+    );
+    expect(promoteRes?.status).toBe(200);
+
+    const promotedLoginRes = await router('http://localhost:3000/api/guest/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: newCode }),
+    });
+    expect(promotedLoginRes?.status).toBe(200);
     const rsvpRes = await router('http://localhost:3000/api/rsvp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

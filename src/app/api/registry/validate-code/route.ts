@@ -5,6 +5,7 @@ import { env } from '@/env';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { hasAddressCollectionTag } from '@/features/registry';
 
 function safeComparePasscode(a: string, b: string): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -32,7 +33,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     where: { code },
   });
 
-  if (!invite || invite.isSample) {
+  if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
     const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
     const expectedPasscode = (
       isProduction ? (process.env.GUEST_PASSCODE ?? '') : (process.env.GUEST_PASSCODE ?? env.GUEST_PASSCODE ?? '')

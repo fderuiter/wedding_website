@@ -17,6 +17,7 @@ import { ToastContext, ToastProvider } from '@/components/ui/ToastProvider';
 import { useAdminWeddingParty } from '@/hooks/admin/useAdminWeddingParty';
 import { useAdminAttractions } from '@/hooks/admin/useAdminAttractions';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
+import { hasAddressCollectionTag } from '@/features/registry';
 import {
   SETUP_WIZARD_STORAGE_KEY,
   useSetupWizardMachine,
@@ -264,7 +265,9 @@ function SetupWizardContent({
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
   const { data: attractions = [] } = useAdminAttractions({ enabled: isAuthenticated });
   const { data: invitationCodes = [], fetchAll: refetchInvitationCodes } = useAdminInvitationCodes({ enabled: isAuthenticated });
-  const nonSampleInvitationCodes = invitationCodes.filter((code) => !code.isSample);
+  const nonSampleInvitationCodes = invitationCodes.filter(
+    (code) => !code.isSample && !hasAddressCollectionTag(code.partyTags)
+  );
   const activeNonSampleGuestCount =
     nonSampleInvitationCodes.length > 0 ? nonSampleInvitationCodes.length : importedGuestCount;
 
@@ -275,7 +278,9 @@ function SetupWizardContent({
         ? (result as { data?: typeof invitationCodes }).data
         : result;
     const codes = Array.isArray(rawItems) ? rawItems : invitationCodes;
-    const nonSampleCount = codes.filter((code) => !code.isSample).length;
+    const nonSampleCount = codes.filter(
+      (code) => !code.isSample && !hasAddressCollectionTag(code.partyTags)
+    ).length;
     updateDraft({ importedGuestCount: nonSampleCount });
   };
 
@@ -1369,7 +1374,9 @@ function SetupWizardContent({
             isOpen={activeModal === 'csv'}
             onClose={closeModal}
             onImportComplete={handleGuestImportComplete}
-            existingCodes={invitationCodes.map((c) => c.code)}
+            existingCodes={invitationCodes
+              .map((c) => c.code)
+              .filter((code): code is string => Boolean(code && code.trim()))}
           />
         </>
       )}

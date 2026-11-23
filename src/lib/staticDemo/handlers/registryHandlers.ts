@@ -751,7 +751,12 @@ export async function handleRegistryRoutes(
     const invite = snapshot.invitationCode.find(
       (inv) => inv.code.toUpperCase() === code,
     );
-    if (!invite) {
+    if (
+      !invite ||
+      invite.partyTags.some(
+        (tag) => tag.trim().toLowerCase() === 'address-collection',
+      )
+    ) {
       const envPasscode =
         typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
           ? process.env.GUEST_PASSCODE.trim().toUpperCase()
@@ -796,7 +801,12 @@ export async function handleRegistryRoutes(
           (i) => i.code.toUpperCase() === sessionCode.toUpperCase(),
         )
         : null;
-      if (!invite) {
+      if (
+        !invite ||
+        invite.partyTags.some(
+          (tag) => tag.trim().toLowerCase() === 'address-collection',
+        )
+      ) {
         return wrapMiddlewareJson({
           isVerified: false,
           invitationCode: null,

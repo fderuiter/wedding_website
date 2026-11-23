@@ -10,7 +10,12 @@ import type {
 import type { SeatingTableDTO } from '@/features/seating';
 import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
 import { notifyGuestSessionChanged } from '@/utils/guestSessionEvents';
+import { normalizePartyTags } from '@/utils/invitationValidation';
 import { buildArchetypeDataset, type ArchetypeDataset } from './demoSeed';
+
+function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
+  return normalizePartyTags(partyTags).includes('address-collection');
+}
 
 export type DemoPersona = 'guest' | 'admin' | 'setup';
 
@@ -406,7 +411,9 @@ export function setDemoArchetype(archetype: ArchetypeId): void {
     const nextDataset = prev.datasets[archetype];
     const currentCode = prev.guestSession?.invitationCode?.toUpperCase() ?? '';
     const matchingGuest = currentCode
-      ? nextDataset.guests.find((g) => g.code.toUpperCase() === currentCode)
+      ? nextDataset.guests.find(
+        (g) => g.code.toUpperCase() === currentCode && !isDemoAddressCollectionOnly(g.partyTags)
+      )
       : undefined;
 
     return {
@@ -587,11 +594,13 @@ export function findDemoGuestByCode(rawCode: string): InvitationCodeDTO | null {
 
   const activeGuests = getActiveArchetypeDataset().guests;
   const directMatch = activeGuests.find((g) => g.code.toUpperCase() === normalized);
-  if (directMatch) return directMatch;
+  if (directMatch) {
+    return isDemoAddressCollectionOnly(directMatch.partyTags) ? null : directMatch;
+  }
 
   const presetGuests = ARCHETYPE_PRESETS[state.archetype]?.guests ?? [];
   const presetMatch = presetGuests.find((g) => g.code.toUpperCase() === normalized);
-  if (!presetMatch) return null;
+  if (!presetMatch || isDemoAddressCollectionOnly(presetMatch.partyTags)) return null;
 
   return {
     id: `demo-${state.archetype}-preset-${normalized}`,

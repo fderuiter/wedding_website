@@ -15,7 +15,11 @@ import {
   type RsvpCutoffEvaluation,
 } from '@/utils/rsvpDeadline';
 import { isPrivateContentNode } from '@/features/content';
-import { getAttendanceStatus, extractDietaryTags } from '@/features/registry';
+import {
+  getAttendanceStatus,
+  extractDietaryTags,
+  hasAddressCollectionTag,
+} from '@/features/registry';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 import {
   SubEventRsvpSubmissionItem,
@@ -418,14 +422,16 @@ export class SubEventService {
     if (code && typeof code === 'string' && code.trim()) {
       const hydrated = this.getHydratedInvitation(code);
       if (hydrated && hydrated.id) {
-        invitationCodeId = hydrated.id;
-        inviteDietaryNotes = typeof hydrated.dietaryNotes === 'string' ? hydrated.dietaryNotes.trim() : '';
+        if (!hasAddressCollectionTag(hydrated.partyTags)) {
+          invitationCodeId = hydrated.id;
+          inviteDietaryNotes = typeof hydrated.dietaryNotes === 'string' ? hydrated.dietaryNotes.trim() : '';
+        }
       } else {
         const invite = await this.client.invitationCode.findUnique({
           where: { code: code.trim().toUpperCase(), isSample: false },
-          select: { id: true, dietaryNotes: true },
+          select: { id: true, dietaryNotes: true, partyTags: true },
         });
-        if (invite && !invite.isSample) {
+        if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
           invitationCodeId = invite.id;
           inviteDietaryNotes = typeof invite.dietaryNotes === 'string' ? invite.dietaryNotes.trim() : '';
         }
@@ -605,14 +611,16 @@ export class SubEventService {
     if (code && typeof code === 'string' && code.trim()) {
       const hydrated = this.getHydratedInvitation(code);
       if (hydrated && hydrated.id) {
-        invitationCodeId = hydrated.id;
-        inviteDietaryNotes = typeof hydrated.dietaryNotes === 'string' ? hydrated.dietaryNotes.trim() : '';
+        if (!hasAddressCollectionTag(hydrated.partyTags)) {
+          invitationCodeId = hydrated.id;
+          inviteDietaryNotes = typeof hydrated.dietaryNotes === 'string' ? hydrated.dietaryNotes.trim() : '';
+        }
       } else {
         const invite = await this.client.invitationCode.findUnique({
           where: { code: code.trim().toUpperCase(), isSample: false },
-          select: { id: true, dietaryNotes: true },
+          select: { id: true, dietaryNotes: true, partyTags: true },
         });
-        if (invite && !invite.isSample) {
+        if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
           invitationCodeId = invite.id;
           inviteDietaryNotes = typeof invite.dietaryNotes === 'string' ? invite.dietaryNotes.trim() : '';
         }
@@ -757,14 +765,15 @@ export class SubEventService {
           id: hydrated.id,
           guestName: hydrated.guestName,
           plusOneAllocations: hydrated.plusOneAllocations,
+          partyTags: hydrated.partyTags,
           isSample: false,
         }
         : await this.client.invitationCode.findUnique({
           where: { code: code.trim().toUpperCase(), isSample: false },
-          select: { id: true, guestName: true, plusOneAllocations: true },
+          select: { id: true, guestName: true, plusOneAllocations: true, partyTags: true },
         });
 
-    if (!invite || invite.isSample) {
+    if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
       throw new ApiError(401, 'Invalid invitation session.');
     }
 
@@ -2172,7 +2181,9 @@ export class SubEventService {
       ]);
 
     const inviteList: any[] = Array.isArray(invitations)
-      ? (isStatic ? invitations : invitations.filter((inv: any) => !inv?.isSample))
+      ? invitations.filter(
+        (inv: any) => (isStatic || !inv?.isSample) && !hasAddressCollectionTag(inv?.partyTags)
+      )
       : [];
     const subEventList: any[] = Array.isArray(subEvents) ? subEvents : [];
     const inviteById = new Map<string, any>(inviteList.map((inv) => [inv.id, inv]));

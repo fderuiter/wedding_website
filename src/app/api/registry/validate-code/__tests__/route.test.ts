@@ -40,6 +40,18 @@ describe('GET /api/registry/validate-code', () => {
     mockFindUnique.mockResolvedValueOnce({ id: 'sample-1', code: 'SAMPLE12', guestName: 'Sample Guest', isSample: true });
     const sampleRes = await GET(new NextRequest('http://localhost/api/registry/validate-code?code=SAMPLE12'));
     expect(sampleRes.status).toBe(404);
+    mockFindUnique.mockResolvedValueOnce({
+      id: 'collect-1',
+      code: 'COLLECT1',
+      guestName: 'Address Collector',
+      isSample: false,
+      partyTags: ['address-collection'],
+    });
+    const collectRes = await GET(
+      new NextRequest('http://localhost/api/registry/validate-code?code=COLLECT1')
+    );
+    expect(collectRes.status).toBe(404);
+    expect(collectRes.cookies.get(GUEST_INVITE_COOKIE)).toBeUndefined();
     expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
   });
 

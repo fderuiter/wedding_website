@@ -94,7 +94,7 @@ describe('SubEventService', () => {
 
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'VIPGUEST', isSample: false },
-        select: { id: true, dietaryNotes: true },
+        select: { id: true, dietaryNotes: true, partyTags: true },
       });
 
       expect(events).toHaveLength(2);
@@ -171,7 +171,7 @@ describe('SubEventService', () => {
 
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'SMITH2026', isSample: false },
-        select: { id: true, dietaryNotes: true },
+        select: { id: true, dietaryNotes: true, partyTags: true },
       });
       expect(mockPrisma.subEvent.findMany).toHaveBeenCalledWith({
         where: { isPrivate: false },
@@ -361,7 +361,7 @@ describe('SubEventService', () => {
       });
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'SMITH2026', isSample: false },
-        select: { id: true, dietaryNotes: true },
+        select: { id: true, dietaryNotes: true, partyTags: true },
       });
     });
 
@@ -523,7 +523,7 @@ describe('SubEventService', () => {
       });
       expect(mockPrisma.invitationCode.findUnique).toHaveBeenCalledWith({
         where: { code: 'SMITH2026', isSample: false },
-        select: { id: true, guestName: true, plusOneAllocations: true },
+        select: { id: true, guestName: true, plusOneAllocations: true, partyTags: true },
       });
     });
 
@@ -2147,6 +2147,115 @@ describe('SubEventService', () => {
           { attendee: 'Child Two', optionId: 'm-kids', label: 'Kids Chicken Tenders', dietaryTags: ['kids'] },
         ],
         answers: [{ questionId: 'q-chair', prompt: 'High chair?', answer: 'Yes' }],
+      });
+    });
+
+    it('excludes unpromoted address-collection records from global and per-sub-event getRsvpSummary tallies', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        {
+          id: 'inv-invited',
+          guestName: 'Invited Household',
+          used: true,
+          isSample: false,
+          plusOneAllocations: 1,
+          plusOneFirstName: 'Alex',
+          plusOneLastName: 'Invited',
+          dietaryNotes: 'Gluten-free',
+          partyTags: ['Family'],
+          extraFields: { attendanceStatus: 'attending' },
+        },
+        {
+          id: 'inv-address-only',
+          guestName: 'Address Collector',
+          used: false,
+          isSample: false,
+          plusOneAllocations: 0,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: null,
+          partyTags: ['address-collection'],
+          extraFields: { householdNotes: 'Vegan household note in mailing form' },
+        },
+      ]);
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-main',
+          title: 'Ceremony & Dinner',
+          isPrivate: false,
+          startTime: null,
+          mealOptions: [{ id: 'm-1', label: 'Herb Chicken', dietaryTags: ['gluten-free'] }],
+          customQuestions: [],
+          accesses: [],
+          rsvps: [
+            {
+              invitationCodeId: 'inv-invited',
+              status: 'attending',
+              plusOneCount: 1,
+              dietaryNotes: 'Gluten-free',
+              mealSelections: ['m-1', 'm-1'],
+              customAnswers: {},
+              plusOneNames: ['Alex Invited'],
+            },
+            {
+              invitationCodeId: 'inv-address-only',
+              status: 'attending',
+              plusOneCount: 0,
+              dietaryNotes: 'Vegan',
+              mealSelections: ['m-1'],
+              customAnswers: {},
+              plusOneNames: [],
+            },
+          ],
+        },
+      ]);
+
+      const summary = await service.getRsvpSummary();
+      expect(summary.global.totalInvitations).toBe(1);
+      expect(summary.global.attendingHouseholds).toBe(1);
+      expect(summary.global.pendingHouseholds).toBe(0);
+      expect(summary.global.attendingHeadcount).toBe(2);
+      expect(summary.global.dietary.vegan).toBe(0);
+      expect(summary.subEvents[0].invitedCount).toBe(1);
+      expect(summary.subEvents[0].attendingCount).toBe(1);
+      expect(summary.subEvents[0].attendingHeadcount).toBe(2);
+      expect(summary.subEvents[0].pendingCount).toBe(0);
+    });
+
+    it('isolates unpromoted address-collection records from schedule dietary pre-population, private events, and submitSubEventRsvps', async () => {
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({
+        id: 'inv-address-only',
+        guestName: 'Address Collector',
+        plusOneAllocations: 1,
+        dietaryNotes: 'No shellfish',
+        partyTags: ['address-collection'],
+        isSample: false,
+      });
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-public',
+          title: 'Ceremony',
+          isPrivate: false,
+          startTime: new Date('2027-06-01T18:00:00Z'),
+          endTime: new Date('2027-06-01T19:00:00Z'),
+          mealOptions: [],
+          customQuestions: [],
+          accesses: [],
+          rsvps: [],
+        },
+      ]);
+
+      const schedule = await service.getScheduleForGuest('ADDRONLY1');
+      expect(schedule).toHaveLength(1);
+      expect(schedule[0].userRsvp).toBeNull();
+
+      await expect(
+        service.submitSubEventRsvps('ADDRONLY1', [
+          { subEventId: 'se-public', status: 'attending', plusOneCount: 0, dietaryNotes: '' },
+        ])
+      ).rejects.toMatchObject({
+        statusCode: 401,
+        message: 'Invalid invitation session.',
       });
     });
   });

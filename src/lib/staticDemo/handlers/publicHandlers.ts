@@ -21,7 +21,12 @@ import {
 } from '../dtoMappers';
 import { buildSubEventIcs } from '../exporters';
 import { createCompactUploadThumbnail, createDemoSvgDataUrl } from '../svgAssets';
+import { normalizePartyTags } from '@/utils/invitationValidation';
 import type { CustomRsvpQuestionDTO, MealOptionDTO } from '@/utils/rsvpPrompts';
+
+function hasUnpromotedAddressCollectionTag(partyTags: unknown): boolean {
+  return normalizePartyTags(partyTags).includes('address-collection');
+}
 
 function resolveActiveInvitation(
   snapshot: StaticDemoSnapshot,
@@ -30,11 +35,17 @@ function resolveActiveInvitation(
     const exact = snapshot.invitationCode.find(
       (inv) => inv.code.toUpperCase() === snapshot.guestSession?.code.toUpperCase(),
     );
-    if (exact) return exact;
+    if (exact) {
+      return hasUnpromotedAddressCollectionTag(exact.partyTags) ? null : exact;
+    }
   }
   return (
-    snapshot.invitationCode.find((inv) => !inv.isSample) ??
-    snapshot.invitationCode[0] ??
+    snapshot.invitationCode.find(
+      (inv) => !inv.isSample && !hasUnpromotedAddressCollectionTag(inv.partyTags),
+    ) ??
+    snapshot.invitationCode.find(
+      (inv) => !hasUnpromotedAddressCollectionTag(inv.partyTags),
+    ) ??
     null
   );
 }
@@ -650,14 +661,27 @@ export async function handlePublicRoutes(
         : null;
 
     if (session.sessionType === 'invite') {
-      const resolvedCode = matchedInvite?.code ?? session.code;
-      const resolvedName = matchedInvite?.guestName ?? session.guestName;
+      if (!matchedInvite || hasUnpromotedAddressCollectionTag(matchedInvite.partyTags)) {
+        store.mutate((draft) => {
+          if (draft.guestSession?.sessionType === 'invite') {
+            draft.guestSession = null;
+          }
+        });
+        return wrapMiddlewareJson({
+          status: 'none',
+          isVerified: false,
+          invitationCode: null,
+          code: null,
+          guestName: null,
+          hasPasscodeSession: false,
+        });
+      }
       return wrapMiddlewareJson({
         status: 'invitation',
         isVerified: true,
-        invitationCode: resolvedCode,
-        code: resolvedCode,
-        guestName: resolvedName,
+        invitationCode: matchedInvite.code,
+        code: matchedInvite.code,
+        guestName: matchedInvite.guestName,
         hasPasscodeSession: false,
       });
     }
@@ -690,6 +714,9 @@ export async function handlePublicRoutes(
     );
 
     if (matchedInvite) {
+      if (hasUnpromotedAddressCollectionTag(matchedInvite.partyTags)) {
+        return errorJson(401, 'Invalid passcode or invitation code.');
+      }
       store.mutate((draft) => {
         const nowIso = new Date().toISOString();
         draft.guestSession = {
@@ -751,9 +778,10 @@ export async function handlePublicRoutes(
     const lowered = query.toLowerCase();
     const found = snapshot.invitationCode.find(
       (inv) =>
-        inv.guestName.toLowerCase().includes(lowered) ||
-        (inv.email && inv.email.toLowerCase() === lowered) ||
-        inv.code.toLowerCase() === lowered,
+        !hasUnpromotedAddressCollectionTag(inv.partyTags) &&
+        (inv.guestName.toLowerCase().includes(lowered) ||
+          (inv.email && inv.email.toLowerCase() === lowered) ||
+          inv.code.toLowerCase() === lowered),
     );
 
     if (!found) {
@@ -837,6 +865,15 @@ export async function handlePublicRoutes(
 
   if (pathname === '/api/guest/address/public' && method === 'POST') {
     const body = await readJsonBody(request);
+    const honeypotVal =
+      body.website || body.honeypot || body.hp_field || body.confirm_email;
+    if (typeof honeypotVal === 'string' && honeypotVal.trim().length > 0) {
+      return wrapMiddlewareJson({
+        success: true,
+        message: 'Address submitted successfully.',
+      });
+    }
+
     const guestName =
       typeof body.guestName === 'string'
         ? body.guestName.trim()
@@ -860,6 +897,38 @@ export async function handlePublicRoutes(
 
     if (!guestName) {
       return errorJson(400, 'Please enter your full name.');
+    }
+    if (!addressLine1) {
+      return errorJson(400, 'Street address is required.', {
+        details: {
+          _errors: [],
+          addressLine1: { _errors: ['Street address is required.'] },
+        },
+      });
+    }
+    if (!city) {
+      return errorJson(400, 'City is required.', {
+        details: {
+          _errors: [],
+          city: { _errors: ['City is required.'] },
+        },
+      });
+    }
+    if (!state) {
+      return errorJson(400, 'State / Province is required.', {
+        details: {
+          _errors: [],
+          state: { _errors: ['State / Province is required.'] },
+        },
+      });
+    }
+    if (!zipCode) {
+      return errorJson(400, 'ZIP / Postal code is required.', {
+        details: {
+          _errors: [],
+          zipCode: { _errors: ['ZIP / Postal code is required.'] },
+        },
+      });
     }
     const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
     if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
@@ -972,7 +1041,6 @@ export async function handlePublicRoutes(
         extraFields.mobile = rawPhone;
       }
       if (rawNotes) {
-        extraFields.notes = rawNotes;
         extraFields.householdNotes = rawNotes;
       }
 

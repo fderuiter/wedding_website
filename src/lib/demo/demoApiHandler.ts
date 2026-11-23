@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
 import {
   buildArchetypeSeedData,
@@ -27,6 +28,17 @@ import {
   normalizeMealSelections,
   normalizePlusOneNames,
 } from '@/utils/rsvpPrompts';
+import {
+  ADDRESS_LINE_MAX_LENGTH,
+  CITY_MAX_LENGTH,
+  COUNTRY_MAX_LENGTH,
+  GUEST_NAME_MAX_LENGTH,
+  HOUSEHOLD_NAME_MAX_LENGTH,
+  normalizePartyTags,
+  PHONE_MAX_LENGTH,
+  STATE_MAX_LENGTH,
+  ZIP_CODE_MAX_LENGTH,
+} from '@/utils/invitationValidation';
 import { DEMO_SHIPPING_ADDRESS } from './demoSeed';
 import {
   applyDemoSampleSelection,
@@ -59,6 +71,73 @@ let demoIdSequence = 0;
 function nextDemoId(prefix: string): string {
   demoIdSequence += 1;
   return `${prefix}-${Date.now()}-${demoIdSequence}`;
+}
+
+const DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN = /[<>]|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+const DEMO_PHONE_PATTERN = /^\+?[\d\s()./-]{7,30}$/;
+const DEMO_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateDemoInvitationCode(length = 8): string {
+  let code = '';
+  for (let i = 0; i < length; i += 1) {
+    code += DEMO_CODE_CHARS[Math.floor(Math.random() * DEMO_CODE_CHARS.length)];
+  }
+  return code;
+}
+
+function createRequiredDemoPostalField(max: number, label: string) {
+  return z
+    .string({ message: `${label} is required.` })
+    .refine((val) => !DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN.test(val), {
+      message: `${label} cannot contain HTML brackets or control characters.`,
+    })
+    .trim()
+    .min(1, `${label} is required and must be under ${max} characters.`)
+    .max(max, `${label} is required and must be under ${max} characters.`);
+}
+
+function createOptionalDemoPostalField(max: number, label: string) {
+  return z
+    .string()
+    .refine((val) => !DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN.test(val), {
+      message: `${label} cannot contain HTML brackets or control characters.`,
+    })
+    .trim()
+    .max(max, `${label} must be under ${max} characters.`)
+    .optional()
+    .or(z.literal(''))
+    .nullable();
+}
+
+const DemoPublicAddressCollectSchema = z.object({
+  guestName: createRequiredDemoPostalField(GUEST_NAME_MAX_LENGTH, 'Guest name'),
+  email: z.string().trim().email('Invalid email address.').optional().or(z.literal('')).nullable(),
+  phone: z
+    .string()
+    .trim()
+    .max(PHONE_MAX_LENGTH, `Phone number must be under ${PHONE_MAX_LENGTH} characters.`)
+    .refine(
+      (val) => {
+        if (!val) return true;
+        if (!DEMO_PHONE_PATTERN.test(val)) return false;
+        return val.replace(/\D/g, '').length >= 7;
+      },
+      { message: 'Invalid phone number format.' }
+    )
+    .optional()
+    .nullable(),
+  addressLine1: createRequiredDemoPostalField(ADDRESS_LINE_MAX_LENGTH, 'Street address'),
+  addressLine2: createOptionalDemoPostalField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
+  city: createRequiredDemoPostalField(CITY_MAX_LENGTH, 'City'),
+  state: createRequiredDemoPostalField(STATE_MAX_LENGTH, 'State / Province'),
+  zipCode: createRequiredDemoPostalField(ZIP_CODE_MAX_LENGTH, 'ZIP / Postal code'),
+  country: createOptionalDemoPostalField(COUNTRY_MAX_LENGTH, 'Country'),
+  householdName: createOptionalDemoPostalField(HOUSEHOLD_NAME_MAX_LENGTH, 'Household name'),
+  notes: z.string().trim().max(1000, 'Notes must be under 1000 characters.').optional().or(z.literal('')).nullable(),
+});
+
+function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
+  return normalizePartyTags(partyTags).includes('address-collection');
 }
 
 function escapeDemoHtml(input: string): string {
@@ -95,10 +174,17 @@ function formatDemoEmailHtml(text: string): string {
   return `<div style="font-family:Georgia,serif;color:#1f2937;line-height:1.6;">${paragraphs}</div>`;
 }
 
-function jsonResponse(payload: unknown, status = 200): Response {
+function jsonResponse(
+  payload: unknown,
+  status = 200,
+  extraHeaders?: Record<string, string>
+): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    },
   });
 }
 
@@ -168,6 +254,80 @@ function getStaticDemoRouteRequest(): StaticDemoRouteRequestFn | null {
     }
   ).__STATIC_DEMO_INSTALLED__;
   return typeof installed?.routeRequest === 'function' ? installed.routeRequest : null;
+}
+
+function upsertInvitationsIntoStaticDemoStore(records: InvitationCodeDTO[]): void {
+  if (typeof window === 'undefined' || records.length === 0) return;
+  const store = (
+    window as Window & {
+      __STATIC_DEMO_INSTALLED__?: {
+        store?: {
+          mutate?: (
+            mutator: (draft: {
+              invitationCode: Array<Record<string, unknown>>;
+            }) => void
+          ) => void;
+        };
+      };
+    }
+  ).__STATIC_DEMO_INSTALLED__?.store;
+  if (typeof store?.mutate !== 'function') return;
+  const nowIso = new Date().toISOString();
+  store.mutate((draft) => {
+    for (const dto of records) {
+      const existing = draft.invitationCode.find(
+        (inv) => inv.id === dto.id || String(inv.code || '').toUpperCase() === dto.code.toUpperCase()
+      );
+      if (existing) {
+        existing.guestName = dto.guestName;
+        existing.householdName = dto.householdName ?? '';
+        existing.email = dto.email ?? null;
+        existing.addressLine1 = dto.addressLine1 ?? null;
+        existing.addressLine2 = dto.addressLine2 ?? null;
+        existing.city = dto.city ?? null;
+        existing.state = dto.state ?? null;
+        existing.zipCode = dto.zipCode ?? null;
+        existing.country = dto.country ?? null;
+        existing.dietaryNotes = dto.dietaryNotes ?? null;
+        existing.partyGroup = dto.partyGroup ?? '';
+        existing.partyTags = [...(dto.partyTags ?? [])];
+        existing.plusOneAllocations = dto.plusOneAllocations ?? 0;
+        if (dto.extraFields !== undefined) {
+          existing.extraFields = dto.extraFields;
+        }
+        existing.updatedAt = nowIso;
+      } else {
+        draft.invitationCode.push({
+          id: dto.id,
+          code: dto.code,
+          guestName: dto.guestName,
+          householdName: dto.householdName ?? '',
+          email: dto.email ?? null,
+          addressLine1: dto.addressLine1 ?? null,
+          addressLine2: dto.addressLine2 ?? null,
+          city: dto.city ?? null,
+          state: dto.state ?? null,
+          zipCode: dto.zipCode ?? null,
+          country: dto.country ?? null,
+          dietaryNotes: dto.dietaryNotes ?? null,
+          plusOneAllocations: dto.plusOneAllocations ?? 0,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          partyGroup: dto.partyGroup ?? '',
+          partyTags: [...(dto.partyTags ?? [])],
+          extraFields: dto.extraFields ?? null,
+          used: Boolean(dto.used),
+          usedAt: null,
+          tableId: dto.tableId ?? null,
+          seatNumber: dto.seatNumber ?? null,
+          plusOneSeatNumbers: dto.plusOneSeatNumbers ?? [],
+          isSample: Boolean(dto.isSample),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+    }
+  });
 }
 
 async function delegateToStaticDemoRouter(
@@ -538,6 +698,26 @@ async function handleDemoApi(
     const rawCode = url.searchParams.get('code') || '';
     const matched = findDemoGuestByCode(rawCode);
     if (!matched) {
+      const trimmedUpper = rawCode.trim().toUpperCase();
+      const envPasscode =
+        typeof process !== 'undefined' && typeof process.env?.GUEST_PASSCODE === 'string'
+          ? process.env.GUEST_PASSCODE.trim().toUpperCase()
+          : '';
+      if (trimmedUpper === 'WEDDING2026' || (envPasscode && trimmedUpper === envPasscode)) {
+        const guidanceError =
+          'That is the shared website passcode. Please enter the personal household invitation code printed on your invitation.';
+        return jsonResponse({
+          valid: false,
+          success: true,
+          reason: 'shared_passcode',
+          error: guidanceError,
+          data: {
+            valid: false,
+            reason: 'shared_passcode',
+            error: guidanceError,
+          },
+        });
+      }
       return jsonResponse(
         {
           valid: false,
@@ -567,14 +747,15 @@ async function handleDemoApi(
   if (path === '/api/registry/session') {
     if (method === 'GET') {
       const session = getDemoState().guestSession;
-      if (!session) {
+      const activeGuest = session ? findDemoGuestByCode(session.invitationCode) : null;
+      if (!session || !activeGuest) {
         return jsonResponse({ isVerified: false, invitationCode: '', guestName: '' });
       }
       return jsonResponse({
         isVerified: true,
-        invitationCode: session.invitationCode,
-        code: session.invitationCode,
-        guestName: session.guestName,
+        invitationCode: activeGuest.code,
+        code: activeGuest.code,
+        guestName: activeGuest.guestName,
       });
     }
     if (method === 'DELETE') {
@@ -586,7 +767,8 @@ async function handleDemoApi(
   if (path === '/api/guest/session') {
     if (method === 'GET') {
       const session = getDemoState().guestSession;
-      if (!session) {
+      const activeGuest = session ? findDemoGuestByCode(session.invitationCode) : null;
+      if (!session || !activeGuest) {
         return jsonResponse({
           status: 'none',
           isVerified: false,
@@ -599,9 +781,9 @@ async function handleDemoApi(
       return jsonResponse({
         status: 'invitation',
         isVerified: true,
-        invitationCode: session.invitationCode,
-        code: session.invitationCode,
-        guestName: session.guestName,
+        invitationCode: activeGuest.code,
+        code: activeGuest.code,
+        guestName: activeGuest.guestName,
         hasPasscodeSession: false,
       });
     }
@@ -621,11 +803,13 @@ async function handleDemoApi(
   if (path === '/api/schedule' && method === 'GET') {
     const demoState = getDemoState();
     const seed = buildArchetypeSeedData(demoState.archetype);
-    const session = demoState.guestSession;
-    const normalizedCode = session?.invitationCode?.trim().toUpperCase() || '';
+    const rawSession = demoState.guestSession;
+    const normalizedCode = rawSession?.invitationCode?.trim().toUpperCase() || '';
     const matchedGuest = normalizedCode ? findDemoGuestByCode(normalizedCode) : null;
-    const seedGuest = normalizedCode
-      ? seed.guests.find((g) => g.code.toUpperCase() === normalizedCode)
+    const session = rawSession && matchedGuest ? rawSession : null;
+    const activeCode = session ? matchedGuest!.code.toUpperCase() : '';
+    const seedGuest = activeCode
+      ? seed.guests.find((g) => g.code.toUpperCase() === activeCode)
       : undefined;
     const guestDietaryNotes = (
       matchedGuest?.dietaryNotes ||
@@ -642,8 +826,8 @@ async function handleDemoApi(
       })
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
       .map((evt) => {
-        const override = normalizedCode
-          ? demoState.rsvpOverrides[`${demoState.archetype}:${normalizedCode}:${evt.id}`]
+        const override = activeCode
+          ? demoState.rsvpOverrides[`${demoState.archetype}:${activeCode}:${evt.id}`]
           : undefined;
         const seededRsvp = seedGuest
           ? evt.rsvps.find((entry) => entry.invitationCodeId === seedGuest.id) ?? null
@@ -697,7 +881,7 @@ async function handleDemoApi(
       success: true,
       data: schedule,
       isGuest: Boolean(session),
-      guestName: session?.guestName || null,
+      guestName: matchedGuest?.guestName || session?.guestName || null,
       plusOneAllocations: session
         ? (matchedGuest?.plusOneAllocations ?? seedGuest?.plusOneAllocations ?? 0)
         : null,
@@ -713,7 +897,10 @@ async function handleDemoApi(
   if (path === '/api/rsvp' && method === 'POST') {
     const demoState = getDemoState();
     const session = demoState.guestSession;
-    if (!session || !session.invitationCode) {
+    const matchedGuest = session?.invitationCode
+      ? findDemoGuestByCode(session.invitationCode)
+      : null;
+    if (!session || !session.invitationCode || !matchedGuest) {
       return jsonResponse(
         { error: 'Unauthorized: Please log in with your invitation code to submit RSVPs.' },
         401
@@ -740,11 +927,10 @@ async function handleDemoApi(
     }
 
     const seed = buildArchetypeSeedData(demoState.archetype);
-    const normalizedCode = session.invitationCode.trim().toUpperCase();
-    const matchedGuest = findDemoGuestByCode(normalizedCode);
+    const normalizedCode = matchedGuest.code.trim().toUpperCase();
     const seedGuest = seed.guests.find((g) => g.code.toUpperCase() === normalizedCode);
     const fallbackDietary = (
-      matchedGuest?.dietaryNotes ||
+      matchedGuest.dietaryNotes ||
       seedGuest?.dietaryNotes ||
       ''
     ).trim();
@@ -802,13 +988,91 @@ async function handleDemoApi(
     });
   }
 
-  // 4. Guest Address Portal
+  // 4. Guest Address Portal & Public Address Collection
+  if (path === '/api/guest/address/public' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    if (!body.guestName && typeof body.name === 'string') body.guestName = body.name;
+    if (!body.addressLine1 && typeof body.streetAddress === 'string') {
+      body.addressLine1 = body.streetAddress;
+    }
+    if (!body.zipCode && typeof body.postalCode === 'string') body.zipCode = body.postalCode;
+    if (!body.notes && typeof body.householdNotes === 'string') body.notes = body.householdNotes;
+    if (!body.phone && typeof body.mobile === 'string') body.phone = body.mobile;
+    if (!body.phone && typeof body.phoneNumber === 'string') body.phone = body.phoneNumber;
+
+    const honeypotVal = body.website || body.honeypot || body.hp_field || body.confirm_email;
+    if (typeof honeypotVal === 'string' && honeypotVal.trim().length > 0) {
+      return jsonResponse({ success: true, message: 'Address submitted successfully.' });
+    }
+
+    const parseResult = DemoPublicAddressCollectSchema.safeParse(body);
+    if (!parseResult.success) {
+      const errorMsg = parseResult.error.issues[0]?.message || 'Invalid address input.';
+      return jsonResponse(
+        { success: false, error: errorMsg, details: z.formatError(parseResult.error) },
+        400
+      );
+    }
+
+    const payload = parseResult.data;
+    const existingCodes = new Set(
+      getActiveArchetypeDataset().guests.map((g) => g.code.toUpperCase())
+    );
+    let uniqueCode = generateDemoInvitationCode();
+    let attempts = 0;
+    while (existingCodes.has(uniqueCode.toUpperCase()) && attempts < 10) {
+      uniqueCode = generateDemoInvitationCode();
+      attempts += 1;
+    }
+
+    const extraFields: Record<string, string> = {};
+    if (payload.phone?.trim()) {
+      extraFields.phone = payload.phone.trim();
+      extraFields.mobile = payload.phone.trim();
+    }
+    if (payload.notes?.trim()) {
+      extraFields.householdNotes = payload.notes.trim();
+    }
+
+    const createdGuest: InvitationCodeDTO = {
+      id: nextDemoId('demo-collect'),
+      code: uniqueCode,
+      guestName: payload.guestName.trim(),
+      email: payload.email?.trim() || null,
+      addressLine1: payload.addressLine1 || null,
+      addressLine2: payload.addressLine2 || null,
+      city: payload.city || null,
+      state: payload.state || null,
+      zipCode: payload.zipCode || null,
+      country: payload.country || null,
+      householdName: payload.householdName || '',
+      dietaryNotes: null,
+      ...(Object.keys(extraFields).length > 0 ? { extraFields } : {}),
+      partyGroup: '',
+      partyTags: ['address-collection'],
+      plusOneAllocations: 0,
+      used: false,
+      isSample: false,
+    };
+
+    mutateActiveDataset((current) => ({
+      ...current,
+      guests: [...current.guests, createdGuest],
+    }));
+    upsertInvitationsIntoStaticDemoStore([createdGuest]);
+
+    return jsonResponse({
+      success: true,
+      message: 'Address submitted successfully.',
+    });
+  }
+
   if (path === '/api/guest/address') {
     const session = getDemoState().guestSession;
-    if (!session) {
+    const guest = session ? findDemoGuestByCode(session.invitationCode) : null;
+    if (!session || !guest) {
       return jsonResponse({ success: false, error: 'Authentication required.' }, 401);
     }
-    const guest = findDemoGuestByCode(session.invitationCode);
     if (method === 'GET') {
       return jsonResponse({
         success: true,
@@ -1123,17 +1387,27 @@ async function handleDemoApi(
             (g.city || '').toLowerCase().includes(search)
         );
       }
+      const effectiveLimit = limitParam > 0 ? limitParam : Math.max(50, guests.length);
       const limited = limitParam > 0 ? guests.slice(0, limitParam) : guests;
-      return jsonResponse({
-        success: true,
-        data: {
-          items: limited,
-          total: guests.length,
-          page: 1,
-          limit: limitParam > 0 ? limitParam : Math.max(50, guests.length),
-          totalPages: 1,
+      return jsonResponse(
+        {
+          success: true,
+          data: {
+            items: limited,
+            total: guests.length,
+            page: 1,
+            limit: effectiveLimit,
+            totalPages: 1,
+          },
         },
-      });
+        200,
+        {
+          'X-Total-Count': String(guests.length),
+          'X-Page': '1',
+          'X-Limit': String(effectiveLimit),
+          'X-Total-Pages': '1',
+        }
+      );
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
@@ -1156,8 +1430,52 @@ async function handleDemoApi(
         ...current,
         guests: [...current.guests, newGuest],
       }));
+      upsertInvitationsIntoStaticDemoStore([newGuest]);
       return jsonResponse({ success: true, data: newGuest }, 201);
     }
+  }
+
+  if (path === '/api/admin/invitation-codes/batch' && method === 'POST') {
+    const body = await parseJsonBody(init);
+    const ids = Array.isArray(body.ids)
+      ? body.ids.filter((id): id is string => typeof id === 'string')
+      : [];
+    const idSet = new Set(ids);
+    const cleanTags = normalizePartyTags(body.tags, { dedupe: true });
+    const action = body.action === 'remove' || body.action === 'replace' ? body.action : 'add';
+    const updatedRecords: InvitationCodeDTO[] = [];
+
+    if (idSet.size > 0) {
+      mutateActiveDataset((current) => ({
+        ...current,
+        guests: current.guests.map((guest) => {
+          if (!idSet.has(guest.id)) return guest;
+          const existing = normalizePartyTags(guest.partyTags, { dedupe: true });
+          const nextTags =
+            action === 'replace'
+              ? [...cleanTags]
+              : action === 'remove'
+                ? existing.filter((tag) => !cleanTags.includes(tag))
+                : Array.from(new Set([...existing, ...cleanTags]));
+          const updated: InvitationCodeDTO = { ...guest, partyTags: nextTags };
+          updatedRecords.push(updated);
+          return updated;
+        }),
+      }));
+      upsertInvitationsIntoStaticDemoStore(updatedRecords);
+    }
+
+    return jsonResponse({
+      success: true,
+      count: updatedRecords.length,
+      updatedCount: updatedRecords.length,
+      records: updatedRecords,
+      data: {
+        count: updatedRecords.length,
+        updatedCount: updatedRecords.length,
+        records: updatedRecords,
+      },
+    });
   }
 
   if (path === '/api/admin/invitation-codes/import' && method === 'POST') {
@@ -1183,6 +1501,7 @@ async function handleDemoApi(
         ...current,
         guests: [...current.guests, ...created],
       }));
+      upsertInvitationsIntoStaticDemoStore(created);
     }
     return jsonResponse({
       success: true,
@@ -1341,7 +1660,9 @@ async function handleDemoApi(
       );
     });
     const storyAndScheduleCompleted = customStoryConfigured && hasPublicScheduleEvent;
-    const guestListCompleted = dataset.guests.some((g) => !g.isSample);
+    const guestListCompleted = dataset.guests.some(
+      (g) => !g.isSample && !isDemoAddressCollectionOnly(g.partyTags)
+    );
     const registryCompleted = dataset.registryItems.some((i) => !i.isSample);
     const seatingCompleted = dataset.seatingTables.some((t) => !t.isSample);
     const faqCompleted = dataset.faqs.some((n) => n.type === 'FAQ' && !n.data.isSample);

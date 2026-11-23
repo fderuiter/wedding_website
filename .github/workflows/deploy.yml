@@ -46,11 +46,6 @@ on:
         required: false
         default: 'google-cloud-run'
         type: string
-      rollback_environment:
-        description: 'Optional unguarded GitHub Environment holding rollback secrets'
-        required: false
-        default: ''
-        type: string
       dry_run:
         description: 'Run release provider deployment in explicit dry-run validation mode'
         required: false
@@ -152,6 +147,7 @@ jobs:
         if: "(github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.image_tag != ''"
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve Target Commit SHA
         id: resolve-sha
@@ -197,7 +193,15 @@ jobs:
                 exit 1
               fi
               if git remote get-url origin >/dev/null 2>&1; then
-                git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+                GIT_AUTH_ARGS=()
+                ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+                EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+                if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+                  ORIGIN_SERVER="${BASH_REMATCH[0]}"
+                  BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+                  GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+                fi
+                git "${GIT_AUTH_ARGS[@]}" fetch --tags origin +refs/heads/main:refs/remotes/origin/main
               fi
               if [[ "$INPUT_IMAGE_TAG" =~ ^[a-fA-F0-9]{40}$ ]]; then
                 IMAGE_TAG_SHA=$(printf '%s' "$INPUT_IMAGE_TAG" | tr '[:upper:]' '[:lower:]')
@@ -446,10 +450,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Align Workspace to Verified Commit SHA
         if: github.event_name == 'workflow_run' || inputs.image_tag != '' || inputs.release_ref != '' || inputs.image_digest != '' || needs.ci-gate.outputs.target_sha != github.sha
         env:
+          GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
           RELEASE_REF: ${{ inputs.release_ref }}
@@ -461,6 +467,15 @@ jobs:
             exit 1
           fi
 
+          GIT_AUTH_ARGS=()
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+            ORIGIN_SERVER="${BASH_REMATCH[0]}"
+            BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+          fi
+
           if [ "$EVENT_NAME" = "workflow_run" ] || { [ -n "${INPUT_IMAGE_TAG:-}" ] && [ -z "${INPUT_IMAGE_DIGEST:-}" ] && [ -z "${RELEASE_REF:-}" ]; }; then
             if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
               echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
@@ -468,7 +483,7 @@ jobs:
             fi
           elif [ -n "${RELEASE_REF:-}" ] && [ -z "${INPUT_IMAGE_DIGEST:-}" ]; then
             if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
-              git fetch --no-tags origin "+refs/tags/v*:refs/tags/v*" 2>/dev/null || true
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "+refs/tags/v*:refs/tags/v*" 2>/dev/null || true
               MATCHING_TAG=$(git tag --list 'v*' --points-at "$TARGET_SHA" | head -n 1 || true)
               if [ -z "$MATCHING_TAG" ]; then
                 echo "::error::Target commit ${TARGET_SHA} is neither an ancestor of ${GITHUB_REF} nor pointed to by a v* release tag."
@@ -476,11 +491,11 @@ jobs:
               fi
             fi
             if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
-              git fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
             fi
           else
             if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
-              git fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
             fi
             if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
               echo "::error::Signed source revision ${TARGET_SHA} does not exist in repository ${GITHUB_REPOSITORY}."
@@ -590,7 +605,7 @@ jobs:
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       cloud_run_service: ${{ inputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
-      rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
+      rollback_environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
@@ -635,6 +650,6 @@ jobs:
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       cloud_run_service: ${{ inputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
-      rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
+      rollback_environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
