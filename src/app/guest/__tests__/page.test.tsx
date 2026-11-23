@@ -33,8 +33,8 @@ describe('GuestAddressPage (/guest)', () => {
 
     render(<GuestAddressPage />);
 
-    expect(await screen.findByText('Guest RSVP & Address Portal')).toBeInTheDocument();
-    expect(screen.getByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(screen.getByText('Guest RSVP & Address Portal')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Access Guest Portal/i })).toBeInTheDocument();
   });
 
@@ -348,8 +348,8 @@ describe('GuestAddressPage (/guest)', () => {
     });
 
     // Session is reset, returns to invitation code entry form
-    expect(await screen.findByText('Guest RSVP & Address Portal')).toBeInTheDocument();
-    expect(screen.getByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Invitation Code')).toBeInTheDocument();
+    expect(screen.getByText('Guest RSVP & Address Portal')).toBeInTheDocument();
   });
 
   it('renders both personalized RSVP controls (public + authorized private SubEvents) and mailing address form when visiting /guest?code=<valid_code>', async () => {

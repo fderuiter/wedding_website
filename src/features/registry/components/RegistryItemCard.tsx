@@ -1890,7 +1890,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               </span>
               <Icon
                 name="ChevronDown"
-                className={`w-4 h-4 text-gray-500 transition-transform ${
+                className={`w-4 h-4 text-muted-text transition-transform ${
                   isReturnAddressOpen ||
                   fieldErrors.addressLine1 ||
                   fieldErrors.addressLine2 ||
@@ -2099,7 +2099,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   <li key={idx}>
                     <span className="font-medium">{c.name}</span>{' '}
                     {c.amount ? `(${formatCurrency(c.amount)})` : ''}
-                    {c.date ? <span className="ml-1 text-gray-400">{formatDate(c.date)}</span> : null}
+                    {c.date ? <span className="ml-1 text-muted-text">{formatDate(c.date)}</span> : null}
                   </li>
                 ))}
               </ul>

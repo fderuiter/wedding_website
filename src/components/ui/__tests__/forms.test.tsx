@@ -226,13 +226,13 @@ test('Form components apply CSS custom properties for default and feedback state
   const message = screen.getByTestId('message');
 
   expect(label.className).toContain('text-[var(--form-label-text,var(--color-primary-text,#111827))]');
-  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
   expect(input.className).toContain('bg-[var(--input-bg,#ffffff)]');
   expect(input.style.borderRadius).toBe('var(--input-radius, 0.375rem)');
-  expect(textarea.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
-  expect(select.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
-  expect(checkbox.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
-  expect(message.className).toContain('text-[var(--form-message-text,var(--color-secondary-text,#6b7280))]');
+  expect(textarea.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
+  expect(select.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
+  expect(checkbox.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
+  expect(message.className).toContain('text-[var(--form-message-text,var(--color-muted-text,#4b5563))]');
 
   // Rerender with error state
   rerender(
@@ -244,7 +244,7 @@ test('Form components apply CSS custom properties for default and feedback state
   );
 
   expect(screen.getByTestId('label').className).toContain('text-[var(--form-error-text,var(--color-error-text,#dc2626))]');
-  expect(screen.getByTestId('input').className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-error-border,var(--color-error-text,#dc2626))]');
   expect(screen.getByTestId('message').className).toContain('text-[var(--form-error-text,var(--color-error-text,#dc2626))]');
 
   // Rerender with success state
@@ -256,9 +256,9 @@ test('Form components apply CSS custom properties for default and feedback state
     </FormGroup>
   );
 
-  expect(screen.getByTestId('label').className).toContain('text-[var(--form-success-text,#16a34a)]');
-  expect(screen.getByTestId('input').className).toContain('border-[var(--input-success-border,#22c55e)]');
-  expect(screen.getByTestId('message').className).toContain('text-[var(--form-success-text,#16a34a)]');
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-success-text,var(--color-status-success-text,#166534))]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-success-border,var(--color-status-success-text,#15803d))]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-success-text,var(--color-status-success-text,#166534))]');
 
   // Rerender with warning state
   rerender(
@@ -269,9 +269,9 @@ test('Form components apply CSS custom properties for default and feedback state
     </FormGroup>
   );
 
-  expect(screen.getByTestId('label').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
-  expect(screen.getByTestId('input').className).toContain('border-[var(--input-warning-border,#f59e0b)]');
-  expect(screen.getByTestId('message').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-warning-text,var(--color-warning-text,#78350f))]');
+  expect(screen.getByTestId('input').className).toContain('border-[var(--input-warning-border,var(--color-warning-text,#b45309))]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-warning-text,var(--color-warning-text,#78350f))]');
 });
 
 test('Standalone Input renders outside of FormGroup without throwing', () => {
@@ -282,7 +282,7 @@ test('Standalone Input renders outside of FormGroup without throwing', () => {
   expect(input.id).toBeTruthy();
   expect(input).not.toHaveAttribute('aria-describedby');
   expect(input).toHaveAttribute('aria-invalid', 'false');
-  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
   expect(input.className).toContain('bg-[var(--input-bg,#ffffff)]');
   expect(input.className).toContain('h-10 px-3 py-2 text-sm');
 });
@@ -299,22 +299,22 @@ test('Standalone Input generates fallback unique identifier with useId when id i
 test('Standalone Input applies explicit feedback state styles and aria-invalid', () => {
   const { rerender } = render(<Input data-testid="input" state="default" />);
   let input = screen.getByTestId('input');
-  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
+  expect(input.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
   expect(input).toHaveAttribute('aria-invalid', 'false');
 
   rerender(<Input data-testid="input" state="error" />);
   input = screen.getByTestId('input');
-  expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+  expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#dc2626))]');
   expect(input).toHaveAttribute('aria-invalid', 'true');
 
   rerender(<Input data-testid="input" state="warning" />);
   input = screen.getByTestId('input');
-  expect(input.className).toContain('border-[var(--input-warning-border,#f59e0b)]');
+  expect(input.className).toContain('border-[var(--input-warning-border,var(--color-warning-text,#b45309))]');
   expect(input).toHaveAttribute('aria-invalid', 'false');
 
   rerender(<Input data-testid="input" state="success" />);
   input = screen.getByTestId('input');
-  expect(input.className).toContain('border-[var(--input-success-border,#22c55e)]');
+  expect(input.className).toContain('border-[var(--input-success-border,var(--color-status-success-text,#15803d))]');
   expect(input).toHaveAttribute('aria-invalid', 'false');
 });
 
@@ -337,7 +337,7 @@ test('Input inside FormGroup allows explicit state and sizeVariant prop override
     </FormGroup>
   );
   const input = screen.getByTestId('input-override');
-  expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+  expect(input.className).toContain('border-[var(--input-error-border,var(--color-error-text,#dc2626))]');
   expect(input.className).toContain('h-7 px-2 py-1 text-xs');
   expect(input).toHaveAttribute('aria-invalid', 'true');
 });
