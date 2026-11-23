@@ -29,7 +29,7 @@ To distinguish officially verified deployment targets from community-maintained 
 | [**Google Cloud Run**](./gcp-cloud-run.md) | Container / Serverless | **Tier 1 — Officially Tested** | `ghcr.io` digest image + `.github/workflows/deploy.yml` |
 | [**Vercel**](./vercel.md) | Serverless Node / Edge | **Tier 1 — Officially Tested** | Next.js serverless runtime adapter |
 | [**Railway & Render**](./railway-render.md) | PaaS Target | **Tier 2 — Community Supported** | Container image / Nixpacks build |
-| [**GitHub Pages**](../../.github/workflows/ci.yml) | Static Documentation Portal | **Tier 1 — Officially Tested** | Static docs + `.github/workflows/ci.yml` |
+| [**GitHub Pages**](../../.github/workflows/ci.yml) | Unified Portal, Static Demo & Storybook | **Tier 1 — Officially Tested** | VitePress + `/demo/` + `/storybook/` via `.github/workflows/ci.yml` |
 
 ---
 
@@ -39,20 +39,21 @@ To distinguish officially verified deployment targets from community-maintained 
 *   [**Google Cloud Run Deployment Guide**](./gcp-cloud-run.md): Fully managed serverless container target deploying immutable `ghcr.io` OCI digests to isolated Cloud Run services (`wedding-website-staging` and `wedding-website`, configurable via `CLOUD_RUN_SERVICE` / `CLOUD_RUN_REGION`) using Workload Identity Federation OIDC (or `GCP_SA_KEY` fallback), GCP Secret Manager, and Cloud SQL.
 *   [**Vercel Deployment Guide**](./vercel.md): Serverless Node.js deployment target with serverless PostgreSQL connection pooling.
 *   [**Railway & Render PaaS Guide**](./railway-render.md): Low-friction PaaS deployment targets with integrated database provisioning.
-*   [**GitHub Pages Workflow**](../../.github/workflows/ci.yml): Automated workflow for publishing static documentation portals with official GitHub Pages actions.
+*   [**GitHub Pages Workflow**](../../.github/workflows/ci.yml): Automated workflow compiling the VitePress documentation portal (`/`), interactive static demo (`/demo/` via `static-export-build`), and Storybook component showcase (`/storybook/` via `storybook-build`) in parallel CI jobs and publishing a unified bundle via `deploy-docs`.
 
 ---
 
 ## GitHub Pages Deployment Prerequisites
 
-To publish static documentation portals to GitHub Pages using the automated workflow (`.github/workflows/ci.yml`), ensure the following repository settings are configured in GitHub:
+To publish the unified documentation portal (`/`), interactive static demo (`/demo/`), and Storybook component showcase (`/storybook/`) to GitHub Pages using the automated workflow (`.github/workflows/ci.yml`), ensure the following repository settings are configured in GitHub:
 
 1. **Enable GitHub Actions Pages Source**:
    - In GitHub, navigate to repository **Settings** > **Pages**.
    - Under **Build and deployment** > **Source**, select **GitHub Actions** (rather than "Deploy from a branch").
+   - Both default repository subpaths (`/<repo>/`, `/<repo>/demo/`, `/<repo>/storybook/`) and custom domains (`/`, `/demo/`, `/storybook/`) are detected automatically via `actions/configure-pages` and `NEXT_PUBLIC_BASE_PATH`.
 2. **Environment Configuration**:
    - Verify that the `github-pages` deployment environment is created or permitted under repository **Settings** > **Environments**.
-   - Review or configure deployment branch rules and protection gates if needed (by default, deployments run on pushes to `main`).
+   - Review or configure deployment branch rules and protection gates if needed (by default, `deploy-docs` runs on pushes to `main` and published releases after `verify`, `static-export-build`, `storybook-build`, and `static-demo-e2e` succeed, verifying `index.html`, `demo/index.html`, `storybook/index.html`, and `.nojekyll` before upload).
 3. **Workflow Permissions**:
    - The `.github/workflows/ci.yml` workflow explicitly requires `contents: read`, `pages: write`, and `id-token: write` for the `deploy-docs` job.
    - Ensure repository settings under **Settings** > **Actions** > **General** > **Workflow permissions** permit workflows to read and write tokens.

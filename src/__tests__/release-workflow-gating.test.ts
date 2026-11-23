@@ -104,8 +104,12 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
     expect(ciWorkflow).toMatch(
-      /deploy-docs:\n\s+needs:\s*\[verify,\s*static-demo-e2e\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
+      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build, static-demo-e2e\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
     );
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/demo/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/storybook/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/.nojekyll');
     expect(ciWorkflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');
@@ -124,7 +128,9 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(a11ySection).toContain('run: node scripts/a11y-report.mjs --require-static-demo');
 
     const deployDocsSection = ciWorkflow.split(/\n  deploy-docs:\n/)[1] ?? '';
-    expect(deployDocsSection).toContain('needs: [verify, static-demo-e2e]');
+    expect(deployDocsSection).toContain(
+      'needs: [verify, static-export-build, storybook-build, static-demo-e2e]'
+    );
 
     const trivyMatches =
       ciWorkflow.match(/aquasecurity\/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25/g) ?? [];
@@ -150,6 +156,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).not.toContain('services:');
     expect(staticExportJob).toContain('path: .next-export/cache');
     expect(staticExportJob).toContain('npm run build:export');
+    expect(staticExportJob).toContain('name: demo-static');
 
     // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);

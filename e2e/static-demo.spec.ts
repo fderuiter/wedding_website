@@ -95,7 +95,14 @@ function collectExportedDemoHtmlRoutes(demoDir: string): string[] {
         walk(fullPath);
       } else if (entry.isFile() && entry.name.endsWith('.html')) {
         const rel = path.relative(demoDir, fullPath).split(path.sep).join('/');
-        if (rel === '404.html' || rel === '_not-found.html' || rel === 'docs.html') {
+        if (
+          rel === '404.html' ||
+          rel === '404/index.html' ||
+          rel === '_not-found.html' ||
+          rel === '_not-found/index.html' ||
+          rel === 'docs.html' ||
+          rel === 'docs/index.html'
+        ) {
           continue;
         }
         if (rel === 'index.html') {

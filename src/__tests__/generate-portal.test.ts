@@ -129,10 +129,13 @@ describe('Portal Documentation Generator & Development Section', () => {
     const configContent = fs.readFileSync(configPath, 'utf8');
 
     expect(configContent).toContain('base: normalizeBasePath(process.env.VITEPRESS_BASE)');
+    expect(configContent).toContain("{ text: 'Live Demo', link: '/demo/', target: '_self' }");
+    expect(configContent).toContain("{ text: 'Storybook', link: '/storybook/', target: '_self' }");
     expect(configContent).toContain("{ text: 'Development', link: '/development/developer-setup' }");
-    expect(configContent).toContain('ignoreDeadLinks: false');
+    expect(configContent).toContain('ignoreDeadLinks: [/^\\/demo(?:\\/|$)/, /^\\/storybook(?:\\/|$)/]');
     expect(configContent).toContain("env: 'dotenv'");
     expect(configContent).toContain("caddy: 'nginx'");
+    expect(configContent).toContain("cron: 'shellscript'");
     expect(configContent).toContain("attrSet('v-pre', '')");
   });
 
@@ -149,12 +152,15 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(configContent).toContain("{ text: 'Changelog', link: '/guides/changelog' }");
   });
 
-  it('verifies docs-portal/index.md contains Developer Onboarding feature card', () => {
+  it('verifies docs-portal/index.md contains Developer Onboarding feature card and full-page showcase links', () => {
     const indexPath = path.join(rootDir, 'docs-portal/index.md');
     const indexContent = fs.readFileSync(indexPath, 'utf8');
 
     expect(indexContent).toContain('title: Developer Onboarding');
     expect(indexContent).toContain('link: /development/developer-setup');
+    expect(indexContent).toContain('link: /demo/');
+    expect(indexContent).toContain('link: /storybook/');
+    expect(indexContent).toContain('target: _self');
   });
 
   it('verifies staged documents exist and route AGENTS.md, README.md, and CHANGELOG.md internally', () => {

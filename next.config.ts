@@ -45,6 +45,7 @@ const nextConfig: NextConfig = {
   // Support dual-mode build: output: 'standalone' by default, 'export' for static showcases
   output: isStaticExport ? 'export' : 'standalone',
   distDir: isStaticExport ? '.next-export' : '.next',
+  trailingSlash: isStaticExport ? true : undefined,
   typescript: {
     tsconfigPath: './tsconfig.build.json',
   },

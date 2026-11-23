@@ -122,7 +122,8 @@ function main() {
   const hasAssembledDemo =
     fs.existsSync(path.join(DIST_DIR, 'index.html')) &&
     fs.existsSync(path.join(DEMO_DIR, 'index.html')) &&
-    fs.existsSync(path.join(DEMO_DIR, 'weather.html'));
+    (fs.existsSync(path.join(DEMO_DIR, 'weather.html')) ||
+      fs.existsSync(path.join(DEMO_DIR, 'weather', 'index.html')));
 
   if (forceBuild || !hasAssembledDemo) {
     buildStaticBundle();
