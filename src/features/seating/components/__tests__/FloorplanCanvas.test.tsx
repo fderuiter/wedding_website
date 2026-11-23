@@ -1452,10 +1452,11 @@ describe('FloorplanCanvas component', () => {
       expect(parseFloat(tableEl.style.width)).toBeGreaterThan(500);
       expect(parseFloat(tableEl.style.height)).toBeGreaterThan(500);
 
-      // Rotation handle sits at -top-[68px] (center -54px), >=36px clear of top seat (center -18px)
+      // Rotation handle sits at -top-[76px] (center -62px, counter-rotated), >=44px clear of top seat (center -18px)
       const rotationHandle = screen.getByTestId('rotation-handle');
-      expect(rotationHandle.className).toContain('-top-[68px]');
+      expect(rotationHandle.className).toContain('-top-[76px]');
       expect(rotationHandle.firstElementChild?.className).toContain('w-7 h-7 rounded-full');
+      expect((rotationHandle.firstElementChild as HTMLElement).style.transform).toContain('rotate(-45deg)');
 
       // Counter-rotated inline floating toolbar so directional buttons follow screen axes
       const floatingToolbar = screen.getByRole('toolbar', {

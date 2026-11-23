@@ -511,7 +511,7 @@ export function ReceptionSlideshowClient({
 
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium text-stone-200">
           <span>{photos.length > 0 ? safeIndex + 1 : 0}</span>
-          <span className="text-stone-500">/</span>
+          <span className="text-stone-300">/</span>
           <span>{photos.length}</span>
         </div>
       </div>
@@ -597,7 +597,7 @@ export function ReceptionSlideshowClient({
             <button
               type="button"
               onClick={() => setShowQrCode(false)}
-              className="p-1 rounded-full text-stone-400 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="p-1 rounded-full text-stone-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Dismiss QR code overlay"
               data-testid="slideshow-qr-close-btn"
             >

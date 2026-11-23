@@ -383,7 +383,7 @@ function SeatingChartAdminContent() {
               <Icon
                 name="Search"
                 size={16}
-                className="text-gray-500 dark:text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                className="text-muted-text absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
               />
               {searchQuery && (
                 <Button
@@ -392,7 +392,7 @@ function SeatingChartAdminContent() {
                   size="sm"
                   onClick={() => setSearchQuery('')}
                   aria-label="Clear search query"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 !h-7 !w-7 min-w-6 min-h-6 !p-0 text-gray-700 hover:text-gray-900 dark:text-gray-200 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 !h-7 !w-7 min-w-6 min-h-6 !p-0 text-muted-text hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   <Icon name="X" size={14} />
                 </Button>

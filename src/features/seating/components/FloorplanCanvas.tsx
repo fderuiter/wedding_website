@@ -1304,8 +1304,8 @@ function FloorplanCanvasContent({
           const rad = (renderedRotation * Math.PI) / 180;
           const rotatedHalfExtentY =
             Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad)) + (isLandmark ? 8 : 34);
-          const handleScreenExtentAbove = (cy + 54) * Math.cos(rad) + 16;
-          const handleScreenExtentBelow = -(cy + 54) * Math.cos(rad) + 16;
+          const handleScreenExtentAbove = (cy + 62) * Math.cos(rad) + 16;
+          const handleScreenExtentBelow = -(cy + 62) * Math.cos(rad) + 16;
           const clearanceAboveCenter = Math.max(rotatedHalfExtentY, handleScreenExtentAbove) + 21;
           const clearanceBelowCenter = Math.max(rotatedHalfExtentY, handleScreenExtentBelow) + 21;
           const placeToolbarBelow = renderedY + cy - clearanceAboveCenter < 14;
@@ -1627,10 +1627,10 @@ function FloorplanCanvasContent({
                       </Button>
                     </div>
 
-                    {/* Floating Handle Stem and Knob (positioned clear of top-center seats) */}
+                    {/* Floating Handle Stem and Knob (positioned clear of top-center seats across all rotation angles) */}
                     <div
                       data-testid="rotation-handle"
-                      className="absolute pointer-events-auto -top-[68px] left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none z-40"
+                      className="absolute pointer-events-auto -top-[76px] left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none z-40"
                       onPointerDown={(e) => handleRotationPointerDown(e, table)}
                       onPointerMove={handleCanvasPointerMove}
                       onPointerUp={handleCanvasPointerUp}
@@ -1643,13 +1643,16 @@ function FloorplanCanvasContent({
                         tabIndex={0}
                         aria-label={`Rotate handle for ${table.name}`}
                         className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center shadow-md hover:scale-110 touch-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+                        style={{
+                          transform: renderedRotation ? `rotate(${-renderedRotation}deg)` : undefined,
+                        }}
                         onPointerDown={(e) => handleRotationPointerDown(e, table)}
                         onMouseDown={(e) => handleRotationMouseDown(e, table)}
                         onKeyDown={(e) => handleTableKeyDown(e, table)}
                       >
                         <Icon name="RotateCw" size={14} />
                       </button>
-                      <div className="w-0.5 h-1.5 bg-primary pointer-events-none" />
+                      <div className="w-0.5 h-3.5 bg-primary pointer-events-none" />
                     </div>
                   </>
                 )}

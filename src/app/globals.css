@@ -120,6 +120,22 @@
   --dialog-title-color: var(--color-foreground);
   --dialog-desc-color: #4B5563;
 
+  --btn-outline-border: #6b7280;
+  --input-bg: #ffffff;
+  --input-border: #6b7280;
+  --input-focus-ring: #b91c1c;
+  --input-error-border: #dc2626;
+  --input-error-focus-ring: #dc2626;
+  --input-success-border: #15803d;
+  --input-success-focus-ring: #15803d;
+  --input-warning-border: #b45309;
+  --input-warning-focus-ring: #b45309;
+  --form-label-text: #111827;
+  --form-message-text: #4b5563;
+  --form-error-text: #b91c1c;
+  --form-success-text: #166534;
+  --form-warning-text: #78350f;
+
   --print-bg: #FFFFFF;
   --print-text: #111827;
   --print-border: #E5E7EB;
@@ -197,8 +213,9 @@
   --dialog-title-color: var(--color-foreground);
   --dialog-desc-color: #9CA3AF;
 
+  --btn-outline-border: #9ca3af;
   --input-bg: #1f2937;
-  --input-border: #4b5563;
+  --input-border: #9ca3af;
   --input-focus-ring: #f9fafb;
   --input-error-border: #f87171;
   --input-error-focus-ring: #f87171;

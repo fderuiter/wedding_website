@@ -338,7 +338,7 @@ function HistoryTimelineContent({
               <TableBody>
                 {loadingHistory && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-gray-500 py-4">Loading broadcast logs...</TableCell>
+                    <TableCell colSpan={6} className="text-center text-muted-text py-4">Loading broadcast logs...</TableCell>
                   </TableRow>
                 )}
                 {!loadingHistory && broadcastHistory.length === 0 && (
@@ -363,7 +363,7 @@ function HistoryTimelineContent({
                     </TableCell>
                     <TableCell>
                       <div className="font-semibold text-sm max-w-xs truncate">{item.subject || 'SMS Alert'}</div>
-                      <div className="text-xs text-gray-500 max-w-xs truncate">{item.body}</div>
+                      <div className="text-xs text-muted-text max-w-xs truncate">{item.body}</div>
                     </TableCell>
                     <TableCell className="text-sm">
                       <span className="font-semibold">{item.sentCount}</span> / {item.totalRecipients} sent
@@ -446,13 +446,13 @@ function HistoryTimelineContent({
 
             {resolvedBroadcast.subject && (
               <div>
-                <span className="text-xs font-semibold text-gray-500 uppercase block">Subject:</span>
+                <span className="text-xs font-semibold text-muted-text uppercase block">Subject:</span>
                 <p className="font-semibold text-sm">{resolvedBroadcast.subject}</p>
               </div>
             )}
 
             <div>
-              <span className="text-xs font-semibold text-gray-500 uppercase block mb-1">Body:</span>
+              <span className="text-xs font-semibold text-muted-text uppercase block mb-1">Body:</span>
               <div className="p-3 bg-gray-100 dark:bg-zinc-800 text-xs font-mono rounded whitespace-pre-wrap">
                 {resolvedBroadcast.body}
               </div>

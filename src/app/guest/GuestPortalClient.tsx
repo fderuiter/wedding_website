@@ -7,7 +7,7 @@ import InteractiveTimeline, {
 import { Button } from '@/components/ui/Button';
 import { FormGroup, FormMessage, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
-import { useOptionalToast, useToast } from '@/components/ui/ToastProvider';
+import { useToast } from '@/components/ui/ToastProvider';
 import {
   GuestHelpTrigger,
   getSafeHostEmailLink,
@@ -15,9 +15,6 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { useTheme } from '@/components/ThemeProvider';
 import { useGuestAddressPortal } from '@/hooks/useGuestAddressPortal';
-
-const usePortalToastContext =
-  typeof useOptionalToast === 'function' ? useOptionalToast : useToast;
 
 export default function GuestAddressPage() {
   const {
@@ -33,7 +30,7 @@ export default function GuestAddressPage() {
     isAuthenticated,
   } = useGuestAddressPortal();
   const theme = useTheme();
-  const toastContext = usePortalToastContext();
+  const toastContext = useToast();
   const [rsvpStatus, setRsvpStatus] = useState<ScheduleRsvpStatusInfo | null>(null);
 
   const emailContact = useMemo(
@@ -55,9 +52,7 @@ export default function GuestAddressPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--color-background)] px-4 py-12">
-        <h1 aria-label="Guest RSVP & Address Portal" className="sr-only">
-          Loading Guest RSVP &amp; Address Portal
-        </h1>
+        <h1 className="sr-only">Guest RSVP &amp; Address Portal</h1>
         <div className="flex flex-col items-center gap-3" role="status" aria-live="polite">
           <Icon name="Loader2" className="animate-spin h-8 w-8 text-[var(--color-primary-text)] dark:text-red-300" />
           <p className="text-sm font-medium text-gray-600 dark:text-zinc-300">

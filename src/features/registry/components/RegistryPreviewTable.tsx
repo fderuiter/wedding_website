@@ -167,7 +167,7 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
                           }}
                         />
                       ) : (
-                        <span className="text-xs text-stone-400">No img</span>
+                        <span className="text-xs text-muted-text">No img</span>
                       )}
                     </div>
                   </td>
@@ -323,7 +323,7 @@ export const RegistryPreviewTable: React.FC<RegistryPreviewTableProps> = ({
                   <td className="px-3 py-3 align-top whitespace-nowrap">
                     {isEditing ? (
                       <div className="relative">
-                        <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-xs text-stone-500 pointer-events-none">
+                        <span className="absolute inset-y-0 left-0 pl-2 flex items-center text-xs text-muted-text pointer-events-none">
                           $
                         </span>
                         <input

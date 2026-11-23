@@ -317,12 +317,13 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
       'dark:text-primary-text',
       'text-secondary',
       'dark:text-secondary-text',
+      'text-muted-text',
       'bg-primary',
       'from-primary',
       'btn-secondary',
     ]);
 
-    // Foreground utilities bind to calibrated --color-primary-text / --color-secondary-text
+    // Foreground utilities bind to calibrated --color-primary-text / --color-secondary-text / --color-muted-text
     expect(builtCss).toMatch(/\.text-primary\s*\{[^}]*color:\s*var\(--color-primary-text\)/);
     expect(builtCss).toMatch(/\.dark\\:text-primary[^{]*\{[^}]*color:\s*var\(--color-primary-text\)/);
     expect(builtCss).toMatch(
@@ -332,6 +333,7 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
     expect(builtCss).toMatch(
       /\.dark\\:text-secondary-text[^{]*\{[^}]*color:\s*var\(--color-secondary-text\)/
     );
+    expect(builtCss).toMatch(/\.text-muted-text\s*\{[^}]*color:\s*var\(--color-muted-text\)/);
 
     // Solid background and gradient utilities keep --color-primary
     expect(builtCss).toMatch(/\.bg-primary\s*\{[^}]*background-color:\s*var\(--color-primary\)/);
@@ -558,6 +560,69 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
           expect(getContrastRatio(hexToRgb(dimmedText), hexToRgb(dimmedBg))).toBeGreaterThanOrEqual(4.5);
         }
       }
+    }
+  });
+
+  it('calibrates dark ghost/outline hover surfaces and translucent bg-white/* containers to WCAG 2.2 AA', () => {
+    const css = generateThemeStylesheet(sampleConfig);
+    const styleEl = document.createElement('style');
+    styleEl.textContent = css;
+    document.head.appendChild(styleEl);
+
+    const prevHtmlClass = document.documentElement.className;
+    document.documentElement.className = 'dark';
+
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <button id="dark-ghost-btn" class="hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] text-primary">Nav Link</button>
+      <div id="white-80-pill" class="bg-white/80 text-muted-text">Overlay Pill</div>
+      <div id="white-70-pill" class="bg-white/70 text-muted-text">Translucent Pill</div>
+      <div id="paired-dark-pill" class="bg-white/80 dark:bg-gray-900/80 text-muted-text">Paired Pill</div>
+    `;
+    document.body.appendChild(host);
+
+    try {
+      const ghostPrimary = getComputedStyle(document.getElementById('dark-ghost-btn')!)
+        .getPropertyValue('--color-primary-text')
+        .trim();
+      const ghostMuted = getComputedStyle(document.getElementById('dark-ghost-btn')!)
+        .getPropertyValue('--color-muted-text')
+        .trim();
+
+      // Composite rgba(255,255,255,0.1) over #1F2937 (~#353E4B) and #111827 (~#292F3D)
+      expect(getContrastRatio(hexToRgb(ghostPrimary), hexToRgb('#1F2937'))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(ghostPrimary), hexToRgb('#353E4B'))).toBeGreaterThanOrEqual(4.5);
+      expect(getContrastRatio(hexToRgb(ghostMuted), hexToRgb('#353E4B'))).toBeGreaterThanOrEqual(4.5);
+
+      // Unpaired .bg-white/80 composited over pure black (#000000 -> #CCCCCC) maintains >= 4.5:1 text & >= 3.0:1 border
+      const pill80Style = getComputedStyle(document.getElementById('white-80-pill')!);
+      const pill80Fg = pill80Style.getPropertyValue('--color-foreground').trim();
+      const pill80Muted = pill80Style.getPropertyValue('--color-muted-text').trim();
+      const pill80Primary = pill80Style.getPropertyValue('--color-primary-text').trim();
+      const pill80Border = pill80Style.getPropertyValue('--color-surface-border').trim();
+
+      for (const backdrop of ['#CCCCCC', '#FFFFFF']) {
+        expect(getContrastRatio(hexToRgb(pill80Fg), hexToRgb(backdrop))).toBeGreaterThanOrEqual(4.5);
+        expect(getContrastRatio(hexToRgb(pill80Muted), hexToRgb(backdrop))).toBeGreaterThanOrEqual(4.5);
+        expect(getContrastRatio(hexToRgb(pill80Primary), hexToRgb(backdrop))).toBeGreaterThanOrEqual(4.5);
+        expect(getContrastRatio(hexToRgb(pill80Border), hexToRgb(backdrop))).toBeGreaterThanOrEqual(3.0);
+      }
+
+      // Unpaired .bg-white/70 composited over pure black (#000000 -> #B3B3B3) maintains >= 4.5:1 text
+      const pill70Muted = getComputedStyle(document.getElementById('white-70-pill')!)
+        .getPropertyValue('--color-muted-text')
+        .trim();
+      expect(getContrastRatio(hexToRgb(pill70Muted), hexToRgb('#B3B3B3'))).toBeGreaterThanOrEqual(4.5);
+
+      // Paired .bg-white/80.dark:bg-gray-900/80 still resolves dark surface calibration in dark mode
+      const pairedMuted = getComputedStyle(document.getElementById('paired-dark-pill')!)
+        .getPropertyValue('--color-muted-text')
+        .trim();
+      expect(getContrastRatio(hexToRgb(pairedMuted), hexToRgb('#111827'))).toBeGreaterThanOrEqual(4.5);
+    } finally {
+      host.remove();
+      styleEl.remove();
+      document.documentElement.className = prevHtmlClass;
     }
   });
 });
