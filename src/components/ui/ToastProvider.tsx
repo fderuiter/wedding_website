@@ -126,14 +126,14 @@ const ToastItem = ({ toast, onClose, duration = 5000 }: ToastItemProps) => {
           {toast.action && (
             <Button
               type="button"
-              variant="outline"
+              variant="inverse"
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 toast.action?.onClick();
                 onClose(toast.id);
               }}
-              className="text-xs px-2.5 py-1 bg-white/20 text-white hover:bg-white/30 border-white/40 focus:ring-1 focus:ring-white"
+              className="shrink-0 px-2.5"
             >
               {toast.action.label}
             </Button>

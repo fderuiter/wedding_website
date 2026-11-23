@@ -106,7 +106,7 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
         } \
         return "node_modules/" + depName; \
       } \
-      const queue = ["node_modules/@prisma/config", "node_modules/prisma"]; \
+      const queue = ["node_modules/@prisma/config", "node_modules/prisma", "node_modules/effect"]; \
       const visited = new Set(); \
       while (queue.length > 0) { \
         const key = queue.shift(); \
@@ -228,7 +228,7 @@ COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-p
 # Link ./node_modules/.bin/prisma (root:root), pre-create runtime cache/upload mountpoints, and strip setuid/setgid bits
 RUN mkdir -p /app/node_modules/.bin /app/.next/cache /app/public/uploads && \
     ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \
-    chown nextjs:nodejs /app/.next/cache /app/public/uploads && \
+    chown -R nextjs:nodejs /app/.next/cache /app/public/uploads && \
     find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
 USER nextjs
@@ -238,7 +238,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\*\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.js"]

@@ -31,7 +31,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The postinstall lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and updates architecture documentation.
+   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client.
 
 ---
 

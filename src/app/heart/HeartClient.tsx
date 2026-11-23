@@ -1,10 +1,10 @@
 'use client';
 
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { Environment, Html, Text } from '@react-three/drei';
+import { Environment, Html, Lightformer, Text } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import { Suspense, useRef, useState, useEffect } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { ActiveCollisionTypes, RigidBodyType } from '@dimforge/rapier3d-compat';
@@ -12,6 +12,7 @@ import { ActiveCollisionTypes, RigidBodyType } from '@dimforge/rapier3d-compat';
 import { useTheme } from '@/components/ThemeProvider';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
+import { HEART_FONT_URL } from './constants';
 import { Sparkles } from './components/Sparkles';
 import { Heart3D } from './components/Heart3D';
 import { ScreenBounds } from './components/ScreenBounds';
@@ -318,7 +319,13 @@ function PhysicsHeart({
       </RigidBody>
 
       {showEasterEgg && (
-        <Text position={[0, 0, 5]} fontSize={1.5} anchorX="center" anchorY="middle">
+        <Text
+          font={HEART_FONT_URL}
+          position={[0, 0, 5]}
+          fontSize={1.5}
+          anchorX="center"
+          anchorY="middle"
+        >
           I love you!
           <meshStandardMaterial color={accentColor} />
         </Text>
@@ -329,19 +336,44 @@ function PhysicsHeart({
 
 export type PerformanceTier = 'high' | 'medium' | 'low';
 
-function isWebGLAvailable() {
-  if (typeof window === 'undefined') return true;
+type TestableWindow = Window & {
+  __mockWebGLSupport?: boolean;
+};
+
+let cachedWebGL2Support: boolean | null = null;
+
+const subscribeToWebGLSupport = () => () => {};
+const getServerWebGLSnapshot = (): boolean | null => null;
+
+export function isWebGLAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
   if (process.env.NODE_ENV === 'test') {
-    if ((window as any).__mockWebGLSupport === false) return false;
-    return true;
+    const testWindow = window as TestableWindow;
+    if (testWindow.__mockWebGLSupport !== undefined) {
+      return Boolean(testWindow.__mockWebGLSupport);
+    }
+    if (!('WebGL2RenderingContext' in window)) {
+      return true;
+    }
+  } else if (cachedWebGL2Support !== null) {
+    return cachedWebGL2Support;
   }
+
   try {
     const canvas = document.createElement('canvas');
-    return !!(
-      window.WebGLRenderingContext &&
-      (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
-    );
+    const gl = window.WebGL2RenderingContext ? canvas.getContext('webgl2') : null;
+    const supported = Boolean(gl);
+    if (gl && typeof gl.getExtension === 'function') {
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+    if (process.env.NODE_ENV !== 'test') {
+      cachedWebGL2Support = supported;
+    }
+    return supported;
   } catch {
+    if (process.env.NODE_ENV !== 'test') {
+      cachedWebGL2Support = false;
+    }
     return false;
   }
 }
@@ -517,6 +549,14 @@ function PerformanceTracker({
   return null;
 }
 
+function SceneReadyNotifier({ onReady }: { onReady: () => void }) {
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+
+  return null;
+}
+
 /**
  * @page HeartPage
  * @description An interactive, physics-based 3D heart page using `@react-three/fiber` and `@react-three/rapier`.
@@ -535,8 +575,16 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
   const [interacted, setInteracted] = useState(false);
   const [scale, setScale] = useState(0.6);
   const [resetKey, setResetKey] = useState(0);
-  const [webglSupported, setWebglSupported] = useState(true);
+  const [sceneReady, setSceneReady] = useState(false);
+  const webglSupported = useSyncExternalStore(
+    subscribeToWebGLSupport,
+    isWebGLAvailable,
+    getServerWebGLSnapshot,
+  );
   const [performanceTier, setPerformanceTier] = useState<PerformanceTier>('high');
+  const markSceneReady = useCallback(() => {
+    setSceneReady(true);
+  }, []);
 
   const { overlayRef } = useOverlay(true, () => {});
 
@@ -545,15 +593,6 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
     setPerformanceTier('high');
     setResetKey((prevKey) => prevKey + 1);
   };
-
-  useEffect(() => {
-    const supported = isWebGLAvailable();
-    if (!supported) {
-      setTimeout(() => {
-        setWebglSupported(false);
-      }, 0);
-    }
-  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -566,7 +605,7 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  if (!webglSupported) {
+  if (webglSupported === false) {
     return (
       <div ref={overlayRef} className="fixed inset-0 bg-black select-none" data-testid="webgl-fallback-container">
         <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
@@ -607,33 +646,82 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
           Back Home
         </Link>
       </div>
-      <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
-        <ambientLight intensity={lighting?.ambientIntensity ?? 0.8} />
-        <directionalLight position={[5, 8, 5]} intensity={lighting?.directionalIntensity ?? 1.6} />
-        <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
-        <Suspense fallback={<Html>Loading…</Html>}>
-          <Physics key={resetKey} gravity={[0, 0, 0]}>
-            {performanceTier !== 'low' && <Sparkles />}
-            {performanceTier !== 'low' && <Environment preset="sunset" />}
-            <PhysicsHeart 
-              scale={scale} 
-              interacted={interacted} 
-              onInteract={() => setInteracted(true)} 
-              primaryColor={themePrimary}
-              secondaryColor={themeSecondary}
-              accentColor={themeAccent}
-              partner1Name={p1}
-              partner2Name={p2}
-            />
-            <ScreenBounds />
-          </Physics>
-          {performanceTier === 'high' && (
-            <EffectComposer>
-              <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
-            </EffectComposer>
-          )}
-        </Suspense>
-      </Canvas>
+      {!sceneReady && (
+        <div
+          data-testid="heart-loading-overlay"
+          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-sm text-white"
+        >
+          Loading…
+        </div>
+      )}
+      {webglSupported && (
+        <Canvas camera={{ position: [0, 0, 15], fov: 50 }} dpr={[1, 2]} gl={{ localClippingEnabled: true }}>
+          <ambientLight intensity={lighting?.ambientIntensity ?? 0.8} />
+          <directionalLight position={[5, 8, 5]} intensity={lighting?.directionalIntensity ?? 1.6} />
+          <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
+          <Suspense fallback={null}>
+            <Physics key={resetKey} gravity={[0, 0, 0]}>
+              {performanceTier !== 'low' && <Sparkles />}
+              {performanceTier !== 'low' && (
+                <Environment frames={1} resolution={256}>
+                  <Lightformer
+                    form="ring"
+                    intensity={2.5}
+                    color="#ffd6a5"
+                    position={[0, 4, 8]}
+                    scale={6}
+                  />
+                  <Lightformer
+                    form="rect"
+                    intensity={2}
+                    color="#ff9e6d"
+                    position={[8, 3, 4]}
+                    scale={[10, 6, 1]}
+                  />
+                  <Lightformer
+                    form="rect"
+                    intensity={1.5}
+                    color="#ff758f"
+                    position={[-8, 2, 4]}
+                    scale={[10, 6, 1]}
+                  />
+                  <Lightformer
+                    form="rect"
+                    intensity={1.2}
+                    color="#fff1d0"
+                    position={[0, 8, -4]}
+                    scale={[12, 8, 1]}
+                  />
+                  <Lightformer
+                    form="circle"
+                    intensity={1}
+                    color="#c77dff"
+                    position={[0, -6, -6]}
+                    scale={10}
+                  />
+                </Environment>
+              )}
+              <PhysicsHeart
+                scale={scale}
+                interacted={interacted}
+                onInteract={() => setInteracted(true)}
+                primaryColor={themePrimary}
+                secondaryColor={themeSecondary}
+                accentColor={themeAccent}
+                partner1Name={p1}
+                partner2Name={p2}
+              />
+              <ScreenBounds />
+            </Physics>
+            {performanceTier === 'high' && (
+              <EffectComposer>
+                <Bloom mipmapBlur intensity={0.5} luminanceThreshold={0.35} luminanceSmoothing={0.9} />
+              </EffectComposer>
+            )}
+            <SceneReadyNotifier onReady={markSceneReady} />
+          </Suspense>
+        </Canvas>
+      )}
     </div>
   );
 }
