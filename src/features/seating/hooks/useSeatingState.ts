@@ -15,9 +15,12 @@ import {
   resolveDetailedSeatAssignments,
 } from '../seatLayout';
 import {
+  getDefaultShapeDimensions,
   getGuestPartySize,
   getGuestsHeadcount,
   isGuestEligibleForSeating,
+  isLandmarkTable,
+  isLandmarkTableShape,
 } from '../utils/seatingHelpers';
 import { withBasePath } from '@/lib/basePath';
 
@@ -33,6 +36,7 @@ export interface GuestSeatSnapshot {
   invitationCodeId: string;
   tableId: string | null;
   seatNumber: number | null;
+  plusOneSeatNumbers?: number[];
 }
 
 export interface SeatingUndoSnapshot {
@@ -58,6 +62,7 @@ export type SeatingAction =
       guestId: string;
       tableId: string | null;
       seatNumber: number | null;
+      plusOneSeatNumbers?: number[];
       pushUndo?: boolean;
       snapshotLabel?: string;
     };
@@ -69,6 +74,7 @@ export type SeatingAction =
       guestId: string;
       tableId?: string | null;
       seatNumber?: number | null;
+      plusOneSeatNumbers?: number[];
       displacedGuest?: {
         guestId: string;
         seatNumber?: number | null;
@@ -83,6 +89,7 @@ export type SeatingAction =
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
         [key: string]: any;
       }>;
     };
@@ -102,6 +109,7 @@ export type SeatingAction =
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
         [key: string]: any;
       }>;
     };
@@ -132,10 +140,254 @@ export type SeatingAction =
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
       }>;
       previousUndoStack?: SeatingUndoSnapshot[];
     };
   };
+
+function extractArrayPayload<T>(json: unknown): T[] {
+  if (Array.isArray(json)) return json as T[];
+  if (json && typeof json === 'object') {
+    const record = json as { items?: unknown; data?: unknown };
+    if (Array.isArray(record.items)) {
+      return record.items as T[];
+    }
+    if (
+      record.data &&
+      typeof record.data === 'object' &&
+      Array.isArray((record.data as { items?: unknown }).items)
+    ) {
+      return (record.data as { items: T[] }).items;
+    }
+    if (Array.isArray(record.data)) {
+      return record.data as T[];
+    }
+  }
+  return [];
+}
+
+function dedupeById<T extends { id?: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (item && typeof item.id === 'string') {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+function extractNumericMeta(json: unknown, key: 'total' | 'totalPages' | 'limit'): number | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const record = json as Record<string, unknown>;
+  const direct = record[key];
+  if (typeof direct === 'number' && Number.isInteger(direct)) {
+    return direct;
+  }
+  const metaObj = record.meta;
+  if (metaObj && typeof metaObj === 'object' && !Array.isArray(metaObj)) {
+    const metaVal = (metaObj as Record<string, unknown>)[key];
+    if (typeof metaVal === 'number' && Number.isInteger(metaVal)) {
+      return metaVal;
+    }
+  }
+  const nestedData = record.data;
+  if (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)) {
+    const nestedRecord = nestedData as Record<string, unknown>;
+    const nested = nestedRecord[key];
+    if (typeof nested === 'number' && Number.isInteger(nested)) {
+      return nested;
+    }
+    const nestedMeta = nestedRecord.meta;
+    if (nestedMeta && typeof nestedMeta === 'object' && !Array.isArray(nestedMeta)) {
+      const nestedMetaVal = (nestedMeta as Record<string, unknown>)[key];
+      if (typeof nestedMetaVal === 'number' && Number.isInteger(nestedMetaVal)) {
+        return nestedMetaVal;
+      }
+    }
+  }
+  return null;
+}
+
+function detectRemainingPageCount(
+  res: Response,
+  json: unknown,
+  firstBatchLength: number
+): {
+  needsPagination: boolean;
+  totalCount: number | null;
+} {
+  const hasHeaders = Boolean(res.headers && typeof res.headers.get === 'function');
+  const rawTotal = hasHeaders ? res.headers.get('X-Total-Count') : null;
+  const parsedHeaderTotal = rawTotal !== null ? Number(rawTotal) : NaN;
+  const bodyTotal = extractNumericMeta(json, 'total');
+  const resolvedTotal = Number.isInteger(parsedHeaderTotal) ? parsedHeaderTotal : bodyTotal;
+
+  if (resolvedTotal !== null) {
+    if (resolvedTotal > firstBatchLength) {
+      return { needsPagination: true, totalCount: resolvedTotal };
+    }
+    if (resolvedTotal >= firstBatchLength && firstBatchLength > 0) {
+      return { needsPagination: false, totalCount: resolvedTotal };
+    }
+    if (resolvedTotal === 0 && firstBatchLength === 0) {
+      return { needsPagination: false, totalCount: 0 };
+    }
+  }
+
+  if (hasHeaders && res.headers.get('X-Has-Next-Page') === 'true') {
+    return { needsPagination: true, totalCount: null };
+  }
+
+  const rawTotalPages = hasHeaders ? res.headers.get('X-Total-Pages') : null;
+  const parsedTotalPages = rawTotalPages !== null ? Number(rawTotalPages) : NaN;
+  const bodyTotalPages = extractNumericMeta(json, 'totalPages');
+  const resolvedTotalPages = Number.isInteger(parsedTotalPages)
+    ? parsedTotalPages
+    : bodyTotalPages;
+  if (resolvedTotalPages !== null && resolvedTotalPages > 1) {
+    return { needsPagination: true, totalCount: null };
+  }
+
+  return { needsPagination: false, totalCount: null };
+}
+
+async function fetchRemainingPages<T extends { id?: string }>(
+  endpoint: string,
+  firstBatch: T[],
+  totalCount: number | null
+): Promise<T[]> {
+  const PAGE_LIMIT = 100;
+
+  // Re-fetch from skip=0 with deterministic primary-key ordering (`orderBy=id&orderDir=asc`)
+  // so records sharing identical `createdAt` timestamps in PostgreSQL cannot shift across pages.
+  if (totalCount !== null && totalCount > firstBatch.length) {
+    const offsets: number[] = [];
+    for (let skip = 0; skip < totalCount; skip += PAGE_LIMIT) {
+      offsets.push(skip);
+    }
+    const pageResponses = await Promise.all(
+      offsets.map((skip, idx) =>
+        fetch(
+          withBasePath(
+            `${endpoint}?page=${idx + 1}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+          )
+        )
+      )
+    );
+    for (const r of pageResponses) {
+      if (!r.ok) {
+        throw new Error('Failed to load seating chart data.');
+      }
+    }
+    const pagePayloads = await Promise.all(pageResponses.map((r) => r.json()));
+    const combined: T[] = [];
+    for (const payload of pagePayloads) {
+      combined.push(...extractArrayPayload<T>(payload));
+    }
+    combined.push(...firstBatch);
+    return dedupeById(combined);
+  }
+
+  const combined: T[] = [];
+  let skip = 0;
+  let page = 1;
+  // Sequential fallback when X-Has-Next-Page is present without X-Total-Count
+  while (true) {
+    const nextRes = await fetch(
+      withBasePath(
+        `${endpoint}?page=${page}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+      )
+    );
+    if (!nextRes.ok) {
+      throw new Error('Failed to load seating chart data.');
+    }
+    const nextJson = await nextRes.json();
+    const nextBatch = extractArrayPayload<T>(nextJson);
+    if (nextBatch.length === 0) break;
+    combined.push(...nextBatch);
+    skip += nextBatch.length;
+    page += 1;
+    const stillHasNext =
+      nextRes.headers && typeof nextRes.headers.get === 'function'
+        ? nextRes.headers.get('X-Has-Next-Page') === 'true'
+        : false;
+    if (!stillHasNext || nextBatch.length < PAGE_LIMIT) {
+      break;
+    }
+  }
+  combined.push(...firstBatch);
+  return dedupeById(combined);
+}
+
+async function fetchRemainingCatalogPages<T extends { id?: string }>(
+  endpoint: string,
+  firstBatch: T[],
+  totalCount: number | null,
+  initialLimit: number
+): Promise<T[]> {
+  const pageLimit = Math.min(1000, Math.max(1, initialLimit));
+
+  // Re-fetch catalog pages ordered deterministically by unique `code` (`orderBy=code&orderDir=asc`)
+  if (totalCount !== null && totalCount > firstBatch.length) {
+    const totalPages = Math.ceil(totalCount / pageLimit);
+    const pages = Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    const pageResponses = await Promise.all(
+      pages.map((page) =>
+        fetch(
+          withBasePath(`${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`)
+        )
+      )
+    );
+    for (const r of pageResponses) {
+      if (!r.ok) {
+        throw new Error('Failed to load seating chart data.');
+      }
+    }
+    const pagePayloads = await Promise.all(pageResponses.map((r) => r.json()));
+    const combined: T[] = [];
+    for (const payload of pagePayloads) {
+      combined.push(...extractArrayPayload<T>(payload));
+    }
+    combined.push(...firstBatch);
+    return dedupeById(combined);
+  }
+
+  const combined: T[] = [];
+  let page = 1;
+  while (true) {
+    const nextRes = await fetch(
+      withBasePath(`${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`)
+    );
+    if (!nextRes.ok) {
+      throw new Error('Failed to load seating chart data.');
+    }
+    const nextJson = await nextRes.json();
+    const nextBatch = extractArrayPayload<T>(nextJson);
+    if (nextBatch.length === 0) break;
+    combined.push(...nextBatch);
+    const bodyTotalPages = extractNumericMeta(nextJson, 'totalPages');
+    const headerTotalPages =
+      nextRes.headers && typeof nextRes.headers.get === 'function'
+        ? Number(nextRes.headers.get('X-Total-Pages'))
+        : NaN;
+    const resolvedTotalPages = Number.isInteger(headerTotalPages)
+      ? headerTotalPages
+      : bodyTotalPages;
+    if (
+      (resolvedTotalPages !== null && page >= resolvedTotalPages) ||
+      nextBatch.length < pageLimit
+    ) {
+      break;
+    }
+    page += 1;
+  }
+  combined.push(...firstBatch);
+  return dedupeById(combined);
+}
 
 /**
  * Merges `tables[].invitationCodes` into `guestsList` so seated guests included on table payloads
@@ -276,7 +528,14 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       };
 
     case 'ASSIGN_GUEST_OPTIMISTIC': {
-      const { guestId, tableId, seatNumber, pushUndo, snapshotLabel } = action.payload;
+      const {
+        guestId,
+        tableId,
+        seatNumber,
+        plusOneSeatNumbers,
+        pushUndo,
+        snapshotLabel,
+      } = action.payload;
       const targetGuest = state.guests.find((g) => g.id === guestId);
 
       let nextUndoStack = state.undoStack || [];
@@ -290,15 +549,27 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
                 invitationCodeId: targetGuest.id,
                 tableId: targetGuest.tableId ?? null,
                 seatNumber: targetGuest.seatNumber ?? null,
+                ...(Array.isArray(targetGuest.plusOneSeatNumbers) &&
+                targetGuest.plusOneSeatNumbers.length > 0
+                  ? { plusOneSeatNumbers: targetGuest.plusOneSeatNumbers }
+                  : {}),
               },
             ],
           },
         ];
       }
-
       const nextGuests = state.guests.map((g) => {
         if (g.id === guestId) {
-          return { ...g, tableId, seatNumber };
+          return {
+            ...g,
+            tableId,
+            seatNumber,
+            ...(plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers }
+              : !tableId
+                ? { plusOneSeatNumbers: [] }
+                : {}),
+          };
         }
         if (
           tableId &&
@@ -335,10 +606,16 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
     }
 
     case 'REVERT_ASSIGN_GUEST': {
-      const { guestId, tableId, seatNumber, displacedGuest, popUndo } = action.payload;
+      const { guestId, tableId, seatNumber, plusOneSeatNumbers, displacedGuest, popUndo } =
+        action.payload;
       const nextGuests = state.guests.map((g) => {
         if (g.id === guestId) {
-          return { ...g, tableId: tableId ?? null, seatNumber: seatNumber ?? null };
+          return {
+            ...g,
+            tableId: tableId ?? null,
+            seatNumber: seatNumber ?? null,
+            ...(plusOneSeatNumbers !== undefined ? { plusOneSeatNumbers } : {}),
+          };
         }
         if (displacedGuest && g.id === displacedGuest.guestId) {
           return { ...g, seatNumber: displacedGuest.seatNumber ?? null };
@@ -374,6 +651,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             invitationCodeId: guest.id,
             tableId: guest.tableId ?? null,
             seatNumber: guest.seatNumber ?? null,
+            ...(Array.isArray(guest.plusOneSeatNumbers) && guest.plusOneSeatNumbers.length > 0
+              ? { plusOneSeatNumbers: guest.plusOneSeatNumbers }
+              : {}),
           });
         }
       }
@@ -386,6 +666,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...update,
             tableId: update.tableId !== undefined ? update.tableId : guest.tableId,
             seatNumber: update.seatNumber !== undefined ? update.seatNumber : guest.seatNumber,
+            ...(update.plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers: update.plusOneSeatNumbers }
+              : {}),
           };
         }
         return guest;
@@ -420,6 +703,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             invitationCodeId: guest.id,
             tableId: guest.tableId ?? null,
             seatNumber: guest.seatNumber ?? null,
+            ...(Array.isArray(guest.plusOneSeatNumbers) && guest.plusOneSeatNumbers.length > 0
+              ? { plusOneSeatNumbers: guest.plusOneSeatNumbers }
+              : {}),
           });
         }
       }
@@ -431,6 +717,7 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...guest,
             tableId: upd.tableId,
             seatNumber: upd.seatNumber,
+            plusOneSeatNumbers: upd.tableId ? (upd.plusOneSeatNumbers ?? []) : [],
           };
         }
         return guest;
@@ -466,6 +753,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...upd,
             tableId: upd.tableId !== undefined ? upd.tableId : guest.tableId,
             seatNumber: upd.seatNumber !== undefined ? upd.seatNumber : guest.seatNumber,
+            ...(upd.plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers: upd.plusOneSeatNumbers }
+              : {}),
           };
         }
         return guest;
@@ -492,6 +782,7 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...guest,
             tableId: prev.tableId,
             seatNumber: prev.seatNumber,
+            plusOneSeatNumbers: prev.plusOneSeatNumbers ?? [],
           };
         }
         return guest;
@@ -529,11 +820,19 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       // Track restored seats per table so any non-restored occupant on that seat gets displaced cleanly
       const claimedSeatsByTable = new Map<string, Set<number>>();
       for (const a of snapshot.assignments) {
-        if (a.tableId && typeof a.seatNumber === 'number') {
+        if (a.tableId) {
           if (!claimedSeatsByTable.has(a.tableId)) {
             claimedSeatsByTable.set(a.tableId, new Set());
           }
-          claimedSeatsByTable.get(a.tableId)!.add(a.seatNumber);
+          const tableSet = claimedSeatsByTable.get(a.tableId)!;
+          if (typeof a.seatNumber === 'number') {
+            tableSet.add(a.seatNumber);
+          }
+          if (Array.isArray(a.plusOneSeatNumbers)) {
+            for (const ps of a.plusOneSeatNumbers) {
+              if (typeof ps === 'number') tableSet.add(ps);
+            }
+          }
         }
       }
 
@@ -544,6 +843,7 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
             ...guest,
             tableId: restored.tableId,
             seatNumber: restored.seatNumber,
+            plusOneSeatNumbers: restored.tableId ? (restored.plusOneSeatNumbers ?? []) : [],
           };
         }
         if (
@@ -674,7 +974,9 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
     case 'DELETE_TABLE': {
       const { tableId } = action.payload;
       const nextGuests = state.guests.map((g) =>
-        g.tableId === tableId ? { ...g, tableId: null, seatNumber: null } : g
+        g.tableId === tableId
+          ? { ...g, tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
+          : g
       );
       const nextTables = state.tables
         .filter((t) => t.id !== tableId)
@@ -693,7 +995,14 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       const nextGuests = state.guests.map((g) => {
         const prev = affectedMap.get(g.id);
         if (prev) {
-          return { ...g, tableId: prev.tableId, seatNumber: prev.seatNumber };
+          return {
+            ...g,
+            tableId: prev.tableId,
+            seatNumber: prev.seatNumber,
+            ...(prev.plusOneSeatNumbers !== undefined
+              ? { plusOneSeatNumbers: prev.plusOneSeatNumbers }
+              : {}),
+          };
         }
         return g;
       });
@@ -744,6 +1053,7 @@ export interface UseSeatingStateReturn {
       id: string;
       tableId?: string | null;
       seatNumber?: number | null;
+      plusOneSeatNumbers?: number[];
       [key: string]: any;
     }>;
     assignedCount?: number;
@@ -753,58 +1063,6 @@ export interface UseSeatingStateReturn {
   deleteTable: (tableId: string) => Promise<boolean>;
   updateTablePosition: (tableId: string, x: number, y: number) => Promise<boolean>;
   updateTableRotation: (tableId: string, rotation: number) => Promise<boolean>;
-}
-
-function extractTablesFromPayload(payload: any): SeatingTableDTO[] {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.items)) return payload.items;
-  return [];
-}
-
-function extractGuestsFromPayload(payload: any): InvitationCodeDTO[] {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.data?.items)) return payload.data.items;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
-}
-
-function parseTotalPages(res: Response, payload: any): number {
-  const bodyPages =
-    typeof payload?.totalPages === 'number'
-      ? payload.totalPages
-      : typeof payload?.data?.totalPages === 'number'
-        ? payload.data.totalPages
-        : null;
-  if (bodyPages !== null && Number.isFinite(bodyPages) && bodyPages >= 1) {
-    return Math.floor(bodyPages);
-  }
-
-  const headerVal =
-    typeof res?.headers?.get === 'function'
-      ? (res.headers.get('X-Total-Pages') ?? res.headers.get('x-total-pages'))
-      : null;
-  if (headerVal) {
-    const parsed = parseInt(headerVal, 10);
-    if (Number.isFinite(parsed) && parsed >= 1) {
-      return parsed;
-    }
-  }
-  return 1;
-}
-
-function dedupeById<T extends { id?: string }>(items: T[]): T[] {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const item of items) {
-    if (!item?.id) continue;
-    if (!seen.has(item.id)) {
-      seen.add(item.id);
-      out.push(item);
-    }
-  }
-  return out;
 }
 
 export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatingStateReturn {
@@ -835,43 +1093,41 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const tablesData = await tablesRes.json();
       const guestsData = await guestsRes.json();
 
-      let allTables = extractTablesFromPayload(tablesData);
-      let allGuests = extractGuestsFromPayload(guestsData);
+      let allTables = extractArrayPayload<SeatingTableDTO>(tablesData);
+      let allGuests = extractArrayPayload<InvitationCodeDTO>(guestsData);
 
-      const tablesTotalPages = parseTotalPages(tablesRes, tablesData);
-      if (tablesTotalPages > 1) {
-        const extraTablePages = await Promise.all(
-          Array.from({ length: tablesTotalPages - 1 }, (_, idx) =>
-            fetch(withBasePath(`/api/admin/seating-tables?page=${idx + 2}`)).then(async (r) => {
-              if (!r.ok) throw new Error('Failed to load additional seating table pages.');
-              return extractTablesFromPayload(await r.json());
-            })
-          )
-        );
-        allTables = dedupeById([allTables, ...extraTablePages].flat());
-      }
+      const tablesPageInfo = detectRemainingPageCount(tablesRes, tablesData, allTables.length);
+      const guestsPageInfo = detectRemainingPageCount(guestsRes, guestsData, allGuests.length);
 
-      const guestsTotalPages = parseTotalPages(guestsRes, guestsData);
-      if (guestsTotalPages > 1) {
-        const pageLimit =
-          typeof guestsData?.limit === 'number' && guestsData.limit > 0
-            ? guestsData.limit
-            : typeof guestsData?.data?.limit === 'number' && guestsData.data.limit > 0
-              ? guestsData.data.limit
-              : 1000;
-        const extraGuestPages = await Promise.all(
-          Array.from({ length: guestsTotalPages - 1 }, (_, idx) =>
-            fetch(
-              withBasePath(`/api/admin/invitation-codes/catalog?limit=${pageLimit}&page=${idx + 2}`)
-            ).then(
-              async (r) => {
-                if (!r.ok) throw new Error('Failed to load additional guest pages.');
-                return extractGuestsFromPayload(await r.json());
-              }
+      if (tablesPageInfo.needsPagination || guestsPageInfo.needsPagination) {
+        const rawCatalogLimitHeader =
+          guestsRes.headers && typeof guestsRes.headers.get === 'function'
+            ? Number(guestsRes.headers.get('X-Limit'))
+            : NaN;
+        const catalogLimit =
+          Number.isInteger(rawCatalogLimitHeader) && rawCatalogLimitHeader > 0
+            ? rawCatalogLimitHeader
+            : extractNumericMeta(guestsData, 'limit') ?? (allGuests.length || 1000);
+
+        const [fullTables, fullGuests] = await Promise.all([
+          tablesPageInfo.needsPagination
+            ? fetchRemainingPages<SeatingTableDTO>(
+              '/api/admin/seating-tables',
+              allTables,
+              tablesPageInfo.totalCount
             )
-          )
-        );
-        allGuests = dedupeById([allGuests, ...extraGuestPages].flat());
+            : Promise.resolve(allTables),
+          guestsPageInfo.needsPagination
+            ? fetchRemainingCatalogPages<InvitationCodeDTO>(
+              '/api/admin/invitation-codes/catalog',
+              allGuests,
+              guestsPageInfo.totalCount,
+              catalogLimit
+            )
+            : Promise.resolve(allGuests),
+        ]);
+        allTables = fullTables;
+        allGuests = fullGuests;
       }
 
       dispatch({
@@ -912,6 +1168,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         id: string;
         tableId?: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
         [key: string]: any;
       }>;
       assignedCount?: number;
@@ -927,7 +1184,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     []
   );
 
-  // Seat assignment with party headcount validation, undo tracking on unassign, and granular rollback
+  // Seat assignment with party headcount validation, landmark guards, undo tracking on unassign, and granular rollback
   const assignGuestToTable = useCallback(
     async (
       guestId: string,
@@ -942,20 +1199,80 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         return false;
       }
 
-      // Table capacity validation prior to optimistic dispatch using party headcounts
+      const incomingHeadcount = getGuestPartySize(currentGuest);
+      const plusOneCount = Math.max(0, incomingHeadcount - 1);
+
+      let optimisticPrimarySeat: number | null = targetSeatNumber;
+      let optimisticPlusOneSeats: number[] | undefined = targetTableId ? undefined : [];
+
+      // Landmark & table capacity validation prior to optimistic dispatch using party headcounts
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         if (targetTable) {
-          const existingHeadcount = getGuestsHeadcount(
-            state.guests.filter((g) => g.tableId === targetTableId && g.id !== guestId)
+          if (isLandmarkTable(targetTable)) {
+            toast?.addToast(
+              `Cannot assign guests to landmark "${targetTable.name}".`,
+              'error'
+            );
+            return false;
+          }
+
+          const otherGuests = state.guests.filter(
+            (g) => g.tableId === targetTableId && g.id !== guestId
           );
-          const incomingHeadcount = getGuestPartySize(currentGuest);
+          const existingHeadcount = getGuestsHeadcount(otherGuests);
           if (existingHeadcount + incomingHeadcount > targetTable.capacity) {
             toast?.addToast(
               `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
               'error'
             );
             return false;
+          }
+
+          if (plusOneCount > 0) {
+            const effectiveOthers = targetSeatNumber
+              ? otherGuests.map((g) =>
+                g.seatNumber === targetSeatNumber ? { ...g, seatNumber: null } : g
+              )
+              : otherGuests;
+            const resolved = resolveDetailedSeatAssignments(
+              effectiveOthers,
+              targetTable.capacity
+            );
+            const usedSeats = new Set<number>();
+            resolved.forEach((_entry, s) => {
+              if (s >= 1 && s <= targetTable.capacity) {
+                usedSeats.add(s);
+              }
+            });
+
+            if (
+              typeof optimisticPrimarySeat === 'number' &&
+              optimisticPrimarySeat >= 1 &&
+              optimisticPrimarySeat <= targetTable.capacity &&
+              !usedSeats.has(optimisticPrimarySeat)
+            ) {
+              usedSeats.add(optimisticPrimarySeat);
+            } else {
+              for (let s = 1; s <= targetTable.capacity; s++) {
+                if (!usedSeats.has(s)) {
+                  usedSeats.add(s);
+                  optimisticPrimarySeat = s;
+                  break;
+                }
+              }
+            }
+
+            optimisticPlusOneSeats = [];
+            for (let i = 0; i < plusOneCount; i++) {
+              for (let s = 1; s <= targetTable.capacity; s++) {
+                if (!usedSeats.has(s)) {
+                  usedSeats.add(s);
+                  optimisticPlusOneSeats.push(s);
+                  break;
+                }
+              }
+            }
           }
         }
       }
@@ -965,6 +1282,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         guestId: currentGuest.id,
         tableId: currentGuest.tableId,
         seatNumber: currentGuest.seatNumber,
+        plusOneSeatNumbers: currentGuest.plusOneSeatNumbers,
       };
       const shouldPushUndo = !targetTableId && Boolean(currentGuest.tableId);
 
@@ -990,7 +1308,10 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         payload: {
           guestId,
           tableId: targetTableId,
-          seatNumber: targetSeatNumber,
+          seatNumber: optimisticPrimarySeat,
+          ...(optimisticPlusOneSeats !== undefined
+            ? { plusOneSeatNumbers: optimisticPlusOneSeats }
+            : {}),
           pushUndo: shouldPushUndo,
           snapshotLabel: shouldPushUndo ? `Unassign ${currentGuest.guestName}` : undefined,
         },
@@ -1015,7 +1336,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           throw new Error('Failed to assign guest seat');
         }
 
-        const returnedGuest: InvitationCodeDTO = await res.json();
+        const rawJson = await res.json();
+        const returnedGuest: InvitationCodeDTO = rawJson?.data ?? rawJson;
         if (returnedGuest && returnedGuest.id) {
           dispatch({
             type: 'CONFIRM_ASSIGN_GUEST',
@@ -1031,11 +1353,13 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             guestId: previousGuestAssignment.guestId,
             tableId: previousGuestAssignment.tableId,
             seatNumber: previousGuestAssignment.seatNumber,
+            plusOneSeatNumbers: previousGuestAssignment.plusOneSeatNumbers,
             displacedGuest,
             popUndo: shouldPushUndo,
           },
         });
-        const message = err instanceof Error && err.message ? err.message : 'Error assigning guest seat';
+        const message =
+          err instanceof Error && err.message ? err.message : 'Error assigning guest seat';
         toast?.addToast(message, 'error');
         return false;
       }
@@ -1072,6 +1396,14 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         if (targetTable) {
+          if (isLandmarkTable(targetTable)) {
+            toast?.addToast(
+              `Cannot assign guests to landmark "${targetTable.name}".`,
+              'error'
+            );
+            return false;
+          }
+
           const existingOtherHeadcount = getGuestsHeadcount(
             state.guests.filter((g) => g.tableId === targetTableId && !batchIdSet.has(g.id))
           );
@@ -1090,6 +1422,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         invitationCodeId: g.id,
         tableId: g.tableId ?? null,
         seatNumber: g.seatNumber ?? null,
+        ...(Array.isArray(g.plusOneSeatNumbers) && g.plusOneSeatNumbers.length > 0
+          ? { plusOneSeatNumbers: g.plusOneSeatNumbers }
+          : {}),
       }));
 
       const plannedUpdates: GuestSeatSnapshot[] = [];
@@ -1109,7 +1444,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           });
         }
 
-        const takeSeats = (partySize: number): number | null => {
+        const allocateParty = (
+          partySize: number
+        ): { primarySeat: number | null; plusOneSeats: number[] } => {
           const needed = Math.max(1, partySize);
           if (needed <= cap) {
             for (let start = 1; start <= cap - needed + 1; start++) {
@@ -1121,10 +1458,14 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
                 }
               }
               if (fits) {
-                for (let offset = 0; offset < needed; offset++) {
-                  usedSeats.add(start + offset);
+                const plusOneSeats: number[] = [];
+                usedSeats.add(start);
+                for (let offset = 1; offset < needed; offset++) {
+                  const s = start + offset;
+                  usedSeats.add(s);
+                  plusOneSeats.push(s);
                 }
-                return start;
+                return { primarySeat: start, plusOneSeats };
               }
             }
           }
@@ -1134,17 +1475,40 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
               chosen.push(i);
             }
           }
-          if (chosen.length === 0) return null;
+          if (chosen.length === 0) return { primarySeat: null, plusOneSeats: [] };
           for (const s of chosen) usedSeats.add(s);
-          return chosen[0];
+          return { primarySeat: chosen[0], plusOneSeats: chosen.slice(1) };
         };
 
         for (const id of uniqueIds) {
           const existing = state.guests.find((g) => g.id === id);
           if (!existing) continue;
           const partySize = getGuestPartySize(existing);
+          const plusOneCount = Math.max(0, partySize - 1);
           let seat: number | null = null;
+          let plusOneSeats: number[] = [];
+
+          const prevPlusOneSeats =
+            existing.tableId === targetTableId && Array.isArray(existing.plusOneSeatNumbers)
+              ? existing.plusOneSeatNumbers
+              : [];
+
           if (
+            existing.tableId === targetTableId &&
+            typeof existing.seatNumber === 'number' &&
+            existing.seatNumber >= 1 &&
+            existing.seatNumber <= cap &&
+            !usedSeats.has(existing.seatNumber) &&
+            prevPlusOneSeats.length === plusOneCount &&
+            prevPlusOneSeats.every(
+              (s) => s >= 1 && s <= cap && s !== existing.seatNumber && !usedSeats.has(s)
+            )
+          ) {
+            usedSeats.add(existing.seatNumber);
+            for (const s of prevPlusOneSeats) usedSeats.add(s);
+            seat = existing.seatNumber;
+            plusOneSeats = [...prevPlusOneSeats];
+          } else if (
             existing.tableId === targetTableId &&
             typeof existing.seatNumber === 'number' &&
             existing.seatNumber >= 1 &&
@@ -1153,17 +1517,24 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
               (s) => !usedSeats.has(s)
             )
           ) {
-            for (let off = 0; off < partySize; off++) {
-              usedSeats.add(existing.seatNumber + off);
-            }
+            usedSeats.add(existing.seatNumber);
             seat = existing.seatNumber;
+            for (let off = 1; off < partySize; off++) {
+              const s = existing.seatNumber + off;
+              usedSeats.add(s);
+              plusOneSeats.push(s);
+            }
           } else {
-            seat = takeSeats(partySize);
+            const allocated = allocateParty(partySize);
+            seat = allocated.primarySeat;
+            plusOneSeats = allocated.plusOneSeats;
           }
+
           plannedUpdates.push({
             invitationCodeId: id,
             tableId: targetTableId,
             seatNumber: seat,
+            ...(plusOneSeats.length > 0 ? { plusOneSeatNumbers: plusOneSeats } : {}),
           });
         }
       } else {
@@ -1270,11 +1641,19 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     // Capture current assignments before applying undo so we can revert if network fails
     const claimedSeatsByTable = new Map<string, Set<number>>();
     for (const a of snapshot.assignments) {
-      if (a.tableId && typeof a.seatNumber === 'number') {
+      if (a.tableId) {
         if (!claimedSeatsByTable.has(a.tableId)) {
           claimedSeatsByTable.set(a.tableId, new Set());
         }
-        claimedSeatsByTable.get(a.tableId)!.add(a.seatNumber);
+        const tableSet = claimedSeatsByTable.get(a.tableId)!;
+        if (typeof a.seatNumber === 'number') {
+          tableSet.add(a.seatNumber);
+        }
+        if (Array.isArray(a.plusOneSeatNumbers)) {
+          for (const ps of a.plusOneSeatNumbers) {
+            if (typeof ps === 'number') tableSet.add(ps);
+          }
+        }
       }
     }
 
@@ -1292,6 +1671,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         invitationCodeId: g.id,
         tableId: g.tableId ?? null,
         seatNumber: g.seatNumber ?? null,
+        ...(Array.isArray(g.plusOneSeatNumbers) && g.plusOneSeatNumbers.length > 0
+          ? { plusOneSeatNumbers: g.plusOneSeatNumbers }
+          : {}),
       }));
 
     dispatch({ type: 'APPLY_UNDO_OPTIMISTIC' });
@@ -1354,7 +1736,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             body: JSON.stringify(tableData),
           });
           if (!res.ok) throw new Error('Failed to update table');
-          const updatedTable: SeatingTableDTO = await res.json();
+          const rawJson = await res.json();
+          const updatedTable: SeatingTableDTO = rawJson?.data ?? rawJson;
           dispatch({
             type: 'UPDATE_TABLE',
             payload: updatedTable,
@@ -1364,22 +1747,27 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         } else {
           const defaultX = (state.tables.length % 4) * 180 + 40;
           const defaultY = Math.floor(state.tables.length / 4) * 180 + 40;
+          const resolvedShape = tableData.shape ?? 'round';
+          const shapeDefaults = getDefaultShapeDimensions(resolvedShape);
+          const isLandmark = isLandmarkTableShape(resolvedShape);
           const res = await fetch(withBasePath('/api/admin/seating-tables'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               x: defaultX,
               y: defaultY,
-              shape: 'round',
-              capacity: 8,
-              width: 120,
-              height: 120,
+              shape: resolvedShape,
+              capacity: isLandmark ? 0 : shapeDefaults.defaultCapacity,
+              width: shapeDefaults.width,
+              height: shapeDefaults.height,
               rotation: 0,
               ...tableData,
+              ...(isLandmark ? { capacity: 0 } : {}),
             }),
           });
           if (!res.ok) throw new Error('Failed to create table');
-          const createdTable: SeatingTableDTO = await res.json();
+          const rawJson = await res.json();
+          const createdTable: SeatingTableDTO = rawJson?.data ?? rawJson;
           dispatch({
             type: 'CREATE_TABLE',
             payload: createdTable,
@@ -1407,6 +1795,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           id: g.id,
           tableId: g.tableId,
           seatNumber: g.seatNumber,
+          plusOneSeatNumbers: g.plusOneSeatNumbers,
         }));
       const previousUndoStack = state.undoStack ? [...state.undoStack] : [];
 

@@ -651,6 +651,78 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       expect(screen.getByRole('option', { name: 'Seat 2 (Empty)' })).toBeInTheDocument();
     });
 
+    test('displays plus-one names & chair count badges, omits landmarks from table dropdowns, and sends keepHouseholdsIntact', async () => {
+      const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { assignedCount: 1, unassignedCount: 0, assignedGuests: [] },
+        }),
+      } as Response);
+
+      const partyGuest = createMockInvitationCode({
+        id: 'g-party-card',
+        code: 'PARTYCARD',
+        guestName: 'Hannah Abbott',
+        used: true,
+        extraFields: {
+          attending: true,
+          plusOneNames: ['Neville Longbottom', 'Luna Lovegood'],
+        },
+      });
+
+      const landmarkBar: SeatingTableDTO = {
+        id: 'lm-bar',
+        name: 'Champagne Bar',
+        shape: 'bar',
+        capacity: 0,
+        x: 0,
+        y: 0,
+        width: 160,
+        height: 75,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      render(
+        <ToastProvider>
+          <UnassignedGuestPanel
+            {...defaultProps}
+            unassignedGuests={[partyGuest]}
+            tables={[...mockTables, landmarkBar]}
+          />
+        </ToastProvider>
+      );
+
+      expect(screen.getByTestId('guest-chair-count-badge')).toHaveTextContent('3 chairs');
+      expect(screen.getByTestId('guest-plus-one-names')).toHaveTextContent(
+        '+1: Neville Longbottom, Luna Lovegood'
+      );
+
+      // Quick-assign modal should exclude Champagne Bar landmark
+      fireEvent.click(screen.getByRole('button', { name: /assign hannah abbott/i }));
+      expect(screen.queryByRole('option', { name: /Champagne Bar/i })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+      // Toggle keepHouseholdsIntact checkbox and trigger Auto-Assign All
+      const intactCheckbox = screen.getByLabelText(/keep households intact/i);
+      expect(intactCheckbox).not.toBeChecked();
+      fireEvent.click(intactCheckbox);
+      expect(intactCheckbox).toBeChecked();
+
+      fireEvent.click(screen.getByRole('button', { name: /auto-assign all/i }));
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalledWith('/api/admin/seating/auto-assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keepHouseholdsIntact: true }),
+        });
+      });
+
+      fetchSpy.mockRestore();
+    });
+
     test('displays party headcount badge (+1 (2 seats)) and disables tables lacking enough open seats in quick-assign modal', () => {
       const coupleGuest = createMockInvitationCode({
         id: 'u-couple',

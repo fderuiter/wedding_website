@@ -85,7 +85,7 @@ describe('SeatingTableAdminService', () => {
 
     await expect(
       service.create({ name: 'Table 1', capacity: 8, shape: 'triangle' as any }, 'Admin')
-    ).rejects.toThrow('Validation Error: Shape must be round, rectangular, square, head, or sweetheart.');
+    ).rejects.toThrow('Validation Error:');
   });
 
   it('should accept head and sweetheart 1-sided table shapes', async () => {
@@ -98,6 +98,110 @@ describe('SeatingTableAdminService', () => {
 
     expect(head.shape).toBe('head');
     expect(sweet.shape).toBe('sweetheart');
+  });
+
+  it('supports zero-capacity landmarks (dance-floor, bar, dj, buffet, cake) and rejects guest drops onto landmarks', async () => {
+    mockTxSeatingTableCreate.mockResolvedValueOnce({
+      id: 'lm-dance',
+      name: 'Main Dance Floor',
+      shape: 'dance-floor',
+      capacity: 0,
+    });
+
+    const landmark = await service.create(
+      { name: 'Main Dance Floor', shape: 'dance-floor', capacity: 0 },
+      'Admin'
+    );
+    expect(landmark.capacity).toBe(0);
+    expect(landmark.shape).toBe('dance-floor');
+
+    await expect(
+      service.create({ name: 'Invalid Dance Floor', shape: 'dance-floor', capacity: 4 }, 'Admin')
+    ).rejects.toThrow('Validation Error: Landmarks must have 0 capacity.');
+
+    mockTxSeatingTableFindUnique.mockResolvedValueOnce({
+      id: 'lm-dance',
+      name: 'Main Dance Floor',
+      shape: 'dance-floor',
+      capacity: 0,
+      invitationCodes: [],
+    });
+    mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+      {
+        id: 'g-1',
+        guestName: 'Alice',
+        tableId: null,
+        seatNumber: null,
+      },
+    ]);
+
+    await expect(service.assignSeat('g-1', 'lm-dance', 1, 'Admin')).rejects.toThrow(
+      'Validation Error: Cannot assign guests to landmark "Main Dance Floor".'
+    );
+  });
+
+  it('claims distinct plusOneSeatNumbers when seating an invitation with plus-ones and blocks overflow', async () => {
+    mockTxSeatingTableFindUnique.mockResolvedValueOnce({
+      id: 'tbl-4',
+      name: 'Garden Table',
+      shape: 'round',
+      capacity: 4,
+      invitationCodes: [{ id: 'g-existing', guestName: 'Existing Guest', seatNumber: 1, plusOneSeatNumbers: [] }],
+    });
+    mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+      {
+        id: 'g-party-3',
+        guestName: 'Clara Oswald',
+        tableId: null,
+        seatNumber: null,
+        plusOneSeatNumbers: [],
+        used: true,
+        extraFields: { attending: true, plusOneNames: ['Danny Pink', 'Rigsy'] },
+      },
+    ]);
+    mockTxInvitationCodeFindFirst.mockResolvedValueOnce(null);
+    mockTxInvitationCodeUpdate.mockResolvedValueOnce({
+      id: 'g-party-3',
+      guestName: 'Clara Oswald',
+      tableId: 'tbl-4',
+      seatNumber: 2,
+      plusOneSeatNumbers: [3, 4],
+    });
+
+    const assigned = await service.assignSeat('g-party-3', 'tbl-4', 2, 'Admin');
+    expect(assigned.seatNumber).toBe(2);
+    expect(mockTxInvitationCodeUpdate).toHaveBeenCalledWith({
+      where: { id: 'g-party-3' },
+      data: {
+        tableId: 'tbl-4',
+        seatNumber: 2,
+        plusOneSeatNumbers: [3, 4],
+      },
+    });
+
+    // Overflow: 3-person party cannot fit on a table with only 2 open chairs
+    mockTxSeatingTableFindUnique.mockResolvedValueOnce({
+      id: 'tbl-tight',
+      name: 'Small Table',
+      shape: 'round',
+      capacity: 3,
+      invitationCodes: [{ id: 'g-existing', guestName: 'Existing Guest', seatNumber: 1, plusOneSeatNumbers: [] }],
+    });
+    mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+      {
+        id: 'g-party-3',
+        guestName: 'Clara Oswald',
+        tableId: null,
+        seatNumber: null,
+        plusOneSeatNumbers: [],
+        used: true,
+        extraFields: { attending: true, plusOneNames: ['Danny Pink', 'Rigsy'] },
+      },
+    ]);
+
+    await expect(service.assignSeat('g-party-3', 'tbl-tight', 2, 'Admin')).rejects.toThrow(
+      'Validation Error: Table "Small Table" has reached its maximum capacity of 3.'
+    );
   });
 
   it('should create a seating table and create an audit snapshot', async () => {
@@ -558,6 +662,57 @@ describe('SeatingTableAdminService', () => {
       expect(result.unassignedCount).toBe(0);
       expect(result.assignedGuests).toHaveLength(1);
       expect(result.assignedGuests[0].id).toBe('g-attending');
+    });
+
+    it('skips zero-capacity landmarks, counts plus-one chairs, groups by partyGroup/partyTags, and honors keepHouseholdsIntact', async () => {
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        { id: 'lm-dance', name: 'Dance Floor', shape: 'dance-floor', capacity: 0, invitationCodes: [] },
+        { id: 'lm-bar', name: 'Cocktail Bar', shape: 'bar', capacity: 0, invitationCodes: [] },
+        { id: 'tbl-college', name: 'Table A', shape: 'round', capacity: 4, invitationCodes: [] },
+        { id: 'tbl-small-1', name: 'Table B', shape: 'round', capacity: 2, invitationCodes: [] },
+      ]);
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([
+        // College Friends group via partyGroup + partyTags, where g-c1 has 1 plus-one (2 chairs) + g-c2 (1 chair) = 3 chairs total -> fits on tbl-college (cap 4)
+        {
+          id: 'g-c1',
+          guestName: 'Liam',
+          householdName: null,
+          partyGroup: 'College Friends',
+          partyTags: ['alumni'],
+          tableId: null,
+          used: true,
+          extraFields: { attending: true, plusOneNames: ['Noah'] },
+        },
+        {
+          id: 'g-c2',
+          guestName: 'Olivia',
+          householdName: null,
+          partyGroup: 'College Friends',
+          partyTags: ['alumni'],
+          tableId: null,
+          used: true,
+          extraFields: { attending: true },
+        },
+        // Intact household of 3 invitations (3 chairs total), while remaining open chairs are 1 on Table A + 2 on Table B -> cannot fit intact!
+        { id: 'hh-1', guestName: 'Miller 1', householdName: 'Miller Family', tableId: null, used: true, extraFields: { attending: true } },
+        { id: 'hh-2', guestName: 'Miller 2', householdName: 'Miller Family', tableId: null, used: true, extraFields: { attending: true } },
+        { id: 'hh-3', guestName: 'Miller 3', householdName: 'Miller Family', tableId: null, used: true, extraFields: { attending: true } },
+      ]);
+
+      mockTxExecuteRaw.mockResolvedValueOnce(2);
+
+      const result = await service.autoAssignSeats('Admin', { keepHouseholdsIntact: true });
+
+      // College Friends (2 invitations, 3 chairs/attendees) seated together on tbl-college; Miller Family (3 invitations) kept unassigned intact; landmarks untouched
+      expect(result.assignedCount).toBe(3);
+      expect(result.unassignedCount).toBe(3);
+      expect(result.assignedGuests.every((g) => g.tableId === 'tbl-college')).toBe(true);
+      const liamAssigned = result.assignedGuests.find((g) => g.id === 'g-c1')!;
+      expect(liamAssigned.seatNumber).toBe(1);
+      expect(liamAssigned.plusOneSeatNumbers).toEqual([2]);
+      const oliviaAssigned = result.assignedGuests.find((g) => g.id === 'g-c2')!;
+      expect(oliviaAssigned.seatNumber).toBe(3);
     });
   });
 

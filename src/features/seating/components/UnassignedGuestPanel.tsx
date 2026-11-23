@@ -6,20 +6,23 @@ import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import {
   InvitationCodeDTO,
-  formatGuestPlusOneNames,
-  formatGuestMealSelections,
   formatGuestCustomAnswers,
+  formatGuestMealSelections,
+  formatGuestPlusOneNames,
 } from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
 import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
   ADDRESS_COLLECTION_TAG,
+  getAttendingPlusOneCount,
   getDietaryBadges,
   getGuestAttendanceStatus,
   getGuestCompanionNames,
   getGuestPartySize,
+  getGuestPlusOneNamesList,
   getGuestsHeadcount,
   isGuestEligibleForSeating,
+  isLandmarkTable,
 } from '../utils/seatingHelpers';
 import { withBasePath } from '@/lib/basePath';
 
@@ -88,6 +91,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const toast = useOptionalToast();
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [includePending, setIncludePending] = useState(true);
+  const [keepHouseholdsIntact, setKeepHouseholdsIntact] = useState(false);
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [rsvpFilter, setRsvpFilter] = useState<RsvpFilterValue>('all');
   const [partyGroupFilter, setPartyGroupFilter] = useState<string>('all');
@@ -100,19 +104,28 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const [selectedHouseholdForModal, setSelectedHouseholdForModal] = useState<HouseholdGroupItem | null>(null);
   const [targetHouseholdTableId, setTargetHouseholdTableId] = useState<string>('');
 
+  const guestTables = useMemo(() => tables.filter((t) => !isLandmarkTable(t)), [tables]);
+  const unassignedById = useMemo(() => {
+    const map = new Map<string, InvitationCodeDTO>();
+    for (const g of unassignedGuests) {
+      map.set(g.id, g);
+    }
+    return map;
+  }, [unassignedGuests]);
+
   const [activePointerDrag, setActivePointerDrag] = useState<ActiveGuestPointerDrag | null>(null);
   const activePointerDragRef = useRef<ActiveGuestPointerDrag | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const latestPropsRef = useRef({
     tables,
-    unassignedGuests,
+    unassignedById,
     onAssignGuestToTable,
     onAssignGuestsToTable,
     toast,
   });
   latestPropsRef.current = {
     tables,
-    unassignedGuests,
+    unassignedById,
     onAssignGuestToTable,
     onAssignGuestsToTable,
     toast,
@@ -187,13 +200,17 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
     const {
       tables: currentTables,
-      unassignedGuests: currentUnassigned,
+      unassignedById: guestLookup,
       onAssignGuestToTable: assignFn,
       onAssignGuestsToTable: assignBatchFn,
       toast: currentToast,
     } = latestPropsRef.current;
     const targetTable = currentTables.find((t) => t.id === resolvedTableId);
-    const unassignedById = new Map(currentUnassigned.map((g) => [g.id, g]));
+
+    if (targetTable && isLandmarkTable(targetTable)) {
+      currentToast?.addToast(`Cannot assign guests to landmark "${targetTable.name}".`, 'error');
+      return;
+    }
 
     if (payload.kind === 'household') {
       if (targetTable) {
@@ -202,7 +219,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         const incomingCount = payload.memberIds
           .filter((id) => !currentSeatedIds.has(id))
           .reduce((sum, id) => {
-            const g = unassignedById.get(id);
+            const g = guestLookup.get(id);
             return sum + (g ? getGuestPartySize(g) : 1);
           }, 0);
         const availableSeats = Math.max(0, targetTable.capacity - seatedHeadcount);
@@ -228,13 +245,21 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       const seatedHeadcount = getGuestsHeadcount(
         (targetTable.invitationCodes || []).filter((g) => g.id !== payload.guestId)
       );
-      const draggedGuest = unassignedById.get(payload.guestId);
+      const draggedGuest = guestLookup.get(payload.guestId);
       const partySize = draggedGuest ? getGuestPartySize(draggedGuest) : 1;
       if (!isAlreadyAtTable && seatedHeadcount + partySize > targetTable.capacity) {
-        currentToast?.addToast(
-          `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
-          'error'
-        );
+        const availableSeats = Math.max(0, targetTable.capacity - seatedHeadcount);
+        if (availableSeats <= 0) {
+          currentToast?.addToast(
+            `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
+            'error'
+          );
+        } else {
+          currentToast?.addToast(
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} (${partySize} seats needed).`,
+            'error'
+          );
+        }
         return;
       }
     }
@@ -407,24 +432,26 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       if (!term) return true;
 
       const matchesName = guest.guestName.toLowerCase().includes(term);
+      const matchesPlusOne =
+        getGuestPlusOneNamesList(guest).some((n) => n.toLowerCase().includes(term)) ||
+        formatGuestPlusOneNames(guest).toLowerCase().includes(term);
       const matchesCode = guest.code ? guest.code.toLowerCase().includes(term) : false;
       const matchesHousehold = guest.householdName ? guest.householdName.toLowerCase().includes(term) : false;
       const matchesGroup = guest.partyGroup ? guest.partyGroup.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
       const matchesDiet = guest.dietaryNotes ? guest.dietaryNotes.toLowerCase().includes(term) : false;
-      const matchesCompanions = formatGuestPlusOneNames(guest).toLowerCase().includes(term);
       const matchesMeals = formatGuestMealSelections(guest).toLowerCase().includes(term);
-      const matchesAnswers = formatGuestCustomAnswers(guest).toLowerCase().includes(term);
+      const matchesCustomAnswers = formatGuestCustomAnswers(guest).toLowerCase().includes(term);
       return (
         matchesName ||
+        matchesPlusOne ||
         matchesCode ||
         matchesHousehold ||
         matchesGroup ||
         matchesTags ||
         matchesDiet ||
-        matchesCompanions ||
         matchesMeals ||
-        matchesAnswers
+        matchesCustomAnswers
       );
     });
   }, [eligibleGuests, rsvpFilter, partyGroupFilter, partyTagFilter, currentSearchQuery]);
@@ -495,8 +522,11 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       };
-      if (!includePending) {
-        fetchInit.body = JSON.stringify({ includePending: false });
+      if (!includePending || keepHouseholdsIntact) {
+        fetchInit.body = JSON.stringify({
+          ...(!includePending ? { includePending: false } : {}),
+          ...(keepHouseholdsIntact ? { keepHouseholdsIntact: true } : {}),
+        });
       }
 
       const res = await fetch(withBasePath('/api/admin/seating/auto-assign'), fetchInit);
@@ -545,7 +575,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     setSelectedGuestForModal(guest);
     setTargetSeatNumber(undefined);
     const needed = getGuestPartySize(guest);
-    const fitting = tables.find(
+    const fitting = guestTables.find(
       (t) => t.capacity - getGuestsHeadcount(t.invitationCodes || []) >= needed
     );
     if (fitting) {
@@ -558,7 +588,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
   const openHouseholdModal = (group: HouseholdGroupItem) => {
     setSelectedHouseholdForModal(group);
     const needed = getGuestsHeadcount(group.members);
-    const firstFittingTable = tables.find(
+    const firstFittingTable = guestTables.find(
       (t) => t.capacity - getGuestsHeadcount(t.invitationCodes || []) >= needed
     );
     setTargetHouseholdTableId(firstFittingTable ? firstFittingTable.id : '');
@@ -585,14 +615,38 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     const status = getGuestAttendanceStatus(guest);
     const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags);
     const partySize = getGuestPartySize(guest);
+    const plusOneCount = getAttendingPlusOneCount(guest);
+    const plusOneNames = getGuestPlusOneNamesList(guest);
     const companions = partySize > 1 ? getGuestCompanionNames(guest) : [];
     const companionNames = formatGuestPlusOneNames(guest);
+    const companionSummary =
+      companionNames ||
+      (plusOneNames.length > 0
+        ? plusOneNames.join(', ')
+        : plusOneCount > 0
+          ? `${plusOneCount} guest${plusOneCount === 1 ? '' : 's'}`
+          : '');
     const mealSelections = formatGuestMealSelections(guest);
     const customAnswers = formatGuestCustomAnswers(guest);
 
     return (
       <div className="space-y-1 pt-0.5">
+        {companionSummary && (
+          <p
+            data-testid="guest-plus-one-names"
+            className="text-[10px] font-medium text-indigo-800 dark:text-indigo-200 truncate"
+          >
+            +1: {companionSummary}
+          </p>
+        )}
         <div className="flex flex-wrap gap-1">
+          <span
+            data-testid="guest-chair-count-badge"
+            className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600"
+          >
+            {partySize} {partySize === 1 ? 'chair' : 'chairs'}
+          </span>
+
           <span
             data-testid="guest-rsvp-badge"
             className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
@@ -611,15 +665,6 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-300 dark:border-sky-800 font-semibold"
             >
               +{partySize - 1} ({partySize} seats)
-            </span>
-          )}
-
-          {companionNames && (
-            <span
-              data-testid="guest-companion-badge"
-              className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-medium"
-            >
-              +1: {companionNames}
             </span>
           )}
 
@@ -952,7 +997,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
           <label
             htmlFor="auto-assign-include-pending"
-            className="flex items-center gap-2 min-h-[28px] mb-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
+            className="flex items-center gap-2 min-h-[28px] mb-1 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
           >
             <input
               id="auto-assign-include-pending"
@@ -962,6 +1007,20 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
             />
             <span>Include pending RSVPs in auto-assign</span>
+          </label>
+
+          <label
+            htmlFor="auto-assign-keep-households-intact"
+            className="flex items-center gap-2 min-h-[28px] mb-2 text-xs text-gray-700 dark:text-gray-200 cursor-pointer select-none"
+          >
+            <input
+              id="auto-assign-keep-households-intact"
+              type="checkbox"
+              checked={keepHouseholdsIntact}
+              onChange={(e) => setKeepHouseholdsIntact(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary"
+            />
+            <span>Keep households intact (skip if split required)</span>
           </label>
 
           <Button
@@ -1023,7 +1082,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
               }}
               className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
             >
-              {tables.map((t) => {
+              {guestTables.map((t) => {
                 const seated = getGuestsHeadcount(t.invitationCodes || []);
                 const needed = selectedGuestForModal ? getGuestPartySize(selectedGuestForModal) : 1;
                 const openSeats = t.capacity - seated;
@@ -1051,7 +1110,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
             >
               <option value="">Any available seat</option>
               {(() => {
-                const selTable = tables.find((t) => t.id === targetTableId);
+                const selTable = guestTables.find((t) => t.id === targetTableId);
                 if (!selTable) return null;
                 const resolvedSeatMap = resolveDetailedSeatAssignments(selTable.invitationCodes, selTable.capacity);
                 return Array.from({ length: selTable.capacity }, (_, idx) => idx + 1).map((seatNum) => {
@@ -1127,7 +1186,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                   <option value="" disabled>
                     Select a table...
                   </option>
-                  {tables.map((t) => {
+                  {guestTables.map((t) => {
                     const seated = getGuestsHeadcount(t.invitationCodes || []);
                     const openSeats = t.capacity - seated;
                     const fits = openSeats >= neededSeats;
