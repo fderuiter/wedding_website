@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
-import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe';
+import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe.client';
 import type { RegistryShippingAddress } from '../types';
 
 interface RegistryCapabilitiesPayload extends StripeCapability {

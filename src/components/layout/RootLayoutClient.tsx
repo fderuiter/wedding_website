@@ -56,8 +56,7 @@ export default function RootLayoutClient({
   const [mainPaddingTop, setMainPaddingTop] = useState(0);
   const { addToast } = useToast();
   const [queryClient] = useState(() => {
-    let client: QueryClient | undefined;
-    client = new QueryClient({
+    const client: QueryClient = new QueryClient({
       mutationCache: new MutationCache({
         onSuccess: (_data, _variables, _context, mutation) => {
           invalidateOnboardingMilestones(client);

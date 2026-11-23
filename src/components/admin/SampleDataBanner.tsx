@@ -121,7 +121,6 @@ export function SampleDataBanner() {
             size="sm"
             onClick={handlePurge}
             disabled={loading}
-            aria-label="Purge all sample data"
           >
             {loading ? 'Purging Sample Data...' : 'Purge Sample Data'}
           </Button>

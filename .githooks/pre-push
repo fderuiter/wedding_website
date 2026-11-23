@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+
+import { spawnSync } from 'child_process';
+
+const checks = [
+  { name: 'TypeScript type check', script: 'type-check' },
+  { name: 'Knip dead-code analysis', script: 'lint:unused' },
+  { name: 'Environment variables documentation check', script: 'check:env-docs' },
+  { name: 'Deployment runbooks verification check', script: 'check:runbooks' },
+  { name: 'Setup and contributor guides contract check', script: 'check:setup-guides' },
+  { name: 'Personal/Template identifier isolation check', script: 'check:identifiers' },
+  { name: 'Third-party action pin commit SHAs check', script: 'check:action-pins' },
+  { name: 'Documentation relative links check', script: 'check:links' },
+  { name: 'Specification route and symbol contracts check', script: 'check:spec-contracts' },
+  { name: 'Prisma schema validation', script: 'check:prisma' },
+  { name: 'Migration compatibility check', script: 'lint:migrations' },
+  { name: 'Documentation synchronization check', script: 'check:doc-sync' },
+];
+
+for (const check of checks) {
+  console.log(`Running ${check.name}...`);
+  const result = spawnSync('npm', ['run', check.script], { stdio: 'inherit', shell: true });
+
+  if (result.status !== 0) {
+    console.error(`\n❌ Pre-push check failed: ${check.name} failed.`);
+    process.exit(result.status ?? 1);
+  }
+}
+
+console.log('✅ All pre-push checks passed.');

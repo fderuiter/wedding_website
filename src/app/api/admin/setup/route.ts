@@ -1,13 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAppConfig, toPublicAppConfig, isSiteInitialized, isSetupCompleted } from '@/lib/config';
+import {
+  getAppConfig,
+  toPublicAppConfig,
+  sanitizeAppConfigForBackup,
+  isSiteInitialized,
+  isSetupCompleted,
+} from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
+import {
+  AppConfigSchema,
+  UpdateAppConfigSchema,
+  toAppConfigDbPayload,
+} from '@/features/content';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { AdminSetupSchema, formatZodError } from '@/utils/validation';
-import { isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import {
+  isAdminRequest,
+  setAdminAuthCookie,
+  signAdminToken,
+} from '@/core/auth/auth.server';
 import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
@@ -25,7 +39,10 @@ function normalizeOptionalName(value: unknown): unknown {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function isReservedPartnerPair(partner1Name: string, partner2Name: string): boolean {
+function isReservedPartnerPair(
+  partner1Name: string,
+  partner2Name: string,
+): boolean {
   const p1Lower = partner1Name.trim().toLowerCase();
   const p2Lower = partner2Name.trim().toLowerCase();
   return (
@@ -99,7 +116,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const setupBodyResult = AdminSetupSchema.safeParse(body);
   if (!setupBodyResult.success) {
-    throw new ApiError(400, `Validation Error: ${formatZodError(setupBodyResult.error)}`);
+    throw new ApiError(
+      400,
+      `Validation Error: ${formatZodError(setupBodyResult.error)}`,
+    );
   }
 
   // Determine if this request is submitting site setup configuration
@@ -121,6 +141,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
       try {
         revalidatePath('/', 'layout');
+        revalidatePath('/admin/setup');
+        revalidatePath('/admin/dashboard');
       } catch {
         // Ignore in non-Next runtime/test environments
       }
@@ -163,9 +185,17 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     brideName: normalizeOptionalName(body.brideName),
     groomName: normalizeOptionalName(body.groomName),
     weddingDate: body.weddingDate ?? new Date().toISOString(),
-    baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl.trim() : (body.baseUrl ?? ''),
+    baseUrl:
+      typeof body.baseUrl === 'string'
+        ? body.baseUrl.trim()
+        : (body.baseUrl ?? ''),
     ...(body.contactEmail !== undefined
-      ? { contactEmail: typeof body.contactEmail === 'string' ? body.contactEmail.trim() : body.contactEmail }
+      ? {
+        contactEmail:
+          typeof body.contactEmail === 'string'
+            ? body.contactEmail.trim()
+            : body.contactEmail,
+      }
       : {}),
     venueName: fallbackVenueField(body.venueName),
     venueAddress: fallbackVenueField(body.venueAddress),
@@ -199,7 +229,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     themeTokens: stripPresetDefaultTokens(
       body.themeTokens ?? {},
       body.themePreset ?? 'classic',
-      config.themePreset
+      config.themePreset,
     ),
     layoutContainerMaxWidth: body.layoutContainerMaxWidth,
     layoutGridGap: body.layoutGridGap,
@@ -207,7 +237,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     layoutBorderRadius: body.layoutBorderRadius,
     timezone: body.timezone ?? 'America/Chicago',
     showCountdown: body.showCountdown ?? config.showCountdown ?? true,
-    showAddToCalendar: body.showAddToCalendar ?? config.showAddToCalendar ?? true,
+    showAddToCalendar:
+      body.showAddToCalendar ?? config.showAddToCalendar ?? true,
     setupCompleted: requestedSetupCompleted,
     modules: body.modules ?? config.modules,
     subdomain: body.subdomain || null,
@@ -215,25 +246,46 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const parseResult = UpdateAppConfigSchema.safeParse(normalizedSetupConfig);
 
   if (!parseResult.success) {
-    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
+    throw new ApiError(
+      400,
+      `Validation Error: ${formatZodError(parseResult.error)}`,
+    );
   }
 
   const validData = parseResult.data;
 
   if (!validData.partner1Name.trim() || !validData.partner2Name.trim()) {
-    throw new ApiError(400, 'Validation Error: Partner names are required to complete setup.');
+    throw new ApiError(
+      400,
+      'Validation Error: Partner names are required to complete setup.',
+    );
   }
   if (isReservedPartnerPair(validData.partner1Name, validData.partner2Name)) {
-    throw new ApiError(400, 'Validation Error: Partner names cannot use reserved placeholder values.');
+    throw new ApiError(
+      400,
+      'Validation Error: Partner names cannot use reserved placeholder values.',
+    );
   }
   if (!validData.baseUrl.trim()) {
-    throw new ApiError(400, 'Validation Error: Site base URL is required to complete setup.');
+    throw new ApiError(
+      400,
+      'Validation Error: Site base URL is required to complete setup.',
+    );
   }
   if (isReservedBaseUrl(validData.baseUrl)) {
-    throw new ApiError(400, 'Validation Error: Site base URL cannot use a reserved placeholder domain.');
+    throw new ApiError(
+      400,
+      'Validation Error: Site base URL cannot use a reserved placeholder domain.',
+    );
   }
-  if (validData.contactEmail && validData.contactEmail.trim().toLowerCase() === 'hosts@wedding.example') {
-    throw new ApiError(400, 'Validation Error: Contact email cannot use a reserved placeholder address.');
+  if (
+    validData.contactEmail &&
+    validData.contactEmail.trim().toLowerCase() === 'hosts@wedding.example'
+  ) {
+    throw new ApiError(
+      400,
+      'Validation Error: Contact email cannot use a reserved placeholder address.',
+    );
   }
 
   const targetId = 'global';
@@ -248,13 +300,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
   });
 
-  const sanitizedUpdatedConfig = toPublicAppConfig(AppConfigSchema.parse(updatedConfig));
+  const parsedUpdatedConfig = AppConfigSchema.parse(updatedConfig);
 
   await prisma.snapshotVersion.create({
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: sanitizedUpdatedConfig as any,
+      data: sanitizeAppConfigForBackup(parsedUpdatedConfig) as any,
       author: 'Admin (Setup)',
     },
   });
@@ -282,7 +334,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const exp = iat + 60 * 60 * 8 * 1000;
   const token = await signAdminToken({ isAdmin: true, iat, exp });
 
-  const parsedUpdatedConfig = AppConfigSchema.parse(updatedConfig);
   const response = NextResponse.json({
     success: true,
     ...toPublicAppConfig(parsedUpdatedConfig),

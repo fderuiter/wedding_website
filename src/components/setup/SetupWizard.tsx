@@ -234,7 +234,7 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
     if (fields.colorSecondary !== undefined) setColorSecondary(fields.colorSecondary);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     startSubmit();
     try {
@@ -259,7 +259,7 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
     }
   };
 
-  const handleSaveConfig = async (e: React.FormEvent) => {
+  const handleSaveConfig = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmedPartner1 = partner1Name.trim();
     const trimmedPartner2 = partner2Name.trim();
@@ -370,7 +370,7 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
     }
   };
 
-  const handleSampleDataSubmit = async (e: React.FormEvent) => {
+  const handleSampleDataSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     startSubmit();
     try {

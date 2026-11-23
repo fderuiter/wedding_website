@@ -9,6 +9,7 @@ import {
   escapeVueMustache,
   generatePortal,
   prependGeneratedPortalComment,
+  prependPortalFrontmatterTitle,
   rewriteMarkdownLinks,
   stagePortalDoc,
   watchPortalDocs,
@@ -130,9 +131,16 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(fs.existsSync(stagedUpgrading)).toBe(true);
     expect(fs.existsSync(stagedChangelog)).toBe(true);
 
+    const readmeContent = fs.readFileSync(stagedReadme, 'utf8');
+    expect(readmeContent).toMatch(
+      /^---\ntitle: Project Overview\n---\n<!-- AUTO-GENERATED FILE: Staged from README\.md by scripts\/generate-portal\.ts\./
+    );
+    expect(readmeContent).not.toContain('NOTE CURRENTLY UNDER MAINTAINANCE');
+    expect(readmeContent).toContain('# Wedding Website & Custom Registry');
+
     const contributingContent = fs.readFileSync(stagedContributing, 'utf8');
     expect(contributingContent).toMatch(
-      /^<!-- AUTO-GENERATED FILE: Staged from \.github\/CONTRIBUTING\.md by scripts\/generate-portal\.ts\./
+      /^---\ntitle: Contribution Guidelines\n---\n<!-- AUTO-GENERATED FILE: Staged from \.github\/CONTRIBUTING\.md by scripts\/generate-portal\.ts\./
     );
     expect(contributingContent).toContain('[AGENTS.md](/development/agents)');
     expect(contributingContent).toContain('[README.md](/development/readme#setup-installation)');
@@ -162,7 +170,10 @@ describe('Portal Documentation Generator & Development Section', () => {
       expect(stagePortalDoc(testDoc, tmpRoot, tmpPortal)).toBe(true);
       const initialStaged = fs.readFileSync(destAbs, 'utf8');
       expect(initialStaged).toBe(
-        prependGeneratedPortalComment('# Initial Title\n\nInitial body.\n', testDoc.src)
+        prependGeneratedPortalComment(
+          prependPortalFrontmatterTitle('# Initial Title\n\nInitial body.\n', testDoc.title),
+          testDoc.src
+        )
       );
 
       const restagedPromise = new Promise<DocMapping>((resolve) => {
@@ -293,6 +304,45 @@ describe('Portal Documentation Generator & Development Section', () => {
       expect(escaped).toContain('`` ${{ inputs.rollback_environment || inputs.environment || \'production\' }} ``');
       expect(escaped).toContain('env: ${{ github.sha }}');
       expect(escaped).toContain('tag: ${{ inputs.tag }}');
+    });
+  });
+
+  describe('prependPortalFrontmatterTitle', () => {
+    it('prepends YAML frontmatter title when Markdown lacks frontmatter and quotes YAML-sensitive titles', () => {
+      expect(prependPortalFrontmatterTitle('# Heading\n', 'Project Overview')).toBe(
+        '---\ntitle: Project Overview\n---\n# Heading\n'
+      );
+      expect(prependPortalFrontmatterTitle('# Agents\n', 'Agent & Contributor Guidelines')).toBe(
+        '---\ntitle: "Agent & Contributor Guidelines"\n---\n# Agents\n'
+      );
+    });
+
+    it('preserves existing YAML frontmatter untouched', () => {
+      const existing = '---\ntitle: Custom Authored Title\nlayout: doc\n---\n\n# Body\n';
+      expect(prependPortalFrontmatterTitle(existing, 'Overridden Title')).toBe(existing);
+    });
+  });
+
+  describe('API Explorer dark-mode accessibility and static server gating', () => {
+    it('replaces CSS invert filters with explicit WCAG AA dark-mode Swagger UI rules in custom.css', () => {
+      const customCssPath = path.join(rootDir, 'docs-portal/.vitepress/theme/custom.css');
+      const css = fs.readFileSync(customCssPath, 'utf8');
+
+      expect(css).not.toMatch(/invert\s*\(/i);
+      expect(css).toContain('.dark #swagger-ui-container .swagger-ui .model-box');
+      expect(css).toContain('.dark #swagger-ui-container .swagger-ui .prop-type');
+    });
+
+    it('gates interactive Try it out requests in ApiExplorer.vue until a valid target server URL is configured', () => {
+      const explorerPath = path.join(
+        rootDir,
+        'docs-portal/.vitepress/theme/components/ApiExplorer.vue'
+      );
+      const vue = fs.readFileSync(explorerPath, 'utf8');
+
+      expect(vue).toContain('supportedSubmitMethods: isLiveEnabled ? SUBMIT_METHODS : []');
+      expect(vue).toContain('servers: []');
+      expect(vue).toContain("description: 'Configured target deployment'");
     });
   });
 });

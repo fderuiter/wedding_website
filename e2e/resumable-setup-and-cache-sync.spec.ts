@@ -192,7 +192,7 @@ test.describe('Resumable Setup Route & Unified Sample Cache Invalidation', () =>
     await expect(sampleBanner).toBeVisible({ timeout: 15000 });
 
     // Purge Sample Data from the banner and verify immediate cache invalidation across views
-    await sampleBanner.getByRole('button', { name: /purge all sample data/i }).click();
+    await sampleBanner.getByRole('button', { name: 'Purge Sample Data' }).click();
     const confirmBtn = page.getByRole('button', { name: 'Confirm' });
     await expect(confirmBtn).toBeVisible();
     const [purgeResponse] = await Promise.all([

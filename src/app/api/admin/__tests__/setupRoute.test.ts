@@ -5,6 +5,10 @@ import { GET, POST } from '../setup/route';
 import { signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
 import { isSiteInitialized } from '@/lib/config';
+import {
+  APP_CONFIG_BACKUP_KEYS,
+  APP_CONFIG_SECRET_KEYS,
+} from '@/lib/backupPersistence';
 import { AppConfigSchema } from '@/features/content';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 
@@ -98,12 +102,15 @@ describe('Setup API Route (/api/admin/setup)', () => {
     jest.clearAllMocks();
     resetRateLimitsForTesting();
     // Valid scrypt hash for password 'secret'
-    process.env.ADMIN_PASSWORD = 'scrypt:8R6mvU36W2Cqp3C8vq+r1g==:XlhFCFplIJUauzo9FzPUPVgA5458RRwbTpQtFCRWjoLN4AI6VCH76jOksMQdQX/5f45ALowp67Xxo58mFrcb3g==';
+    process.env.ADMIN_PASSWORD =
+      'scrypt:8R6mvU36W2Cqp3C8vq+r1g==:XlhFCFplIJUauzo9FzPUPVgA5458RRwbTpQtFCRWjoLN4AI6VCH76jOksMQdQX/5f45ALowp67Xxo58mFrcb3g==';
   });
 
   describe('GET /api/admin/setup', () => {
     test('returns initialized false when site is uninitialized', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const res = await GET();
       expect(res.status).toBe(200);
@@ -113,7 +120,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('returns initialized true when site is fully initialized', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(initializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        initializedConfig,
+      );
 
       const res = await GET();
       expect(res.status).toBe(200);
@@ -140,7 +149,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
   describe('POST /api/admin/setup', () => {
     test('uninitialized setup fails when wrong password is provided', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -154,7 +165,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('returns 400 when ogImageUrl contains parent traversal sequence', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -173,7 +186,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('uninitialized setup succeeds and returns session cookie with correct password', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -189,10 +204,13 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('uninitialized setup completes configuration and marks site initialized', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const mockSavedConfig = {
         id: 'global',
+        subdomain: null,
         brideName: 'Alice',
         groomName: 'Bob',
         weddingDate: new Date('2026-06-20T16:00:00.000Z'),
@@ -213,18 +231,38 @@ describe('Setup API Route (/api/admin/setup)', () => {
         seoDescription: 'Join Alice and Bob',
         faviconUrl: '/assets/favicon.png',
         ogImageUrl: '/images/sunset.jpg',
+        brandMonogram: null,
+        brandLogoUrl: null,
+        brandLogoAlt: null,
+        heroImageUrl: null,
+        heroImageAlt: null,
+        brandWatermarkUrl: null,
+        brandWatermarkAlt: null,
+        badgeGraphicUrl: null,
+        badgeGraphicAlt: null,
         seoKeywords: 'wedding, seattle',
         colorPrimary: '#B91C1C',
         colorSecondary: '#B45309',
         timezone: 'America/Los_Angeles',
         showCountdown: true,
         showAddToCalendar: true,
+        rsvpGracePeriodHours: 24,
+        smtpHost: 'smtp.setup.example.com',
+        smtpPass: 'setup-smtp-secret',
+        twilioAccountSid: 'AC_SETUP',
+        twilioAuthToken: 'setup-twilio-secret',
+        shippingRecipientName: 'Alice & Bob',
+        shippingAddressLine1: '123 Main St',
+        defaultPaymentHandleType: 'Venmo',
+        defaultPaymentHandle: '@alice-bob',
         features: '[]',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
-      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(
+        mockSavedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -248,6 +286,30 @@ describe('Setup API Route (/api/admin/setup)', () => {
       expect(json.groomName).toBe('Bob');
       expect(json.baseUrl).toBe('https://ourwedding.com');
       expect(json.timezone).toBe('America/Los_Angeles');
+      expect(json.rsvpGracePeriodHours).toBeUndefined();
+      expect(json.twilioAccountSid).toBeUndefined();
+      expect(json.shippingRecipientName).toBeUndefined();
+      expect(json.defaultPaymentHandle).toBeUndefined();
+      expect(json.smtpPass).toBeUndefined();
+
+      const setupSnapCall = (
+        mockPrisma.snapshotVersion.create as jest.Mock
+      ).mock.calls.at(-1)?.[0];
+      expect(setupSnapCall.data.author).toBe('Admin (Setup)');
+      expect(Object.keys(setupSnapCall.data.data).sort()).toEqual(
+        [...APP_CONFIG_BACKUP_KEYS].sort(),
+      );
+      expect(setupSnapCall.data.data.rsvpGracePeriodHours).toBe(24);
+      expect(setupSnapCall.data.data.smtpHost).toBe('smtp.setup.example.com');
+      expect(setupSnapCall.data.data.twilioAccountSid).toBe('AC_SETUP');
+      expect(setupSnapCall.data.data.shippingRecipientName).toBe('Alice & Bob');
+      expect(setupSnapCall.data.data.defaultPaymentHandle).toBe('@alice-bob');
+      for (const secretKey of APP_CONFIG_SECRET_KEYS) {
+        expect(setupSnapCall.data.data[secretKey]).toBeUndefined();
+      }
+      expect(setupSnapCall.data.data.multisiteEnabled).toBeUndefined();
+      expect(setupSnapCall.data.data.isRsvpOpen).toBeUndefined();
+      expect(setupSnapCall.data.data.typographyScale).toBeUndefined();
 
       expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
         where: { id: 'global' },
@@ -272,14 +334,18 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('strips unchanged light preset defaults from themeTokens during setup save', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
-      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => ({
-        ...uninitializedConfig,
-        ...create,
-        features: '[]',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(
+        async ({ create }) => ({
+          ...uninitializedConfig,
+          ...create,
+          features: '[]',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -311,24 +377,28 @@ describe('Setup API Route (/api/admin/setup)', () => {
               '--custom-hero-gap': '3rem',
             },
           }),
-        })
+        }),
       );
     });
 
     test('persists trimmed partner1Name and partner2Name and marks isSiteInitialized true', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       let savedRecord: Record<string, unknown> | null = null;
-      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => {
-        savedRecord = {
-          ...uninitializedConfig,
-          ...create,
-          features: '[]',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        return savedRecord;
-      });
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(
+        async ({ create }) => {
+          savedRecord = {
+            ...uninitializedConfig,
+            ...create,
+            features: '[]',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          return savedRecord;
+        },
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -358,8 +428,12 @@ describe('Setup API Route (/api/admin/setup)', () => {
       const parsedConfig = AppConfigSchema.parse(savedRecord);
       expect(isSiteInitialized(parsedConfig)).toBe(true);
 
-      (globalThis as unknown as { globalFallbackStore?: Map<unknown, unknown> }).globalFallbackStore?.clear();
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(savedRecord);
+      (
+        globalThis as unknown as { globalFallbackStore?: Map<unknown, unknown> }
+      ).globalFallbackStore?.clear();
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        savedRecord,
+      );
       const statusRes = await GET();
       const statusJson = await statusRes.json();
       expect(statusJson.initialized).toBe(true);
@@ -367,19 +441,23 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('synchronizes legacy brideName and groomName from partner names even when empty legacy strings are sent', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       let savedRecord: Record<string, unknown> | null = null;
-      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => {
-        savedRecord = {
-          ...uninitializedConfig,
-          ...create,
-          features: '[]',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        return savedRecord;
-      });
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(
+        async ({ create }) => {
+          savedRecord = {
+            ...uninitializedConfig,
+            ...create,
+            features: '[]',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          return savedRecord;
+        },
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -405,19 +483,23 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('falls back to trimmed legacy brideName and groomName when partner fields are blank or omitted', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       let savedRecord: Record<string, unknown> | null = null;
-      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => {
-        savedRecord = {
-          ...uninitializedConfig,
-          ...create,
-          features: '[]',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        return savedRecord;
-      });
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(
+        async ({ create }) => {
+          savedRecord = {
+            ...uninitializedConfig,
+            ...create,
+            features: '[]',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          return savedRecord;
+        },
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -444,7 +526,11 @@ describe('Setup API Route (/api/admin/setup)', () => {
     test.each([
       {
         label: 'blank partner1Name',
-        payload: { partner1Name: '   ', partner2Name: 'Sam', baseUrl: 'https://ourwedding.com' },
+        payload: {
+          partner1Name: '   ',
+          partner2Name: 'Sam',
+          baseUrl: 'https://ourwedding.com',
+        },
       },
       {
         label: 'blank partner2Name without baseUrl',
@@ -452,7 +538,11 @@ describe('Setup API Route (/api/admin/setup)', () => {
       },
       {
         label: 'reserved placeholder partner names',
-        payload: { partner1Name: 'Partner 1', partner2Name: 'Partner 2', baseUrl: 'https://ourwedding.com' },
+        payload: {
+          partner1Name: 'Partner 1',
+          partner2Name: 'Partner 2',
+          baseUrl: 'https://ourwedding.com',
+        },
       },
       {
         label: 'blank baseUrl',
@@ -460,11 +550,19 @@ describe('Setup API Route (/api/admin/setup)', () => {
       },
       {
         label: 'reserved wedding.example baseUrl',
-        payload: { partner1Name: 'Alex', partner2Name: 'Sam', baseUrl: 'https://wedding.example' },
+        payload: {
+          partner1Name: 'Alex',
+          partner2Name: 'Sam',
+          baseUrl: 'https://wedding.example',
+        },
       },
       {
         label: 'reserved example.com baseUrl',
-        payload: { partner1Name: 'Alex', partner2Name: 'Sam', baseUrl: 'https://example.com' },
+        payload: {
+          partner1Name: 'Alex',
+          partner2Name: 'Sam',
+          baseUrl: 'https://example.com',
+        },
       },
       {
         label: 'reserved placeholder contactEmail',
@@ -484,24 +582,31 @@ describe('Setup API Route (/api/admin/setup)', () => {
           contactEmail: 'not-an-email',
         },
       },
-    ])('rejects invalid setup payload ($label) with 400 before upserting AppConfig', async ({ payload }) => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+    ])(
+      'rejects invalid setup payload ($label) with 400 before upserting AppConfig',
+      async ({ payload }) => {
+        (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+          uninitializedConfig,
+        );
 
-      const req = new NextRequest('http://localhost/api/admin/setup', {
-        method: 'POST',
-        body: JSON.stringify({
-          password: 'secret',
-          ...payload,
-        }),
-      });
+        const req = new NextRequest('http://localhost/api/admin/setup', {
+          method: 'POST',
+          body: JSON.stringify({
+            password: 'secret',
+            ...payload,
+          }),
+        });
 
-      const res = await POST(req);
-      expect(res.status).toBe(400);
-      expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
-    });
+        const res = await POST(req);
+        expect(res.status).toBe(400);
+        expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
+      },
+    );
 
     test('uninitialized setup saves themePreset and layout tokens during configuration', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const mockSavedConfig = {
         id: 'global',
@@ -541,7 +646,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
         updatedAt: new Date(),
       };
 
-      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(
+        mockSavedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -573,12 +680,14 @@ describe('Setup API Route (/api/admin/setup)', () => {
             layoutCardPadding: '2.5rem',
             layoutBorderRadius: '1.5rem',
           }),
-        })
+        }),
       );
     });
 
     test('replay attack fails with 403 Forbidden once site is initialized and caller is unauthenticated', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(initializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        initializedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -597,7 +706,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('replay setup allows updating configuration when caller is an authenticated admin', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(initializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        initializedConfig,
+      );
 
       const mockSavedConfig = {
         id: 'global',
@@ -632,7 +743,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
         updatedAt: new Date(),
       };
 
-      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(
+        mockSavedConfig,
+      );
 
       const token = await signAdminToken({ isAdmin: true, iat: Date.now() });
 
@@ -659,7 +772,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('uninitialized setup succeeds with empty, whitespace, or omitted venue fields and applies empty-string fallbacks', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const mockSavedConfig = {
         ...uninitializedConfig,
@@ -675,7 +790,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
         setupCompleted: false,
       };
 
-      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(
+        mockSavedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -771,7 +888,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('uninitialized setup saves optional contactEmail when provided', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       const mockSavedConfig = {
         ...uninitializedConfig,
@@ -782,7 +901,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
         contactEmail: 'hosts@ourwedding.com',
       };
 
-      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(
+        mockSavedConfig,
+      );
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
@@ -812,7 +933,9 @@ describe('Setup API Route (/api/admin/setup)', () => {
     });
 
     test('returns 429 on the 6th unauthenticated POST attempt within 15 minutes', async () => {
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(
+        uninitializedConfig,
+      );
 
       for (let i = 1; i <= 5; i++) {
         const req = new NextRequest('http://localhost/api/admin/setup', {
