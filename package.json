@@ -32,8 +32,8 @@
     "build:export": "node scripts/build-export.mjs",
     "postbuild": "[ -d .next/standalone ] && rm -rf .next/standalone/.next/static .next/standalone/public && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && rm -f .next/standalone/public/mockServiceWorker.js || true",
     "start": "node .next/standalone/server.js",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
+    "lint": "eslint . --cache --cache-location .eslintcache --max-warnings 0",
+    "lint:fix": "eslint . --cache --cache-location .eslintcache --fix --max-warnings 0",
     "lint:migrations": "tsx scripts/verify-migration-compatibility.ts",
     "lint:unused": "knip",
     "lint:unused:fix": "knip --fix --allow-remove-files",
@@ -54,6 +54,7 @@
     "migrate:dev": "dotenv -c development -- prisma migrate dev",
     "migrate:deploy": "dotenv -c development -- prisma migrate deploy",
     "migrate:status": "dotenv -c development -- tsx scripts/preflight-migration-summary.ts --require-db",
+    "preflight:env": "tsx scripts/preflight-env.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "db:seed": "dotenv -c development -- tsx scripts/seed.ts",
@@ -61,7 +62,7 @@
     "check:action-pins": "npx tsx scripts/check-action-pins.ts",
     "check:identifiers": "npx tsx scripts/check-personal-identifiers.ts",
     "check:links": "npx tsx scripts/check-doc-links.ts",
-    "check:prisma": "npx tsx scripts/check-prisma-schema.ts",
+    "check:prisma": "tsx scripts/check-prisma-schema.ts",
     "check:standalone": "npx tsx scripts/check-docker-build.ts",
     "check:env-docs": "npx tsx scripts/verify-env-docs.ts",
     "check:runbooks": "npx tsx scripts/verify-deployment-runbooks.ts",
@@ -116,12 +117,12 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
+    "@babel/core": "^8.0.0",
     "@babel/preset-env": "^8.0.7",
     "@babel/preset-react": "^8.0.1",
     "@babel/preset-typescript": "^8.0.7",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.65.1",
-    "@storybook/addon-essentials": "^8.6.14",
     "@storybook/react": "^10.6.7",
     "@storybook/react-webpack5": "^10.6.7",
     "@stylistic/eslint-plugin": "^6.0.1",
@@ -161,7 +162,8 @@
     "tailwindcss": "^4.1.18",
     "ts-morph": "^28.0.0",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.72.0",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
     "yaml": "^2.9.1"
@@ -171,15 +173,21 @@
       "minimatch": "^11.0.8"
     },
     "effect": "^3.22.5",
+    "eslint-plugin-react": {
+      "eslint": "$eslint"
+    },
     "image-size": "^2.1.0",
     "msw-storybook-addon": {
       "msw": "$msw"
     },
     "sharp": "$sharp",
     "vite": "^6.4.6",
+    "vitepress-plugin-mermaid": {
+      "mermaid": "$mermaid"
+    },
     "webpack-dev-middleware": "^7.4.6"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": "eslint --fix"
+    "*.{js,jsx,ts,tsx,mjs,cjs}": "eslint --fix"
   }
 }

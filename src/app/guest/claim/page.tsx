@@ -79,7 +79,7 @@ function GuestClaimContent() {
       ? fetchState.error
       : null;
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!token || isSubmitting) return;
 

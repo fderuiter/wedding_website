@@ -107,6 +107,32 @@ export const GuestLookupSchema = z.object({
       });
     }
   }
+}).meta({
+  description:
+    'Guest self-service invitation lookup payload. Requires at least one of query (min 2 characters or valid email), name (min 2 characters), or email (valid email address).',
+  anyOf: [
+    {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        query: { type: 'string', minLength: 2 },
+      },
+    },
+    {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: { type: 'string', minLength: 2 },
+      },
+    },
+    {
+      type: 'object',
+      required: ['email'],
+      properties: {
+        email: { type: 'string', format: 'email', minLength: 3 },
+      },
+    },
+  ],
 });
 
 const SingleGuestPhotoSchema = z.any()
@@ -213,6 +239,8 @@ export const MediaExportSchema = z.object({
   ids: z.union([z.array(z.string()), z.string()]).optional(),
   tag: z.string().optional(),
   category: z.string().optional(),
+  filename: z.string().optional(),
+  preflight: z.union([z.boolean(), z.string()]).optional(),
 });
 
 export const AdminSetupSchema = z.object({
@@ -264,6 +292,36 @@ export const AdminSetupSchema = z.object({
   showCountdown: z.boolean().optional(),
   showAddToCalendar: z.boolean().optional(),
   subdomain: z.string().nullable().optional(),
+}).meta({
+  description:
+    'First-run site setup and authenticated configuration payload. Requires either password (validated against ADMIN_PASSWORD_HASH or ADMIN_PASSWORD during step-1 setup authentication) or full site initialization fields (non-placeholder baseUrl plus partner1Name & partner2Name or legacy brideName & groomName; unauthenticated first-run requests must also include password).',
+  anyOf: [
+    {
+      type: 'object',
+      required: ['password'],
+      properties: {
+        password: { type: 'string', minLength: 1 },
+      },
+    },
+    {
+      type: 'object',
+      required: ['baseUrl', 'partner1Name', 'partner2Name'],
+      properties: {
+        baseUrl: { type: 'string', minLength: 1 },
+        partner1Name: { type: 'string', minLength: 1 },
+        partner2Name: { type: 'string', minLength: 1 },
+      },
+    },
+    {
+      type: 'object',
+      required: ['baseUrl', 'brideName', 'groomName'],
+      properties: {
+        baseUrl: { type: 'string', minLength: 1 },
+        brideName: { type: 'string', minLength: 1 },
+        groomName: { type: 'string', minLength: 1 },
+      },
+    },
+  ],
 });
 
 export const StripeWebhookEventSchema = z.object({
