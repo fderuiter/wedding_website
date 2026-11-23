@@ -1,4 +1,12 @@
 import { defineConfig } from '@prisma/config';
+import { normalizePostgresUrl } from './src/lib/postgres-url.js';
+
+if (process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = normalizePostgresUrl(process.env.DATABASE_URL);
+}
+if (process.env.POSTGRES_URL_NON_POOLING) {
+  process.env.POSTGRES_URL_NON_POOLING = normalizePostgresUrl(process.env.POSTGRES_URL_NON_POOLING);
+}
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',

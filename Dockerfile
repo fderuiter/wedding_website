@@ -146,9 +146,10 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Copy Prisma schema, config, and standalone password hash utility owned by root:root
+# Copy Prisma schema, config, shared PostgreSQL URI normalizer, and standalone password hash utility owned by root:root
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/src/lib/postgres-url.js ./src/lib/postgres-url.js
 COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs
 
 # Link ./node_modules/.bin/prisma (root:root), pre-create runtime cache/upload mountpoints, and strip setuid/setgid bits

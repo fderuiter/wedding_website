@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidPostgresUrl, normalizePostgresUrl } from './lib/postgres-url.js';
 
 const PLACEHOLDER_STRIPE_KEYS = new Set([
   'sk_test_placeholder_mock_key',
@@ -97,26 +98,19 @@ function parseTrustProxy(val: unknown): boolean | number {
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required').refine(val => {
-    try {
-      new URL(val);
-      return val.startsWith('postgres://') || val.startsWith('postgresql://');
-    } catch {
-      return false;
-    }
+    return isValidPostgresUrl(val);
   }, {
     message: 'DATABASE_URL must be a valid PostgreSQL URL',
-  }),
+  }).transform(val => normalizePostgresUrl(val)),
   POSTGRES_URL_NON_POOLING: z.string().optional().refine(val => {
     if (!val) return true;
-    try {
-      new URL(val);
-      return val.startsWith('postgres://') || val.startsWith('postgresql://');
-    } catch {
-      return false;
-    }
+    return isValidPostgresUrl(val);
   }, {
     message: 'POSTGRES_URL_NON_POOLING must be a valid PostgreSQL URL',
-  }).transform(val => normalizeOptionalEnv(val)),
+  }).transform(val => {
+    const normalized = normalizeOptionalEnv(val);
+    return normalized ? normalizePostgresUrl(normalized) : undefined;
+  }),
   ADMIN_PASSWORD: z
     .string()
     .min(1, 'ADMIN_PASSWORD is required')
@@ -419,8 +413,12 @@ if (process.env.NEXT_RUNTIME === 'edge' || isStaticExport || (isBuildTime && (!p
   // Use fallbacks for build tasks
   _env = {
     NODE_ENV: (process.env.NODE_ENV as 'development' | 'test' | 'production') || 'development',
-    DATABASE_URL: process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy',
-    POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',
+    DATABASE_URL: process.env.DATABASE_URL && isValidPostgresUrl(process.env.DATABASE_URL)
+      ? normalizePostgresUrl(process.env.DATABASE_URL)
+      : (process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost:5432/dummy'),
+    POSTGRES_URL_NON_POOLING: process.env.POSTGRES_URL_NON_POOLING && isValidPostgresUrl(process.env.POSTGRES_URL_NON_POOLING)
+      ? normalizePostgresUrl(process.env.POSTGRES_URL_NON_POOLING)
+      : (process.env.POSTGRES_URL_NON_POOLING || 'postgresql://dummy:dummy@localhost:5432/dummy_shadow'),
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || BUILD_FALLBACK_ADMIN_PASSWORD,
     ALLOWED_HOSTS: process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,*.localhost',
     MULTISITE_ENABLED: process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1',
@@ -458,6 +456,9 @@ export const env = new Proxy(_env, {
         return val !== undefined && val !== '' ? parseTrustProxy(val) : target.TRUST_PROXY;
       }
       if (val !== undefined && val !== '') {
+        if (prop === 'DATABASE_URL' || prop === 'POSTGRES_URL_NON_POOLING') {
+          return isValidPostgresUrl(val) ? normalizePostgresUrl(val) : val;
+        }
         if (prop === 'MULTISITE_ENABLED' || prop === 'RUN_MIGRATIONS') {
           return val === 'true' || val === '1';
         }

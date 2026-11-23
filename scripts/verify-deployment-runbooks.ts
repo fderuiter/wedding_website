@@ -3,6 +3,7 @@ import path from 'path';
 import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
+import { parsePostgresUrl, redactPostgresUrl } from '../src/lib/postgres-url.js';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -122,6 +123,171 @@ function extractFencedLogicalLines(markdown: string): string[] {
   return extractOrderedSnippets(markdown)
     .filter((item) => item.isFencedBlock)
     .map((item) => item.text);
+}
+
+const BRACKETED_POSTGRES_TEMPLATE_REGEX =
+  /^postgres(?:ql)?:\/\/\[user\]:\[password\]@\[host\](?::\[port\])?\/\[(?:database|db)\](?:\?.*)?$/i;
+
+function materializeShellVarsForUrlValidation(input: string): string {
+  let current = input;
+  const innermostVarRegex = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-?+])([^{}]*))?\}/g;
+  for (let round = 0; round < 5; round++) {
+    let changed = false;
+    current = current.replace(
+      innermostVarRegex,
+      (fullMatch, varName: string, operator?: string, operand?: string) => {
+        if ((operator === ':-' || operator === '-') && operand && !operand.startsWith('$')) {
+          changed = true;
+          return operand;
+        }
+        if (operator === ':-' && operand && operand.startsWith('$')) {
+          return fullMatch;
+        }
+        changed = true;
+        if (/PORT/i.test(varName)) {
+          return '5432';
+        }
+        return 'placeholder';
+      }
+    );
+    if (!changed) {
+      break;
+    }
+  }
+  return current;
+}
+
+function isPureVariableReference(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/^\$[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    return true;
+  }
+  if (/^\$\{\{[^}]+\}\}$/.test(trimmed)) {
+    return true;
+  }
+  if (/^\$\{[A-Za-z_][A-Za-z0-9_]*(?::?[-?+](\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}))?\}$/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+function validateDocumentedPostgresUrlsInRunbook(
+  relPath: string,
+  markdown: string,
+  envKeysToCheck: string[],
+  errors: string[]
+): void {
+  const snippets = extractOrderedSnippets(markdown);
+  const envKeyPattern = envKeysToCheck
+    .filter(Boolean)
+    .map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const assignmentRegex = envKeyPattern
+    ? new RegExp(
+      `(?:^|[\\s"'(])(${envKeyPattern})=("([^"]*)"|'([^']*)'|([^\\s"',;)]*))`,
+      'g'
+    )
+    : null;
+
+  for (const { text: rawSnippet, isFencedBlock } of snippets) {
+    const snippet = rawSnippet.trim();
+    if (!snippet) {
+      continue;
+    }
+
+    const validatedNormalizedUrls = new Set<string>();
+
+    if (assignmentRegex) {
+      assignmentRegex.lastIndex = 0;
+      let assignMatch: RegExpExecArray | null;
+      while ((assignMatch = assignmentRegex.exec(snippet)) !== null) {
+        const envKey = assignMatch[1];
+        const fullRhs = assignMatch[2] ?? '';
+        const unquotedValue =
+          assignMatch[3] !== undefined
+            ? assignMatch[3]
+            : assignMatch[4] !== undefined
+              ? assignMatch[4]
+              : (assignMatch[5] ?? '');
+
+        // Prose reference to `DATABASE_URL=` prefix without a value (as opposed to `DATABASE_URL=""`)
+        if (fullRhs === '' && (snippet === `${envKey}=` || !isFencedBlock)) {
+          continue;
+        }
+
+        const prefixBeforeMatch = snippet.slice(0, assignMatch.index + assignMatch[0].indexOf(envKey));
+        if (
+          /--(?:set|update)-secrets\b/.test(prefixBeforeMatch) ||
+          (/--(?:set|update)-secrets\b/.test(snippet) &&
+            /^[A-Za-z_][A-Za-z0-9_]*:(?:latest|\d+)$/.test(unquotedValue))
+        ) {
+          continue;
+        }
+
+        if (isPureVariableReference(unquotedValue)) {
+          continue;
+        }
+
+        const materializedValue = materializeShellVarsForUrlValidation(unquotedValue);
+        if (BRACKETED_POSTGRES_TEMPLATE_REGEX.test(materializedValue)) {
+          validatedNormalizedUrls.add(materializedValue);
+          continue;
+        }
+
+        try {
+          parsePostgresUrl(materializedValue, {
+            allowEmptyHostSocket: false,
+            requireDatabaseName: true,
+          });
+          validatedNormalizedUrls.add(materializedValue);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          errors.push(
+            `${relPath}: Invalid documented ${envKey} connection string (${redactPostgresUrl(unquotedValue)}): ${reason}`
+          );
+          validatedNormalizedUrls.add(materializedValue);
+        }
+      }
+    }
+
+    // Prose scheme-only mentions such as `postgres://`, `postgresql://`, or `postgres(ql)://`
+    if (
+      !isFencedBlock &&
+      (snippet === 'postgres://' || snippet === 'postgresql://' || snippet === 'postgres(ql)://')
+    ) {
+      continue;
+    }
+
+    const materializedSnippet = materializeShellVarsForUrlValidation(snippet);
+    const uriRegex = /\bpostgres(?:ql)?:\/\/[^\s"'`<>)]+/g;
+    let uriMatch: RegExpExecArray | null;
+    while ((uriMatch = uriRegex.exec(materializedSnippet)) !== null) {
+      const candidateUri = uriMatch[0].replace(/[.,;]+$/, '');
+      if (validatedNormalizedUrls.has(candidateUri)) {
+        continue;
+      }
+      // Bare scheme mention inside a multi-token inline span is still invalid if intended as a URI,
+      // except if someone wrote e.g. `postgres://` alone (already handled above).
+      if (BRACKETED_POSTGRES_TEMPLATE_REGEX.test(candidateUri)) {
+        continue;
+      }
+
+      try {
+        parsePostgresUrl(candidateUri, {
+          allowEmptyHostSocket: false,
+          requireDatabaseName: true,
+        });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        errors.push(
+          `${relPath}: Invalid documented PostgreSQL URI (${redactPostgresUrl(candidateUri)}): ${reason}`
+        );
+      }
+    }
+  }
 }
 
 function parseMigrateSegmentsFromSnippet(
@@ -784,6 +950,13 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         );
       }
     }
+
+    validateDocumentedPostgresUrlsInRunbook(
+      relPath,
+      content,
+      [urlEnvKey ?? 'DATABASE_URL', shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING'],
+      errors
+    );
   }
 
   // Verify Vercel prisma migrate deploy explicitly overrides DATABASE_URL when non-pooling URL is documented

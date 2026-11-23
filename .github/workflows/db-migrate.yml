@@ -114,6 +114,54 @@ jobs:
             echo "::error::Invalid format for DATABASE_URL. Must start with postgres:// or postgresql://"
             exit 1
           fi
+          if ! node --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            import { pathToFileURL } from "node:url";
+            const raw = process.env.DATABASE_URL ?? "";
+            const helperPath = path.resolve("src/lib/postgres-url.js");
+            if (fs.existsSync(helperPath)) {
+              const { parsePostgresUrl } = await import(pathToFileURL(helperPath).href);
+              parsePostgresUrl(raw);
+            } else {
+              if (!/^(postgres|postgresql):\/\//.test(raw) || /[\x00-\x20\x7f#]/.test(raw)) {
+                process.exit(1);
+              }
+              const afterScheme = raw.replace(/^(postgres|postgresql):\/\//, "");
+              const qIdx = afterScheme.indexOf("?");
+              const beforeQ = qIdx === -1 ? afterScheme : afterScheme.slice(0, qIdx);
+              const query = qIdx === -1 ? "" : afterScheme.slice(qIdx + 1);
+              const sIdx = beforeQ.indexOf("/");
+              const authority = sIdx === -1 ? beforeQ : beforeQ.slice(0, sIdx);
+              const pathPart = sIdx === -1 ? "" : beforeQ.slice(sIdx);
+              const atIdx = authority.indexOf("@");
+              if (atIdx !== authority.lastIndexOf("@")) process.exit(1);
+              const userinfo = atIdx === -1 ? null : authority.slice(0, atIdx);
+              const hostPort = atIdx === -1 ? authority : authority.slice(atIdx + 1);
+              const host = hostPort.startsWith("[") ? hostPort : hostPort.split(":")[0];
+              if (!hostPort.startsWith("[") && hostPort.includes(":")) {
+                const portStr = hostPort.slice(hostPort.indexOf(":") + 1);
+                if (!/^[1-9]\d{0,4}$/.test(portStr) || Number(portStr) > 65535) process.exit(1);
+              }
+              const params = new URLSearchParams(query);
+              const qHost = params.get("host") ?? "";
+              if (params.has("host") && (!qHost || /^\/+$/.test(qHost))) process.exit(1);
+              const validSocket = qHost.startsWith("/") && qHost.length > 1 && !/^\/+$/.test(qHost);
+              let normalized = raw;
+              if (!host) {
+                if (!validSocket) process.exit(1);
+                if (!pathPart || pathPart === "/") process.exit(1);
+                const scheme = raw.startsWith("postgresql://") ? "postgresql" : "postgres";
+                const portSuffix = hostPort.includes(":") ? ":" + hostPort.split(":")[1] : "";
+                normalized = `${scheme}://${userinfo !== null ? userinfo + "@" : ""}localhost${portSuffix}${pathPart}${qIdx === -1 ? "" : "?" + query}`;
+              }
+              const parsed = new URL(normalized);
+              if (!parsed.hostname) process.exit(1);
+            }
+          ' 2>/dev/null; then
+            echo "::error::Invalid format for DATABASE_URL. Must be a valid PostgreSQL URI with a non-empty host or ?host=/... Unix socket path."
+            exit 1
+          fi
 
       - name: Pre-flight schema migration check and summary
         id: status_check

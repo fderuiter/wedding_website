@@ -349,6 +349,70 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
+  it('rejects invalid documented DATABASE_URL, POSTGRES_URL_NON_POOLING, and PostgreSQL URIs across all seven runbooks', () => {
+    const runbookMutations: Array<{
+      relPath: string;
+      snippetToAppend: string;
+      expectedSubstring: string;
+    }> = [
+      {
+        relPath: 'docs/deployment/gcp-cloud-run.md',
+        snippetToAppend:
+          '\n```env\nDATABASE_URL="postgresql://wedding_user:STRONG_PASSWORD@/wedding_db?host=/cloudsql/my-proj:us-central1:wedding-db"\n```\n',
+        expectedSubstring: 'docs/deployment/gcp-cloud-run.md: Invalid documented DATABASE_URL connection string',
+      },
+      {
+        relPath: 'DEPLOYMENT.md',
+        snippetToAppend:
+          '\nBroken inline URI: `postgresql://wedding:secret@/wedding_db`\n',
+        expectedSubstring: 'DEPLOYMENT.md: Invalid documented PostgreSQL URI',
+      },
+      {
+        relPath: 'docs/runtime-contract.md',
+        snippetToAppend:
+          '\n```env\nDATABASE_URL="mysql://root:pass@localhost:3306/wedding"\n```\n',
+        expectedSubstring: 'docs/runtime-contract.md: Invalid documented DATABASE_URL connection string',
+      },
+      {
+        relPath: 'docs/deployment/README.md',
+        snippetToAppend:
+          '\n```env\nDATABASE_URL="postgresql://user:pass@localhost:5432/wedding?sslmode=bogus"\n```\n',
+        expectedSubstring: 'docs/deployment/README.md: Invalid documented DATABASE_URL connection string',
+      },
+      {
+        relPath: 'docs/deployment/vercel.md',
+        snippetToAppend:
+          '\n```env\nPOSTGRES_URL_NON_POOLING="postgresql://user:pass@/wedding_db"\n```\n',
+        expectedSubstring: 'docs/deployment/vercel.md: Invalid documented POSTGRES_URL_NON_POOLING connection string',
+      },
+      {
+        relPath: 'docs/deployment/docker-vps.md',
+        snippetToAppend:
+          '\n```env\nDATABASE_URL="postgresql://user:pass@db:5432/wedding?connection_limit=0"\n```\n',
+        expectedSubstring: 'docs/deployment/docker-vps.md: Invalid documented DATABASE_URL connection string',
+      },
+      {
+        relPath: 'docs/deployment/railway-render.md',
+        snippetToAppend:
+          '\n```env\nDATABASE_URL="postgres://"\n```\n',
+        expectedSubstring: 'docs/deployment/railway-render.md: Invalid documented DATABASE_URL connection string',
+      },
+    ];
+
+    for (const mutation of runbookMutations) {
+      const fullPath = path.join(tempDir, mutation.relPath);
+      fs.writeFileSync(fullPath, `${fs.readFileSync(fullPath, 'utf8')}${mutation.snippetToAppend}`);
+    }
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    for (const mutation of runbookMutations) {
+      expect(errors).toEqual(
+        expect.arrayContaining([expect.stringContaining(mutation.expectedSubstring)])
+      );
+    }
+    expect(JSON.stringify(errors)).not.toContain('STRONG_PASSWORD');
+  });
+
   it('rejects Node.js major version drift across Dockerfile, setup-node workflows, runtime docs, and dependabot.yml', () => {
     const dockerfilePath = path.join(tempDir, 'Dockerfile');
     fs.writeFileSync(
