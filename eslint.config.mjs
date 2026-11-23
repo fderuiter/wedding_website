@@ -32,6 +32,7 @@ const eslintConfig = [
       'public/mockServiceWorker.js',
       '.next/**',
       'node_modules/**',
+      'docker/prisma-cli/**',
       'coverage/**',
       'dist/**',
       'test-results/**',

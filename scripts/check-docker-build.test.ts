@@ -12,6 +12,7 @@ const CHECK_SCRIPT_PATH = path.join(REPO_ROOT, 'scripts', 'check-docker-build.ts
 const TSX_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
 const NODE_DIGEST = 'sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee';
+const DEBIAN_DIGEST = 'sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc';
 const POSTGRES_DIGEST = 'sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d';
 const ALT_DIGEST = 'sha256:1111111111111111111111111111111111111111111111111111111111111111';
 
@@ -48,7 +49,8 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '    apt-get update && apt-get install -y --no-install-recommends \\',
       '    openssl \\',
       '    ca-certificates \\',
-      '    tini',
+      '    binutils && \\',
+      '    printf \'update-notifier=false\\n\' > /usr/local/etc/npmrc',
       'FROM base AS prisma-cli',
       'WORKDIR /opt/prisma-cli',
       'FROM base AS builder',
@@ -63,9 +65,16 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       'COPY scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
       'RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \\',
       '    npm run build:docker',
-      'FROM base AS runner',
-      'RUN addgroup --system --gid 1001 nodejs && \\',
+      `FROM debian:bookworm-slim@${DEBIAN_DIGEST} AS runner`,
+      'WORKDIR /app',
+      'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\',
+      '    --mount=type=cache,target=/var/lib/apt,sharing=locked \\',
+      '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
+      '    apt-get update && apt-get install -y --no-install-recommends \\',
+      '    openssl ca-certificates tini libstdc++6 && \\',
+      '    addgroup --system --gid 1001 nodejs && \\',
       '    adduser --system --uid 1001 --ingroup nodejs nextjs',
+      'COPY --from=base /usr/local/bin/node /usr/local/bin/node',
       'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
       'COPY --from=builder /app/prisma.config.ts ./prisma.config.ts',
       'RUN ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \\',
@@ -631,6 +640,82 @@ describe('check-docker-build', () => {
         expect.objectContaining({
           filePath: 'docker-compose.ci.yml',
           imageRef: 'app.build.cache_to',
+        }),
+      ])
+    );
+  });
+
+  it('enforces /usr/local/etc/npmrc in base, committed npm ci in prisma-cli, and forbids npm/npx/corepack/yarn in runner', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'Dockerfile'),
+      [
+        '# syntax=docker/dockerfile:1',
+        `FROM node:22-bookworm-slim@${NODE_DIGEST} AS base`,
+        'WORKDIR /app',
+        'RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \\',
+        '    --mount=type=cache,target=/var/lib/apt,sharing=locked \\',
+        '    rm -f /etc/apt/apt.conf.d/docker-clean && \\',
+        '    apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && \\',
+        '    printf \'update-notifier=false\\n\' > /etc/npmrc',
+        'FROM base AS prisma-cli',
+        'WORKDIR /opt/prisma-cli',
+        'RUN npm install --omit=dev',
+        'FROM base AS builder',
+        'COPY package.json package-lock.json .npmrc ./',
+        'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
+        '    npm ci --ignore-scripts',
+        'COPY prisma ./prisma',
+        'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./',
+        'COPY assets ./assets',
+        'COPY public ./public',
+        'COPY src ./src',
+        'COPY scripts/generate-password-hash.mjs ./scripts/generate-password-hash.mjs',
+        'RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \\',
+        '    npm run build:docker',
+        'FROM base AS runner',
+        'RUN addgroup --system --gid 1001 nodejs && \\',
+        '    adduser --system --uid 1001 --ingroup nodejs nextjs && \\',
+        '    npm --version',
+        'COPY --from=base /usr/local/include/node /usr/local/include/node',
+        'COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli',
+        'COPY --from=builder /app/prisma.config.ts ./prisma.config.ts',
+        'RUN ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \\',
+        '    find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true',
+        'HEALTHCHECK CMD node -e "fetch(\'http://127.0.0.1:3000/api/live\')"',
+        'ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]',
+        'CMD ["node", "server.js"]',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/etc/npmrc',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/usr/local/etc/npmrc',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'npm install',
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'npm',
+          reason: expect.stringContaining('must not inherit from Node.js stage/image'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'npm',
+          reason: expect.stringContaining('runner stage must forbid npm'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: '/usr/local/include/node',
         }),
       ])
     );

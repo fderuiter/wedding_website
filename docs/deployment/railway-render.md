@@ -68,16 +68,16 @@ Database migrations run automatically during the pre-deployment phase before new
 ### Railway Migration Command
 In Railway **Settings > Deploy > Custom Build / Pre-deploy Command**:
 ```bash
-npx prisma migrate deploy
+/usr/local/bin/prisma migrate deploy
 ```
 
 ### Render Migration Command
 In Render **Web Service Settings > Release Command**:
 ```bash
-npx prisma migrate deploy
+/usr/local/bin/prisma migrate deploy
 ```
 
-*Note: `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. If `DATABASE_URL` points to an external PgBouncer transaction pooler, override `DATABASE_URL` explicitly and unset `POSTGRES_URL_NON_POOLING` for the migration subprocess (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`) so Prisma acquires migration advisory locks without triggering `P3025`.*
+*Note: The official `Dockerfile` packages the isolated offline Prisma CLI at `/usr/local/bin/prisma` (symlinked at `./node_modules/.bin/prisma`, which also works on native Node.js buildpacks without `npx`). `prisma.config.ts` binds `datasource.url` to `DATABASE_URL` and `datasource.shadowDatabaseUrl` to `POSTGRES_URL_NON_POOLING`. If `DATABASE_URL` points to an external PgBouncer transaction pooler, override `DATABASE_URL` explicitly and unset `POSTGRES_URL_NON_POOLING` for the migration subprocess (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING /usr/local/bin/prisma migrate deploy`) so Prisma acquires migration advisory locks without triggering `P3025`.*
 
 ---
 

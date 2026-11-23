@@ -274,8 +274,8 @@ IMAGE_DIGEST="sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789a
 
 gcloud run jobs create wedding-migrate \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
-    --command="npx" \
-    --args="prisma,migrate,deploy" \
+    --command="/usr/local/bin/prisma" \
+    --args="migrate,deploy" \
     --set-secrets="DATABASE_URL=DATABASE_URL_DIRECT:latest" \
     --region=us-central1
 
