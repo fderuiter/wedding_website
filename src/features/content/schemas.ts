@@ -197,6 +197,7 @@ const rawUpdateAppConfigBaseSchema = z.object({
       { message: 'Invalid URL format' },
     )
     .optional(),
+  autoApproveGuestPhotos: z.boolean().optional(),
   faviconUrl: z
     .string()
     .refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
@@ -503,6 +504,7 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
       shippingDeliveryNotes: data.shippingDeliveryNotes ?? '',
       defaultPaymentHandleType: data.defaultPaymentHandleType ?? '',
       defaultPaymentHandle: data.defaultPaymentHandle ?? '',
+      autoApproveGuestPhotos: data.autoApproveGuestPhotos ?? false,
       setupCompleted: data.setupCompleted ?? true,
       subdomain: data.subdomain || null,
     };
@@ -601,6 +603,9 @@ export function toAppConfigDbPayload(
     seoDescription: data.seoDescription,
     contactEmail: data.contactEmail,
     photoAlbumUrl: data.photoAlbumUrl ?? '',
+    ...(typeof data.autoApproveGuestPhotos === 'boolean'
+      ? { autoApproveGuestPhotos: data.autoApproveGuestPhotos }
+      : {}),
     faviconUrl: data.faviconUrl,
     ogImageUrl: data.ogImageUrl,
     brandMonogram: data.brandMonogram,
@@ -903,6 +908,24 @@ export const PhotoModerationSchema = z.object({
     { type: 'object', required: ['status'] },
   ],
 });
+
+export const AdminPhotoQrUpdateSchema = z
+  .object({
+    action: z.enum(['rotate']).optional(),
+    autoApproveGuestPhotos: z.boolean().optional(),
+  })
+  .refine(
+    (data) => data.action === 'rotate' || typeof data.autoApproveGuestPhotos === 'boolean',
+    { message: 'Provide action: "rotate" and/or a boolean autoApproveGuestPhotos flag.' }
+  )
+  .meta({
+    description:
+      'Admin guest photo QR settings update payload. Requires action ("rotate") and/or a boolean autoApproveGuestPhotos flag.',
+    anyOf: [
+      { type: 'object', required: ['action'] },
+      { type: 'object', required: ['autoApproveGuestPhotos'] },
+    ],
+  });
 
 export const QueuePhotoModerationSchema = z.object({
   id: z.string().min(1).optional(),
@@ -1217,6 +1240,8 @@ export const AppConfigSchema = z.object({
   seoDescription: z.string().describe('Meta description summarizing the wedding website for search engines and Open Graph previews.'),
   contactEmail: z.string().default('').describe('Public host contact email address displayed for guest inquiries.'),
   photoAlbumUrl: z.string().default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
+  autoApproveGuestPhotos: z.boolean().default(false).describe('Admin-only toggle controlling whether new guest photo uploads are automatically approved and published immediately without manual moderation; omitted from public DTOs.'),
+  guestPhotoQrTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter for rotating signed guest photo upload QR links and invalidating previously issued photo sessions; omitted from public DTOs.'),
   faviconUrl: z.string().describe('Asset path or safe URL for the browser tab favicon icon.'),
   ogImageUrl: z.string().describe('Default Open Graph social sharing preview image URL or asset path.'),
   brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),
@@ -1593,6 +1618,32 @@ export function translateAppConfigSnapshot(
     if (raw !== undefined) {
       update[key] = resolved;
     }
+  }
+
+  if (
+    snapshotData.autoApproveGuestPhotos !== undefined &&
+    snapshotData.autoApproveGuestPhotos !== null
+  ) {
+    const resolvedAutoApprove = Boolean(snapshotData.autoApproveGuestPhotos);
+    update.autoApproveGuestPhotos = resolvedAutoApprove;
+    create.autoApproveGuestPhotos = resolvedAutoApprove;
+  } else {
+    create.autoApproveGuestPhotos = false;
+  }
+
+  if (
+    snapshotData.guestPhotoQrTokenVersion !== undefined &&
+    snapshotData.guestPhotoQrTokenVersion !== null
+  ) {
+    const numericVersion = Number(snapshotData.guestPhotoQrTokenVersion);
+    const resolvedVersion =
+      Number.isInteger(numericVersion) && numericVersion >= 1
+        ? numericVersion
+        : 1;
+    update.guestPhotoQrTokenVersion = resolvedVersion;
+    create.guestPhotoQrTokenVersion = resolvedVersion;
+  } else {
+    create.guestPhotoQrTokenVersion = 1;
   }
 
   const faviconUrl =

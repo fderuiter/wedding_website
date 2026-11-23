@@ -229,7 +229,7 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
 }) => {
   const handleClose = () => {
     if (typeof document !== 'undefined') {
-      document.body.classList.remove('printing-qr-labels');
+      document.body.classList.remove('printing-qr-labels', 'printing-qr-portal');
     }
     onClose();
   };
@@ -237,12 +237,12 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
   useEffect(() => {
     if (typeof document === 'undefined') return;
     if (isOpen) {
-      document.body.classList.add('printing-qr-labels');
+      document.body.classList.add('printing-qr-labels', 'printing-qr-portal');
     } else {
-      document.body.classList.remove('printing-qr-labels');
+      document.body.classList.remove('printing-qr-labels', 'printing-qr-portal');
     }
     return () => {
-      document.body.classList.remove('printing-qr-labels');
+      document.body.classList.remove('printing-qr-labels', 'printing-qr-portal');
     };
   }, [isOpen]);
 
@@ -252,7 +252,7 @@ export const InvitationQRPrintLabelsModal: React.FC<InvitationQRPrintLabelsModal
       if (event.key === 'Escape') {
         event.stopPropagation();
         if (typeof document !== 'undefined') {
-          document.body.classList.remove('printing-qr-labels');
+          document.body.classList.remove('printing-qr-labels', 'printing-qr-portal');
         }
         onClose();
       }

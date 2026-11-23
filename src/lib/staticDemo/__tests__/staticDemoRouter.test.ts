@@ -286,6 +286,8 @@ function buildOpenApiRequestInit(
         snapshotVersion: snapshot.snapshotVersion,
       },
     };
+  } else if (resolvedPath === '/api/admin/photos/qr' && method === 'POST') {
+    body = { autoApproveGuestPhotos: true };
   } else if (resolvedPath === '/api/media/export') {
     body = { ids: [firstMedia?.id ?? 'm-1'], preflight: true };
   }

@@ -10666,6 +10666,14 @@
                           "photoAlbumUrl": {
                             "type": "string"
                           },
+                          "autoApproveGuestPhotos": {
+                            "type": "boolean"
+                          },
+                          "guestPhotoQrTokenVersion": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
                           "faviconUrl": {
                             "type": "string"
                           },
@@ -12353,6 +12361,14 @@
                         },
                         "photoAlbumUrl": {
                           "type": "string"
+                        },
+                        "autoApproveGuestPhotos": {
+                          "type": "boolean"
+                        },
+                        "guestPhotoQrTokenVersion": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
                         },
                         "faviconUrl": {
                           "type": "string"
@@ -15247,6 +15263,228 @@
         }
       }
     },
+    "/api/admin/photos/qr": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "GET /api/admin/photos/qr",
+        "description": "Endpoint for /api/admin/photos/qr",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "uploadUrl": {
+                      "type": "string"
+                    },
+                    "tokenVersion": {
+                      "type": "number"
+                    },
+                    "autoApproveGuestPhotos": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "uploadUrl",
+                    "tokenVersion",
+                    "autoApproveGuestPhotos"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/photos/qr",
+        "description": "Endpoint for /api/admin/photos/qr",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "rotate"
+                    ]
+                  },
+                  "autoApproveGuestPhotos": {
+                    "type": "boolean"
+                  }
+                },
+                "description": "Admin guest photo QR settings update payload. Requires action (\"rotate\") and/or a boolean autoApproveGuestPhotos flag.",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "autoApproveGuestPhotos"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "uploadUrl": {
+                      "type": "string"
+                    },
+                    "tokenVersion": {
+                      "type": "number"
+                    },
+                    "autoApproveGuestPhotos": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "uploadUrl",
+                    "tokenVersion",
+                    "autoApproveGuestPhotos"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/registry/items/{id}/unclaim": {
       "post": {
         "tags": [
@@ -16497,6 +16735,9 @@
                   "photoAlbumUrl": {
                     "type": "string"
                   },
+                  "autoApproveGuestPhotos": {
+                    "type": "boolean"
+                  },
                   "faviconUrl": {
                     "type": "string"
                   },
@@ -17070,6 +17311,9 @@
                   },
                   "photoAlbumUrl": {
                     "type": "string"
+                  },
+                  "autoApproveGuestPhotos": {
+                    "type": "boolean"
                   },
                   "faviconUrl": {
                     "type": "string"

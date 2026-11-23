@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { GuestPhotoUploadSchema } from '@/utils/validation';
 import { getStorageProvider } from '@/utils/storage';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -90,6 +91,12 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const caption = parsed.data.caption;
   const publicTitle = caption || (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
   const actorName = uploaderName || 'Guest';
+  const autoApprove = Boolean(config.autoApproveGuestPhotos);
+  const photoStatus = autoApprove ? 'APPROVED' : 'PENDING';
+  const photoVisible = autoApprove;
+  const statusMessage = autoApprove
+    ? 'Photo uploaded and published live to the gallery!'
+    : 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.';
 
   const sanitizedBatch = await mapWithConcurrency(
     files,
@@ -120,8 +127,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         tags: ['gallery', 'guest-upload'],
         data: {
           url: storageResult.url,
-          isVisible: false,
-          status: 'PENDING',
+          ...(autoApprove
+            ? { isVisible: true, status: 'APPROVED' as const }
+            : { isVisible: false, status: 'PENDING' as const }),
           title: publicTitle,
           altText: publicTitle,
           mediaId: media.id,
@@ -141,12 +149,21 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
         ...(originalFilename ? { originalFilename } : {}),
         createdAt: media.createdAt,
         nodeId: photoNode.id,
-        status: 'PENDING',
-        isVisible: false,
-        message: 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
+        status: photoStatus,
+        isVisible: photoVisible,
+        message: statusMessage,
       };
     }
   );
+
+  if (autoApprove && uploadedPhotos.length > 0) {
+    try {
+      revalidatePath('/photos');
+      revalidatePath('/photos/slideshow');
+    } catch {
+      // Ignore outside Next.js request context (e.g. unit tests)
+    }
+  }
 
   return NextResponse.json(
     {
@@ -155,4 +172,4 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
     { status: 201 }
   );
-});
+}, { limit: 15, windowMs: 60 * 1000, keyPrefix: 'guest-photo-upload' });

@@ -1140,6 +1140,54 @@ export async function handleAdminWorkflowRoutes(
     }
   }
 
+  if (pathname === '/api/admin/photos/qr') {
+    const origin = new URL(request.url).origin;
+    if (method === 'GET') {
+      const snapshot = store.getSnapshot();
+      const cfg = getActiveAppConfig(snapshot);
+      const tokenVersion = cfg.guestPhotoQrTokenVersion || 1;
+      const autoApproveGuestPhotos = Boolean(cfg.autoApproveGuestPhotos);
+      return wrapMiddlewareJson({
+        success: true,
+        uploadUrl: `${origin}/photos?qr=demo-signed-qr-v${tokenVersion}`,
+        tokenVersion,
+        autoApproveGuestPhotos,
+      });
+    }
+
+    if (method === 'POST') {
+      const body = await readJsonBody(request);
+      const hasRotate = body.action === 'rotate';
+      const hasAutoApprove = typeof body.autoApproveGuestPhotos === 'boolean';
+      if (!hasRotate && !hasAutoApprove) {
+        return errorJson(400, 'Provide action="rotate" or autoApproveGuestPhotos boolean.');
+      }
+
+      const result = store.mutate((draft) => {
+        const cfg = getActiveAppConfig(draft);
+        if (hasRotate) {
+          cfg.guestPhotoQrTokenVersion = (cfg.guestPhotoQrTokenVersion || 1) + 1;
+        }
+        if (hasAutoApprove) {
+          cfg.autoApproveGuestPhotos = Boolean(body.autoApproveGuestPhotos);
+        }
+        cfg.updatedAt = new Date().toISOString();
+        pushAuditVersion(draft, 'AppConfig', 'global', cfg);
+        return {
+          tokenVersion: cfg.guestPhotoQrTokenVersion || 1,
+          autoApproveGuestPhotos: Boolean(cfg.autoApproveGuestPhotos),
+        };
+      });
+
+      return wrapMiddlewareJson({
+        success: true,
+        uploadUrl: `${origin}/photos?qr=demo-signed-qr-v${result.tokenVersion}`,
+        tokenVersion: result.tokenVersion,
+        autoApproveGuestPhotos: result.autoApproveGuestPhotos,
+      });
+    }
+  }
+
   const adminPhotoMatch = pathname.match(/^\/api\/admin\/photos\/([^/]+)$/);
   if (adminPhotoMatch) {
     const photoId = decodeURIComponent(adminPhotoMatch[1]);

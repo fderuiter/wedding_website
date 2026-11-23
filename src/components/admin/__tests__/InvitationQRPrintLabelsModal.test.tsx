@@ -54,11 +54,12 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     expect(screen.getByText('BINGLEY26')).toBeInTheDocument();
   });
 
-  it('adds printing-qr-labels class to body when mounted', () => {
+  it('adds printing-qr-labels and printing-qr-portal classes to body when mounted', () => {
     render(
       <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
     );
     expect(document.body.classList.contains('printing-qr-labels')).toBe(true);
+    expect(document.body.classList.contains('printing-qr-portal')).toBe(true);
   });
 
   it('allows switching between Avery 5163 and Avery 5160 templates without triggering print', () => {
@@ -140,7 +141,7 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     window.print = originalPrint;
   });
 
-  it('removes printing-qr-labels class from body and calls onClose when Done is clicked', () => {
+  it('removes printing-qr-labels and printing-qr-portal classes from body and calls onClose when Done is clicked', () => {
     const mockClose = jest.fn();
     render(
       <InvitationQRPrintLabelsModal isOpen={true} onClose={mockClose} codes={sampleCodes} />
@@ -151,6 +152,7 @@ describe('InvitationQRPrintLabelsModal Component', () => {
 
     expect(mockClose).toHaveBeenCalledTimes(1);
     expect(document.body.classList.contains('printing-qr-labels')).toBe(false);
+    expect(document.body.classList.contains('printing-qr-portal')).toBe(false);
   });
 
   it('renders via document.body portal outside clipped ancestors, disables Print Sheet while empty or progressively rendering, and encodes AppConfig.baseUrl', async () => {
