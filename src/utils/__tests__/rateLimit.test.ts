@@ -237,6 +237,37 @@ describe('rateLimit', () => {
       const lockedOut = await checkAuthLockout(sixthReq);
       expect(lockedOut?.status).toBe(429);
     });
+
+    test('binds auth lockout endpoints strictly to client IP even when rotating valid guest_auth cookies', async () => {
+      for (let i = 0; i < 5; i++) {
+        const freshGuestToken = await signGuestToken({
+          guest: true,
+          iat: 10000 + i,
+          exp: Date.now() + 3600000,
+        });
+        const attemptReq = new NextRequest('http://localhost/api/admin/login', {
+          method: 'POST',
+          headers: createVerifiedSocketIpHeaders('127.0.0.2', {
+            cookie: `${GUEST_COOKIE}=${freshGuestToken}`,
+          }),
+        });
+        expect(await checkAuthLockout(attemptReq)).toBeNull();
+        await recordFailedAuthAttempt(attemptReq);
+      }
+
+      const sixthGuestToken = await signGuestToken({
+        guest: true,
+        iat: 20000,
+        exp: Date.now() + 3600000,
+      });
+      const bypassAttemptReq = new NextRequest('http://localhost/api/admin/login', {
+        method: 'POST',
+        headers: createVerifiedSocketIpHeaders('127.0.0.2', {
+          cookie: `${GUEST_COOKIE}=${sixthGuestToken}`,
+        }),
+      });
+      expect((await checkAuthLockout(bypassAttemptReq))?.status).toBe(429);
+    });
   });
 
   describe('Opt-in TRUST_PROXY enabled', () => {
@@ -589,6 +620,13 @@ describe('rateLimit', () => {
       expect(normalizeApiPathname('/api/admin/evict/key-42.png')).toBe('/api/admin/:entity/:id');
       expect(normalizeApiPathname('/api/schedule/sub-1/ics')).toBe('/api/schedule/:id/ics');
       expect(normalizeApiPathname('/api/admin/versions/v-1/restore')).toBe('/api/admin/versions/:id/restore');
+      expect(normalizeApiPathname('/api/admin/broadcast/history')).toBe('/api/admin/broadcast/history');
+      expect(normalizeApiPathname('/api/admin/broadcast/bc-123')).toBe('/api/admin/broadcast/:id');
+      expect(normalizeApiPathname('/api/admin/broadcast/schedule/bc-123')).toBe('/api/admin/broadcast/schedule/:id');
+      expect(normalizeApiPathname('/api/admin/invitation-codes/merge')).toBe('/api/admin/invitation-codes/merge');
+      expect(normalizeApiPathname('/api/admin/contributors/c-99/action')).toBe('/api/admin/contributors/:id/action');
+      expect(normalizeApiPathname('/api/registry/claim')).toBe('/api/registry/claim');
+      expect(normalizeApiPathname('/api/uploads/photos/hero.webp')).toBe('/api/uploads/:path');
     });
   });
 });

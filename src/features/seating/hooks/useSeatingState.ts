@@ -1517,5 +1517,3 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     updateTableRotation,
   };
 }
-
-export const useSeatingChartState = useSeatingState;

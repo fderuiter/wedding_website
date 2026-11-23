@@ -90,6 +90,11 @@
   --color-status-sent-text: #166534;
   --color-status-info-text: #1E40AF;
   --color-status-not-needed-text: #1E40AF;
+  --toast-action-bg: #ffffff;
+  --toast-action-hover-bg: #e5e7eb;
+  --toast-action-text: #111827;
+  --badge-inverse-bg: #ffffff;
+  --badge-inverse-text: #991b1b;
 
   --font-heading: var(--font-playfair, Georgia, serif);
   --font-body: var(--font-geist-sans, Arial, Helvetica, sans-serif);
@@ -171,6 +176,11 @@
   --color-status-sent-text: #86EFAC;
   --color-status-info-text: #93C5FD;
   --color-status-not-needed-text: #93C5FD;
+  --toast-action-bg: #ffffff;
+  --toast-action-hover-bg: #e5e7eb;
+  --toast-action-text: #111827;
+  --badge-inverse-bg: #ffffff;
+  --badge-inverse-text: #991b1b;
 
   --container-bg: #111827;
   --card-bg: #1f2937;
@@ -262,7 +272,7 @@ html:focus-within {
 
 /* Focus styles */
 :focus-visible {
-  outline: 2px solid currentColor;
+  outline: 2px solid var(--color-focus-ring, currentColor);
   outline-offset: 3px;
 }
 

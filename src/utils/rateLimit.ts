@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { verifyGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { verifyGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteToken';
+import {
+  getSignedGuestInviteSession,
+  verifyGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteToken';
 import { env } from '@/env';
 import { normalizeSocketIp, readVerifiedSocketIp } from '@/lib/socket-ip-boundary.js';
 
@@ -45,6 +49,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/admin/invitation-codes/batch/validate',
   '/api/admin/invitation-codes/catalog',
   '/api/admin/invitation-codes/export',
+  '/api/admin/invitation-codes/merge',
   '/api/admin/invitation-codes/rsvps',
   '/api/admin/invitation-codes/validate',
   '/api/admin/login',
@@ -84,6 +89,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/photos/upload',
   '/api/ready',
   '/api/registry/capabilities',
+  '/api/registry/claim',
   '/api/registry/contribute',
   '/api/registry/items',
   '/api/registry/items/batch',
@@ -135,6 +141,12 @@ export function normalizeApiPathname(pathname: string): string {
   if (/^\/api\/admin\/broadcast\/schedule\/[^/]+$/.test(cleaned)) {
     return '/api/admin/broadcast/schedule/:id';
   }
+  if (/^\/api\/admin\/broadcast\/(?!(?:history|preview|retry|send|test-connection|test-send)$)[^/]+$/.test(cleaned)) {
+    return '/api/admin/broadcast/:id';
+  }
+  if (/^\/api\/admin\/contributors\/[^/]+\/action$/.test(cleaned)) {
+    return '/api/admin/contributors/:id/action';
+  }
   if (/^\/api\/admin\/photos\/(?!moderation$)[^/]+$/.test(cleaned)) {
     return '/api/admin/photos/:id';
   }
@@ -152,6 +164,9 @@ export function normalizeApiPathname(pathname: string): string {
   }
   if (/^\/api\/schedule\/[^/]+\/ics$/.test(cleaned)) {
     return '/api/schedule/:id/ics';
+  }
+  if (/^\/api\/uploads\/.+$/.test(cleaned)) {
+    return '/api/uploads/:path';
   }
 
   const segments = cleaned.split('/').filter(Boolean); // segments[0] === 'api'
@@ -261,11 +276,14 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
   const inviteCookie = readRawCookieFromRequest(req, inviteCookieName);
   if (inviteCookie) {
     try {
-      if (typeof verifyGuestInviteSessionToken === 'function') {
-        const payload = await verifyGuestInviteSessionToken(inviteCookie);
-        if (payload && payload.code && payload.guestName) {
-          return `session:invite:${inviteCookie}`;
-        }
+      const payload =
+        typeof getSignedGuestInviteSession === 'function'
+          ? await getSignedGuestInviteSession(req)
+          : typeof verifyGuestInviteSessionToken === 'function'
+            ? await verifyGuestInviteSessionToken(inviteCookie)
+            : null;
+      if (payload && payload.code && payload.guestName) {
+        return `session:invite:${inviteCookie}`;
       }
     } catch {
       // Malformed or invalid guest invite cookie falls through
@@ -298,8 +316,6 @@ export async function rateLimit(
   bucket?: RateLimitBucket,
   behavior?: RateLimitBehaviorOptions
 ): Promise<NextResponse | null> {
-  const identifier = await getSessionOrIp(req);
-
   let rawPathname = '';
   try {
     rawPathname = req.nextUrl?.pathname || (req.url ? new URL(req.url, 'http://localhost').pathname : '');
@@ -308,8 +324,13 @@ export async function rateLimit(
   }
 
   const method = req.method || 'GET';
+  const isLockoutEndpoint = isAuthLockoutRoute(rawPathname, method);
   const resolvedBucket: RateLimitBucket =
-    bucket ?? (isAuthLockoutRoute(rawPathname, method) ? 'auth' : 'general');
+    bucket ?? (isLockoutEndpoint ? 'auth' : 'general');
+  const identifier =
+    resolvedBucket === 'auth' || isLockoutEndpoint
+      ? getClientIp(req)
+      : await getSessionOrIp(req);
   const store = resolvedBucket === 'auth' ? authStore : generalStore;
   const shouldIncrement = behavior?.increment !== false;
 
