@@ -6,7 +6,7 @@ export const apiClient = new ApiClient({
     if (typeof window !== 'undefined') {
       localStorage.removeItem('isAdminLoggedIn');
       window.dispatchEvent(new Event('storage'));
-      window.location.href = '/admin/login';
+      window.location.assign(new URL('/admin/login', window.location.origin).href);
     }
   }
 });
