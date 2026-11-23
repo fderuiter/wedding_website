@@ -172,7 +172,7 @@ describe('docs/3D_TECHNICAL_GUIDE.md specification & portal verification', () =>
       'https://github.com/fderuiter/wedding_website/blob/main/src/app/heart/HeartClient.tsx#L27-L335'
     );
     expect(staged).toContain(
-      'https://github.com/fderuiter/wedding_website/blob/main/src/components/ThemeProvider.tsx#L438-L511'
+      'https://github.com/fderuiter/wedding_website/blob/main/src/components/ThemeProvider.tsx#L496-L569'
     );
     expect(staged).toContain(
       'https://github.com/fderuiter/wedding_website/blob/main/src/components/ui/Interactive3DCard.tsx#L42-L220'

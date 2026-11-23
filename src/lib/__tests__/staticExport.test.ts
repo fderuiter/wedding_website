@@ -1,6 +1,6 @@
 import { getAppConfig, STATIC_MOCK_CONFIG, isSiteInitialized } from '../config';
 import { attractionsRepository } from '@/features/attractions';
-import { contentRepository } from '@/features/content';
+import { contentRepository, contentService } from '@/features/content';
 import { logisticsRepository } from '@/features/logistics';
 import { mediaRepository } from '@/features/media';
 import { registryRepository } from '@/features/registry';
@@ -27,6 +27,7 @@ jest.mock('../prisma', () => ({
     contentNode: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      count: jest.fn(),
     },
     weddingPartyMember: {
       findMany: jest.fn(),
@@ -299,6 +300,28 @@ describe('Dual-mode static export mock adapter', () => {
     expect(prisma.invitationCode.findUnique).not.toHaveBeenCalled();
     expect(prisma.subEvent.findMany).not.toHaveBeenCalled();
     expect(prisma.subEvent.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('provides mock gallery photos without database queries when STATIC_EXPORT is enabled', async () => {
+    process.env.STATIC_EXPORT = 'true';
+
+    const photos = await contentService.getPublicPhotos();
+
+    expect(prisma.contentNode.findMany).not.toHaveBeenCalled();
+    expect(prisma.media.findMany).not.toHaveBeenCalled();
+    expect(photos.length).toBeGreaterThan(0);
+    expect(photos[0].type).toBe('Photo');
+  });
+
+  it('provides mock wedding party members without database queries when STATIC_EXPORT is enabled', async () => {
+    process.env.STATIC_EXPORT = 'true';
+
+    const members = await weddingPartyRepository.getMembers();
+
+    expect(prisma.weddingPartyMember.findMany).not.toHaveBeenCalled();
+    expect(members.length).toBe(ARCHETYPE_PRESETS.classic.weddingParty.length);
+    expect(members[0].name).toBe(ARCHETYPE_PRESETS.classic.weddingParty[0].name);
+    expect(members[0].photo?.url).toBeTruthy();
   });
 });
 

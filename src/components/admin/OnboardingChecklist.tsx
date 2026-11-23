@@ -1,10 +1,15 @@
 'use client';
 
-import { useState, useEffect, useSyncExternalStore } from 'react';
+import { useState, useEffect, useContext, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
+import { QueryClientContext } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { cn } from '@/utils/cn';
+import {
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+  subscribeToAdminCacheSync,
+} from '@/lib/adminCacheSync';
 
 export const ONBOARDING_CHECKLIST_COLLAPSED_KEY = 'admin_onboarding_checklist_collapsed';
 
@@ -45,6 +50,7 @@ function writePersistedCollapsedState(collapsed: boolean): void {
 
 export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps) {
   const router = useRouter();
+  const queryClient = useContext(QueryClientContext);
   const isHydrated = useSyncExternalStore(
     emptySubscribe,
     getHydratedClientSnapshot,
@@ -59,7 +65,7 @@ export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps
   useEffect(() => {
     let cancelled = false;
 
-    const loadMilestones = async () => {
+    async function loadMilestones() {
       try {
         const res = await fetch('/api/admin/onboarding-milestones');
         if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
@@ -74,14 +80,24 @@ export function OnboardingChecklist({ refreshTrigger }: OnboardingChecklistProps
       } catch {
         // Gracefully ignore network or mock errors so dashboard remains usable
       }
-    };
+    }
 
     void loadMilestones();
 
+    const unsubscribe = subscribeToAdminCacheSync(
+      queryClient,
+      ['milestones', 'sample-data'],
+      [ADMIN_ONBOARDING_MILESTONES_QUERY_KEY],
+      () => {
+        void loadMilestones();
+      }
+    );
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, [refreshTrigger]);
+  }, [queryClient, refreshTrigger]);
 
   const handleToggleCollapse = () => {
     const next = !isCollapsed;

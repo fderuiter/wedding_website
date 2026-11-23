@@ -1,5 +1,11 @@
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/config';
+import {
+  computeSavedPlusOneNames,
+  getHydratedGuestInvitation,
+  updateHydratedGuestInvitation,
+  type HydratedGuestInvitation,
+} from '@/lib/requestContext';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
 import { ApiError } from '@/utils/ApiError';
@@ -222,6 +228,13 @@ export interface AccessMatrixQueryParams {
 export class SubEventService {
   constructor(private client: any = prisma) {}
 
+  private getHydratedInvitation(code?: string | null): HydratedGuestInvitation | null {
+    if (this.client !== prisma) {
+      return null;
+    }
+    return getHydratedGuestInvitation(code);
+  }
+
   /**
    * Loads RSVP cutoff configuration from AppConfig (using getAppConfig for the primary
    * Prisma client or querying an injected test client when available).
@@ -273,6 +286,11 @@ export class SubEventService {
       return guest ? Math.max(0, guest.plusOneAllocations ?? 0) : null;
     }
 
+    const hydrated = this.getHydratedInvitation(code);
+    if (hydrated) {
+      return Math.max(0, hydrated.plusOneAllocations ?? 0);
+    }
+
     const invite = await this.client.invitationCode.findUnique({
       where: { code: code.trim().toUpperCase(), isSample: false },
       select: { plusOneAllocations: true },
@@ -298,15 +316,12 @@ export class SubEventService {
       const guest = buildArchetypeSeedData('classic').guests.find(
         (g) => g.code.toUpperCase() === normalizedCode
       );
-      if (!guest) return [];
-      const extra = parseExtraFieldsObject(guest.extraFields);
-      const extraNames = normalizePlusOneNames(extra.plusOneNames).filter(Boolean);
-      if (extraNames.length > 0) return extraNames;
-      const combined = [guest.plusOneFirstName, guest.plusOneLastName]
-        .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-        .map((part) => part.trim())
-        .join(' ');
-      return combined ? [combined] : [];
+      return guest ? computeSavedPlusOneNames(guest) : [];
+    }
+
+    const hydrated = this.getHydratedInvitation(code);
+    if (hydrated) {
+      return [...hydrated.savedPlusOneNames];
     }
 
     const invite = await this.client.invitationCode.findUnique({
@@ -322,18 +337,7 @@ export class SubEventService {
       return [];
     }
 
-    const extra = parseExtraFieldsObject(invite.extraFields);
-    const extraNames = normalizePlusOneNames(extra.plusOneNames).filter(Boolean);
-    if (extraNames.length > 0) {
-      return extraNames;
-    }
-
-    const combined = [invite.plusOneFirstName, invite.plusOneLastName]
-      .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
-      .map((part) => part.trim())
-      .join(' ');
-
-    return combined ? [combined] : [];
+    return computeSavedPlusOneNames(invite);
   }
 
   /**
@@ -403,12 +407,17 @@ export class SubEventService {
 
     let invitationCodeId: string | null = null;
     if (code && typeof code === 'string' && code.trim()) {
-      const invite = await this.client.invitationCode.findUnique({
-        where: { code: code.trim().toUpperCase(), isSample: false },
-        select: { id: true },
-      });
-      if (invite && !invite.isSample) {
-        invitationCodeId = invite.id;
+      const hydrated = this.getHydratedInvitation(code);
+      if (hydrated && hydrated.id) {
+        invitationCodeId = hydrated.id;
+      } else {
+        const invite = await this.client.invitationCode.findUnique({
+          where: { code: code.trim().toUpperCase(), isSample: false },
+          select: { id: true },
+        });
+        if (invite && !invite.isSample) {
+          invitationCodeId = invite.id;
+        }
       }
     }
 
@@ -567,12 +576,17 @@ export class SubEventService {
     let invitationCodeId: string | null = null;
 
     if (code && typeof code === 'string' && code.trim()) {
-      const invite = await this.client.invitationCode.findUnique({
-        where: { code: code.trim().toUpperCase(), isSample: false },
-        select: { id: true },
-      });
-      if (invite && !invite.isSample) {
-        invitationCodeId = invite.id;
+      const hydrated = this.getHydratedInvitation(code);
+      if (hydrated && hydrated.id) {
+        invitationCodeId = hydrated.id;
+      } else {
+        const invite = await this.client.invitationCode.findUnique({
+          where: { code: code.trim().toUpperCase(), isSample: false },
+          select: { id: true },
+        });
+        if (invite && !invite.isSample) {
+          invitationCodeId = invite.id;
+        }
       }
     }
 
@@ -701,10 +715,19 @@ export class SubEventService {
       throw new ApiError(401, 'Invitation code is required.');
     }
 
-    const invite = await this.client.invitationCode.findUnique({
-      where: { code: code.trim().toUpperCase(), isSample: false },
-      select: { id: true, guestName: true, plusOneAllocations: true },
-    });
+    const hydrated = this.getHydratedInvitation(code);
+    const invite =
+      hydrated && hydrated.id
+        ? {
+          id: hydrated.id,
+          guestName: hydrated.guestName,
+          plusOneAllocations: hydrated.plusOneAllocations,
+          isSample: false,
+        }
+        : await this.client.invitationCode.findUnique({
+          where: { code: code.trim().toUpperCase(), isSample: false },
+          select: { id: true, guestName: true, plusOneAllocations: true },
+        });
 
     if (!invite || invite.isSample) {
       throw new ApiError(401, 'Invalid invitation session.');
@@ -915,6 +938,8 @@ export class SubEventService {
       });
     }
 
+    let syncedHydrationPatch: Partial<HydratedGuestInvitation> | null = null;
+
     // Execute all upsert operations and InvitationCode sync within a single Prisma transaction
     const results = await this.client.$transaction(async (tx: any) => {
       const upserted = await Promise.all(
@@ -950,19 +975,28 @@ export class SubEventService {
 
       if (typeof tx.invitationCode?.update === 'function') {
         const existingInvite =
-          typeof tx.invitationCode?.findUnique === 'function'
-            ? await tx.invitationCode.findUnique({
-              where: { id: invite.id },
-              select: {
-                used: true,
-                usedAt: true,
-                plusOneFirstName: true,
-                plusOneLastName: true,
-                dietaryNotes: true,
-                extraFields: true,
-              },
-            })
-            : null;
+          hydrated && hydrated.id === invite.id
+            ? {
+              used: hydrated.used,
+              usedAt: hydrated.usedAt,
+              plusOneFirstName: hydrated.plusOneFirstName,
+              plusOneLastName: hydrated.plusOneLastName,
+              dietaryNotes: hydrated.dietaryNotes,
+              extraFields: hydrated.extraFields,
+            }
+            : typeof tx.invitationCode?.findUnique === 'function'
+              ? await tx.invitationCode.findUnique({
+                where: { id: invite.id },
+                select: {
+                  used: true,
+                  usedAt: true,
+                  plusOneFirstName: true,
+                  plusOneLastName: true,
+                  dietaryNotes: true,
+                  extraFields: true,
+                },
+              })
+              : null;
 
         const dbRsvps =
           typeof tx.subEventRsvp?.findMany === 'function'
@@ -1197,6 +1231,19 @@ export class SubEventService {
 
         const existingExtra = parseExtraFieldsObject(existingInvite?.extraFields);
 
+        const nextExtraFields = {
+          ...existingExtra,
+          attendanceStatus,
+          plusOneCount: maxAttendingPlusOnes,
+          plusOneNames: syncedPlusOneNames,
+          dietaryTags: Array.from(dietaryTagSet),
+          mealSelections: structuredMeals,
+          mealSummary,
+          customAnswers: structuredAnswers,
+          customAnswersSummary,
+          eventRsvps,
+        };
+
         await tx.invitationCode.update({
           where: { id: invite.id },
           data: {
@@ -1205,24 +1252,27 @@ export class SubEventService {
             plusOneFirstName: nextFirstName,
             plusOneLastName: nextLastName,
             dietaryNotes: nextDietaryNotes,
-            extraFields: {
-              ...existingExtra,
-              attendanceStatus,
-              plusOneCount: maxAttendingPlusOnes,
-              plusOneNames: syncedPlusOneNames,
-              dietaryTags: Array.from(dietaryTagSet),
-              mealSelections: structuredMeals,
-              mealSummary,
-              customAnswers: structuredAnswers,
-              customAnswersSummary,
-              eventRsvps,
-            },
+            extraFields: nextExtraFields,
           },
         });
+
+        syncedHydrationPatch = {
+          used: nextUsed,
+          usedAt: nextUsedAt,
+          plusOneFirstName: nextFirstName,
+          plusOneLastName: nextLastName,
+          dietaryNotes: nextDietaryNotes,
+          extraFields: nextExtraFields,
+          savedPlusOneNames: syncedPlusOneNames,
+        };
       }
 
       return upserted;
     });
+
+    if (syncedHydrationPatch && this.client === prisma) {
+      updateHydratedGuestInvitation(code, syncedHydrationPatch);
+    }
 
     return results;
   }

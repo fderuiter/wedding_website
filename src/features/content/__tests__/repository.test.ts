@@ -184,6 +184,64 @@ describe('ContentRepository.getNodesByType', () => {
     expect(pending.photos).toHaveLength(1);
     expect(pending.photos[0].id).toBe('legacy-photo-1');
   });
+
+  it('skips Prisma queries and returns mock Photo nodes during STATIC_EXPORT builds', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
+    process.env.STATIC_EXPORT = 'true';
+
+    const strictRepo = new ContentRepository({
+      contentNode: {
+        count: jest.fn(),
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+      },
+      media: {
+        findMany: jest.fn(),
+      },
+      appConfig: {
+        findUnique: jest.fn(),
+      },
+    });
+
+    try {
+      const photos = await strictRepo.getNodesByType('Photo');
+      expect(photos.length).toBeGreaterThan(0);
+      expect(photos[0].type).toBe('Photo');
+      expect(strictRepo.client.contentNode.findMany).not.toHaveBeenCalled();
+
+      const publicPhotos = await strictRepo.getPublicPhotos({
+        since: '2025-01-01T00:00:00.000Z',
+        limit: 5,
+      });
+      expect(publicPhotos.length).toBeGreaterThan(0);
+      expect(publicPhotos[0].type).toBe('Photo');
+      expect(strictRepo.client.contentNode.findMany).not.toHaveBeenCalled();
+      expect(strictRepo.client.media.findMany).not.toHaveBeenCalled();
+
+      const otherNodes = await strictRepo.getNodesByType('CustomSection');
+      expect(otherNodes).toEqual([]);
+      expect(strictRepo.client.contentNode.findMany).not.toHaveBeenCalled();
+
+      const boundIds = await strictRepo.getEntityBoundMediaIds(['media-1']);
+      expect(boundIds.size).toBe(0);
+      expect(strictRepo.client.media.findMany).not.toHaveBeenCalled();
+
+      const pending = await strictRepo.getPendingPhotos();
+      expect(pending.photos.length).toBeGreaterThan(0);
+      expect(pending.photos.every((p) => p.type === 'Photo')).toBe(true);
+      expect(strictRepo.client.contentNode.count).not.toHaveBeenCalled();
+
+      const features = await strictRepo.getFeatures();
+      expect(features.length).toBeGreaterThan(0);
+      expect(strictRepo.client.appConfig.findUnique).not.toHaveBeenCalled();
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+    }
+  });
 });
 
 describe('ContentRepository.getPublicPhotos', () => {
