@@ -2,6 +2,7 @@
 
 import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 
 type GuestLoginMachineStatus =
   | 'idle'
@@ -40,13 +41,7 @@ export function isAbortError(err: unknown): boolean {
   return errorObj.name === 'AbortError';
 }
 
-export function getSafeCallbackUrl(url: string | null | undefined): string {
-  if (!url) return '/';
-  if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) {
-    return url;
-  }
-  return '/';
-}
+export { getSafeCallbackUrl };
 
 export function stripCodeFromCallbackUrl(url: string): string {
   const hashIdx = url.indexOf('#');
@@ -261,12 +256,11 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
   }, [router]);
 
   const getTargetCallbackUrl = useCallback((): string => {
-    if (optionsRef.current?.callbackUrl !== undefined) {
-      return stripCodeFromCallbackUrl(getSafeCallbackUrl(optionsRef.current.callbackUrl));
-    }
-    return stripCodeFromCallbackUrl(
-      getSafeCallbackUrl(searchParams?.get('callbackUrl') ?? null)
-    );
+    const rawCallbackUrl =
+      optionsRef.current?.callbackUrl !== undefined
+        ? optionsRef.current.callbackUrl
+        : (searchParams?.get('callbackUrl') ?? null);
+    return getSafeCallbackUrl(stripCodeFromCallbackUrl(getSafeCallbackUrl(rawCallbackUrl)));
   }, [searchParams]);
 
   const submitPasscode = useCallback(
