@@ -92,7 +92,7 @@ npm run quality
 6. Verify Specification Route & Symbol Contracts (`npm run check:spec-contracts` / [`scripts/verify-spec-contracts.ts`](scripts/verify-spec-contracts.ts))
 7. Validate Prisma Schema (`npx tsx scripts/check-prisma-schema.ts` / `check:prisma`)
 8. TypeScript Typecheck across all four project configs (`npm run typecheck`)
-9. ESLint Code Linting (`npm run lint`)
+9. ESLint Code Linting (`npm run lint`) — enforces error-level formatting, import-boundary, unused-variable, deprecated-import, React Hook, Next.js, and JSX accessibility rules alongside a ratcheted `--max-warnings=1120` ceiling on legacy `@typescript-eslint/no-explicit-any` annotations
 10. Knip Unused Export Analysis (`npm run lint:unused`)
 11. Verify Migration Compatibility (`npm run lint:migrations`)
 12. Verify Documentation Synchronization (`npm run check:doc-sync`)
@@ -161,7 +161,7 @@ node scripts/a11y-report.mjs
   - `npm run check:doc-sync` — Verify [`public/openapi.json`](public/openapi.json), [`ARCHITECTURE.md`](ARCHITECTURE.md), and [`FEATURE_MODULES.md`](FEATURE_MODULES.md) match current schemas (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
   - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
-  - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
+  - ESLint enforces error-level rules for single quotes, 2-space indentation, semicolons, import boundaries (`no-restricted-imports`, `local-rules/no-restricted-utility-imports`), deprecated shared imports (`local-rules/no-deprecated-imports`), CommonJS bans (`@typescript-eslint/no-require-imports`), `prefer-const`, TypeScript-backed unused imports and variables (`unused-imports/no-unused-imports`, `unused-imports/no-unused-vars`), React Hook dependencies (`react-hooks/exhaustive-deps`), JSX entities and ARIA roles (`react/no-unescaped-entities`, `jsx-a11y/role-supports-aria-props`), and Next.js image/navigation rules (`@next/next/no-img-element`, `@next/next/no-location-assign-relative-destination`), while ratcheting legacy `@typescript-eslint/no-explicit-any` warnings via `--max-warnings=1120` in `npm run lint` and `--max-warnings=0` in `lint-staged`. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.
 - **Documentation Portal:** `npm run docs:build` — Stages architectural and testing docs via [`scripts/generate-portal.ts`](scripts/generate-portal.ts) and compiles the VitePress documentation portal.
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).

@@ -24,6 +24,11 @@ const ensureFlatConfig = (config) => {
   return compat.config(config);
 };
 
+const coreWebVitalsConfigs = ensureFlatConfig(nextCoreWebVitals);
+const jsxA11yPlugin = coreWebVitalsConfigs.find(
+  (cfg) => cfg.plugins?.['jsx-a11y']
+)?.plugins?.['jsx-a11y'];
+
 const eslintConfig = [
   {
     ignores: [
@@ -37,7 +42,7 @@ const eslintConfig = [
       'test-results/**',
     ],
   },
-  ...ensureFlatConfig(nextCoreWebVitals),
+  ...coreWebVitalsConfigs,
   ...ensureFlatConfig(nextTypescript),
   {
     plugins: {
@@ -45,6 +50,7 @@ const eslintConfig = [
       'unused-imports': unusedImports,
       react,
       'react-hooks': reactHooks,
+      ...(jsxA11yPlugin ? { 'jsx-a11y': jsxA11yPlugin } : {}),
       'local-rules': {
         rules: {
           'no-deprecated-imports': noDeprecatedImports,
@@ -54,7 +60,7 @@ const eslintConfig = [
     },
     rules: {
       'local-rules/no-restricted-utility-imports': 'error',
-      'local-rules/no-deprecated-imports': 'warn',
+      'local-rules/no-deprecated-imports': 'error',
       '@stylistic/quotes': ['error', 'single', { avoidEscape: true }],
       '@stylistic/indent': ['error', 2],
       '@stylistic/semi': ['error', 'always'],
@@ -72,13 +78,17 @@ const eslintConfig = [
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-require-imports': 'error',
-      'prefer-const': 'warn',
-      'react/no-unescaped-entities': 'warn',
+      'prefer-const': 'error',
+      'react/no-unescaped-entities': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+      'jsx-a11y/role-supports-aria-props': 'error',
+      '@next/next/no-location-assign-relative-destination': 'error',
+      '@next/next/no-img-element': 'error',
 
       '@typescript-eslint/no-unused-vars': 'off',
       'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
-        'warn',
+        'error',
         { vars: 'all', varsIgnorePattern: '^_', args: 'after-used', argsIgnorePattern: '^_' }
       ]
     }

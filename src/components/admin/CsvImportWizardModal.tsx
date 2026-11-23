@@ -1255,59 +1255,79 @@ export function CsvImportWizardModal({
     if (typeof window === 'undefined') return;
     try {
       if (
-        state.step === 1 &&
-        !state.fileName &&
-        state.rawRows.length === 0 &&
-        state.editableRows.length === 0 &&
-        state.failedRows.length === 0 &&
-        !state.importSummary
+        step === 1 &&
+        !fileName &&
+        rawRows.length === 0 &&
+        editableRows.length === 0 &&
+        failedRows.length === 0 &&
+        !importSummary
       ) {
         window.sessionStorage.removeItem('csv_import_wizard_draft');
         return;
       }
-      const {
-        isValidating: _unusedValidating,
-        validationSeq: _unusedValidationSeq,
-        serverSummary: _unusedServerSummary,
-        validatedRows: _unusedValidatedRows,
-        statusFilter: _unusedStatusFilter,
-        codeFrequencyMap: _unusedCodeFreq,
-        isSubmitting: _unusedSubmitting,
-        ...persisted
-      } = state;
+      const persisted: CsvImportPersistedState = {
+        step,
+        fileName,
+        csvHeaders,
+        rawRows,
+        guestNameCol,
+        guestFirstNameCol,
+        guestLastNameCol,
+        codeCol,
+        emailCol,
+        addressLine1Col,
+        addressLine2Col,
+        cityCol,
+        stateCol,
+        zipCodeCol,
+        countryCol,
+        dietaryNotesCol,
+        plusOneCol,
+        plusOneFirstNameCol,
+        plusOneLastNameCol,
+        householdNameCol,
+        partyGroupCol,
+        partyTagsCol,
+        selectedExtraCols,
+        groupByHousehold,
+        collisionStrategy,
+        editableRows,
+        failedRows,
+        importSummary,
+      };
       window.sessionStorage.setItem('csv_import_wizard_draft', JSON.stringify(persisted));
     } catch (err) {
       console.warn('Failed to write key "csv_import_wizard_draft" to sessionStorage:', err);
     }
   }, [
-    state.step,
-    state.fileName,
-    state.csvHeaders,
-    state.rawRows,
-    state.guestNameCol,
-    state.guestFirstNameCol,
-    state.guestLastNameCol,
-    state.codeCol,
-    state.emailCol,
-    state.addressLine1Col,
-    state.addressLine2Col,
-    state.cityCol,
-    state.stateCol,
-    state.zipCodeCol,
-    state.countryCol,
-    state.dietaryNotesCol,
-    state.plusOneCol,
-    state.plusOneFirstNameCol,
-    state.plusOneLastNameCol,
-    state.householdNameCol,
-    state.partyGroupCol,
-    state.partyTagsCol,
-    state.selectedExtraCols,
-    state.groupByHousehold,
-    state.collisionStrategy,
-    state.editableRows,
-    state.failedRows,
-    state.importSummary,
+    step,
+    fileName,
+    csvHeaders,
+    rawRows,
+    guestNameCol,
+    guestFirstNameCol,
+    guestLastNameCol,
+    codeCol,
+    emailCol,
+    addressLine1Col,
+    addressLine2Col,
+    cityCol,
+    stateCol,
+    zipCodeCol,
+    countryCol,
+    dietaryNotesCol,
+    plusOneCol,
+    plusOneFirstNameCol,
+    plusOneLastNameCol,
+    householdNameCol,
+    partyGroupCol,
+    partyTagsCol,
+    selectedExtraCols,
+    groupByHousehold,
+    collisionStrategy,
+    editableRows,
+    failedRows,
+    importSummary,
   ]);
 
   const setStep = (s: 1 | 2 | 3 | 4) => dispatch({ type: 'SET_STEP', step: s });
@@ -1575,8 +1595,13 @@ export function CsvImportWizardModal({
             return;
           }
         }
-      } catch (err: any) {
-        if (controller.signal.aborted || err?.name === 'AbortError') {
+      } catch (err: unknown) {
+        const isAbortError =
+          typeof err === 'object' &&
+          err !== null &&
+          'name' in err &&
+          (err as { name?: unknown }).name === 'AbortError';
+        if (controller.signal.aborted || isAbortError) {
           dispatch({ type: 'VALIDATION_ABORT', seq });
           return;
         }
@@ -1870,9 +1895,19 @@ export function CsvImportWizardModal({
       });
       addToast('Batch CSV import completed successfully.', 'success');
       onImportComplete();
-    } catch (err: any) {
-      dispatch({ type: 'COMMIT_FAILURE', error: err.message });
-      addToast(err.message || 'Failed to execute batch import.', 'error');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : typeof err === 'object' &&
+              err !== null &&
+              'message' in err &&
+              typeof (err as { message?: unknown }).message === 'string' &&
+              (err as { message: string }).message
+            ? (err as { message: string }).message
+            : '';
+      dispatch({ type: 'COMMIT_FAILURE', error: message });
+      addToast(message || 'Failed to execute batch import.', 'error');
     }
   };
 
@@ -2510,7 +2545,7 @@ export function CsvImportWizardModal({
                   <select
                     id="status-filter-select"
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
                     className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold text-gray-900 dark:text-zinc-100"
                   >
                     <option value="all">All Rows ({summary.total})</option>
@@ -2530,7 +2565,7 @@ export function CsvImportWizardModal({
                   <select
                     id="collision-strategy"
                     value={collisionStrategy}
-                    onChange={(e) => setCollisionStrategy(e.target.value as any)}
+                    onChange={(e) => setCollisionStrategy(e.target.value as InvitationCollisionStrategy)}
                     className="px-2 py-1 rounded border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-xs font-semibold text-gray-900 dark:text-zinc-100"
                   >
                     <option value="skip">Skip Duplicates</option>
