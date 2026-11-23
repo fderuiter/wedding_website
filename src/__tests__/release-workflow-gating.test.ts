@@ -1484,7 +1484,10 @@ process.exit(1);
       scripts?: Record<string, string>;
     };
     expect(pkg.scripts?.prebuild).toBeUndefined();
-    expect(pkg.scripts?.postinstall).toBe('next typegen && prisma generate');
+    expect(pkg.scripts?.postinstall).toBe(
+      'next typegen && prisma generate && node scripts/pretest.mjs --record-install-state'
+    );
+    expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');
 
     const verifySection = ciWorkflow.split(/\n  unit-test:\n/)[0] ?? '';
