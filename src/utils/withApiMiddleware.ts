@@ -106,8 +106,8 @@ export function withApiMiddleware(
       const isAdminPath = isProtectedRoute(pathname, method);
 
       // 1. Rate Limiting
-      // Check active authStore lockouts before handlers run, cap bursts at 100 req/min in generalStore,
-      // and increment authStore only on failed attempts (status >= 400); probe endpoints (/api/health, /api/live) are exempt.
+      // Check active AuthLockout state before handlers run, cap bursts at 100 req/min in generalStore,
+      // and record failed auth attempts (401/403/404); probe endpoints (/api/health, /api/live) are exempt.
       if (!isHealthPath) {
         const hasReadableHeaders = Boolean(req && req.headers && typeof req.headers.get === 'function');
         shouldTrackAuthFailures = resolvedBucket === 'auth' && hasReadableHeaders;
@@ -115,13 +115,18 @@ export function withApiMiddleware(
 
         if (hasReadableHeaders && req) {
           if (resolvedBucket === 'auth') {
-            rateLimitResponse = await checkAuthLockout(
-              req,
-              authLimit,
-              authWindowMs,
-              options?.keyPrefix,
-              options?.authInstance
-            );
+            rateLimitResponse =
+              typeof checkAuthLockout === 'function'
+                ? await checkAuthLockout(
+                  req,
+                  authLimit,
+                  authWindowMs,
+                  options?.keyPrefix,
+                  options?.authInstance
+                )
+                : await rateLimit(req, authLimit, authWindowMs, options?.keyPrefix, 'auth', {
+                  increment: false,
+                });
 
             if (!rateLimitResponse) {
               rateLimitResponse = await rateLimit(
@@ -190,7 +195,8 @@ export function withApiMiddleware(
         !isHealthPath &&
         prechecksCompleted &&
         req &&
-        isAuthFailureStatus(response.status)
+        isAuthFailureStatus(response.status) &&
+        typeof recordAuthFailure === 'function'
       ) {
         await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
       }
@@ -293,7 +299,8 @@ export function withApiMiddleware(
         !isHealthPath &&
         prechecksCompleted &&
         req &&
-        isAuthFailureStatus(errorStatus)
+        isAuthFailureStatus(errorStatus) &&
+        typeof recordAuthFailure === 'function'
       ) {
         try {
           await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
