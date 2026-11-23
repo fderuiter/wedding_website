@@ -65,9 +65,11 @@ describe('CLI Scaffolding Tool - Base Class Inheritance Alignment', () => {
     expect(serviceContent).toContain("import { BaseService } from '@/core/infrastructure/service';");
     expect(serviceContent).toContain('class ScaffoldTestFeatureService extends BaseService<ScaffoldTestFeature>');
 
-    // 3. Passes repository instance to parent constructor inside constructor
+    // 3. Passes repository instance and schema to parent constructor inside constructor
     expect(serviceContent).toContain('constructor() {');
-    expect(serviceContent).toContain("super(new ScaffoldTestFeatureRepository(), 'ScaffoldTestFeature');");
+    expect(serviceContent).toContain(
+      "super(new ScaffoldTestFeatureRepository(), 'ScaffoldTestFeature', ScaffoldTestFeatureSchema);"
+    );
 
     // 4. Omits manual CRUD operations
     expect(serviceContent).not.toContain('findMany(');
@@ -75,5 +77,15 @@ describe('CLI Scaffolding Tool - Base Class Inheritance Alignment', () => {
     expect(serviceContent).not.toContain('create(');
     expect(serviceContent).not.toContain('update(');
     expect(serviceContent).not.toContain('delete(');
+
+    // Verify index.ts uses explicit named value and type exports rather than wildcard re-exports
+    const indexPath = path.join(featureDir, 'index.ts');
+    expect(fs.existsSync(indexPath)).toBe(true);
+    const indexContent = fs.readFileSync(indexPath, 'utf8');
+    expect(indexContent).not.toContain('export *');
+    expect(indexContent).toContain("export { ScaffoldTestFeatureSchema } from './schemas';");
+    expect(indexContent).toContain("export { ScaffoldTestFeatureRepository } from './repository';");
+    expect(indexContent).toContain("export type { ScaffoldTestFeature } from './types';");
+    expect(indexContent).toContain("export { ScaffoldTestFeatureService } from './service';");
   });
 });
