@@ -536,8 +536,59 @@ describe('ThankYouService', () => {
       const csv = await streamToText(stream);
 
       expect(csv).toBe(
-        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number,Linked Guest,Address Line 1,Address Line 2,City,State,Zip Code,Country\n'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number,Linked Guest,Address Line 1,Address Line 2,City,State,ZIP Code,Country\n'
       );
+    });
+
+    it('exports household postal address columns from linked invitationCode with formula neutralization', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([
+        {
+          id: 'c-postal-1',
+          name: 'Aunt Clara',
+          email: 'clara@example.com',
+          message: 'With love',
+          amount: 200,
+          date: '2026-06-10T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          thankYouSentAt: null,
+          thankYouNote: '',
+          invitationCode: {
+            addressLine1: '742 Evergreen Terrace',
+            addressLine2: 'Suite 2B',
+            city: 'Springfield',
+            state: 'IL',
+            zipCode: '62704',
+            country: 'USA',
+          },
+          registryItem: null,
+        },
+        {
+          id: 'c-postal-formula',
+          name: 'Formula Postal',
+          email: '',
+          message: '',
+          amount: 50,
+          date: '2026-06-11T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          thankYouSentAt: null,
+          thankYouNote: '',
+          invitationCode: {
+            addressLine1: '=CMD()',
+            addressLine2: '+Apt 9',
+            city: '-Metro',
+            state: '@NY',
+            zipCode: '=10001',
+            country: '+Canada',
+          },
+          registryItem: null,
+        },
+      ]);
+
+      const stream = service.exportThankYouNotesCsv();
+      const csv = await streamToText(stream);
+
+      expect(csv).toContain('742 Evergreen Terrace,Suite 2B,Springfield,IL,62704,USA');
+      expect(csv).toContain('\'=CMD(),\'+Apt 9,\'-Metro,\'@NY,\'=10001,\'+Canada');
     });
 
     it('exports retailer order number, carrier, and tracking number columns with formula neutralization', async () => {
@@ -914,6 +965,175 @@ describe('ThankYouService', () => {
           body: 'Thank you!',
         })
       ).rejects.toThrow(/no email address on file/i);
+    });
+  });
+
+  describe('createOfflineGift and household address linking', () => {
+    it('records an offline gift linked to a RegistryItem and InvitationCode under row lock and updates ledger + snapshots', async () => {
+      const createdRecord = {
+        id: 'c-offline-1',
+        name: 'Aunt Clara',
+        email: 'clara@example.com',
+        amount: 150,
+        status: 'CONFIRMED',
+        message: 'Check at reception',
+        date: new Date('2026-06-15T00:00:00.000Z'),
+        thankYouStatus: 'Unsent',
+        thankYouSentAt: null,
+        thankYouNote: 'Thank you so much!',
+        registryItemId: 'item-offline-1',
+        invitationCodeId: 'inv-clara',
+        registryItem: { id: 'item-offline-1', name: 'Stand Mixer', category: 'Kitchen' },
+        invitationCode: {
+          id: 'inv-clara',
+          code: 'CLARA2026',
+          guestName: 'Aunt Clara',
+          householdName: 'Clara Household',
+          addressLine1: '742 Evergreen Terrace',
+          addressLine2: null,
+          city: 'Springfield',
+          state: 'IL',
+          zipCode: '62704',
+          country: 'USA',
+        },
+      };
+
+      const txClient = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'item-offline-1' }]),
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'inv-clara', code: 'CLARA2026' }),
+        },
+        registryItem: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValueOnce({
+              id: 'item-offline-1',
+              name: 'Stand Mixer',
+              price: 150,
+              quantity: 1,
+              itemType: 'PHYSICAL',
+              isGroupGift: false,
+            })
+            .mockResolvedValueOnce({
+              id: 'item-offline-1',
+              name: 'Stand Mixer',
+              price: 150,
+              quantity: 1,
+              itemType: 'PHYSICAL',
+              isGroupGift: false,
+              contributors: [createdRecord],
+            }),
+          update: jest.fn().mockResolvedValue({
+            id: 'item-offline-1',
+            name: 'Stand Mixer',
+            price: 150,
+            quantity: 1,
+            purchased: true,
+            amountContributed: 150,
+            purchaserName: 'Aunt Clara',
+          }),
+        },
+        contributor: {
+          create: jest.fn().mockResolvedValue(createdRecord),
+        },
+        snapshotVersion: {
+          create: jest.fn().mockResolvedValue({ id: 'snap-offline-1' }),
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        },
+      };
+
+      mockPrisma.$transaction = jest.fn((cb: any) => cb(txClient));
+
+      const result = await service.createOfflineGift({
+        name: '  Aunt Clara  ',
+        email: 'clara@example.com',
+        amount: 150,
+        message: 'Check at reception',
+        registryItemId: 'item-offline-1',
+        invitationCodeId: 'inv-clara',
+        thankYouNote: 'Thank you so much!',
+      });
+
+      expect(txClient.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(txClient.contributor.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            name: 'Aunt Clara',
+            amount: 150,
+            status: 'CONFIRMED',
+            registryItemId: 'item-offline-1',
+            invitationCodeId: 'inv-clara',
+          }),
+        })
+      );
+      expect(txClient.registryItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'item-offline-1' },
+          data: expect.objectContaining({
+            amountContributed: 150,
+            purchased: true,
+            purchaserName: 'Aunt Clara',
+          }),
+        })
+      );
+      expect(txClient.snapshotVersion.create).toHaveBeenCalledTimes(2);
+      expect(result.invitationCode?.addressLine1).toBe('742 Evergreen Terrace');
+    });
+
+    it('links and unlinks invitationCodeId in updateThankYouNote and rejects unknown household IDs', async () => {
+      mockPrisma.invitationCode = {
+        findUnique: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
+          id: 'inv-valid',
+          code: 'VALID26',
+        }),
+      };
+
+      mockPrisma.contributor.findUnique.mockResolvedValue({
+        id: 'c-unlinked',
+        name: 'Guest Without Invite',
+        amount: 80,
+        date: new Date('2026-06-15T00:00:00.000Z'),
+        thankYouStatus: 'Unsent',
+        invitationCodeId: null,
+      });
+
+      await expect(
+        service.updateThankYouNote('c-unlinked', { invitationCodeId: 'inv-missing' })
+      ).rejects.toThrow('Invitation code not found');
+
+      mockPrisma.contributor.update.mockResolvedValue({
+        id: 'c-unlinked',
+        name: 'Guest Without Invite',
+        amount: 80,
+        date: new Date('2026-06-15T00:00:00.000Z'),
+        thankYouStatus: 'Unsent',
+        invitationCodeId: 'inv-valid',
+        invitationCode: {
+          id: 'inv-valid',
+          code: 'VALID26',
+          guestName: 'Guest Household',
+          householdName: 'Guest Family',
+          addressLine1: '100 Wedding Blvd',
+          addressLine2: null,
+          city: 'Denver',
+          state: 'CO',
+          zipCode: '80202',
+          country: 'USA',
+        },
+      });
+
+      const linked = await service.updateThankYouNote('c-unlinked', {
+        invitationCodeId: 'inv-valid',
+      });
+      expect(mockPrisma.contributor.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'c-unlinked' },
+          data: expect.objectContaining({ invitationCodeId: 'inv-valid' }),
+        })
+      );
+      expect(linked.invitationCode?.addressLine1).toBe('100 Wedding Blvd');
+      expect(mockPrisma.snapshotVersion.create).toHaveBeenCalled();
     });
   });
 });

@@ -1,12 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useRouter } from 'next/navigation';
+import { QueryClientContext } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
+import {
+  ADMIN_SAMPLE_DATA_QUERY_KEY,
+  invalidateSampleDataCaches,
+  subscribeToAdminCacheSync,
+} from '@/lib/adminCacheSync';
 
 export function SampleDataBanner() {
   const router = useRouter();
+  const queryClient = useContext(QueryClientContext);
   const [hasSampleData, setHasSampleData] = useState<boolean>(false);
   const [countsSummary, setCountsSummary] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -15,10 +22,10 @@ export function SampleDataBanner() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadStatus = async () => {
+    async function loadStatus() {
       try {
         const res = await fetch('/api/admin/sample-data');
-        if (!res.ok || cancelled) return;
+        if (!res || !res.ok || cancelled) return;
         const data = await res.json();
         if (cancelled) return;
         if (data.success) {
@@ -32,19 +39,30 @@ export function SampleDataBanner() {
             if (data.counts.attractions) parts.push(`${data.counts.attractions} attractions`);
             if (data.counts.faqs) parts.push(`${data.counts.faqs} FAQs`);
             setCountsSummary(parts.join(', '));
+          } else {
+            setCountsSummary('');
           }
         }
       } catch {
         // Ignore network errors in background polling
       }
-    };
+    }
 
     void loadStatus();
+    const unsubscribe = subscribeToAdminCacheSync(
+      queryClient,
+      ['sample-data'],
+      [ADMIN_SAMPLE_DATA_QUERY_KEY],
+      () => {
+        void loadStatus();
+      }
+    );
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   const handlePurge = async () => {
     const confirmed = await confirm(
@@ -58,8 +76,10 @@ export function SampleDataBanner() {
         method: 'DELETE',
       });
       if (res.ok) {
-        addToast('All sample data has been successfully purged.', 'success');
         setHasSampleData(false);
+        setCountsSummary('');
+        await invalidateSampleDataCaches(queryClient);
+        addToast('All sample data has been successfully purged.', 'success');
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));

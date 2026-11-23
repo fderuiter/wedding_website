@@ -203,6 +203,82 @@ export const AdminContributorActionSchema = z.object({
   action: z.enum(['confirm', 'remind', 'void']),
 });
 
+export const AdminUnclaimRegistryItemSchema = z.object({
+  confirmVerifiedPayment: z.boolean().optional().default(false),
+});
+
+export const AdminUpdateContributorSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Contributor name must be between 1 and 100 characters.')
+      .max(100, 'Contributor name must be between 1 and 100 characters.')
+      .optional(),
+    email: optionalNullableEmailField,
+    amount: z.coerce
+      .number({ message: 'Contribution amount must be a positive number.' })
+      .positive('Contribution amount must be a positive number.')
+      .optional(),
+    status: ContributorStatusEnum.optional(),
+    message: z.string().max(1000, 'Personal note must be under 1000 characters.').nullable().optional(),
+    confirmVerifiedPayment: z.boolean().optional().default(false),
+  })
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.email !== undefined ||
+      data.amount !== undefined ||
+      data.status !== undefined ||
+      data.message !== undefined,
+    { message: 'At least one editable contributor field is required.' }
+  )
+  .meta({
+    description:
+      'Partial contributor update requiring at least one editable field (name, email, amount, status, or message).',
+    anyOf: [
+      { type: 'object', required: ['name'] },
+      { type: 'object', required: ['email'] },
+      { type: 'object', required: ['amount'] },
+      { type: 'object', required: ['status'] },
+      { type: 'object', required: ['message'] },
+    ],
+  });
+
+export type AdminUpdateContributorInput = z.infer<typeof AdminUpdateContributorSchema>;
+
+export const AdminDeleteContributorSchema = z.object({
+  confirmVerifiedPayment: z.boolean().optional().default(false),
+});
+
+export const CreateOfflineThankYouNoteSchema = z.object({
+  name: z
+    .string({ message: 'Contributor name is required.' })
+    .trim()
+    .min(1, 'Contributor name is required and must be under 100 characters.')
+    .max(100, 'Contributor name is required and must be under 100 characters.'),
+  email: optionalNullableEmailField,
+  amount: z.coerce
+    .number({ message: 'Contribution amount must be a positive number.' })
+    .positive('Contribution amount must be a positive number.'),
+  date: z.union([z.string(), z.date()]).optional(),
+  message: z.string().max(1000, 'Personal note must be under 1000 characters.').nullable().optional(),
+  registryItemId: z
+    .string()
+    .trim()
+    .transform((val) => (val === '' ? null : val))
+    .nullable()
+    .optional(),
+  invitationCodeId: z
+    .string()
+    .trim()
+    .transform((val) => (val === '' ? null : val))
+    .nullable()
+    .optional(),
+  thankYouStatus: z.enum(['Unsent', 'Sent', 'Not Needed']).optional().default('Unsent'),
+  thankYouNote: z.string().max(2000, 'Thank-you note must be under 2000 characters.').nullable().optional(),
+});
+
 export const UpdateThankYouNoteSchema = z.object({
   thankYouStatus: z.enum(['Unsent', 'Sent', 'Not Needed']).optional(),
   thankYouSentAt: z.union([z.string(), z.date()]).nullable().optional(),
@@ -214,8 +290,8 @@ export const UpdateThankYouNoteSchema = z.object({
   invitationCodeId: z
     .string()
     .trim()
-    .min(1, 'Invalid invitation code ID.')
     .max(255)
+    .transform((val) => (val === '' ? null : val))
     .nullable()
     .optional(),
   addressLine1: nullableOptionalTrimmedField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 1'),

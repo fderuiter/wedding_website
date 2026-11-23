@@ -939,8 +939,9 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     }
   };
 
+  const isClaimedReadOnly = (item.purchased || isFullyFunded) && !isSuccess;
   const showDirectTransferDetails =
-    hasPaymentHandle && (!isPayableGroupGift || isDirectMode || item.isSample || item.purchased);
+    hasPaymentHandle && !isClaimedReadOnly && (!isPayableGroupGift || isDirectMode || item.isSample);
 
   return (
     <div
@@ -1061,7 +1062,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       )}
 
       {/* Embedded Stripe Elements supported payment methods notice (only in Card Checkout mode) */}
-      {isCardMode && !item.isSample && (
+      {isCardMode && !item.isSample && !isClaimedReadOnly && (
         <div
           data-testid="stripe-payment-notice"
           className="mb-3 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-md border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
@@ -1188,7 +1189,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
         </Button>
       </div>
 
-      {hasFormattedShipping && (
+      {hasFormattedShipping && !isClaimedReadOnly && (
         <div
           data-testid="registry-shipping-address-card"
           className="mb-4 p-3.5 rounded-lg bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-sm"
@@ -1895,10 +1896,10 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <p className="text-xl font-semibold text-green-600">
             {item.isGroupGift ? 'This gift is fully funded!' : 'This gift has been claimed!'}
           </p>
-          {item.purchaserName && !item.isGroupGift && (
+          {isAdmin && item.purchaserName && item.purchaserName !== 'Anonymous' && !item.isGroupGift && (
             <p className="text-sm text-gray-600 dark:text-gray-400">Claimed by: {item.purchaserName}</p>
           )}
-          {item.isGroupGift && item.contributors.length > 0 && (
+          {isAdmin && item.isGroupGift && item.contributors.length > 0 && (
             <div className="mt-2 mb-2">
               <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Contributors:</h4>
               <ul className="list-disc list-inside text-xs text-gray-600 dark:text-gray-400">

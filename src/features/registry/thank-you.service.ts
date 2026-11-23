@@ -3,12 +3,6 @@ import { getAppConfig } from '@/lib/config';
 import { getPresetTokens } from '@/lib/theme/presets';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
-import {
-  MultiChannelMessagingProvider,
-  escapeHtmlEntities,
-  formatEmailHtmlBody,
-  sanitizeEmailSubject,
-} from '@/features/broadcast';
 import { ContributorSchema, type SendThankYouEmailDTO, type UpdateThankYouNoteDTO } from './schemas';
 import { substituteThankYouTemplateTokens, type ContributorRecord } from './types';
 import { ApiError } from '@/utils/ApiError';
@@ -223,6 +217,166 @@ export class ThankYouService {
   }
 
   /**
+   * Records an offline gift contribution (cash, check, or off-registry physical gift)
+   * with optional RegistryItem ledger reconciliation and InvitationCode household linking.
+   */
+  async createOfflineGift(
+    data: {
+      name: string;
+      email?: string | null;
+      amount: number;
+      date?: Date | string;
+      message?: string | null;
+      registryItemId?: string | null;
+      invitationCodeId?: string | null;
+      thankYouStatus?: 'Unsent' | 'Sent' | 'Not Needed';
+      thankYouNote?: string | null;
+    },
+    author: string = 'Admin'
+  ) {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const targetItemId =
+        data.registryItemId && data.registryItemId.trim() ? data.registryItemId.trim() : null;
+      const targetInviteId =
+        data.invitationCodeId && data.invitationCodeId.trim()
+          ? data.invitationCodeId.trim()
+          : null;
+
+      if (targetInviteId) {
+        const invite = await txClient.invitationCode.findUnique({
+          where: { id: targetInviteId },
+        });
+        if (!invite) {
+          throw new ApiError(404, 'Invitation code not found');
+        }
+      }
+
+      if (targetItemId) {
+        if (typeof txClient.$queryRaw === 'function') {
+          await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${targetItemId} FOR UPDATE`;
+        }
+        const targetItem = await txClient.registryItem.findUnique({
+          where: { id: targetItemId },
+        });
+        if (!targetItem) {
+          throw new ApiError(404, 'Registry item not found');
+        }
+      }
+
+      const resolvedStatus = data.thankYouStatus || 'Unsent';
+      const resolvedSentAt = resolvedStatus === 'Sent' ? new Date() : null;
+
+      const created = await txClient.contributor.create({
+        data: {
+          name: data.name.trim(),
+          email: data.email && data.email.trim() ? data.email.trim() : null,
+          amount: data.amount,
+          status: 'CONFIRMED',
+          message: data.message && data.message.trim() ? data.message.trim() : null,
+          date: data.date ? new Date(data.date) : new Date(),
+          thankYouStatus: resolvedStatus,
+          thankYouSentAt: resolvedSentAt,
+          thankYouNote:
+            data.thankYouNote && data.thankYouNote.trim() ? data.thankYouNote.trim() : null,
+          registryItemId: targetItemId,
+          invitationCodeId: targetInviteId,
+        },
+        include: {
+          registryItem: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+            },
+          },
+          invitationCode: {
+            select: INVITATION_CODE_SELECT,
+          },
+        },
+      });
+
+      await createAuditSnapshot('Contributor', created.id, created, author, txClient);
+
+      if (targetItemId) {
+        const itemWithContributors = await txClient.registryItem.findUnique({
+          where: { id: targetItemId },
+          include: { image: true, contributors: true },
+        });
+        if (itemWithContributors) {
+          const isFund =
+            itemWithContributors.itemType === 'CASH_FUND' ||
+            itemWithContributors.itemType === 'EXPERIENCE_FUND';
+          const quantity = isFund
+            ? 1
+            : Math.max(1, Math.floor(itemWithContributors.quantity || 1));
+          const unitPriceCents = Math.round(itemWithContributors.price * 100);
+          const totalTargetCents = unitPriceCents * quantity;
+          const isGroupGift = Boolean(isFund || itemWithContributors.isGroupGift);
+          const contributorsList: any[] = Array.isArray(itemWithContributors.contributors)
+            ? [...itemWithContributors.contributors]
+            : [];
+
+          let activeNetCents = 0;
+          const activeNames: string[] = [];
+          for (const contributor of contributorsList) {
+            const rawSt =
+              typeof contributor?.status === 'string'
+                ? contributor.status.trim().toUpperCase()
+                : 'CONFIRMED';
+            if (rawSt !== 'RESERVED' && rawSt !== 'CONFIRMED') {
+              continue;
+            }
+            const grossCents = Math.max(
+              0,
+              Math.round((Number(contributor?.amount) || 0) * 100)
+            );
+            const refundedCents = Math.max(
+              0,
+              Math.round((Number(contributor?.refundedAmount) || 0) * 100)
+            );
+            const netCents = Math.max(0, grossCents - refundedCents);
+            activeNetCents += netCents;
+            if (netCents > 0 && typeof contributor?.name === 'string' && contributor.name.trim()) {
+              activeNames.push(contributor.name.trim());
+            }
+          }
+
+          const nextAmountContributed = activeNetCents / 100;
+          const nextPurchased = totalTargetCents > 0 ? activeNetCents >= totalTargetCents : false;
+          const nextPurchaserName = !isGroupGift
+            ? activeNames.length > 0
+              ? activeNames.join(', ')
+              : null
+            : activeNetCents === 0
+              ? null
+              : itemWithContributors.purchaserName ?? null;
+
+          const updatedItem = await txClient.registryItem.update({
+            where: { id: targetItemId },
+            data: {
+              amountContributed: nextAmountContributed,
+              purchased: nextPurchased,
+              ...(!isGroupGift || activeNetCents === 0
+                ? { purchaserName: nextPurchaserName }
+                : {}),
+            },
+            include: { image: true, contributors: true },
+          });
+          await createAuditSnapshot(
+            'RegistryItem',
+            updatedItem.id,
+            updatedItem,
+            author,
+            txClient
+          );
+        }
+      }
+
+      return ContributorSchema.parse(created);
+    });
+  }
+
+  /**
    * Updates an individual contributor's thank-you status, sent timestamp, note draft,
    * linked guest household (`invitationCodeId`), postal fields, and optional household address sync.
    */
@@ -275,12 +429,15 @@ export class ThankYouService {
     }
 
     if (data.invitationCodeId !== undefined) {
-      if (data.invitationCodeId === null) {
+      const targetInviteId =
+        typeof data.invitationCodeId === 'string' && data.invitationCodeId.trim()
+          ? data.invitationCodeId.trim()
+          : null;
+      if (!targetInviteId) {
         updateData.invitationCodeId = null;
       } else {
-        const trimmedInviteId = data.invitationCodeId.trim();
         const inviteRecord = await this.client.invitationCode.findUnique({
-          where: { id: trimmedInviteId },
+          where: { id: targetInviteId },
           select: { id: true },
         });
         if (!inviteRecord) {
@@ -469,7 +626,7 @@ export class ThankYouService {
             'Address Line 2',
             'City',
             'State',
-            'Zip Code',
+            'ZIP Code',
             'Country',
           ];
           const headerRow = headers.map(escapeCsvCell).join(',') + '\n';
@@ -714,6 +871,12 @@ export class ThankYouService {
     }
 
     const config = await getAppConfig();
+    const {
+      MultiChannelMessagingProvider,
+      escapeHtmlEntities,
+      formatEmailHtmlBody,
+      sanitizeEmailSubject,
+    } = await import('@/features/broadcast');
     const renderedText = substituteThankYouTemplateTokens(payload.body, {
       guestName: existing.name || existing.invitationCode?.guestName,
       giftName: existing.registryItem?.name || 'wedding gift',

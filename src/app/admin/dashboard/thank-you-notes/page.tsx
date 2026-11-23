@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
-import { Input, FormGroup } from '@/components/ui/forms';
+import { Input, Label, Textarea, FormGroup } from '@/components/ui/forms';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { formatCurrency, formatDate } from '@/utils/intl';
 import type { ProgressMetrics } from '@/features/registry';
@@ -77,6 +77,12 @@ interface InvitationHouseholdOption {
   state?: string | null;
   zipCode?: string | null;
   country?: string | null;
+}
+
+interface RegistryItemOption {
+  id: string;
+  name: string;
+  category?: string;
 }
 
 function resolveDisplayAddress(item: ThankYouContributorItem): {
@@ -278,6 +284,59 @@ export default function ThankYouNotesPage() {
     'preview' | 'test' | 'send' | null
   >(null);
 
+  // Offline gift creation & lookup options state
+  const [isOfflineFormOpen, setIsOfflineFormOpen] = useState(false);
+  const [offlineName, setOfflineName] = useState('');
+  const [offlineEmail, setOfflineEmail] = useState('');
+  const [offlineAmount, setOfflineAmount] = useState('');
+  const [offlineRegistryItemId, setOfflineRegistryItemId] = useState('');
+  const [offlineInvitationCodeId, setOfflineInvitationCodeId] = useState('');
+  const [offlineStatus, setOfflineStatus] = useState<'Unsent' | 'Sent' | 'Not Needed'>('Unsent');
+  const [offlineMessage, setOfflineMessage] = useState('');
+  const [offlineNote, setOfflineNote] = useState('');
+  const [isCreatingOffline, setIsCreatingOffline] = useState(false);
+
+  const [invitationOptions, setInvitationOptions] = useState<InvitationHouseholdOption[]>([]);
+  const [registryItemOptions, setRegistryItemOptions] = useState<RegistryItemOption[]>([]);
+  const lookupRequestedRef = useRef(false);
+
+  const ensureLookupOptionsLoaded = useCallback(async () => {
+    if (lookupRequestedRef.current) return;
+    lookupRequestedRef.current = true;
+
+    try {
+      const inviteRes = await fetch('/api/admin/invitation-codes/catalog?limit=500');
+      if (inviteRes.ok) {
+        const inviteJson = await inviteRes.json();
+        const invitePayload = inviteJson?.data ?? inviteJson;
+        const rawInvites = Array.isArray(invitePayload)
+          ? invitePayload
+          : Array.isArray(invitePayload?.items)
+            ? invitePayload.items
+            : [];
+        setInvitationOptions(rawInvites);
+      }
+    } catch {
+      // Optional lookup in isolated environments
+    }
+
+    try {
+      const regRes = await fetch('/api/registry/items?limit=500');
+      if (regRes.ok) {
+        const regJson = await regRes.json();
+        const regPayload = regJson?.data ?? regJson;
+        const rawItems = Array.isArray(regPayload)
+          ? regPayload
+          : Array.isArray(regPayload?.items)
+            ? regPayload.items
+            : [];
+        setRegistryItemOptions(rawItems);
+      }
+    } catch {
+      // Optional lookup in isolated environments
+    }
+  }, []);
+
   const handleStatusFilterChange = (tab: 'All' | 'Unsent' | 'Sent' | 'Not Needed') => {
     setIsLoading(true);
     setError(null);
@@ -448,6 +507,7 @@ export default function ThankYouNotesPage() {
   };
 
   const startEditing = (item: ThankYouContributorItem) => {
+    void ensureLookupOptionsLoaded();
     setEditingId(item.id);
     setSelectedTemplate('');
     setEditStatus((item.thankYouStatus as any) || 'Unsent');
@@ -464,8 +524,8 @@ export default function ThankYouNotesPage() {
     const currentInviteId = item.invitationCodeId ?? item.invitationCode?.id ?? null;
     setEditInvitationCodeId(currentInviteId);
     setEditLinkedHouseholdLabel(
-      item.invitationCode?.guestName
-        ? `${item.invitationCode.guestName}${item.invitationCode.code ? ` (${item.invitationCode.code})` : ''}`
+      item.invitationCode?.guestName || item.invitationCode?.householdName
+        ? `${item.invitationCode.householdName || item.invitationCode.guestName}${item.invitationCode.code ? ` (${item.invitationCode.code})` : ''}`
         : ''
     );
     setSyncAddressToGuest(false);
@@ -635,6 +695,72 @@ export default function ThankYouNotesPage() {
     }
   };
 
+  const openOfflineGiftForm = () => {
+    void ensureLookupOptionsLoaded();
+    setIsOfflineFormOpen(true);
+  };
+
+  const resetOfflineGiftForm = () => {
+    setOfflineName('');
+    setOfflineEmail('');
+    setOfflineAmount('');
+    setOfflineRegistryItemId('');
+    setOfflineInvitationCodeId('');
+    setOfflineStatus('Unsent');
+    setOfflineMessage('');
+    setOfflineNote('');
+    setIsOfflineFormOpen(false);
+  };
+
+  const handleCreateOfflineGift = async (e: React.SubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const trimmedName = offlineName.trim();
+    const parsedAmount = Number(offlineAmount);
+
+    if (!trimmedName) {
+      addToast('Contributor name is required.', 'error');
+      return;
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      addToast('Gift value must be a positive number.', 'error');
+      return;
+    }
+
+    setIsCreatingOffline(true);
+    try {
+      const res = await fetch('/api/admin/thank-you-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: trimmedName,
+          email: offlineEmail.trim() || null,
+          amount: parsedAmount,
+          registryItemId: offlineRegistryItemId || null,
+          invitationCodeId: offlineInvitationCodeId || null,
+          thankYouStatus: offlineStatus,
+          message: offlineMessage.trim() || null,
+          thankYouNote: offlineNote.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to record offline gift.');
+      }
+
+      addToast('Offline gift recorded successfully.', 'success');
+      resetOfflineGiftForm();
+      await fetchData();
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message ? err.message : 'Failed to record offline gift.',
+        'error'
+      );
+    } finally {
+      setIsCreatingOffline(false);
+    }
+  };
+
   const handleTemplateSelect = async (
     templateId: string,
     item: ThankYouContributorItem
@@ -670,22 +796,24 @@ export default function ThankYouNotesPage() {
   const saveIndividualEdit = async (id: string) => {
     setIsSaving(true);
     try {
+      const payload: Record<string, unknown> = {
+        thankYouStatus: editStatus,
+        thankYouNote: editNote.trim() || null,
+        thankYouSentAt: editSentAt ? new Date(editSentAt).toISOString() : null,
+        invitationCodeId: editInvitationCodeId || null,
+        addressLine1: editAddressLine1.trim() || null,
+        addressLine2: editAddressLine2.trim() || null,
+        city: editCity.trim() || null,
+        state: editState.trim() || null,
+        zipCode: editZipCode.trim() || null,
+        country: editCountry.trim() || null,
+        ...(syncAddressToGuest && editInvitationCodeId ? { syncAddressToGuest: true } : {}),
+      };
+
       const res = await fetch(`/api/admin/thank-you-notes/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          thankYouStatus: editStatus,
-          thankYouNote: editNote.trim() || null,
-          thankYouSentAt: editSentAt ? new Date(editSentAt).toISOString() : null,
-          invitationCodeId: editInvitationCodeId,
-          addressLine1: editAddressLine1.trim() || null,
-          addressLine2: editAddressLine2.trim() || null,
-          city: editCity.trim() || null,
-          state: editState.trim() || null,
-          zipCode: editZipCode.trim() || null,
-          country: editCountry.trim() || null,
-          ...(syncAddressToGuest && editInvitationCodeId ? { syncAddressToGuest: true } : {}),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -784,6 +912,9 @@ export default function ThankYouNotesPage() {
           </p>
         </div>
         <div className="flex gap-2 items-center flex-wrap relative">
+          <Button variant="primary" onClick={openOfflineGiftForm}>
+            Record Offline Gift
+          </Button>
           <Button variant="secondary" onClick={handleExportCsv}>
             Export CSV
           </Button>
@@ -841,11 +972,145 @@ export default function ThankYouNotesPage() {
               </div>
             )}
           </div>
-          <Button variant="ghost" onClick={() => router.push('/admin/dashboard')}>
+          <Button variant="ghost" onClick={() => router.push('/admin/dashboard/registry')}>
             Back to Registry
           </Button>
         </div>
       </div>
+
+      {isOfflineFormOpen && (
+        <section
+          aria-labelledby="offline-gift-heading"
+          className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 border border-primary/40 dark:border-gray-700 space-y-4"
+        >
+          <div>
+            <h2 id="offline-gift-heading" className="text-lg font-bold text-gray-900 dark:text-white">
+              Record Offline Gift
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Log cash, check, or off-registry physical gifts and optionally link them to a household mailing address.
+            </p>
+          </div>
+          <form onSubmit={handleCreateOfflineGift} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormGroup>
+              <Label htmlFor="offline-gift-name">Contributor Name</Label>
+              <Input
+                id="offline-gift-name"
+                type="text"
+                value={offlineName}
+                onChange={(e) => setOfflineName(e.target.value)}
+                placeholder="e.g., Aunt Clara & Uncle Bob"
+                required
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="offline-gift-amount">Gift Value ($)</Label>
+              <Input
+                id="offline-gift-amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={offlineAmount}
+                onChange={(e) => setOfflineAmount(e.target.value)}
+                placeholder="e.g., 100.00"
+                required
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="offline-gift-email">Contributor Email (Optional)</Label>
+              <Input
+                id="offline-gift-email"
+                type="email"
+                value={offlineEmail}
+                onChange={(e) => setOfflineEmail(e.target.value)}
+                placeholder="clara@example.com"
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="offline-gift-item">Registry Item (Optional)</Label>
+              <select
+                id="offline-gift-item"
+                value={offlineRegistryItemId}
+                onChange={(e) => setOfflineRegistryItemId(e.target.value)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+              >
+                <option value="">Off-Registry / Cash or Check Gift</option>
+                {registryItemOptions.map((regItem) => (
+                  <option key={regItem.id} value={regItem.id}>
+                    {regItem.name}
+                    {regItem.category ? ` (${regItem.category})` : ''}
+                  </option>
+                ))}
+              </select>
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="offline-gift-household">Household Mailing Address (Optional)</Label>
+              <select
+                id="offline-gift-household"
+                value={offlineInvitationCodeId}
+                onChange={(e) => setOfflineInvitationCodeId(e.target.value)}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+              >
+                <option value="">No linked household</option>
+                {invitationOptions.map((inv) => (
+                  <option key={inv.id} value={inv.id}>
+                    {inv.householdName || inv.guestName} ({inv.code})
+                    {inv.addressLine1
+                      ? ` — ${inv.addressLine1}${inv.city ? `, ${inv.city}` : ''}`
+                      : ' — No address'}
+                  </option>
+                ))}
+              </select>
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="offline-gift-status">Thank-You Status</Label>
+              <select
+                id="offline-gift-status"
+                value={offlineStatus}
+                onChange={(e) => setOfflineStatus(e.target.value as 'Unsent' | 'Sent' | 'Not Needed')}
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+              >
+                <option value="Unsent">Unsent</option>
+                <option value="Sent">Sent</option>
+                <option value="Not Needed">Not Needed</option>
+              </select>
+            </FormGroup>
+            <FormGroup className="md:col-span-2">
+              <Label htmlFor="offline-gift-message">Gift Description / Card Message (Optional)</Label>
+              <Textarea
+                id="offline-gift-message"
+                rows={2}
+                value={offlineMessage}
+                onChange={(e) => setOfflineMessage(e.target.value)}
+                placeholder="e.g., Crystal vase brought to reception"
+              />
+            </FormGroup>
+            <FormGroup className="md:col-span-2">
+              <Label htmlFor="offline-gift-note">Thank-You Note Draft (Optional)</Label>
+              <Textarea
+                id="offline-gift-note"
+                rows={2}
+                value={offlineNote}
+                onChange={(e) => setOfflineNote(e.target.value)}
+                placeholder="Draft a thank-you note..."
+              />
+            </FormGroup>
+            <div className="md:col-span-2 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={isCreatingOffline}
+                onClick={resetOfflineGiftForm}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={isCreatingOffline}>
+                {isCreatingOffline ? 'Saving...' : 'Save Offline Gift'}
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
 
       {/* Progress & Metrics Dashboard */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-6 border border-gray-200 dark:border-gray-700 space-y-4">
@@ -1059,12 +1324,12 @@ export default function ThankYouNotesPage() {
                           {item.email || item.invitationCode?.email}
                         </div>
                       )}
-                      {item.invitationCode?.guestName && (
+                      {(item.invitationCode?.guestName || item.invitationCode?.householdName) && (
                         <div
                           data-testid={`linked-household-${item.id}`}
                           className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-[11px] font-medium text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800"
                         >
-                          Household: {item.invitationCode.guestName}
+                          Household: {item.invitationCode.guestName || item.invitationCode.householdName}
                           {item.invitationCode.code ? ` (${item.invitationCode.code})` : ''}
                         </div>
                       )}
@@ -1082,8 +1347,20 @@ export default function ThankYouNotesPage() {
                           );
                         }
                         return (
-                          <div className="text-[11px] text-gray-500 dark:text-gray-400 font-normal italic mt-1">
-                            No address on file
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 font-normal">
+                            <span className="text-[11px] text-gray-500 dark:text-gray-400 italic">
+                              No address on file
+                            </span>
+                            {!isEditing && (
+                              <button
+                                type="button"
+                                onClick={() => startEditing(item)}
+                                aria-label={`Link Address for ${item.name}`}
+                                className="text-[11px] font-medium text-primary underline hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                              >
+                                Link Address
+                              </button>
+                            )}
                           </div>
                         );
                       })()}
@@ -1092,9 +1369,12 @@ export default function ThankYouNotesPage() {
                         <div className="mt-3 space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 p-2.5 font-normal text-xs">
                           <div className="space-y-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-gray-800 dark:text-gray-200">
+                              <label
+                                htmlFor={`edit-household-${item.id}`}
+                                className="font-semibold text-gray-800 dark:text-gray-200"
+                              >
                                 Guest Household Link
-                              </span>
+                              </label>
                               {editInvitationCodeId && (
                                 <button
                                   type="button"
@@ -1106,6 +1386,50 @@ export default function ThankYouNotesPage() {
                                 </button>
                               )}
                             </div>
+                            <select
+                              id={`edit-household-${item.id}`}
+                              aria-label={`Household address for ${item.name}`}
+                              value={editInvitationCodeId || ''}
+                              onChange={(e) => {
+                                const nextId = e.target.value;
+                                if (!nextId) {
+                                  handleUnlinkHousehold();
+                                  return;
+                                }
+                                const matched = invitationOptions.find((opt) => opt.id === nextId);
+                                if (matched) {
+                                  handleSelectHousehold(matched);
+                                } else {
+                                  setEditInvitationCodeId(nextId);
+                                }
+                              }}
+                              className="w-full text-xs p-1.5 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="">No linked household</option>
+                              {item.invitationCode?.id &&
+                                !invitationOptions.some((opt) => opt.id === item.invitationCode?.id) && (
+                                <option value={item.invitationCode.id}>
+                                  {item.invitationCode.householdName ||
+                                    item.invitationCode.guestName ||
+                                    item.invitationCode.code}
+                                </option>
+                              )}
+                              {editInvitationCodeId &&
+                                editInvitationCodeId !== item.invitationCode?.id &&
+                                !invitationOptions.some((opt) => opt.id === editInvitationCodeId) && (
+                                <option value={editInvitationCodeId}>
+                                  {editLinkedHouseholdLabel || editInvitationCodeId}
+                                </option>
+                              )}
+                              {invitationOptions.map((inv) => (
+                                <option key={inv.id} value={inv.id}>
+                                  {inv.householdName || inv.guestName} ({inv.code})
+                                  {inv.addressLine1
+                                    ? ` — ${inv.addressLine1}${inv.city ? `, ${inv.city}` : ''}`
+                                    : ' — No address'}
+                                </option>
+                              ))}
+                            </select>
                             {editInvitationCodeId ? (
                               <div className="text-[11px] text-indigo-800 dark:text-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-1 rounded border border-indigo-200 dark:border-indigo-800">
                                 Linked: {editLinkedHouseholdLabel || editInvitationCodeId}

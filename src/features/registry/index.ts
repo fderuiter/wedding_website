@@ -4,6 +4,7 @@ export {
   RegistryItemCreateInputSchema,
   RegistryItemInputSchema,
   ContributorSchema,
+  CreateOfflineThankYouNoteSchema,
   UpdateThankYouNoteSchema,
   SendThankYouEmailSchema,
   BatchUpdateThankYouNotesSchema,
@@ -27,6 +28,9 @@ export {
   GuestClaimQuerySchema,
   GuestClaimActionSchema,
   AdminContributorActionSchema,
+  AdminUnclaimRegistryItemSchema,
+  AdminUpdateContributorSchema,
+  AdminDeleteContributorSchema,
   InvitationCatalogQuerySchema,
 } from './schemas';
 export { registryService } from './service';
@@ -74,6 +78,7 @@ export type {
   BatchScrapeUrlsDTO,
   BatchCreateRegistryItemsDTO,
   ContributorStatus,
+  AdminUpdateContributorInput,
   InvitationCatalogQueryDTO,
   InvitationSubEventRsvpSummaryDTO,
 } from './schemas';

@@ -322,4 +322,61 @@ describe('RegistryPage Dialog integration', () => {
       jest.useRealTimers();
     }
   });
+
+  test('positions sticky filter bar below fixed Navbar (top-16) and exposes inline Clear Filters button when filters or sort are active', () => {
+    const mockClearFilters = jest.fn();
+    const baseState = {
+      items: [mockItem],
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+      selectedItem: null,
+      isModalOpen: false,
+      visibleItemsCount: 12,
+      setVisibleItemsCount: jest.fn(),
+      isAdmin: false,
+      filteredItems: [mockItem],
+      visibleItems: [mockItem],
+      categories: ['Kitchen'],
+      minPrice: 0,
+      maxPrice: 500,
+      categoryFilter: [],
+      setCategoryFilter: jest.fn(),
+      priceRange: [0, 500] as [number, number],
+      setPriceRange: jest.fn(),
+      showGroupGiftsOnly: false,
+      setShowGroupGiftsOnly: jest.fn(),
+      showAvailableOnly: false,
+      setShowAvailableOnly: jest.fn(),
+      searchQuery: '',
+      setSearchQuery: jest.fn(),
+      sortOption: 'default' as const,
+      setSortOption: jest.fn(),
+      handleClearFilters: mockClearFilters,
+      handleCardClick: jest.fn(),
+      handleCloseModal: mockHandleCloseModal,
+      handleEdit: jest.fn(),
+      handleDelete: jest.fn(),
+      handleContribute: mockHandleContribute,
+    };
+
+    (useRegistry as jest.Mock).mockReturnValue(baseState);
+    const { rerender } = render(<RegistryPage />);
+
+    const filterNav = screen.getByRole('navigation', { name: 'Registry Filters' });
+    expect(filterNav).toHaveClass('sticky', 'top-16');
+    expect(filterNav).not.toHaveClass('top-0');
+    expect(screen.queryByTestId('inline-clear-filters-button')).not.toBeInTheDocument();
+
+    (useRegistry as jest.Mock).mockReturnValue({
+      ...baseState,
+      showAvailableOnly: true,
+    });
+    rerender(<RegistryPage />);
+
+    const inlineClearBtn = screen.getByTestId('inline-clear-filters-button');
+    expect(inlineClearBtn).toHaveTextContent('Clear Filters');
+    fireEvent.click(inlineClearBtn);
+    expect(mockClearFilters).toHaveBeenCalledTimes(1);
+  });
 });

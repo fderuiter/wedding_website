@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { GET } from '../route';
+import { GET, POST } from '../route';
 import { GET as EXPORT_GET } from '../export/route';
 import { GET as EXPORT_LABELS_GET } from '../export-labels/route';
 import { PATCH } from '../[id]/route';
@@ -112,16 +112,19 @@ jest.mock('next/server', () => {
 
 jest.mock('@/features/registry', () => {
   const {
+    CreateOfflineThankYouNoteSchema,
     UpdateThankYouNoteSchema,
     BatchUpdateThankYouNotesSchema,
     SendThankYouEmailSchema,
   } = jest.requireActual('@/features/registry');
   return {
+    CreateOfflineThankYouNoteSchema,
     UpdateThankYouNoteSchema,
     BatchUpdateThankYouNotesSchema,
     SendThankYouEmailSchema,
     thankYouService: {
       getThankYouNotes: jest.fn(),
+      createOfflineGift: jest.fn(),
       updateThankYouNote: jest.fn(),
       batchUpdateThankYouNotes: jest.fn(),
       exportThankYouNotesCsv: jest.fn(),
@@ -134,6 +137,7 @@ jest.mock('@/features/registry', () => {
 jest.mock('@/features/registry/thank-you.service', () => ({
   thankYouService: {
     getThankYouNotes: jest.fn(),
+    createOfflineGift: jest.fn(),
     updateThankYouNote: jest.fn(),
     batchUpdateThankYouNotes: jest.fn(),
     exportThankYouNotesCsv: jest.fn(),
@@ -255,6 +259,50 @@ describe('Thank-You Notes API Routes', () => {
       expect(res.status).toBe(400);
     });
 
+    it('links or unlinks invitationCodeId on PATCH /api/admin/thank-you-notes/[id]', async () => {
+      (thankYouService.updateThankYouNote as jest.Mock).mockResolvedValue({
+        id: 'c1',
+        name: 'Jane Doe',
+        amount: 100,
+        date: new Date().toISOString(),
+        thankYouStatus: 'Unsent',
+        invitationCodeId: 'inv-household-1',
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          invitationCodeId: 'inv-household-1',
+        }),
+      });
+
+      const res = await PATCH(req, { params: Promise.resolve({ id: 'c1' }) });
+      expect(res.status).toBe(200);
+      expect(thankYouService.updateThankYouNote).toHaveBeenCalledWith(
+        'c1',
+        {
+          invitationCodeId: 'inv-household-1',
+        },
+        'Admin'
+      );
+
+      const unlinkReq = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          invitationCodeId: '',
+        }),
+      });
+      const unlinkRes = await PATCH(unlinkReq, { params: Promise.resolve({ id: 'c1' }) });
+      expect(unlinkRes.status).toBe(200);
+      expect(thankYouService.updateThankYouNote).toHaveBeenCalledWith(
+        'c1',
+        {
+          invitationCodeId: null,
+        },
+        'Admin'
+      );
+    });
+
     it('forwards invitationCodeId, postal fields, and syncAddressToGuest on PATCH', async () => {
       (thankYouService.updateThankYouNote as jest.Mock).mockResolvedValue({
         id: 'c1',
@@ -295,6 +343,54 @@ describe('Thank-You Notes API Routes', () => {
         }),
         'Admin'
       );
+    });
+  });
+
+  describe('POST /api/admin/thank-you-notes', () => {
+    it('creates an offline gift record and returns 201', async () => {
+      (thankYouService.createOfflineGift as jest.Mock).mockResolvedValue({
+        id: 'c-offline-1',
+        name: 'Aunt Clara',
+        amount: 150,
+        date: new Date().toISOString(),
+        thankYouStatus: 'Unsent',
+        invitationCodeId: 'inv-clara',
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Aunt Clara',
+          amount: 150,
+          message: 'Check at reception',
+          invitationCodeId: 'inv-clara',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(201);
+      expect(thankYouService.createOfflineGift).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Aunt Clara',
+          amount: 150,
+          message: 'Check at reception',
+          invitationCodeId: 'inv-clara',
+        }),
+        'Admin'
+      );
+    });
+
+    it('returns 400 when offline gift amount or name is invalid', async () => {
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: '',
+          amount: -10,
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(400);
     });
   });
 

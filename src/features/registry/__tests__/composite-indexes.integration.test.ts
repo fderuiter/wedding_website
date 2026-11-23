@@ -157,20 +157,15 @@ describe('Composite & Foreign Key Indexes Verification', () => {
         await client.query(`
           INSERT INTO "SnapshotVersion" ("id", "entityType", "entityId", "data", "author", "createdAt")
           SELECT
-            'explain-seed-' || g::text,
-            CASE
-              WHEN g % 3 = 0 THEN 'RegistryItem'
-              WHEN g % 3 = 1 THEN 'InvitationCode'
-              ELSE 'ContentNode'
-            END,
-            'entity-' || (g % 20)::text,
+            '00000000-0000-4000-8000-' || lpad(i::text, 12, '0'),
+            CASE WHEN i % 2 = 0 THEN 'RegistryItem' ELSE 'ContentNode' END,
+            '11111111-1111-4111-8111-' || lpad((i % 25)::text, 12, '0'),
             '{}'::jsonb,
             'Test',
-            NOW() - (g || ' minutes')::interval
-          FROM generate_series(1, 200) AS g;
+            NOW() - (i || ' minutes')::interval
+          FROM generate_series(1, 100) AS s(i);
         `);
         await client.query('ANALYZE "SnapshotVersion";');
-        await client.query('SET LOCAL enable_seqscan = off;');
 
         const explainRes = await client.query<{ 'QUERY PLAN': string }>(`
           EXPLAIN SELECT * FROM "SnapshotVersion"
