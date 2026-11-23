@@ -752,6 +752,81 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     }
   });
 
+  it('emits verified HTTP 200 and 503 application/json probe schemas for /api/live, /api/health, and /api/ready', () => {
+    const rootDoc = openapi as unknown as Record<string, unknown>;
+
+    const liveGet = openapi.paths['/api/live']?.get as OpenApiOperation;
+    expect(Object.keys(liveGet.responses).sort()).toEqual(['200', '500']);
+    expect(liveGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['alive'] },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+
+    const healthGet = openapi.paths['/api/health']?.get as OpenApiOperation;
+    expect(Object.keys(healthGet.responses).sort()).toEqual(['200', '500', '503']);
+    expect(healthGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['success', 'data'],
+      properties: {
+        success: { type: 'boolean', enum: [true] },
+        data: {
+          type: 'object',
+          required: ['status', 'timestamp', 'database'],
+          properties: {
+            status: { type: 'string', enum: ['ok'] },
+            database: { type: 'string', enum: ['connected'] },
+            timestamp: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    });
+
+    const rawHealth503Schema = healthGet.responses['503']?.content?.['application/json']?.schema as {
+      $ref?: string;
+    };
+    expect(rawHealth503Schema).toEqual({ $ref: '#/components/schemas/ApiErrorEnvelope' });
+
+    const resolvedHealth503Schema = resolveJsonPointer(rootDoc, rawHealth503Schema.$ref!) as {
+      type?: string;
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+    expect(resolvedHealth503Schema.type).toBe('object');
+    expect(resolvedHealth503Schema.required).toEqual(['success', 'error']);
+    expect(resolvedHealth503Schema.properties?.success).toEqual({ type: 'boolean', enum: [false] });
+    expect(resolvedHealth503Schema.properties?.error).toEqual({ type: 'string' });
+    expect(resolvedHealth503Schema.properties?.referenceId).toEqual({ type: 'string' });
+    expect(resolvedHealth503Schema.properties?.status).toBeUndefined();
+    expect(resolvedHealth503Schema.properties?.database).toBeUndefined();
+    expect(resolvedHealth503Schema.properties?.timestamp).toBeUndefined();
+
+    const readyGet = openapi.paths['/api/ready']?.get as OpenApiOperation;
+    expect(Object.keys(readyGet.responses).sort()).toEqual(['200', '503']);
+    expect(readyGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'database', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['ready'] },
+        database: { type: 'string', enum: ['connected'] },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+    expect(readyGet.responses['503']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'database', 'error', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['unhealthy'] },
+        database: { type: 'string', enum: ['disconnected', 'connected'] },
+        error: { type: 'string' },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+  });
+
   it('validates all 7 entity creates/updates, photo moderation forms, and invitation batch payloads without union collisions while rejecting empty {} on all 7 structurally guarded operations', () => {
     // Direct check on AdminEntityCreateSchema & AdminEntityUpdateSchema (z.union -> anyOf, non-colliding)
     const createJsonSchema = z.toJSONSchema(AdminEntityCreateSchema, {
