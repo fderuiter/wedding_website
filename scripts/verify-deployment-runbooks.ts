@@ -2835,6 +2835,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           `docs/upgrading.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\` (Remediation: Deploy wedding-website:previous)`
         );
       }
+      if (/\$\{DB_(?:USER|PASSWORD|NAME)\b/.test(line)) {
+        errors.push(
+          `docs/upgrading.md: Rollback \`docker run\` command must not expand unset host \${DB_*} variables over \`--env-file .env\`: \`${line}\` (Remediation: Load DATABASE_URL from --env-file .env)`
+        );
+      }
     }
   }
 

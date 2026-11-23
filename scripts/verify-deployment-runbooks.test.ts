@@ -537,6 +537,17 @@ describe('verify-deployment-runbooks', () => {
         vercelText.slice(sec5Start)
     );
 
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace(
+          '--env-file .env \\\n     -e E2E_TEST=false',
+          '--env-file .env \\\n     -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \\\n     -e E2E_TEST=false'
+        )
+    );
+
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
@@ -549,7 +560,8 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining('`wedding-migrate` Cloud Run Job must attach Cloud SQL via `--set-cloudsql-instances`'),
         expect.stringContaining('docs/deployment/docker-vps.md (Section 1): Must not wrap `.env` DATABASE_URL'),
         expect.stringContaining('docs/deployment/docker-vps.md (Section 6): Must generate `ADMIN_HASH` inside Docker'),
-        expect.stringContaining('Rollback `docker run` command must not expand unset host ${DB_*} variables'),
+        expect.stringContaining('docs/deployment/docker-vps.md: Rollback `docker run` command must not expand unset host ${DB_*} variables'),
+        expect.stringContaining('docs/upgrading.md: Rollback `docker run` command must not expand unset host ${DB_*} variables'),
         expect.stringContaining('References nonexistent Render "Release Command"'),
         expect.stringContaining('Railway Nixpacks instructions must include `npm ci --include=dev` and `npm run postbuild`'),
         expect.stringContaining('docs/deployment/railway-render.md: Must document `healthcheck.railway.app`'),
