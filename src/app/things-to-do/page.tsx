@@ -6,6 +6,12 @@ import { withPageQuery } from '@/lib/query-wrapper';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
+import { geocodeBestMatch } from '@/lib/geocoding';
+import {
+  hasValidCoordinates,
+  isNonPlaceholderVenueText,
+  formatVenueStreetAddress,
+} from '@/utils/maps';
 
 export const metadata: Metadata = {
   title: 'Things to Do',
@@ -38,7 +44,39 @@ export default async function ThingsToDoPage() {
     [] as AttractionDTO[]
   );
 
-  const heading = config.venueCity?.trim()
+  let resolvedCenter: [number, number] | undefined;
+  let hasExactVenuePin = false;
+
+  if (hasValidCoordinates(config.latitude, config.longitude)) {
+    resolvedCenter = [config.latitude, config.longitude];
+    hasExactVenuePin = true;
+  } else if (process.env.STATIC_EXPORT !== 'true') {
+    const geocoded = await geocodeBestMatch([
+      config.venueName,
+      config.venueAddress,
+      config.venueCity,
+      config.venueState,
+      config.venueZip,
+    ]);
+    if (geocoded && hasValidCoordinates(geocoded.latitude, geocoded.longitude)) {
+      resolvedCenter = [geocoded.latitude, geocoded.longitude];
+      hasExactVenuePin = isNonPlaceholderVenueText(config.venueAddress) || isNonPlaceholderVenueText(config.venueName);
+    }
+  }
+
+  const venuePin =
+    hasExactVenuePin && resolvedCenter
+      ? {
+        name: isNonPlaceholderVenueText(config.venueName)
+          ? config.venueName.trim()
+          : 'Wedding Venue',
+        address: formatVenueStreetAddress(config),
+        latitude: resolvedCenter[0],
+        longitude: resolvedCenter[1],
+      }
+      : null;
+
+  const heading = isNonPlaceholderVenueText(config.venueCity)
     ? `Things to Do in ${config.venueCity.trim()}`
     : 'Things to Do';
 
@@ -68,7 +106,11 @@ export default async function ThingsToDoPage() {
           ))}
         </section>
       )}
-      <ThingsToDoList attractions={attractions} defaultCenter={[config.latitude, config.longitude]} />
+      <ThingsToDoList
+        attractions={attractions}
+        defaultCenter={resolvedCenter}
+        venue={venuePin}
+      />
     </div>
   );
 }

@@ -27,6 +27,8 @@ import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
+import { isNonPlaceholderVenueText } from '@/utils/maps';
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
@@ -161,8 +163,12 @@ function SetupWizardContent({
     baseUrl,
     contactEmail = '',
     venueName,
+    venueAddress = '',
     venueCity,
     venueState,
+    venueZip = '',
+    latitude = 0,
+    longitude = 0,
     timezone,
     sampleArchetype,
     selectedModules,
@@ -175,8 +181,10 @@ function SetupWizardContent({
   const setBaseUrl = (val: string) => updateDraft({ baseUrl: val });
   const setContactEmail = (val: string) => updateDraft({ contactEmail: val });
   const setVenueName = (val: string) => updateDraft({ venueName: val });
+  const setVenueAddress = (val: string) => updateDraft({ venueAddress: val });
   const setVenueCity = (val: string) => updateDraft({ venueCity: val });
   const setVenueState = (val: string) => updateDraft({ venueState: val });
+  const setVenueZip = (val: string) => updateDraft({ venueZip: val });
   const setTimezone = (val: string) => updateDraft({ timezone: val });
   const setSampleArchetype = (archetype: ArchetypeId) => updateDraft({ sampleArchetype: archetype });
   const setSelectedModules = (modules: string[]) => updateDraft({ selectedModules: modules });
@@ -355,13 +363,13 @@ function SetupWizardContent({
           baseUrl: trimmedBaseUrl,
           contactEmail: trimmedContactEmail,
           venueName: venueName?.trim() || '',
-          venueAddress: '',
+          venueAddress: venueAddress?.trim() || '',
           venueCity: venueCity?.trim() || '',
           venueState: venueState?.trim() || '',
-          venueZip: '',
+          venueZip: venueZip?.trim() || '',
           timezone: timezone || 'America/Chicago',
-          latitude: 0,
-          longitude: 0,
+          latitude: typeof latitude === 'number' && Number.isFinite(latitude) ? latitude : 0,
+          longitude: typeof longitude === 'number' && Number.isFinite(longitude) ? longitude : 0,
           storyText: '',
           venueDescription: '',
           travelAdvice: '',
@@ -569,19 +577,52 @@ function SetupWizardContent({
                   <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>
-              <div className="grid grid-cols-3 gap-4">
-                <FormGroup className="col-span-3 md:col-span-1">
-                  <Label htmlFor="venueName">Venue Name</Label>
-                  <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Optional" />
-                </FormGroup>
-                <FormGroup className="col-span-3 md:col-span-1">
-                  <Label htmlFor="venueCity">City</Label>
-                  <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="Optional" />
-                </FormGroup>
-                <FormGroup className="col-span-3 md:col-span-1">
-                  <Label htmlFor="venueState">State</Label>
-                  <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="Optional" />
-                </FormGroup>
+              <div className="space-y-4 pt-2 border-t border-gray-200 dark:border-zinc-700">
+                <AddressLookupInput
+                  id="setupVenueLookup"
+                  label="Lookup Address"
+                  placeholder="Search venue name or street address..."
+                  helperText="Select a result to fill your venue address and coordinates automatically."
+                  verifiedCoordinates={{ latitude, longitude }}
+                  onSelect={(match) => {
+                    updateDraft({
+                      venueName:
+                        !isNonPlaceholderVenueText(venueName) && match.name
+                          ? match.name
+                          : venueName || match.name,
+                      venueAddress: match.streetAddress || match.displayName || venueAddress,
+                      venueCity: match.city || venueCity,
+                      venueState: match.state || venueState,
+                      venueZip: match.zip || venueZip,
+                      latitude: match.latitude,
+                      longitude: match.longitude,
+                    });
+                  }}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormGroup>
+                    <Label htmlFor="venueName">Venue Name</Label>
+                    <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label htmlFor="venueAddress">Street Address</Label>
+                    <Input id="venueAddress" type="text" value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <FormGroup className="col-span-3 md:col-span-1">
+                    <Label htmlFor="venueCity">City</Label>
+                    <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                  <FormGroup className="col-span-3 md:col-span-1">
+                    <Label htmlFor="venueState">State</Label>
+                    <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                  <FormGroup className="col-span-3 md:col-span-1">
+                    <Label htmlFor="venueZip">Postal / Zip Code</Label>
+                    <Input id="venueZip" type="text" value={venueZip} onChange={(e) => setVenueZip(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-gray-200 dark:border-zinc-700">

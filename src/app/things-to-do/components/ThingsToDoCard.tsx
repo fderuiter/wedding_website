@@ -5,15 +5,21 @@ import { MediaImage } from '@/components/MediaImage';
 import type { AttractionDTO } from '@/features/attractions';
 import { Icon } from '@/components/ui/Icon';
 import { sanitizeUrl } from '@/utils/validation';
-import { resolveDirectionsUrl } from '@/utils/maps';
+import {
+  resolveDirectionsUrl,
+  formatDistanceFromVenue,
+  type LatLonCoordinates,
+} from '@/utils/maps';
 
 /**
  * @interface ThingsToDoCardProps
  * @description Defines the props for the ThingsToDoCard component.
  * @property {AttractionDTO} attraction - The attraction object containing details to display.
+ * @property {LatLonCoordinates | null} [venueCoords] - Optional primary wedding venue coordinates for distance display.
  */
 interface ThingsToDoCardProps {
   attraction: AttractionDTO;
+  venueCoords?: LatLonCoordinates | null;
 }
 
 /**
@@ -23,7 +29,7 @@ interface ThingsToDoCardProps {
  * @param {ThingsToDoCardProps} props - The props for the component.
  * @returns {JSX.Element} The rendered ThingsToDoCard component.
  */
-const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
+const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction, venueCoords }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopyCode = async () => {
@@ -40,6 +46,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
   const safeBookingUrl = sanitizeUrl(attraction.bookingUrl);
   const safeWebsiteUrl = sanitizeUrl(attraction.website);
   const directionsUrl = resolveDirectionsUrl(attraction);
+  const distanceLabel = formatDistanceFromVenue(venueCoords, attraction);
 
   const isSafeUrl = (url?: string): url is string => {
     if (!url) return false;
@@ -85,6 +92,15 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
       </div>
       <div className="p-6 flex flex-col flex-grow">
         <h3 className="text-2xl font-bold mb-2 text-primary dark:text-primary">{attraction.name}</h3>
+        {distanceLabel && (
+          <p
+            data-testid="venue-distance-badge"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+          >
+            <Icon name="MapPin" size={15} className="text-primary shrink-0" />
+            <span>{distanceLabel}</span>
+          </p>
+        )}
         <p className="text-gray-600 dark:text-gray-400 mb-4 flex-grow">{attraction.description}</p>
 
         {hasHotelBlock && (
@@ -139,7 +155,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
                   href={safeBookingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="w-full inline-flex items-center justify-center px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors"
+                  className="w-full min-h-11 inline-flex items-center justify-center px-4 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary/90 transition-colors"
                 >
                   <Icon name="ExternalLink" size={16} className="mr-2" />
                   Book Hotel Block
@@ -156,7 +172,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
               href={safeWebsiteUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
+              className="min-h-11 min-w-11 inline-flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
             >
               <Icon name="Globe" size={18} className="mr-2" />
               Website
@@ -168,7 +184,7 @@ const ThingsToDoCard: React.FC<ThingsToDoCardProps> = ({ attraction }) => {
               href={directionsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
+              className="min-h-11 min-w-11 inline-flex items-center text-primary dark:text-primary hover:text-primary dark:hover:text-primary transition-colors"
             >
               <Icon name="MapPin" size={18} className="mr-2" />
               Directions
