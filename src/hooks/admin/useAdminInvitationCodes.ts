@@ -7,6 +7,10 @@ import type {
 } from '@/features/sub-events';
 import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
 import { normalizePartyTags } from '@/utils/invitationValidation';
+import {
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+  invalidateOnboardingMilestones,
+} from '@/lib/adminCacheSync';
 import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 
 type TagUpdateAction = 'add' | 'remove' | 'replace';
@@ -95,7 +99,10 @@ function computeNextTags(
   return Array.from(new Set([...current, ...cleanTags]));
 }
 
-const INVITATION_INVALIDATE_QUERY_KEYS = [ADMIN_RSVP_SUMMARY_QUERY_KEY] as const;
+const INVITATION_INVALIDATE_QUERY_KEYS = [
+  ADMIN_RSVP_SUMMARY_QUERY_KEY,
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+] as const;
 
 export function useAdminInvitationCodes(options?: AdminHookOptions) {
   const queryClient = useQueryClient();
@@ -110,6 +117,11 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
 
   const invalidateRsvpSummary = () => {
     queryClient.invalidateQueries({ queryKey: ADMIN_RSVP_SUMMARY_QUERY_KEY });
+  };
+
+  const invalidateDependentAdminQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ADMIN_RSVP_SUMMARY_QUERY_KEY });
+    invalidateOnboardingMilestones(queryClient);
   };
 
   const { mutateAsync: mutateBatchUpdateTags } = useMutation({
@@ -163,6 +175,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
               })
             )
         );
+        invalidateDependentAdminQueries();
         return;
       }
 
@@ -179,6 +192,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
             )
           )
       );
+      invalidateDependentAdminQueries();
     },
     onError: (_err, _variables, context) => {
       if (context && context.previousData !== undefined) {
@@ -217,6 +231,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
               )
           )
       );
+      invalidateDependentAdminQueries();
     },
     meta: {
       showSuccessToast: false,

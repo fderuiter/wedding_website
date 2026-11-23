@@ -484,6 +484,34 @@ describe('RegistryRepository', () => {
       expect(tx.registryItem.update).not.toHaveBeenCalled();
     });
 
+    it('should reject unpromoted address-collection invitation codes during contribution', async () => {
+      const tx = {
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(mockRegistryItem),
+          update: jest.fn(),
+        },
+        invitationCode: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'addr-only-1',
+            code: 'ADDR2026',
+            guestName: 'Unpromoted Prospect',
+            isSample: false,
+            partyTags: ['address-collection'],
+          }),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementation((callback) => callback(tx));
+
+      await expect(
+        registryRepository.contributeToItem('1', {
+          name: 'Unpromoted Prospect',
+          amount: 50,
+          code: 'ADDR2026',
+        })
+      ).rejects.toThrow('Invalid invitation code.');
+      expect(tx.registryItem.update).not.toHaveBeenCalled();
+    });
+
     it('should successfully contribute without an invitation code', async () => {
       const tx = {
         registryItem: {

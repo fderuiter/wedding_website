@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 import { resetRateLimitsForTesting } from '../rateLimit';
 import { GUEST_INVITE_COOKIE, getGuestInviteSession, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
+import { GUEST_PHOTO_COOKIE, signPhotoUploadSessionToken } from '@/core/auth/photoUploadToken';
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
 import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
@@ -648,6 +649,52 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       const body = await res.json();
       expect(body.data.code).toBe('REUSE2026');
       expect(mockFindUnique).toHaveBeenCalledTimes(1);
+    });
+
+    test('allows photo-scoped API route via active guest_photo_session while expiring a revoked guest_invite_session cookie', async () => {
+      mockFindUnique.mockResolvedValue(null);
+      const prismaWithAppConfig = prisma as unknown as {
+        appConfig?: { findUnique?: jest.Mock; findFirst?: jest.Mock };
+      };
+      const originalAppConfig = prismaWithAppConfig.appConfig;
+      prismaWithAppConfig.appConfig = {
+        findUnique: jest.fn().mockResolvedValue({ guestPhotoQrTokenVersion: 1 }),
+      };
+
+      try {
+        const handler = jest.fn(async (incomingReq: NextRequest) => {
+          const session = await getGuestInviteSession(incomingReq);
+          return new Response(JSON.stringify({ uploaded: true, inviteCode: session?.code ?? null }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          });
+        });
+        const middleware = withApiMiddleware(handler);
+
+        const revokedInvite = await signGuestInviteSessionToken({
+          code: 'REVOKED1',
+          guestName: 'Former Guest',
+        });
+        const validPhoto = await signPhotoUploadSessionToken({ v: 1 });
+        const req = new NextRequest('http://localhost/api/guest/photos/upload', {
+          method: 'POST',
+          headers: {
+            cookie: `${GUEST_INVITE_COOKIE}=${revokedInvite}; ${GUEST_PHOTO_COOKIE}=${validPhoto}`,
+          },
+        });
+
+        const res = await middleware(req, {});
+        expect(res.status).toBe(201);
+        const body = await res.json();
+        expect(body.data).toEqual({ uploaded: true, inviteCode: null });
+        const setCookie = res.headers.get('set-cookie') || '';
+        expect(setCookie).toContain(`${GUEST_INVITE_COOKIE}=`);
+        expect(setCookie).toContain('Max-Age=0');
+        expect(setCookie).not.toContain(`${GUEST_PHOTO_COOKIE}=;`);
+        expect(mockFindUnique).toHaveBeenCalledTimes(1);
+      } finally {
+        prismaWithAppConfig.appConfig = originalAppConfig;
+      }
     });
   });
 });

@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
@@ -96,15 +96,28 @@ export function ReceptionSlideshowClient({
     }
   }, [initialLatestTimestamp]);
 
-  // Derive resolved upload URL
+  const subscribeOriginNoop = useCallback(() => () => {}, []);
+  const clientOrigin = useSyncExternalStore(
+    subscribeOriginNoop,
+    () => (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''),
+    () => ''
+  );
+
+  // Derive resolved upload URL (upgrading relative signed QR paths and basePath-prefixed fallbacks after hydration)
   const resolvedUploadUrl = useMemo(() => {
-    if (uploadUrl) return uploadUrl;
+    if (uploadUrl) {
+      if (uploadUrl.startsWith('/')) {
+        const prefixed = withBasePath(uploadUrl);
+        return clientOrigin ? `${clientOrigin}${prefixed}` : prefixed;
+      }
+      return uploadUrl;
+    }
     const photosPath = withBasePath('/photos?tab=guest');
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}${photosPath}`;
+    if (clientOrigin) {
+      return `${clientOrigin}${photosPath}`;
     }
     return photosPath;
-  }, [uploadUrl]);
+  }, [uploadUrl, clientOrigin]);
 
   // Helper to determine whether an element is an interactive control in the slideshow
   const isInteractiveControl = useCallback((node: Node | null): boolean => {

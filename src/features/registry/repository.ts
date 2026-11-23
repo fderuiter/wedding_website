@@ -30,7 +30,7 @@ import {
   RegistryItemSchema,
   RegistryItemDTO,
 } from './schemas';
-import { isAddressComplete } from './utils/invitation';
+import { hasAddressCollectionTag, isAddressComplete } from './utils/invitation';
 
 const MAX_ACTIVE_HOUSEHOLD_RESERVATIONS = 5;
 
@@ -509,7 +509,11 @@ class RegistryRepository implements IRegistryRepository {
           where: { code: contribution.code.trim().toUpperCase(), isSample: false }
         });
 
-        if (!inviteRecord || inviteRecord.isSample) {
+        if (
+          !inviteRecord ||
+          inviteRecord.isSample ||
+          hasAddressCollectionTag(inviteRecord.partyTags)
+        ) {
           throw new Error('Invalid invitation code.');
         }
 

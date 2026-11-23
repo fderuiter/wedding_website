@@ -7,6 +7,7 @@ import { signContributorActionToken } from './lib/contributorToken';
 import { registryRepository } from './repository';
 import { registryService } from './service';
 import type { IRegistryRepository } from './types';
+import { hasAddressCollectionTag } from './utils/invitation';
 import { getPaymentUrl, resolveEffectivePaymentHandle } from './utils/paymentUrls';
 
 const VALID_EMAIL_SCHEMA = z.email();
@@ -35,6 +36,7 @@ interface ContributorCandidate {
     code?: string;
     email?: string | null;
     isSample?: boolean;
+    partyTags?: unknown;
   } | null;
 }
 
@@ -639,8 +641,11 @@ export async function dispatchContributionNotifications(
 
     let recipientGuestEmail = '';
     if (isReserved) {
-      let verifiedHouseholdRecord: { email?: string | null; isSample?: boolean } | null =
-        savedContributor.invitationCode ?? null;
+      let verifiedHouseholdRecord: {
+        email?: string | null;
+        isSample?: boolean;
+        partyTags?: unknown;
+      } | null = savedContributor.invitationCode ?? null;
 
       if (
         !verifiedHouseholdRecord &&
@@ -666,7 +671,9 @@ export async function dispatchContributionNotifications(
       }
 
       const verifiedHouseholdEmail =
-        !verifiedHouseholdRecord?.isSample && isValidEmail(verifiedHouseholdRecord?.email)
+        !verifiedHouseholdRecord?.isSample &&
+        !hasAddressCollectionTag(verifiedHouseholdRecord?.partyTags) &&
+        isValidEmail(verifiedHouseholdRecord?.email)
           ? verifiedHouseholdRecord.email.trim()
           : '';
 

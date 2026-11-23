@@ -105,7 +105,7 @@ staging:
     provider: ${{ inputs.provider || 'google-cloud-run' }}
     cloud_run_service: ${{ inputs.cloud_run_service || '' }}
     cloud_run_region: ${{ inputs.cloud_run_region || '' }}
-    rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
+    rollback_environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
     dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
 
@@ -147,7 +147,7 @@ production:
     provider: ${{ inputs.provider || 'google-cloud-run' }}
     cloud_run_service: ${{ inputs.cloud_run_service || '' }}
     cloud_run_region: ${{ inputs.cloud_run_region || '' }}
-    rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
+    rollback_environment: ${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
     dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
 
@@ -211,9 +211,9 @@ The release pipeline supports automated merges as well as manual triggers via Gi
     *   `provider`: Hosting provider adapter (defaults to `google-cloud-run`).
     *   `cloud_run_service` / `cloud_run_region`: Optional Cloud Run service and region overrides forwarded across `deploy-provider.yml` and `rollback.yml`.
     *   `previous_tag`: Optional immutable container image tag override for automated rollback if health checks fail (defaults to `previous_image_digest` / `previous_image_tag` captured before rollout by `deploy-provider.yml`; mutable `latest` and the failing `commit_sha` / `github.sha` are rejected outside explicit dry-run mode).
-    *   `rollback_environment`: Optional unguarded GitHub Environment name (e.g., `production-rollback`, or configured via repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT`) used by `rollback.yml` and `deploy-provider.yml` to resolve provider secrets and `vars.SERVICE_URL` (`secrets.SERVICE_URL` legacy fallback) without pausing on `production` reviewer gates.
+    *   `rollback_environment` (`workflow_call` only on `deploy.yml` and `deploy-provider.yml`; configured for automated/manual promotions via repository variables `PRODUCTION_ROLLBACK_ENVIRONMENT` / `STAGING_ROLLBACK_ENVIRONMENT` and accepted on `rollback.yml` `workflow_dispatch`): Optional unguarded GitHub Environment name (e.g., `production-rollback`) used by `rollback.yml` and `deploy-provider.yml` during `workflow_call` rollbacks to resolve provider secrets and `vars.SERVICE_URL` (`secrets.SERVICE_URL` legacy fallback) without pausing on `production` reviewer gates.
 *   **Standalone Provider & Rollback Dispatches (`deploy-provider.yml` & `rollback.yml`)**:
-    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), optional `source_ref` (`refs/heads/main` or `refs/tags/v*`), optional 40-character hexadecimal `commit_sha` (defaulting to `github.sha` when omitted on `workflow_dispatch`), optional `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode), with job-scoped `actions: read` and `deployments: write` permissions on deployment and caller jobs. Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner`, `--signer-workflow`, and `--source-ref`) plus passing `ci.yml` status for the signed source revision and standalone live `origin/main` ancestry / `db-migrate.yml` checks prior to Cloud Run rollout.
+    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), optional `source_ref` (`refs/heads/main` or `refs/tags/v*`), optional 40-character hexadecimal `commit_sha` (defaulting to `github.sha` when omitted on `workflow_dispatch`), optional `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode), with job-scoped `actions: read` and `deployments: write` permissions on deployment and caller jobs. Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner`, `--signer-workflow`, and `--source-ref`) plus passing `ci.yml` status for the signed source revision and standalone live `origin/main` ancestry / target-environment `db-migrate.yml` checks prior to Cloud Run rollout (`rollback.yml` `preflight` also verifies that `previous_digest` / `previous_tag` does not match `CURRENT_SHA` and succeeded earlier in `target_environment` GitHub Deployments before `redeploy` starts).
     *   Exports `service_url`, `is_dry_run`, `previous_image_tag`, `previous_image_digest`, `image_digest`, `image_uri`, `attestation_status`, `cloud_run_service`, and `cloud_run_region` outputs and records them in `$GITHUB_STEP_SUMMARY` and GitHub Deployments.
 *   **Standalone Database Migration Dispatches (`db-migrate.yml`)**:
     *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. Manual `workflow_dispatch` runs default `confirm` to `false` and abort immediately before touching PostgreSQL unless the operator explicitly sets `confirm: true` alongside `environment` (`production`, `staging`, or `development`).

@@ -552,6 +552,12 @@ describe('Isomorphic Theme Stylesheet Generation', () => {
           expect(getContrastRatio(hexToRgb(actionText), hexToRgb(actionBg))).toBeGreaterThanOrEqual(4.5);
           expect(getContrastRatio(hexToRgb(actionText), hexToRgb(actionHoverBg))).toBeGreaterThanOrEqual(4.5);
           expect(getContrastRatio(hexToRgb(badgeText), hexToRgb(badgeBg))).toBeGreaterThanOrEqual(4.5);
+
+          const dimmedBg = extractVar(block, '--floorplan-seat-dimmed-bg');
+          const dimmedText = extractVar(block, '--floorplan-seat-dimmed-text');
+          expect(dimmedBg).toMatch(/^#[0-9a-fA-F]{6}$/);
+          expect(dimmedText).toMatch(/^#[0-9a-fA-F]{6}$/);
+          expect(getContrastRatio(hexToRgb(dimmedText), hexToRgb(dimmedBg))).toBeGreaterThanOrEqual(4.5);
         }
       }
     }
