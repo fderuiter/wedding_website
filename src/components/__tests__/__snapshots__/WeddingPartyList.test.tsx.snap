@@ -28,7 +28,7 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
         role="tab"
         tabindex="-1"
       >
-        Bride's Side
+        Partner 1's Side
       </button>
       <button
         aria-controls="wedding-party-tabpanel"
@@ -38,7 +38,7 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
         role="tab"
         tabindex="-1"
       >
-        Groom's Side
+        Partner 2's Side
       </button>
       <button
         aria-controls="wedding-party-tabpanel"
@@ -78,11 +78,11 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="p-6"
           >
-            <h3
+            <h2
               class="type-h3 text-primary dark:text-primary mb-2"
             >
               John Doe
-            </h3>
+            </h2>
             <p
               class="type-body font-medium text-gray-600 dark:text-gray-300 mb-4"
             >
@@ -146,11 +146,11 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="p-6"
           >
-            <h3
+            <h2
               class="type-h3 text-primary dark:text-primary mb-2"
             >
               Jane Smith
-            </h3>
+            </h2>
             <p
               class="type-body font-medium text-gray-600 dark:text-gray-300 mb-4"
             >
@@ -182,11 +182,11 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="p-6"
           >
-            <h3
+            <h2
               class="type-h3 text-primary dark:text-primary mb-2"
             >
               Sam Wilson
-            </h3>
+            </h2>
             <p
               class="type-body font-medium text-gray-600 dark:text-gray-300 mb-4"
             >
@@ -218,11 +218,11 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="p-6"
           >
-            <h3
+            <h2
               class="type-h3 text-primary dark:text-primary mb-2"
             >
               Alex Taylor
-            </h3>
+            </h2>
             <p
               class="type-body font-medium text-gray-600 dark:text-gray-300 mb-4"
             >

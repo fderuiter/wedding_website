@@ -379,4 +379,38 @@ describe('useGuestLoginMachine hook lifecycle and coordination', () => {
     expect(result.current.error).toBe('');
     expect(mockPush).toHaveBeenCalledWith('/');
   });
+
+  it('restores focus to #passcode after LOGIN_FAILURE when help dialog is closed', async () => {
+    const passcodeEl = document.createElement('input');
+    passcodeEl.id = 'passcode';
+    document.body.appendChild(passcodeEl);
+
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: 'Invalid passcode' }),
+      } as unknown as Response);
+    globalWithFetch.fetch = fetchMock;
+
+    try {
+      const { result } = renderHook(() => useGuestLoginMachine());
+      result.current.passcodeInputRef.current = passcodeEl;
+
+      act(() => {
+        result.current.setPasscode('BADPASS');
+      });
+
+      await act(async () => {
+        await result.current.handleLogin();
+      });
+
+      expect(result.current.error).toBe('Invalid passcode');
+      expect(result.current.loading).toBe(false);
+      expect(document.activeElement).toBe(passcodeEl);
+    } finally {
+      passcodeEl.remove();
+    }
+  });
 });

@@ -166,16 +166,27 @@ export default function AdminDashboardPage() {
               Review setup milestones and jump directly to your active wedding tools.
             </p>
           </div>
-          {setupIncomplete && (
+          <div className="flex flex-wrap items-center gap-3">
+            {setupIncomplete && (
+              <Link
+                href="/admin/setup"
+                data-testid="resume-setup-wizard-link"
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              >
+                <span>Resume Setup Wizard</span>
+                <Icon name="ChevronRight" className="w-4 h-4" />
+              </Link>
+            )}
             <Link
-              href="/admin/setup"
-              data-testid="resume-setup-wizard-link"
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              href="/"
+              data-testid="admin-overview-view-live-site"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 shadow-sm hover:border-primary hover:text-primary dark:hover:border-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             >
-              <span>Resume Setup Wizard</span>
-              <Icon name="ChevronRight" className="w-4 h-4" />
+              <Icon name="Globe" className="w-4 h-4 text-primary" />
+              <span>View Live Site</span>
+              <Icon name="ExternalLink" className="w-4 h-4" />
             </Link>
-          )}
+          </div>
         </div>
 
         <OnboardingChecklist refreshTrigger={checklistRefreshTick} />

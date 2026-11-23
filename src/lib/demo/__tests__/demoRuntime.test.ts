@@ -648,7 +648,8 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect(getDemoState().configOverrides.latitude).toBe(41.8842);
 
       const milestonesPayload = await (await window.fetch('/api/admin/onboarding-milestones')).json();
-      expect(milestonesPayload.data.milestones).toHaveLength(5);
+      expect(milestonesPayload.data.milestones).toHaveLength(6);
+      expect(milestonesPayload.data.milestones.some((m: { id: string }) => m.id === 'story-and-schedule')).toBe(true);
 
       // Contribute to a fund item so we can test contributor edit/action/delete & thank-you updates (#1242)
       const fundTarget = getActiveArchetypeDataset().registryItems.find((i) => i.isGroupGift)!;

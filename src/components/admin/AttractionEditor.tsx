@@ -60,6 +60,8 @@ export function AttractionEditorForm({
     onSubmit(e);
   };
 
+  const HotelSubheadingTag = heading ? 'h4' : 'h3';
+
   return (
     <form ref={ref} onSubmit={handleFormSubmit} className={className}>
       {heading && (
@@ -230,9 +232,9 @@ export function AttractionEditorForm({
 
         {values.category === 'hotel' && (
           <div className="md:col-span-2 border-t border-gray-200 dark:border-zinc-700 pt-4 mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <h4 className="md:col-span-2 text-md font-semibold text-gray-900 dark:text-gray-100">
+            <HotelSubheadingTag className="md:col-span-2 text-md font-semibold text-gray-900 dark:text-gray-100">
               Hotel Block Details
-            </h4>
+            </HotelSubheadingTag>
             <FormGroup>
               <Label {...labelIdProps('promoCode')}>Promo / Group Discount Code</Label>
               <Input

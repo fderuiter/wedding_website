@@ -89,6 +89,7 @@ describe('AdminDashboardPage (Decoupled Overview)', () => {
     );
 
     expect(screen.getByRole('heading', { level: 1, name: 'Admin Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /view live site/i })).toHaveAttribute('href', '/');
     expect(await screen.findByTestId('onboarding-checklist')).toBeInTheDocument();
 
     expect(screen.getByTestId('overview-card-invitations')).toHaveAttribute(

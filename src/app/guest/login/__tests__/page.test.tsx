@@ -399,4 +399,62 @@ describe('Guest Login Page with Unified Sign-In and Help Drawer', () => {
       expect(mockPush).toHaveBeenCalledWith('/');
     });
   });
+
+  it('exposes autoComplete="current-password", renders visible busy text on submit, and keeps #passcode focused across failed sign-ins', async () => {
+    let resolveLogin: ((value: Response) => void) | null = null;
+    const fetchMock = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveLogin = resolve;
+          })
+      );
+    globalWithFetch.fetch = fetchMock;
+
+    const { container } = render(<GuestLoginPage />);
+
+    const passcodeInput = screen.getByLabelText(/passcode or invitation code/i) as HTMLInputElement;
+    expect(passcodeInput).toHaveAttribute('id', 'passcode');
+    expect(passcodeInput).toHaveAttribute('autocomplete', 'current-password');
+    expect(passcodeInput).toBeRequired();
+    expect(passcodeInput).toHaveAttribute('aria-required', 'true');
+
+    passcodeInput.focus();
+    expect(document.activeElement).toBe(passcodeInput);
+
+    fireEvent.change(passcodeInput, { target: { value: 'WRONGCODE' } });
+    fireEvent.submit(passcodeInput.closest('form')!);
+
+    // While request is in flight: #passcode is readOnly + aria-busy (never disabled/blurred), button shows visible busy text
+    expect(document.activeElement).toBe(passcodeInput);
+    expect(passcodeInput).not.toBeDisabled();
+    expect(passcodeInput).toHaveAttribute('readonly');
+    expect(passcodeInput).toHaveAttribute('aria-busy', 'true');
+
+    const busySubmitButton = screen.getByRole('button', { name: /signing in\.\.\./i });
+    expect(busySubmitButton).toBeInTheDocument();
+    expect(busySubmitButton).toHaveAttribute('aria-busy', 'true');
+    expect(busySubmitButton).toHaveTextContent('Signing in...');
+    expect(busySubmitButton.querySelector('.opacity-0')).toBeNull();
+
+    // Resolve with 401 failure
+    resolveLogin!({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        success: false,
+        error: 'Incorrect passcode or invitation code. Please check your invitation and try again.',
+      }),
+    } as unknown as Response);
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(errorAlert).toHaveAttribute('id', 'login-error');
+    expect(passcodeInput).toHaveAttribute('aria-invalid', 'true');
+    expect(passcodeInput).toHaveAttribute('aria-describedby', 'login-error');
+    expect(passcodeInput).not.toHaveAttribute('readonly');
+    expect(document.activeElement).toBe(passcodeInput);
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
 });

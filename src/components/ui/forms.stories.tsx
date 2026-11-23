@@ -117,3 +117,27 @@ export const SelectAndCheckbox: Story = {
     </div>
   ),
 };
+
+export const RequiredField: Story = {
+  render: () => (
+    <div className="max-w-md space-y-4">
+      <FormGroup required>
+        <Label>Your Name</Label>
+        <Input placeholder="Jane Doe" autoComplete="name" />
+        <FormMessage>Required fields expose programmatic aria-required and hide visual asterisks.</FormMessage>
+      </FormGroup>
+    </div>
+  ),
+};
+
+export const BusyReadOnlyLock: Story = {
+  render: () => (
+    <div className="max-w-md space-y-4">
+      <FormGroup busy required>
+        <Label>Invitation Code</Label>
+        <Input defaultValue="LOVE2026" />
+        <FormMessage>Busy inputs remain focusable via readOnly without dropping focus to body.</FormMessage>
+      </FormGroup>
+    </div>
+  ),
+};

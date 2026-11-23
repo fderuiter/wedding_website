@@ -2,10 +2,16 @@ import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes
 import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
+import {
+  cleanOptionalSetupText,
+  hasCustomStoryText,
+  hasNonPlaceholderVenueDetails,
+} from '@/lib/setupCopy';
 import { formatCurrency } from '@/utils/intl';
 import type {
   InvitationCodeDTO,
   RegistryItem,
+  ThankYouTemplateTokens,
 } from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
@@ -31,6 +37,7 @@ import {
 } from './demoStore';
 
 const DEMO_LANDMARK_SHAPES = new Set<string>(['dance-floor', 'bar', 'dj', 'buffet', 'cake']);
+
 function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
 }
@@ -41,9 +48,18 @@ function nextDemoId(prefix: string): string {
   return `${prefix}-${Date.now()}-${demoIdSequence}`;
 }
 
-function substituteThankYouTemplateTokens(
+function escapeDemoHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatDemoThankYouText(
   template: string,
-  tokens: { guestName?: string; giftName?: string; amount?: number | string }
+  tokens: ThankYouTemplateTokens
 ): string {
   const guestName = tokens.guestName?.trim() || 'Friend';
   const giftName = tokens.giftName?.trim() || 'wedding gift';
@@ -56,15 +72,6 @@ function substituteThankYouTemplateTokens(
     .replace(/\{\{\s*guestName\s*\}\}/g, guestName)
     .replace(/\{\{\s*giftName\s*\}\}/g, giftName)
     .replace(/\{\{\s*amount\s*\}\}/g, formattedAmount);
-}
-
-function escapeDemoHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function formatDemoEmailHtml(text: string): string {
@@ -206,11 +213,21 @@ async function handleDemoApi(
         body.weddingDate.includes('T') ? body.weddingDate : `${body.weddingDate}T16:00:00Z`
       );
     }
-    if (typeof body.venueName === 'string') overrides.venueName = body.venueName;
-    if (typeof body.venueAddress === 'string') overrides.venueAddress = body.venueAddress;
-    if (typeof body.venueCity === 'string') overrides.venueCity = body.venueCity;
-    if (typeof body.venueState === 'string') overrides.venueState = body.venueState;
-    if (typeof body.venueZip === 'string') overrides.venueZip = body.venueZip;
+    if (typeof body.venueName === 'string') {
+      overrides.venueName = cleanOptionalSetupText(body.venueName);
+    }
+    if (typeof body.venueAddress === 'string') {
+      overrides.venueAddress = cleanOptionalSetupText(body.venueAddress);
+    }
+    if (typeof body.venueCity === 'string') {
+      overrides.venueCity = cleanOptionalSetupText(body.venueCity);
+    }
+    if (typeof body.venueState === 'string') {
+      overrides.venueState = cleanOptionalSetupText(body.venueState);
+    }
+    if (typeof body.venueZip === 'string') {
+      overrides.venueZip = cleanOptionalSetupText(body.venueZip);
+    }
     if (typeof body.latitude === 'number' && Number.isFinite(body.latitude)) {
       overrides.latitude = body.latitude;
     }
@@ -219,6 +236,19 @@ async function handleDemoApi(
     }
     if (typeof body.timezone === 'string') overrides.timezone = body.timezone;
     if (typeof body.contactEmail === 'string') overrides.contactEmail = body.contactEmail;
+    if (typeof body.heroTitle === 'string') overrides.heroTitle = body.heroTitle;
+    if (typeof body.heroSubtitle === 'string') overrides.heroSubtitle = body.heroSubtitle;
+    if (typeof body.storyText === 'string') {
+      overrides.storyText = cleanOptionalSetupText(body.storyText);
+    }
+    if (typeof body.venueDescription === 'string') {
+      overrides.venueDescription = cleanOptionalSetupText(body.venueDescription);
+    }
+    if (typeof body.travelAdvice === 'string') {
+      overrides.travelAdvice = cleanOptionalSetupText(body.travelAdvice);
+    }
+    if (typeof body.seoTitle === 'string') overrides.seoTitle = body.seoTitle;
+    if (typeof body.seoDescription === 'string') overrides.seoDescription = body.seoDescription;
     if (
       typeof body.themePreset === 'string' &&
       THEME_PRESET_KEYS.includes(body.themePreset as ThemePreset)
@@ -865,7 +895,8 @@ async function handleDemoApi(
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
-      const code = String(body.code || `GUEST${Date.now().toString().slice(-4)}`).toUpperCase();
+      const seqSuffix = `${Date.now().toString().slice(-3)}${(++demoIdSequence) % 10}`;
+      const code = String(body.code || `GUEST${seqSuffix}`).toUpperCase();
       const newGuest: InvitationCodeDTO = {
         id: nextDemoId('demo-guest'),
         code,
@@ -1046,10 +1077,28 @@ async function handleDemoApi(
   if (path === '/api/admin/onboarding-milestones' && method === 'GET') {
     const state = getDemoState();
     const dataset = getActiveArchetypeDataset();
-    const venueName = (state.configOverrides.venueName || '').trim();
+    const effectiveConfig = state.configOverrides;
+    const partner1 = (effectiveConfig.partner1Name || effectiveConfig.brideName || '').trim();
+    const partner2 = (effectiveConfig.partner2Name || effectiveConfig.groomName || '').trim();
     const weddingDetailsCompleted =
-      Boolean(state.configOverrides.partner1Name && state.configOverrides.partner2Name) &&
-      Boolean(venueName && venueName.toUpperCase() !== 'TBD');
+      Boolean(partner1 && partner2) && hasNonPlaceholderVenueDetails(effectiveConfig);
+    const customStoryConfigured = hasCustomStoryText(effectiveConfig);
+    const hasPublicScheduleEvent = dataset.logisticsNodes.some((node) => {
+      const data =
+        node?.data && typeof node.data === 'object' && !Array.isArray(node.data)
+          ? (node.data as Record<string, unknown>)
+          : {};
+      if (data.isSample === true || data.isSample === 'true') return false;
+      if (data.isPrivate === true || data.isPrivate === 'true') return false;
+      return (
+        node.type === 'Schedule' ||
+        (typeof data.startTime === 'string' && data.startTime.trim().length > 0) ||
+        (node.type === 'Logistics' &&
+          typeof data.ceremonyTitle === 'string' &&
+          data.ceremonyTitle.trim().length > 0)
+      );
+    });
+    const storyAndScheduleCompleted = customStoryConfigured && hasPublicScheduleEvent;
     const guestListCompleted = dataset.guests.some((g) => !g.isSample);
     const registryCompleted = dataset.registryItems.some((i) => !i.isSample);
     const seatingCompleted = dataset.seatingTables.some((t) => !t.isSample);
@@ -1063,6 +1112,18 @@ async function handleDemoApi(
         completed: weddingDetailsCompleted,
         href: '/admin/dashboard/settings',
         actionLabel: weddingDetailsCompleted ? 'Edit Wedding Details' : 'Configure Wedding Details',
+      },
+      {
+        id: 'story-and-schedule',
+        title: 'Story & Schedule',
+        description: 'Share your custom couple story and publish at least one public schedule event.',
+        completed: storyAndScheduleCompleted,
+        href: !customStoryConfigured ? '/admin/dashboard/settings' : '/admin/dashboard/sub-events',
+        actionLabel: storyAndScheduleCompleted
+          ? 'Edit Story & Schedule'
+          : !customStoryConfigured
+            ? 'Write Our Story'
+            : 'Add Schedule Event',
       },
       {
         id: 'guest-list',
@@ -1326,7 +1387,7 @@ async function handleDemoApi(
     const contactEmail = demoState.configOverrides.contactEmail || presetConfig.contactEmail;
 
     const rawBody = typeof body.body === 'string' ? body.body.trim() : '';
-    const renderedText = substituteThankYouTemplateTokens(rawBody, {
+    const renderedText = formatDemoThankYouText(rawBody, {
       guestName: foundContributor.name,
       giftName: foundItem?.name || 'Wedding Gift',
       amount: foundContributor.amount,
