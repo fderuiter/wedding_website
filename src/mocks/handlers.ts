@@ -383,6 +383,29 @@ export const handlers = [
   }),
 
   // Mock Leaflet tiles for ThingsToDoMap (CartoDB / OpenStreetMap)
+  http.get('*/api/admin/photos/qr', () => {
+    return HttpResponse.json({
+      success: true,
+      uploadUrl: 'http://localhost:3000/photos?qr=mock-signed-qr-token',
+      tokenVersion: 1,
+      autoApproveGuestPhotos: false,
+    });
+  }),
+
+  http.post('*/api/admin/photos/qr', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const rotated = body.action === 'rotate';
+    return HttpResponse.json({
+      success: true,
+      uploadUrl: rotated
+        ? 'http://localhost:3000/photos?qr=mock-rotated-qr-token-v2'
+        : 'http://localhost:3000/photos?qr=mock-signed-qr-token',
+      tokenVersion: rotated ? 2 : 1,
+      autoApproveGuestPhotos:
+        typeof body.autoApproveGuestPhotos === 'boolean' ? body.autoApproveGuestPhotos : false,
+    });
+  }),
+
   http.get('https://*.basemaps.cartocdn.com/*', () => {
     return new HttpResponse(TRANSPARENT_PNG, {
       headers: {

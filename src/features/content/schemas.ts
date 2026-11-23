@@ -149,6 +149,7 @@ const rawUpdateAppConfigBaseSchema = z.object({
     },
     { message: 'Invalid URL format' }
   ).optional(),
+  autoApproveGuestPhotos: z.boolean().optional(),
   faviconUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
   ogImageUrl: z.string().refine(isSafeConfigAssetUrl, { message: 'Invalid URL format' }),
   brandMonogram: z.string().nullable().optional(),
@@ -328,6 +329,7 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
       shippingDeliveryNotes: data.shippingDeliveryNotes ?? '',
       defaultPaymentHandleType: data.defaultPaymentHandleType ?? '',
       defaultPaymentHandle: data.defaultPaymentHandle ?? '',
+      autoApproveGuestPhotos: data.autoApproveGuestPhotos ?? false,
       subdomain: data.subdomain || null,
     };
   });
@@ -395,6 +397,9 @@ export function toAppConfigDbPayload(data: z.infer<typeof UpdateAppConfigSchema>
     seoDescription: data.seoDescription,
     contactEmail: data.contactEmail,
     photoAlbumUrl: data.photoAlbumUrl ?? '',
+    ...(typeof data.autoApproveGuestPhotos === 'boolean'
+      ? { autoApproveGuestPhotos: data.autoApproveGuestPhotos }
+      : {}),
     faviconUrl: data.faviconUrl,
     ogImageUrl: data.ogImageUrl,
     brandMonogram: data.brandMonogram,
@@ -613,6 +618,16 @@ export const PhotoModerationSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
 });
 
+export const AdminPhotoQrUpdateSchema = z
+  .object({
+    action: z.enum(['rotate']).optional(),
+    autoApproveGuestPhotos: z.boolean().optional(),
+  })
+  .refine(
+    (data) => data.action === 'rotate' || typeof data.autoApproveGuestPhotos === 'boolean',
+    { message: 'Provide action: "rotate" and/or a boolean autoApproveGuestPhotos flag.' }
+  );
+
 export const BatchPhotoModerationSchema = z.object({
   ids: z.array(z.string()).optional(),
   photoIds: z.array(z.string()).optional(),
@@ -799,6 +814,8 @@ export const AppConfigSchema = z.object({
   seoDescription: z.string().describe('Meta description summarizing the wedding website for search engines and Open Graph previews.'),
   contactEmail: z.string().default('').describe('Public host contact email address displayed for guest inquiries.'),
   photoAlbumUrl: z.string().default('').describe('Optional external shared photo album URL displayed on the public gallery page.'),
+  autoApproveGuestPhotos: z.boolean().default(false).describe('Admin-only toggle controlling whether new guest photo uploads are automatically approved and published immediately without manual moderation; omitted from public DTOs.'),
+  guestPhotoQrTokenVersion: z.number().int().min(1).default(1).describe('Admin-only monotonic version counter for rotating signed guest photo upload QR links and invalidating previously issued photo sessions; omitted from public DTOs.'),
   faviconUrl: z.string().describe('Asset path or safe URL for the browser tab favicon icon.'),
   ogImageUrl: z.string().describe('Default Open Graph social sharing preview image URL or asset path.'),
   brandMonogram: z.string().nullable().optional().describe('Custom monogram text overriding initials derived from partner names.'),

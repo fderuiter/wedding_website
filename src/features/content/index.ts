@@ -20,6 +20,7 @@ export {
   ScheduleDataSchema,
   PhotoDataSchema,
   PhotoModerationSchema,
+  AdminPhotoQrUpdateSchema,
   BatchPhotoModerationSchema,
   PhotoNodeSchema,
   GenericNodeSchema,

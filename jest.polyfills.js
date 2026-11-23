@@ -4,6 +4,8 @@ import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web
 import { BroadcastChannel } from 'node:worker_threads';
 import { Blob, File } from 'node:buffer';
 
+class MockMessagePort extends EventTarget {}
+
 const polyfills = {
   TextDecoder,
   TextEncoder,
@@ -11,6 +13,7 @@ const polyfills = {
   TransformStream,
   WritableStream,
   BroadcastChannel,
+  MessagePort: MockMessagePort,
   Blob,
   File,
 };

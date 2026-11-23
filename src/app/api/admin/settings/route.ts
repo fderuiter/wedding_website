@@ -117,6 +117,10 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       ...validData,
       themeTokens: cleanedThemeTokens,
     }),
+    autoApproveGuestPhotos:
+      typeof validData.autoApproveGuestPhotos === 'boolean'
+        ? validData.autoApproveGuestPhotos
+        : existing.autoApproveGuestPhotos,
     modules: mergedModules,
     showCountdown: mergedModules.countdown,
     showAddToCalendar: mergedModules.addToCalendar,

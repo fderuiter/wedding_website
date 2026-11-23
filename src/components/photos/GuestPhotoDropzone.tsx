@@ -37,6 +37,7 @@ export interface UploadStatus {
   order?: number;
   uploaderName?: string;
   caption?: string;
+  publishedLive?: boolean;
 }
 
 interface GuestPhotoDropzoneProps {
@@ -136,6 +137,9 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
       }
 
       const firstPhoto = Array.isArray(json.data) ? json.data[0] : json.data;
+      const publishedLive = Boolean(
+        firstPhoto && firstPhoto.status === 'APPROVED' && firstPhoto.isVisible !== false
+      );
 
       if (isMountedRef.current) {
         setUploads((prev) => {
@@ -146,6 +150,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                 status: 'success' as const,
                 progress: 100,
                 url: firstPhoto?.url,
+                publishedLive,
               }
               : item
           );
@@ -565,10 +570,17 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                       </span>
                     )}
                     {item.status === 'success' && (
-                      <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium" data-testid="upload-success-badge">
-                        <Icon name="Check" className="w-3.5 h-3.5" />
-                        Uploaded (Pending Review)
-                      </span>
+                      item.publishedLive ? (
+                        <span className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-medium" data-testid="upload-success-badge">
+                          <Icon name="Check" className="w-3.5 h-3.5" />
+                          Published Live
+                        </span>
+                      ) : (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium" data-testid="upload-success-badge">
+                          <Icon name="Check" className="w-3.5 h-3.5" />
+                          Uploaded (Pending Review)
+                        </span>
+                      )
                     )}
                     {item.status === 'error' && (
                       <div className="flex items-center gap-2">
@@ -610,10 +622,17 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                 )}
 
                 {item.status === 'success' && (
-                  <p className="text-xs text-amber-700 dark:text-amber-300 font-medium bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 flex items-center gap-1.5" data-testid="upload-pending-notice">
-                    <Icon name="Info" className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span>Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.</span>
-                  </p>
+                  item.publishedLive ? (
+                    <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20 flex items-center gap-1.5" data-testid="upload-live-notice">
+                      <Icon name="Check" className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>Published live! Your photo is now visible in the gallery and reception slideshow.</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-700 dark:text-amber-300 font-medium bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 flex items-center gap-1.5" data-testid="upload-pending-notice">
+                      <Icon name="Info" className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.</span>
+                    </p>
+                  )
                 )}
 
                 {item.status === 'error' && item.errorMessage && (

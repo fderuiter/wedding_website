@@ -3,9 +3,41 @@ import type { NextRequest } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
+import {
+  GUEST_PHOTO_COOKIE,
+  GUEST_PHOTO_SESSION_MAX_AGE_SECONDS,
+  PHOTO_QR_QUERY_PARAM,
+  getSignedPhotoUploadSession,
+  isPhotoScopedRoute,
+  signPhotoUploadSessionToken,
+  verifyPhotoQrLinkToken,
+} from '@/core/auth/photoUploadToken';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
 import { timingSafeEqualJS } from '@/utils/crypto';
+
+function setPhotoSessionCookieOnResponse(response: NextResponse, sessionToken: string): void {
+  const isProd = process.env.NODE_ENV === 'production';
+  if (response.cookies && typeof response.cookies.set === 'function') {
+    response.cookies.set(GUEST_PHOTO_COOKIE, sessionToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: GUEST_PHOTO_SESSION_MAX_AGE_SECONDS,
+    });
+    return;
+  }
+  const cookieParts = [
+    `${GUEST_PHOTO_COOKIE}=${sessionToken}`,
+    'Path=/',
+    `Max-Age=${GUEST_PHOTO_SESSION_MAX_AGE_SECONDS}`,
+    'HttpOnly',
+    'SameSite=Lax',
+    ...(isProd ? ['Secure'] : []),
+  ];
+  response.headers.append('set-cookie', cookieParts.join('; '));
+}
 
 function isValidCronAuthorization(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
@@ -43,7 +75,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const { pathname } = request.nextUrl;
-  const method = request.method;
+  const method = (request.method || 'GET').toUpperCase();
   const normalizedPath = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
 
   // Background cron execution routes support Bearer token authorization bypass
@@ -53,6 +85,45 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // Exchange signed QR photo upload links for an HttpOnly photo-scoped cookie and strip the token via 303 redirect
+  if (
+    normalizedPath === '/photos' &&
+    (method === 'GET' || method === 'HEAD') &&
+    request.nextUrl.searchParams.has(PHOTO_QR_QUERY_PARAM)
+  ) {
+    const rawQrToken = request.nextUrl.searchParams.get(PHOTO_QR_QUERY_PARAM);
+    const verifiedQr = await verifyPhotoQrLinkToken(rawQrToken);
+    const cleanTargetUrl = new URL('/photos', request.url);
+    const remainingParams = new URLSearchParams(request.nextUrl.search);
+    remainingParams.delete(PHOTO_QR_QUERY_PARAM);
+    if (!remainingParams.has('tab')) {
+      remainingParams.set('tab', 'guest');
+    }
+    cleanTargetUrl.search = remainingParams.toString();
+
+    if (verifiedQr) {
+      const sessionToken = await signPhotoUploadSessionToken({ v: verifiedQr.v });
+      const redirectResponse = NextResponse.redirect(cleanTargetUrl, { status: 303 });
+      setPhotoSessionCookieOnResponse(redirectResponse, sessionToken);
+      return redirectResponse;
+    }
+
+    const hasExistingFullAuth =
+      (await isGuestRequest(request)) ||
+      Boolean(await getSignedGuestInviteSession(request)) ||
+      (await isAdminRequest(request));
+    if (hasExistingFullAuth) {
+      return NextResponse.redirect(cleanTargetUrl, { status: 303 });
+    }
+
+    const loginUrl = new URL('/guest/login', request.url);
+    loginUrl.searchParams.set(
+      'callbackUrl',
+      `${cleanTargetUrl.pathname}${cleanTargetUrl.search}`
+    );
+    return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
   const isApiRoute = normalizedPath === '/api' || normalizedPath.startsWith('/api/');
@@ -102,8 +173,11 @@ export async function middleware(request: NextRequest) {
   if (!isExcluded) {
     const isGuest = (await isGuestRequest(request)) || Boolean(await getSignedGuestInviteSession(request));
     const isAdmin = await isAdminRequest(request);
+    const hasPhotoAccess =
+      isPhotoScopedRoute(normalizedPath, method) &&
+      Boolean(await getSignedPhotoUploadSession(request));
 
-    if (!isGuest && !isAdmin) {
+    if (!isGuest && !isAdmin && !hasPhotoAccess) {
       if (normalizedPath.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
@@ -112,6 +186,9 @@ export async function middleware(request: NextRequest) {
       const incomingCode = incomingParams.get('code')?.trim();
       if (incomingParams.has('code')) {
         incomingParams.delete('code');
+      }
+      if (incomingParams.has(PHOTO_QR_QUERY_PARAM)) {
+        incomingParams.delete(PHOTO_QR_QUERY_PARAM);
       }
       const cleanSearch = incomingParams.toString();
       loginUrl.searchParams.set(
@@ -122,6 +199,22 @@ export async function middleware(request: NextRequest) {
         loginUrl.searchParams.set('code', incomingCode);
       }
       return NextResponse.redirect(loginUrl, { status: 303 });
+    }
+  } else if (normalizedPath === '/guest' && !request.nextUrl.searchParams.has('code')) {
+    const signedPhoto = await getSignedPhotoUploadSession(request);
+    if (signedPhoto) {
+      const isGuest =
+        (await isGuestRequest(request)) || Boolean(await getSignedGuestInviteSession(request));
+      const isAdmin = await isAdminRequest(request);
+      if (!isGuest && !isAdmin) {
+        const loginUrl = new URL('/guest/login', request.url);
+        const cleanSearch = request.nextUrl.search;
+        loginUrl.searchParams.set(
+          'callbackUrl',
+          cleanSearch ? `${pathname}${cleanSearch}` : pathname
+        );
+        return NextResponse.redirect(loginUrl, { status: 303 });
+      }
     }
   }
 

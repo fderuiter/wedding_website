@@ -4,16 +4,34 @@ import PhotosSlideshowPage from '../page';
 import { notFound } from 'next/navigation';
 import { contentService } from '@/features/content';
 import { isFeatureEnabled } from '@/lib/modules';
+import { verifyPhotoQrLinkToken } from '@/core/auth/photoUploadToken';
 
 // Mock dependencies
 jest.mock('next/navigation', () => ({
   notFound: jest.fn(),
 }));
 
+jest.mock('next/headers', () => ({
+  headers: jest.fn().mockResolvedValue(new Map([['host', 'wedding.example.com']])),
+}));
+
+jest.mock('@/core/auth/guestInviteSession', () => ({
+  enforceActiveGuestPageSession: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    appConfig: {
+      findFirst: jest.fn().mockResolvedValue({ guestPhotoQrTokenVersion: 3 }),
+    },
+  },
+}));
+
 jest.mock('@/lib/config', () => ({
   getAppConfig: jest.fn().mockResolvedValue({
     baseUrl: 'https://wedding.example.com',
     modules: { gallery: true },
+    guestPhotoQrTokenVersion: 3,
   }),
 }));
 
@@ -44,11 +62,22 @@ jest.mock('@/components/photos/ReceptionSlideshowClient', () => ({
 }));
 
 describe('PhotosSlideshowPage', () => {
+  const originalStaticExport = process.env.STATIC_EXPORT;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.STATIC_EXPORT;
   });
 
-  it('renders slideshow client with empty photos array when no database photos exist', async () => {
+  afterAll(() => {
+    if (originalStaticExport === undefined) {
+      delete process.env.STATIC_EXPORT;
+    } else {
+      process.env.STATIC_EXPORT = originalStaticExport;
+    }
+  });
+
+  it('renders slideshow client with empty photos array and embeds signed QR upload URL', async () => {
     (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([]);
 
     const pageElement = await PhotosSlideshowPage();
@@ -57,6 +86,31 @@ describe('PhotosSlideshowPage', () => {
     const client = screen.getByTestId('reception-slideshow-client');
     expect(client).toBeInTheDocument();
     expect(client).toHaveAttribute('data-count', '0');
+
+    const uploadUrl = client.getAttribute('data-upload-url') ?? '';
+    const parsedUrl = new URL(uploadUrl);
+    expect(parsedUrl.origin).toBe('https://wedding.example.com');
+    expect(parsedUrl.pathname).toBe('/photos');
+    const qrToken = parsedUrl.searchParams.get('qr');
+    expect(qrToken).toBeTruthy();
+
+    const verified = await verifyPhotoQrLinkToken(qrToken);
+    expect(verified).toEqual(
+      expect.objectContaining({
+        purpose: 'photo_qr_link',
+        v: 3,
+      })
+    );
+  });
+
+  it('omits dynamic QR signing and headers when STATIC_EXPORT=true', async () => {
+    process.env.STATIC_EXPORT = 'true';
+    (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([]);
+
+    const pageElement = await PhotosSlideshowPage();
+    render(pageElement);
+
+    const client = screen.getByTestId('reception-slideshow-client');
     expect(client).toHaveAttribute('data-upload-url', 'https://wedding.example.com/photos');
   });
 

@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
 import { contentService } from '@/features/content';
@@ -9,7 +9,13 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
+import { isGuestRequest } from '@/core/auth/guest.server';
+import {
+  enforceActiveGuestPageSession,
+  getActivePhotoUploadSession,
+  getGuestInviteSession,
+} from '@/core/auth/guestInviteSession';
+import { getSignedPhotoUploadSession } from '@/core/auth/photoUploadToken';
 
 import { PhotoGalleryClient, PublicPhotoItem } from '@/components/photos/PhotoGalleryClient';
 
@@ -19,6 +25,30 @@ export const metadata: Metadata = {
     canonical: '/photos',
   },
 };
+
+interface PhotosPageProps {
+  searchParams?: Promise<{ tab?: string | string[] }>;
+}
+
+function redirectToGuestLogin(): never {
+  try {
+    redirect('/guest/login?callbackUrl=%2Fphotos%3Ftab%3Dguest');
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'digest' in err &&
+      typeof (err as { digest?: unknown }).digest === 'string' &&
+      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT;')
+    ) {
+      (err as { digest: string }).digest = (err as { digest: string }).digest.replace(
+        /;30[78];$/,
+        ';303;'
+      );
+    }
+    throw err;
+  }
+}
 
 /**
  * @page PhotosPage
@@ -30,7 +60,7 @@ export const metadata: Metadata = {
  *
  * @returns {Promise<JSX.Element>} The rendered photos page.
  */
-export default async function PhotosPage() {
+export default async function PhotosPage(props?: PhotosPageProps) {
   await enforceActiveGuestPageSession();
   const isStaticExport =
     process.env.STATIC_EXPORT === 'true' ||
@@ -42,6 +72,35 @@ export default async function PhotosPage() {
   ]);
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();
+  }
+
+  let requestedTab: 'curated' | 'guest' | null = null;
+  let isPhotoScopedVisitor = false;
+
+  if (!isStaticExport) {
+    const resolvedSearchParams = props?.searchParams ? await props.searchParams : undefined;
+    const rawTab = Array.isArray(resolvedSearchParams?.tab)
+      ? resolvedSearchParams.tab[0]
+      : resolvedSearchParams?.tab;
+    if (rawTab === 'guest' || rawTab === 'curated') {
+      requestedTab = rawTab;
+    }
+
+    const signedPhoto = await getSignedPhotoUploadSession();
+    if (signedPhoto) {
+      const hasFullAuth =
+        isAdmin || (await isGuestRequest()) || Boolean(await getGuestInviteSession());
+      if (!hasFullAuth) {
+        const activePhotoSession = await getActivePhotoUploadSession(
+          undefined,
+          config.guestPhotoQrTokenVersion
+        );
+        if (!activePhotoSession) {
+          redirectToGuestLogin();
+        }
+        isPhotoScopedVisitor = true;
+      }
+    }
   }
 
   const photoNodes = await withPageQuery(
@@ -81,7 +140,13 @@ export default async function PhotosPage() {
     .filter((item): item is PublicPhotoItem => item !== null);
 
   const hasCuratedPhotos = initialPhotos.some((p) => p.category === 'curated');
-  const defaultTab = hasCuratedPhotos || initialPhotos.length === 0 ? 'curated' : 'guest';
+  const defaultTab: 'curated' | 'guest' =
+    requestedTab ??
+    (isPhotoScopedVisitor
+      ? 'guest'
+      : hasCuratedPhotos || initialPhotos.length === 0
+        ? 'curated'
+        : 'guest');
   const albumUrl = config.photoAlbumUrl?.trim() || '';
 
   return (

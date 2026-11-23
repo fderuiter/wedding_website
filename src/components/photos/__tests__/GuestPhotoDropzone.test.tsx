@@ -490,4 +490,37 @@ describe('GuestPhotoDropzone', () => {
       expect(screen.getByTestId('upload-pending-notice')).toBeInTheDocument();
     });
   });
+
+  it('displays Published Live badge and live notice banner when auto-approval returns APPROVED + isVisible', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [
+          {
+            id: 'media-live-77',
+            nodeId: 'node-live-77',
+            url: '/uploads/photos/live.jpg',
+            title: 'Live Toast',
+            status: 'APPROVED',
+            isVisible: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+
+    render(<GuestPhotoDropzone />);
+
+    const file = new File(['jpeg bytes'], 'live.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByTestId('guest-photo-file-input'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-success-badge')).toHaveTextContent('Published Live');
+      expect(screen.getByTestId('upload-live-notice')).toBeInTheDocument();
+      expect(screen.queryByTestId('upload-pending-notice')).not.toBeInTheDocument();
+    });
+  });
 });

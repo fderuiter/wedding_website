@@ -2,6 +2,7 @@
 import { Fragment, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { AdminViewState } from '@/components/admin/AdminViewState';
+import { PhotoUploadQRModal } from '@/components/admin/PhotoUploadQRModal';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Checkbox } from '@/components/ui/forms';
 import { apiClient } from '@/lib/apiClient';
@@ -39,6 +40,14 @@ interface MediaDashboardContentProps {
   a11yNotice: string;
   setA11yNotice: React.Dispatch<React.SetStateAction<string>>;
   fetchMedia: (_targetPage?: number, _options?: { background?: boolean }) => Promise<void>;
+  qrUploadUrl: string;
+  qrTokenVersion: number;
+  autoApproveGuestPhotos: boolean;
+  onToggleAutoApprove: () => Promise<void>;
+  isUpdatingAutoApprove: boolean;
+  onRotateQrToken: () => Promise<void>;
+  isRotatingQrToken: boolean;
+  onEnsureQrLoaded: () => Promise<void>;
 }
 
 function MediaDashboardContent({
@@ -55,13 +64,27 @@ function MediaDashboardContent({
   a11yNotice,
   setA11yNotice,
   fetchMedia,
+  qrUploadUrl,
+  qrTokenVersion,
+  autoApproveGuestPhotos,
+  onToggleAutoApprove,
+  isUpdatingAutoApprove,
+  onRotateQrToken,
+  isRotatingQrToken,
+  onEnsureQrLoaded,
 }: MediaDashboardContentProps) {
   const [currentMedia, setCurrentMedia] = useState<Partial<MediaDTO>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const { confirm } = useToast();
+
+  const handleOpenQrModal = () => {
+    setQrModalOpen(true);
+    void onEnsureQrLoaded();
+  };
 
   const handleApprove = async (id: string) => {
     try {
@@ -245,6 +268,47 @@ function MediaDashboardContent({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800">
+            <span
+              id="auto-approve-guest-photos-label"
+              className="text-xs sm:text-sm font-semibold text-stone-800 dark:text-stone-100"
+            >
+              Auto-Approve Uploads
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoApproveGuestPhotos}
+              aria-labelledby="auto-approve-guest-photos-label"
+              disabled={isUpdatingAutoApprove}
+              onClick={() => {
+                void onToggleAutoApprove();
+              }}
+              data-testid="auto-approve-guest-photos-toggle"
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50 ${
+                autoApproveGuestPhotos ? 'bg-emerald-600' : 'bg-stone-300 dark:bg-stone-600'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  autoApproveGuestPhotos ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleOpenQrModal}
+            data-testid="open-photo-qr-modal-btn"
+            className="flex items-center gap-2"
+          >
+            <Icon name="Share2" className="w-4 h-4" />
+            <span>Upload QR &amp; Cards</span>
+          </Button>
+
           <Link
             href="/photos/slideshow"
             data-testid="admin-launch-slideshow-link"
@@ -635,8 +699,52 @@ function MediaDashboardContent({
           Next
         </Button>
       </div>
+
+      <PhotoUploadQRModal
+        isOpen={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        uploadUrl={qrUploadUrl}
+        tokenVersion={qrTokenVersion}
+        isRotating={isRotatingQrToken}
+        onRotateToken={onRotateQrToken}
+      />
     </div>
   );
+}
+
+interface PhotoQrSettingsSnapshot {
+  uploadUrl: string;
+  tokenVersion: number;
+  autoApproveGuestPhotos: boolean;
+}
+
+async function requestPhotoQrSettings(): Promise<PhotoQrSettingsSnapshot | null> {
+  const res = await apiClient.get<unknown>('/api/admin/photos/qr');
+  if (!res || typeof res !== 'object') {
+    return null;
+  }
+  const envelope = res as {
+    uploadUrl?: unknown;
+    tokenVersion?: unknown;
+    autoApproveGuestPhotos?: unknown;
+    data?: {
+      uploadUrl?: unknown;
+      tokenVersion?: unknown;
+      autoApproveGuestPhotos?: unknown;
+    };
+  };
+  const payload = envelope.data && typeof envelope.data === 'object' ? envelope.data : envelope;
+  if (typeof payload.uploadUrl !== 'string') {
+    return null;
+  }
+  return {
+    uploadUrl: payload.uploadUrl,
+    tokenVersion:
+      typeof payload.tokenVersion === 'number' && payload.tokenVersion >= 1
+        ? payload.tokenVersion
+        : 1,
+    autoApproveGuestPhotos: Boolean(payload.autoApproveGuestPhotos),
+  };
 }
 
 interface MediaPageSnapshot {
@@ -743,6 +851,94 @@ export default function MediaDashboardPage() {
   const [limit] = useState(20);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [qrUploadUrl, setQrUploadUrl] = useState('');
+  const [qrTokenVersion, setQrTokenVersion] = useState(1);
+  const [autoApproveGuestPhotos, setAutoApproveGuestPhotos] = useState(false);
+  const [isUpdatingAutoApprove, setIsUpdatingAutoApprove] = useState(false);
+  const [isRotatingQrToken, setIsRotatingQrToken] = useState(false);
+
+  const applyPhotoQrSnapshot = useCallback((snapshot: PhotoQrSettingsSnapshot | null) => {
+    if (!snapshot) return;
+    setQrUploadUrl(snapshot.uploadUrl);
+    setQrTokenVersion(snapshot.tokenVersion);
+    setAutoApproveGuestPhotos(snapshot.autoApproveGuestPhotos);
+  }, []);
+
+  const ensureQrLoaded = useCallback(async () => {
+    try {
+      const snapshot = await requestPhotoQrSettings();
+      applyPhotoQrSnapshot(snapshot);
+    } catch (e: unknown) {
+      console.error('Failed to load photo QR settings:', e);
+    }
+  }, [applyPhotoQrSnapshot]);
+
+  const handleToggleAutoApprove = useCallback(async () => {
+    const nextValue = !autoApproveGuestPhotos;
+    setIsUpdatingAutoApprove(true);
+    try {
+      const res = await apiClient.post<unknown>('/api/admin/photos/qr', {
+        autoApproveGuestPhotos: nextValue,
+      });
+      if (res && typeof res === 'object') {
+        const envelope = res as {
+          uploadUrl?: unknown;
+          tokenVersion?: unknown;
+          autoApproveGuestPhotos?: unknown;
+        };
+        if (typeof envelope.uploadUrl === 'string') {
+          setQrUploadUrl(envelope.uploadUrl);
+        }
+        if (typeof envelope.tokenVersion === 'number' && envelope.tokenVersion >= 1) {
+          setQrTokenVersion(envelope.tokenVersion);
+        }
+        setAutoApproveGuestPhotos(
+          typeof envelope.autoApproveGuestPhotos === 'boolean'
+            ? envelope.autoApproveGuestPhotos
+            : nextValue
+        );
+      } else {
+        setAutoApproveGuestPhotos(nextValue);
+      }
+      setA11yNotice(
+        nextValue
+          ? 'Auto-approval enabled. New guest uploads will publish live immediately.'
+          : 'Auto-approval disabled. New guest uploads will enter the moderation queue.'
+      );
+    } catch (e: unknown) {
+      console.error('Failed to update auto-approve guest photos setting:', e);
+      setA11yNotice('Failed to update auto-approval setting.');
+    } finally {
+      setIsUpdatingAutoApprove(false);
+    }
+  }, [autoApproveGuestPhotos]);
+
+  const handleRotateQrToken = useCallback(async () => {
+    setIsRotatingQrToken(true);
+    try {
+      const res = await apiClient.post<unknown>('/api/admin/photos/qr', {
+        action: 'rotate',
+      });
+      if (res && typeof res === 'object') {
+        const envelope = res as {
+          uploadUrl?: unknown;
+          tokenVersion?: unknown;
+        };
+        if (typeof envelope.uploadUrl === 'string') {
+          setQrUploadUrl(envelope.uploadUrl);
+        }
+        if (typeof envelope.tokenVersion === 'number' && envelope.tokenVersion >= 1) {
+          setQrTokenVersion(envelope.tokenVersion);
+        }
+      }
+      setA11yNotice('Guest photo QR link rotated. Previous QR links are now invalid.');
+    } catch (e: unknown) {
+      console.error('Failed to rotate guest photo QR token:', e);
+      setA11yNotice('Failed to rotate guest photo QR link.');
+    } finally {
+      setIsRotatingQrToken(false);
+    }
+  }, []);
 
   const fetchPendingPhotos = async () => {
     try {
@@ -814,12 +1010,24 @@ export default function MediaDashboardPage() {
         }
       });
 
-    void Promise.all([mediaTask, pendingTask]);
+    const qrTask = requestPhotoQrSettings()
+      .then((qrSnapshot) => {
+        if (!cancelled) {
+          applyPhotoQrSnapshot(qrSnapshot);
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          console.error('Failed to load photo QR settings:', e);
+        }
+      });
+
+    void Promise.all([mediaTask, pendingTask, qrTask]);
 
     return () => {
       cancelled = true;
     };
-  }, [page, limit]);
+  }, [page, limit, applyPhotoQrSnapshot]);
 
   const handleRetry = async () => {
     await Promise.all([fetchMedia(page), fetchPendingPhotos()]);
@@ -850,6 +1058,14 @@ export default function MediaDashboardPage() {
           a11yNotice={a11yNotice}
           setA11yNotice={setA11yNotice}
           fetchMedia={fetchMedia}
+          qrUploadUrl={qrUploadUrl}
+          qrTokenVersion={qrTokenVersion}
+          autoApproveGuestPhotos={autoApproveGuestPhotos}
+          onToggleAutoApprove={handleToggleAutoApprove}
+          isUpdatingAutoApprove={isUpdatingAutoApprove}
+          onRotateQrToken={handleRotateQrToken}
+          isRotatingQrToken={isRotatingQrToken}
+          onEnsureQrLoaded={ensureQrLoaded}
         />
       </AdminViewState>
     </ToastBoundary>

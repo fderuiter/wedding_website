@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "autoApproveGuestPhotos" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "AppConfig" ADD COLUMN IF NOT EXISTS "guestPhotoQrTokenVersion" INTEGER NOT NULL DEFAULT 1;

@@ -33,6 +33,8 @@ model AppConfig {
   seoDescription   String   @default("")
   contactEmail     String   @default("")
   photoAlbumUrl    String   @default("")
+  autoApproveGuestPhotos   Boolean @default(false)
+  guestPhotoQrTokenVersion Int     @default(1)
   faviconUrl       String   @default("/assets/favicon.png")
   ogImageUrl       String   @default("/images/sunset-embrace.jpg")
   brandMonogram    String?

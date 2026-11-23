@@ -15,7 +15,7 @@ export interface GuestInviteSessionPayload {
   exp?: number;
 }
 
-async function getSecret(): Promise<string> {
+export async function getGuestSessionSecret(): Promise<string> {
   const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
   const fallback = isProduction ? '' : 'default-guest-session-secret';
   const secret = isProduction
@@ -53,7 +53,7 @@ export async function signGuestInviteSessionToken(
     iat,
     exp,
   };
-  const secret = await getSecret();
+  const secret = await getGuestSessionSecret();
   return signCompactToken(fullPayload, secret);
 }
 
@@ -64,7 +64,7 @@ export async function verifyGuestInviteSessionToken(token: string): Promise<Gues
   if (!token || typeof token !== 'string') return null;
 
   try {
-    const secret = await getSecret();
+    const secret = await getGuestSessionSecret();
     const payload = await verifyCompactToken<GuestInviteSessionPayload>(token, secret);
     if (!payload || !payload.code || !payload.guestName) {
       return null;

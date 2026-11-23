@@ -505,4 +505,64 @@ describe('MediaDashboardPage', () => {
     expect(slideshowLink).toBeInTheDocument();
     expect(slideshowLink).toHaveAttribute('href', '/photos/slideshow');
   });
+
+  it('toggles autoApproveGuestPhotos switch and opens PhotoUploadQRModal from media dashboard header', async () => {
+    mockGet.mockImplementation(async (url) => {
+      if (url === '/api/admin/photos/qr') {
+        return {
+          success: true,
+          uploadUrl: 'https://wedding.example.com/photos?qr=v1-signed',
+          tokenVersion: 1,
+          autoApproveGuestPhotos: false,
+        };
+      }
+      if (url.startsWith('/api/admin/photos/moderation')) {
+        return { photos: [], pendingCount: 0 };
+      }
+      return [];
+    });
+
+    mockPost.mockImplementation(async (url, body: any) => {
+      if (url === '/api/admin/photos/qr' && body?.autoApproveGuestPhotos === true) {
+        return {
+          success: true,
+          uploadUrl: 'https://wedding.example.com/photos?qr=v1-signed',
+          tokenVersion: 1,
+          autoApproveGuestPhotos: true,
+        };
+      }
+      if (url === '/api/admin/photos/qr' && body?.action === 'rotate') {
+        return {
+          success: true,
+          uploadUrl: 'https://wedding.example.com/photos?qr=v2-signed',
+          tokenVersion: 2,
+          autoApproveGuestPhotos: true,
+        };
+      }
+      return {};
+    });
+
+    render(<MediaDashboardPage />);
+
+    const toggle = await screen.findByTestId('auto-approve-guest-photos-toggle');
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith('/api/admin/photos/qr', {
+        autoApproveGuestPhotos: true,
+      });
+      expect(toggle).toHaveAttribute('aria-checked', 'true');
+    });
+
+    fireEvent.click(screen.getByTestId('open-photo-qr-modal-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Guest Photo Upload QR & Printable Cards')).toBeInTheDocument();
+      expect(screen.getByTestId('photo-qr-signed-url-input')).toHaveValue(
+        'https://wedding.example.com/photos?qr=v1-signed'
+      );
+    });
+  });
 });

@@ -34,6 +34,7 @@ const APP_CONFIG_BACKUP_KEYS = [
   'seoDescription',
   'contactEmail',
   'photoAlbumUrl',
+  'autoApproveGuestPhotos',
   'faviconUrl',
   'ogImageUrl',
   'brandMonogram',

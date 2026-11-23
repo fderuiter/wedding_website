@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
-import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  getActivePhotoUploadSession,
+  getGuestInviteSession,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteSession';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
+import {
+  GUEST_PHOTO_COOKIE,
+  getSignedPhotoUploadSession,
+  isPhotoScopedApiRoute,
+} from '@/core/auth/photoUploadToken';
 import { rateLimit, type RateLimitBucket } from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
@@ -103,7 +112,7 @@ export function withApiMiddleware(
         }
       }
 
-      // 2. Admin & Active Guest Invite Verification
+      // 2. Admin, Active Guest Invite & Scoped Photo Session Verification
       if (isAdminPath) {
         const isAdmin = req ? await isAdminRequest(req) : false;
         if (!isAdmin) {
@@ -111,24 +120,43 @@ export function withApiMiddleware(
         }
       } else if (req && !isInviteRevocationExcludedApiPath(normalizedPathname)) {
         const signedInvite = await getSignedGuestInviteSession(req);
-        if (signedInvite) {
+        const signedPhoto = await getSignedPhotoUploadSession(req);
+        if (signedInvite || signedPhoto) {
           const hasFallbackAuth = (await isAdminRequest(req)) || (await isGuestRequest(req));
           if (!hasFallbackAuth) {
-            const activeInvite = await getGuestInviteSession(req);
+            const activeInvite = signedInvite ? await getGuestInviteSession(req) : null;
             if (!activeInvite) {
-              const unauthorizedResponse = NextResponse.json(
-                { success: false, error: 'Unauthorized' },
-                { status: 401 }
-              );
-              unauthorizedResponse.headers.set('x-api-version', 'v2');
-              unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                path: '/',
-                maxAge: 0,
-              });
-              return unauthorizedResponse;
+              const photoRouteAllowed = isPhotoScopedApiRoute(normalizedPathname, method);
+              const activePhoto =
+                photoRouteAllowed && signedPhoto
+                  ? await getActivePhotoUploadSession(req)
+                  : null;
+              if (!activePhoto) {
+                const unauthorizedResponse = NextResponse.json(
+                  { success: false, error: 'Unauthorized' },
+                  { status: 401 }
+                );
+                unauthorizedResponse.headers.set('x-api-version', 'v2');
+                if (signedInvite) {
+                  unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax',
+                    path: '/',
+                    maxAge: 0,
+                  });
+                }
+                if (signedPhoto && photoRouteAllowed) {
+                  unauthorizedResponse.cookies.set(GUEST_PHOTO_COOKIE, '', {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax',
+                    path: '/',
+                    maxAge: 0,
+                  });
+                }
+                return unauthorizedResponse;
+              }
             }
           }
         }
