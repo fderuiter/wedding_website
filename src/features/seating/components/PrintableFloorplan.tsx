@@ -2,15 +2,19 @@
 
 import { useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestCustomAnswers,
+  formatGuestMealSelections,
+} from '@/features/registry';
 import { ServerExportTokens, ThemePreset } from '@/lib/theme/presets';
 import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
   computeTableMealCounts,
   getDietaryBadges,
-  getGuestPlusOneNamesList,
+  getGuestCompanionNames,
+  getGuestsHeadcount,
   getSeatingShapeLabel,
-  getTableOccupiedChairCount,
   isGuestEligibleForSeating,
   isLandmarkTable,
 } from '../utils/seatingHelpers';
@@ -37,6 +41,11 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
   const printableUnassignedGuests = useMemo(
     () => unassignedGuests.filter((g) => isGuestEligibleForSeating(g)),
     [unassignedGuests]
+  );
+
+  const unassignedHeadcount = useMemo(
+    () => getGuestsHeadcount(printableUnassignedGuests),
+    [printableUnassignedGuests]
   );
 
   return (
@@ -99,7 +108,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
         </h2>
         <div className="grid grid-cols-2 gap-6 mb-8">
           {guestTables.map((table) => {
-            const occupiedChairs = getTableOccupiedChairCount(table.invitationCodes);
+            const seatedHeadcount = getGuestsHeadcount(table.invitationCodes || []);
             const mealSummary = computeTableMealCounts(table.invitationCodes);
             const detailedSeatMap = resolveDetailedSeatAssignments(
               table.invitationCodes,
@@ -135,11 +144,11 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                       color: 'var(--print-text)',
                     }}
                   >
-                    Shape: {table.shape} | Capacity: {table.capacity} | Seated: {occupiedChairs}
+                    Shape: {table.shape} | Capacity: {table.capacity} | Seated: {seatedHeadcount}
                   </span>
                 </div>
 
-                {occupiedChairs > 0 && (
+                {seatedHeadcount > 0 && (
                   <div
                     data-testid="printable-table-meal-summary"
                     className="text-[11px] mb-2.5 px-2 py-1 rounded border"
@@ -157,46 +166,65 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
 
                 {orderedEntries.length > 0 ? (
                   <ol className="list-decimal list-inside space-y-1 text-xs">
-                    {orderedEntries.map((entry) => (
-                      <li
-                        key={`${entry.guest.id}-seat-${entry.seatNumber}`}
-                        className="flex justify-between items-center gap-2 border-b border-dashed py-0.5"
-                        style={{ borderColor: 'var(--print-border)' }}
-                      >
-                        <span className="font-medium flex items-center flex-wrap gap-1">
-                          <span>
-                            Seat {entry.seatNumber}: {entry.attendeeName}
-                          </span>
-                          {entry.isPlusOne && (
-                            <span
-                              className="text-[10px] px-1 rounded border opacity-80"
-                              style={{ borderColor: 'var(--print-border)' }}
-                            >
-                              +1
+                    {orderedEntries.map((entry) => {
+                      const mealSelections = !entry.isCompanion
+                        ? formatGuestMealSelections(entry.guest)
+                        : '';
+                      const customAnswers = !entry.isCompanion
+                        ? formatGuestCustomAnswers(entry.guest)
+                        : '';
+
+                      return (
+                        <li
+                          key={`${entry.guest.id}-seat-${entry.seatNumber}`}
+                          className="border-b border-dashed py-1 space-y-0.5"
+                          style={{ borderColor: 'var(--print-border)' }}
+                        >
+                          <div className="flex justify-between items-center gap-2">
+                            <span className="font-medium flex items-center flex-wrap gap-1">
+                              <span>
+                                Seat {entry.seatNumber}: {entry.displayName}
+                              </span>
+                              {entry.dietaryBadges.map((badge) => (
+                                <span
+                                  key={badge.category}
+                                  data-testid="printable-dietary-badge"
+                                  className="text-[10px] font-semibold px-1.5 py-0.2 rounded border"
+                                  style={{
+                                    backgroundColor: 'var(--print-badge-bg)',
+                                    borderColor: 'var(--print-border)',
+                                    color: 'var(--print-text)',
+                                  }}
+                                >
+                                  {badge.label}
+                                </span>
+                              ))}
                             </span>
+                            {entry.mealChoice && (
+                              <span className="text-[10px] font-medium opacity-85">
+                                {entry.mealChoice}
+                              </span>
+                            )}
+                          </div>
+                          {mealSelections && (
+                            <div
+                              data-testid="printable-meal-selections"
+                              className="text-[10px] opacity-85 pl-3"
+                            >
+                              Meals: {mealSelections}
+                            </div>
                           )}
-                          {entry.dietaryBadges.map((badge) => (
-                            <span
-                              key={badge.category}
-                              data-testid="printable-dietary-badge"
-                              className="text-[10px] font-semibold px-1.5 py-0.2 rounded border"
-                              style={{
-                                backgroundColor: 'var(--print-badge-bg)',
-                                borderColor: 'var(--print-border)',
-                                color: 'var(--print-text)',
-                              }}
+                          {customAnswers && (
+                            <div
+                              data-testid="printable-custom-answers"
+                              className="text-[10px] opacity-85 pl-3"
                             >
-                              {badge.label}
-                            </span>
-                          ))}
-                        </span>
-                        {entry.mealChoice && (
-                          <span className="text-[10px] font-medium opacity-85">
-                            {entry.mealChoice}
-                          </span>
-                        )}
-                      </li>
-                    ))}
+                              Responses: {customAnswers}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ol>
                 ) : (
                   <p className="text-xs italic py-2 opacity-60">No guests assigned to this table.</p>
@@ -215,42 +243,67 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
           style={{ borderColor: 'var(--print-header-border)' }}
         >
           <h2 id="unassigned-guests-heading" className="text-sm font-bold uppercase mb-2">
-            Unassigned Guests ({printableUnassignedGuests.length})
+            Unassigned Guests ({unassignedHeadcount})
           </h2>
           <div className="grid grid-cols-3 gap-2 text-xs">
             {printableUnassignedGuests.map((guest) => {
-              const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
-              const plusOneNames = getGuestPlusOneNamesList(guest);
+              const dietaryBadges = getDietaryBadges(
+                guest.dietaryNotes,
+                guest.extraFields,
+                guest.partyTags
+              );
+              const companions = getGuestCompanionNames(guest);
+              const hasNamedCompanion = companions.some(
+                (c) => !c.startsWith(`${guest.guestName} (+`)
+              );
+              const companionSuffix =
+                companions.length > 0
+                  ? hasNamedCompanion
+                    ? ` (+${companions.length}: ${companions.join(', ')})`
+                    : ` (+${companions.length})`
+                  : '';
+              const mealSelections = formatGuestMealSelections(guest);
+              const customAnswers = formatGuestCustomAnswers(guest);
               return (
                 <div
                   key={guest.id}
-                  className="p-1.5 border rounded flex justify-between items-center gap-1"
+                  className="p-1.5 border rounded space-y-0.5"
                   style={{
                     borderColor: 'var(--print-border)',
                     backgroundColor: 'var(--print-badge-bg)',
                   }}
                 >
-                  <span className="flex items-center flex-wrap gap-1">
-                    <span>{guest.guestName}</span>
-                    {plusOneNames.length > 0 && (
-                      <span className="text-[10px] opacity-80">
-                        (+1: {plusOneNames.join(', ')})
+                  <div className="flex justify-between items-center gap-1">
+                    <span className="flex items-center flex-wrap gap-1">
+                      <span>
+                        {guest.guestName}
+                        {companionSuffix}
                       </span>
-                    )}
-                    {dietaryBadges.map((badge) => (
-                      <span
-                        key={badge.category}
-                        data-testid="printable-dietary-badge"
-                        className="text-[10px] font-semibold px-1 rounded border"
-                        style={{
-                          borderColor: 'var(--print-border)',
-                          color: 'var(--print-text)',
-                        }}
-                      >
-                        {badge.shortLabel}
-                      </span>
-                    ))}
-                  </span>
+                      {dietaryBadges.map((badge) => (
+                        <span
+                          key={badge.category}
+                          data-testid="printable-dietary-badge"
+                          className="text-[10px] font-semibold px-1 rounded border"
+                          style={{
+                            borderColor: 'var(--print-border)',
+                            color: 'var(--print-text)',
+                          }}
+                        >
+                          {badge.shortLabel}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                  {mealSelections && (
+                    <div data-testid="printable-meal-selections" className="text-[10px] opacity-85">
+                      Meals: {mealSelections}
+                    </div>
+                  )}
+                  {customAnswers && (
+                    <div data-testid="printable-custom-answers" className="text-[10px] opacity-85">
+                      Responses: {customAnswers}
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -51,10 +51,9 @@ describe('SeatingTableAdminService Auto-Assign Bulk Integration', () => {
   });
 
   afterAll(async () => {
-    await realPrisma.snapshotVersion.deleteMany();
-    await realPrisma.invitationCode.deleteMany();
-    await realPrisma.seatingTable.deleteMany();
-    await pool.query('VACUUM ANALYZE "SnapshotVersion", "InvitationCode", "SeatingTable";');
+    await pool.query(
+      'TRUNCATE TABLE "SnapshotVersion", "InvitationCode", "SeatingTable" RESTART IDENTITY CASCADE;'
+    );
     await realPrisma.$disconnect();
     await pool.end();
   });
@@ -229,7 +228,7 @@ describe('SeatingTableAdminService Auto-Assign Bulk Integration', () => {
         keepHouseholdsIntact: true,
       });
 
-      expect(result.assignedCount).toBe(2);
+      expect(result.assignedCount).toBe(4);
       expect(result.unassignedCount).toBe(3);
 
       const hostRow = await cleanPrisma.invitationCode.findUnique({ where: { id: 'g-plus-int-1' } });

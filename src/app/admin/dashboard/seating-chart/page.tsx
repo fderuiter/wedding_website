@@ -14,17 +14,25 @@ import {
   computeTableMealCounts,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestCompanionNames,
+  getGuestPartySize,
   getGuestPlusOneNamesList,
-  getRequiredChairCount,
+  getGuestsHeadcount,
   getSeatingShapeLabel,
-  getTableOccupiedChairCount,
   isGuestEligibleForSeating,
   isLandmarkTable,
 } from '@/features/seating';
 import { Dialog } from '@/components/ui/Dialog';
-import { InvitationCodeDTO } from '@/features/registry';
+import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
+import {
+  InvitationCodeDTO,
+  formatGuestCustomAnswers,
+  formatGuestMealSelections,
+  formatGuestPlusOneNames,
+} from '@/features/registry';
 
-export default function SeatingChartAdminPage() {
+function SeatingChartAdminContent() {
+  const { confirm } = useToast();
   const {
     tables,
     allGuests,
@@ -72,10 +80,14 @@ export default function SeatingChartAdminPage() {
       return (
         g.guestName.toLowerCase().includes(normalizedQuery) ||
         getGuestPlusOneNamesList(g).some((n) => n.toLowerCase().includes(normalizedQuery)) ||
+        formatGuestPlusOneNames(g).toLowerCase().includes(normalizedQuery) ||
         (g.code ? g.code.toLowerCase().includes(normalizedQuery) : false) ||
         (g.householdName && g.householdName.toLowerCase().includes(normalizedQuery)) ||
         (g.partyGroup && g.partyGroup.toLowerCase().includes(normalizedQuery)) ||
-        (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)))
+        (g.dietaryNotes && g.dietaryNotes.toLowerCase().includes(normalizedQuery)) ||
+        (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery))) ||
+        formatGuestMealSelections(g).toLowerCase().includes(normalizedQuery) ||
+        formatGuestCustomAnswers(g).toLowerCase().includes(normalizedQuery)
       );
     });
 
@@ -129,37 +141,62 @@ export default function SeatingChartAdminPage() {
     await saveTable(tableData);
   };
 
-  const handleDeleteTable = async (tableId: string) => {
+  const handleDeleteTableConfirmed = async (tableId: string) => {
     setSelectedTableId(null);
     await deleteTable(tableId);
   };
 
+  const handleRequestDeleteTable = async (table: SeatingTableDTO) => {
+    const seatedGuests = table.invitationCodes || [];
+    if (seatedGuests.length > 0) {
+      const seatedHeadcount = getGuestsHeadcount(seatedGuests);
+      const confirmed = await confirm(
+        `Are you sure you want to delete "${table.name}"? ${seatedHeadcount} seated guest${seatedHeadcount === 1 ? '' : 's'} will become unassigned.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    await handleDeleteTableConfirmed(table.id);
+  };
+
   const selectedTable = tables.find((t) => t.id === selectedTableId) || null;
+  const selectedTableSeatedHeadcount = useMemo(
+    () =>
+      selectedTable && !isLandmarkTable(selectedTable)
+        ? getGuestsHeadcount(selectedTable.invitationCodes || [])
+        : 0,
+    [selectedTable]
+  );
+  const selectedTableDetailedSeats = useMemo(() => {
+    if (!selectedTable?.invitationCodes || isLandmarkTable(selectedTable)) return [];
+    return Array.from(
+      resolveDetailedSeatAssignments(selectedTable.invitationCodes, selectedTable.capacity).values()
+    ).sort((a, b) => a.seatNumber - b.seatNumber);
+  }, [selectedTable]);
+
   const selectedTableDetails = useMemo(() => {
-    const primarySeatLookup = new Map<string, number>();
+    const seatsByGuestId = new Map<string, number[]>();
     const plusOneSeatsByGuestId = new Map<
       string,
       Array<{ seatNumber: number; attendeeName: string }>
     >();
-    if (!selectedTable?.invitationCodes || isLandmarkTable(selectedTable)) {
-      return { primarySeatLookup, plusOneSeatsByGuestId };
-    }
-    const detailedMap = resolveDetailedSeatAssignments(
-      selectedTable.invitationCodes,
-      selectedTable.capacity
-    );
-    detailedMap.forEach((entry, seatNum) => {
-      if (!entry.guest.id) return;
-      if (entry.isPlusOne) {
-        const list = plusOneSeatsByGuestId.get(entry.guest.id) ?? [];
-        list.push({ seatNumber: seatNum, attendeeName: entry.attendeeName });
-        plusOneSeatsByGuestId.set(entry.guest.id, list);
+    for (const entry of selectedTableDetailedSeats) {
+      if (!entry.guest.id) continue;
+      const list = seatsByGuestId.get(entry.guest.id);
+      if (list) {
+        list.push(entry.seatNumber);
       } else {
-        primarySeatLookup.set(entry.guest.id, seatNum);
+        seatsByGuestId.set(entry.guest.id, [entry.seatNumber]);
       }
-    });
-    return { primarySeatLookup, plusOneSeatsByGuestId };
-  }, [selectedTable]);
+      if (entry.isPlusOne) {
+        const poList = plusOneSeatsByGuestId.get(entry.guest.id) ?? [];
+        poList.push({ seatNumber: entry.seatNumber, attendeeName: entry.attendeeName });
+        plusOneSeatsByGuestId.set(entry.guest.id, poList);
+      }
+    }
+    return { seatsByGuestId, plusOneSeatsByGuestId };
+  }, [selectedTableDetailedSeats]);
 
   return (
     <div className="space-y-6">
@@ -397,7 +434,7 @@ export default function SeatingChartAdminPage() {
           <div className="lg:col-span-3 space-y-4">
             <FloorplanCanvas
               tables={tables}
-              allGuests={allGuests}
+              guests={allGuests}
               selectedTableId={selectedTableId}
               onSelectTable={setSelectedTableId}
               onUpdateTablePosition={handleUpdateTablePosition}
@@ -413,9 +450,6 @@ export default function SeatingChartAdminPage() {
             {/* Selected Table Inspector Bar */}
             {selectedTable && (() => {
               const selectedIsLandmark = isLandmarkTable(selectedTable);
-              const selectedOccupiedChairs = selectedIsLandmark
-                ? 0
-                : getTableOccupiedChairCount(selectedTable.invitationCodes);
               const selectedMealSummary = selectedIsLandmark
                 ? null
                 : computeTableMealCounts(selectedTable.invitationCodes);
@@ -428,10 +462,10 @@ export default function SeatingChartAdminPage() {
                       <span className="text-xs font-normal text-gray-600 dark:text-gray-300">
                         {selectedIsLandmark
                           ? `(Landmark · ${getSeatingShapeLabel(selectedTable.shape)}, 0 seats)`
-                          : `(${selectedTable.shape}, ${selectedTable.capacity} capacity, ${selectedOccupiedChairs} seated)`}
+                          : `(${selectedTable.shape}, ${selectedTable.capacity} capacity, ${selectedTableSeatedHeadcount} seated)`}
                       </span>
                     </h3>
-                    {!selectedIsLandmark && selectedOccupiedChairs > 0 && selectedMealSummary && (
+                    {!selectedIsLandmark && selectedTableSeatedHeadcount > 0 && selectedMealSummary && (
                       <p
                         data-testid="inspector-meal-summary"
                         className="mt-1 text-[11px] font-medium text-gray-700 dark:text-gray-300"
@@ -447,10 +481,24 @@ export default function SeatingChartAdminPage() {
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {selectedTable.invitationCodes.map((guest) => {
                           const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
-                          const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+                          const dietaryBadges = getDietaryBadges(
+                            guest.dietaryNotes,
+                            guest.extraFields,
+                            guest.partyTags
+                          );
+                          const companionNames = formatGuestPlusOneNames(guest);
+                          const mealSelections = formatGuestMealSelections(guest);
+                          const customAnswers = formatGuestCustomAnswers(guest);
                           const visibleTags = (guest.partyTags || []).filter(
                             (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
                           );
+                          const resolvedSeats =
+                            selectedTableDetails.seatsByGuestId.get(guest.id) || [];
+                          const companions = !isDeclined ? getGuestCompanionNames(guest) : [];
+                          const seatPrefix =
+                            resolvedSeats.length > 1
+                              ? `Seats ${resolvedSeats.join(', ')}`
+                              : `Seat ${resolvedSeats[0] || guest.seatNumber || '?'}`;
                           const plusOneSeats =
                             selectedTableDetails.plusOneSeatsByGuestId.get(guest.id) || [];
 
@@ -465,8 +513,17 @@ export default function SeatingChartAdminPage() {
                               }`}
                             >
                               <span>
-                                Seat {guest.seatNumber || selectedTableDetails.primarySeatLookup.get(guest.id) || '?'}: {guest.guestName}
+                                {seatPrefix}: {guest.guestName}
+                                {companions.length > 0 ? ` (+${companions.length}: ${companions.join(', ')})` : ''}
                               </span>
+                              {companionNames && (
+                                <span
+                                  data-testid="inspector-companion-names"
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-600/80 text-slate-800 dark:text-slate-100 font-medium"
+                                >
+                                  +1: {companionNames}
+                                </span>
+                              )}
                               {plusOneSeats.map((po) => (
                                 <span
                                   key={`${guest.id}-po-${po.seatNumber}`}
@@ -489,6 +546,14 @@ export default function SeatingChartAdminPage() {
                                   (🏠 {guest.householdName})
                                 </span>
                               )}
+                              {mealSelections && (
+                                <span
+                                  data-testid="inspector-meal-selections"
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+                                >
+                                  🍽️ {mealSelections}
+                                </span>
+                              )}
                               {dietaryBadges.map((badge) => (
                                 <span
                                   key={badge.category}
@@ -499,6 +564,14 @@ export default function SeatingChartAdminPage() {
                                   🍽️ {badge.shortLabel}
                                 </span>
                               ))}
+                              {customAnswers && (
+                                <span
+                                  data-testid="inspector-custom-answers"
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-200 dark:border-sky-800 font-medium"
+                                >
+                                  💬 {customAnswers}
+                                </span>
+                              )}
                               {visibleTags.length > 0 && (
                                 <span className="text-[9px] text-blue-800 dark:text-blue-200 ml-0.5">
                                   [{visibleTags.join(', ')}]
@@ -583,7 +656,9 @@ export default function SeatingChartAdminPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDeleteTable(selectedTable.id)}
+                      onClick={() => {
+                        void handleRequestDeleteTable(selectedTable);
+                      }}
                       className="min-h-[30px] px-3 py-1.5 text-xs font-medium bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded-lg border border-red-200"
                     >
                       Delete Table
@@ -602,7 +677,7 @@ export default function SeatingChartAdminPage() {
         table={editingTable}
         onClose={() => setIsTableModalOpen(false)}
         onSave={handleSaveTable}
-        onDelete={handleDeleteTable}
+        onDelete={handleDeleteTableConfirmed}
       />
 
       {/* Target Seat Assignment Modal */}
@@ -632,62 +707,81 @@ export default function SeatingChartAdminPage() {
                 </button>
               </div>
             </div>
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const guestId = formData.get('guestId') as string;
-                if (guestId && assignSeatTarget) {
-                  handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
-                  setAssignSeatTarget(null);
-                }
-              }}
-              className="space-y-3"
-            >
-              <div>
-                <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Select Guest
-                </label>
-                <select
-                  id="modal-assign-guest"
-                  name="guestId"
-                  required
-                  defaultValue={unassignedGuests[0]?.id || ''}
-                  className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
-                >
-                  {unassignedGuests.map((g) => {
-                    const chairs = Math.max(1, getRequiredChairCount(g));
-                    const plusOneNames = getGuestPlusOneNamesList(g);
-                    return (
-                      <option key={g.id} value={g.id}>
-                        {g.guestName}
-                        {plusOneNames.length > 0 ? ` (+1: ${plusOneNames.join(', ')})` : ''}
-                        {chairs > 1 ? ` — ${chairs} chairs` : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAssignSeatTarget(null)}
-                  className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90"
-                >
-                  Assign Guest
-                </button>
-              </div>
-            </form>
-          )
+          ) : (() => {
+            const modalTable = tables.find((t) => t.id === assignSeatTarget.tableId);
+            const openSeats = modalTable
+              ? Math.max(0, modalTable.capacity - getGuestsHeadcount(modalTable.invitationCodes || []))
+              : Infinity;
+            const firstFittingGuest = unassignedGuests.find((g) => getGuestPartySize(g) <= openSeats);
+
+            return (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  const guestId = formData.get('guestId') as string;
+                  if (guestId && assignSeatTarget) {
+                    handleAssignGuestToTable(guestId, assignSeatTarget.tableId, assignSeatTarget.seatNumber);
+                    setAssignSeatTarget(null);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label htmlFor="modal-assign-guest" className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Select Guest
+                  </label>
+                  <select
+                    id="modal-assign-guest"
+                    name="guestId"
+                    required
+                    defaultValue={firstFittingGuest?.id || unassignedGuests[0]?.id || ''}
+                    className="w-full min-h-[32px] px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                  >
+                    {unassignedGuests.map((g) => {
+                      const pSize = getGuestPartySize(g);
+                      const plusOneNames = getGuestPlusOneNamesList(g);
+                      const fits = pSize <= openSeats;
+                      return (
+                        <option key={g.id} value={g.id} disabled={!fits}>
+                          {g.guestName}
+                          {plusOneNames.length > 0 ? ` (+1: ${plusOneNames.join(', ')})` : ''}
+                          {pSize > 1 ? ` — ${pSize} seats` : ''}
+                          {!fits ? ' (insufficient open seats)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAssignSeatTarget(null)}
+                    className="min-h-[30px] px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!firstFittingGuest}
+                    className="min-h-[30px] px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Assign Guest
+                  </button>
+                </div>
+              </form>
+            );
+          })()
         )}
       </Dialog>
     </div>
+  );
+}
+
+export default function SeatingChartAdminPage() {
+  return (
+    <EnsureToastProvider>
+      <SeatingChartAdminContent />
+    </EnsureToastProvider>
   );
 }

@@ -1,8 +1,14 @@
 import {
   computeSeatPosition,
+  repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
   resolveSeatAssignments,
 } from '../seatLayout';
+import {
+  getGuestCompanionNames,
+  getGuestPartySize,
+  getGuestsHeadcount,
+} from '../utils/seatingHelpers';
 import { createMockInvitationCode } from '@/testing/factories/registryFactory';
 
 describe('seatLayout shared seating geometry and seat resolution', () => {
@@ -138,6 +144,99 @@ describe('seatLayout shared seating geometry and seat resolution', () => {
         originY: 40,
       });
       expect(squareWithOrigin).toEqual({ x: 100, y: 30 });
+    });
+  });
+
+  describe('party headcount, companion chair allocation, and seat clamping', () => {
+    it('projects party size from extraFields.plusOneCount for confirmed RSVPs and plusOneAllocations for pending guests', () => {
+      const confirmedZeroPlusOnes = createMockInvitationCode({
+        id: 'g-confirmed-solo',
+        guestName: 'Solo Confirmed',
+        used: true,
+        plusOneAllocations: 1,
+        extraFields: { attending: true, plusOneCount: 0 },
+      });
+      const confirmedWithTwoCompanions = createMockInvitationCode({
+        id: 'g-confirmed-trio',
+        guestName: 'Alex Rivera',
+        used: true,
+        plusOneAllocations: 2,
+        extraFields: {
+          attending: true,
+          plusOneCount: 2,
+          plusOneNames: ['Sam Rivera', 'Casey Rivera'],
+        },
+      });
+      const pendingWithAllocation = createMockInvitationCode({
+        id: 'g-pending-couple',
+        guestName: 'Pending Primary',
+        used: false,
+        plusOneAllocations: 1,
+        plusOneFirstName: 'Jamie',
+        plusOneLastName: 'Lee',
+      });
+      const declinedGuest = createMockInvitationCode({
+        id: 'g-declined',
+        guestName: 'Declined Guest',
+        used: true,
+        plusOneAllocations: 2,
+        extraFields: { attending: false, plusOneCount: 2 },
+      });
+
+      expect(getGuestPartySize(confirmedZeroPlusOnes)).toBe(1);
+      expect(getGuestPartySize(confirmedWithTwoCompanions)).toBe(3);
+      expect(getGuestPartySize(pendingWithAllocation)).toBe(2);
+      // Declined guest drops all plus-ones (party size 1 only if seated before release)
+      expect(getGuestPartySize(declinedGuest)).toBe(1);
+      expect(getGuestCompanionNames(declinedGuest)).toEqual([]);
+      expect(
+        getGuestsHeadcount([
+          confirmedZeroPlusOnes,
+          confirmedWithTwoCompanions,
+          pendingWithAllocation,
+        ])
+      ).toBe(6);
+      expect(getGuestCompanionNames(confirmedWithTwoCompanions)).toEqual([
+        'Sam Rivera',
+        'Casey Rivera',
+      ]);
+      expect(getGuestCompanionNames(pendingWithAllocation)).toEqual(['Jamie Lee']);
+    });
+
+    it('allocates contiguous companion chairs and clamps seatNumber > capacity into 1..capacity', () => {
+      const coupleAtSeat8 = createMockInvitationCode({
+        id: 'g-couple-high',
+        guestName: 'Jordan Taylor',
+        seatNumber: 8,
+        plusOneAllocations: 1,
+        extraFields: { attending: true, plusOneCount: 1, plusOneNames: ['Morgan Taylor'] },
+        used: true,
+      });
+      const singleAtSeat2 = createMockInvitationCode({
+        id: 'g-single-2',
+        guestName: 'Riley Chen',
+        seatNumber: 2,
+        plusOneAllocations: 0,
+      });
+
+      const detailed = resolveDetailedSeatAssignments([coupleAtSeat8, singleAtSeat2], 6);
+      expect(detailed.size).toBe(3);
+      expect(detailed.get(2)?.guest.id).toBe('g-single-2');
+      expect(detailed.get(2)?.isCompanion).toBe(false);
+      // Couple previously at Seat 8 is clamped into contiguous seats 3..4 within 1..6
+      expect(detailed.get(3)?.guest.id).toBe('g-couple-high');
+      expect(detailed.get(3)?.isCompanion).toBe(false);
+      expect(detailed.get(3)?.displayName).toBe('Jordan Taylor');
+      expect(detailed.get(4)?.guest.id).toBe('g-couple-high');
+      expect(detailed.get(4)?.isCompanion).toBe(true);
+      expect(detailed.get(4)?.displayName).toBe('Morgan Taylor (Jordan Taylor +1)');
+
+      const basicMap = resolveSeatAssignments([coupleAtSeat8, singleAtSeat2], 6);
+      expect(Array.from(basicMap.keys()).sort((a, b) => a - b)).toEqual([2, 3, 4]);
+
+      const repacked = repackTableSeatNumbers([coupleAtSeat8, singleAtSeat2], 6);
+      expect(repacked.get('g-single-2')).toBe(2);
+      expect(repacked.get('g-couple-high')).toBe(3);
     });
   });
 });

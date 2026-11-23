@@ -121,7 +121,7 @@ describe('prisma singleton behavior', () => {
     consoleSpy.mockRestore();
   });
 
-  test('configures Pool defaults (max=5, connectionTimeoutMillis=10000) and passes { schema } to PrismaPg while honoring URI overrides', async () => {
+  test('configures Pool defaults (max=5, connectionTimeoutMillis=10000, query_timeout=10000) and passes { schema } to PrismaPg while honoring URI overrides', async () => {
     const originalDbUrl = process.env.DATABASE_URL;
     const poolCalls: unknown[] = [];
     const adapterCalls: unknown[] = [];
@@ -156,6 +156,8 @@ describe('prisma singleton behavior', () => {
         database: 'wedding_test',
         max: 5,
         connectionTimeoutMillis: 10000,
+        query_timeout: 10000,
+        allowExitOnIdle: true,
         ssl: false,
       });
       expect(adapterCalls[0]).toEqual({ schema: 'public' });
@@ -164,6 +166,7 @@ describe('prisma singleton behavior', () => {
       delete globalForPrisma.prisma;
 
       await jest.isolateModulesAsync(async () => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
         process.env.DATABASE_URL =
           'postgresql://wedding:wedding123@/wedding_db?host=/cloudsql/proj:us-central1:db&schema=tenant_ceremony&connection_limit=3&connect_timeout=14&socket_timeout=9';
         jest.doMock('pg', () => ({
@@ -194,6 +197,7 @@ describe('prisma singleton behavior', () => {
         connectionTimeoutMillis: 14000,
         query_timeout: 9000,
       });
+      expect(poolCalls[1]).not.toHaveProperty('allowExitOnIdle');
       expect(adapterCalls[1]).toEqual({ schema: 'tenant_ceremony' });
     } finally {
       if (originalDbUrl === undefined) {

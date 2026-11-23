@@ -74,36 +74,66 @@ describe('Button', () => {
     expect(handleClick).not.toHaveBeenCalled();
   });
 
-  test('supports pressed prop with aria-pressed, non-color check icon and ring, and passes jest-axe', async () => {
+  test('supports pressed and srContext props with visible-first accessible name and passes jest-axe', async () => {
     const toggleProps: ButtonProps = {
       variant: 'outline',
       pressed: true,
-      'aria-label': 'Our Story: Visible',
+      srContext: 'for Our Story',
     };
     const { container, getByRole, rerender } = render(
       <Button {...toggleProps}>Visible</Button>
     );
 
-    let button = getByRole('button', { name: 'Our Story: Visible' });
+    let button = getByRole('button', { name: 'Visible for Our Story' });
     expect(button).toHaveAttribute('aria-pressed', 'true');
     expect(button).toHaveClass('ring-2');
     expect(button.querySelector('svg[aria-hidden="true"]')).toBeInTheDocument();
+    expect(button.querySelector('.sr-only')?.textContent).toBe(' for Our Story');
 
-    expect(await axe(container)).toHaveNoViolations();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
 
     rerender(
-      <Button variant="ghost" pressed={false} aria-label="Our Story: Hidden">
+      <Button variant="ghost" pressed={false} srContext="for Our Story">
         Hidden
       </Button>
     );
-    button = getByRole('button', { name: 'Our Story: Hidden' });
+    button = getByRole('button', { name: 'Hidden for Our Story' });
     expect(button).toHaveAttribute('aria-pressed', 'false');
     expect(button).not.toHaveClass('ring-current');
     expect(button.querySelector('svg[aria-hidden="true"]')).toBeNull();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
 
     rerender(<Button>Standard Action</Button>);
     button = getByRole('button', { name: 'Standard Action' });
     expect(button).not.toHaveAttribute('aria-pressed');
+    expect(button.querySelector('.sr-only')).toBeNull();
+
+    rerender(
+      <Button aria-label="Close modal">
+        <span aria-hidden="true">×</span>
+      </Button>
+    );
+    expect(getByRole('button', { name: 'Close modal' })).toBeInTheDocument();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+  });
+
+  test('supports inverse variant with opaque toast action tokens, two-tone focus ring, and forced-colors outline', async () => {
+    const { container, getByRole } = render(<Button variant="inverse">Undo</Button>);
+    const button = getByRole('button', { name: 'Undo' });
+
+    expect(button).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(button).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(button).toHaveClass('hover:bg-[var(--toast-action-hover-bg,#e5e7eb)]');
+    expect(button).toHaveClass('focus-visible:ring-[var(--toast-action-bg,#ffffff)]');
+    expect(button).toHaveClass('focus-visible:ring-offset-[var(--toast-action-text,#111827)]');
+    expect(button).toHaveClass('forced-colors:border');
+    expect(await axe(container)).toHaveNoViolations();
   });
 });
 

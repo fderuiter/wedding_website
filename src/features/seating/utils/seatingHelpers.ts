@@ -28,16 +28,45 @@ export const ALL_SEATING_TABLE_SHAPES = [
 ] as const;
 
 export interface DietaryBadgeInfo {
-  category: 'gluten-free' | 'vegan' | 'vegetarian' | 'dairy-free' | 'nut-free' | 'other';
+  category:
+    | 'gluten-free'
+    | 'vegan'
+    | 'vegetarian'
+    | 'dairy-free'
+    | 'nut-free'
+    | 'kids'
+    | 'other';
   shortLabel: string;
   label: string;
 }
 
 export interface SeatingGuestCandidate {
+  guestName?: string | null;
   used?: boolean | null;
   extraFields?: unknown;
   partyTags?: unknown;
   dietaryNotes?: string | null;
+  plusOneAllocations?: number | null;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+  subEventRsvps?: Array<{
+    status?: string | null;
+    plusOneCount?: number | null;
+    plusOneNames?: unknown;
+  }> | null;
+}
+
+function toNonNegativeInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value));
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.floor(parsed));
+    }
+  }
+  return null;
 }
 
 export interface SeatingPartyGuestCandidate extends SeatingGuestCandidate {
@@ -129,38 +158,266 @@ export function isGuestEligibleForSeating(guest: SeatingGuestCandidate): boolean
  */
 export function getDietaryBadges(
   notes: string | null | undefined,
-  structuredSource?: unknown
+  structuredSource?: unknown,
+  partyTags?: unknown
 ): DietaryBadgeInfo[] {
-  if (!matchDietaryCategory(notes, 'has_restriction', structuredSource)) {
+  const trimmed = notes ? notes.trim() : '';
+  const hasPartyKidsTag =
+    Array.isArray(partyTags) &&
+    partyTags.some(
+      (tag) =>
+        typeof tag === 'string' && /^(kid|kids|child|children|kids[-_ ]meal)$/i.test(tag.trim())
+    );
+  const hasKids = hasPartyKidsTag || matchDietaryCategory(trimmed, 'kids', structuredSource);
+  const hasRestriction = matchDietaryCategory(notes, 'has_restriction', structuredSource);
+
+  if (!hasRestriction && !hasKids) {
     return [];
   }
 
-  const trimmed = notes ? notes.trim() : '';
   const badges: DietaryBadgeInfo[] = [];
 
-  if (matchDietaryCategory(trimmed, 'gluten-free', structuredSource)) {
-    badges.push({ category: 'gluten-free', shortLabel: 'GF', label: 'Gluten-Free' });
+  if (hasRestriction) {
+    if (matchDietaryCategory(trimmed, 'gluten-free', structuredSource)) {
+      badges.push({ category: 'gluten-free', shortLabel: 'GF', label: 'Gluten-Free' });
+    }
+    if (matchDietaryCategory(trimmed, 'vegan', structuredSource)) {
+      badges.push({ category: 'vegan', shortLabel: 'VG', label: 'Vegan' });
+    }
+    if (matchDietaryCategory(trimmed, 'vegetarian', structuredSource)) {
+      badges.push({ category: 'vegetarian', shortLabel: 'V', label: 'Vegetarian' });
+    }
+    if (matchDietaryCategory(trimmed, 'dairy-free', structuredSource)) {
+      badges.push({ category: 'dairy-free', shortLabel: 'DF', label: 'Dairy-Free' });
+    }
+    if (matchDietaryCategory(trimmed, 'nut-free', structuredSource)) {
+      badges.push({ category: 'nut-free', shortLabel: 'NF', label: 'Nut-Free' });
+    }
   }
-  if (matchDietaryCategory(trimmed, 'vegan', structuredSource)) {
-    badges.push({ category: 'vegan', shortLabel: 'VG', label: 'Vegan' });
+
+  if (hasKids) {
+    badges.push({ category: 'kids', shortLabel: 'KIDS', label: 'Kids Meal' });
   }
-  if (matchDietaryCategory(trimmed, 'vegetarian', structuredSource)) {
-    badges.push({ category: 'vegetarian', shortLabel: 'V', label: 'Vegetarian' });
-  }
-  if (matchDietaryCategory(trimmed, 'dairy-free', structuredSource)) {
-    badges.push({ category: 'dairy-free', shortLabel: 'DF', label: 'Dairy-Free' });
-  }
-  if (matchDietaryCategory(trimmed, 'nut-free', structuredSource)) {
-    badges.push({ category: 'nut-free', shortLabel: 'NF', label: 'Nut-Free' });
-  }
-  if (matchDietaryCategory(trimmed, 'other', structuredSource)) {
-    const fallbackLabel = trimmed || 'Dietary Restriction';
-    const cleanLabel =
-      fallbackLabel.length > 24 ? `${fallbackLabel.slice(0, 22).trimEnd()}…` : fallbackLabel;
-    badges.push({ category: 'other', shortLabel: 'DIET', label: cleanLabel });
+
+  if (hasRestriction && matchDietaryCategory(trimmed, 'other', structuredSource)) {
+    const isPureKidsNote =
+      Boolean(trimmed) &&
+      /^(kid|kids|child|children)(\s+meals?)?$/i.test(trimmed) &&
+      !matchDietaryCategory(null, 'other', structuredSource);
+    if (!isPureKidsNote) {
+      const fallbackLabel = trimmed || 'Dietary Restriction';
+      const cleanLabel =
+        fallbackLabel.length > 24 ? `${fallbackLabel.slice(0, 22).trimEnd()}…` : fallbackLabel;
+      badges.push({ category: 'other', shortLabel: 'DIET', label: cleanLabel });
+    }
   }
 
   return badges;
+}
+
+/**
+ * Computes the number of attending/allocated plus-one companions for a guest record.
+ * - Declined RSVPs return 0.
+ * - Confirmed ('attending') RSVPs prefer explicit `extraFields.plusOneCount` synced by sub-event RSVPs,
+ *   falling back to attending `subEventRsvps`, `extraFields.plusOneNames`, `plusOneAllocations`, or legacy plus-one name columns.
+ * - Pending RSVPs prefer positive `extraFields.plusOneCount`, falling back to `plusOneAllocations` or plus-one names.
+ */
+function getGuestPlusOneCount(guest: SeatingPartyGuestCandidate): number {
+  const status = getGuestAttendanceStatus(guest);
+  if (status === 'declined') {
+    return 0;
+  }
+
+  const extra = normalizeExtraFields(guest.extraFields);
+  const explicitExtraCount = extra ? toNonNegativeInt(extra.plusOneCount) : null;
+  const rawTopCount = (guest as Record<string, unknown>).plusOneCount;
+  const topCount = toNonNegativeInt(rawTopCount);
+  const legacyFullName = [guest.plusOneFirstName, guest.plusOneLastName]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .map((part) => part.trim())
+    .join(' ');
+  const allocCount = toNonNegativeInt(guest.plusOneAllocations);
+
+  const extraNamesCount =
+    extra && Array.isArray(extra.plusOneNames)
+      ? extra.plusOneNames.filter((n) => typeof n === 'string' && n.trim().length > 0).length
+      : 0;
+
+  const seatArrCount = Array.isArray(guest.plusOneSeatNumbers)
+    ? guest.plusOneSeatNumbers.filter(
+      (n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1
+    ).length
+    : 0;
+
+  if (status === 'attending') {
+    if (explicitExtraCount !== null) {
+      if (explicitExtraCount === 0 && extraNamesCount === 0 && seatArrCount === 0) {
+        return 0;
+      }
+      return Math.max(explicitExtraCount, extraNamesCount, seatArrCount);
+    }
+
+    if (Array.isArray(guest.subEventRsvps) && guest.subEventRsvps.length > 0) {
+      const attendingRsvps = guest.subEventRsvps.filter(
+        (r) => typeof r?.status === 'string' && r.status.trim().toLowerCase() === 'attending'
+      );
+      if (attendingRsvps.length > 0) {
+        let maxRsvpPlusOnes = 0;
+        for (const rsvp of attendingRsvps) {
+          const cnt = toNonNegativeInt(rsvp.plusOneCount) ?? 0;
+          if (cnt > maxRsvpPlusOnes) {
+            maxRsvpPlusOnes = cnt;
+          }
+        }
+        return Math.max(maxRsvpPlusOnes, extraNamesCount, seatArrCount);
+      }
+    }
+
+    if (extraNamesCount > 0) {
+      return Math.max(extraNamesCount, seatArrCount);
+    }
+    if (topCount !== null && topCount > 0) {
+      return Math.max(topCount, seatArrCount);
+    }
+    if (allocCount !== null && allocCount > 0) {
+      return Math.max(allocCount, seatArrCount);
+    }
+    if (legacyFullName) {
+      return Math.max(1, seatArrCount);
+    }
+    if (seatArrCount > 0) {
+      return seatArrCount;
+    }
+    return 0;
+  }
+
+  // status === 'pending'
+  if (explicitExtraCount !== null && explicitExtraCount > 0) {
+    return Math.max(explicitExtraCount, seatArrCount);
+  }
+  if (allocCount !== null && allocCount > 0) {
+    return Math.max(allocCount, extraNamesCount, seatArrCount);
+  }
+  if (extraNamesCount > 0) {
+    return Math.max(extraNamesCount, seatArrCount);
+  }
+  if (topCount !== null && topCount > 0) {
+    return Math.max(topCount, seatArrCount);
+  }
+  if (legacyFullName) {
+    return Math.max(1, seatArrCount);
+  }
+  if (seatArrCount > 0) {
+    return seatArrCount;
+  }
+  return 0;
+}
+
+/**
+ * Computes total chairs required for an `InvitationCode` party (`1 + plusOneCount`).
+ */
+export function getGuestPartySize(guest: SeatingGuestCandidate): number {
+  return 1 + getGuestPlusOneCount(guest);
+}
+
+/**
+ * Sums total attendee headcount across a collection of guest records.
+ */
+export function getGuestsHeadcount(
+  guests: ReadonlyArray<SeatingGuestCandidate> | null | undefined
+): number {
+  if (!guests || guests.length === 0) {
+    return 0;
+  }
+  let total = 0;
+  for (const guest of guests) {
+    total += getGuestPartySize(guest);
+  }
+  return total;
+}
+
+function extractRawCompanionNames(guest: SeatingGuestCandidate): Array<string | null> {
+  const plusOneCount = getGuestPlusOneCount(guest);
+  if (plusOneCount <= 0) {
+    return [];
+  }
+
+  const extra = normalizeExtraFields(guest.extraFields);
+  let rawNames: string[] = [];
+
+  if (extra && Array.isArray(extra.plusOneNames)) {
+    rawNames = extra.plusOneNames
+      .filter((n): n is string => typeof n === 'string')
+      .map((n) => n.trim())
+      .filter(Boolean);
+  }
+
+  if (rawNames.length === 0 && Array.isArray(guest.subEventRsvps)) {
+    for (const rsvp of guest.subEventRsvps) {
+      if (
+        typeof rsvp?.status === 'string' &&
+        rsvp.status.trim().toLowerCase() === 'attending' &&
+        Array.isArray(rsvp.plusOneNames)
+      ) {
+        const candidateNames = rsvp.plusOneNames
+          .filter((n): n is string => typeof n === 'string')
+          .map((n) => n.trim())
+          .filter(Boolean);
+        if (candidateNames.length > rawNames.length) {
+          rawNames = candidateNames;
+        }
+      }
+    }
+  }
+
+  const legacyFullName = [guest.plusOneFirstName, guest.plusOneLastName]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .map((part) => part.trim())
+    .join(' ');
+
+  return Array.from({ length: plusOneCount }, (_, idx) => {
+    if (rawNames[idx]) {
+      return rawNames[idx];
+    }
+    if (idx === 0 && legacyFullName) {
+      return legacyFullName;
+    }
+    return null;
+  });
+}
+
+/**
+ * Returns display names for each companion of a multi-person invitation (`length === partySize - 1`).
+ */
+export function getGuestCompanionNames(guest: SeatingGuestCandidate): string[] {
+  const rawList = extractRawCompanionNames(guest);
+  if (rawList.length === 0) {
+    return [];
+  }
+  const primaryName = (guest.guestName || 'Guest').trim() || 'Guest';
+  return rawList.map((named, idx) => {
+    if (named) {
+      return named;
+    }
+    return rawList.length === 1 ? `${primaryName} (+1)` : `${primaryName} (+${idx + 1})`;
+  });
+}
+
+/**
+ * Formats a clear seat/roster label for a specific 0-indexed companion chair.
+ */
+export function formatCompanionSeatLabel(
+  guest: SeatingGuestCandidate,
+  companionIndex: number
+): string {
+  const rawList = extractRawCompanionNames(guest);
+  const primaryName = (guest.guestName || 'Guest').trim() || 'Guest';
+  const named = rawList[companionIndex];
+  const ordinalTag = rawList.length <= 1 ? '+1' : `+${companionIndex + 1}`;
+  if (named) {
+    return `${named} (${primaryName} ${ordinalTag})`;
+  }
+  return `${primaryName} (${ordinalTag})`;
 }
 
 /**
@@ -290,50 +547,17 @@ export function getAttendingPlusOneCount(guest: SeatingPartyGuestCandidate): num
   if (!isGuestEligibleForSeating(guest)) {
     return 0;
   }
-
-  const extra = normalizeExtraFields(guest.extraFields);
-  const names = getGuestPlusOneNamesList(guest);
-  const seatArrCount = Array.isArray(guest.plusOneSeatNumbers)
-    ? guest.plusOneSeatNumbers.filter(
-      (n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 1
-    ).length
-    : 0;
-
-  const efCount =
-    extra && typeof extra.plusOneCount === 'number' && Number.isFinite(extra.plusOneCount)
-      ? Math.max(0, Math.floor(extra.plusOneCount))
-      : undefined;
-
-  const rawTopCount = (guest as Record<string, unknown>).plusOneCount;
-  const topCount =
-    typeof rawTopCount === 'number' && Number.isFinite(rawTopCount)
-      ? Math.max(0, Math.floor(rawTopCount))
-      : undefined;
-
-  if (efCount !== undefined) {
-    return Math.max(efCount, names.length, seatArrCount);
-  }
-  if (names.length > 0) {
-    return Math.max(names.length, seatArrCount);
-  }
-  if (topCount !== undefined) {
-    return Math.max(topCount, seatArrCount);
-  }
-  if (seatArrCount > 0) {
-    return seatArrCount;
-  }
-
-  return 0;
+  return getGuestPlusOneCount(guest);
 }
 
 /**
- * Total chairs required to seat an invitation at one table (`1` primary guest + attending plus-ones).
+ * Total chairs required to seat an invitation at one table (`1` primary guest + attending/allocated plus-ones).
  */
 export function getRequiredChairCount(guest: SeatingPartyGuestCandidate): number {
   if (!isGuestEligibleForSeating(guest)) {
     return 0;
   }
-  return 1 + getAttendingPlusOneCount(guest);
+  return getGuestPartySize(guest);
 }
 
 /**
@@ -478,6 +702,12 @@ function extractAttendeeMeals(
       if (parsedName) {
         const lower = parsedName.toLowerCase();
         targetIdx = attendeeNames.findIndex((n) => n.toLowerCase() === lower);
+        if (targetIdx < 0 && parsedName.includes(' - ')) {
+          const strippedName = parsedName.slice(parsedName.lastIndexOf(' - ') + 3).trim().toLowerCase();
+          if (strippedName) {
+            targetIdx = attendeeNames.findIndex((n) => n.toLowerCase() === strippedName);
+          }
+        }
       }
       if (targetIdx < 0 && segIdx < attendeeNames.length) {
         targetIdx = segIdx;
@@ -507,20 +737,8 @@ export function getInvitationPartyMembers(
   }
 
   const primaryName = (guest.guestName || 'Guest').trim() || 'Guest';
-  const plusOneCount = getAttendingPlusOneCount(guest);
-  const plusOneNames = getGuestPlusOneNamesList(guest);
-
-  const attendeeNames: string[] = [primaryName];
-  for (let idx = 0; idx < plusOneCount; idx++) {
-    const named = plusOneNames[idx];
-    if (named) {
-      attendeeNames.push(named);
-    } else if (plusOneCount === 1) {
-      attendeeNames.push(`${primaryName} (+1)`);
-    } else {
-      attendeeNames.push(`${primaryName} (+1 #${idx + 1})`);
-    }
-  }
+  const companionNames = getGuestCompanionNames(guest);
+  const attendeeNames: string[] = [primaryName, ...companionNames];
 
   const parsedMeals = extractAttendeeMeals(guest, attendeeNames);
 
@@ -542,7 +760,11 @@ export function getInvitationPartyMembers(
       isPlusOne: index > 0,
       plusOneIndex: index > 0 ? index - 1 : null,
       mealChoice: mealInfo.label,
-      dietaryBadges: getDietaryBadges(notesForAttendee, structuredSource),
+      dietaryBadges: getDietaryBadges(
+        notesForAttendee,
+        structuredSource,
+        index === 0 ? guest.partyTags : undefined
+      ),
     };
   });
 }

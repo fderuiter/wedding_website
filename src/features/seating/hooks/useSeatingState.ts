@@ -4,12 +4,14 @@ import { useReducer, useEffect, useCallback, useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
 import { useToast } from '@/components/ui/ToastProvider';
-import { resolveSeatAssignments } from '../seatLayout';
 import {
-  getAttendingPlusOneCount,
+  repackTableSeatNumbers,
+  resolveDetailedSeatAssignments,
+} from '../seatLayout';
+import {
   getDefaultShapeDimensions,
-  getRequiredChairCount,
-  getTableOccupiedChairCount,
+  getGuestPartySize,
+  getGuestsHeadcount,
   isGuestEligibleForSeating,
   isLandmarkTable,
   isLandmarkTableShape,
@@ -54,6 +56,8 @@ export type SeatingAction =
       tableId: string | null;
       seatNumber: number | null;
       plusOneSeatNumbers?: number[];
+      pushUndo?: boolean;
+      snapshotLabel?: string;
     };
   }
   | { type: 'CONFIRM_ASSIGN_GUEST'; payload: InvitationCodeDTO }
@@ -68,6 +72,7 @@ export type SeatingAction =
         guestId: string;
         seatNumber?: number | null;
       } | null;
+      popUndo?: boolean;
     };
   }
   | {
@@ -130,6 +135,7 @@ export type SeatingAction =
         seatNumber?: number | null;
         plusOneSeatNumbers?: number[];
       }>;
+      previousUndoStack?: SeatingUndoSnapshot[];
     };
   };
 
@@ -169,15 +175,31 @@ function dedupeById<T extends { id?: string }>(items: T[]): T[] {
 
 function extractNumericMeta(json: unknown, key: 'total' | 'totalPages' | 'limit'): number | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
-  const direct = (json as Record<string, unknown>)[key];
+  const record = json as Record<string, unknown>;
+  const direct = record[key];
   if (typeof direct === 'number' && Number.isInteger(direct)) {
     return direct;
   }
-  const nestedData = (json as { data?: unknown }).data;
+  const metaObj = record.meta;
+  if (metaObj && typeof metaObj === 'object' && !Array.isArray(metaObj)) {
+    const metaVal = (metaObj as Record<string, unknown>)[key];
+    if (typeof metaVal === 'number' && Number.isInteger(metaVal)) {
+      return metaVal;
+    }
+  }
+  const nestedData = record.data;
   if (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)) {
-    const nested = (nestedData as Record<string, unknown>)[key];
+    const nestedRecord = nestedData as Record<string, unknown>;
+    const nested = nestedRecord[key];
     if (typeof nested === 'number' && Number.isInteger(nested)) {
       return nested;
+    }
+    const nestedMeta = nestedRecord.meta;
+    if (nestedMeta && typeof nestedMeta === 'object' && !Array.isArray(nestedMeta)) {
+      const nestedMetaVal = (nestedMeta as Record<string, unknown>)[key];
+      if (typeof nestedMetaVal === 'number' && Number.isInteger(nestedMetaVal)) {
+        return nestedMetaVal;
+      }
     }
   }
   return null;
@@ -355,14 +377,82 @@ async function fetchRemainingCatalogPages<T extends { id?: string }>(
 }
 
 /**
+ * Merges `tables[].invitationCodes` into `guestsList` so seated guests included on table payloads
+ * are never lost if absent from a paginated guest response.
+ */
+function mergeTableOccupantsIntoGuests(
+  tablesList: SeatingTableDTO[],
+  guestsList: InvitationCodeDTO[]
+): InvitationCodeDTO[] {
+  const guestMap = new Map<string, InvitationCodeDTO>();
+  const orderedIds: string[] = [];
+
+  for (const guest of guestsList || []) {
+    if (!guest?.id) continue;
+    if (!guestMap.has(guest.id)) {
+      orderedIds.push(guest.id);
+    }
+    guestMap.set(guest.id, guest);
+  }
+
+  for (const table of tablesList || []) {
+    if (!table?.invitationCodes) continue;
+    for (const tableGuest of table.invitationCodes) {
+      if (!tableGuest?.id) continue;
+      const existing = guestMap.get(tableGuest.id);
+      if (!existing) {
+        orderedIds.push(tableGuest.id);
+        guestMap.set(tableGuest.id, {
+          ...tableGuest,
+          tableId: tableGuest.tableId ?? table.id,
+        });
+      } else if (existing.tableId === undefined) {
+        guestMap.set(tableGuest.id, {
+          ...tableGuest,
+          ...existing,
+          tableId: table.id,
+          seatNumber: existing.seatNumber ?? tableGuest.seatNumber ?? null,
+        });
+      }
+    }
+  }
+
+  return orderedIds.map((id) => guestMap.get(id)!);
+}
+
+function pruneUndoStackForTable(
+  stack: SeatingUndoSnapshot[] | undefined,
+  deletedTableId: string
+): SeatingUndoSnapshot[] {
+  if (!stack || stack.length === 0) {
+    return [];
+  }
+  const pruned: SeatingUndoSnapshot[] = [];
+  for (const snapshot of stack) {
+    const remainingAssignments = snapshot.assignments.filter(
+      (a) => a.tableId !== deletedTableId
+    );
+    if (remainingAssignments.length > 0) {
+      pruned.push(
+        remainingAssignments.length === snapshot.assignments.length
+          ? snapshot
+          : { ...snapshot, assignments: remainingAssignments }
+      );
+    }
+  }
+  return pruned;
+}
+
+/**
  * Synchronizes tables' nested invitationCodes with guest assignments in a single pass O(G + T).
  */
 export function syncTablesWithGuests(
   tablesList: SeatingTableDTO[],
   guestsList: InvitationCodeDTO[]
 ): SeatingTableDTO[] {
+  const mergedGuests = mergeTableOccupantsIntoGuests(tablesList, guestsList);
   const guestsByTableMap = new Map<string, InvitationCodeDTO[]>();
-  for (const guest of guestsList) {
+  for (const guest of mergedGuests) {
     if (guest.tableId) {
       const existing = guestsByTableMap.get(guest.tableId);
       if (existing) {
@@ -397,11 +487,15 @@ export const initialSeatingState: SeatingState = {
 export function seatingReducer(state: SeatingState, action: SeatingAction): SeatingState {
   switch (action.type) {
     case 'INIT_DATA': {
-      const nextTables = syncTablesWithGuests(action.payload.tables, action.payload.guests);
+      const mergedGuests = mergeTableOccupantsIntoGuests(
+        action.payload.tables,
+        action.payload.guests
+      );
+      const nextTables = syncTablesWithGuests(action.payload.tables, mergedGuests);
       return {
         ...state,
         tables: nextTables,
-        guests: action.payload.guests,
+        guests: mergedGuests,
         isLoading: false,
         error: null,
       };
@@ -421,7 +515,36 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       };
 
     case 'ASSIGN_GUEST_OPTIMISTIC': {
-      const { guestId, tableId, seatNumber, plusOneSeatNumbers } = action.payload;
+      const {
+        guestId,
+        tableId,
+        seatNumber,
+        plusOneSeatNumbers,
+        pushUndo,
+        snapshotLabel,
+      } = action.payload;
+      const targetGuest = state.guests.find((g) => g.id === guestId);
+
+      let nextUndoStack = state.undoStack || [];
+      if (pushUndo && targetGuest) {
+        nextUndoStack = [
+          ...nextUndoStack,
+          {
+            label: snapshotLabel || `Unassign ${targetGuest.guestName}`,
+            assignments: [
+              {
+                invitationCodeId: targetGuest.id,
+                tableId: targetGuest.tableId ?? null,
+                seatNumber: targetGuest.seatNumber ?? null,
+                ...(Array.isArray(targetGuest.plusOneSeatNumbers) &&
+                targetGuest.plusOneSeatNumbers.length > 0
+                  ? { plusOneSeatNumbers: targetGuest.plusOneSeatNumbers }
+                  : {}),
+              },
+            ],
+          },
+        ];
+      }
       const nextGuests = state.guests.map((g) => {
         if (g.id === guestId) {
           return {
@@ -446,10 +569,13 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         return g;
       });
 
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
+
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
+        undoStack: nextUndoStack,
       };
     }
 
@@ -458,15 +584,17 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       const nextGuests = state.guests.map((g) =>
         g.id === returnedGuest.id ? { ...g, ...returnedGuest } : g
       );
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
       };
     }
 
     case 'REVERT_ASSIGN_GUEST': {
-      const { guestId, tableId, seatNumber, plusOneSeatNumbers, displacedGuest } = action.payload;
+      const { guestId, tableId, seatNumber, plusOneSeatNumbers, displacedGuest, popUndo } =
+        action.payload;
       const nextGuests = state.guests.map((g) => {
         if (g.id === guestId) {
           return {
@@ -482,10 +610,16 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         return g;
       });
 
+      const currentStack = state.undoStack || [];
+      const nextUndoStack =
+        popUndo && currentStack.length > 0 ? currentStack.slice(0, -1) : currentStack;
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
+
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
+        undoStack: nextUndoStack,
       };
     }
 
@@ -532,11 +666,12 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         previousAssignments.length > 0
           ? [...currentStack, { label: 'Auto-Assign', assignments: previousAssignments }]
           : currentStack;
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
 
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
         undoStack: nextUndoStack,
       };
     }
@@ -580,11 +715,12 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         pushUndo && previousAssignments.length > 0
           ? [...currentStack, { label: snapshotLabel, assignments: previousAssignments }]
           : currentStack;
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
 
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
         undoStack: nextUndoStack,
       };
     }
@@ -611,11 +747,12 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         }
         return guest;
       });
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
 
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
       };
     }
 
@@ -645,11 +782,12 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
       if (restoreUndoSnapshot) {
         nextUndoStack = [...nextUndoStack, restoreUndoSnapshot];
       }
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
 
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
         undoStack: nextUndoStack,
       };
     }
@@ -707,18 +845,20 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         }
         return guest;
       });
+      const strippedTables = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
 
       return {
         ...state,
         guests: nextGuests,
-        tables: syncTablesWithGuests(state.tables, nextGuests),
+        tables: syncTablesWithGuests(strippedTables, nextGuests),
         undoStack: nextUndoStack,
       };
     }
 
     case 'CREATE_TABLE': {
       const newTable = { ...action.payload, invitationCodes: action.payload.invitationCodes || [] };
-      const nextTables = syncTablesWithGuests([...state.tables, newTable], state.guests);
+      const strippedExisting = state.tables.map((t) => ({ ...t, invitationCodes: [] }));
+      const nextTables = syncTablesWithGuests([...strippedExisting, newTable], state.guests);
       return {
         ...state,
         tables: nextTables,
@@ -728,11 +868,57 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
     case 'UPDATE_TABLE': {
       const updatedTable = action.payload;
       const nextTablesList = state.tables.map((t) =>
-        t.id === updatedTable.id ? { ...t, ...updatedTable } : t
+        t.id === updatedTable.id ? { ...t, ...updatedTable, invitationCodes: [] } : { ...t, invitationCodes: [] }
       );
+      const mergedTarget = nextTablesList.find((t) => t.id === updatedTable.id);
+
+      const serverSeatMap = new Map<string, number | null>();
+      if (Array.isArray(updatedTable.invitationCodes)) {
+        for (const ic of updatedTable.invitationCodes) {
+          if (ic?.id && ic.seatNumber !== undefined) {
+            serverSeatMap.set(ic.id, ic.seatNumber ?? null);
+          }
+        }
+      }
+
+      let nextGuests = state.guests.map((g) => {
+        if (g.tableId === updatedTable.id && serverSeatMap.has(g.id)) {
+          return { ...g, seatNumber: serverSeatMap.get(g.id) ?? null };
+        }
+        return g;
+      });
+
+      if (mergedTarget) {
+        const tableGuests = nextGuests
+          .filter((g) => g.tableId === mergedTarget.id)
+          .sort((a, b) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+
+        const needsRepack = tableGuests.some((g) => {
+          const partySize = getGuestPartySize(g);
+          if (typeof g.seatNumber === 'number') {
+            return g.seatNumber > mergedTarget.capacity || g.seatNumber + partySize - 1 > mergedTarget.capacity;
+          }
+          return false;
+        });
+
+        if (needsRepack && tableGuests.length > 0) {
+          const repacked = repackTableSeatNumbers(tableGuests, mergedTarget.capacity);
+          nextGuests = nextGuests.map((g) => {
+            if (g.tableId === mergedTarget.id && repacked.has(g.id)) {
+              const clampedSeat = repacked.get(g.id)!;
+              if (clampedSeat <= mergedTarget.capacity) {
+                return { ...g, seatNumber: clampedSeat };
+              }
+            }
+            return g;
+          });
+        }
+      }
+
       return {
         ...state,
-        tables: syncTablesWithGuests(nextTablesList, state.guests),
+        guests: nextGuests,
+        tables: syncTablesWithGuests(nextTablesList, nextGuests),
       };
     }
 
@@ -779,16 +965,19 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
           ? { ...g, tableId: null, seatNumber: null, plusOneSeatNumbers: [] }
           : g
       );
-      const nextTables = state.tables.filter((t) => t.id !== tableId);
+      const nextTables = state.tables
+        .filter((t) => t.id !== tableId)
+        .map((t) => ({ ...t, invitationCodes: [] }));
       return {
         ...state,
         guests: nextGuests,
         tables: syncTablesWithGuests(nextTables, nextGuests),
+        undoStack: pruneUndoStackForTable(state.undoStack, tableId),
       };
     }
 
     case 'REVERT_DELETE_TABLE': {
-      const { table, affectedGuests } = action.payload;
+      const { table, affectedGuests, previousUndoStack } = action.payload;
       const affectedMap = new Map(affectedGuests.map((g) => [g.id, g]));
       const nextGuests = state.guests.map((g) => {
         const prev = affectedMap.get(g.id);
@@ -804,11 +993,15 @@ export function seatingReducer(state: SeatingState, action: SeatingAction): Seat
         }
         return g;
       });
-      const restoredTables = [...state.tables, table];
+      const restoredTables = [
+        ...state.tables.map((t) => ({ ...t, invitationCodes: [] })),
+        { ...table, invitationCodes: [] },
+      ];
       return {
         ...state,
         guests: nextGuests,
         tables: syncTablesWithGuests(restoredTables, nextGuests),
+        undoStack: previousUndoStack !== undefined ? previousUndoStack : state.undoStack,
       };
     }
 
@@ -869,7 +1062,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     return state.guests.filter((g) => !g.tableId && isGuestEligibleForSeating(g));
   }, [state.guests]);
 
-  // Fetch all pages of tables and invitation codes without dropping records past row 50
+  // Fetch all pages of tables and invitation codes, merging tables[].invitationCodes
   const fetchData = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -886,47 +1079,48 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const tablesData = await tablesRes.json();
       const guestsData = await guestsRes.json();
 
-      let rawTables = extractArrayPayload<SeatingTableDTO>(tablesData);
-      let rawGuests = extractArrayPayload<InvitationCodeDTO>(guestsData);
+      let allTables = extractArrayPayload<SeatingTableDTO>(tablesData);
+      let allGuests = extractArrayPayload<InvitationCodeDTO>(guestsData);
 
-      const tablesPageInfo = detectRemainingPageCount(tablesRes, tablesData, rawTables.length);
-      const guestsPageInfo = detectRemainingPageCount(guestsRes, guestsData, rawGuests.length);
+      const tablesPageInfo = detectRemainingPageCount(tablesRes, tablesData, allTables.length);
+      const guestsPageInfo = detectRemainingPageCount(guestsRes, guestsData, allGuests.length);
 
       if (tablesPageInfo.needsPagination || guestsPageInfo.needsPagination) {
         const rawCatalogLimitHeader =
           guestsRes.headers && typeof guestsRes.headers.get === 'function'
             ? Number(guestsRes.headers.get('X-Limit'))
             : NaN;
-        const catalogLimit = Number.isInteger(rawCatalogLimitHeader) && rawCatalogLimitHeader > 0
-          ? rawCatalogLimitHeader
-          : extractNumericMeta(guestsData, 'limit') ?? (rawGuests.length || 1000);
+        const catalogLimit =
+          Number.isInteger(rawCatalogLimitHeader) && rawCatalogLimitHeader > 0
+            ? rawCatalogLimitHeader
+            : extractNumericMeta(guestsData, 'limit') ?? (allGuests.length || 1000);
 
         const [fullTables, fullGuests] = await Promise.all([
           tablesPageInfo.needsPagination
             ? fetchRemainingPages<SeatingTableDTO>(
               '/api/admin/seating-tables',
-              rawTables,
+              allTables,
               tablesPageInfo.totalCount
             )
-            : Promise.resolve(rawTables),
+            : Promise.resolve(allTables),
           guestsPageInfo.needsPagination
             ? fetchRemainingCatalogPages<InvitationCodeDTO>(
               '/api/admin/invitation-codes/catalog',
-              rawGuests,
+              allGuests,
               guestsPageInfo.totalCount,
               catalogLimit
             )
-            : Promise.resolve(rawGuests),
+            : Promise.resolve(allGuests),
         ]);
-        rawTables = fullTables;
-        rawGuests = fullGuests;
+        allTables = fullTables;
+        allGuests = fullGuests;
       }
 
       dispatch({
         type: 'INIT_DATA',
         payload: {
-          tables: rawTables,
-          guests: rawGuests,
+          tables: allTables,
+          guests: allGuests,
         },
       });
     } catch (err: any) {
@@ -966,7 +1160,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     []
   );
 
-  // Seat assignment with party chair capacity checks, landmark guards, and granular rollback on failure
+  // Seat assignment with party headcount validation, landmark guards, undo tracking on unassign, and granular rollback
   const assignGuestToTable = useCallback(
     async (
       guestId: string,
@@ -977,13 +1171,17 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       const targetSeatNumber = targetTableId ? (seatNumber ?? null) : null;
 
       const currentGuest = state.guests.find((g) => g.id === guestId);
-      const requiredChairs = currentGuest ? getRequiredChairCount(currentGuest) : 1;
-      const plusOneCount = currentGuest ? getAttendingPlusOneCount(currentGuest) : 0;
+      if (!currentGuest) {
+        return false;
+      }
+
+      const incomingHeadcount = getGuestPartySize(currentGuest);
+      const plusOneCount = Math.max(0, incomingHeadcount - 1);
 
       let optimisticPrimarySeat: number | null = targetSeatNumber;
       let optimisticPlusOneSeats: number[] | undefined = targetTableId ? undefined : [];
 
-      // Landmark & table capacity validation prior to optimistic dispatch
+      // Landmark & table capacity validation prior to optimistic dispatch using party headcounts
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         if (targetTable) {
@@ -998,8 +1196,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           const otherGuests = state.guests.filter(
             (g) => g.tableId === targetTableId && g.id !== guestId
           );
-          const existingOccupiedChairs = getTableOccupiedChairCount(otherGuests);
-          if (existingOccupiedChairs + requiredChairs > targetTable.capacity) {
+          const existingHeadcount = getGuestsHeadcount(otherGuests);
+          if (existingHeadcount + incomingHeadcount > targetTable.capacity) {
             toast?.addToast(
               `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
               'error'
@@ -1008,8 +1206,22 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           }
 
           if (plusOneCount > 0) {
-            const resolved = resolveSeatAssignments(otherGuests, targetTable.capacity);
-            const usedSeats = new Set<number>(resolved.keys());
+            const effectiveOthers = targetSeatNumber
+              ? otherGuests.map((g) =>
+                g.seatNumber === targetSeatNumber ? { ...g, seatNumber: null } : g
+              )
+              : otherGuests;
+            const resolved = resolveDetailedSeatAssignments(
+              effectiveOthers,
+              targetTable.capacity
+            );
+            const usedSeats = new Set<number>();
+            resolved.forEach((_entry, s) => {
+              if (s >= 1 && s <= targetTable.capacity) {
+                usedSeats.add(s);
+              }
+            });
+
             if (
               typeof optimisticPrimarySeat === 'number' &&
               optimisticPrimarySeat >= 1 &&
@@ -1041,10 +1253,6 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         }
       }
 
-      if (!currentGuest) {
-        return false;
-      }
-
       // Snapshot granular previous state of affected entities only
       const previousGuestAssignment = {
         guestId: currentGuest.id,
@@ -1052,6 +1260,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         seatNumber: currentGuest.seatNumber,
         plusOneSeatNumbers: currentGuest.plusOneSeatNumbers,
       };
+      const shouldPushUndo = !targetTableId && Boolean(currentGuest.tableId);
 
       let displacedGuest: { guestId: string; seatNumber?: number | null } | null = null;
       if (targetTableId && targetSeatNumber) {
@@ -1079,6 +1288,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           ...(optimisticPlusOneSeats !== undefined
             ? { plusOneSeatNumbers: optimisticPlusOneSeats }
             : {}),
+          pushUndo: shouldPushUndo,
+          snapshotLabel: shouldPushUndo ? `Unassign ${currentGuest.guestName}` : undefined,
         },
       });
 
@@ -1120,6 +1331,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             seatNumber: previousGuestAssignment.seatNumber,
             plusOneSeatNumbers: previousGuestAssignment.plusOneSeatNumbers,
             displacedGuest,
+            popUndo: shouldPushUndo,
           },
         });
         const message =
@@ -1138,7 +1350,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     [assignGuestToTable]
   );
 
-  // Atomic batch assignment for households and Clear Seats, with undo snapshot and rollback
+  // Atomic batch assignment for households and Clear Seats, with party headcount validation and undo snapshot
   const assignGuestsToTable = useCallback(
     async (
       guestIds: string[],
@@ -1168,12 +1380,11 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
             return false;
           }
 
-          const existingOtherChairs = getTableOccupiedChairCount(
+          const existingOtherHeadcount = getGuestsHeadcount(
             state.guests.filter((g) => g.tableId === targetTableId && !batchIdSet.has(g.id))
           );
-          const incomingBatchChairs = getTableOccupiedChairCount(affectedGuests);
-
-          if (existingOtherChairs + incomingBatchChairs > targetTable.capacity) {
+          const incomingHeadcount = getGuestsHeadcount(affectedGuests);
+          if (existingOtherHeadcount + incomingHeadcount > targetTable.capacity) {
             toast?.addToast(
               `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`,
               'error'
@@ -1196,60 +1407,103 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       if (targetTableId) {
         const targetTable = state.tables.find((t) => t.id === targetTableId);
         const cap = targetTable?.capacity ?? 50;
-        const otherGuestsAtTable = state.guests.filter(
+        const otherOccupants = state.guests.filter(
           (g) => g.tableId === targetTableId && !batchIdSet.has(g.id)
         );
-        const usedSeats = new Set<number>(
-          resolveSeatAssignments(otherGuestsAtTable, cap).keys()
-        );
-        const nextSeat = () => {
-          for (let i = 1; i <= cap; i++) {
-            if (!usedSeats.has(i)) {
-              usedSeats.add(i);
-              return i;
+        const usedSeats = new Set<number>();
+        if (otherOccupants.length > 0) {
+          const resolved = resolveDetailedSeatAssignments(otherOccupants, cap);
+          resolved.forEach((_entry, s) => {
+            if (s >= 1 && s <= cap) {
+              usedSeats.add(s);
+            }
+          });
+        }
+
+        const allocateParty = (
+          partySize: number
+        ): { primarySeat: number | null; plusOneSeats: number[] } => {
+          const needed = Math.max(1, partySize);
+          if (needed <= cap) {
+            for (let start = 1; start <= cap - needed + 1; start++) {
+              let fits = true;
+              for (let offset = 0; offset < needed; offset++) {
+                if (usedSeats.has(start + offset)) {
+                  fits = false;
+                  break;
+                }
+              }
+              if (fits) {
+                const plusOneSeats: number[] = [];
+                usedSeats.add(start);
+                for (let offset = 1; offset < needed; offset++) {
+                  const s = start + offset;
+                  usedSeats.add(s);
+                  plusOneSeats.push(s);
+                }
+                return { primarySeat: start, plusOneSeats };
+              }
             }
           }
-          return null;
+          const chosen: number[] = [];
+          for (let i = 1; i <= cap && chosen.length < needed; i++) {
+            if (!usedSeats.has(i)) {
+              chosen.push(i);
+            }
+          }
+          if (chosen.length === 0) return { primarySeat: null, plusOneSeats: [] };
+          for (const s of chosen) usedSeats.add(s);
+          return { primarySeat: chosen[0], plusOneSeats: chosen.slice(1) };
         };
 
         for (const id of uniqueIds) {
           const existing = state.guests.find((g) => g.id === id);
           if (!existing) continue;
-          const plusOneCount = getAttendingPlusOneCount(existing);
+          const partySize = getGuestPartySize(existing);
+          const plusOneCount = Math.max(0, partySize - 1);
           let seat: number | null = null;
-          if (
-            existing.tableId === targetTableId &&
-            typeof existing.seatNumber === 'number' &&
-            existing.seatNumber >= 1 &&
-            existing.seatNumber <= cap &&
-            !usedSeats.has(existing.seatNumber)
-          ) {
-            usedSeats.add(existing.seatNumber);
-            seat = existing.seatNumber;
-          } else {
-            seat = nextSeat();
-          }
+          let plusOneSeats: number[] = [];
 
-          const plusOneSeats: number[] = [];
           const prevPlusOneSeats =
             existing.tableId === targetTableId && Array.isArray(existing.plusOneSeatNumbers)
               ? existing.plusOneSeatNumbers
               : [];
 
-          for (let i = 0; i < plusOneCount; i++) {
-            const candidate = prevPlusOneSeats[i];
-            if (
-              typeof candidate === 'number' &&
-              candidate >= 1 &&
-              candidate <= cap &&
-              !usedSeats.has(candidate)
-            ) {
-              usedSeats.add(candidate);
-              plusOneSeats.push(candidate);
-            } else {
-              const s = nextSeat();
-              if (s !== null) plusOneSeats.push(s);
+          if (
+            existing.tableId === targetTableId &&
+            typeof existing.seatNumber === 'number' &&
+            existing.seatNumber >= 1 &&
+            existing.seatNumber <= cap &&
+            !usedSeats.has(existing.seatNumber) &&
+            prevPlusOneSeats.length === plusOneCount &&
+            prevPlusOneSeats.every(
+              (s) => s >= 1 && s <= cap && s !== existing.seatNumber && !usedSeats.has(s)
+            )
+          ) {
+            usedSeats.add(existing.seatNumber);
+            for (const s of prevPlusOneSeats) usedSeats.add(s);
+            seat = existing.seatNumber;
+            plusOneSeats = [...prevPlusOneSeats];
+          } else if (
+            existing.tableId === targetTableId &&
+            typeof existing.seatNumber === 'number' &&
+            existing.seatNumber >= 1 &&
+            existing.seatNumber + partySize - 1 <= cap &&
+            Array.from({ length: partySize }, (_, off) => existing.seatNumber! + off).every(
+              (s) => !usedSeats.has(s)
+            )
+          ) {
+            usedSeats.add(existing.seatNumber);
+            seat = existing.seatNumber;
+            for (let off = 1; off < partySize; off++) {
+              const s = existing.seatNumber + off;
+              usedSeats.add(s);
+              plusOneSeats.push(s);
             }
+          } else {
+            const allocated = allocateParty(partySize);
+            seat = allocated.primarySeat;
+            plusOneSeats = allocated.plusOneSeats;
           }
 
           plannedUpdates.push({
@@ -1517,6 +1771,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           seatNumber: g.seatNumber,
           plusOneSeatNumbers: g.plusOneSeatNumbers,
         }));
+      const previousUndoStack = state.undoStack ? [...state.undoStack] : [];
 
       dispatch({
         type: 'DELETE_TABLE',
@@ -1535,6 +1790,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           payload: {
             table: tableToDelete,
             affectedGuests,
+            previousUndoStack,
           },
         });
         const message = err instanceof Error && err.message ? err.message : 'Error deleting table';
@@ -1542,7 +1798,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         return false;
       }
     },
-    [state.tables, state.guests, toast]
+    [state.tables, state.guests, state.undoStack, toast]
   );
 
   const updateTablePosition = useCallback(

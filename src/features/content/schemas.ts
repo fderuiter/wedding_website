@@ -882,6 +882,62 @@ export const PhotoModerationSchema = z.object({
   photoId: z.string().optional(),
   action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
+}).superRefine((data, ctx) => {
+  if (!data.action && !data.status) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['action'],
+      message: "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required",
+    });
+  }
+}).meta({
+  description:
+    "Single-photo moderation decision when the target photo ID is supplied in the URL path. Requires either action ('approve' | 'reject') or status ('APPROVED' | 'REJECTED').",
+  anyOf: [
+    { type: 'object', required: ['action'] },
+    { type: 'object', required: ['status'] },
+  ],
+});
+
+export const QueuePhotoModerationSchema = z.object({
+  id: z.string().min(1).optional(),
+  nodeId: z.string().min(1).optional(),
+  photoId: z.string().min(1).optional(),
+  action: z.enum(['approve', 'reject', 'APPROVE', 'REJECT']).optional(),
+  status: z.enum(['APPROVED', 'REJECTED']).optional(),
+}).superRefine((data, ctx) => {
+  if (!data.id && !data.nodeId && !data.photoId) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['id'],
+      message: 'Photo ID (id or nodeId) is required',
+    });
+  }
+  if (!data.action && !data.status) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['action'],
+      message: "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required",
+    });
+  }
+}).meta({
+  description:
+    'Single-photo moderation payload for the moderation queue endpoint. Requires a target photo identifier (id, nodeId, or photoId) and a moderation decision (action or status).',
+  allOf: [
+    {
+      anyOf: [
+        { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1 } } },
+        { type: 'object', required: ['nodeId'], properties: { nodeId: { type: 'string', minLength: 1 } } },
+        { type: 'object', required: ['photoId'], properties: { photoId: { type: 'string', minLength: 1 } } },
+      ],
+    },
+    {
+      anyOf: [
+        { type: 'object', required: ['action'] },
+        { type: 'object', required: ['status'] },
+      ],
+    },
+  ],
 });
 
 export const BatchPhotoModerationSchema = z
@@ -917,6 +973,58 @@ export const BatchPhotoModerationSchema = z
           "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required",
       });
     }
+  })
+  .meta({
+    description:
+      'Batch photo moderation payload requiring between 1 and 100 photo identifiers (in ids, photoIds, or nodeIds) and a moderation decision (action or status).',
+    allOf: [
+      {
+        anyOf: [
+          {
+            type: 'object',
+            required: ['ids'],
+            properties: {
+              ids: {
+                type: 'array',
+                items: { type: 'string', minLength: 1 },
+                minItems: 1,
+                maxItems: 100,
+              },
+            },
+          },
+          {
+            type: 'object',
+            required: ['photoIds'],
+            properties: {
+              photoIds: {
+                type: 'array',
+                items: { type: 'string', minLength: 1 },
+                minItems: 1,
+                maxItems: 100,
+              },
+            },
+          },
+          {
+            type: 'object',
+            required: ['nodeIds'],
+            properties: {
+              nodeIds: {
+                type: 'array',
+                items: { type: 'string', minLength: 1 },
+                minItems: 1,
+                maxItems: 100,
+              },
+            },
+          },
+        ],
+      },
+      {
+        anyOf: [
+          { type: 'object', required: ['action'] },
+          { type: 'object', required: ['status'] },
+        ],
+      },
+    ],
   });
 
 export const PhotoNodeSchema = BaseContentNode.extend({

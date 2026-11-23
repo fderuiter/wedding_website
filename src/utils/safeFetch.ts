@@ -6,7 +6,7 @@ import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  const agent = new Agent({
+  return bridgeLegacyDispatcher(new Agent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -22,15 +22,7 @@ export function createPinnedDispatcher(address: string, family: number): Agent {
         }
       },
     },
-  });
-
-  const rawDispatch = agent.dispatch.bind(agent);
-  const legacyDispatcher = new Dispatcher1Wrapper({
-    dispatch: rawDispatch,
-  } as unknown as Dispatcher);
-  agent.dispatch = legacyDispatcher.dispatch.bind(legacyDispatcher);
-
-  return agent;
+  }));
 }
 
 /**
@@ -115,4 +107,13 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       return res;
     }
   }
+}
+
+function bridgeLegacyDispatcher(agent: Agent): Agent {
+  const target: Dispatcher = Object.assign(Object.create(agent) as Dispatcher, {
+    dispatch: agent.dispatch.bind(agent),
+  });
+  const wrapper = new Dispatcher1Wrapper(target);
+  agent.dispatch = wrapper.dispatch.bind(wrapper);
+  return agent;
 }

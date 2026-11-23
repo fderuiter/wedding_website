@@ -8,6 +8,7 @@ export interface AccessibleExternalLinkProps
   showIcon?: boolean;
   iconClassName?: string;
   iconSize?: number | string;
+  srContext?: string;
   srText?: string;
 }
 
@@ -18,6 +19,7 @@ export function AccessibleExternalLink({
   showIcon = false,
   iconClassName,
   iconSize,
+  srContext,
   srText = '(opens in a new tab)',
   'aria-label': ariaLabel,
   ref,
@@ -50,8 +52,9 @@ export function AccessibleExternalLink({
           className={cn(iconClassName || 'w-4 h-4 ml-1')}
         />
       )}{!computedAriaLabel && (
-        <span className="sr-only"> {srText}</span>
+        <span className="sr-only">
+          {srContext ? ` ${srContext} ${srText}` : ` ${srText}`}
+        </span>
       )}</a>
   );
 }
-

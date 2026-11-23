@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Prisma } from '@prisma/client';
+import { Prisma, WeddingPartySide } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { createAuditSnapshot } from '@/lib/audit';
 import { coordinateSchema, isSafeMediaOrPhotoUrl } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
@@ -26,6 +27,99 @@ const BATCH_SUMMARY_IDS = new Set([
 
 interface ForeignKeyDelegate {
   findUnique?: (_args: { where: { id: string } }) => Promise<unknown>;
+}
+
+interface SnapshotPayload extends Record<string, unknown> {
+  deleted?: boolean;
+  previous?: Record<string, unknown> | null;
+  current?: Prisma.InputJsonValue;
+  type?: string;
+  tags?: string[];
+  data?: Prisma.InputJsonValue;
+  photoId?: string | null;
+  imageId?: string | null;
+  name?: string;
+  role?: string;
+  bio?: string;
+  link?: string | null;
+  order?: number;
+  side?: WeddingPartySide | null;
+  isSample?: boolean;
+  description?: string;
+  category?: string;
+  website?: string;
+  directions?: string;
+  latitude?: number | string;
+  longitude?: number | string;
+  isVisible?: boolean;
+  promoCode?: string | null;
+  bookingUrl?: string | null;
+  roomRate?: string | null;
+  cutoffDate?: Date | string | null;
+  shuttleInfo?: string | null;
+  invitationCodeId?: string | null;
+  registryItemId?: string | null;
+  url?: string;
+  altText?: string | null;
+  isDecorative?: boolean;
+  createdAt?: string | number | Date;
+  updatedAt?: string | number | Date;
+  tableId?: string | null;
+  action?: string;
+  code?: string;
+  seatNumber?: number | null;
+  plusOneSeatNumbers?: number[];
+  guestName?: string;
+  email?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
+  dietaryNotes?: string | null;
+  plusOneAllocations?: number;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
+  householdName?: string | null;
+  partyGroup?: string | null;
+  partyTags?: string[];
+  extraFields?: Prisma.InputJsonValue | null;
+  used?: boolean;
+  usedAt?: unknown;
+  shape?: string;
+  capacity?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  title?: string;
+  startTime?: unknown;
+  endTime?: unknown;
+  locationName?: string;
+  location?: string;
+  isPrivate?: boolean;
+  mealOptions?: Prisma.InputJsonValue;
+  customQuestions?: Prisma.InputJsonValue;
+  subEventId?: string;
+  status?: string;
+  plusOneCount?: number;
+  mealSelections?: Prisma.InputJsonValue;
+  customAnswers?: Prisma.InputJsonValue;
+  plusOneNames?: Prisma.InputJsonValue;
+  channel?: string;
+  subject?: string | null;
+  body?: string;
+  targetFilters?: Prisma.InputJsonValue | null;
+  totalRecipients?: number;
+  sentCount?: number;
+  failedCount?: number;
+  scheduledFor?: unknown;
+  sentAt?: unknown;
+  broadcastId?: string;
+  destination?: string;
+  error?: string | null;
 }
 
 async function resolveForeignKeyId<T>(
@@ -77,12 +171,13 @@ export const POST = withApiMiddleware(
       throw new ApiError(400, 'Invalid snapshot data');
     }
 
-    const rawSnapshotData = version.data as Record<string, any>;
-    const snapshotData: Record<string, any> =
+    const rawSnapshotData = version.data as SnapshotPayload;
+    const snapshotData: SnapshotPayload =
       rawSnapshotData.deleted &&
       rawSnapshotData.previous &&
-      typeof rawSnapshotData.previous === 'object'
-        ? (rawSnapshotData.previous as Record<string, any>)
+      typeof rawSnapshotData.previous === 'object' &&
+      !Array.isArray(rawSnapshotData.previous)
+        ? (rawSnapshotData.previous as SnapshotPayload)
         : rawSnapshotData;
 
     if (version.entityType === 'AppConfig') {
@@ -122,7 +217,7 @@ export const POST = withApiMiddleware(
         });
       }
     } else if (version.entityType === 'ContentNode') {
-      const nodeData = snapshotData.data || {};
+      const nodeData: Prisma.InputJsonValue = snapshotData.data || {};
       if (snapshotData.type === 'Photo') {
         const parsedPhoto = PhotoDataSchema.safeParse(nodeData);
         if (!parsedPhoto.success) {
@@ -132,6 +227,7 @@ export const POST = withApiMiddleware(
         nodeData &&
         typeof nodeData === 'object' &&
         !Array.isArray(nodeData) &&
+        'url' in nodeData &&
         typeof nodeData.url === 'string' &&
         !isSafeMediaOrPhotoUrl(nodeData.url)
       ) {
@@ -139,7 +235,7 @@ export const POST = withApiMiddleware(
       }
 
       const data = {
-        type: snapshotData.type,
+        type: snapshotData.type as string,
         tags: snapshotData.tags || [],
         data: nodeData,
       };
@@ -155,9 +251,9 @@ export const POST = withApiMiddleware(
       );
 
       const data = {
-        name: snapshotData.name,
-        role: snapshotData.role,
-        bio: snapshotData.bio,
+        name: snapshotData.name as string,
+        role: snapshotData.role as string,
+        bio: snapshotData.bio as string,
         photoId: resolvedPhotoId,
         link: snapshotData.link,
         order: snapshotData.order || 0,
@@ -178,12 +274,12 @@ export const POST = withApiMiddleware(
       );
 
       const data = {
-        name: snapshotData.name,
-        description: snapshotData.description,
+        name: snapshotData.name as string,
+        description: snapshotData.description as string,
         imageId: resolvedImageId,
-        category: snapshotData.category,
-        website: snapshotData.website,
-        directions: snapshotData.directions,
+        category: snapshotData.category as string,
+        website: snapshotData.website as string,
+        directions: snapshotData.directions as string,
         latitude: coordinateSchema.parse(snapshotData.latitude || 0),
         longitude: coordinateSchema.parse(snapshotData.longitude || 0),
         isVisible: snapshotData.isVisible !== false,
@@ -575,14 +671,12 @@ export const POST = withApiMiddleware(
         ? stripAppConfigSecrets(rawSnapshotData)
         : rawSnapshotData;
 
-    await prisma.snapshotVersion.create({
-      data: {
-        entityType: version.entityType,
-        entityId: version.entityId,
-        data: rollbackSnapshotPayload,
-        author: 'Admin (Rollback)',
-      },
-    });
+    await createAuditSnapshot(
+      version.entityType,
+      version.entityId,
+      rollbackSnapshotPayload,
+      'Admin (Rollback)',
+    );
 
     return NextResponse.json({ success: true, restoredTo: id });
   },

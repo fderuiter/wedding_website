@@ -4,9 +4,10 @@ import React, { useMemo, useState } from 'react';
 import { Dialog, useDirtyConfirmClose } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
+import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
   getDefaultShapeDimensions,
-  getTableOccupiedChairCount,
+  getGuestsHeadcount,
   isLandmarkTableShape,
 } from '../utils/seatingHelpers';
 
@@ -100,7 +101,37 @@ function TableModalForm({
   };
 
   const isLandmark = isLandmarkTableShape(shape);
-  const currentSeatedCount = getTableOccupiedChairCount(table?.invitationCodes);
+  const currentSeatedCount = useMemo(
+    () => getGuestsHeadcount(table?.invitationCodes || []),
+    [table?.invitationCodes]
+  );
+
+  const seatsAboveNewCapacity = useMemo(() => {
+    if (isLandmark || !table?.invitationCodes || table.invitationCodes.length === 0) {
+      return [] as number[];
+    }
+    const baselineMaxCap = Math.max(initialSnapshot.capacity, table.capacity);
+    const resolvedAtOriginal = resolveDetailedSeatAssignments(
+      table.invitationCodes,
+      baselineMaxCap
+    );
+    const highSeats: number[] = [];
+    resolvedAtOriginal.forEach((_entry, seatNum) => {
+      if (seatNum > capacity) {
+        highSeats.push(seatNum);
+      }
+    });
+    for (const guest of table.invitationCodes) {
+      if (
+        typeof guest.seatNumber === 'number' &&
+        guest.seatNumber > capacity &&
+        !highSeats.includes(guest.seatNumber)
+      ) {
+        highSeats.push(guest.seatNumber);
+      }
+    }
+    return highSeats.sort((a, b) => a - b);
+  }, [isLandmark, table, initialSnapshot.capacity, capacity]);
 
   const handleShapeChange = (val: TableShapeValue) => {
     const nextIsLandmark = isLandmarkTableShape(val);
@@ -140,9 +171,17 @@ function TableModalForm({
     e.preventDefault();
     if (!name.trim()) return;
 
-    if (table && capacity < currentSeatedCount) {
+    if (!isLandmark && table && capacity < currentSeatedCount) {
       const confirmed = await confirm(
-        `Warning: This table currently has ${currentSeatedCount} seated guests, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`
+        `Warning: This table currently has ${currentSeatedCount} seated guest${currentSeatedCount === 1 ? '' : 's'}, which exceeds the new capacity of ${capacity}. Are you sure you want to save?`
+      );
+      if (!confirmed) {
+        return;
+      }
+    } else if (!isLandmark && table && seatsAboveNewCapacity.length > 0) {
+      const seatListLabel = seatsAboveNewCapacity.map((s) => `Seat ${s}`).join(', ');
+      const confirmed = await confirm(
+        `Warning: Lowering capacity to ${capacity} will repack ${seatListLabel} into seats 1–${capacity}. Are you sure you want to save?`
       );
       if (!confirmed) {
         return;
@@ -236,11 +275,15 @@ function TableModalForm({
               Room landmarks have 0 guest seats.
             </p>
           )}
-          {table && capacity < currentSeatedCount && (
+          {!isLandmark && table && capacity < currentSeatedCount ? (
             <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
               Warning: Table has {currentSeatedCount} seated guest{currentSeatedCount === 1 ? '' : 's'}. Lowering capacity below {currentSeatedCount} exceeds current occupancy.
             </p>
-          )}
+          ) : table && seatsAboveNewCapacity.length > 0 ? (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400 font-medium" data-testid="capacity-warning">
+              Warning: Lowering capacity to {capacity} will repack {seatsAboveNewCapacity.map((s) => `Seat ${s}`).join(', ')} into seats 1–{capacity}.
+            </p>
+          ) : null}
         </div>
       </div>
 

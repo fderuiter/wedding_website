@@ -35,15 +35,15 @@ npm run test:cov
 
 ### Pretest Lifecycle & Database Automation
 
-Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
+Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates CI-aware dependency alignment, database readiness checks, and schema isolation:
 
-1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci`).
+1. **CI-Aware Dependency Alignment & Strict `npm ci`:** Treats `node_modules` as aligned when `CI=true` with an existing `node_modules/.package-lock.json` or when `node_modules/.package-lock-hash` matches the SHA-256 digest of `package-lock.json`. When local dependencies are missing or lockfile drift is detected, it runs strict `npm ci` (enforcing peer dependency checks) and records `node_modules/.package-lock-hash`.
 2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
 3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
-4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.
-5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
-6. **Schema Synchronization & Prisma Generation:** Ensures `wedding_test` exists and applies committed forward-only migrations via `npx prisma migrate deploy` (automatically resetting the `public` schema on `wedding_test` and retrying once if prior local `prisma db push` state triggers Prisma error `P3005`), then runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
-7. **Documentation Portal Staging:** Runs `npx tsx scripts/generate-portal.ts` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links, synchronize OpenAPI/architecture docs, and stage `docs-portal/development/` before Jest executes portal verification suites.
+4. **Test Environment Isolation & Explicit `DATABASE_URL` Preservation:** Both `scripts/pretest.mjs` and [jest.setup.js](../jest.setup.js) preserve the caller's `DATABASE_URL` when `CI=true` is set or honor `TEST_DATABASE_URL` when targeting a custom PostgreSQL instance, while still loading test defaults from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`). Locally (when neither `CI=true` nor `TEST_DATABASE_URL` is set), they clear parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and target the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
+5. **TCP Readiness Probing & Conditional PostgreSQL Container Startup:** Probes TCP readiness on the host and port parsed from `DATABASE_URL` before invoking Docker Compose. When a PostgreSQL listener already accepts connections (such as GitHub Actions `services.db` or an active local database) or when `CI=true`, `docker compose up -d db` is skipped. Locally, when the target port is offline and Docker (`docker info`) is running, it starts the container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully.
+6. **Schema Synchronization & Conditional Prisma Generation:** Ensures `wedding_test` exists and applies committed forward-only migrations via `npx prisma migrate deploy` (automatically resetting the `public` schema on `wedding_test` and retrying once if prior local `prisma db push` state triggers Prisma error `P3005`), then runs `npm run prisma:generate` only when `node_modules/.prisma/client` is missing or older than `prisma/schema.prisma` (skipping duplicate generation after `postinstall` in CI).
+7. **Stage-Only Documentation Portal Sync:** Runs `npx tsx scripts/generate-portal.ts --stage-only` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links and stage `docs-portal/` (`docs-portal/development/`) and `openapi.json` without rerunning OpenAPI or architecture AST generators during unit test setup.
 
 ## Test Structure & Architecture
 
@@ -99,27 +99,28 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (42 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (53 src/ suites, no Docker required):
   npm run test:a11y:unit
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 42 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 53 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
   npm run build
+  npm run check:standalone -- --require-standalone
   npm run test:standalone
   ```
-  Runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) to verify that standalone Next.js production builds (`.next/standalone/server.js`) boot cleanly and pass health/readiness probes.
-  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js` is missing) and executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) during cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
+  Verifies post-build standalone asset staging (`.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` via [`scripts/check-docker-build.ts`](../scripts/check-docker-build.ts)) and runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) + [`scripts/smoke-runner.mjs`](../scripts/smoke-runner.mjs) to check PostgreSQL TCP readiness (`pg_isready -h localhost`), clean migrations (`POSTGRES_URL_NON_POOLING` unset), `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, and authenticated `/api/registry/items`.
+  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js`, `.next/standalone/.next/static`, or `.next/standalone/public` is missing) and executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
 
 - **OCI Container Smoke Test:**
   ```bash
   npm run test:container
   ```
-  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container and verify clean-database Prisma migrations, bootstrapping, and service readiness.
+  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container, execute the containerized `migration` service (`docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration`) by default even when `node_modules/.bin/prisma` exists on the host, and verify schema readiness, static assets, authenticated data-backed routes, `pg.Pool` connection bounds, and `SIGTERM` draining.
   > **Warning:** Like `npm run test:standalone`, `npm run test:container` executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **wiping local Docker Compose PostgreSQL volumes (`db_data`)**.
 
 - **Static Repository & Document Checks:**
@@ -149,7 +150,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run build-storybook
   ```
-  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml). Use `npm run storybook` for interactive component development.
+  Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) and manual [.github/workflows/storybook.yml](workflows/storybook.yml) workflow (both installing dependencies with `npm ci --ignore-scripts`). Use `npm run storybook` for interactive component development.
 
 - **Complete Quality Gate:**
   ```bash

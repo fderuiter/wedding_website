@@ -12,6 +12,8 @@ import { createAuditSnapshot } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
 import { generateRandomCode } from './utils/invitation';
 import {
+  normalizeMealOptions,
+  normalizeCustomQuestions,
   normalizeMealSelections,
   normalizeCustomAnswers,
   normalizePlusOneNames,
@@ -30,6 +32,93 @@ import {
   validateInvitationGuestFields,
   validateInvitationGuestFieldsWithColumns,
 } from '@/utils/invitationValidation';
+
+function parseExtraObject(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function buildMealSummaryFromEntries(
+  entries: Array<{
+    subEventTitle: string;
+    selections: Array<{ attendee: string; label: string; dietaryTags: string[] }>;
+  }>
+): string {
+  return entries
+    .map((entry) => {
+      const inner = entry.selections
+        .map((sel) =>
+          sel.dietaryTags.length > 0
+            ? `${sel.attendee}: ${sel.label} (${sel.dietaryTags.join(', ')})`
+            : `${sel.attendee}: ${sel.label}`
+        )
+        .join('; ');
+      return entries.length > 1 ? `${entry.subEventTitle} — ${inner}` : inner;
+    })
+    .join(' | ');
+}
+
+const RESERVED_BATCH_UPDATE_RSVP_KEYS = new Set([
+  'attendanceStatus',
+  'rsvpStatus',
+  'attendance',
+  'rsvp',
+  'attending',
+  'status',
+  'plusOneCount',
+  'attendingPlusOneCount',
+  'dietaryTags',
+  'mealSelections',
+  'mealSummary',
+  'customAnswers',
+  'customAnswersSummary',
+  'eventRsvps',
+]);
+
+function sanitizeBatchUpdateExtraFields(
+  extraFields: Record<string, unknown> | null | undefined
+): Record<string, unknown> | undefined {
+  if (!extraFields || typeof extraFields !== 'object' || Array.isArray(extraFields)) {
+    return undefined;
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extraFields)) {
+    if (RESERVED_BATCH_UPDATE_RSVP_KEYS.has(key)) {
+      continue;
+    }
+    if (key === 'plusOneNames') {
+      if (Array.isArray(value)) {
+        const cleanedNames = value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (cleanedNames.length > 0) {
+          sanitized.plusOneNames = cleanedNames;
+        }
+      }
+      continue;
+    }
+    if (value !== undefined) {
+      sanitized[key] = value;
+    }
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
 
 export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
   static ENTITY_KEY = 'invitation-codes';
@@ -111,6 +200,304 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
           throw new Error(
             `Validation Error: Invitation code "${normalizedCode}" is already in use.`
           );
+        }
+      }
+
+      const touchesSyncedIdentityFields =
+        'guestName' in processedData ||
+        'plusOneFirstName' in processedData ||
+        'plusOneLastName' in processedData ||
+        'plusOneAllocations' in processedData ||
+        'extraFields' in processedData;
+
+      if (touchesSyncedIdentityFields && typeof txRepo.client?.invitationCode?.findUnique === 'function') {
+        const existingInvite = await txRepo.client.invitationCode.findUnique({
+          where: { id },
+        });
+        const dbRsvps =
+          typeof txRepo.client?.subEventRsvp?.findMany === 'function'
+            ? await txRepo.client.subEventRsvp.findMany({
+              where: { invitationCodeId: id },
+              include: { subEvent: true },
+              orderBy: { createdAt: 'asc' },
+            })
+            : [];
+
+        const oldGuestName =
+          typeof existingInvite?.guestName === 'string' ? existingInvite.guestName.trim() : '';
+        const nextGuestName =
+          typeof processedData.guestName === 'string' && processedData.guestName.trim()
+            ? processedData.guestName.trim()
+            : oldGuestName;
+        const oldCompanion0 = [existingInvite?.plusOneFirstName, existingInvite?.plusOneLastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        const hasExplicitPlusOneColumns =
+          'plusOneFirstName' in processedData || 'plusOneLastName' in processedData;
+        const nextFirst =
+          'plusOneFirstName' in processedData
+            ? (processedData.plusOneFirstName as string | null)
+            : (existingInvite?.plusOneFirstName ?? null);
+        const nextLast =
+          'plusOneLastName' in processedData
+            ? (processedData.plusOneLastName as string | null)
+            : (existingInvite?.plusOneLastName ?? null);
+        const nextCompanion0 = [nextFirst, nextLast].filter(Boolean).join(' ').trim();
+
+        const hadStructuredDbRsvp =
+          Array.isArray(dbRsvps) &&
+          dbRsvps.some(
+            (r) =>
+              normalizePlusOneNames(r.plusOneNames).length > 0 ||
+              normalizeMealSelections(r.mealSelections).some(Boolean) ||
+              Object.keys(normalizeCustomAnswers(r.customAnswers)).length > 0
+          );
+
+        if (
+          hasExplicitPlusOneColumns &&
+          Array.isArray(dbRsvps) &&
+          dbRsvps.length > 0 &&
+          typeof txRepo.client?.subEventRsvp?.update === 'function'
+        ) {
+          for (const rsvp of dbRsvps) {
+            if (rsvp.status !== 'attending' || (rsvp.plusOneCount ?? 0) <= 0) continue;
+            const rNames = normalizePlusOneNames(rsvp.plusOneNames);
+            while (rNames.length < rsvp.plusOneCount) {
+              rNames.push('');
+            }
+            let rsvpNamesChanged = false;
+            if (nextCompanion0) {
+              if (!rNames[0] || rNames[0] === oldCompanion0) {
+                rNames[0] = nextCompanion0;
+                rsvpNamesChanged = true;
+              }
+            } else if (rNames[0] && (!oldCompanion0 || rNames[0] === oldCompanion0)) {
+              rNames[0] = '';
+              rsvpNamesChanged = true;
+            }
+            if (rsvpNamesChanged) {
+              rsvp.plusOneNames = rNames;
+              await txRepo.client.subEventRsvp.update({
+                where: { id: rsvp.id },
+                data: { plusOneNames: rNames },
+              });
+            }
+          }
+        }
+
+        const baseExtra =
+          processedData.extraFields !== undefined
+            ? parseExtraObject(processedData.extraFields)
+            : parseExtraObject(existingInvite?.extraFields);
+
+        const hasStructuredProjectionExtra =
+          Array.isArray(baseExtra.plusOneNames) ||
+          Array.isArray(baseExtra.mealSelections) ||
+          typeof baseExtra.mealSummary === 'string' ||
+          Array.isArray(baseExtra.customAnswers) ||
+          typeof baseExtra.customAnswersSummary === 'string' ||
+          'plusOneCount' in baseExtra ||
+          Array.isArray(baseExtra.eventRsvps);
+
+        if (
+          Array.isArray(dbRsvps) &&
+          dbRsvps.length > 0 &&
+          (hadStructuredDbRsvp || hasStructuredProjectionExtra)
+        ) {
+          const collectedPlusOneNames: string[] = [];
+          for (const r of dbRsvps) {
+            if (r.status !== 'attending' || (r.plusOneCount ?? 0) <= 0) continue;
+            const names = normalizePlusOneNames(r.plusOneNames).slice(0, r.plusOneCount);
+            for (const name of names) {
+              if (name && !collectedPlusOneNames.includes(name)) {
+                collectedPlusOneNames.push(name);
+              }
+            }
+          }
+          const maxAttendingPlusOnes = dbRsvps.reduce(
+            (max: number, r) =>
+              r.status === 'attending' ? Math.max(max, Math.max(0, r.plusOneCount ?? 0)) : max,
+            0
+          );
+          let syncedPlusOneNames = collectedPlusOneNames;
+          if (maxAttendingPlusOnes === 0) {
+            syncedPlusOneNames = [];
+          } else if (syncedPlusOneNames.length === 0 && nextCompanion0) {
+            syncedPlusOneNames = [nextCompanion0];
+          }
+
+          const dietaryTagSet = new Set<string>();
+          const structuredMeals: Array<{
+            subEventId: string;
+            subEventTitle: string;
+            selections: Array<{
+              attendee: string;
+              optionId: string;
+              label: string;
+              dietaryTags: string[];
+            }>;
+          }> = [];
+          const structuredAnswers: Array<{
+            subEventId: string;
+            subEventTitle: string;
+            answers: Array<{ questionId: string; prompt: string; answer: string }>;
+          }> = [];
+
+          for (const r of dbRsvps) {
+            if (r.status !== 'attending') continue;
+            const evtTitle = r.subEvent?.title || 'Event';
+            const evtMealOpts = normalizeMealOptions(r.subEvent?.mealOptions);
+            const evtQuestions = normalizeCustomQuestions(r.subEvent?.customQuestions);
+            const rMeals = normalizeMealSelections(r.mealSelections);
+            const rNames = normalizePlusOneNames(r.plusOneNames);
+            const rAnswers = normalizeCustomAnswers(r.customAnswers);
+
+            if (rMeals.some(Boolean)) {
+              const optMap = new Map(evtMealOpts.map((o) => [o.id, o]));
+              const resolvedSelections: Array<{
+                attendee: string;
+                optionId: string;
+                label: string;
+                dietaryTags: string[];
+              }> = [];
+              rMeals.forEach((optId, idx) => {
+                if (!optId) return;
+                const opt = optMap.get(optId);
+                const label = opt?.label || optId;
+                const tags = opt?.dietaryTags ?? [];
+                tags.forEach((t) => dietaryTagSet.add(t));
+                const attendee =
+                  idx === 0
+                    ? nextGuestName || 'Primary Guest'
+                    : rNames[idx - 1] || syncedPlusOneNames[idx - 1] || `Plus-One #${idx}`;
+                resolvedSelections.push({
+                  attendee,
+                  optionId: optId,
+                  label,
+                  dietaryTags: tags,
+                });
+              });
+              if (resolvedSelections.length > 0) {
+                structuredMeals.push({
+                  subEventId: r.subEventId,
+                  subEventTitle: evtTitle,
+                  selections: resolvedSelections,
+                });
+              }
+            }
+
+            if (Object.keys(rAnswers).length > 0) {
+              const qMap = new Map(evtQuestions.map((q) => [q.id, q]));
+              const resolvedAnswers: Array<{
+                questionId: string;
+                prompt: string;
+                answer: string;
+              }> = [];
+              for (const [qId, ans] of Object.entries(rAnswers)) {
+                if (!ans) continue;
+                resolvedAnswers.push({
+                  questionId: qId,
+                  prompt: qMap.get(qId)?.prompt || qId,
+                  answer: ans,
+                });
+              }
+              if (resolvedAnswers.length > 0) {
+                structuredAnswers.push({
+                  subEventId: r.subEventId,
+                  subEventTitle: evtTitle,
+                  answers: resolvedAnswers,
+                });
+              }
+            }
+          }
+
+          const customAnswersSummary = structuredAnswers
+            .map((entry) => {
+              const inner = entry.answers.map((ans) => `${ans.prompt}: ${ans.answer}`).join('; ');
+              return structuredAnswers.length > 1 ? `${entry.subEventTitle} — ${inner}` : inner;
+            })
+            .join(' | ');
+
+          processedData.extraFields = {
+            ...baseExtra,
+            plusOneCount: maxAttendingPlusOnes,
+            plusOneNames: syncedPlusOneNames,
+            dietaryTags: Array.from(dietaryTagSet),
+            mealSelections: structuredMeals,
+            mealSummary: buildMealSummaryFromEntries(structuredMeals),
+            customAnswers: structuredAnswers,
+            customAnswersSummary,
+          } as Prisma.InputJsonValue;
+        } else if (hasStructuredProjectionExtra) {
+          const nextExtra: Record<string, unknown> = { ...baseExtra };
+          let nextNames = Array.isArray(baseExtra.plusOneNames)
+            ? baseExtra.plusOneNames
+              .filter((n): n is string => typeof n === 'string')
+              .map((n) => n.trim())
+              .filter(Boolean)
+            : [];
+
+          if (hasExplicitPlusOneColumns) {
+            if (nextCompanion0) {
+              if (nextNames.length === 0) {
+                nextNames = [nextCompanion0];
+              } else {
+                nextNames = [
+                  nextCompanion0,
+                  ...nextNames.slice(1).filter((n) => n !== nextCompanion0),
+                ];
+              }
+            } else if (nextNames.length > 0 && (!oldCompanion0 || nextNames[0] === oldCompanion0)) {
+              nextNames = nextNames.slice(1);
+            }
+            nextExtra.plusOneNames = nextNames;
+            if (typeof nextExtra.plusOneCount === 'number' && nextNames.length > nextExtra.plusOneCount) {
+              nextExtra.plusOneCount = nextNames.length;
+            }
+          }
+
+          if (Array.isArray(baseExtra.mealSelections)) {
+            const updatedMealEntries = baseExtra.mealSelections
+              .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+              .map((entry) => {
+                const subEventTitle =
+                  typeof entry.subEventTitle === 'string' ? entry.subEventTitle : 'Event';
+                const rawSelections = Array.isArray(entry.selections) ? entry.selections : [];
+                const updatedSelections = rawSelections
+                  .filter((sel): sel is Record<string, unknown> => Boolean(sel && typeof sel === 'object'))
+                  .map((sel, idx) => {
+                    let attendee = typeof sel.attendee === 'string' ? sel.attendee : '';
+                    if (idx === 0 && nextGuestName) {
+                      if (!attendee || attendee === oldGuestName || attendee === 'Primary Guest') {
+                        attendee = nextGuestName;
+                      }
+                    } else if (idx > 0 && nextNames[idx - 1]) {
+                      attendee = nextNames[idx - 1];
+                    }
+                    const label = typeof sel.label === 'string' ? sel.label : '';
+                    const dietaryTags = Array.isArray(sel.dietaryTags)
+                      ? sel.dietaryTags.filter((t): t is string => typeof t === 'string')
+                      : [];
+                    return {
+                      ...sel,
+                      attendee,
+                      label,
+                      dietaryTags,
+                    };
+                  });
+                return {
+                  ...entry,
+                  subEventTitle,
+                  selections: updatedSelections,
+                };
+              });
+
+            nextExtra.mealSelections = updatedMealEntries;
+            nextExtra.mealSummary = buildMealSummaryFromEntries(updatedMealEntries);
+          }
+
+          processedData.extraFields = nextExtra as Prisma.InputJsonValue;
         }
       }
 
@@ -210,15 +597,22 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (row.zipCode !== undefined) updateData.zipCode = normalized.zipCode;
     if (row.country !== undefined) updateData.country = normalized.country;
     if (row.dietaryNotes !== undefined) updateData.dietaryNotes = normalized.dietaryNotes;
-    if (row.plusOneAllocations !== undefined) {
-      updateData.plusOneAllocations = normalized.plusOneAllocations ?? 0;
+    if (row.plusOneAllocations !== undefined && normalized.plusOneAllocations !== undefined) {
+      updateData.plusOneAllocations = normalized.plusOneAllocations;
     }
     if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = normalized.plusOneFirstName;
     if (row.plusOneLastName !== undefined) updateData.plusOneLastName = normalized.plusOneLastName;
     if (row.householdName !== undefined) updateData.householdName = normalized.householdName;
     if (row.partyGroup !== undefined) updateData.partyGroup = normalized.partyGroup;
     if (row.partyTags !== undefined) updateData.partyTags = normalized.partyTags;
-    if (row.extraFields !== undefined) updateData.extraFields = normalized.extraFields;
+    if (row.extraFields !== undefined) {
+      const sanitizedExtra = sanitizeBatchUpdateExtraFields(
+        normalized.extraFields as Record<string, unknown> | null | undefined
+      );
+      if (sanitizedExtra) {
+        updateData.extraFields = sanitizedExtra;
+      }
+    }
     return updateData;
   }
 
@@ -366,7 +760,24 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         for (const item of toUpdate) {
           const existing = updatesById.get(item.id);
           if (existing) {
+            const prevExtra =
+              existing.extraFields &&
+              typeof existing.extraFields === 'object' &&
+              !Array.isArray(existing.extraFields)
+                ? (existing.extraFields as Record<string, unknown>)
+                : undefined;
+            const nextExtra =
+              item.data.extraFields &&
+              typeof item.data.extraFields === 'object' &&
+              !Array.isArray(item.data.extraFields)
+                ? (item.data.extraFields as Record<string, unknown>)
+                : undefined;
             Object.assign(existing, item.data);
+            if (prevExtra && nextExtra) {
+              existing.extraFields = { ...prevExtra, ...nextExtra };
+            } else if (prevExtra && !('extraFields' in item.data)) {
+              existing.extraFields = prevExtra;
+            }
           } else {
             updatesById.set(item.id, { ...item.data });
           }
@@ -429,7 +840,31 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             "householdName" = CASE WHEN v."has_householdName" THEN v."householdName" ELSE t."householdName" END,
             "partyGroup" = CASE WHEN v."has_partyGroup" THEN v."partyGroup" ELSE t."partyGroup" END,
             "partyTags" = CASE WHEN v."has_partyTags" THEN v."partyTags" ELSE t."partyTags" END,
-            "extraFields" = CASE WHEN v."has_extraFields" THEN v."extraFields" ELSE t."extraFields" END,
+            "extraFields" = CASE
+              WHEN v."has_extraFields" AND v."extraFields" IS NOT NULL AND jsonb_typeof(v."extraFields") = 'object' THEN
+                (
+                  CASE
+                    WHEN t."extraFields" IS NOT NULL AND jsonb_typeof(t."extraFields") = 'object'
+                      THEN t."extraFields"
+                    ELSE '{}'::jsonb
+                  END
+                ) || (
+                  CASE
+                    WHEN t."used" = true
+                      OR (
+                        t."extraFields" IS NOT NULL
+                        AND jsonb_typeof(t."extraFields") = 'object'
+                        AND (
+                          (t."extraFields" -> 'attendanceStatus') IS NOT NULL
+                          OR jsonb_typeof(t."extraFields" -> 'plusOneNames') = 'array'
+                        )
+                      )
+                      THEN (v."extraFields" - 'plusOneNames')
+                    ELSE v."extraFields"
+                  END
+                )
+              ELSE t."extraFields"
+            END,
             "updatedAt" = NOW()
           FROM (VALUES ${values}) AS v(
             "id",

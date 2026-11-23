@@ -1,14 +1,18 @@
 import PDFDocument from 'pdfkit';
 import { SeatingTableDTO } from './schemas';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestCustomAnswers,
+  formatGuestMealSelections,
+} from '@/features/registry';
 import { computeSeatPosition, resolveDetailedSeatAssignments } from './seatLayout';
 import {
   computeTableMealCounts,
   getDietaryBadges,
-  getGuestPlusOneNamesList,
+  getGuestCompanionNames,
+  getGuestsHeadcount,
   getInvitationPartyMembers,
   getSeatingShapeLabel,
-  getTableOccupiedChairCount,
   isLandmarkTable,
   type DietaryBadgeInfo,
 } from './utils/seatingHelpers';
@@ -75,13 +79,14 @@ export async function generateSeatingChartPdf(
       const guestTables = tables.filter((t) => !isLandmarkTable(t));
       const landmarkTables = tables.filter((t) => isLandmarkTable(t));
 
+      // Calculate total stats using party headcounts
       let totalCapacity = 0;
       let totalSeated = 0;
       guestTables.forEach((t) => {
         totalCapacity += t.capacity;
-        totalSeated += getTableOccupiedChairCount(t.invitationCodes);
+        totalSeated += getGuestsHeadcount(t.invitationCodes || []);
       });
-      const unassignedCount = unassignedGuests.length;
+      const unassignedCount = getGuestsHeadcount(unassignedGuests);
 
       // ==========================================
       // PAGE 1: VISUAL FLOORPLAN SCHEMATIC
@@ -198,12 +203,13 @@ export async function generateSeatingChartPdf(
           }
 
           const isRound = shapeLower === 'round';
-          const assignedCount = getTableOccupiedChairCount(table.invitationCodes);
+          const assignedCount = getGuestsHeadcount(table.invitationCodes || []);
           const isOverCapacity = assignedCount > table.capacity;
 
           const fillColor = isOverCapacity ? '#fef2f2' : '#ffffff';
           const strokeColor = isOverCapacity ? '#ef4444' : '#475569';
 
+          // Resolve explicit, clamped, and companion seat assignments with dietary metadata
           const seatMap = resolveDetailedSeatAssignments(table.invitationCodes, table.capacity);
 
           if (isRound) {
@@ -372,12 +378,11 @@ export async function generateSeatingChartPdf(
 
         for (const table of guestTables) {
           const guests = table.invitationCodes || [];
-          const occupiedChairs = getTableOccupiedChairCount(guests);
+          const seatedHeadcount = getGuestsHeadcount(guests);
           const mealSummary = computeTableMealCounts(guests);
-          const detailedSeats = resolveDetailedSeatAssignments(guests, table.capacity);
-          const orderedEntries = Array.from(detailedSeats.values()).sort(
-            (a, b) => a.seatNumber - b.seatNumber
-          );
+          const orderedEntries = Array.from(
+            resolveDetailedSeatAssignments(guests, table.capacity).values()
+          ).sort((a, b) => a.seatNumber - b.seatNumber);
           const rowCount = Math.max(1, orderedEntries.length);
           const tableBlockHeight = 22 + 18 + 18 + rowCount * 18 + 12;
 
@@ -386,7 +391,7 @@ export async function generateSeatingChartPdf(
           // Table Banner Header
           doc.rect(margin, currentY, contentWidth, 22).fillAndStroke('#0f172a', '#0f172a');
           const shapeLabel = (table.shape || 'round').toUpperCase();
-          const tableHeaderText = `${table.name}   (${shapeLabel}  |  Capacity: ${table.capacity}  |  Seated: ${occupiedChairs})`;
+          const tableHeaderText = `${table.name}   (${shapeLabel}  |  Capacity: ${table.capacity}  |  Seated: ${seatedHeadcount})`;
           doc
             .fontSize(10)
             .font('Helvetica-Bold')
@@ -421,6 +426,7 @@ export async function generateSeatingChartPdf(
           );
           currentY += 18;
 
+          // Guest & Companion Seat Rows
           if (orderedEntries.length === 0) {
             doc.rect(margin, currentY, contentWidth, 18).fillAndStroke('#ffffff', '#e2e8f0');
             doc.fontSize(8).font('Helvetica-Oblique').fillColor('#94a3b8');
@@ -429,39 +435,69 @@ export async function generateSeatingChartPdf(
           } else {
             for (let idx = 0; idx < orderedEntries.length; idx++) {
               const entry = orderedEntries[idx];
-              checkPageBreak(20);
-
-              const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-              doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
-
-              doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-              doc.text(`Seat ${entry.seatNumber}`, margin + 6, currentY + 5, { width: colSeatW });
-
-              const displayName = entry.isPlusOne
-                ? `${entry.attendeeName} (+1)`
-                : entry.attendeeName;
-              doc.text(displayName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
-
-              doc.text(entry.mealChoice || '—', margin + colSeatW + colNameW + 6, currentY + 5, {
-                width: colMealW,
-              });
-
               const badgePrefix =
                 entry.dietaryBadges.length > 0
                   ? `[${entry.dietaryBadges.map((b) => b.shortLabel).join(', ')}]`
                   : '';
-              const rawNotes = !entry.isPlusOne ? entry.guest.dietaryNotes : null;
-              const dietaryText = rawNotes
-                ? `${badgePrefix ? `${badgePrefix} ` : ''}${rawNotes}`
-                : badgePrefix || '—';
+
+              let dietaryText = badgePrefix || '—';
+              if (!entry.isCompanion) {
+                const mealSelections = formatGuestMealSelections(entry.guest);
+                const customAnswers = formatGuestCustomAnswers(entry.guest);
+                const primaryBadges = getDietaryBadges(
+                  entry.guest.dietaryNotes,
+                  entry.guest.extraFields,
+                  entry.guest.partyTags
+                );
+                const effectiveBadges =
+                  primaryBadges.length >= entry.dietaryBadges.length
+                    ? primaryBadges
+                    : entry.dietaryBadges;
+                const dietaryPrefix =
+                  effectiveBadges.length > 0
+                    ? `[${effectiveBadges.map((b) => b.shortLabel).join(', ')}]`
+                    : '';
+                const baseDietLine = entry.guest.dietaryNotes
+                  ? `${dietaryPrefix ? `${dietaryPrefix} ` : ''}${entry.guest.dietaryNotes}`
+                  : dietaryPrefix;
+                const detailLines = [
+                  baseDietLine,
+                  mealSelections ? `Meals: ${mealSelections}` : '',
+                  customAnswers ? `Responses: ${customAnswers}` : '',
+                ].filter(Boolean);
+                dietaryText = detailLines.length > 0 ? detailLines.join('\n') : '—';
+              }
+
+              doc.fontSize(8).font('Helvetica');
+              const nameTextH = doc.heightOfString(entry.displayName, { width: colNameW - 6 });
+              const mealTextH = doc.heightOfString(entry.mealChoice || '—', { width: colMealW - 6 });
+              const dietTextH = doc.heightOfString(dietaryText, { width: colDietW - 6 });
+              const rowHeight = Math.max(
+                18,
+                Math.ceil(Math.max(nameTextH, mealTextH, dietTextH)) + 8
+              );
+
+              checkPageBreak(rowHeight + 2);
+
+              const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+              doc.rect(margin, currentY, contentWidth, rowHeight).fillAndStroke(bg, '#e2e8f0');
+
+              doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
+              doc.text(`Seat ${entry.seatNumber}`, margin + 6, currentY + 5, { width: colSeatW - 6 });
+              doc.text(entry.displayName, margin + colSeatW + 6, currentY + 5, {
+                width: colNameW - 6,
+              });
+              doc.text(entry.mealChoice || '—', margin + colSeatW + colNameW + 6, currentY + 5, {
+                width: colMealW - 6,
+              });
               doc.text(
                 dietaryText,
                 margin + colSeatW + colNameW + colMealW + 6,
                 currentY + 5,
-                { width: colDietW }
+                { width: colDietW - 6 }
               );
 
-              currentY += 18;
+              currentY += rowHeight;
             }
           }
 
@@ -477,7 +513,7 @@ export async function generateSeatingChartPdf(
             .fontSize(10)
             .font('Helvetica-Bold')
             .fillColor('#ffffff')
-            .text(`Unassigned Guests (${unassignedGuests.length})`, margin + 8, currentY + 6);
+            .text(`Unassigned Guests (${unassignedCount})`, margin + 8, currentY + 6);
           currentY += 22;
 
           doc.rect(margin, currentY, contentWidth, 18).fillAndStroke('#e2e8f0', '#cbd5e1');
@@ -498,47 +534,78 @@ export async function generateSeatingChartPdf(
 
           for (let idx = 0; idx < unassignedGuests.length; idx++) {
             const guest = unassignedGuests[idx];
-            checkPageBreak(20);
-
-            const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-            doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
-
-            const plusOnes = getGuestPlusOneNamesList(guest);
-            const guestLabel =
-              plusOnes.length > 0
-                ? `${guest.guestName} (+1: ${plusOnes.join(', ')})`
+            const companions = getGuestCompanionNames(guest);
+            const guestDisplay =
+              companions.length > 0
+                ? `${guest.guestName} (+${companions.length}: ${companions.join(', ')})`
                 : guest.guestName;
 
             const partyMembers = getInvitationPartyMembers(guest);
             const mealLabels = partyMembers
               .map((m) => m.mealChoice)
               .filter((m): m is string => Boolean(m));
+            const mealColumnText = mealLabels.length > 0 ? mealLabels.join('; ') : '—';
 
-            doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-            doc.text(guestLabel, margin + 6, currentY + 5, { width: colNameW + colSeatW });
-            doc.text(
-              mealLabels.length > 0 ? mealLabels.join('; ') : '—',
-              margin + colSeatW + colNameW + 6,
-              currentY + 5,
-              { width: colMealW }
+            const mealSelections = formatGuestMealSelections(guest);
+            const customAnswers = formatGuestCustomAnswers(guest);
+            const unassignedBadges = getDietaryBadges(
+              guest.dietaryNotes,
+              guest.extraFields,
+              guest.partyTags
             );
-
-            const unassignedBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
             const unassignedPrefix =
               unassignedBadges.length > 0
                 ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]`
                 : '';
-            const unassignedDietText = guest.dietaryNotes
+            const baseUnassignedDiet = guest.dietaryNotes
               ? `${unassignedPrefix ? `${unassignedPrefix} ` : ''}${guest.dietaryNotes}`
-              : unassignedPrefix || '—';
+              : unassignedPrefix;
+            const unassignedDetailLines = [
+              baseUnassignedDiet,
+              mealSelections ? `Meals: ${mealSelections}` : '',
+              customAnswers ? `Responses: ${customAnswers}` : '',
+            ].filter(Boolean);
+            const unassignedDietText =
+              unassignedDetailLines.length > 0 ? unassignedDetailLines.join('\n') : '—';
+
+            doc.fontSize(8).font('Helvetica');
+            const unassignedNameH = doc.heightOfString(guestDisplay, {
+              width: colNameW + colSeatW - 6,
+            });
+            const unassignedMealH = doc.heightOfString(mealColumnText, {
+              width: colMealW - 6,
+            });
+            const unassignedDietH = doc.heightOfString(unassignedDietText, {
+              width: colDietW - 6,
+            });
+            const unassignedRowHeight = Math.max(
+              18,
+              Math.ceil(Math.max(unassignedNameH, unassignedMealH, unassignedDietH)) + 8
+            );
+
+            checkPageBreak(unassignedRowHeight + 2);
+
+            const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+            doc
+              .rect(margin, currentY, contentWidth, unassignedRowHeight)
+              .fillAndStroke(bg, '#e2e8f0');
+
+            doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
+            doc.text(guestDisplay, margin + 6, currentY + 5, { width: colNameW + colSeatW - 6 });
+            doc.text(
+              mealColumnText,
+              margin + colSeatW + colNameW + 6,
+              currentY + 5,
+              { width: colMealW - 6 }
+            );
             doc.text(
               unassignedDietText,
               margin + colSeatW + colNameW + colMealW + 6,
               currentY + 5,
-              { width: colDietW }
+              { width: colDietW - 6 }
             );
 
-            currentY += 18;
+            currentY += unassignedRowHeight;
           }
         }
       }
@@ -754,7 +821,7 @@ export async function generateAveryCardsPdf(
             doc.addPage();
             summaryY = margin;
           }
-          const occupied = getTableOccupiedChairCount(table.invitationCodes);
+          const occupied = getGuestsHeadcount(table.invitationCodes);
           const summary = computeTableMealCounts(table.invitationCodes);
           doc.rect(margin, summaryY, contentWidth, 26).fillAndStroke('#f8fafc', '#cbd5e1');
           doc

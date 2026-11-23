@@ -1,5 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { InvitationQRPreviewModal } from '../InvitationQRPreviewModal';
+
+expect.extend(toHaveNoViolations);
 
 const mockAddToast = jest.fn();
 jest.mock('@/components/ui/ToastProvider', () => ({
@@ -69,7 +72,7 @@ describe('InvitationQRPreviewModal Component', () => {
     expect(canvas).toBeInTheDocument();
   });
 
-  it('copies personalized RSVP link to clipboard and triggers toast', async () => {
+  it('copies personalized RSVP link to clipboard, updates live accessible name to Copied, and passes jest-axe', async () => {
     const originalClipboard = navigator.clipboard;
     const writeTextMock = jest.fn().mockResolvedValue(undefined);
     Object.assign(navigator, {
@@ -80,18 +83,32 @@ describe('InvitationQRPreviewModal Component', () => {
 
     render(<InvitationQRPreviewModal {...defaultProps} />);
 
+    const dialog = screen.getByRole('dialog', { name: 'Guest Invitation QR Preview' });
+    expect(
+      await axe(dialog, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
+
     const copyBtn = screen.getByRole('button', {
-      name: /Copy personalized RSVP and address portal URL/i,
+      name: 'Copy personalized RSVP and address portal URL',
     });
     fireEvent.click(copyBtn);
 
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('/guest?code=PEMBERLEY26'));
+      expect(
+        screen.getByRole('button', {
+          name: 'Copied personalized RSVP and address portal URL',
+        })
+      ).toBeInTheDocument();
       expect(mockAddToast).toHaveBeenCalledWith(
         'Personalized RSVP & address portal link copied to clipboard!',
         'success'
       );
     });
+
+    expect(
+      await axe(dialog, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
 
     Object.assign(navigator, { clipboard: originalClipboard });
   });
@@ -102,7 +119,7 @@ describe('InvitationQRPreviewModal Component', () => {
     const appendChildSpy = jest.spyOn(document.body, 'appendChild');
     const removeChildSpy = jest.spyOn(document.body, 'removeChild');
 
-    const downloadBtn = screen.getByRole('button', { name: /Download QR code as PNG image/i });
+    const downloadBtn = screen.getByRole('button', { name: 'Download PNG QR code image' });
     fireEvent.click(downloadBtn);
 
     expect(appendChildSpy).toHaveBeenCalled();
@@ -167,7 +184,7 @@ describe('InvitationQRPreviewModal Component', () => {
       }
 
       fillStyles.length = 0;
-      fireEvent.click(screen.getByRole('button', { name: /Download QR code as PNG image/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Download PNG QR code image' }));
       expect(fillStyles.map((s) => s.toLowerCase())).toContain('#ffffff');
     } finally {
       HTMLCanvasElement.prototype.getContext = originalGetContext;

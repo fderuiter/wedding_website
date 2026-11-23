@@ -34,21 +34,30 @@ export type {
 export { generateAveryCardsPdf, generateSeatingChartPdf } from './pdf.service';
 export {
   computeSeatPosition,
+  repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
   resolveSeatAssignments,
 } from './seatLayout';
+export type { ResolvedSeatEntry, ResolvedSeatOccupant } from './seatLayout';
 export {
   ADDRESS_COLLECTION_TAG,
   computeTableMealCounts,
+  formatCompanionSeatLabel,
+  getAttendingPlusOneCount,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestCompanionNames,
+  getGuestPartySize,
   getGuestPlusOneNamesList,
+  getGuestsHeadcount,
+  getInvitationPartyMembers,
   getRequiredChairCount,
   getSeatingShapeLabel,
   getTableOccupiedChairCount,
   hasAddressCollectionTag,
   isGuestEligibleForSeating,
   isLandmarkTable,
+  isLandmarkTableShape,
   isOneSidedTableShape,
 } from './utils/seatingHelpers';
-export type { DietaryBadgeInfo } from './utils/seatingHelpers';
+export type { DietaryBadgeInfo, PartyMemberAttendeeInfo, TableMealSummary } from './utils/seatingHelpers';

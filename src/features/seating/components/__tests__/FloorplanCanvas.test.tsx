@@ -1221,6 +1221,77 @@ describe('FloorplanCanvas component', () => {
       const results = await axe(container);
       expect(results).toHaveNoViolations();
     });
+
+    it('selects table on single-click of occupied seat dot, unassigns on double-click or keyboard Delete, and renders companion chairs', async () => {
+      const onSelectTable = jest.fn();
+      const onUnassignGuest = jest.fn();
+      const coupleTable: SeatingTableDTO = {
+        id: 'table-couple',
+        name: 'Garden Table',
+        shape: 'round',
+        capacity: 4,
+        x: 120,
+        y: 120,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-couple-1',
+            code: 'CPL01',
+            guestName: 'Jordan Taylor',
+            tableId: 'table-couple',
+            seatNumber: 1,
+            used: true,
+            isSample: false,
+            partyTags: [],
+            plusOneAllocations: 1,
+            extraFields: {
+              attending: true,
+              plusOneCount: 1,
+              plusOneNames: ['Morgan Taylor'],
+            },
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[coupleTable]}
+          onSelectTable={onSelectTable}
+          onUnassignGuest={onUnassignGuest}
+        />
+      );
+
+      // Party of 2 occupies 2 / 4 seats with contiguous companion chair at Seat 2
+      expect(screen.getByText('2 / 4 seats')).toBeInTheDocument();
+      const primarySeat = screen.getByLabelText('Seat 1: Jordan Taylor');
+      const companionSeat = screen.getByLabelText('Seat 2: Morgan Taylor (Jordan Taylor +1)');
+      expect(primarySeat).toBeInTheDocument();
+      expect(companionSeat).toBeInTheDocument();
+
+      // Single-click selects the table and does NOT unassign
+      fireEvent.click(primarySeat);
+      expect(onSelectTable).toHaveBeenCalledWith('table-couple');
+      expect(onUnassignGuest).not.toHaveBeenCalled();
+
+      // Double-click unassigns the guest and announces via aria-live
+      fireEvent.doubleClick(companionSeat);
+      expect(onUnassignGuest).toHaveBeenCalledWith('g-couple-1');
+      expect(
+        screen.getByText('Jordan Taylor unassigned from Garden Table Seat 2')
+      ).toBeInTheDocument();
+
+      // Keyboard Delete still unassigns
+      onUnassignGuest.mockClear();
+      fireEvent.keyDown(primarySeat, { key: 'Delete' });
+      expect(onUnassignGuest).toHaveBeenCalledWith('g-couple-1');
+
+      const results = await axe(container);
+      expect(results).toHaveNoViolations();
+    });
   });
 
   describe('Inline plus-one chairs and zero-capacity landmarks', () => {
@@ -1279,7 +1350,7 @@ describe('FloorplanCanvas component', () => {
 
       // Seat 1 is primary guest Alex Rivera; Seat 2 is plus-one Jordan Rivera
       expect(screen.getByRole('button', { name: 'Seat 1: Alex Rivera' })).not.toHaveAttribute('data-is-plus-one');
-      const plusOneChair = screen.getByRole('button', { name: /Seat 2: Jordan Rivera \(\+1 of Alex Rivera\)/i });
+      const plusOneChair = screen.getByRole('button', { name: /Seat 2: Jordan Rivera \(Alex Rivera \+1\)/i });
       expect(plusOneChair).toHaveAttribute('data-is-plus-one', 'true');
       expect(screen.getByTestId('seat-plus-one-badge')).toHaveTextContent('+1');
 

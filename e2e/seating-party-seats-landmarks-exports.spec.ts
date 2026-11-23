@@ -159,14 +159,23 @@ test('seating chart loads >100 invitations without truncation, renders inline pl
     ).toBeVisible({ timeout: 25000 });
 
     const unassignedList = page.getByRole('list', { name: 'Unassigned guests' });
-    await expect(unassignedList.getByText(`Pool Guest 001 ${runTag}`)).toBeVisible({
+    await expect(
+      unassignedList.getByText(`Pool Guest 001 ${runTag}`, { exact: true })
+    ).toBeVisible({
       timeout: 25000,
     });
     // Guest #104 (well past row 50 & row 100) must be loaded in the pool!
-    await expect(unassignedList.getByText(`Pool Guest 104 ${runTag}`)).toBeVisible({
+    await expect(
+      unassignedList.getByText(`Pool Guest 104 ${runTag}`, { exact: true })
+    ).toBeVisible({
       timeout: 15000,
     });
-    await expect(unassignedList.getByText(`+1: Companion One ${runTag}`)).toBeVisible();
+    await expect(
+      unassignedList.getByText(`+1: Companion One ${runTag}`, { exact: true })
+    ).toBeVisible();
+    await expect(unassignedList.getByTestId('guest-meal-selections').first()).toContainText(
+      'Herb Crusted Salmon'
+    );
 
     // 5. Verify Orchard Reception claims 3 distinct inline chairs (1 primary + 2 plus-ones) and landmarks have 0 chairs
     const orchardNode = page.getByRole('button', {

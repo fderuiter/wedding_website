@@ -56,7 +56,9 @@ describe('MediaDashboardPage', () => {
     fireEvent.click(addButtons[0]);
 
     expect(screen.getByText('Create Media')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /file upload dropzone/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /drag and drop an image file here, or click to browse/i })
+    ).toBeInTheDocument();
   });
 
   it('uploads dropped image, populates URL input and default alt text from filename', async () => {
@@ -77,7 +79,9 @@ describe('MediaDashboardPage', () => {
     const addButton = screen.getAllByRole('button', { name: 'Add Media' })[0];
     fireEvent.click(addButton);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', {
+      name: /drag and drop an image file here, or click to browse/i,
+    });
     const file = new File(['image bytes'], 'sample-photo.png', { type: 'image/png' });
 
     fireEvent.drop(dropzone, {
@@ -152,7 +156,9 @@ describe('MediaDashboardPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Add Media' })[0]);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', {
+      name: /drag and drop an image file here, or click to browse/i,
+    });
     const file = new File(['image bytes'], 'gallery-vows.jpg', { type: 'image/jpeg' });
     fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
 
@@ -192,7 +198,9 @@ describe('MediaDashboardPage', () => {
     const addButton = screen.getAllByRole('button', { name: 'Add Media' })[0];
     fireEvent.click(addButton);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', {
+      name: /drag and drop an image file here, or click to browse/i,
+    });
     const hugeFile = new File(['x'.repeat(6 * 1024 * 1024)], 'huge.png', { type: 'image/png' });
 
     fireEvent.drop(dropzone, {

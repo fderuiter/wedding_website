@@ -294,7 +294,7 @@ describe('PrintableFloorplan component', () => {
     );
 
     expect(screen.getByText('Seat 1: Meredith Grey')).toBeInTheDocument();
-    expect(screen.getByText('Seat 2: Derek Shepherd')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Derek Shepherd (Meredith Grey +1)')).toBeInTheDocument();
     expect(screen.getByTestId('printable-table-meal-summary')).toHaveTextContent(
       'Filet Mignon: 1, Herb Salmon: 1'
     );
@@ -305,5 +305,110 @@ describe('PrintableFloorplan component', () => {
     // Zero secret invitation codes exposed anywhere in printable DOM
     expect(container.textContent).not.toContain('SECRET-PRINT-CODE-1');
     expect(container.textContent).not.toContain('SECRET-PRINT-CODE-2');
+  });
+
+  it('renders companion names, entrée selections, Kids Meal badges, and custom answers for seated and unassigned guests', () => {
+    const tablesWithDetails: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-rich',
+            code: 'RICH1',
+            guestName: 'Elena Gilbert',
+            seatNumber: 1,
+            used: true,
+            extraFields: {
+              attendanceStatus: 'attending',
+              plusOneNames: ['Damon Salvatore', 'Bonnie Bennett'],
+              dietaryTags: ['kids'],
+              mealSummary: 'Reception - Elena Gilbert: Herb Salmon; Bonnie Bennett: Kids Pasta (kids)',
+              customAnswersSummary: 'Reception - Shuttle?: Yes',
+            },
+          }),
+        ],
+      },
+    ];
+
+    const unassignedWithDetails: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'u-rich',
+        code: 'URICH1',
+        guestName: 'Caroline Forbes',
+        used: true,
+        plusOneFirstName: 'Klaus',
+        plusOneLastName: 'Mikaelson',
+        extraFields: {
+          attendanceStatus: 'attending',
+          mealSummary: 'Reception - Caroline Forbes: Truffle Risotto',
+          customAnswersSummary: 'Reception - Song?: Halo',
+        },
+      }),
+    ];
+
+    const { container } = render(
+      <PrintableFloorplan tables={tablesWithDetails} unassignedGuests={unassignedWithDetails} />
+    );
+
+    expect(screen.getByText('Seat 1: Elena Gilbert')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Damon Salvatore (Elena Gilbert +1)')).toBeInTheDocument();
+    expect(screen.getByText('Seat 3: Bonnie Bennett (Elena Gilbert +2)')).toBeInTheDocument();
+    expect(screen.getByText('Caroline Forbes (+1: Klaus Mikaelson)')).toBeInTheDocument();
+
+    const mealEls = screen.getAllByTestId('printable-meal-selections');
+    expect(mealEls.map((el) => el.textContent).join(' ')).toContain('Herb Salmon');
+    expect(mealEls.map((el) => el.textContent).join(' ')).toContain('Truffle Risotto');
+
+    const answerEls = screen.getAllByTestId('printable-custom-answers');
+    expect(answerEls.map((el) => el.textContent).join(' ')).toContain('Shuttle?: Yes');
+    expect(answerEls.map((el) => el.textContent).join(' ')).toContain('Song?: Halo');
+
+    const badges = screen.getAllByTestId('printable-dietary-badge');
+    expect(badges.map((b) => b.textContent).join(' ')).toContain('Kids Meal');
+
+    expect(container.textContent).not.toContain('RICH1');
+    expect(container.textContent).not.toContain('URICH1');
+  });
+
+  it('expands multi-person InvitationCode parties into companion seat rows and reports total attendee headcounts', () => {
+    const coupleTables: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        capacity: 4,
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-couple',
+            code: 'CPL99',
+            guestName: 'Jordan Taylor',
+            seatNumber: 1,
+            used: true,
+            plusOneAllocations: 1,
+            extraFields: {
+              attending: true,
+              plusOneCount: 1,
+              plusOneNames: ['Morgan Taylor'],
+            },
+          }),
+        ],
+      },
+    ];
+
+    const unassignedTrio: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'u-trio',
+        code: 'TRIO1',
+        guestName: 'Alex Rivera',
+        used: false,
+        plusOneAllocations: 2,
+      }),
+    ];
+
+    render(<PrintableFloorplan tables={coupleTables} unassignedGuests={unassignedTrio} />);
+
+    expect(screen.getByText(/Seated: 2/)).toBeInTheDocument();
+    expect(screen.getByText('Seat 1: Jordan Taylor')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Morgan Taylor (Jordan Taylor +1)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Unassigned Guests (3)' })).toBeInTheDocument();
+    expect(screen.getByText('Alex Rivera (+2)')).toBeInTheDocument();
   });
 });
