@@ -368,6 +368,14 @@ jobs:
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
 
+      - name: Scan OCI Container Image with Trivy (amd64)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
       - name: Extract Standalone Output from Container Image
         run: |
           rm -rf .next
@@ -550,6 +558,14 @@ jobs:
             mkdir -p "$MOUNT_CACHE_DIR/next"
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
+
+      - name: Scan Native ARM64 OCI Container Image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
 
       - name: Run Native ARM64 OCI Container & Clean Database Smoke Test
         env:
