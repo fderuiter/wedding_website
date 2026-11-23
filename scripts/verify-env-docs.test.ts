@@ -7,6 +7,7 @@ import {
   getKeysFromSource,
   validateContainerHostnameBinding,
   validateEnvDocContent,
+  validateProviderRunbookScope,
   validateRuntimeContract,
   verifyEnvDocs,
 } from './verify-env-docs';
@@ -228,6 +229,120 @@ describe('verify-env-docs section-aware validation', () => {
       expect.stringContaining('Dockerfile must set ENV HOSTNAME="0.0.0.0"'),
       expect.stringContaining('docker-compose.yml service "app" must set HOSTNAME to "0.0.0.0"'),
     ]);
+  });
+
+  it('scopes provider runbooks to runtime-contract cross-references without full env matrix duplication', () => {
+    const conciseRunbook = [
+      '# Cloud Run Guide',
+      '',
+      '## 2. Cloud Run Secrets & Service Configuration',
+      'See [Application Runtime Contract](../runtime-contract.md) for the complete matrix.',
+      '- `DATABASE_URL`: Cloud SQL connection URL.',
+      '- `PORT`: Listening port.',
+    ].join('\n');
+
+    expect(
+      validateProviderRunbookScope(
+        'docs/deployment/gcp-cloud-run.md',
+        conciseRunbook,
+        sampleKeys,
+        sampleKeys
+      )
+    ).toEqual([]);
+
+    const missingCrossRef = conciseRunbook.replace('[Application Runtime Contract](../runtime-contract.md)', 'the runtime contract');
+    expect(
+      validateProviderRunbookScope(
+        'docs/deployment/gcp-cloud-run.md',
+        missingCrossRef,
+        sampleKeys,
+        sampleKeys
+      )
+    ).toEqual([
+      expect.stringContaining('must cross-reference docs/runtime-contract.md'),
+    ]);
+
+    const duplicatedMatrix = [
+      '# Cloud Run Guide',
+      'See [Application Runtime Contract](../runtime-contract.md).',
+      '',
+      '## 2. Required Environment Variables',
+      ...sampleKeys.map((key) => `- \`${key}\`: duplicated`),
+    ].join('\n');
+    expect(
+      validateProviderRunbookScope(
+        'docs/deployment/gcp-cloud-run.md',
+        duplicatedMatrix,
+        sampleKeys,
+        sampleKeys
+      )
+    ).toEqual([
+      expect.stringContaining('Duplicate full environment variable reference section'),
+    ]);
+  });
+
+  it('requires updating only .env.example, docker-compose.yml, and docs/runtime-contract.md when adding an env variable', () => {
+    const repoRoot = process.cwd();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'verify-env-single-source-'));
+    const mockLog = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const mockErr = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const filesToCopy = [
+        'src/env.ts',
+        'src/lib/config.ts',
+        'next.config.ts',
+        'scripts/build-export.mjs',
+        'docs-portal/.vitepress/config.mts',
+        'Dockerfile',
+        'docker-compose.yml',
+        'docker-compose.rollout.yml',
+        '.env.example',
+        'docs/runtime-contract.md',
+        'DEPLOYMENT.md',
+        'docs/deployment/README.md',
+        'docs/deployment/docker-vps.md',
+        'docs/deployment/gcp-cloud-run.md',
+        'docs/deployment/vercel.md',
+        'docs/deployment/railway-render.md',
+      ];
+      for (const relPath of filesToCopy) {
+        const dest = path.join(tempDir, relPath);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(path.join(repoRoot, relPath), dest);
+      }
+
+      const originalEnvTs = fs.readFileSync(path.join(tempDir, 'src/env.ts'), 'utf8');
+      const updatedEnvTs = originalEnvTs.replace(
+        /(CRON_SECRET:\s*z\.string\(\)[^\n]*,)/,
+        '$1\n  SYNTHETIC_FEATURE_FLAG: z.string().optional(),'
+      );
+      expect(updatedEnvTs).toContain('SYNTHETIC_FEATURE_FLAG');
+      fs.writeFileSync(path.join(tempDir, 'src/env.ts'), updatedEnvTs);
+      fs.appendFileSync(path.join(tempDir, '.env.example'), '\n# SYNTHETIC_FEATURE_FLAG="enabled"\n');
+      fs.writeFileSync(
+        path.join(tempDir, 'docker-compose.yml'),
+        fs
+          .readFileSync(path.join(tempDir, 'docker-compose.yml'), 'utf8')
+          .replace('CRON_SECRET: ${CRON_SECRET:-}', 'CRON_SECRET: ${CRON_SECRET:-}\n      SYNTHETIC_FEATURE_FLAG: ${SYNTHETIC_FEATURE_FLAG:-}')
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'docs/runtime-contract.md'),
+        fs
+          .readFileSync(path.join(tempDir, 'docs/runtime-contract.md'), 'utf8')
+          .replace(
+            '| `CRON_SECRET` | *None* |',
+            '| `SYNTHETIC_FEATURE_FLAG` | *None* | Synthetic test variable. |\n| `CRON_SECRET` | *None* |'
+          )
+      );
+
+      expect(() => verifyEnvDocs(tempDir)).not.toThrow();
+      expect(mockErr).not.toHaveBeenCalled();
+    } finally {
+      mockLog.mockRestore();
+      mockErr.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects runtime-contract.md drift across Node floor, OCI layout, RUN_MIGRATIONS=1, E2E_TEST bypasses, SITE_* fields, and /api/health 503', () => {

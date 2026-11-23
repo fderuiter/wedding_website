@@ -4,6 +4,7 @@ import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { parsePostgresUrl, redactPostgresUrl } from '../src/lib/postgres-url.js';
+import { staticSteps } from './check-quality';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -2461,12 +2462,22 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     if (!isMap(stepItem)) continue;
     const runNode: unknown = stepItem.get('run', true);
     if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
+    const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
     const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
     let scriptMatch: RegExpExecArray | null;
     while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
       const scriptName = scriptMatch[1];
       if (scriptName !== 'prisma:generate' && !ciVerifyScripts.includes(scriptName)) {
         ciVerifyScripts.push(scriptName);
+      }
+      if (scriptName === 'check:static') {
+        for (const staticStep of staticSteps) {
+          if (!staticStep.script) continue;
+          if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (!ciVerifyScripts.includes(staticStep.script)) {
+            ciVerifyScripts.push(staticStep.script);
+          }
+        }
       }
     }
   }
@@ -2942,13 +2953,33 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');
-  const totalModels = (prismaSchemaRaw.match(/^model\s+[A-Za-z0-9_]+\s*\{/gm) ?? []).length;
-  const sharedTableCount = Math.max(0, totalModels - 1);
-  for (const relPath of runbookRelPaths) {
-    const content = runbookContents.get(relPath) ?? '';
-    if (!new RegExp(`\\b${sharedTableCount}\\s+tables\\b`).test(content) || !content.includes('AppConfig')) {
+  const prismaModels = Array.from(
+    prismaSchemaRaw.matchAll(/^model\s+([A-Za-z0-9_]+)\s*\{/gm),
+    (match) => match[1]
+  );
+  for (const modelName of prismaModels) {
+    if (!runtimeContractMd.includes(`\`${modelName}\``)) {
       errors.push(
-        `${relPath}: Must state that \`prisma/schema.prisma\` shares ${sharedTableCount} tables across subdomains (\`MULTISITE_ENABLED\` switches \`AppConfig\` rows only)`
+        `docs/runtime-contract.md: Missing persisted prisma/schema.prisma model \`${modelName}\` in canonical runtime entity summary`
+      );
+    }
+  }
+  if (
+    !runtimeContractMd.includes('MULTISITE_ENABLED') ||
+    !runtimeContractMd.includes('AppConfig') ||
+    !/all\s+other\s+persisted\s+models\s+in\s+`?prisma\/schema\.prisma`?\s+are\s+shared\s+across\s+subdomains/i.test(
+      runtimeContractMd
+    )
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document that `MULTISITE_ENABLED` switches `AppConfig` rows only while all other persisted models in `prisma/schema.prisma` are shared across subdomains'
+    );
+  }
+  for (const relPath of hostingGuides) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!content.includes('runtime-contract.md')) {
+      errors.push(
+        `${relPath}: Must cross-reference \`docs/runtime-contract.md\` for canonical environment variable and persisted entity contracts`
       );
     }
   }

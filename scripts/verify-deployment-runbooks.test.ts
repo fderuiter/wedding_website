@@ -549,6 +549,51 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
+  it('requires updating docs/runtime-contract.md (plus release/upgrade notes) without touching provider hosting runbooks when a new Prisma model is added', () => {
+    const schemaPath = path.join(tempDir, 'prisma/schema.prisma');
+    fs.appendFileSync(schemaPath, '\nmodel GuestSurveyResponse {\n  id String @id @default(cuid())\n}\n');
+
+    const missingErrors = verifyDeploymentRunbooks(tempDir);
+    expect(missingErrors).toEqual(
+      expect.arrayContaining([
+        'docs/runtime-contract.md: Missing persisted prisma/schema.prisma model `GuestSurveyResponse` in canonical runtime entity summary',
+        expect.stringContaining('CHANGELOG.md: Schema model count drift'),
+        expect.stringContaining('CHANGELOG.md: Post-0.1.0 Prisma model "GuestSurveyResponse"'),
+        expect.stringContaining('docs/upgrading.md: Prisma model "GuestSurveyResponse"'),
+      ])
+    );
+    expect(missingErrors.some((err) => err.startsWith('DEPLOYMENT.md:') || err.startsWith('docs/deployment/'))).toBe(
+      false
+    );
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs
+        .readFileSync(runtimeContractPath, 'utf8')
+        .replace('`AuthLockout`', '`AuthLockout`, `GuestSurveyResponse`')
+    );
+
+    const changelogPath = path.join(tempDir, 'CHANGELOG.md');
+    fs.writeFileSync(
+      changelogPath,
+      fs
+        .readFileSync(changelogPath, 'utf8')
+        .replace(/\b16 models\b/g, '17 models')
+        .replace('`AuthLockout`', '`AuthLockout`, `GuestSurveyResponse`')
+    );
+
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace('`SnapshotVersion`', '`SnapshotVersion`, `GuestSurveyResponse`')
+    );
+
+    expect(verifyDeploymentRunbooks(tempDir)).toEqual([]);
+  });
+
   it('rejects PostgreSQL < 15 claims, /api/health liveness prose, Docker Compose npx migrate claims, and missing Dependabot >= 23.0.0 rules', () => {
     const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
     fs.writeFileSync(

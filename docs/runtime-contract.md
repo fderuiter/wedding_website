@@ -34,6 +34,18 @@ This document defines the authoritative, provider-neutral runtime contract for t
   - `POSTGRES_URL_NON_POOLING` *(Optional)*: Direct, non-pooled connection URL bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` for local shadow database creation (`prisma migrate dev`). Operators on pooled serverless databases can also store their direct PostgreSQL URL in `POSTGRES_URL_NON_POOLING` and pass it via an explicit `DATABASE_URL` override (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`) during release migrations.
 - **Provider Neutrality**: No database-vendor specific features or proprietary extensions are required. Standard relational PostgreSQL features (tables, foreign keys, indexes, JSONB) are used.
 
+### Persisted Entities, Full-Site Backups & Multi-Site Isolation (`prisma/schema.prisma`)
+
+- **Persisted Relational Entities**: `prisma/schema.prisma` defines the authoritative relational data model persisted in PostgreSQL:
+  - **Configuration & Content**: `AppConfig`, `ContentNode`, `SnapshotVersion`, `Media`
+  - **Celebration Roster & Venue Logistics**: `WeddingPartyMember`, `Attraction`, `SeatingTable`
+  - **Guest Access, Events & RSVPs**: `InvitationCode`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`
+  - **Gift Registry & Contributions**: `RegistryItem`, `Contributor`
+  - **Communications**: `BroadcastMessage`, `BroadcastRecipient`
+  - **Security & Rate Limiting**: `AuthLockout` (ephemeral HMAC-SHA256 hashed IP brute-force lockout counters)
+- **Full-Site Backup & Restore Coverage**: Administrative maintenance backups (`/api/admin/maintenance/export` and `/api/admin/maintenance/import`) export and restore all 15 domain `prisma/schema.prisma` models (excluding ephemeral `AuthLockout` counters) so operators can migrate or snapshot an entire wedding deployment without vendor lock-in.
+- **Multi-Site Subdomain Scope (`MULTISITE_ENABLED`)**: Enabling `MULTISITE_ENABLED=true` routes subdomain requests (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`) to subdomain-specific `AppConfig` branding/profile rows only. All other persisted models in `prisma/schema.prisma` are shared across subdomains without tenant row isolation.
+
 ---
 
 ## 4. Environment Variable Matrix
@@ -61,7 +73,7 @@ These variables provide convenience defaults for local `development` and `test` 
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in `Dockerfile` runner environments. |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
-| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; the other 15 tables in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
+| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; all other persisted models in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`./node_modules/.bin/prisma migrate deploy`) during container startup in `docker-entrypoint.sh` when set to `true` or `1` (both `docker-entrypoint.sh` and `src/env.ts` accept `RUN_MIGRATIONS=true` and `RUN_MIGRATIONS=1`). |
 | `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
@@ -72,13 +84,13 @@ When storing uploaded media assets externally, all four core S3 credential varia
 | Variable | Requirement | Default Value | Description |
 |---|---|---|---|
 | `S3_BUCKET` | Required if using S3 | *None* | Target S3/R2 bucket name. |
-| `S3_REGION` | Required if using S3 | *None* | S3 region (e.g., `us-east-1` or `auto` for Cloudflare R2). |
+| `S3_REGION` | Required if using S3 | *None* | S3 region (e.g., `us-east-1` or `auto` for Cloudflare R2; `S3_REGION=auto` requires `S3_ENDPOINT`). |
 | `S3_ACCESS_KEY_ID` | Required if using S3 | *None* | AWS/S3 API access key ID. |
 | `S3_SECRET_ACCESS_KEY` | Required if using S3 | *None* | AWS/S3 API secret access key. |
-| `S3_ENDPOINT` | Optional | *None* | Custom S3 API endpoint URL (e.g., Cloudflare R2 endpoint or MinIO). |
-| `S3_PUBLIC_URL` | Optional | *None* | Custom CDN or public asset delivery URL prefix. |
+| `S3_ENDPOINT` | Required when `S3_REGION=auto`; Optional otherwise | *None* | Custom S3 API endpoint URL (e.g., `https://<account_id>.r2.cloudflarestorage.com`, `https://storage.googleapis.com`, or MinIO). |
+| `S3_PUBLIC_URL` | Required when `S3_ENDPOINT` targets `*.r2.cloudflarestorage.com`; Optional otherwise | *None* | Custom CDN, R2 Custom Domain, or public `https://pub-<id>.r2.dev` asset delivery URL prefix. |
 
-*Note: Supplying partial core S3 credentials will cause startup and build-time environment validation to fail.*
+*Note: Supplying partial core S3 credentials—or configuring Cloudflare R2 with `S3_REGION=auto` without `S3_ENDPOINT` or a private `*.r2.cloudflarestorage.com` endpoint without `S3_PUBLIC_URL`—will cause startup and build-time environment validation to fail.*
 
 ### Optional Stripe Card Checkout Variables
 When enabling online credit card and digital wallet processing for cash and experience funds, `STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` must be supplied together as a pair (or both omitted for direct-transfer-only registries):

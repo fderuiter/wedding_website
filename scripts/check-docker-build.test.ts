@@ -684,6 +684,38 @@ describe('check-docker-build', () => {
     );
   });
 
+  it('ignores dev-only .next/ directories by default and enforces .next/standalone when requireStandalone is true', () => {
+    fs.mkdirSync(path.join(tempDir, '.next', 'cache'), { recursive: true });
+
+    // Default static check passes even when `next dev` created .next/ without .next/standalone
+    expect(checkDockerBuild(tempDir)).toEqual({ violations: [] });
+
+    // Post-build `--require-standalone` mode fails if .next/standalone is missing
+    const requiredMissing = checkDockerBuild(tempDir, { requireStandalone: true });
+    expect(requiredMissing.violations).toEqual([
+      expect.objectContaining({
+        filePath: '.next/standalone',
+        imageRef: '.next/standalone',
+      }),
+    ]);
+
+    // When .next/standalone exists, both modes validate server.js, .next/static, and public bundle hygiene
+    fs.mkdirSync(path.join(tempDir, '.next', 'standalone', '.next', 'static', 'chunks'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(tempDir, '.next', 'standalone', 'public', 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.next', 'standalone', 'server.js'), 'console.log("ok");\n');
+    fs.writeFileSync(
+      path.join(tempDir, '.next', 'standalone', '.next', 'static', 'chunks', 'main.js'),
+      'console.log("chunk");\n'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, '.next', 'standalone', 'public', 'assets', 'favicon.png'),
+      'png-bytes'
+    );
+    expect(checkDockerBuild(tempDir, { requireStandalone: true })).toEqual({ violations: [] });
+  });
+
   it('fails when Dockerfile, package.json, .nvmrc, or workflow node-version entries diverge', () => {
     // 1. Divergent Dockerfile Node base image major
     const dockerfilePath = path.join(tempDir, 'Dockerfile');

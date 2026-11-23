@@ -143,49 +143,11 @@ If you start `npm run dev` with an **unseeded** database, navigating to `http://
 
 ---
 
-## 6. Quality Gates & Testing
+## 6. Verification & Next Steps
 
-Before committing code or submitting pull requests, run local quality checks to ensure type safety, test coverage, and style compliance:
+Before opening a pull request, run the shared quality workflow (`npm run check:static` for fast static checks or `npm run quality` for the full pre-push suite). Rather than duplicating test, linting, and agent rules here, refer to each authoritative guide:
 
-- **TypeScript Type Checking (Production, Tests/Mocks, E2E & Scripts):**
-  ```bash
-  npm run typecheck
-  # or
-  npm run type-check
-  ```
-  Validates `tsconfig.json`, `tsconfig.build.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` with strict compiler flags (`strict`, `noUnusedLocals`, `noUnusedParameters`).
-
-- **ESLint, Unused Exports & Static Checks:**
-  ```bash
-  npm run lint
-  npm run lint:unused
-  npm run check:static
-  ```
-
-- **Unit & Integration Test Suite:**
-  ```bash
-  npm test
-  # targeted single-file run
-  npm test -- src/utils/__tests__/ApiError.test.ts
-  # interactive watch mode
-  npm run test:watch
-  # full suite with coverage threshold enforcement
-  npm run test:cov
-  ```
-  The test runner automatically isolates database state against an isolated PostgreSQL database (`wedding_test`, or an explicit `TEST_DATABASE_URL` override) via cached pretest hooks without modifying local development data.
-
-- **Full Quality Gate:**
-  ```bash
-  npm run quality
-  # or
-  npm run check:all
-  ```
-
----
-
-## 7. Next Steps & Additional Resources
-
-- **[Testing Strategy](../.github/TESTING.md)**: Detailed breakdown of Jest unit tests, Playwright E2E suites, database isolation, and coverage requirements.
-- **[Contribution Guidelines](../.github/CONTRIBUTING.md)**: Coding standards, branching rules, quality thresholds, and pull request submission etiquette.
-- **[Deployment Strategy](../DEPLOYMENT.md)**: Multi-target cloud recipes for Docker VPS, Cloud Run, Vercel, and Render.
-- **[Application Runtime Contract](./runtime-contract.md)**: Container specification and production environment requirements.
+- **[Testing Strategy](../.github/TESTING.md)**: Fast cached local Jest unit/integration tests (`npm test`), coverage threshold verification (`npm run test:cov`), `wedding_test` pretest database isolation, Playwright E2E (`npm run test:e2e`), WCAG 2.2 AA accessibility audits (`npm run test:a11y`), and standalone/container smoke tests.
+- **[Contribution Guidelines](../.github/CONTRIBUTING.md)**: Feature module scaffolding (`npm run scaffold`), ESLint/Knip rules, `.githooks/pre-commit` workflow, and documentation synchronization (`npm run check:doc-sync`).
+- **[Agent & Architecture Guidelines](../AGENTS.md)**: Module boundaries, the five-file TypeScript configuration split (`npm run typecheck`), and non-interactive verification workflows.
+- **[Application Runtime Contract](./runtime-contract.md)** & **[Deployment Strategy](../DEPLOYMENT.md)**: Canonical environment variable matrix, persisted `prisma/schema.prisma` entities, and cloud hosting recipes.
