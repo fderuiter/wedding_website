@@ -39,12 +39,109 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-artifact-${{ github.ref }}
+  group: publish-artifact-release
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Verify Main Ancestry & CI Status
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      resolved_sha: ${{ steps.resolve.outputs.resolved_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify Commit SHA & Main Branch Ancestry
+        id: resolve
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ -n "$INPUT_COMMIT_SHA" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${CURRENT_SHA}}"
+          if [[ ! "$RESOLVED_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Resolved target SHA '${RESOLVED_SHA}' is not a valid 40-character commit SHA."
+            exit 1
+          fi
+
+          if git remote get-url origin >/dev/null 2>&1; then
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          fi
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+            echo "::error::Missing refs/remotes/origin/main reference required to verify main branch ancestry."
+            exit 1
+          fi
+
+          if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null; then
+            if git remote get-url origin >/dev/null 2>&1; then
+              git fetch --no-tags origin "$RESOLVED_SHA" || true
+            fi
+          fi
+
+          if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Commit '${RESOLVED_SHA}' does not exist in repository history."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$RESOLVED_SHA" refs/remotes/origin/main; then
+            echo "::error::Target commit '${RESOLVED_SHA}' is not an ancestor of origin/main. Refusing to build or sign unmerged artifact."
+            exit 1
+          fi
+
+          echo "resolved_sha=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Verified target commit ${RESOLVED_SHA} is an ancestor of origin/main."
+
+      - name: Verify Successful CI Run for Commit
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TARGET_SHA: ${{ steps.resolve.outputs.resolved_sha }}
+        with:
+          script: |
+            const targetSha = process.env.TARGET_SHA;
+            const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                head_sha: targetSha,
+                status: 'completed',
+                per_page: 100,
+              }
+            );
+
+            const successfulRun = runs.find(
+              (run) =>
+                run.conclusion === 'success' &&
+                run.head_sha === targetSha &&
+                (!run.head_repository || run.head_repository.full_name === fullRepo)
+            );
+
+            if (!successfulRun) {
+              core.setFailed(
+                `No completed successful CI workflow run found for commit ${targetSha} in ${fullRepo}. Artifact publication aborted.`
+              );
+              return;
+            }
+
+            core.info(
+              `Verified successful CI run #${successfulRun.run_number} (ID: ${successfulRun.id}) for commit ${targetSha}.`
+            );
+
   build:
     name: Build, Scan & Smoke Test (${{ matrix.platform }})
+    needs: [preflight]
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -318,7 +415,7 @@ jobs:
           fi
 
           PUBLISH_LATEST="false"
-          if [ -z "$RAW_INPUT_TAG" ]; then
+          if [ -z "$RAW_INPUT_TAG" ] && [ -z "$INPUT_COMMIT_SHA" ]; then
             if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
               PUBLISH_LATEST="true"
             elif [[ "${GITHUB_REF}" == refs/tags/v* ]] && [ -n "${GITHUB_REF_NAME}" ] && [[ "${GITHUB_REF_NAME}" != *-* ]]; then

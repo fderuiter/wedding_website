@@ -1,8 +1,11 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { WeddingPartyEditorForm, WeddingPartyCard } from '../WeddingPartyEditor';
+
+expect.extend(toHaveNoViolations);
 
 const createMockMember = (overrides: Partial<WeddingPartyMemberDTO> = {}): WeddingPartyMemberDTO => ({
   id: 'wp-1',
@@ -224,8 +227,8 @@ describe('WeddingPartyCard', () => {
     expect(screen.getByText('Best Person')).toBeInTheDocument();
     expect(screen.getByText('College roommate and lifelong friend')).toBeInTheDocument();
     expect(screen.queryByText('Sample')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /move .* up/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /move .* down/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /move up/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /move down/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit wedding party member: Jordan Taylor' }));
     expect(handleEdit).toHaveBeenCalledWith(member);
@@ -234,11 +237,11 @@ describe('WeddingPartyCard', () => {
     expect(handleDelete).toHaveBeenCalledWith('wp-1', expect.any(Object));
   });
 
-  it('renders studio card variant with Sample badge, unnamed fallbacks, and reorder buttons', () => {
+  it('renders studio card variant with Sample badge, unnamed fallbacks, reorder buttons, and passes jest-axe', async () => {
     const handleMove = jest.fn();
     const member = createMockMember({ name: '', isSample: true });
 
-    const { rerender } = render(
+    const { container, rerender } = render(
       <WeddingPartyCard
         member={member}
         showSampleBadge
@@ -255,10 +258,13 @@ describe('WeddingPartyCard', () => {
     expect(screen.getByRole('button', { name: 'Edit unnamed item' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete unnamed item' })).toBeInTheDocument();
 
-    const moveUpBtn = screen.getByRole('button', { name: 'Move member up' });
-    const moveDownBtn = screen.getByRole('button', { name: 'Move member down' });
+    const moveUpBtn = screen.getByRole('button', { name: 'Move Up member' });
+    const moveDownBtn = screen.getByRole('button', { name: 'Move Down member' });
     expect(moveUpBtn).toBeDisabled();
     expect(moveDownBtn).not.toBeDisabled();
+    expect(
+      await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+    ).toHaveNoViolations();
 
     fireEvent.click(moveDownBtn);
     expect(handleMove).toHaveBeenCalledWith('down');
@@ -276,8 +282,8 @@ describe('WeddingPartyCard', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Move member up' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move Up member' }));
     expect(handleMove).toHaveBeenCalledWith('up');
-    expect(screen.getByRole('button', { name: 'Move member down' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move Down member' })).toBeDisabled();
   });
 });

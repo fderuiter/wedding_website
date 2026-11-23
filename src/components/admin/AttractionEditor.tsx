@@ -9,7 +9,7 @@ import { cn } from '@/utils/cn';
 interface AttractionEditorFormProps {
   values: Partial<AttractionDTO>;
   onChange: (_updatedFields: Partial<AttractionDTO>) => void;
-  onSubmit: (_e: React.FormEvent<HTMLFormElement>) => void;
+  onSubmit: (_e: React.SubmitEvent<HTMLFormElement>) => void;
   onCancel: () => void;
   bindFieldIds?: boolean;
   requireName?: boolean;
@@ -53,7 +53,7 @@ export function AttractionEditorForm({
   const resolvedLongitude =
     values.longitude !== undefined && !Number.isNaN(values.longitude) ? values.longitude : 0;
 
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     onSubmit(e);
   };

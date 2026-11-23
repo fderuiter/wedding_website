@@ -13,6 +13,14 @@ const PORT = process.env.TEST_PORT || '3001';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const COMPOSE_ARGS = ['--env-file', '.env.ci', '-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
 
+// Real 16x16 HEIC fixture (ISOBMFF ftyp=heic, HEVC primary frame)
+const VALID_HEIC_BUFFER = Buffer.from(
+  'AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAXxtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAACJpbG9jAAAAAERAAAEAAQAAAAABoAABAAAAAAAAADUAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRtAAAAAAABAAAA/GlwcnAAAADcaXBjbwAAAHVodmNDAQNwAAAAkAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMAAAMAHroCQGEAAQApQgEBA3AAAAMAkAAAAwAAAwAeoCCBBZbqrprm4CGgwIAAAAyAAAADAIRiAAEABkQBwXPBiQAAABNjb2xybmNseAABAA0ABoAAAAAUaXNwZQAAAAAAAABAAAAAQAAAAChjbGFwAAAAEAAAAAEAAAAQAAAAAf///9AAAAAC////0AAAAAIAAAAQcGl4aQAAAAADCAgIAAAAGGlwbWEAAAAAAAAAAQABBYECAwWEAAAAPW1kYXQAAAAxKAGvBPIWZzRxZNLf+Cv///V4+y/SYUEm1Qjs/VLEYCa/deugZMTNE6ls0CgrqKdepg==',
+  'base64'
+);
+const WORKER_ERROR_LOG_PATTERN =
+  /Image processor worker|Failed to sanitize image|Failed to initialize image processor worker|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ERR_WORKER|Unhandled API Error/i;
+
 function createEphemeralScryptHash() {
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(crypto.randomBytes(24).toString('hex'), salt, 64, {
@@ -23,13 +31,16 @@ function createEphemeralScryptHash() {
   return `scrypt:${salt.toString('base64')}:${key.toString('base64')}`;
 }
 
-function request(urlPath) {
+function httpRequest(urlPath, options = {}) {
+  const { method = 'GET', headers = {}, body = null, timeoutMs = 5000 } = options;
   return new Promise((resolve, reject) => {
     const fullUrl = new URL(urlPath, BASE_URL);
-    const req = http.get(fullUrl, {
+    const req = http.request(fullUrl, {
+      method,
       headers: {
         'Host': `127.0.0.1:${PORT}`,
-      }
+        ...headers,
+      },
     }, (res) => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
@@ -38,11 +49,30 @@ function request(urlPath) {
       });
     });
     req.on('error', reject);
-    req.setTimeout(5000, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy();
       reject(new Error(`Timeout fetching ${urlPath}`));
     });
+    if (body) {
+      req.write(body);
+    }
+    req.end();
   });
+}
+
+function request(urlPath) {
+  return httpRequest(urlPath);
+}
+
+function buildHeicMultipartPayload(boundary) {
+  const preamble = Buffer.from(
+    `--${boundary}\r\n` +
+    'Content-Disposition: form-data; name="file"; filename="smoke-test.HEIC"\r\n' +
+    'Content-Type: image/heic\r\n\r\n',
+    'utf8'
+  );
+  const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  return Buffer.concat([preamble, VALID_HEIC_BUFFER, epilogue]);
 }
 
 async function main() {
@@ -89,6 +119,9 @@ async function main() {
   if (fs.existsSync(srcPublicDir) && !fs.existsSync(standalonePublicDir)) {
     fs.cpSync(srcPublicDir, standalonePublicDir, { recursive: true });
   }
+
+  const standaloneUploadsDir = path.join(standalonePublicDir, 'uploads');
+  const uploadedStandaloneFiles = [];
 
   // Prepare environment for standalone server execution
   const ephemeralAdminPassword = process.env.ADMIN_PASSWORD || createEphemeralScryptHash();
@@ -254,6 +287,73 @@ async function main() {
       console.log(`✅ ${route.name} (${route.path}) returned ${res.statusCode}`);
     }
 
+    // Test 4: Verify Guest Login, Standalone Worker HEIC Upload, /api/live Responsiveness, and Zero Worker Errors
+    console.log('Testing POST /api/guest/login and HEIC worker upload to /api/guest/photos/upload...');
+    const loginPayload = JSON.stringify({ passcode: ephemeralGuestPasscode });
+    const loginRes = await httpRequest('/api/guest/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': String(Buffer.byteLength(loginPayload)),
+      },
+      body: loginPayload,
+    });
+    if (loginRes.statusCode !== 200) {
+      throw new Error(`Guest login failed with status ${loginRes.statusCode}: ${loginRes.body}`);
+    }
+    const rawSetCookie = loginRes.headers['set-cookie'];
+    const setCookies = Array.isArray(rawSetCookie) ? rawSetCookie : (rawSetCookie ? [rawSetCookie] : []);
+    const guestCookie = setCookies
+      .map((header) => header.split(';')[0].trim())
+      .find((pair) => pair.startsWith('guest_auth='));
+    if (!guestCookie) {
+      throw new Error('Guest login response did not set guest_auth cookie.');
+    }
+
+    const boundary = `----StandaloneHeicSmokeBoundary${crypto.randomBytes(8).toString('hex')}`;
+    const multipartBody = buildHeicMultipartPayload(boundary);
+    const [uploadRes, duringUploadLiveRes] = await Promise.all([
+      httpRequest('/api/guest/photos/upload', {
+        method: 'POST',
+        headers: {
+          'Cookie': guestCookie,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': String(multipartBody.length),
+        },
+        body: multipartBody,
+        timeoutMs: 15000,
+      }),
+      httpRequest('/api/live', { timeoutMs: 1000 }),
+    ]);
+
+    if (uploadRes.statusCode !== 201) {
+      throw new Error(`HEIC photo upload returned status ${uploadRes.statusCode}: ${uploadRes.body}`);
+    }
+    const uploadJson = JSON.parse(uploadRes.body);
+    const uploadedUrl = uploadJson?.data?.[0]?.url;
+    if (uploadJson.success !== true || typeof uploadedUrl !== 'string' || !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)) {
+      throw new Error(`Unexpected HEIC upload response payload: ${uploadRes.body}`);
+    }
+    uploadedStandaloneFiles.push(path.join(standalonePublicDir, uploadedUrl.replace(/^\/+/, '')));
+
+    if (duringUploadLiveRes.statusCode !== 200) {
+      throw new Error(`Concurrent /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`);
+    }
+    const postUploadLiveRes = await httpRequest('/api/live', { timeoutMs: 1000 });
+    if (postUploadLiveRes.statusCode !== 200 || JSON.parse(postUploadLiveRes.body).status !== 'alive') {
+      throw new Error(`Post-upload /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`);
+    }
+
+    // Allow stdout/stderr pipe flush before inspecting logs
+    await new Promise((r) => setTimeout(r, 100));
+    if (WORKER_ERROR_LOG_PATTERN.test(serverLogs)) {
+      throw new Error(`Standalone server logged worker or sanitization errors during HEIC upload:\n${serverLogs}`);
+    }
+    if (!serverLogs.includes('Successfully transcoded and sanitized HEIC/HEIF image to image/jpeg')) {
+      throw new Error(`Expected standalone worker HEIC transcoding confirmation in logs, observed:\n${serverLogs}`);
+    }
+    console.log(`✅ Standalone HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`);
+
     console.log('=============================================');
     console.log('🎉 Standalone server smoke tests PASSED successfully!');
     console.log('=============================================');
@@ -266,6 +366,19 @@ async function main() {
     process.exitCode = 1;
   } finally {
     cleanup();
+    // Clean up uploaded smoke-test files in .next/standalone/public/uploads
+    for (const uploadedFilePath of uploadedStandaloneFiles) {
+      try {
+        fs.rmSync(uploadedFilePath, { force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    try {
+      fs.rmSync(standaloneUploadsDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
     child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], { stdio: 'ignore', shell: true, cwd: rootDir, env: composeEnv });
     // Allow process exit
     setTimeout(() => {

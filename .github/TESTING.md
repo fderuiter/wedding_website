@@ -41,8 +41,8 @@ Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`,
 2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
 3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
 4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.
-5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
-6. **Schema Synchronization & Prisma Generation:** Pushes the current schema to `wedding_test` via `npx prisma db push --accept-data-loss` and runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
+5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
+6. **Schema Synchronization & Prisma Generation:** Ensures `wedding_test` exists and applies committed forward-only migrations via `npx prisma migrate deploy` (automatically resetting the `public` schema on `wedding_test` and retrying once if prior local `prisma db push` state triggers Prisma error `P3005`), then runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
 7. **Documentation Portal Staging:** Runs `npx tsx scripts/generate-portal.ts` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links, synchronize OpenAPI/architecture docs, and stage `docs-portal/development/` before Jest executes portal verification suites.
 
 ## Test Structure & Architecture
@@ -99,13 +99,13 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (42 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (49 src/ suites, no Docker required):
   npm run test:a11y:unit
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 42 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 49 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -137,6 +137,13 @@ A variety of verification scripts in [package.json](../package.json) support com
   - `npm run lint:migrations`: Verifies database migration compatibility.
   - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
   - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `.githooks/pre-push`, `scripts/check-quality.ts`, and `tsconfig.json`.
+
+- **PostgreSQL Migration Drift Verification (`Verify Prisma Migration Sync`):**
+  ```bash
+  POSTGRES_URL_NON_POOLING="postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public" \
+    npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+  ```
+  Mirrors the `Verify Prisma Migration Sync` CI gate in the `unit-test` job of [.github/workflows/ci.yml](workflows/ci.yml), replaying `prisma/migrations/` against an isolated `wedding_shadow` PostgreSQL database bound via [prisma.config.ts](../prisma.config.ts) (`shadowDatabaseUrl`). Ensure `wedding_shadow` exists on your local PostgreSQL container (`docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml exec -T db psql -U wedding -d postgres -c 'CREATE DATABASE wedding_shadow;'`), and run `npm run migrate:dev` to generate and commit forward-only SQL migrations whenever schema drift is detected (exit code `2`).
 
 - **Storybook Static Showcase Build:**
   ```bash
