@@ -164,6 +164,7 @@ export const BackupAppConfigSchema = z.object({
   shippingDeliveryNotes: z.string().max(1000).optional(),
   defaultPaymentHandleType: z.string().max(100).optional(),
   defaultPaymentHandle: z.string().max(255).optional(),
+  setupCompleted: z.boolean().optional(),
 
   // Optional provider credentials (omitted on export; preserved from live DB if omitted/blank on import)
   smtpPass: z.string().nullable().optional(),

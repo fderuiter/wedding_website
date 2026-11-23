@@ -1,5 +1,7 @@
 import { registryRepository } from './repository';
+import type { AdminUpdateContributorInput } from './schemas';
 import type {
+  ContributorDeleteResult,
   ContributorLifecycleResult,
   ContributorRecord,
   CreateRegistryItemInput,
@@ -213,6 +215,48 @@ class RegistryService {
       return this.repository.reconcileStripeAdjustment(params);
     }
     return registryRepository.reconcileStripeAdjustment!(params);
+  }
+
+  /**
+   * Releases an item claim and voids active contributor rows in a locked transaction.
+   */
+  async unclaimItem(
+    itemId: string,
+    options?: { confirmVerifiedPayment?: boolean },
+    author: string = 'Admin'
+  ): Promise<RegistryItem> {
+    if (typeof this.repository.unclaimItem === 'function') {
+      return this.repository.unclaimItem(itemId, options, author);
+    }
+    return registryRepository.unclaimItem!(itemId, options, author);
+  }
+
+  /**
+   * Updates a contributor record and recomputes the parent item ledger atomically.
+   */
+  async updateContributor(
+    contributorId: string,
+    data: Partial<AdminUpdateContributorInput>,
+    author: string = 'Admin'
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItem | null }> {
+    if (typeof this.repository.updateContributor === 'function') {
+      return this.repository.updateContributor(contributorId, data, author);
+    }
+    return registryRepository.updateContributor!(contributorId, data, author);
+  }
+
+  /**
+   * Deletes a contributor record and recomputes the parent item ledger atomically.
+   */
+  async deleteContributor(
+    contributorId: string,
+    options?: { confirmVerifiedPayment?: boolean },
+    author: string = 'Admin'
+  ): Promise<ContributorDeleteResult> {
+    if (typeof this.repository.deleteContributor === 'function') {
+      return this.repository.deleteContributor(contributorId, options, author);
+    }
+    return registryRepository.deleteContributor!(contributorId, options, author);
   }
 }
 
