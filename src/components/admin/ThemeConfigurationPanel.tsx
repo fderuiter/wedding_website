@@ -1,8 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
-import { THEME_PRESET_KEYS, ThemePreset, getPresetTokens, stripPresetDefaultTokens } from '@/lib/theme/presets';
+import { Icon } from '@/components/ui/Icon';
+import {
+  THEME_PRESET_KEYS,
+  ThemePreset,
+  getPresetTokens,
+  getServerExportTokens,
+  stripPresetDefaultTokens,
+} from '@/lib/theme/presets';
 
 const layoutTokenRegex = /^\d+(\.\d+)?(px|rem|em|%|ch)$/;
 
@@ -13,6 +20,11 @@ const PRESET_DESCRIPTIONS: Record<ThemePreset, string> = {
   minimal: 'Monochrome minimalism with sharp square borders and high-contrast tokens',
   editorial: 'Bold typographic layout with thick borders and high-impact card shadows',
 };
+
+function formatShortFontName(fontStack: string): string {
+  const first = fontStack.split(',')[0] || 'Serif';
+  return first.replace(/['"]/g, '').trim();
+}
 
 interface ThemeConfigValues {
   colorPrimary?: string;
@@ -121,6 +133,9 @@ export function ThemeConfigurationPanel({
     });
   };
 
+  const presetCardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const normalizedSelectedIndex = Math.max(0, THEME_PRESET_KEYS.indexOf(selectedPreset));
+
   const handlePresetChange = (nextPreset: ThemePreset) => {
     if (values.themeTokens !== undefined) {
       onChange({
@@ -132,28 +147,151 @@ export function ThemeConfigurationPanel({
     onChange({ themePreset: nextPreset });
   };
 
+  const handlePresetKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const count = THEME_PRESET_KEYS.length;
+    let nextIndex = index;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      nextIndex = (index + 1) % count;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      nextIndex = (index - 1 + count) % count;
+    } else if (e.key === 'Home') {
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      nextIndex = count - 1;
+    } else {
+      return;
+    }
+    e.preventDefault();
+    const nextPreset = THEME_PRESET_KEYS[nextIndex];
+    handlePresetChange(nextPreset);
+    presetCardRefs.current[nextIndex]?.focus();
+  };
+
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Theme Preset Selection */}
+      {/* Theme Preset Visual Cards */}
       <FormGroup>
-        <Label htmlFor="themePreset" className="font-semibold text-gray-900 dark:text-zinc-100">
-          Theme Preset
-        </Label>
-        <select
-          id="themePreset"
-          name="themePreset"
-          value={selectedPreset}
-          onChange={(e) => handlePresetChange(e.target.value as ThemePreset)}
-          aria-label="Select Theme Preset"
-          aria-describedby="themePreset-desc"
-          className="w-full rounded-md border border-gray-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
+        <span
+          id="themePreset-label"
+          className="block text-sm font-semibold text-gray-900 dark:text-zinc-100"
         >
-          {THEME_PRESET_KEYS.map((preset) => (
-            <option key={preset} value={preset}>
-              {preset.charAt(0).toUpperCase() + preset.slice(1)} Preset
-            </option>
-          ))}
-        </select>
+          Select Theme Preset
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby="themePreset-label"
+          aria-describedby="themePreset-desc"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-1.5"
+        >
+          {THEME_PRESET_KEYS.map((preset, index) => {
+            const isSelected = selectedPreset === preset;
+            const isTabbable = index === normalizedSelectedIndex;
+            const exportTokens = getServerExportTokens(preset);
+            const compTokens = getPresetTokens(preset, 'light');
+            const cardRadius = compTokens['--schedule-card-radius'] || '1rem';
+            const btnRadius = compTokens['--btn-radius'] || '0.5rem';
+            const shortHeadingFont = formatShortFontName(exportTokens.fontHeading);
+            const presetLabel = `${preset.charAt(0).toUpperCase()}${preset.slice(1)} Preset`;
+            const swatchColors = [
+              exportTokens.canvasBg,
+              exportTokens.cardBg,
+              isSelected ? primaryColor : exportTokens.colorPrimary,
+              isSelected ? secondaryColor : exportTokens.colorSecondary,
+            ];
+
+            return (
+              <button
+                key={preset}
+                ref={(el) => {
+                  presetCardRefs.current[index] = el;
+                }}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                aria-label={presetLabel}
+                tabIndex={isTabbable ? 0 : -1}
+                data-preset={preset}
+                onClick={() => handlePresetChange(preset)}
+                onKeyDown={(e) => handlePresetKeyDown(e, index)}
+                className={`group flex flex-col justify-between text-left rounded-xl border p-3 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                  isSelected
+                    ? 'border-primary ring-2 ring-primary/30 bg-rose-50/40 dark:bg-zinc-800 shadow-sm'
+                    : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/70 hover:border-gray-400 dark:hover:border-zinc-500'
+                }`}
+              >
+                {/* Visual Mini Surface Preview */}
+                <div
+                  aria-hidden="true"
+                  className="w-full rounded-lg p-2.5 mb-2.5 border border-black/10"
+                  style={{ backgroundColor: exportTokens.canvasBg }}
+                >
+                  <div
+                    className="p-2.5 flex items-center justify-between gap-2"
+                    style={{
+                      backgroundColor: exportTokens.cardBg,
+                      borderRadius: cardRadius,
+                      border: '1px solid rgba(17, 24, 39, 0.14)',
+                    }}
+                  >
+                    <span
+                      className="text-base font-bold leading-none truncate"
+                      style={{
+                        fontFamily: exportTokens.fontHeading,
+                        color: '#111827',
+                      }}
+                    >
+                      Aa · {preset.charAt(0).toUpperCase() + preset.slice(1)}
+                    </span>
+                    <span
+                      className="inline-block h-4 w-9 shrink-0 border border-black/15"
+                      style={{
+                        backgroundColor: isSelected ? primaryColor : exportTokens.colorPrimary,
+                        borderRadius: btnRadius,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Preset Title, Palette Swatches, Font & Radius Meta */}
+                <div className="w-full space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-gray-900 dark:text-zinc-100">
+                      {presetLabel}
+                    </span>
+                    {isSelected && (
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-white shrink-0">
+                        <Icon name="Check" size={12} />
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div
+                      aria-hidden="true"
+                      data-testid={`preset-palette-${preset}`}
+                      className="flex items-center gap-1"
+                    >
+                      {swatchColors.map((hex, chipIdx) => (
+                        <span
+                          key={`${preset}-chip-${chipIdx}`}
+                          className="inline-block h-3.5 w-3.5 rounded-full border border-black/20 dark:border-white/30"
+                          style={{ backgroundColor: hex }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[11px] font-medium text-gray-600 dark:text-zinc-300 truncate">
+                      {shortHeadingFont} · {cardRadius}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-gray-600 dark:text-gray-300 line-clamp-2">
+                    {PRESET_DESCRIPTIONS[preset]}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
         <p id="themePreset-desc" className="text-xs text-gray-600 dark:text-gray-300 mt-1">
           {PRESET_DESCRIPTIONS[selectedPreset] || PRESET_DESCRIPTIONS.classic}
         </p>

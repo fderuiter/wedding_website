@@ -732,23 +732,23 @@ export default function AdminSettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormGroup>
                     <Label>Venue Name</Label>
-                    <Input required type="text" name="venueName" value={localConfig.venueName || ''} onChange={handleChange} />
+                    <Input type="text" name="venueName" value={localConfig.venueName || ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>Address</Label>
-                    <Input required type="text" name="venueAddress" value={localConfig.venueAddress || ''} onChange={handleChange} />
+                    <Input type="text" name="venueAddress" value={localConfig.venueAddress || ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>City</Label>
-                    <Input required type="text" name="venueCity" value={localConfig.venueCity || ''} onChange={handleChange} />
+                    <Input type="text" name="venueCity" value={localConfig.venueCity || ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>State</Label>
-                    <Input required type="text" name="venueState" value={localConfig.venueState || ''} onChange={handleChange} />
+                    <Input type="text" name="venueState" value={localConfig.venueState || ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>Zip Code</Label>
-                    <Input required type="text" name="venueZip" value={localConfig.venueZip || ''} onChange={handleChange} />
+                    <Input type="text" name="venueZip" value={localConfig.venueZip || ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>Venue Timezone</Label>
@@ -1087,24 +1087,24 @@ export default function AdminSettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormGroup>
                     <Label>Hero Title</Label>
-                    <Input required type="text" name="heroTitle" value={localConfig.heroTitle || ''} onChange={handleChange} />
+                    <Input type="text" name="heroTitle" value={localConfig.heroTitle || ''} onChange={handleChange} />
                   </FormGroup>
                   <FormGroup>
                     <Label>Hero Subtitle</Label>
-                    <Input required type="text" name="heroSubtitle" value={localConfig.heroSubtitle || ''} onChange={handleChange} />
+                    <Input type="text" name="heroSubtitle" value={localConfig.heroSubtitle || ''} onChange={handleChange} />
                   </FormGroup>
                 </div>
                 <FormGroup>
                   <Label>Our Story</Label>
-                  <Textarea required name="storyText" value={localConfig.storyText || ''} onChange={handleChange} rows={6} />
+                  <Textarea name="storyText" value={localConfig.storyText || ''} onChange={handleChange} rows={6} />
                 </FormGroup>
                 <FormGroup>
                   <Label>Venue Description</Label>
-                  <Textarea required name="venueDescription" value={localConfig.venueDescription || ''} onChange={handleChange} rows={4} />
+                  <Textarea name="venueDescription" value={localConfig.venueDescription || ''} onChange={handleChange} rows={4} />
                 </FormGroup>
                 <FormGroup>
                   <Label>Travel Advice</Label>
-                  <Textarea required name="travelAdvice" value={localConfig.travelAdvice || ''} onChange={handleChange} rows={4} />
+                  <Textarea name="travelAdvice" value={localConfig.travelAdvice || ''} onChange={handleChange} rows={4} />
                 </FormGroup>
               </section>
 

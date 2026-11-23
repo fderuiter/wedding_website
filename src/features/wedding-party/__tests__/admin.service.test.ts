@@ -308,4 +308,20 @@ describe('WeddingPartyAdminService - Atomic Transactions & Auditing', () => {
       );
     });
   });
+
+  describe('findMany ordering', () => {
+    it('passes a Prisma-valid array orderBy when default entity route createdAt ordering is supplied', async () => {
+      const { prisma } = jest.requireMock('@/lib/prisma');
+      prisma.weddingPartyMember.findMany.mockResolvedValue([]);
+
+      await service.findMany({ take: 50, skip: 0, orderBy: { createdAt: 'desc' } });
+
+      expect(prisma.weddingPartyMember.findMany).toHaveBeenCalledWith({
+        take: 50,
+        skip: 0,
+        include: { photo: true },
+        orderBy: [{ order: 'asc' }, { createdAt: 'desc' }],
+      });
+    });
+  });
 });

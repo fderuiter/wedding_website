@@ -16,12 +16,17 @@ describe('ThemeConfigurationPanel Component', () => {
     layoutBorderRadius: '1rem',
   };
 
-  test('renders preset dropdown, descriptions, color pickers, and layout inputs', () => {
+  test('renders accessible visual preset swatch cards, descriptions, color pickers, and layout inputs', () => {
     const handleChange = jest.fn();
     render(<ThemeConfigurationPanel values={defaultValues} onChange={handleChange} />);
 
-    expect(screen.getByLabelText(/Select Theme Preset/i)).toBeInTheDocument();
-    expect(screen.getByText(/Timeless elegance with traditional serif accents/i)).toBeInTheDocument();
+    const presetGroup = screen.getByRole('radiogroup', { name: /Select Theme Preset/i });
+    expect(presetGroup).toBeInTheDocument();
+    expect(screen.getAllByRole('radio')).toHaveLength(5);
+    expect(screen.getByRole('radio', { name: /Classic Preset/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getAllByText(/Timeless elegance with traditional serif accents/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId('preset-palette-classic')).toBeInTheDocument();
+    expect(screen.getByText(/Playfair Display/i)).toHaveTextContent('Playfair Display · 1rem');
     expect(screen.getByLabelText(/Primary Color Code/i)).toHaveValue('#B91C1C');
     expect(screen.getByLabelText(/Secondary Color Code/i)).toHaveValue('#B45309');
     expect(screen.getByLabelText(/Container Max Width/i)).toHaveValue('64rem');
@@ -35,14 +40,25 @@ describe('ThemeConfigurationPanel Component', () => {
     expect(screen.getByLabelText(/Print Badge Accent Color Code/i)).toHaveValue('#f3f4f6');
   });
 
-  test('calls onChange when theme preset changes', () => {
+  test('calls onChange when theme preset card is clicked or navigated via keyboard arrows', () => {
     const handleChange = jest.fn();
     render(<ThemeConfigurationPanel values={defaultValues} onChange={handleChange} />);
 
-    const select = screen.getByLabelText(/Select Theme Preset/i);
-    fireEvent.change(select, { target: { value: 'modern' } });
+    const classicRadio = screen.getByRole('radio', { name: /Classic Preset/i });
+    const modernRadio = screen.getByRole('radio', { name: /Modern Preset/i });
+    expect(classicRadio).toHaveAttribute('tabIndex', '0');
+    expect(modernRadio).toHaveAttribute('tabIndex', '-1');
 
+    fireEvent.click(modernRadio);
     expect(handleChange).toHaveBeenCalledWith({ themePreset: 'modern' });
+
+    handleChange.mockClear();
+    fireEvent.keyDown(classicRadio, { key: 'ArrowRight' });
+    expect(handleChange).toHaveBeenCalledWith({ themePreset: 'modern' });
+
+    handleChange.mockClear();
+    fireEvent.keyDown(classicRadio, { key: 'End' });
+    expect(handleChange).toHaveBeenCalledWith({ themePreset: 'editorial' });
   });
 
   test('calls onChange when color inputs change', () => {
@@ -159,7 +175,8 @@ describe('ThemeConfigurationPanel Component', () => {
       <ThemeConfigurationPanel mode="essentials" values={defaultValues} onChange={handleChange} />
     );
 
-    expect(screen.getByLabelText(/Select Theme Preset/i)).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: /Select Theme Preset/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('radio')).toHaveLength(5);
     expect(screen.getByLabelText(/Primary Color Code/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Secondary Color Code/i)).toBeInTheDocument();
     expect(screen.queryByLabelText(/Container Max Width/i)).not.toBeInTheDocument();
@@ -234,9 +251,7 @@ describe('ThemeConfigurationPanel Component', () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText(/Select Theme Preset/i), {
-      target: { value: 'romantic' },
-    });
+    fireEvent.click(screen.getByRole('radio', { name: /Romantic Preset/i }));
 
     expect(handleChange).toHaveBeenCalledWith({
       themePreset: 'romantic',

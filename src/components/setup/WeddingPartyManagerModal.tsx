@@ -11,9 +11,16 @@ import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 interface WeddingPartyManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  partner1Name?: string;
+  partner2Name?: string;
 }
 
-function WeddingPartyManagerModalContent({ isOpen, onClose }: WeddingPartyManagerModalProps) {
+function WeddingPartyManagerModalContent({
+  isOpen,
+  onClose,
+  partner1Name,
+  partner2Name,
+}: WeddingPartyManagerModalProps) {
   const { confirm } = useToast();
 
   const {
@@ -92,6 +99,8 @@ function WeddingPartyManagerModalContent({ isOpen, onClose }: WeddingPartyManage
             onChange={(updated) => setCurrentMember((prev) => ({ ...prev, ...updated }))}
             onSubmit={handleSave}
             onCancel={() => setIsEditing(false)}
+            partner1Name={partner1Name}
+            partner2Name={partner2Name}
             bindFieldIds
             requireFields
             submitLabel="Save Member"

@@ -643,20 +643,20 @@ describe('Setup API Route (/api/admin/setup)', () => {
       expect(json.brideName).toBe('Alice Updated');
     });
 
-    test('uninitialized setup succeeds with empty, whitespace, or omitted venue fields and applies TBD fallbacks', async () => {
+    test('uninitialized setup succeeds with empty, whitespace, or omitted venue fields, stores clean empty strings, and synthesizes upcoming copy', async () => {
       (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
 
       const mockSavedConfig = {
         ...uninitializedConfig,
         brideName: 'Alice',
         groomName: 'Bob',
-        weddingDate: new Date('2026-06-20T16:00:00.000Z'),
+        weddingDate: new Date('2028-06-20T16:00:00.000Z'),
         baseUrl: 'https://ourwedding.com',
-        venueName: 'TBD',
-        venueAddress: 'TBD',
-        venueCity: 'TBD',
-        venueState: 'TBD',
-        venueZip: 'TBD',
+        venueName: '',
+        venueAddress: '',
+        venueCity: '',
+        venueState: '',
+        venueZip: '',
       };
 
       (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(mockSavedConfig);
@@ -667,7 +667,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
           password: 'secret',
           brideName: 'Alice',
           groomName: 'Bob',
-          weddingDate: '2026-06-20T16:00:00.000Z',
+          weddingDate: '2028-06-20T16:00:00.000Z',
           baseUrl: 'https://ourwedding.com',
           venueName: '   ',
           venueAddress: '',
@@ -683,21 +683,60 @@ describe('Setup API Route (/api/admin/setup)', () => {
       expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith({
         where: { id: 'global' },
         update: expect.objectContaining({
-          venueName: 'TBD',
-          venueAddress: 'TBD',
-          venueCity: 'TBD',
-          venueState: 'TBD',
-          venueZip: 'TBD',
+          venueName: '',
+          venueAddress: '',
+          venueCity: '',
+          venueState: '',
+          venueZip: '',
+          venueDescription: '',
+          travelAdvice: '',
+          heroTitle: 'Alice & Bob',
+          heroSubtitle: 'Join us to celebrate our wedding on June 20, 2028.',
         }),
         create: expect.objectContaining({
           id: 'global',
-          venueName: 'TBD',
-          venueAddress: 'TBD',
-          venueCity: 'TBD',
-          venueState: 'TBD',
-          venueZip: 'TBD',
+          venueName: '',
+          venueAddress: '',
+          venueCity: '',
+          venueState: '',
+          venueZip: '',
+          venueDescription: '',
+          travelAdvice: '',
+          heroTitle: 'Alice & Bob',
+          heroSubtitle: 'Join us to celebrate our wedding on June 20, 2028.',
         }),
       });
+    });
+
+    test('uninitialized setup synthesizes past-wedding copy when weddingDate is in the past', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue({
+        ...uninitializedConfig,
+        brideName: 'Alice',
+        groomName: 'Bob',
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          weddingDate: '2024-06-20T16:00:00.000Z',
+          baseUrl: 'https://ourwedding.com',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            heroTitle: 'We Tied the Knot!',
+            heroSubtitle: expect.stringContaining('Thank you for celebrating with us on June 20, 2024.'),
+          }),
+        })
+      );
     });
 
     test('uninitialized setup saves optional contactEmail when provided', async () => {

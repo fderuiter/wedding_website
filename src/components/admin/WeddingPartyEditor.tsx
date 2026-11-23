@@ -12,6 +12,8 @@ interface WeddingPartyEditorFormProps {
   onChange: (_updatedFields: Partial<WeddingPartyMemberDTO>) => void;
   onSubmit: (_e: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
+  partner1Name?: string;
+  partner2Name?: string;
   bindFieldIds?: boolean;
   requireFields?: boolean;
   submitLabel?: string;
@@ -33,6 +35,8 @@ export const WeddingPartyEditorForm = React.forwardRef<HTMLFormElement, WeddingP
       onChange,
       onSubmit,
       onCancel,
+      partner1Name,
+      partner2Name,
       bindFieldIds = false,
       requireFields = false,
       submitLabel = 'Save',
@@ -45,6 +49,11 @@ export const WeddingPartyEditorForm = React.forwardRef<HTMLFormElement, WeddingP
   ) => {
     const labelIdProps = (fieldId: string) => (bindFieldIds ? { htmlFor: fieldId } : {});
     const inputIdProps = (fieldId: string) => (bindFieldIds ? { id: fieldId } : {});
+
+    const p1 = partner1Name?.trim() || '';
+    const p2 = partner2Name?.trim() || '';
+    const partner1SideLabel = p1 ? `${p1}'s Side` : "Partner 1's Side";
+    const partner2SideLabel = p2 ? `${p2}'s Side` : "Partner 2's Side";
 
     const isDecorative = Boolean(values.photoDecorative ?? values.photo?.isDecorative ?? false);
     const resolvedPhotoUrl = values.photoUrl ?? values.photo?.url ?? '';
@@ -93,8 +102,8 @@ export const WeddingPartyEditorForm = React.forwardRef<HTMLFormElement, WeddingP
               onChange={(e) => onChange({ side: (e.target.value || null) as WeddingPartySide | null })}
             >
               <option value="">None / Joint</option>
-              <option value="BRIDE">Bride</option>
-              <option value="GROOM">Groom</option>
+              <option value="BRIDE">{partner1SideLabel}</option>
+              <option value="GROOM">{partner2SideLabel}</option>
               <option value="JOINT">Joint</option>
             </Select>
           </FormGroup>

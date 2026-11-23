@@ -115,15 +115,15 @@ describe('WeddingPartyList', () => {
   it('filters wedding party members interactively when clicking side tabs', () => {
     render(<WeddingPartyList members={mockMembers} />);
 
-    // Click "Bride's Side" tab
-    fireEvent.click(screen.getByRole('tab', { name: "Bride's Side" }));
+    // Click "Partner 1's Side" tab
+    fireEvent.click(screen.getByRole('tab', { name: "Partner 1's Side" }));
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
     expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
     expect(screen.queryByText('Sam Wilson')).not.toBeInTheDocument();
     expect(screen.queryByText('Alex Taylor')).not.toBeInTheDocument();
 
-    // Click "Groom's Side" tab
-    fireEvent.click(screen.getByRole('tab', { name: "Groom's Side" }));
+    // Click "Partner 2's Side" tab
+    fireEvent.click(screen.getByRole('tab', { name: "Partner 2's Side" }));
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.queryByText('Jane Smith')).not.toBeInTheDocument();
     expect(screen.queryByText('Sam Wilson')).not.toBeInTheDocument();
@@ -235,6 +235,45 @@ describe('WeddingPartyList', () => {
 
   it('evaluates rendered list markup with zero accessibility warnings', async () => {
     const { container } = render(<WeddingPartyList members={mockMembers} />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('labels side tabs using configured partner names and hides empty side tabs', () => {
+    const twoSidesOnly = mockMembers.filter((m) => m.side === 'BRIDE' || m.side === 'GROOM');
+
+    render(
+      <WeddingPartyList
+        members={twoSidesOnly}
+        partner1Name="Maya"
+        partner2Name="Liam"
+      />
+    );
+
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: "Maya's Side" })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: "Liam's Side" })).toBeInTheDocument();
+    // Joint has 0 members, so its tab is hidden
+    expect(screen.queryByRole('tab', { name: 'Joint' })).not.toBeInTheDocument();
+  });
+
+  it('omits role="tablist" completely and renders a unified grid when fewer than 2 side groups exist', async () => {
+    const singleGroup = mockMembers.filter((m) => m.side === 'BRIDE' || m.side === null);
+
+    const { container } = render(
+      <WeddingPartyList
+        members={singleGroup}
+        partner1Name="Maya"
+        partner2Name="Liam"
+      />
+    );
+
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expect(screen.getByText('Alex Taylor')).toBeInTheDocument();
+
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });

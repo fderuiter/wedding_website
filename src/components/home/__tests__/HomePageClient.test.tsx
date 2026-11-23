@@ -452,5 +452,60 @@ describe('HomePageClient', () => {
     const results = await axe(faqSection);
     expect(results).toHaveNoViolations();
   });
+
+  test('renders upcoming wedding copy and hides TBD or dangling venue punctuation when optional setup fields are blank', async () => {
+    const blankOptionalConfig: PublicAppConfig = {
+      ...mockConfig,
+      heroTitle: '',
+      heroSubtitle: '',
+      storyText: '',
+      venueName: '',
+      venueAddress: '',
+      venueCity: '',
+      venueState: '',
+      venueDescription: '',
+      travelAdvice: '',
+      weddingDate: '2028-09-18T18:00:00.000Z',
+      partner1Name: 'Clara',
+      partner2Name: 'Devon',
+      brideName: 'Clara',
+      groomName: 'Devon',
+    } as any;
+
+    const { container } = render(<HomePageClient config={blankOptionalConfig} />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Clara & Devon' })).toBeInTheDocument();
+    expect(screen.queryByText(/We Tied the Knot!/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/TBD/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Venue description\.\.\./i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Our story\.\.\./i)).not.toBeInTheDocument();
+
+    const footer = screen.getByRole('contentinfo');
+    expect(footer.textContent).toContain('Clara & Devon');
+    expect(footer.textContent).not.toContain(' in .');
+    expect(footer.textContent).not.toContain('TBD');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  test('preserves past-wedding fallback copy when weddingDate is in the past and hero fields are blank', () => {
+    const pastConfig: PublicAppConfig = {
+      ...mockConfig,
+      heroTitle: '',
+      heroSubtitle: '',
+      storyText: '',
+      weddingDate: '2024-05-12T18:00:00.000Z',
+      partner1Name: 'Clara',
+      partner2Name: 'Devon',
+      brideName: 'Clara',
+      groomName: 'Devon',
+    } as any;
+
+    render(<HomePageClient config={pastConfig} />);
+
+    expect(screen.getByRole('heading', { level: 1, name: 'We Tied the Knot!' })).toBeInTheDocument();
+    expect(screen.getByText(/Thank you for celebrating with us on May 12, 2024/i)).toBeInTheDocument();
+  });
 });
 

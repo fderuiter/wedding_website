@@ -1,6 +1,7 @@
 import { getAppConfig, STATIC_MOCK_CONFIG, isSiteInitialized } from '../config';
 import { attractionsRepository } from '@/features/attractions';
 import { logisticsRepository } from '@/features/logistics';
+import { weddingPartyRepository } from '@/features/wedding-party';
 import { prisma } from '../prisma';
 
 jest.mock('../prisma', () => ({
@@ -14,6 +15,9 @@ jest.mock('../prisma', () => ({
       findMany: jest.fn(),
     },
     contentNode: {
+      findMany: jest.fn(),
+    },
+    weddingPartyMember: {
       findMany: jest.fn(),
     },
   },
@@ -67,5 +71,16 @@ describe('Dual-mode static export mock adapter', () => {
     expect(hotel).toBeDefined();
     expect(hotel?.promoCode).toBe('WEDDING2026');
     expect(hotel?.roomRate).toBe('$189/night');
+  });
+
+  it('provides mock wedding party members across both partner sides without database queries when STATIC_EXPORT is enabled', async () => {
+    process.env.STATIC_EXPORT = 'true';
+
+    const members = await weddingPartyRepository.getMembers();
+
+    expect(prisma.weddingPartyMember.findMany).not.toHaveBeenCalled();
+    expect(members.length).toBeGreaterThanOrEqual(2);
+    expect(members.some((m) => m.side === 'BRIDE')).toBe(true);
+    expect(members.some((m) => m.side === 'GROOM')).toBe(true);
   });
 });

@@ -198,6 +198,36 @@ describe('WeddingPartyEditorForm', () => {
     fireEvent.change(screen.getByLabelText('Display Order'), { target: { value: '' } });
     expect(handleChange).toHaveBeenCalledWith({ order: 0 });
   });
+
+  it('renders partner-named Side options when partner1Name and partner2Name are provided', () => {
+    const { rerender } = render(
+      <WeddingPartyEditorForm
+        values={{ name: 'Alex', role: 'Attendant' }}
+        onChange={jest.fn()}
+        onSubmit={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: "Partner 1's Side" })).toHaveValue('BRIDE');
+    expect(screen.getByRole('option', { name: "Partner 2's Side" })).toHaveValue('GROOM');
+
+    rerender(
+      <WeddingPartyEditorForm
+        values={{ name: 'Alex', role: 'Attendant' }}
+        partner1Name="Elena"
+        partner2Name="Marcus"
+        onChange={jest.fn()}
+        onSubmit={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    expect(screen.getByRole('option', { name: "Elena's Side" })).toHaveValue('BRIDE');
+    expect(screen.getByRole('option', { name: "Marcus's Side" })).toHaveValue('GROOM');
+    expect(screen.getByRole('option', { name: 'Joint' })).toHaveValue('JOINT');
+    expect(screen.getByRole('option', { name: 'None / Joint' })).toHaveValue('');
+  });
 });
 
 describe('WeddingPartyCard', () => {
