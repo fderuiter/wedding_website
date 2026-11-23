@@ -38,7 +38,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
       aria-live={role === 'status' ? 'polite' : undefined}
       className="text-center p-10 col-span-full flex flex-col items-center"
     >
-      <Icon name="SearchX" className="mx-auto h-12 w-12 text-gray-400" />
+      <Icon name="SearchX" className="mx-auto h-12 w-12 text-muted-text" />
       <Heading
         as={headingLevel}
         variant="none"

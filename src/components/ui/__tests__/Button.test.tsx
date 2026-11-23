@@ -2,7 +2,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
-import { Button, type ButtonProps } from '../Button';
+import { Button, getButtonClassName, type ButtonProps } from '../Button';
 
 expect.extend(toHaveNoViolations);
 
@@ -20,16 +20,21 @@ describe('Button', () => {
     expect(container.firstChild).toHaveClass('inline-flex');
   });
 
-  test('applies CSS variable class bindings for outline and ghost variants', () => {
+  test('applies CSS variable class bindings for outline, ghost, and inverse variants', () => {
     const { getByRole, rerender } = render(<Button variant="outline">Outline Button</Button>);
     let button = getByRole('button');
     expect(button).toHaveClass('bg-[var(--btn-outline-bg,transparent)]');
-    expect(button).toHaveClass('border-[var(--btn-outline-border,var(--color-surface-border,#d1d5db))]');
+    expect(button).toHaveClass('border-[var(--btn-outline-border,var(--color-surface-border,#6b7280))]');
 
     rerender(<Button variant="ghost">Ghost Button</Button>);
     button = getByRole('button');
     expect(button).toHaveClass('bg-[var(--btn-ghost-bg,transparent)]');
     expect(button).toHaveClass('hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))]');
+
+    const linkClasses = getButtonClassName({ variant: 'inverse', size: 'sm' });
+    expect(linkClasses).toContain('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(linkClasses).toContain('text-[var(--toast-action-text,#111827)]');
+    expect(linkClasses).toContain('h-8 px-3 text-xs');
   });
 
   test('applies disabled cursor styling without disabling pointer events', () => {

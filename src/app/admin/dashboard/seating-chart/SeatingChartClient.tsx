@@ -366,7 +366,7 @@ function SeatingChartAdminContent() {
                 className="w-full pl-9 pr-8 py-2 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
               />
               <svg
-                className="w-4 h-4 text-gray-400 absolute left-3 top-2.5"
+                className="w-4 h-4 text-muted-text absolute left-3 top-2.5"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -377,7 +377,7 @@ function SeatingChartAdminContent() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-6 min-h-6 inline-flex items-center justify-center text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 font-bold text-xs rounded"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 min-w-6 min-h-6 inline-flex items-center justify-center text-muted-text hover:text-gray-700 dark:hover:text-gray-200 font-bold text-xs rounded"
                   aria-label="Clear search query"
                 >
                   ×

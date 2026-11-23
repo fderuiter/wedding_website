@@ -127,10 +127,6 @@ on:
         description: 'Schema compatibility check status'
         value: ${{ jobs.schema-compatibility.outputs.compatibility_status }}
 
-concurrency:
-  group: deploy-${{ inputs.environment || 'pipeline' }}
-  cancel-in-progress: false
-
 jobs:
   ci-gate:
     name: Verify CI Status & Resolve Release SHA
@@ -557,8 +553,15 @@ jobs:
   # ============================================================================
   # STAGING ENVIRONMENT PIPELINE (Automated after CI succeeds on main push)
   # ============================================================================
-  staging-database-migration:
-    name: Staging Database Migration
+  staging:
+    name: Staging Deployment Stage
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      attestations: read
+      deployments: write
+      id-token: write
     needs: [ci-gate, publish-artifact, schema-compatibility]
     if: |
       !cancelled() &&
@@ -577,206 +580,25 @@ jobs:
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
       (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped'))
-    uses: ./.github/workflows/db-migrate.yml
-    with:
-      environment: 'staging'
-      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
-      confirm: true
-    secrets: inherit
-
-  staging-deploy-provider:
-    name: Staging Provider Deployment
-    permissions:
-      actions: read
-      contents: read
-      packages: read
-      attestations: read
-      deployments: write
-      id-token: write
-    needs: [ci-gate, publish-artifact, staging-database-migration]
-    if: |
-      !cancelled() &&
-      (
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        ) ||
-        (
-          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
-        )
-      ) &&
-      (needs.ci-gate.result == 'success') &&
-      (needs.staging-database-migration.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped'))
-    uses: ./.github/workflows/deploy-provider.yml
+    uses: ./.github/workflows/deploy-stage.yml
     with:
       environment: 'staging'
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+      previous_tag: ${{ inputs.previous_tag || '' }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       cloud_run_service: ${{ inputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
+      rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
-  staging-verify-deployment:
-    name: Staging Post-Deployment Health Verification
-    needs: [ci-gate, publish-artifact, staging-deploy-provider]
-    if: |
-      !cancelled() &&
-      (
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        ) ||
-        (
-          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-          (inputs.environment == 'all' || inputs.environment == 'staging' || inputs.environment == '')
-        )
-      ) &&
-      (needs.ci-gate.result == 'success') &&
-      (needs.staging-deploy-provider.result == 'success')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: staging
-    outputs:
-      health_status: ${{ steps.health-probe.outputs.health_status }}
-    steps:
-      - name: Execute Staging Health Probe Verification
-        id: health-probe
-        env:
-          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
-          SERVICE_URL: ${{ needs.staging-deploy-provider.outputs.service_url }}
-          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
-          IS_DRY_RUN: ${{ (inputs.dry_run && needs.staging-deploy-provider.outputs.is_dry_run == 'true') && 'true' || 'false' }}
-        run: |
-          RESOLVED_URL="${VAR_SERVICE_URL:-}"
-          if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
-            RESOLVED_URL="$SERVICE_URL"
-          fi
-          if [ -z "$RESOLVED_URL" ]; then
-            RESOLVED_URL="${SECRET_SERVICE_URL:-}"
-          fi
-
-          if [ "${IS_DRY_RUN:-false}" = "true" ]; then
-            TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
-          else
-            TARGET_URL="$RESOLVED_URL"
-          fi
-          TARGET_URL="${TARGET_URL%/}"
-
-          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
-            echo "::error::Missing or invalid SERVICE_URL for staging health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the 'staging' GitHub Environment."
-            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 Staging Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Environment:** \`staging\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL:-unconfigured}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
-
-          echo "=================================================="
-          echo "     STAGING HEALTH CHECK VERIFICATION PROBE      "
-          echo "=================================================="
-          echo "Target Service URL : ${TARGET_URL}"
-          echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
-          echo "Dry Run Environment: ${IS_DRY_RUN}"
-          echo "=================================================="
-
-          MAX_TIMEOUT=120
-          START_TIME=$(date +%s)
-          DELAY=2
-          SUCCESS=false
-          HTTP_STATUS=""
-          RESPONSE_BODY=""
-
-          while true; do
-            CURRENT_TIME=$(date +%s)
-            ELAPSED=$((CURRENT_TIME - START_TIME))
-            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
-              echo "❌ Health check timed out after ${MAX_TIMEOUT} seconds."
-              break
-            fi
-
-            echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
-
-            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
-            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
-            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
-
-            if [ "$HTTP_STATUS" = "200" ]; then
-              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
-              STATUS_VAL=""
-              DB_STATUS=""
-              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
-                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
-                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
-              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
-                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
-                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
-              fi
-
-              if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
-                echo "✅ Staging health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
-                SUCCESS=true
-                break
-              else
-                echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
-              fi
-            else
-              echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
-            fi
-
-            if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
-              if [ $ELAPSED -ge 6 ]; then
-                echo "::notice::Dry-run staging environment detected without live endpoint. Dry-run health verification probe validated."
-                SUCCESS=true
-                HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
-                break
-              fi
-            fi
-
-            sleep $DELAY
-            DELAY=$((DELAY * 2))
-            if [ $DELAY -gt 16 ]; then
-              DELAY=16
-            fi
-          done
-
-          if [ "$SUCCESS" = "true" ]; then
-            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
-            echo "### 🟢 Staging Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Environment:** \`staging\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          else
-            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 Staging Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Environment:** \`staging\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-  staging-rollback:
-    name: Staging Automated Rollback
+  # ============================================================================
+  # PRODUCTION ENVIRONMENT PIPELINE (Mandatory Reviewer Gate & Promotion)
+  # ============================================================================
+  production:
+    name: Production Deployment Stage
     permissions:
       actions: read
       contents: read
@@ -784,30 +606,7 @@ jobs:
       attestations: read
       deployments: write
       id-token: write
-    needs: [ci-gate, publish-artifact, staging-deploy-provider, staging-verify-deployment]
-    if: |
-      (failure() || cancelled()) &&
-      needs.staging-deploy-provider.result == 'success' &&
-      (needs.staging-verify-deployment.result == 'failure' || needs.staging-verify-deployment.result == 'cancelled')
-    uses: ./.github/workflows/rollback.yml
-    with:
-      target_environment: 'staging'
-      rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
-      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
-      previous_digest: ${{ inputs.previous_tag == '' && needs.staging-deploy-provider.outputs.previous_image_digest || '' }}
-      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.staging-deploy-provider.outputs.previous_image_tag }}
-      provider: ${{ inputs.provider || 'google-cloud-run' }}
-      cloud_run_service: ${{ inputs.cloud_run_service || needs.staging-deploy-provider.outputs.cloud_run_service || '' }}
-      cloud_run_region: ${{ inputs.cloud_run_region || needs.staging-deploy-provider.outputs.cloud_run_region || '' }}
-      reason: 'Automated staging post-deployment health check failure on /api/health'
-    secrets: inherit
-
-  # ============================================================================
-  # PRODUCTION ENVIRONMENT PIPELINE (Mandatory Reviewer Gate & Promotion)
-  # ============================================================================
-  production-database-migration:
-    name: Production Database Migration
-    needs: [ci-gate, publish-artifact, schema-compatibility, staging-verify-deployment]
+    needs: [ci-gate, publish-artifact, schema-compatibility, staging]
     if: |
       !cancelled() &&
       (
@@ -825,231 +624,17 @@ jobs:
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
       (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped')) &&
-      (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
-    uses: ./.github/workflows/db-migrate.yml
-    with:
-      environment: 'production'
-      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
-      confirm: true
-    secrets: inherit
-
-  production-deploy-provider:
-    name: Production Provider Deployment
-    permissions:
-      actions: read
-      contents: read
-      packages: read
-      attestations: read
-      deployments: write
-      id-token: write
-    needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
-    if: |
-      !cancelled() &&
-      (
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        ) ||
-        (
-          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-          (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
-        )
-      ) &&
-      (needs.ci-gate.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped')) &&
-      (needs.production-database-migration.result == 'success') &&
-      (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
-    uses: ./.github/workflows/deploy-provider.yml
+      (inputs.environment == 'production' || needs.staging.result == 'success')
+    uses: ./.github/workflows/deploy-stage.yml
     with:
       environment: 'production'
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+      previous_tag: ${{ inputs.previous_tag || '' }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       cloud_run_service: ${{ inputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
-      dry_run: ${{ inputs.dry_run || false }}
-    secrets: inherit
-
-  production-verify-deployment:
-    name: Production Post-Deployment Health Verification
-    needs: [ci-gate, publish-artifact, production-deploy-provider]
-    if: |
-      !cancelled() &&
-      (
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        ) ||
-        (
-          (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-          (inputs.environment == 'all' || inputs.environment == 'production' || inputs.environment == '')
-        )
-      ) &&
-      (needs.ci-gate.result == 'success') &&
-      (needs.production-deploy-provider.result == 'success')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: production
-    outputs:
-      health_status: ${{ steps.health-probe.outputs.health_status }}
-    steps:
-      - name: Execute Production Health Probe Verification
-        id: health-probe
-        env:
-          VAR_SERVICE_URL: ${{ vars.SERVICE_URL }}
-          SERVICE_URL: ${{ needs.production-deploy-provider.outputs.service_url }}
-          SECRET_SERVICE_URL: ${{ secrets.SERVICE_URL }}
-          IS_DRY_RUN: ${{ (inputs.dry_run && needs.production-deploy-provider.outputs.is_dry_run == 'true') && 'true' || 'false' }}
-        run: |
-          RESOLVED_URL="${VAR_SERVICE_URL:-}"
-          if [ -z "$RESOLVED_URL" ] && [ -n "${SERVICE_URL:-}" ] && [ "$SERVICE_URL" != "***" ]; then
-            RESOLVED_URL="$SERVICE_URL"
-          fi
-          if [ -z "$RESOLVED_URL" ]; then
-            RESOLVED_URL="${SECRET_SERVICE_URL:-}"
-          fi
-
-          if [ "${IS_DRY_RUN:-false}" = "true" ]; then
-            TARGET_URL="${RESOLVED_URL:-http://127.0.0.1:3000}"
-          else
-            TARGET_URL="$RESOLVED_URL"
-          fi
-          TARGET_URL="${TARGET_URL%/}"
-
-          if [ -z "$TARGET_URL" ] || [[ ! "$TARGET_URL" =~ ^https?://[^[:space:]]+ ]]; then
-            echo "::error::Missing or invalid SERVICE_URL for production health verification. Configure vars.SERVICE_URL (recommended) or legacy secrets.SERVICE_URL with a valid http:// or https:// URL in the 'production' GitHub Environment."
-            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 Production Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Environment:** \`production\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL:-unconfigured}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **HTTP Status:** \`invalid-url\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-          HEALTH_ENDPOINT="${TARGET_URL}/api/health"
-
-          echo "=================================================="
-          echo "    PRODUCTION HEALTH CHECK VERIFICATION PROBE    "
-          echo "=================================================="
-          echo "Target Service URL : ${TARGET_URL}"
-          echo "Health Probe Path  : ${HEALTH_ENDPOINT}"
-          echo "Dry Run Environment: ${IS_DRY_RUN}"
-          echo "=================================================="
-
-          MAX_TIMEOUT=120
-          START_TIME=$(date +%s)
-          DELAY=2
-          SUCCESS=false
-          HTTP_STATUS=""
-          RESPONSE_BODY=""
-
-          while true; do
-            CURRENT_TIME=$(date +%s)
-            ELAPSED=$((CURRENT_TIME - START_TIME))
-            if [ $ELAPSED -ge $MAX_TIMEOUT ]; then
-              echo "❌ Health check timed out after ${MAX_TIMEOUT} seconds."
-              break
-            fi
-
-            echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
-
-            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
-            HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
-            RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
-
-            if [ "$HTTP_STATUS" = "200" ]; then
-              PAYLOAD_KIND=$(printf '%s' "$RESPONSE_BODY" | jq -r 'if type != "object" then "invalid" elif has("success") then (if .success == true and (.data | type) == "object" then "wrapped" else "rejected" end) else "unwrapped" end' 2>/dev/null || true)
-              STATUS_VAL=""
-              DB_STATUS=""
-              if [ "$PAYLOAD_KIND" = "wrapped" ]; then
-                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.status // empty' 2>/dev/null || true)
-                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '.data.database // empty' 2>/dev/null || true)
-              elif [ "$PAYLOAD_KIND" = "unwrapped" ]; then
-                STATUS_VAL=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.status) // empty' 2>/dev/null || true)
-                DB_STATUS=$(printf '%s' "$RESPONSE_BODY" | jq -r '(.database) // empty' 2>/dev/null || true)
-              fi
-
-              if [ "$DB_STATUS" = "connected" ] && [ "$STATUS_VAL" = "ok" ]; then
-                echo "✅ Production health check probe succeeded! HTTP ${HTTP_STATUS}, status: ${STATUS_VAL}, database: ${DB_STATUS}"
-                SUCCESS=true
-                break
-              else
-                echo "⚠️ Endpoint returned 200 but payload unhealthy. status: '${STATUS_VAL}', database: '${DB_STATUS}'. Retrying in ${DELAY}s..."
-              fi
-            else
-              echo "⚠️ Probe query failed with HTTP status '${HTTP_STATUS:-unreachable}'. Retrying in ${DELAY}s..."
-            fi
-
-            if [ "$IS_DRY_RUN" = "true" ] && { [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" = "000" ]; }; then
-              if [ $ELAPSED -ge 6 ]; then
-                echo "::notice::Dry-run production environment detected without live endpoint. Dry-run health verification probe validated."
-                SUCCESS=true
-                HTTP_STATUS="200 (dry-run)"
-                RESPONSE_BODY='{"success":true,"data":{"status":"ok","database":"connected","mode":"dry-run"}}'
-                break
-              fi
-            fi
-
-            sleep $DELAY
-            DELAY=$((DELAY * 2))
-            if [ $DELAY -gt 16 ]; then
-              DELAY=16
-            fi
-          done
-
-          if [ "$SUCCESS" = "true" ]; then
-            echo "health_status=healthy" >> "$GITHUB_OUTPUT"
-            echo "### 🟢 Production Post-Deployment Health Verification Passed" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Environment:** \`production\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **HTTP Status:** \`${HTTP_STATUS}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Verification Outcome:** \`HEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          else
-            echo "health_status=unhealthy" >> "$GITHUB_OUTPUT"
-            echo "### 🔴 Production Post-Deployment Health Verification Failed" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Environment:** \`production\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Target Service URL:** \`${TARGET_URL}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Health Endpoint:** \`/api/health\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **HTTP Status:** \`${HTTP_STATUS:-unreachable}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Last Response:** \`${RESPONSE_BODY}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Verification Outcome:** \`UNHEALTHY\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Action:** Triggering automated rollback pipeline with N-1 schema compatibility verification..." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-  production-rollback:
-    name: Production Automated Rollback
-    permissions:
-      actions: read
-      contents: read
-      packages: read
-      attestations: read
-      deployments: write
-      id-token: write
-    needs: [ci-gate, publish-artifact, production-deploy-provider, production-verify-deployment]
-    if: |
-      (failure() || cancelled()) &&
-      needs.production-deploy-provider.result == 'success' &&
-      (needs.production-verify-deployment.result == 'failure' || needs.production-verify-deployment.result == 'cancelled')
-    uses: ./.github/workflows/rollback.yml
-    with:
-      target_environment: 'production'
       rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
-      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
-      previous_digest: ${{ inputs.previous_tag == '' && needs.production-deploy-provider.outputs.previous_image_digest || '' }}
-      previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.production-deploy-provider.outputs.previous_image_tag }}
-      provider: ${{ inputs.provider || 'google-cloud-run' }}
-      cloud_run_service: ${{ inputs.cloud_run_service || needs.production-deploy-provider.outputs.cloud_run_service || '' }}
-      cloud_run_region: ${{ inputs.cloud_run_region || needs.production-deploy-provider.outputs.cloud_run_region || '' }}
-      reason: 'Automated post-deployment health check failure on /api/health in production'
+      dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit

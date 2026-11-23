@@ -38,10 +38,10 @@ const getWeatherDescription = (code: number): string => {
 
 const getWeatherIcon = (code: number): { name: IconName, color: string } => {
   if (code <= 1) return { name: 'Sun', color: 'text-secondary' };
-  if (code <= 3) return { name: 'Cloud', color: 'text-gray-400' };
+  if (code <= 3) return { name: 'Cloud', color: 'text-muted-text' };
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'CloudRain', color: 'text-blue-400' };
   if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: 'CloudSnow', color: 'text-sky-300' };
-  return { name: 'Cloud', color: 'text-gray-400' };
+  return { name: 'Cloud', color: 'text-muted-text' };
 };
 
 /**

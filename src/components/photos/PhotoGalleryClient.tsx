@@ -151,6 +151,12 @@ export function PhotoGalleryClient({
   }, [demoOverrides, localPhotos]);
 
   const [activeTab, setActiveTab] = useState<PhotoCategory>(() => {
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const tabParam = new URLSearchParams(window.location.search).get('tab');
+      if (tabParam === 'guest' || tabParam === 'curated') {
+        return tabParam;
+      }
+    }
     if (defaultTab) return defaultTab;
     const normalized = normalizeInitialPhotos(initialPhotos);
     return normalized.some((p) => p.category === 'curated') ? 'curated' : 'guest';

@@ -254,9 +254,12 @@ describe('Theme Preset Catalog & Token Mapping', () => {
 
       const dialogBg = darkTokens['--dialog-bg'];
       const containerBg = darkTokens['--container-bg'];
+      const cardBg = darkTokens['--card-bg'];
+      const inputBg = darkTokens['--input-bg'];
       const titleColor = darkTokens['--dialog-title-color'];
       const descColor = darkTokens['--dialog-desc-color'];
       const focusRing = darkTokens['--btn-focus-ring'];
+      const inputFocusRing = darkTokens['--input-focus-ring'];
       const outlineBorder = darkTokens['--btn-outline-border'];
       const outlineText = darkTokens['--btn-outline-text'];
 
@@ -265,10 +268,115 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(getContrast(descColor, dialogBg)).toBeGreaterThanOrEqual(4.5);
       expect(getContrast(outlineText, dialogBg)).toBeGreaterThanOrEqual(4.5);
 
-      // Focus ring and outline border contrast against modal/container backgrounds must be at least 3:1
+      // Focus ring and outline border contrast against modal/container/card backgrounds must be at least 3:1
       expect(getContrast(focusRing, dialogBg)).toBeGreaterThanOrEqual(3.0);
+      expect(getContrast(inputFocusRing, inputBg)).toBeGreaterThanOrEqual(3.0);
       expect(getContrast(outlineBorder, dialogBg)).toBeGreaterThanOrEqual(3.0);
       expect(getContrast(outlineBorder, containerBg)).toBeGreaterThanOrEqual(3.0);
+      expect(getContrast(outlineBorder, cardBg)).toBeGreaterThanOrEqual(3.0);
+
+      // Form text contrast (>= 4.5:1) and input border contrast (>= 3.0:1) in dark mode
+      for (const surface of [cardBg, inputBg, dialogBg]) {
+        expect(getContrast(darkTokens['--form-label-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(darkTokens['--form-message-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(darkTokens['--form-error-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(darkTokens['--form-success-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(darkTokens['--form-warning-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(darkTokens['--input-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(darkTokens['--input-error-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(darkTokens['--input-success-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(darkTokens['--input-warning-border'], surface)).toBeGreaterThanOrEqual(3.0);
+      }
+    }
+  });
+
+  it('ensures all light mode form, border, and outline tokens achieve WCAG 2.2 AA contrast ratios with hex/rgba formats', () => {
+    const hexOrVarHexPattern = /^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]+,\s*#[0-9a-fA-F]{6}\))$/;
+    const hexOrRgbaPattern = /^(#[0-9a-fA-F]{6}|rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*[\d.]+\s*\))$/;
+
+    function unwrapVarHex(raw: string): string {
+      const varMatch = raw.match(/^var\([^,]+,\s*([^)]+)\)$/);
+      return varMatch ? varMatch[1].trim() : raw.trim();
+    }
+
+    function getLuminance(hex: string): number {
+      const cleanHex = unwrapVarHex(hex).replace(/^#/, '');
+      const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+      const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+      const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+      const transform = (val: number) => (val <= 0.03928 ? val / 12.92 : Math.pow((val + 0.055) / 1.055, 2.4));
+      return 0.2126 * transform(r) + 0.7152 * transform(g) + 0.0722 * transform(b);
+    }
+
+    function getContrast(hex1: string, hex2: string): number {
+      const l1 = getLuminance(hex1);
+      const l2 = getLuminance(hex2);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    }
+
+    function resolveSurfaceHex(raw: string, backdropHex = '#ffffff'): string {
+      const candidate = unwrapVarHex(raw);
+      if (/^#[0-9a-fA-F]{6}$/.test(candidate)) {
+        return candidate;
+      }
+      const m = candidate.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/);
+      if (!m) {
+        throw new Error(`Unsupported color format: ${raw}`);
+      }
+      const r = Number(m[1]);
+      const g = Number(m[2]);
+      const b = Number(m[3]);
+      const a = Number(m[4]);
+      const bgClean = backdropHex.replace(/^#/, '');
+      const br = parseInt(bgClean.substring(0, 2), 16);
+      const bg = parseInt(bgClean.substring(2, 4), 16);
+      const bb = parseInt(bgClean.substring(4, 6), 16);
+      const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0');
+      return `#${toHex(r * a + br * (1 - a))}${toHex(g * a + bg * (1 - a))}${toHex(b * a + bb * (1 - a))}`;
+    }
+
+    for (const presetKey of THEME_PRESET_KEYS) {
+      const lightTokens = getPresetTokens(presetKey, 'light');
+      const containerBg = resolveSurfaceHex(lightTokens['--container-bg'], '#ffffff');
+      const cardBg = resolveSurfaceHex(lightTokens['--card-bg'], containerBg);
+      const inputBg = resolveSurfaceHex(lightTokens['--input-bg'], cardBg);
+      const dialogBg = resolveSurfaceHex(lightTokens['--dialog-bg'], '#ffffff');
+
+      // Emit standard 6-digit hex, var(..., #hex), or rgba() without color-mix() so server/SVG exports stay deterministic
+      for (const key of [
+        '--form-label-text',
+        '--form-message-text',
+        '--form-error-text',
+        '--form-success-text',
+        '--form-warning-text',
+        '--input-border',
+        '--input-error-border',
+        '--input-success-border',
+        '--input-warning-border',
+        '--btn-outline-border',
+      ] as const) {
+        expect(lightTokens[key]).toMatch(hexOrVarHexPattern);
+        expect(getPresetTokens(presetKey, 'dark')[key]).toMatch(hexOrVarHexPattern);
+      }
+      expect(lightTokens['--btn-ghost-hover-bg']).toMatch(hexOrRgbaPattern);
+      expect(lightTokens['--btn-outline-hover-bg']).toMatch(hexOrRgbaPattern);
+
+      for (const surface of [cardBg, inputBg, containerBg, dialogBg]) {
+        expect(getContrast(lightTokens['--form-label-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(lightTokens['--form-message-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(lightTokens['--form-error-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(lightTokens['--form-success-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(lightTokens['--form-warning-text'], surface)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(lightTokens['--input-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(lightTokens['--input-error-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(lightTokens['--input-success-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(lightTokens['--input-warning-border'], surface)).toBeGreaterThanOrEqual(3.0);
+        expect(getContrast(lightTokens['--btn-outline-border'], surface)).toBeGreaterThanOrEqual(3.0);
+      }
+
+      const exported = getServerExportTokens(presetKey);
+      expect(getContrast(exported.textMuted, exported.canvasBg)).toBeGreaterThanOrEqual(4.5);
+      expect(getContrast(exported.textMuted, exported.cardBg)).toBeGreaterThanOrEqual(4.5);
     }
   });
 

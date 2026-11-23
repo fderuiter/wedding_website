@@ -799,6 +799,66 @@ describe('PhotoGalleryClient', () => {
     expect(tablist.contains(slideshowLink)).toBe(false);
   });
 
+  it('honors ?tab=guest in window.location.search on client mount and exposes GuestPhotoDropzone', async () => {
+    window.history.pushState({}, '', '/photos?tab=guest');
+
+    try {
+      render(
+        <PhotoGalleryClient
+          defaultTab="curated"
+          initialPhotos={[
+            {
+              id: 'curated-1',
+              url: '/uploads/curated1.jpg',
+              title: 'Curated Vows',
+              category: 'curated',
+            },
+          ]}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('tab-guest')).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByTestId('guest-photo-dropzone')).toBeInTheDocument();
+      });
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('immediately renders auto-approved guest uploads in the gallery grid without page reload', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          id: 'media-live-1',
+          nodeId: 'node-live-1',
+          url: '/uploads/photos/live-dance.jpg',
+          title: 'Dance Floor Encore',
+          caption: 'Dance Floor Encore',
+          uploaderName: 'DJ Maya',
+          status: 'APPROVED',
+          isVisible: true,
+          createdAt: new Date().toISOString(),
+        },
+      }),
+    });
+
+    render(<PhotoGalleryClient defaultTab="guest" initialPhotos={[]} />);
+
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const validFile = new File(['jpeg bytes'], 'dance.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-photos-grid')).toBeInTheDocument();
+      expect(screen.getByText('Dance Floor Encore')).toBeInTheDocument();
+      expect(screen.getByTestId('upload-live-notice')).toBeInTheDocument();
+    });
+  });
+
   it('renders Upload Guest Photos CTA on curated tab that activates guest tab, focuses GuestPhotoDropzone, and forwards defaultUploaderName', async () => {
     render(
       <PhotoGalleryClient
@@ -906,7 +966,6 @@ describe('PhotoGalleryClient', () => {
       });
     }
   });
-
   it('eliminates redundant thumbnail/lightbox captions and generic aria-label violations under jest-axe', async () => {
     const { container } = render(
       <main>

@@ -164,9 +164,11 @@ describe('Standardized Heading Hierarchy & Standalone Fallbacks', () => {
 
   it('exposes a descriptive sr-only h1 in GuestAddressPage while authentication is loading', async () => {
     const { container } = render(
-      <main>
-        <GuestAddressPage />
-      </main>
+      <ToastProvider>
+        <main>
+          <GuestAddressPage />
+        </main>
+      </ToastProvider>
     );
 
     expect(

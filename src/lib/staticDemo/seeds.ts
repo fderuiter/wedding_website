@@ -702,6 +702,8 @@ export function buildArchetypeSeedSnapshot(
     timezone: meta.timezone,
     showCountdown: true,
     showAddToCalendar: true,
+    autoApproveGuestPhotos: false,
+    guestPhotoQrTokenVersion: 1,
     setupCompleted: true,
     rsvpOpen: true,
     rsvpDeadlineDate: '',

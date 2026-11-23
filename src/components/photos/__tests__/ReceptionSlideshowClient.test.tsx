@@ -1189,6 +1189,26 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent('Shared by Cousin Leo');
   });
 
+  it('encodes the full signed QR upload URL into ThemedQRCode while displaying a readable short URL', () => {
+    const signedUrl = 'https://wedding.example.com/photos?qr=eyJwdXJwb3NlIjoicGhvdG9fcXJfbGluayJ9.sig';
+    render(<ReceptionSlideshowClient initialPhotos={samplePhotos} uploadUrl={signedUrl} />);
+
+    expect(screen.getByTestId('themed-qr-code')).toHaveAttribute('data-value', signedUrl);
+    expect(screen.getByTestId('slideshow-upload-url')).toHaveTextContent(
+      'https://wedding.example.com/photos'
+    );
+  });
+
+  it('resolves relative signed upload URLs against window.location.origin after mount without hydration mismatch', () => {
+    const relativeSignedUrl = '/photos?qr=relative-signed-token';
+    render(<ReceptionSlideshowClient initialPhotos={samplePhotos} uploadUrl={relativeSignedUrl} />);
+
+    expect(screen.getByTestId('themed-qr-code')).toHaveAttribute(
+      'data-value',
+      `${window.location.origin}${relativeSignedUrl}`
+    );
+  });
+
   it('defaults QR code link to /photos?tab=guest when uploadUrl is omitted, advances cursor using updatedAt on out-of-order approvals, and refreshes existing slide captions in-place', async () => {
     const mockFetch = jest
       .fn()

@@ -204,7 +204,7 @@ function RegistryPageContent() {
             <div className="relative flex items-center w-full">
               <Icon
                 name="Search"
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-text pointer-events-none"
               />
               <Input
                 id="registry-search-input"
@@ -219,7 +219,7 @@ function RegistryPageContent() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery?.('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 min-w-6 min-h-6 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 min-w-6 min-h-6 flex items-center justify-center text-muted-text hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
                   aria-label="Clear search query"
                 >
                   <Icon name="X" className="w-4 h-4" />

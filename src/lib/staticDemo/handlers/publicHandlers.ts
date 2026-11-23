@@ -512,6 +512,8 @@ export async function handlePublicRoutes(
 
     const createdItems = store.mutate((draft) => {
       const nowIso = new Date().toISOString();
+      const autoApproved = Boolean(getActiveAppConfig(draft).autoApproveGuestPhotos);
+      const nextStatus = autoApproved ? 'APPROVED' : 'PENDING';
       return thumbnails.map((url, idx) => {
         const mediaId = generateDemoId('media-guest');
         const nodeId = generateDemoId('photo-guest');
@@ -532,8 +534,8 @@ export async function handlePublicRoutes(
           data: {
             mediaId,
             url,
-            isVisible: false,
-            status: 'PENDING',
+            isVisible: autoApproved,
+            status: nextStatus,
             title: publicTitle,
             altText: publicTitle,
             category: 'Guest',
@@ -556,10 +558,12 @@ export async function handlePublicRoutes(
           originalFilename: filenames[idx] || 'upload.jpg',
           createdAt: nowIso,
           nodeId,
-          status: 'PENDING',
-          isVisible: false,
-          message:
-            'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
+          status: nextStatus,
+          isVisible: autoApproved,
+          autoApproved,
+          message: autoApproved
+            ? 'Photo uploaded and published to the live gallery.'
+            : 'Photo submitted successfully. It will be reviewed by the couple before appearing in the gallery.',
         };
       });
     });

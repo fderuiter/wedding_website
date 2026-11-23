@@ -82,7 +82,7 @@ function MultiGroupDemo() {
   const [selectedTags, setSelectedTags] = useState<string[]>(['vip']);
   return (
     <div className="space-y-2 p-4">
-      <span id="demo-tags-label" className="block text-xs font-semibold uppercase tracking-wider text-gray-500">
+      <span id="demo-tags-label" className="block text-xs font-semibold uppercase tracking-wider text-muted-text">
         Party Tags
       </span>
       <ToggleButtonGroup

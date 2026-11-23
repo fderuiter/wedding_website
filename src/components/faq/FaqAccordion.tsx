@@ -268,7 +268,7 @@ const FaqAccordion: React.FC<FaqAccordionProps> = ({ faqs, className = '' }) => 
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-text hover:text-gray-600 dark:hover:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
                 aria-label="Clear search query"
               >
                 ✕
@@ -417,7 +417,7 @@ const FaqAccordion: React.FC<FaqAccordionProps> = ({ faqs, className = '' }) => 
             <p className="text-gray-600 dark:text-gray-400 font-medium">
               No matching FAQs found.
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+            <p className="text-sm text-muted-text mt-1">
               Try adjusting your search query or clearing category filters.
             </p>
             {(searchQuery || selectedCategories.length > 0) && (
