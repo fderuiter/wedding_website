@@ -110,6 +110,11 @@ export interface ComponentTokens {
   '--toast-confirm-text': string;
   '--toast-radius': string;
   '--toast-close-hover-bg': string;
+  '--toast-action-bg': string;
+  '--toast-action-hover-bg': string;
+  '--toast-action-text': string;
+  '--badge-inverse-bg': string;
+  '--badge-inverse-text': string;
 
   '--print-bg': string;
   '--print-text': string;
@@ -243,6 +248,11 @@ const DEFAULT_DARK_TOKENS: Partial<Omit<ComponentTokens, 'darkTokens'>> = {
   '--btn-ghost-text': '#f9fafb',
   '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
   '--btn-focus-ring': '#f9fafb',
+  '--toast-action-bg': '#ffffff',
+  '--toast-action-hover-bg': '#e5e7eb',
+  '--toast-action-text': '#111827',
+  '--badge-inverse-bg': '#ffffff',
+  '--badge-inverse-text': '#991b1b',
   '--dialog-bg': '#18181b',
   '--dialog-border-color': '#27272a',
   '--dialog-title-color': '#f9fafb',
@@ -389,6 +399,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-confirm-text': '#ffffff',
     '--toast-radius': '0.375rem',
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+    '--toast-action-bg': '#ffffff',
+    '--toast-action-hover-bg': '#e5e7eb',
+    '--toast-action-text': '#111827',
+    '--badge-inverse-bg': '#ffffff',
+    '--badge-inverse-text': '#991b1b',
 
     '--print-bg': '#ffffff',
     '--print-text': '#111827',
@@ -536,6 +551,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--btn-ghost-text': '#f9fafb',
       '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
       '--btn-focus-ring': '#f9fafb',
+      '--toast-action-bg': '#ffffff',
+      '--toast-action-hover-bg': '#e5e7eb',
+      '--toast-action-text': '#111827',
+      '--badge-inverse-bg': '#ffffff',
+      '--badge-inverse-text': '#991b1b',
       '--dialog-bg': '#1f2937',
       '--dialog-border-color': '#374151',
       '--dialog-title-color': '#f9fafb',
@@ -668,6 +688,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-confirm-text': '#ffffff',
     '--toast-radius': '0.5rem',
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+    '--toast-action-bg': '#ffffff',
+    '--toast-action-hover-bg': '#e2e8f0',
+    '--toast-action-text': '#0f172a',
+    '--badge-inverse-bg': '#ffffff',
+    '--badge-inverse-text': '#0f172a',
 
     '--print-bg': '#ffffff',
     '--print-text': '#0f172a',
@@ -815,6 +840,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--btn-ghost-text': '#f8fafc',
       '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.1)',
       '--btn-focus-ring': '#38bdf8',
+      '--toast-action-bg': '#f8fafc',
+      '--toast-action-hover-bg': '#e2e8f0',
+      '--toast-action-text': '#0f172a',
+      '--badge-inverse-bg': '#f8fafc',
+      '--badge-inverse-text': '#0f172a',
       '--dialog-bg': '#0f172a',
       '--dialog-border-color': '#1e293b',
       '--dialog-title-color': '#f8fafc',
@@ -947,6 +977,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-confirm-text': '#ffffff',
     '--toast-radius': '1rem',
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+    '--toast-action-bg': '#fffafb',
+    '--toast-action-hover-bg': '#fce7f3',
+    '--toast-action-text': '#831843',
+    '--badge-inverse-bg': '#fffafb',
+    '--badge-inverse-text': '#831843',
 
     '--print-bg': '#fffafb',
     '--print-text': '#831843',
@@ -1094,6 +1129,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--btn-ghost-text': '#fdf2f8',
       '--btn-ghost-hover-bg': 'rgba(244, 114, 182, 0.15)',
       '--btn-focus-ring': '#f472b6',
+      '--toast-action-bg': '#fdf2f8',
+      '--toast-action-hover-bg': '#fce7f3',
+      '--toast-action-text': '#831843',
+      '--badge-inverse-bg': '#fdf2f8',
+      '--badge-inverse-text': '#831843',
       '--dialog-bg': '#231118',
       '--dialog-border-color': '#4a1d2f',
       '--dialog-title-color': '#fdf2f8',
@@ -1227,6 +1267,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-confirm-text': '#ffffff',
     '--toast-radius': '0px',
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.15)',
+    '--toast-action-bg': '#ffffff',
+    '--toast-action-hover-bg': '#e4e4e7',
+    '--toast-action-text': '#18181b',
+    '--badge-inverse-bg': '#ffffff',
+    '--badge-inverse-text': '#18181b',
 
     '--print-bg': '#ffffff',
     '--print-text': '#18181b',
@@ -1374,6 +1419,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--btn-ghost-text': '#f4f4f5',
       '--btn-ghost-hover-bg': 'rgba(255, 255, 255, 0.08)',
       '--btn-focus-ring': '#f4f4f5',
+      '--toast-action-bg': '#f4f4f5',
+      '--toast-action-hover-bg': '#e4e4e7',
+      '--toast-action-text': '#18181b',
+      '--badge-inverse-bg': '#f4f4f5',
+      '--badge-inverse-text': '#18181b',
       '--dialog-bg': '#18181b',
       '--dialog-border-color': '#27272a',
       '--dialog-title-color': '#f4f4f5',
@@ -1509,6 +1559,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--toast-confirm-text': '#ffffff',
     '--toast-radius': '0.125rem',
     '--toast-close-hover-bg': 'rgba(255, 255, 255, 0.2)',
+    '--toast-action-bg': '#fcfbf9',
+    '--toast-action-hover-bg': '#e7e5e4',
+    '--toast-action-text': '#000000',
+    '--badge-inverse-bg': '#fcfbf9',
+    '--badge-inverse-text': '#000000',
 
     '--print-bg': '#fcfbf9',
     '--print-text': '#000000',
@@ -1658,6 +1713,11 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
       '--btn-ghost-text': '#ffffff',
       '--btn-ghost-hover-bg': '#292524',
       '--btn-focus-ring': '#ffffff',
+      '--toast-action-bg': '#ffffff',
+      '--toast-action-hover-bg': '#e7e5e4',
+      '--toast-action-text': '#000000',
+      '--badge-inverse-bg': '#ffffff',
+      '--badge-inverse-text': '#000000',
       '--dialog-bg': '#1c1917',
       '--dialog-border-color': '#ffffff',
       '--dialog-title-color': '#ffffff',

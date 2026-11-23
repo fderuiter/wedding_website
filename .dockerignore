@@ -73,6 +73,7 @@ src/**/__tests__
 src/mocks
 src/testing
 public/mockServiceWorker.js
+public/uploads
 scripts/*
 !scripts/generate-password-hash.mjs
 

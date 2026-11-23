@@ -223,7 +223,9 @@ async function main() {
       process.platform === 'win32' ? 'prisma.cmd' : 'prisma'
     );
     const useHostPrisma =
-      process.argv.includes('--host-migration') && fs.existsSync(hostPrismaBin);
+      process.argv.includes('--host-migration') &&
+      !process.argv.includes('--container-migration') &&
+      fs.existsSync(hostPrismaBin);
 
     if (skipImageBuild) {
       runCommand('docker', ['image', 'inspect', 'wedding-website:latest'], {

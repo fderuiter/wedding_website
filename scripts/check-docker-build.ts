@@ -50,6 +50,13 @@ function normalizeImageKey(imageName: string): string {
   return trimmed;
 }
 
+function normalizeImageRepository(imageName: string): string {
+  const normalized = normalizeImageKey(imageName);
+  const lastSlashIdx = normalized.lastIndexOf('/');
+  const colonIdx = normalized.indexOf(':', lastSlashIdx + 1);
+  return colonIdx === -1 ? normalized : normalized.slice(0, colonIdx);
+}
+
 function validateExternalImageRef(
   rawRef: string,
   filePath: string,
@@ -100,8 +107,8 @@ function validateExternalImageRef(
     return;
   }
 
-  const normalizedKey = normalizeImageKey(imageName);
-  const existing = pinnedOccurrences.get(normalizedKey) ?? [];
+  const repositoryKey = normalizeImageRepository(imageName);
+  const existing = pinnedOccurrences.get(repositoryKey) ?? [];
   existing.push({
     filePath,
     lineNumber,
@@ -109,7 +116,7 @@ function validateExternalImageRef(
     imageName,
     digest: digest.toLowerCase(),
   });
-  pinnedOccurrences.set(normalizedKey, existing);
+  pinnedOccurrences.set(repositoryKey, existing);
 }
 
 function parseDockerfileInstructions(content: string): DockerfileInstruction[] {
@@ -1137,17 +1144,31 @@ export function checkDockerBuild(
     }
   }
 
-  // 4. Verify matching @sha256 digests across Dockerfile, docker-compose.yml, and .github/workflows/*.yml
-  for (const [normalizedImage, occurrences] of pinnedOccurrences.entries()) {
+  // 4. Verify matching tags and @sha256 digests per external image repository across Dockerfile, docker-compose.yml, and .github/workflows/*.yml
+  for (const [repositoryKey, occurrences] of pinnedOccurrences.entries()) {
     const canonical = occurrences[0];
+    const canonicalNormalizedImage = normalizeImageKey(canonical.imageName);
     for (const occ of occurrences.slice(1)) {
-      if (occ.digest !== canonical.digest) {
+      const occNormalizedImage = normalizeImageKey(occ.imageName);
+      const tagDrifted = occNormalizedImage !== canonicalNormalizedImage;
+      const digestDrifted = occ.digest !== canonical.digest;
+
+      if (tagDrifted || digestDrifted) {
+        let reason: string;
+        if (tagDrifted && digestDrifted) {
+          reason = `Image repository "${repositoryKey}" reference "${occNormalizedImage}@${occ.digest}" does not match "${canonicalNormalizedImage}@${canonical.digest}" at ${canonical.filePath}:${canonical.lineNumber}. All references to "${repositoryKey}" must share the same tag and @sha256 digest.`;
+        } else if (tagDrifted) {
+          reason = `Image repository "${repositoryKey}" tag "${occNormalizedImage}" does not match "${canonicalNormalizedImage}" at ${canonical.filePath}:${canonical.lineNumber}. All references to "${repositoryKey}" must share the same tag and @sha256 digest.`;
+        } else {
+          reason = `Image "${canonicalNormalizedImage}" digest "${occ.digest}" does not match "${canonical.digest}" at ${canonical.filePath}:${canonical.lineNumber}. All references to "${repositoryKey}" must share the same @sha256 digest.`;
+        }
+
         violations.push({
           filePath: occ.filePath,
           lineNumber: occ.lineNumber,
           lineContent: occ.lineContent,
           imageRef: `${occ.imageName}@${occ.digest}`,
-          reason: `Image "${normalizedImage}" digest "${occ.digest}" does not match "${canonical.digest}" at ${canonical.filePath}:${canonical.lineNumber}. All references to "${normalizedImage}" must share the same @sha256 digest.`,
+          reason,
         });
       }
     }

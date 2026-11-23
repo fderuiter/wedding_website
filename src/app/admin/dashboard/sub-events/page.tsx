@@ -16,6 +16,7 @@ import type {
   SubEventDTO,
   RsvpSummaryResponse,
   SubEventRsvpSummaryItem,
+  AccessMatrixGuestEventRsvp,
 } from '@/features/sub-events';
 
 type SubEvent = EditableSubEvent;
@@ -28,6 +29,7 @@ interface InvitationCode {
   partyGroup?: string | null;
   partyTags?: string[];
   allowedSubEventIds?: string[];
+  eventRsvps?: Record<string, AccessMatrixGuestEventRsvp>;
 }
 
 interface MatrixFilterOptions {
@@ -61,6 +63,29 @@ interface AccessMatrixSetters {
   setTotalPages: React.Dispatch<React.SetStateAction<number>>;
   setFilterOptions: React.Dispatch<React.SetStateAction<MatrixFilterOptions>>;
   setAccessMatrix: React.Dispatch<React.SetStateAction<Record<string, string[]>>>;
+}
+
+interface BatchSubEventAccessRequest {
+  subEventIds: string[];
+  action: 'grant' | 'revoke';
+  invitationCodeIds?: string[];
+  search?: string;
+  partyTags?: string[];
+  partyGroups?: string[];
+  householdName?: string[];
+}
+
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return fallback;
 }
 
 async function requestAccessMatrix(query: AccessMatrixQuery): Promise<AccessMatrixSnapshot> {
@@ -399,15 +424,15 @@ function SubEventsMatrixPageContent() {
       }
       addToast('Sub-event access updated.', 'success');
       void refreshRsvpSummary();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Failed to update access. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Failed to update access. Reverted changes.'), 'error');
     }
   };
 
   // Bulk Column Toggle (for all currently filtered guests)
   const handleColumnToggle = async (subEventId: string, action: 'grant' | 'revoke') => {
-    const body: any = {
+    const body: BatchSubEventAccessRequest = {
       subEventIds: [subEventId],
       action,
     };
@@ -439,8 +464,8 @@ function SubEventsMatrixPageContent() {
       } else {
         void fetchMatrix({ searchQuery });
       }
-    } catch (e: any) {
-      addToast(e.message || 'Batch update failed.', 'error');
+    } catch (e: unknown) {
+      addToast(getErrorMessage(e, 'Batch update failed.'), 'error');
     }
   };
 
@@ -477,9 +502,9 @@ function SubEventsMatrixPageContent() {
         throw new Error(errJson.error || 'Batch row update failed');
       }
       addToast(`Row permissions ${action === 'grant' ? 'granted' : 'revoked'}.`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Failed to update row access. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Failed to update row access. Reverted changes.'), 'error');
     }
   };
 
@@ -519,9 +544,9 @@ function SubEventsMatrixPageContent() {
       }
 
       addToast(`Batch ${action} completed for ${selectedRowIds.length} selected guests.`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       setAccessMatrix(previousMatrix);
-      addToast(e.message || 'Batch update failed. Reverted changes.', 'error');
+      addToast(getErrorMessage(e, 'Batch update failed. Reverted changes.'), 'error');
     }
   };
 
@@ -530,6 +555,7 @@ function SubEventsMatrixPageContent() {
     try {
       if (editingId) {
         const updated = await updateSubEvent(editingId, payload);
+        await fetchMatrix();
         setSubEvents((prev) =>
           sortSubEventsBySchedule(
             prev.map((evt) =>
@@ -581,6 +607,7 @@ function SubEventsMatrixPageContent() {
   const handleConfirmDeleteSubEvent = async (target: SubEvent) => {
     try {
       await removeSubEvent(target.id);
+      await fetchMatrix();
       setSubEvents((prev) => prev.filter((evt) => evt.id !== target.id));
       setAccessMatrix((prev) => {
         const next: Record<string, string[]> = {};
@@ -589,6 +616,9 @@ function SubEventsMatrixPageContent() {
         });
         return next;
       });
+      if (editingSubEvent?.id === target.id) {
+        setEditingSubEvent(null);
+      }
       addToast('Sub-event deleted successfully.', 'success');
     } catch (err: unknown) {
       addToast(
@@ -791,11 +821,7 @@ function SubEventsMatrixPageContent() {
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">Loading sub-event access matrix...</div>
         ) : subEvents.length === 0 ? (
           <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            No sub-events created yet. Click "+ Create New Sub-Event" to get started.
-          </div>
-        ) : totalRecords === 0 ? (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            No invitation codes match your filter criteria.
+            No sub-events created yet. Click &quot;+ Create New Sub-Event&quot; to get started.
           </div>
         ) : (
           <Table
@@ -942,7 +968,16 @@ function SubEventsMatrixPageContent() {
             </thead>
 
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {paginatedCodes.map((code) => {
+              {paginatedCodes.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={2 + subEvents.length}
+                    className="p-12 text-center text-gray-500 dark:text-gray-400"
+                  >
+                    No invitation codes match your filter criteria.
+                  </td>
+                </tr>
+              ) : paginatedCodes.map((code) => {
                 const allowedIds = accessMatrix[code.id] || [];
                 const isSelectedRow = selectedRowIds.includes(code.id);
 
@@ -1027,13 +1062,70 @@ function SubEventsMatrixPageContent() {
                     {/* Sub-Event Access Matrix Cells */}
                     {subEvents.map((evt) => {
                       const isAllowed = allowedIds.includes(evt.id);
+                      const guestEventRsvp = code.eventRsvps?.[evt.id];
+                      const rsvpStatusBadgeClasses =
+                        guestEventRsvp?.status === 'attending'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-800'
+                          : guestEventRsvp?.status === 'declined'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-200 dark:border-rose-800'
+                            : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800';
+                      const rsvpDetailsBlock = guestEventRsvp ? (
+                        <div
+                          className="mt-1.5 space-y-1 text-left text-[11px]"
+                          data-testid={`matrix-cell-rsvp-${code.id}-${evt.id}`}
+                        >
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded font-semibold border ${rsvpStatusBadgeClasses}`}
+                            >
+                              {guestEventRsvp.status.charAt(0).toUpperCase() +
+                                guestEventRsvp.status.slice(1)}
+                              {guestEventRsvp.status === 'attending' &&
+                              guestEventRsvp.plusOneCount > 0
+                                ? ` (+${guestEventRsvp.plusOneCount})`
+                                : ''}
+                            </span>
+                          </div>
+                          {guestEventRsvp.plusOneNames.length > 0 && (
+                            <div className="text-gray-600 dark:text-gray-300 text-center">
+                              +1: {guestEventRsvp.plusOneNames.join(', ')}
+                            </div>
+                          )}
+                          {guestEventRsvp.meals.length > 0 && (
+                            <div className="text-indigo-800 dark:text-indigo-200 bg-indigo-50/70 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/60">
+                              {guestEventRsvp.meals
+                                .map((sel) => {
+                                  const tags =
+                                    sel.dietaryTags.length > 0
+                                      ? ` (${sel.dietaryTags.join(', ')})`
+                                      : '';
+                                  return `${sel.attendee}: ${sel.label}${tags}`;
+                                })
+                                .join('; ')}
+                            </div>
+                          )}
+                          {guestEventRsvp.answers.length > 0 && (
+                            <div className="text-sky-800 dark:text-sky-200 bg-sky-50/70 dark:bg-sky-950/40 px-1.5 py-0.5 rounded border border-sky-200 dark:border-sky-800/60">
+                              {guestEventRsvp.answers
+                                .map((ans) => `${ans.prompt}: ${ans.answer}`)
+                                .join('; ')}
+                            </div>
+                          )}
+                          {guestEventRsvp.dietaryNotes && (
+                            <div className="text-amber-800 dark:text-amber-200 bg-amber-50/70 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">
+                              Dietary: {guestEventRsvp.dietaryNotes}
+                            </div>
+                          )}
+                        </div>
+                      ) : null;
 
                       if (!evt.isPrivate) {
                         return (
-                          <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center bg-gray-50/50 dark:bg-gray-800/50">
+                          <td key={evt.id} className="p-3 border-l border-gray-200 dark:border-gray-700 text-center bg-gray-50/50 dark:bg-gray-800/50 align-middle">
                             <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
                               ✓ Public
                             </span>
+                            {rsvpDetailsBlock}
                           </td>
                         );
                       }
@@ -1049,6 +1141,7 @@ function SubEventsMatrixPageContent() {
                               className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4 cursor-pointer"
                             />
                           </label>
+                          {rsvpDetailsBlock}
                         </td>
                       );
                     })}
@@ -1129,6 +1222,9 @@ function SubEventsMatrixPageContent() {
         }}
         editingEvent={editingSubEvent}
         onSave={handleSaveSubEvent}
+        existingSubEvents={subEvents}
+        onSelectEdit={(evt) => setEditingSubEvent(evt)}
+        onRequestDelete={(evt) => setDeletingSubEvent(evt)}
       />
 
       <SubEventDeleteConfirmModal
