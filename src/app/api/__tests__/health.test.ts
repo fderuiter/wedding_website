@@ -50,13 +50,145 @@ describe('Health and Readiness Endpoints', () => {
   });
 
   describe('GET /api/ready (Readiness)', () => {
-    it('returns 200 OK when database is connected', async () => {
-      mockQueryRaw.mockResolvedValue([{ '?column?': 1 }]);
+    const coreTableRows = [
+      { table_name: 'AppConfig' },
+      { table_name: 'Media' },
+      { table_name: 'RegistryItem' },
+      { table_name: 'Contributor' },
+      { table_name: 'InvitationCode' },
+      { table_name: 'ContentNode' },
+      { table_name: 'SubEvent' },
+    ];
+
+    it('returns 200 OK on an unseeded migrated database when core tables and applied migrations exist', async () => {
+      mockQueryRaw
+        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          {
+            migration_name: '20250419032914_init',
+            finished_at: '2026-11-22T00:00:00.000Z',
+            rolled_back_at: null,
+          },
+        ]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      const json = await res.json();
+      expect(json.status).toBe('ready');
+      expect(json.database).toBe('connected');
+      expect(mockQueryRaw).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns 200 OK when core tables exist via prisma db push without _prisma_migrations', async () => {
+      mockQueryRaw.mockResolvedValueOnce(coreTableRows);
+
       const res = await readyRoute();
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.status).toBe('ready');
       expect(json.database).toBe('connected');
+      expect(mockQueryRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 200 OK when a previously failed migration was rolled back and subsequent migrations succeeded', async () => {
+      mockQueryRaw
+        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          {
+            migration_name: '20250419032914_init',
+            finished_at: '2026-11-22T00:00:00.000Z',
+            rolled_back_at: null,
+          },
+          {
+            migration_name: '20261122000000_aborted_attempt',
+            finished_at: null,
+            rolled_back_at: '2026-11-22T01:00:00.000Z',
+          },
+        ]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.status).toBe('ready');
+    });
+
+    it('returns 503 Service Unavailable on a zero-table database', async () => {
+      mockQueryRaw.mockResolvedValueOnce([]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.status).toBe('unhealthy');
+      expect(json.database).toBe('connected');
+      expect(json.error).toContain('Missing required database tables');
+      expect(json.error).toContain('AppConfig');
+    });
+
+    it('masks missing table details in production on a zero-table database', async () => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      mockQueryRaw.mockResolvedValueOnce([]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.status).toBe('unhealthy');
+      expect(json.error).toBe('Database schema is not ready');
+    });
+
+    it('returns 503 Service Unavailable when _prisma_migrations contains a failed migration', async () => {
+      mockQueryRaw
+        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          {
+            migration_name: '20250419032914_init',
+            finished_at: '2026-11-22T00:00:00.000Z',
+            rolled_back_at: null,
+          },
+          {
+            migration_name: '20261122000000_broken_migration',
+            finished_at: null,
+            rolled_back_at: null,
+          },
+        ]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.status).toBe('unhealthy');
+      expect(json.database).toBe('connected');
+      expect(json.error).toContain('20261122000000_broken_migration');
+    });
+
+    it('masks failed migration names in production while returning 503', async () => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      mockQueryRaw
+        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([
+          {
+            migration_name: '20261122000000_broken_migration',
+            finished_at: null,
+            rolled_back_at: null,
+          },
+        ]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.status).toBe('unhealthy');
+      expect(json.error).toBe('Database schema is not ready');
+    });
+
+    it('returns 503 Service Unavailable when _prisma_migrations has zero applied migrations', async () => {
+      mockQueryRaw
+        .mockResolvedValueOnce([...coreTableRows, { table_name: '_prisma_migrations' }])
+        .mockResolvedValueOnce([]);
+
+      const res = await readyRoute();
+      expect(res.status).toBe(503);
+      const json = await res.json();
+      expect(json.status).toBe('unhealthy');
+      expect(json.error).toContain('No applied database migrations');
     });
 
     it('returns 503 Service Unavailable when database query fails', async () => {
