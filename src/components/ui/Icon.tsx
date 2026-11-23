@@ -13,6 +13,7 @@ export type IconName =
   | 'Eye'
   | 'EyeOff'
   | 'ArrowLeft'
+  | 'ArrowRight'
   | 'ExternalLink'
   | 'ArrowUp'
   | 'ArrowDown'
@@ -174,6 +175,13 @@ export function Icon({
         <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
           <path d="m12 19-7-7 7-7" />
           <path d="M19 12H5" />
+        </svg>
+      );
+    case 'ArrowRight':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M5 12h14" />
+          <path d="m12 5 7 7-7 7" />
         </svg>
       );
     case 'ExternalLink':
