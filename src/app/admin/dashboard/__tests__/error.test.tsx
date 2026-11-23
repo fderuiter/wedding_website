@@ -36,7 +36,7 @@ describe('AdminDashboardError Boundary', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Admin Dashboard Error' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Admin Dashboard Error' })).toBeInTheDocument();
     expect(screen.getAllByText(/unexpected error occurred while loading this administrative view/i).length).toBeGreaterThanOrEqual(1);
 
     const retryBtn = screen.getByRole('button', { name: 'Try Again' });
@@ -59,16 +59,18 @@ describe('AdminDashboardError Boundary', () => {
 
     render(<ToastProvider>{layoutElement}</ToastProvider>);
 
-    // Header landmark and title are preserved
-    expect(screen.getByRole('heading', { name: 'Admin Control Panel' })).toBeInTheDocument();
+    // Header landmark and shell label are preserved without duplicating h1
+    expect(screen.getByText('Admin Control Panel')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Admin Control Panel' })).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Admin Navigation' })).toBeInTheDocument();
 
-    // Main section renders the localized error boundary rather than full page unmounting
+    // Main section renders the localized error boundary inside MainLandmark as the single page h1
     const mainElement = screen.getByRole('main', { name: 'Admin Dashboard Content' });
     expect(mainElement).toBeInTheDocument();
     expect(mainElement).toHaveAttribute('id', 'main-content');
     expect(mainElement).toHaveAttribute('tabindex', '-1');
-    expect(screen.getByRole('heading', { level: 2, name: 'Admin Dashboard Error' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Admin Dashboard Error' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Dashboard Overview' })).toBeInTheDocument();
   });

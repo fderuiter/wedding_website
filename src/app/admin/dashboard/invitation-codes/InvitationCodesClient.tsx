@@ -26,6 +26,8 @@ import {
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import {
   extractDietaryTags,
+  extractHouseholdNotes,
+  hasAddressCollectionTag,
   matchDietaryCategory,
   getAttendanceStatus,
   formatGuestPlusOneNames,
@@ -47,14 +49,6 @@ interface GuestEventRsvpPill {
   title: string;
   status: 'attending' | 'declined' | 'pending';
   plusOneCount: number;
-}
-
-function getGuestHouseholdNotes(item: InvitationCodeDTO): string {
-  const extra =
-    item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
-      ? (item.extraFields as Record<string, unknown>)
-      : null;
-  return extra && typeof extra.householdNotes === 'string' ? extra.householdNotes.trim() : '';
 }
 
 function getGuestAttendingPlusOneCount(item: InvitationCodeDTO): number {
@@ -180,8 +174,12 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
     const attendingPlusOneCount = getGuestAttendingPlusOneCount(item);
     const mealSelectionsDisplay = formatGuestMealSelections(item);
     const customAnswersDisplay = formatGuestCustomAnswers(item);
-    const householdNotesDisplay = getGuestHouseholdNotes(item);
+    const householdNotesDisplay = extractHouseholdNotes(item.extraFields);
     const eventRsvpPills = getGuestEventRsvpPills(item, subEvents);
+    const privateSubEvents = useMemo(
+      () => subEvents.filter((evt) => Boolean(evt.isPrivate)),
+      [subEvents]
+    );
 
     return (
       <div>
@@ -227,7 +225,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
         )}
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-700 dark:text-red-200">{item.code}</code>
           </div>
           <Button
             size="sm"
@@ -267,21 +265,21 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
               Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
             </span>
           ) : (
-            <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+            <span className="text-muted-text italic">No address provided</span>
           )}
         </div>
 
-        <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
-          <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+        <div className="text-xs text-muted-text flex flex-wrap gap-x-4 pt-1">
+          <span>Status: <span className={item.used ? 'text-red-700 dark:text-red-300 font-semibold' : 'text-green-700 dark:text-green-400 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
           <span>
             RSVP:{' '}
             <span
               className={
                 attendanceStatus === 'attending'
-                  ? 'text-green-600 font-semibold'
+                  ? 'text-green-700 dark:text-green-400 font-semibold'
                   : attendanceStatus === 'declined'
-                    ? 'text-red-600 font-semibold'
-                    : 'text-amber-600 font-semibold'
+                    ? 'text-red-700 dark:text-red-300 font-semibold'
+                    : 'text-amber-700 dark:text-amber-400 font-semibold'
               }
             >
               {attendanceStatus.charAt(0).toUpperCase() + attendanceStatus.slice(1)}
@@ -351,9 +349,13 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
           </span>
           <div className="flex flex-wrap gap-2">
             {subEvents.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+              <span className="text-xs text-muted-text italic">No sub-events created yet</span>
+            ) : privateSubEvents.length === 0 ? (
+              <span className="text-xs text-muted-text italic">
+                No private sub-events configured. Public sub-events are accessible to all invited guests.
+              </span>
             ) : (
-              subEvents.map((evt) => {
+              privateSubEvents.map((evt) => {
                 const isAllowed = allowedSubEventIds.includes(evt.id);
                 return (
                   <label
@@ -371,9 +373,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
                       onChange={(e) => onToggleSubEventAccess(item.id, evt.id, e.target.checked)}
                       className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
                     />
-                    <span>
-                      {evt.title} {evt.isPrivate ? '(Private)' : '(Public)'}
-                    </span>
+                    <span>{evt.title} (Private)</span>
                   </label>
                 );
               })
@@ -387,23 +387,37 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
 
 interface InvitationCodeRowActionsProps {
   item: InvitationCodeDTO;
+  onPromote?: (_item: InvitationCodeDTO) => void;
   onSendInvite: (_item: InvitationCodeDTO) => void;
   onEdit: (_item: InvitationCodeDTO) => void;
   onDelete: (_id: string, _e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
-  function InvitationCodeRowActions({ item, onSendInvite, onEdit, onDelete }) {
+  function InvitationCodeRowActions({ item, onPromote, onSendInvite, onEdit, onDelete }) {
+    const isAddressCollectionOnly = hasAddressCollectionTag(item.partyTags);
     return (
-      <div className="flex items-center gap-2 shrink-0 flex-wrap">
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-label={`Send invite to ${item.guestName}`}
-          onClick={() => onSendInvite(item)}
-        >
-          Send Invite
-        </Button>
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
+        {isAddressCollectionOnly && onPromote ? (
+          <Button
+            variant="primary"
+            size="sm"
+            data-testid={`promote-guest-${item.id}`}
+            srContext={`for ${item.guestName}`}
+            onClick={() => onPromote(item)}
+          >
+            Promote to Invited
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label={`Send invite to ${item.guestName}`}
+            onClick={() => onSendInvite(item)}
+          >
+            Send Invite
+          </Button>
+        )}
         <Button
           variant="secondary"
           size="sm"
@@ -438,6 +452,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
   onToggleSelect,
   onPreviewQr,
   onToggleSubEventAccess,
+  onPromote,
   onSendInvite,
   onEdit,
   onDelete,
@@ -462,6 +477,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
       </div>
       <InvitationCodeRowActions
         item={item}
+        onPromote={onPromote}
         onSendInvite={onSendInvite}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -765,6 +781,16 @@ export default function InvitationCodesDashboardPage() {
     return Array.from(set).sort();
   }, [codes]);
 
+  const privateSubEvents = useMemo(
+    () => subEvents.filter((evt) => Boolean(evt.isPrivate)),
+    [subEvents]
+  );
+
+  const invitedCodes = useMemo(
+    () => codes.filter((c) => !c.isSample && !hasAddressCollectionTag(c.partyTags)),
+    [codes]
+  );
+
   const counts = useMemo(() => {
     const complete = codes.filter((c) => isAddressComplete(c)).length;
     return {
@@ -777,13 +803,12 @@ export default function InvitationCodesDashboardPage() {
   }, [codes]);
 
   const attendanceCounts = useMemo(() => {
-    const nonSampleCodes = codes.filter((c) => !c.isSample);
     let attending = 0;
     let declined = 0;
     let pending = 0;
     let attendingPlusOnes = 0;
 
-    for (const c of nonSampleCodes) {
+    for (const c of invitedCodes) {
       const status = getAttendanceStatus(c);
       if (status === 'attending') {
         attending++;
@@ -797,10 +822,10 @@ export default function InvitationCodesDashboardPage() {
 
     const useServerGlobal =
       Boolean(rsvpSummary?.global) &&
-      rsvpSummary!.global.totalInvitations === nonSampleCodes.length;
+      rsvpSummary!.global.totalInvitations === invitedCodes.length;
 
     return {
-      all: nonSampleCodes.length,
+      all: invitedCodes.length,
       attending,
       declined,
       pending,
@@ -811,10 +836,9 @@ export default function InvitationCodesDashboardPage() {
         ? rsvpSummary!.global.attendingPlusOnes
         : attendingPlusOnes,
     };
-  }, [codes, rsvpSummary]);
+  }, [invitedCodes, rsvpSummary]);
 
   const cateringSummary = useMemo(() => {
-    const nonSampleCodes = codes.filter((c) => !c.isSample);
     let totalWithRestrictions = 0;
     let glutenFree = 0;
     let vegetarian = 0;
@@ -825,7 +849,7 @@ export default function InvitationCodesDashboardPage() {
     let other = 0;
     const clientMealMap = new Map<string, { optionId: string; label: string; count: number }>();
 
-    for (const item of nonSampleCodes) {
+    for (const item of invitedCodes) {
       const attendanceStatus = getAttendanceStatus(item);
       if (attendanceStatus === 'declined') continue;
 
@@ -901,7 +925,7 @@ export default function InvitationCodesDashboardPage() {
 
     const useServerSummary =
       Boolean(rsvpSummary?.global) &&
-      rsvpSummary!.global.totalInvitations === nonSampleCodes.length;
+      rsvpSummary!.global.totalInvitations === invitedCodes.length;
 
     const mealTotals =
       useServerSummary && Array.isArray(rsvpSummary!.global.mealTotals)
@@ -921,7 +945,7 @@ export default function InvitationCodesDashboardPage() {
       other: useServerSummary ? rsvpSummary!.global.dietary.other : other,
       mealTotals,
     };
-  }, [codes, rsvpSummary]);
+  }, [invitedCodes, rsvpSummary]);
 
   const filteredCodes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -968,7 +992,7 @@ export default function InvitationCodesDashboardPage() {
         .toLowerCase()
         .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
-      const matchesHouseholdNotes = getGuestHouseholdNotes(item).toLowerCase().includes(query);
+      const matchesHouseholdNotes = extractHouseholdNotes(item.extraFields).toLowerCase().includes(query);
       const matchesHousehold = item.householdName ? item.householdName.toLowerCase().includes(query) : false;
       const matchesPartyGroup = item.partyGroup ? item.partyGroup.toLowerCase().includes(query) : false;
       const matchesTags = item.partyTags ? item.partyTags.some((t) => t.toLowerCase().includes(query)) : false;
@@ -1119,24 +1143,59 @@ export default function InvitationCodesDashboardPage() {
       addToast('No invitation codes selected for printing.', 'info');
       return;
     }
-    const targetCodes = codes.filter((c) => selectedIdsSet.has(c.id));
-    setPrintLabelsList(targetCodes);
-    setIsPrintLabelsModalOpen(true);
-  };
-
-  const handlePrintGlobalLabels = () => {
-    const targetCodes = selectedIds.length > 0
-      ? codes.filter((c) => selectedIdsSet.has(c.id))
-      : filteredCodes.length > 0
-        ? filteredCodes
-        : codes;
+    const targetCodes = codes.filter((c) => selectedIdsSet.has(c.id) && !c.isSample);
     if (targetCodes.length === 0) {
-      addToast('No invitation codes available to print.', 'info');
+      addToast('Sample invitation codes are excluded from printable QR label sheets.', 'info');
       return;
     }
     setPrintLabelsList(targetCodes);
     setIsPrintLabelsModalOpen(true);
   };
+
+  const handlePrintGlobalLabels = () => {
+    const candidateCodes = selectedIds.length > 0
+      ? codes.filter((c) => selectedIdsSet.has(c.id))
+      : filteredCodes.length > 0
+        ? filteredCodes
+        : codes;
+    if (candidateCodes.length === 0) {
+      addToast('No invitation codes available to print.', 'info');
+      return;
+    }
+    const targetCodes = candidateCodes.filter((c) => !c.isSample);
+    if (targetCodes.length === 0) {
+      addToast('Sample invitation codes are excluded from printable QR label sheets.', 'info');
+      return;
+    }
+    setPrintLabelsList(targetCodes);
+    setIsPrintLabelsModalOpen(true);
+  };
+
+  const handlePromoteGuest = useCallback(
+    async (item: InvitationCodeDTO) => {
+      try {
+        if (typeof batchUpdateTags === 'function') {
+          await batchUpdateTags([item.id], ['address-collection'], 'remove');
+        } else {
+          const remainingTags = (item.partyTags || []).filter(
+            (tag) => tag.trim().toLowerCase() !== 'address-collection'
+          );
+          await update(item.id, { partyTags: remainingTags });
+        }
+        void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: ['admin-onboarding-milestones'] });
+        addToast(`Promoted ${item.guestName} to invited household.`, 'success');
+      } catch (e: unknown) {
+        addToast(
+          e instanceof Error && e.message
+            ? e.message
+            : 'Failed to promote address contact to invited household.',
+          'error'
+        );
+      }
+    },
+    [batchUpdateTags, update, queryClient, addToast]
+  );
 
   const handleConfirmBatchDelete = async () => {
     const count = selectedIds.length;
@@ -1586,7 +1645,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
               <span
                 id="party-tags-filter-label"
-                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
               >
                 Party Tags:
               </span>
@@ -1627,7 +1686,7 @@ export default function InvitationCodesDashboardPage() {
           <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
             {/* Redemption Status Tab Group */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
+              <span className="text-xs font-semibold text-muted-text uppercase tracking-wider">Redemption:</span>
               <SegmentedTabs
                 idPrefix="redemption-status"
                 panelId="invitation-codes-results-panel"
@@ -1651,7 +1710,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span
                 id="address-filter-label"
-                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
               >
                 Address:
               </span>
@@ -1676,7 +1735,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span
                 id="attendance-filter-label"
-                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
               >
                 Attendance:
               </span>
@@ -1736,6 +1795,7 @@ export default function InvitationCodesDashboardPage() {
                 onToggleSelect={handleToggleSelectRow}
                 onPreviewQr={setQrPreviewGuest}
                 onToggleSubEventAccess={handleToggleSubEventAccess}
+                onPromote={handlePromoteGuest}
                 onSendInvite={handleSendInviteToGuest}
                 onEdit={setEditingGuest}
                 onDelete={handleDelete}
@@ -2039,8 +2099,12 @@ export default function InvitationCodesDashboardPage() {
               >
                 {subEvents.length === 0 ? (
                   <p className="text-xs text-gray-600 dark:text-gray-300 italic">No sub-events found.</p>
+                ) : privateSubEvents.length === 0 ? (
+                  <p className="text-xs text-gray-600 dark:text-gray-300 italic">
+                    No private sub-events configured. Public sub-events are accessible to all invited guests.
+                  </p>
                 ) : (
-                  subEvents.map((se) => {
+                  privateSubEvents.map((se) => {
                     const isChecked = bulkSelectedSubEventIds.includes(se.id);
                     return (
                       <label key={se.id} className="flex items-center gap-2 text-sm cursor-pointer">
@@ -2058,9 +2122,7 @@ export default function InvitationCodesDashboardPage() {
                           }}
                           className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
                         />
-                        <span>
-                          {se.title} {se.isPrivate ? '(Private)' : '(Public)'}
-                        </span>
+                        <span>{se.title} (Private)</span>
                       </label>
                     );
                   })
@@ -2076,7 +2138,11 @@ export default function InvitationCodesDashboardPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" variant="primary">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={privateSubEvents.length === 0}
+              >
                 Apply Batch Access
               </Button>
             </div>

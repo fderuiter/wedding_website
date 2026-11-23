@@ -108,6 +108,11 @@ on:
         required: false
         default: ''
         type: string
+      caller_holds_lock:
+        description: 'Whether the calling workflow already holds the deploy-env-<environment> concurrency lock'
+        required: false
+        default: false
+        type: boolean
     secrets:
       GCP_SA_KEY:
         required: false
@@ -121,19 +126,25 @@ on:
         required: false
 
 concurrency:
-  group: rollback-${{ inputs.target_environment || 'production' }}
+  group: ${{ inputs.caller_holds_lock && format('caller-rollback-{0}-{1}-{2}', inputs.target_environment || 'production', github.run_id, github.run_attempt) || format('deploy-env-{0}', inputs.target_environment || 'production') }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   preflight:
     name: Validate Inputs & Database Compatibility
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+      packages: read
+      attestations: read
     # Note: Automated rollback uses an unguarded rollback_environment (or target_environment)
     # on provider/probe jobs so post-deployment failure recovery can restore the previous
     # validated container image immediately without a second manual approval gate.
     outputs:
       effective_tag: ${{ steps.validate.outputs.effective_tag }}
-      effective_digest: ${{ steps.validate.outputs.effective_digest }}
+      effective_digest: ${{ steps.verify_deployment.outputs.verified_digest || steps.validate.outputs.effective_digest }}
       validation_status: ${{ steps.validate.outputs.validation_status }}
       db_compatibility_status: ${{ steps.db_safety_check.outputs.db_compatibility_status }}
       failed_stage: ${{ steps.record_failure.outputs.failed_stage }}
@@ -236,10 +247,209 @@ jobs:
           echo "Timestamp: ${NOW}"
           echo "=================================================="
 
+      - name: Verify Rollback Digest Deployment History
+        id: verify_deployment
+        if: "!inputs.dry_run && (steps.validate.outputs.effective_digest != '' || github.event_name == 'workflow_dispatch')"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET_ENV: ${{ inputs.target_environment || 'production' }}
+          EFFECTIVE_DIGEST: ${{ steps.validate.outputs.effective_digest }}
+          EFFECTIVE_TAG: ${{ steps.validate.outputs.effective_tag }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: |
+          TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -z "$TOKEN" ] || [ -z "${GITHUB_REPOSITORY:-}" ]; then
+            echo "::error::Missing GITHUB_TOKEN or GITHUB_REPOSITORY required to verify prior '${TARGET_ENV}' GitHub Deployments for rollback."
+            exit 1
+          fi
+
+          RESOLVED_CURRENT_SHA="${INPUT_COMMIT_SHA:-${CURRENT_SHA:-${GITHUB_SHA:-}}}"
+          NORMALIZED_CURRENT_SHA=$(printf '%s' "$RESOLVED_CURRENT_SHA" | tr '[:upper:]' '[:lower:]')
+          NORMALIZED_DIGEST=$(printf '%s' "${EFFECTIVE_DIGEST:-}" | tr '[:upper:]' '[:lower:]')
+          REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          RESOLVED_OWNER="${REPO_OWNER:-${GITHUB_REPOSITORY%%/*}}"
+          RESOLVED_SIGNER="${SIGNER_WORKFLOW:-${GITHUB_REPOSITORY}/.github/workflows/publish-artifact.yml}"
+
+          GHCR_LOGGED_IN="false"
+          ensure_ghcr_login() {
+            if [ "$GHCR_LOGGED_IN" = "true" ]; then
+              return 0
+            fi
+            if [ -n "$TOKEN" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
+              printf '%s\n' "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
+            fi
+            GHCR_LOGGED_IN="true"
+          }
+
+          if [ -n "$NORMALIZED_DIGEST" ]; then
+            IMAGE_URI="ghcr.io/${REPO_LOWER}@${NORMALIZED_DIGEST}"
+
+            if command -v gh >/dev/null 2>&1 && [ -n "$RESOLVED_OWNER" ] && [ -n "$RESOLVED_SIGNER" ]; then
+              ATTESTATION_JSON=$(GH_TOKEN="$TOKEN" gh attestation verify "oci://${IMAGE_URI}" \
+                --owner "$RESOLVED_OWNER" \
+                --signer-workflow "$RESOLVED_SIGNER" \
+                --format json 2>/dev/null || true)
+              if [ -n "$ATTESTATION_JSON" ]; then
+                ATTESTED_SHA=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                  [
+                    (if type == "array" then .[] else . end)
+                    | (
+                        ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                          .buildDefinition.externalParameters.inputs.commit_sha,
+                          (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                          .buildDefinition.internalParameters.github.sha,
+                          .invocation.configSource.digest.sha1,
+                          (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                        )),
+                        .verificationResult.signature.certificate.sourceRepositoryDigest,
+                        .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                        .statement.subject[]?.annotations["org.opencontainers.image.revision"]
+                      )
+                    | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                  ][0] // empty
+                ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                if [ -n "$ATTESTED_SHA" ] && [ -n "$NORMALIZED_CURRENT_SHA" ] && [ "$ATTESTED_SHA" = "$NORMALIZED_CURRENT_SHA" ]; then
+                  echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' was built from the failing commit SHA '${RESOLVED_CURRENT_SHA}'. Specify a prior healthy deployment digest."
+                  exit 1
+                fi
+              fi
+            fi
+
+            if command -v docker >/dev/null 2>&1; then
+              ensure_ghcr_login
+              RAW_MANIFEST=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
+              if [[ "${RAW_MANIFEST#"${RAW_MANIFEST%%[![:space:]]*}"}" == \{* ]]; then
+                MANIFEST_REV=$(printf '%s' "$RAW_MANIFEST" | jq -r '
+                  .annotations["org.opencontainers.image.revision"]
+                  // .config.Labels["org.opencontainers.image.revision"]
+                  // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                  // empty
+                ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                if [ -n "$MANIFEST_REV" ] && [ -n "$NORMALIZED_CURRENT_SHA" ] && [ "$MANIFEST_REV" = "$NORMALIZED_CURRENT_SHA" ]; then
+                  echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' matches OCI revision '${RESOLVED_CURRENT_SHA}' (CURRENT_SHA). Specify a prior healthy deployment digest."
+                  exit 1
+                fi
+              fi
+
+              if [[ "$NORMALIZED_CURRENT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+                CURRENT_SHA_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "ghcr.io/${REPO_LOWER}:${NORMALIZED_CURRENT_SHA}" 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' || true)
+                if [ -n "$CURRENT_SHA_DIGEST" ] && [ "$CURRENT_SHA_DIGEST" = "$NORMALIZED_DIGEST" ]; then
+                  echo "::error::Rollback image digest '${EFFECTIVE_DIGEST}' matches the image digest of failing commit SHA '${RESOLVED_CURRENT_SHA}'. Specify a prior healthy deployment digest."
+                  exit 1
+                fi
+              fi
+            fi
+          fi
+
+          API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+          if ! DEPLOYMENTS_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments?environment=${TARGET_ENV}&per_page=50"); then
+            echo "::error::Failed to query GitHub Deployments for environment '${TARGET_ENV}' in '${GITHUB_REPOSITORY}'."
+            exit 1
+          fi
+
+          if [[ "${DEPLOYMENTS_JSON#"${DEPLOYMENTS_JSON%%[![:space:]]*}"}" != \[* ]]; then
+            echo "::error::Unexpected GitHub Deployments response while verifying rollback history for '${TARGET_ENV}'."
+            exit 1
+          fi
+
+          VERIFIED_DEPLOYMENT_ID=""
+          VERIFIED_DIGEST="$NORMALIZED_DIGEST"
+
+          while IFS='|' read -r DEP_ID DEP_SHA DEP_COMMIT_SHA DEP_TAG DEP_DIGEST DEP_DRY_RUN; do
+            [ -z "$DEP_ID" ] && continue
+            if [ "$DEP_DRY_RUN" = "true" ]; then
+              continue
+            fi
+
+            NORM_DEP_SHA=$(printf '%s' "${DEP_SHA:-}" | tr '[:upper:]' '[:lower:]')
+            NORM_DEP_COMMIT=$(printf '%s' "${DEP_COMMIT_SHA:-}" | tr '[:upper:]' '[:lower:]')
+            NORM_DEP_DIGEST=$(printf '%s' "${DEP_DIGEST:-}" | tr '[:upper:]' '[:lower:]')
+
+            MATCHES_TARGET="false"
+            if [ -n "$NORMALIZED_DIGEST" ]; then
+              if [ -n "$NORM_DEP_DIGEST" ] && [ "$NORM_DEP_DIGEST" = "$NORMALIZED_DIGEST" ]; then
+                MATCHES_TARGET="true"
+              elif [ -z "$NORM_DEP_DIGEST" ] && command -v docker >/dev/null 2>&1; then
+                CANDIDATE_LOOKUP_TAG="${DEP_TAG:-${DEP_SHA:-}}"
+                if [ -n "$CANDIDATE_LOOKUP_TAG" ] && [ "$CANDIDATE_LOOKUP_TAG" != "latest" ]; then
+                  ensure_ghcr_login
+                  RESOLVED_DEP_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "ghcr.io/${REPO_LOWER}:${CANDIDATE_LOOKUP_TAG}" 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' || true)
+                  if [ -n "$RESOLVED_DEP_DIGEST" ] && [ "$RESOLVED_DEP_DIGEST" = "$NORMALIZED_DIGEST" ]; then
+                    MATCHES_TARGET="true"
+                  fi
+                fi
+              fi
+            elif [ -n "${EFFECTIVE_TAG:-}" ]; then
+              if [ "${DEP_TAG:-}" = "$EFFECTIVE_TAG" ] || [ "$NORM_DEP_SHA" = "${EFFECTIVE_TAG,,}" ] || [ "$NORM_DEP_COMMIT" = "${EFFECTIVE_TAG,,}" ]; then
+                MATCHES_TARGET="true"
+              fi
+            fi
+
+            if [ "$MATCHES_TARGET" != "true" ]; then
+              continue
+            fi
+
+            if [ -n "$NORMALIZED_CURRENT_SHA" ]; then
+              if { [ -n "$NORM_DEP_SHA" ] && [ "$NORM_DEP_SHA" = "$NORMALIZED_CURRENT_SHA" ]; } || \
+                 { [ -n "$NORM_DEP_COMMIT" ] && [ "$NORM_DEP_COMMIT" = "$NORMALIZED_CURRENT_SHA" ]; }; then
+                echo "::error::Rollback target '${EFFECTIVE_DIGEST:-$EFFECTIVE_TAG}' matches failing commit SHA '${RESOLVED_CURRENT_SHA}' in '${TARGET_ENV}' GitHub Deployments."
+                exit 1
+              fi
+            fi
+
+            STATUSES_JSON=$(curl -fsSL --connect-timeout 5 --max-time 10 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${DEP_ID}/statuses?per_page=20" 2>/dev/null || true)
+            ACTIVE_STATE=""
+            if [[ "${STATUSES_JSON#"${STATUSES_JSON%%[![:space:]]*}"}" == \[* ]]; then
+              ACTIVE_STATE=$(printf '%s' "$STATUSES_JSON" | jq -r '[.[]? | select(.state != null and .state != "inactive") | .state] | .[0] // empty' 2>/dev/null || true)
+            fi
+            if [ "$ACTIVE_STATE" != "success" ]; then
+              continue
+            fi
+
+            VERIFIED_DEPLOYMENT_ID="$DEP_ID"
+            if [ -z "$VERIFIED_DIGEST" ] && [[ "$NORM_DEP_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              VERIFIED_DIGEST="$NORM_DEP_DIGEST"
+            fi
+            break
+          done < <(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg env "$TARGET_ENV" '
+            .[]?
+            | select((.environment // $env) == $env and .id != null)
+            | [
+                (.id | tostring),
+                (.sha // ""),
+                ((.payload | if type == "object" then (.commit_sha // "") else "" end) | tostring),
+                ((.payload | if type == "object" then (.image_tag // "") else "" end) | tostring),
+                ((.payload | if type == "object" then (.image_digest // "") else "" end) | tostring),
+                ((.payload | if type == "object" then (.dry_run // false) else false end) | tostring)
+              ]
+            | join("|")
+          ' 2>/dev/null || true)
+
+          if [ -z "$VERIFIED_DEPLOYMENT_ID" ]; then
+            echo "::error::Rollback blocked: '${EFFECTIVE_DIGEST:-$EFFECTIVE_TAG}' has no prior successful GitHub Deployment in environment '${TARGET_ENV}'."
+            exit 1
+          fi
+
+          echo "verified_deployment_id=${VERIFIED_DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "verified_digest=${VERIFIED_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "✅ Verified prior successful '${TARGET_ENV}' GitHub Deployment #${VERIFIED_DEPLOYMENT_ID} for rollback target '${EFFECTIVE_DIGEST:-$EFFECTIVE_TAG}'."
+
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -266,10 +476,13 @@ jobs:
         if: failure()
         env:
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          VERIFY_DEPLOYMENT_OUTCOME: ${{ steps.verify_deployment.outcome }}
           DB_CHECK_OUTCOME: ${{ steps.db_safety_check.outcome }}
         run: |
           if [ "$VALIDATE_OUTCOME" != "success" ]; then
             echo "failed_stage=Input Validation" >> "$GITHUB_OUTPUT"
+          elif [ "$VERIFY_DEPLOYMENT_OUTCOME" = "failure" ]; then
+            echo "failed_stage=Rollback Digest Deployment Verification" >> "$GITHUB_OUTPUT"
           elif [ "$DB_CHECK_OUTCOME" != "success" ]; then
             echo "failed_stage=Pre-Rollback Database Compatibility Gate (lint:migrations)" >> "$GITHUB_OUTPUT"
           else
@@ -297,6 +510,7 @@ jobs:
       cloud_run_service: ${{ inputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
+      caller_holds_lock: true
     secrets: inherit
 
   verify:

@@ -56,6 +56,14 @@ describe('ReceptionSlideshowClient', () => {
     expect(img).toHaveAttribute('src', 'https://example.com/photo1.jpg');
     expect(screen.getByText('First Dance')).toBeInTheDocument();
 
+    // Slide presentation exposes descriptive h1 and sequential h2 QR overlay heading
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Live Reception Slideshow' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: /Upload Your Photos/i })
+    ).toBeInTheDocument();
+
     // QR code overlay is prominently rendered by default
     const qrOverlay = screen.getByTestId('slideshow-qr-overlay');
     expect(qrOverlay).toBeInTheDocument();
@@ -1189,6 +1197,26 @@ describe('ReceptionSlideshowClient', () => {
     fireEvent.click(screen.getByTestId('slideshow-next-btn'));
     expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Late Night Tacos');
     expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent('Shared by Cousin Leo');
+  });
+
+  it('encodes the full signed QR upload URL into ThemedQRCode while displaying a readable short URL', () => {
+    const signedUrl = 'https://wedding.example.com/photos?qr=eyJwdXJwb3NlIjoicGhvdG9fcXJfbGluayJ9.sig';
+    render(<ReceptionSlideshowClient initialPhotos={samplePhotos} uploadUrl={signedUrl} />);
+
+    expect(screen.getByTestId('themed-qr-code')).toHaveAttribute('data-value', signedUrl);
+    expect(screen.getByTestId('slideshow-upload-url')).toHaveTextContent(
+      'https://wedding.example.com/photos'
+    );
+  });
+
+  it('resolves relative signed upload URLs against window.location.origin after mount without hydration mismatch', () => {
+    const relativeSignedUrl = '/photos?qr=relative-signed-token';
+    render(<ReceptionSlideshowClient initialPhotos={samplePhotos} uploadUrl={relativeSignedUrl} />);
+
+    expect(screen.getByTestId('themed-qr-code')).toHaveAttribute(
+      'data-value',
+      `${window.location.origin}${relativeSignedUrl}`
+    );
   });
 
   it('defaults QR code link to /photos?tab=guest when uploadUrl is omitted, advances cursor using updatedAt on out-of-order approvals, and refreshes existing slide captions in-place', async () => {

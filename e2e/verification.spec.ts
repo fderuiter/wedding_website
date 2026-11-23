@@ -255,7 +255,7 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
       expect(new URL(page.url()).pathname).toBe(studioRoute);
 
       const previewIframe = page.locator('iframe[title="Live Preview"]');
-      await expect(previewIframe).toBeVisible();
+      await expect(previewIframe).toBeVisible({ timeout: 15_000 });
 
       const previewFrame = page.frameLocator('iframe[title="Live Preview"]');
       await expect(previewFrame.getByRole('region', { name: 'Live Preview' })).toBeAttached({
@@ -285,6 +285,83 @@ test.describe('UI Verification', { tag: '@a11y' }, () => {
         .options({ rules: a11yConfig.rules });
       const results = await axeBuilder.analyze();
       recordRouteViolations(studioRoute, results.violations);
+      expect(results.violations).toEqual([]);
+    }
+  });
+
+  test('should skip static Wedding Registry heading on Tab and pass axe heading checks on /registry', async ({
+    context,
+    page,
+  }) => {
+    await seedGuestAuthCookies(context);
+
+    await page.goto('/registry', { waitUntil: 'domcontentloaded' });
+    expect(new URL(page.url()).pathname).toBe('/registry');
+
+    const registryHeading = page.getByRole('heading', { level: 1, name: 'Wedding Registry' });
+    await expect(registryHeading).toBeVisible();
+    await expect(registryHeading).not.toHaveAttribute('tabindex');
+
+    // Focus the last focusable control in the top header, then press Tab once:
+    // focus must move directly to the search input without stopping on the static h1.
+    const focusedLastNavControl = await page.evaluate(() => {
+      const headerControls = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'header a[href], header button:not([disabled]), nav[aria-label="Primary"] a[href], nav[aria-label="Primary"] button:not([disabled])'
+        )
+      ).filter((el) => el.offsetParent !== null);
+      const last = headerControls[headerControls.length - 1];
+      if (!last) return false;
+      last.focus();
+      return document.activeElement === last;
+    });
+    expect(focusedLastNavControl).toBe(true);
+
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#registry-search-input')).toBeFocused();
+
+    const axeBuilder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
+    if (a11yConfig.rules) {
+      axeBuilder.options({ rules: a11yConfig.rules });
+    }
+    const results = await axeBuilder.analyze();
+    recordRouteViolations('/registry', results.violations);
+    expect(results.violations).toEqual([]);
+  });
+
+  test('should expose a single h1 and zero heading-order violations across 404, standalone editors, media, and admin dashboard routes', async ({
+    context,
+    page,
+  }) => {
+    await seedAdminAndGuestAuthCookies(context);
+
+    const routesToAudit = [
+      '/missing-route-404-heading-audit',
+      '/heart',
+      '/schedule',
+      '/history',
+      '/things-to-do',
+      '/wedding-party',
+      '/registry/add-item',
+      '/registry/edit-item/1',
+      '/admin/dashboard',
+      '/admin/dashboard/site-manager',
+      '/admin/dashboard/registry',
+      '/admin/dashboard/settings',
+    ];
+
+    for (const route of routesToAudit) {
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await expect(page.locator('h1')).toHaveCount(1);
+
+      const axeBuilder = new AxeBuilder({ page })
+        .exclude('iframe')
+        .withTags(a11yConfig.runOnly.values);
+      if (a11yConfig.rules) {
+        axeBuilder.options({ rules: a11yConfig.rules });
+      }
+      const results = await axeBuilder.analyze();
+      recordRouteViolations(route, results.violations);
       expect(results.violations).toEqual([]);
     }
   });

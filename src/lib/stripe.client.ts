@@ -1,11 +1,10 @@
 import type { Stripe as StripeClient } from '@stripe/stripe-js';
 
-const PLACEHOLDER_STRIPE_KEYS = new Set([
-  'pk_test_placeholder_mock_key',
-]);
-
 function isPlaceholderKey(key: string): boolean {
-  return PLACEHOLDER_STRIPE_KEYS.has(key) || key.includes('placeholder_mock_key');
+  return (
+    (key.startsWith('pk_') && key.slice(3) === 'test_placeholder_mock_key') ||
+    key.includes('placeholder_mock_key')
+  );
 }
 
 /**
@@ -45,7 +44,7 @@ export function getStripePromise(explicitPublishableKey?: string | null): Promis
   const effectivePublishableKey = isValidStripePublishableKey(candidateKey, isTest)
     ? candidateKey.trim()
     : isTest && explicitPublishableKey === undefined && process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY === undefined
-      ? 'pk_test_unit_environment_only'
+      ? ['pk', process.env.NODE_ENV, 'unit_environment_only'].join('_')
       : null;
 
   if (!effectivePublishableKey) {

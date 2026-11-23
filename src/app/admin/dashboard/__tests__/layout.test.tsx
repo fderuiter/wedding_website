@@ -90,6 +90,7 @@ describe('AdminDashboardLayout and AdminNav', () => {
 
     const navElement = screen.getByRole('navigation', { name: 'Admin Navigation' });
     expect(navElement).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /view live site/i })).toHaveAttribute('href', '/');
     expect(within(navElement).getByRole('link', { name: 'Overview' })).toHaveAttribute(
       'href',
       '/admin/dashboard'

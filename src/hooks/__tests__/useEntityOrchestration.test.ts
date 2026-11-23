@@ -386,5 +386,61 @@ describe('useEntityOrchestration', () => {
         totalPages: 1,
       });
     });
+
+    it('exposes totalCount and paginationMeta from attached response metadata and adjusts totalCount on optimistic create/remove', async () => {
+      const { attachResponsePaginationMeta } = await import('@/lib/apiClient');
+      const itemsWithMeta = [...initialItems];
+      attachResponsePaginationMeta(itemsWithMeta, {
+        totalCount: 122,
+        page: 1,
+        limit: 1000,
+        totalPages: 1,
+      });
+      mockApiClient.get.mockResolvedValueOnce(itemsWithMeta);
+      const { result } = renderHook(
+        () =>
+          useEntityOrchestration<TestItem>({
+            queryKey: ['meta-entities'],
+            endpoint,
+            entityName,
+            apiClient: mockApiClient,
+          }),
+        { wrapper: createWrapper(queryClient) }
+      );
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      expect(result.current.totalCount).toBe(122);
+      expect(result.current.paginationMeta).toEqual(
+        expect.objectContaining({
+          totalCount: 122,
+          limit: 1000,
+        })
+      );
+
+      let resolvePost!: (val: TestItem) => void;
+      mockApiClient.post.mockImplementationOnce(
+        () =>
+          new Promise<TestItem>((res) => {
+            resolvePost = res;
+          })
+      );
+
+      let createPromise!: Promise<TestItem>;
+      await act(async () => {
+        createPromise = result.current.create({ name: 'Optimistic Six' });
+      });
+
+      await waitFor(() => {
+        expect(result.current.totalCount).toBe(123);
+      });
+
+      await act(async () => {
+        resolvePost({ id: '6', name: 'Optimistic Six', position: 6 });
+        await createPromise;
+      });
+    });
   });
 });

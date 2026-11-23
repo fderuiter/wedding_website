@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { MainLandmark } from '@/components/ui/Layout';
@@ -97,15 +97,28 @@ export function ReceptionSlideshowClient({
     }
   }, [initialLatestTimestamp]);
 
-  // Derive resolved upload URL
+  const subscribeOriginNoop = useCallback(() => () => {}, []);
+  const clientOrigin = useSyncExternalStore(
+    subscribeOriginNoop,
+    () => (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''),
+    () => ''
+  );
+
+  // Derive resolved upload URL (upgrading relative signed QR paths and basePath-prefixed fallbacks after hydration)
   const resolvedUploadUrl = useMemo(() => {
-    if (uploadUrl) return uploadUrl;
+    if (uploadUrl) {
+      if (uploadUrl.startsWith('/')) {
+        const prefixed = withBasePath(uploadUrl);
+        return clientOrigin ? `${clientOrigin}${prefixed}` : prefixed;
+      }
+      return uploadUrl;
+    }
     const photosPath = withBasePath('/photos?tab=guest');
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}${photosPath}`;
+    if (clientOrigin) {
+      return `${clientOrigin}${photosPath}`;
     }
     return photosPath;
-  }, [uploadUrl]);
+  }, [uploadUrl, clientOrigin]);
 
   // Helper to determine whether an element is an interactive control in the slideshow
   const isInteractiveControl = useCallback((node: Node | null): boolean => {
@@ -513,7 +526,7 @@ export function ReceptionSlideshowClient({
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs font-medium text-stone-200">
             <span>{photos.length > 0 ? safeIndex + 1 : 0}</span>
-            <span className="text-stone-500">/</span>
+            <span className="text-stone-300">/</span>
             <span>{photos.length}</span>
           </div>
         </div>
@@ -781,7 +794,7 @@ export function ReceptionSlideshowClient({
             <button
               type="button"
               onClick={() => setShowQrCode(false)}
-              className="p-1 rounded-full text-stone-400 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
+              className="p-1 rounded-full text-stone-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus:ring-2 focus:ring-white"
               aria-label="Dismiss QR code overlay"
               data-testid="slideshow-qr-close-btn"
             >

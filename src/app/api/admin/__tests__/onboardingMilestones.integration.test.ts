@@ -26,6 +26,7 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
   const createdInvitationIds: string[] = [];
   const createdTableIds: string[] = [];
   const createdFaqIds: string[] = [];
+  const createdSubEventIds: string[] = [];
 
   async function makeAdminRequest() {
     const now = Date.now();
@@ -50,11 +51,15 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     await prisma.registryItem.deleteMany({});
     await prisma.invitationCode.deleteMany({});
     await prisma.seatingTable.deleteMany({});
-    await prisma.contentNode.deleteMany({ where: { type: 'FAQ' } });
+    await prisma.subEvent.deleteMany({});
+    await prisma.contentNode.deleteMany({});
   });
 
   afterAll(async () => {
     await purgeSampleData();
+    if (createdSubEventIds.length > 0) {
+      await prisma.subEvent.deleteMany({ where: { id: { in: createdSubEventIds } } });
+    }
     if (createdFaqIds.length > 0) {
       await prisma.contentNode.deleteMany({ where: { id: { in: createdFaqIds } } });
     }
@@ -73,7 +78,7 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     await prisma.$disconnect();
   });
 
-  it('ignores sample records (isSample: true) and completes detection under 150ms', async () => {
+  it('ignores sample records, requires non-placeholder venue + custom story & schedule, and completes under 150ms', async () => {
     await prisma.appConfig.upsert({
       where: { id: 'global' },
       update: {
@@ -81,9 +86,12 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
         partner2Name: 'Morgan',
         brideName: 'Riley',
         groomName: 'Morgan',
+        venueName: 'TBD',
+        venueCity: '',
+        venueState: '',
+        storyText: 'Our story...',
         baseUrl: 'https://rileymorgan.example.org',
         weddingDate: new Date('2027-09-18T16:00:00.000Z'),
-        venueName: 'Conservatory Hall',
       },
       create: {
         id: 'global',
@@ -91,9 +99,12 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
         partner2Name: 'Morgan',
         brideName: 'Riley',
         groomName: 'Morgan',
+        venueName: 'TBD',
+        venueCity: '',
+        venueState: '',
+        storyText: 'Our story...',
         baseUrl: 'https://rileymorgan.example.org',
         weddingDate: new Date('2027-09-18T16:00:00.000Z'),
-        venueName: 'Conservatory Hall',
       },
     });
 
@@ -115,14 +126,37 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     expect(elapsedMs).toBeLessThan(150);
 
     const sampleOnlyBody = await resWithOnlySample.json();
-    expect(sampleOnlyBody.completedCount).toBe(1);
-    expect(sampleOnlyBody.pendingCount).toBe(4);
+    expect(sampleOnlyBody.completedCount).toBe(0);
+    expect(sampleOnlyBody.pendingCount).toBe(6);
     expect(sampleOnlyBody.allComplete).toBe(false);
-    expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'wedding-details')?.completed).toBe(true);
+    expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'wedding-details')?.completed).toBe(false);
+    expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'story-and-schedule')?.completed).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'guest-list')?.completed).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'registry')?.completed).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'seating-layout')?.completed).toBe(false);
     expect(sampleOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'faq-setup')?.completed).toBe(false);
+
+    // Update config with non-placeholder venue details and custom story text
+    await prisma.appConfig.update({
+      where: { id: 'global' },
+      data: {
+        venueName: 'Botanical Conservatory',
+        venueCity: 'Portland',
+        venueState: 'OR',
+        storyText: 'Riley and Morgan met in Portland and cannot wait to celebrate under the glass conservatory.',
+      },
+    });
+
+    const subEvent = await prisma.subEvent.create({
+      data: {
+        title: 'Conservatory Ceremony',
+        startTime: new Date('2028-06-20T23:00:00.000Z'),
+        endTime: new Date('2028-06-21T00:00:00.000Z'),
+        locationName: 'Main Atrium',
+        isPrivate: false,
+      },
+    });
+    createdSubEventIds.push(subEvent.id);
 
     // Add real non-sample records for guest list, registry, seating, and Wedding Q&A
     const media = await prisma.media.create({
@@ -155,6 +189,28 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     });
     createdTableIds.push(table.id);
 
+    const unpromotedCollector = await prisma.invitationCode.create({
+      data: {
+        code: 'ADDR-COLLECT-01',
+        guestName: 'Prospect Household',
+        addressLine1: '100 Prospect St',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        partyTags: ['address-collection'],
+        isSample: false,
+      },
+    });
+    createdInvitationIds.push(unpromotedCollector.id);
+
+    clearReactTestCache();
+    const resWithOnlyCollector = await GET(await makeAdminRequest(), {});
+    const collectorOnlyBody = await resWithOnlyCollector.json();
+    expect(
+      collectorOnlyBody.milestones.find((m: OnboardingMilestone) => m.id === 'guest-list')
+        ?.completed
+    ).toBe(false);
+
     const guest = await prisma.invitationCode.create({
       data: {
         code: 'REAL-MILESTONE-01',
@@ -183,7 +239,7 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
     const resAllReal = await GET(await makeAdminRequest(), {});
     const allRealBody = await resAllReal.json();
 
-    expect(allRealBody.completedCount).toBe(5);
+    expect(allRealBody.completedCount).toBe(6);
     expect(allRealBody.pendingCount).toBe(0);
     expect(allRealBody.allComplete).toBe(true);
     expect(allRealBody.milestones.every((m: OnboardingMilestone) => m.completed)).toBe(true);

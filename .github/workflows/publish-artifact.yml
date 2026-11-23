@@ -41,6 +41,7 @@ permissions:
 concurrency:
   group: publish-artifact-release
   cancel-in-progress: false
+  queue: max
 
 jobs:
   preflight:
@@ -56,10 +57,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify Commit SHA & Main Branch Ancestry
         id: resolve
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           CURRENT_SHA: ${{ github.sha }}
         run: |
@@ -74,8 +77,17 @@ jobs:
             exit 1
           fi
 
+          GIT_AUTH_ARGS=()
+          ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+          EFFECTIVE_GIT_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+          if [ -n "$EFFECTIVE_GIT_TOKEN" ] && [[ "$ORIGIN_URL" =~ ^https?://[^/]+ ]]; then
+            ORIGIN_SERVER="${BASH_REMATCH[0]}"
+            BASIC_TOKEN=$(printf 'x-access-token:%s' "$EFFECTIVE_GIT_TOKEN" | base64 | tr -d '\r\n')
+            GIT_AUTH_ARGS=(-c "http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic ${BASIC_TOKEN}")
+          fi
+
           if git remote get-url origin >/dev/null 2>&1; then
-            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           fi
 
           if ! git show-ref --verify --quiet refs/remotes/origin/main; then
@@ -85,7 +97,7 @@ jobs:
 
           if ! git cat-file -e "${RESOLVED_SHA}^{commit}" 2>/dev/null; then
             if git remote get-url origin >/dev/null 2>&1; then
-              git fetch --no-tags origin "$RESOLVED_SHA" || true
+              git "${GIT_AUTH_ARGS[@]}" fetch --no-tags origin "$RESOLVED_SHA" || true
             fi
           fi
 
@@ -277,6 +289,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -302,19 +315,14 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/deps
-          key: buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
-          restore-keys: |
-            buildkit-deps-${{ matrix.arch }}-
+          key: release-buildkit-deps-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'package-lock.json', '.npmrc') }}
 
       - name: Cache BuildKit Next.js mount
         id: buildkit-next-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/buildkit-mounts/next
-          key: buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
-          restore-keys: |
-            buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-
-            buildkit-next-${{ matrix.arch }}-
+          key: release-buildkit-next-${{ matrix.arch }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('next.config.ts', 'postcss.config.mjs', 'tsconfig.json', 'tsconfig.build.json', 'prisma/schema.prisma', 'src/**') }}
 
       - name: Hydrate BuildKit Cache Mounts
         env:
@@ -324,12 +332,30 @@ jobs:
           BASE_IMAGE=$(awk '/^FROM / {print $2; exit}' Dockerfile)
           CTX_DIR=$(mktemp -d)
           trap 'rm -rf "$CTX_DIR"' EXIT
+          validate_cache_archive() {
+            local archive="$1"
+            local allowed_regex="$2"
+            if tar -tvf "$archive" | awk '{print substr($1,1,1)}' | grep -Eq '^[lhbcps]'; then
+              echo "::error::Cache archive '${archive}' contains disallowed link or device entries."
+              exit 1
+            fi
+            while IFS= read -r member; do
+              [ -z "$member" ] && continue
+              local normalized="${member#./}"
+              if [[ "$member" == /* ]] || [[ "$normalized" == *".."* ]] || [[ ! "$normalized" =~ $allowed_regex ]]; then
+                echo "::error::Cache archive '${archive}' contains unexpected path '${member}'."
+                exit 1
+              fi
+            done < <(tar -tf "$archive")
+          }
           HAS_ARCHIVE=false
           if [ -f "$MOUNT_CACHE_DIR/deps/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/deps/mounts.tar" '^(var(/cache(/apt(/.*)?)?|/lib(/apt(/.*)?)?)?|root(/\.npm(/.*)?)?)$'
             cp "$MOUNT_CACHE_DIR/deps/mounts.tar" "$CTX_DIR/deps.tar"
             HAS_ARCHIVE=true
           fi
           if [ -f "$MOUNT_CACHE_DIR/next/mounts.tar" ]; then
+            validate_cache_archive "$MOUNT_CACHE_DIR/next/mounts.tar" '^app(/\.next(/cache(/.*)?)?)?$'
             cp "$MOUNT_CACHE_DIR/next/mounts.tar" "$CTX_DIR/next.tar"
             HAS_ARCHIVE=true
           fi
@@ -347,8 +373,8 @@ jobs:
             '    --mount=type=cache,target=/root/.npm,sharing=locked \' \
             '    --mount=type=cache,target=/app/.next/cache,sharing=locked \' \
             '    echo "$CACHEBUST" >/dev/null && \' \
-            '    if [ -f /ctx/deps.tar ]; then tar -xf /ctx/deps.tar -C /; fi && \' \
-            '    if [ -f /ctx/next.tar ]; then tar -xf /ctx/next.tar -C /; fi' \
+            '    if [ -f /ctx/deps.tar ]; then mkdir -p /var/cache/apt /var/lib/apt /root/.npm && tar --no-same-owner --no-same-permissions -xf /ctx/deps.tar -C / var/cache/apt var/lib/apt root/.npm; fi && \' \
+            '    if [ -f /ctx/next.tar ]; then mkdir -p /app/.next/cache && tar --no-same-owner --no-same-permissions -xf /ctx/next.tar -C / app/.next/cache; fi' \
             | docker buildx build \
               --platform "$TARGET_PLATFORM" \
               --build-arg "CACHEBUST=$(date +%s%N)" \
@@ -436,8 +462,16 @@ jobs:
           image-ref: wedding-website:latest
           format: 'sarif'
           output: 'trivy-results-${{ matrix.arch }}.sarif'
-          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: 'true'
+          severity: 'CRITICAL,HIGH,MEDIUM'
           exit-code: '1'
+
+      - name: Generate Native Container SPDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'spdx-json'
+          output: 'sbom-${{ matrix.arch }}.spdx.json'
 
       - name: Upload Trivy Scan Results to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
@@ -472,6 +506,12 @@ jobs:
             exit 1
           fi
           mkdir -p /tmp/oci-handoff
+          SBOM_FILE="sbom-${ARCH}.spdx.json"
+          if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
+            echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for architecture '${ARCH}'."
+            exit 1
+          fi
+          cp "$SBOM_FILE" "/tmp/oci-handoff/sbom-${ARCH}.spdx.json"
           zstd -T0 -f "$OCI_TAR" -o "/tmp/oci-handoff/oci-${ARCH}.tar.zst"
           printf '%s\n' "$ARCHIVE_DIGEST" > "/tmp/oci-handoff/${ARCH}.digest"
 
@@ -482,6 +522,7 @@ jobs:
           path: |
             /tmp/oci-handoff/oci-${{ matrix.arch }}.tar.zst
             /tmp/oci-handoff/${{ matrix.arch }}.digest
+            /tmp/oci-handoff/sbom-${{ matrix.arch }}.spdx.json
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
@@ -504,6 +545,7 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Compute Image Tag & Targets
         id: meta
@@ -645,6 +687,16 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Verify Per-Architecture SPDX SBOM Artifacts
+        run: |
+          for required_arch in amd64 arm64; do
+            SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
+            if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
+              echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for architecture '${required_arch}'."
+              exit 1
+            fi
+          done
 
       - name: Verify and Push Architecture OCI Archives
         env:
@@ -801,8 +853,133 @@ jobs:
             fi
           fi
 
+          echo "amd64_digest=${AMD64_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "arm64_digest=${ARM64_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "digest=${INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
           echo "dockerhub_digest=${DOCKERHUB_INDEX_DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Multi-Platform Index SPDX SBOM
+        env:
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
+          AMD64_DIGEST: ${{ steps.merge.outputs.amd64_digest }}
+          ARM64_DIGEST: ${{ steps.merge.outputs.arm64_digest }}
+          INDEX_DIGEST: ${{ steps.merge.outputs.digest }}
+          REVISION: ${{ steps.meta.outputs.revision }}
+          RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
+        run: |
+          SOURCE_REVISION=$(printf '%s' "${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}" | tr '[:upper:]' '[:lower:]')
+          for required_arch in amd64 arm64; do
+            SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"
+            if [ ! -f "$SBOM_FILE" ] || ! jq -e '.spdxVersion and (.packages | type == "array")' "$SBOM_FILE" >/dev/null; then
+              echo "::error::Missing or invalid SPDX JSON SBOM '${SBOM_FILE}' for multi-platform index synthesis."
+              exit 1
+            fi
+          done
+          CREATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          jq -n \
+            --slurpfile amd64 /tmp/oci-handoff/sbom-amd64.spdx.json \
+            --slurpfile arm64 /tmp/oci-handoff/sbom-arm64.spdx.json \
+            --arg repo "$IMAGE_REPOSITORY" \
+            --arg index_digest "${INDEX_DIGEST#sha256:}" \
+            --arg amd64_digest "${AMD64_DIGEST#sha256:}" \
+            --arg arm64_digest "${ARM64_DIGEST#sha256:}" \
+            --arg revision "$SOURCE_REVISION" \
+            --arg created "$CREATED_AT" \
+            '
+              def prefix_spdx(p):
+                if (type == "string") then
+                  if . == "SPDXRef-DOCUMENT" then "SPDXRef-Root-" + p
+                  elif startswith("SPDXRef-") then "SPDXRef-" + p + "-" + ltrimstr("SPDXRef-")
+                  else . end
+                else . end;
+              def rewrite_pkgs(doc; p):
+                [ (doc.packages // [])[] | .SPDXID = (.SPDXID | prefix_spdx(p)) ];
+              def rewrite_rels(doc; p):
+                [
+                  (doc.relationships // [])[]
+                  | .spdxElementId = (.spdxElementId | prefix_spdx(p))
+                  | .relatedSpdxElement = (.relatedSpdxElement | prefix_spdx(p))
+                ];
+              ($amd64[0]) as $a |
+              ($arm64[0]) as $b |
+              {
+                spdxVersion: "SPDX-2.3",
+                dataLicense: "CC0-1.0",
+                SPDXID: "SPDXRef-DOCUMENT",
+                name: ($repo + "@sha256:" + $index_digest),
+                documentNamespace: ("https://spdx.org/spdxdocs/wedding-website-index-" + $revision + "-" + $index_digest),
+                creationInfo: {
+                  created: $created,
+                  creators: ["Tool: trivy-spdx-index-merger"]
+                },
+                documentDescribes: ["SPDXRef-Index"],
+                packages: (
+                  [
+                    {
+                      name: $repo,
+                      SPDXID: "SPDXRef-Index",
+                      versionInfo: $revision,
+                      downloadLocation: "NOASSERTION",
+                      filesAnalyzed: false,
+                      checksums: [{ algorithm: "SHA256", checksumValue: $index_digest }]
+                    },
+                    {
+                      name: ($repo + "-linux-amd64"),
+                      SPDXID: "SPDXRef-Root-amd64",
+                      versionInfo: $revision,
+                      downloadLocation: "NOASSERTION",
+                      filesAnalyzed: false,
+                      checksums: [{ algorithm: "SHA256", checksumValue: $amd64_digest }]
+                    },
+                    {
+                      name: ($repo + "-linux-arm64"),
+                      SPDXID: "SPDXRef-Root-arm64",
+                      versionInfo: $revision,
+                      downloadLocation: "NOASSERTION",
+                      filesAnalyzed: false,
+                      checksums: [{ algorithm: "SHA256", checksumValue: $arm64_digest }]
+                    }
+                  ]
+                  + rewrite_pkgs($a; "amd64")
+                  + rewrite_pkgs($b; "arm64")
+                ),
+                relationships: (
+                  [
+                    {
+                      spdxElementId: "SPDXRef-DOCUMENT",
+                      relationshipType: "DESCRIBES",
+                      relatedSpdxElement: "SPDXRef-Index"
+                    },
+                    {
+                      spdxElementId: "SPDXRef-Root-amd64",
+                      relationshipType: "VARIANT_OF",
+                      relatedSpdxElement: "SPDXRef-Index"
+                    },
+                    {
+                      spdxElementId: "SPDXRef-Root-arm64",
+                      relationshipType: "VARIANT_OF",
+                      relatedSpdxElement: "SPDXRef-Index"
+                    }
+                  ]
+                  + rewrite_rels($a; "amd64")
+                  + rewrite_rels($b; "arm64")
+                )
+              }
+            ' > /tmp/oci-handoff/sbom-index.spdx.json
+
+      - name: Attest amd64 Build Provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-digest: ${{ steps.merge.outputs.amd64_digest }}
+          push-to-registry: true
+
+      - name: Attest arm64 Build Provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-digest: ${{ steps.merge.outputs.arm64_digest }}
+          push-to-registry: true
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -811,12 +988,84 @@ jobs:
           subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
 
+      - name: Attest amd64 SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-digest: ${{ steps.merge.outputs.amd64_digest }}
+          sbom-path: /tmp/oci-handoff/sbom-amd64.spdx.json
+          push-to-registry: true
+
+      - name: Attest arm64 SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-digest: ${{ steps.merge.outputs.arm64_digest }}
+          sbom-path: /tmp/oci-handoff/sbom-arm64.spdx.json
+          push-to-registry: true
+
+      - name: Attest Index SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.meta.outputs.image_repository }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
+          sbom-path: /tmp/oci-handoff/sbom-index.spdx.json
+          push-to-registry: true
+
+      - name: Attest Docker Hub amd64 Build Provenance (optional)
+        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.amd64_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Docker Hub arm64 Build Provenance (optional)
+        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.arm64_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
       - name: Attest Docker Hub Build Provenance (optional)
         if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
           subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Docker Hub amd64 SPDX SBOM (optional)
+        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.amd64_digest }}
+          sbom-path: /tmp/oci-handoff/sbom-amd64.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Docker Hub arm64 SPDX SBOM (optional)
+        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.arm64_digest }}
+          sbom-path: /tmp/oci-handoff/sbom-arm64.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest Docker Hub Index SPDX SBOM (optional)
+        if: steps.meta.outputs.dockerhub_repository != '' && steps.merge.outputs.dockerhub_digest != ''
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}
+          subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}
+          sbom-path: /tmp/oci-handoff/sbom-index.spdx.json
           push-to-registry: true
           create-storage-record: false
 

@@ -343,3 +343,10 @@ export function deriveAdminInputSchema<T extends z.ZodRawShape>(
   const omitted = baseSchema.omit(omitKeys);
   return makePartial ? omitted.partial() : omitted;
 }
+
+const ALLOWED_SMTP_PORT_SET: ReadonlySet<number> = new Set<number>([25, 465, 587, 2525]);
+
+export function isAllowedSmtpPort(port: number): boolean {
+  return Number.isInteger(port) && ALLOWED_SMTP_PORT_SET.has(port);
+}
+

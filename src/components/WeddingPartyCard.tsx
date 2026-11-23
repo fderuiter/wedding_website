@@ -2,14 +2,17 @@ import React from 'react';
 import { MediaImage } from '@/components/MediaImage';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 
 /**
  * @interface WeddingPartyCardProps
  * @description Defines the props for the WeddingPartyCard component.
  * @property {WeddingPartyMemberDTO} member - The wedding party member's data to display.
+ * @property {HeadingLevel} [headingLevel='h2'] - Semantic HTML heading rank for the member name.
  */
 interface WeddingPartyCardProps {
   member: WeddingPartyMemberDTO;
+  headingLevel?: HeadingLevel;
 }
 
 /**
@@ -19,7 +22,7 @@ interface WeddingPartyCardProps {
  * @param {WeddingPartyCardProps} props - The props for the component.
  * @returns {JSX.Element} The rendered WeddingPartyCard component.
  */
-const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
+const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member, headingLevel = 'h2' }) => {
   return (
     <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden transform transition-transform hover:scale-105">
       <div className="relative h-64 w-full">
@@ -31,7 +34,14 @@ const WeddingPartyCard: React.FC<WeddingPartyCardProps> = ({ member }) => {
         />
       </div>
       <div className="p-6">
-        <h3 className="type-h3 text-primary dark:text-primary mb-2">{member.name}</h3>
+        <Heading
+          as={headingLevel}
+          variant="h3"
+          unstyledColor
+          className="text-primary dark:text-primary mb-2"
+        >
+          {member.name}
+        </Heading>
         <p className="type-body font-medium text-gray-600 dark:text-gray-300 mb-4">{member.role}</p>
         <p className="type-body text-gray-700 dark:text-gray-400 mb-4">{member.bio}</p>
         {member.link && (

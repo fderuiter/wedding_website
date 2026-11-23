@@ -156,6 +156,58 @@ describe('AdminPreviewLayout studio draft preservation & accessibility', () => {
     });
   });
 
+  it('toggles live preview iframe container between Desktop and Mobile (375px) viewports and passes axe', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <AdminPreviewLayout
+          previewUrl="/"
+          draftType="config"
+          draftData={{ heroTitle: 'Alex & Sam' }}
+        >
+          <MockStudioEditor />
+        </AdminPreviewLayout>
+      </ToastProvider>
+    );
+
+    const viewportGroup = screen.getByRole('group', { name: 'Preview viewport' });
+    const desktopBtn = within(viewportGroup).getByRole('button', { name: 'Desktop' });
+    const mobileBtn = within(viewportGroup).getByRole('button', { name: 'Mobile (375px)' });
+    const viewportContainer = screen.getByTestId('admin-preview-viewport');
+
+    expect(desktopBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(mobileBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(viewportContainer).toHaveAttribute('data-viewport', 'desktop');
+
+    fireEvent.click(mobileBtn);
+
+    expect(mobileBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(desktopBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(viewportContainer).toHaveAttribute('data-viewport', 'mobile');
+    expect(viewportContainer).toHaveStyle({ width: '375px' });
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+
+    fireEvent.click(desktopBtn);
+    expect(viewportContainer).toHaveAttribute('data-viewport', 'desktop');
+
+    // Keyboard arrow navigation across viewport toggles
+    desktopBtn.focus();
+    fireEvent.keyDown(desktopBtn, { key: 'ArrowRight' });
+    expect(mobileBtn).toHaveFocus();
+    expect(mobileBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(viewportContainer).toHaveAttribute('data-viewport', 'mobile');
+
+    fireEvent.keyDown(mobileBtn, { key: 'Home' });
+    expect(desktopBtn).toHaveFocus();
+    expect(desktopBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(viewportContainer).toHaveAttribute('data-viewport', 'desktop');
+
+    fireEvent.keyDown(desktopBtn, { key: 'End' });
+    expect(mobileBtn).toHaveFocus();
+    expect(viewportContainer).toHaveAttribute('data-viewport', 'mobile');
+  });
+
   it('inserts ?preview=true before hash fragments, scopes postMessage to window.location.origin, and switches mobile Editor / Live Preview tabs cleanly', async () => {
     const postMessageSpy = jest.fn();
 

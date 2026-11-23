@@ -8,6 +8,7 @@ import { parseDocument } from 'yaml';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const WORKFLOWS_DIR = path.join(REPO_ROOT, '.github', 'workflows');
 const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
+const DEPLOY_STAGE_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-stage.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const DB_MIGRATE_YML_PATH = path.join(WORKFLOWS_DIR, 'db-migrate.yml');
 const DEPLOYMENT_DOC_PATH = path.join(REPO_ROOT, 'DEPLOYMENT.md');
@@ -57,6 +58,7 @@ function extractStepRunScript(workflowContent: string, stepName: string): string
 
 describe('Release & Provider Deployment Workflow Digest Pinning and Provenance Checks', () => {
   const deployYml = fs.readFileSync(DEPLOY_YML_PATH, 'utf8');
+  const deployStageYml = fs.readFileSync(DEPLOY_STAGE_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
   const dbMigrateYml = fs.readFileSync(DB_MIGRATE_YML_PATH, 'utf8');
 
@@ -312,6 +314,7 @@ process.exit(1);
 
   it('keeps top-level permissions at contents: read and scopes attestations/packages/id-token to deployment jobs', () => {
     expect(deployYml).toMatch(/^permissions:\n  contents: read\n/m);
+    expect(deployStageYml).toMatch(/^permissions:\n  contents: read\n/m);
     expect(deployProviderYml).toMatch(/^permissions:\n  contents: read\n/m);
     expect(dbMigrateYml).toMatch(/^permissions:\n  contents: read\n/m);
 
@@ -319,11 +322,94 @@ process.exit(1);
       '    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
     );
     expect(deployYml).toContain(
-      '  staging-deploy-provider:\n    name: Staging Provider Deployment\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
+      '  staging:\n    name: Staging Deployment Stage\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
     );
     expect(deployYml).toContain(
-      '  production-deploy-provider:\n    name: Production Provider Deployment\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
+      '  production:\n    name: Production Deployment Stage\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
     );
+    expect(deployStageYml).toContain(
+      '  deploy-provider:\n    name: Provider Deployment (${{ inputs.environment }})\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
+    );
+    expect(deployStageYml).toContain(
+      '  rollback:\n    name: Automated Rollback (${{ inputs.environment }})\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
+    );
+  });
+
+  it('isolates per-environment concurrency locks in deploy-stage.yml with queue: max and avoids nested lock contention via caller_holds_lock', () => {
+    type WorkflowShape = {
+      concurrency?: { group?: string; 'cancel-in-progress'?: boolean; queue?: string };
+      on?: {
+        workflow_call?: {
+          inputs?: Record<string, { type?: string; default?: unknown; required?: boolean }>;
+        };
+      };
+      jobs?: Record<
+        string,
+        {
+          uses?: string;
+          secrets?: string;
+          concurrency?: unknown;
+          with?: Record<string, unknown>;
+        }
+      >;
+    };
+
+    const deployDoc = parseDocument(deployYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+    const deployStageDoc = parseDocument(deployStageYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+    const dbMigrateDoc = parseDocument(dbMigrateYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+    const deployProviderDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as WorkflowShape;
+
+    // 1. deploy.yml removes root concurrency and delegates staging/production to deploy-stage.yml
+    expect(deployDoc.concurrency).toBeUndefined();
+    for (const jobId of ['ci-gate', 'schema-compatibility', 'publish-artifact', 'staging', 'production']) {
+      expect(deployDoc.jobs?.[jobId]?.concurrency).toBeUndefined();
+    }
+    expect(deployDoc.jobs?.staging?.uses).toBe('./.github/workflows/deploy-stage.yml');
+    expect(deployDoc.jobs?.staging?.secrets).toBe('inherit');
+    expect(deployDoc.jobs?.staging?.with).toMatchObject({
+      environment: 'staging',
+      commit_sha: '${{ needs.ci-gate.outputs.target_sha }}',
+    });
+    expect(deployDoc.jobs?.production?.uses).toBe('./.github/workflows/deploy-stage.yml');
+    expect(deployDoc.jobs?.production?.secrets).toBe('inherit');
+    expect(deployDoc.jobs?.production?.with).toMatchObject({
+      environment: 'production',
+      commit_sha: '${{ needs.ci-gate.outputs.target_sha }}',
+    });
+
+    // 2. deploy-stage.yml holds deploy-env-<environment> with queue: max and passes caller_holds_lock: true
+    expect(deployStageDoc.concurrency).toEqual({
+      group: 'deploy-env-${{ inputs.environment }}',
+      'cancel-in-progress': false,
+      queue: 'max',
+    });
+    for (const stageChildJob of ['database-migration', 'deploy-provider', 'rollback']) {
+      expect(deployStageDoc.jobs?.[stageChildJob]?.secrets).toBe('inherit');
+      expect(deployStageDoc.jobs?.[stageChildJob]?.with?.caller_holds_lock).toBe(true);
+    }
+
+    // 3. db-migrate.yml and deploy-provider.yml expose caller_holds_lock and queue: max without forbidden contexts
+    for (const [label, doc, callerPrefix] of [
+      ['db-migrate.yml', dbMigrateDoc, 'caller-db-migrate-'],
+      ['deploy-provider.yml', deployProviderDoc, 'caller-deploy-provider-'],
+    ] as const) {
+      expect({
+        label,
+        input: doc.on?.workflow_call?.inputs?.caller_holds_lock,
+      }).toEqual({
+        label,
+        input: expect.objectContaining({ type: 'boolean', default: false }),
+      });
+      expect(doc.concurrency?.['cancel-in-progress']).toBe(false);
+      expect(doc.concurrency?.queue).toBe('max');
+      const groupExpr = doc.concurrency?.group ?? '';
+      expect(groupExpr).toContain("format('deploy-env-{0}', inputs.environment || 'production')");
+      expect(groupExpr).toContain(callerPrefix);
+      expect(groupExpr).not.toContain('rollback_environment');
+      for (const forbiddenCtx of ['needs.', 'steps.', 'secrets.', 'strategy.', 'matrix.']) {
+        expect(groupExpr).not.toContain(forbiddenCtx);
+      }
+    }
   });
 
   it('propagates image_digest in deploy.yml and removes latest defaults in deploy-provider.yml', () => {
@@ -356,6 +442,12 @@ process.exit(1);
       const script = extractStepRunScript(deployProviderYml, stepName);
       expect(script).not.toContain('${{');
     }
+
+    const stageHealthScript = extractStepRunScript(
+      deployStageYml,
+      'Execute Post-Deployment Health Probe Verification'
+    );
+    expect(stageHealthScript).not.toContain('${{');
   });
 
   it('validates an explicit sha256 digest, verifies OIDC provenance, and writes pinned @sha256 URI to outputs and summary', () => {
@@ -781,6 +873,13 @@ process.exit(1);
     expect(cloudRunDoc).toContain('secrets.SERVICE_URL');
     expect(cloudRunDoc).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(cloudRunDoc).toContain('deployments: write');
+    for (const doc of [deploymentDoc, cloudRunDoc]) {
+      expect(doc).toContain('deploy-stage.yml');
+      expect(doc).toContain('queue: max');
+      expect(doc).toContain('caller_holds_lock');
+      expect(doc).toContain('deploy-env-staging');
+      expect(doc).toContain('deploy-env-production');
+    }
   });
 
   it('resolves vars.SERVICE_URL, cloudrun url, and secrets.SERVICE_URL in order without exporting secret-only fallback to $GITHUB_OUTPUT', () => {
@@ -908,9 +1007,11 @@ process.exit(1);
     });
   });
 
-  it('verifies deploy.yml health probes succeed under simulated runner secret output redaction with vars.SERVICE_URL or legacy secrets.SERVICE_URL and reject degraded or invalid payloads', async () => {
-    const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');
-    const prodProbeScript = extractStepRunScript(deployYml, 'Execute Production Health Probe Verification');
+  it('verifies deploy-stage.yml health probes succeed under simulated runner secret output redaction with vars.SERVICE_URL or legacy secrets.SERVICE_URL and reject degraded or invalid payloads', async () => {
+    const stageProbeScript = extractStepRunScript(
+      deployStageYml,
+      'Execute Post-Deployment Health Probe Verification'
+    );
 
     let healthMode: 'wrapped-ok' | 'unwrapped-ok' | 'degraded' | 'success-false' | 'malformed' = 'wrapped-ok';
 
@@ -991,16 +1092,14 @@ process.exit(1);
         });
       });
 
-    const fastStagingFailScript = stagingProbeScript
-      .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=1')
-      .replace('DELAY=2', 'DELAY=1');
-    const fastProdFailScript = prodProbeScript
+    const fastFailScript = stageProbeScript
       .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=1')
       .replace('DELAY=2', 'DELAY=1');
 
     try {
       // Simulated runner redaction (empty string and masked '***') with vars.SERVICE_URL set
-      const stagingVarsRes = await runAsync(stagingProbeScript, {
+      const stagingVarsRes = await runAsync(stageProbeScript, {
+        TARGET_ENV: 'staging',
         VAR_SERVICE_URL: `${liveUrl}/`,
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1011,7 +1110,8 @@ process.exit(1);
       expect(stagingVarsRes.summary).toContain(`- **Target Service URL:** \`${liveUrl}\``);
 
       // Simulated runner redaction (empty string and '***') with legacy secrets.SERVICE_URL set
-      const stagingSecretRes = await runAsync(stagingProbeScript, {
+      const stagingSecretRes = await runAsync(stageProbeScript, {
+        TARGET_ENV: 'staging',
         VAR_SERVICE_URL: '',
         SERVICE_URL: '',
         SECRET_SERVICE_URL: liveUrl,
@@ -1020,7 +1120,8 @@ process.exit(1);
       expect(stagingSecretRes.status).toBe(0);
       expect(stagingSecretRes.outputs).toContain('health_status=healthy');
 
-      const prodSecretMaskedRes = await runAsync(prodProbeScript, {
+      const prodSecretMaskedRes = await runAsync(stageProbeScript, {
+        TARGET_ENV: 'production',
         VAR_SERVICE_URL: '',
         SERVICE_URL: '***',
         SECRET_SERVICE_URL: liveUrl,
@@ -1031,7 +1132,8 @@ process.exit(1);
 
       // Unwrapped fallback succeeds when .success is absent
       healthMode = 'unwrapped-ok';
-      const unwrappedRes = await runAsync(prodProbeScript, {
+      const unwrappedRes = await runAsync(stageProbeScript, {
+        TARGET_ENV: 'production',
         VAR_SERVICE_URL: liveUrl,
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1042,8 +1144,9 @@ process.exit(1);
 
       // Degraded wrapped payload fails closed
       healthMode = 'degraded';
-      for (const script of [fastStagingFailScript, fastProdFailScript]) {
-        const degradedRes = await runAsync(script, {
+      for (const targetEnv of ['staging', 'production'] as const) {
+        const degradedRes = await runAsync(fastFailScript, {
+          TARGET_ENV: targetEnv,
           VAR_SERVICE_URL: liveUrl,
           SERVICE_URL: '',
           SECRET_SERVICE_URL: '',
@@ -1055,8 +1158,9 @@ process.exit(1);
 
       // HTTP 200 with .success == false fails closed even if status/database look healthy
       healthMode = 'success-false';
-      for (const script of [fastStagingFailScript, fastProdFailScript]) {
-        const successFalseRes = await runAsync(script, {
+      for (const targetEnv of ['staging', 'production'] as const) {
+        const successFalseRes = await runAsync(fastFailScript, {
+          TARGET_ENV: targetEnv,
           VAR_SERVICE_URL: liveUrl,
           SERVICE_URL: '',
           SECRET_SERVICE_URL: '',
@@ -1068,7 +1172,8 @@ process.exit(1);
 
       // Malformed JSON fails closed
       healthMode = 'malformed';
-      const malformedRes = await runAsync(fastStagingFailScript, {
+      const malformedRes = await runAsync(fastFailScript, {
+        TARGET_ENV: 'staging',
         VAR_SERVICE_URL: liveUrl,
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1080,21 +1185,17 @@ process.exit(1);
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
 
-    // Hung /api/health socket (accepts connection & headers but never finishes response) aborts within 10s via curl --connect-timeout 5 --max-time 10
-    expect(stagingProbeScript).toContain('--connect-timeout 5 --max-time 10');
-    expect(prodProbeScript).toContain('--connect-timeout 5 --max-time 10');
+    // Hung /api/health socket (accepts connection & headers but never finishes response) stops within 10s via curl --connect-timeout 5 --max-time 10
+    expect(stageProbeScript).toContain('--connect-timeout 5 --max-time 10');
 
-    const deployDoc = parseDocument(deployYml, { version: '1.2', strict: true }).toJS() as {
+    const deployStageDoc = parseDocument(deployStageYml, { version: '1.2', strict: true }).toJS() as {
       jobs?: Record<string, { 'timeout-minutes'?: number; if?: string }>;
     };
-    expect(deployDoc.jobs?.['staging-verify-deployment']?.['timeout-minutes']).toBe(5);
-    expect(deployDoc.jobs?.['production-verify-deployment']?.['timeout-minutes']).toBe(5);
-    for (const rollbackJobId of ['staging-rollback', 'production-rollback'] as const) {
-      const cond = deployDoc.jobs?.[rollbackJobId]?.if ?? '';
-      expect(cond).toContain('(failure() || cancelled())');
-      expect(cond).toContain(".result == 'failure'");
-      expect(cond).toContain(".result == 'cancelled'");
-    }
+    expect(deployStageDoc.jobs?.['verify-deployment']?.['timeout-minutes']).toBe(5);
+    const rollbackCond = deployStageDoc.jobs?.rollback?.if ?? '';
+    expect(rollbackCond).toContain('(failure() || cancelled())');
+    expect(rollbackCond).toContain(".result == 'failure'");
+    expect(rollbackCond).toContain(".result == 'cancelled'");
 
     const openSockets = new Set<import('net').Socket>();
     const hungServer = http.createServer((req, res) => {
@@ -1113,14 +1214,15 @@ process.exit(1);
     const hungPort = typeof hungAddr === 'object' && hungAddr ? hungAddr.port : 0;
     const hungUrl = `http://127.0.0.1:${hungPort}`;
 
-    // Keep curl's real --max-time 10 intact and set loop MAX_TIMEOUT=8 + DELAY=0 so a single hung probe aborts at <=10s and exits immediately
-    const hungBoundScript = prodProbeScript
+    // Keep curl's real --max-time 10 intact and set loop MAX_TIMEOUT=8 + DELAY=0 so a single hung probe stops at <=10s and exits immediately
+    const hungBoundScript = stageProbeScript
       .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=8')
       .replace('sleep $DELAY', 'sleep 0');
 
     try {
       const startMs = Date.now();
       const hungRes = await runAsync(hungBoundScript, {
+        TARGET_ENV: 'production',
         VAR_SERVICE_URL: hungUrl,
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1246,9 +1348,11 @@ process.exit(1);
     }
   });
 
-  it('fails fast in deploy.yml without polling 127.0.0.1:3000 when is_dry_run is false and SERVICE_URL is omitted, and passes dry-run when omitted', () => {
-    const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');
-    const prodProbeScript = extractStepRunScript(deployYml, 'Execute Production Health Probe Verification');
+  it('fails fast in deploy-stage.yml without polling 127.0.0.1:3000 when is_dry_run is false and SERVICE_URL is omitted, and passes dry-run when omitted', () => {
+    const stageProbeScript = extractStepRunScript(
+      deployStageYml,
+      'Execute Post-Deployment Health Probe Verification'
+    );
 
     // Shim curl to fail test if invoked during fail-fast checks
     const curlShim = path.join(binDir, 'curl');
@@ -1263,10 +1367,11 @@ process.exit(0);
     );
     fs.chmodSync(curlShim, 0o755);
 
-    for (const script of [stagingProbeScript, prodProbeScript]) {
+    for (const targetEnv of ['staging', 'production'] as const) {
       fs.writeFileSync(outputFile, '');
       fs.writeFileSync(summaryFile, '');
-      const failRes = runBashStep(script, {
+      const failRes = runBashStep(stageProbeScript, {
+        TARGET_ENV: targetEnv,
         VAR_SERVICE_URL: '',
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1281,10 +1386,11 @@ process.exit(0);
     expect(fs.readFileSync(callLogFile, 'utf8')).toBe('');
 
     // Dry-run mode with omitted SERVICE_URL still passes
-    for (const script of [stagingProbeScript, prodProbeScript]) {
-      const fastDryScript = script.replace('DELAY=2', 'DELAY=1').replace('ELAPSED -ge 6', 'ELAPSED -ge 0');
+    const fastDryScript = stageProbeScript.replace('DELAY=2', 'DELAY=1').replace('ELAPSED -ge 6', 'ELAPSED -ge 0');
+    for (const targetEnv of ['staging', 'production'] as const) {
       fs.writeFileSync(outputFile, '');
       const dryRes = runBashStep(fastDryScript, {
+        TARGET_ENV: targetEnv,
         VAR_SERVICE_URL: '',
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1295,10 +1401,11 @@ process.exit(0);
     }
 
     // Unreachable endpoint in live mode (IS_DRY_RUN=false) fails closed after timeout
-    for (const script of [stagingProbeScript, prodProbeScript]) {
-      const fastLiveTimeoutScript = script.replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=0');
+    const fastLiveTimeoutScript = stageProbeScript.replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=0');
+    for (const targetEnv of ['staging', 'production'] as const) {
       fs.writeFileSync(outputFile, '');
       const unreachableRes = runBashStep(fastLiveTimeoutScript, {
+        TARGET_ENV: targetEnv,
         VAR_SERVICE_URL: 'http://127.0.0.1:9',
         SERVICE_URL: '',
         SECRET_SERVICE_URL: '',
@@ -1772,8 +1879,13 @@ process.exit(0);
       const migrateFailures: string[] = [];
       await runStandaloneGate(
         {
-          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
-          paginate: async (_fn: unknown, opts: { workflow_id: string }) =>
+          rest: {
+            actions: {
+              listWorkflowRuns: 'listWorkflowRuns',
+              listJobsForWorkflowRun: 'listJobsForWorkflowRun',
+            },
+          },
+          paginate: async (_fn: unknown, opts: { workflow_id?: string }) =>
             opts.workflow_id === 'ci.yml'
               ? [{ id: 1, run_number: 7, conclusion: 'success', head_sha: mainSha }]
               : [],
@@ -1784,19 +1896,70 @@ process.exit(0);
       expect(migrateFailures).toHaveLength(1);
       expect(migrateFailures[0]).toContain('no completed successful db-migrate.yml workflow run found');
 
-      // 3. Succeeds when both ci.yml and db-migrate.yml succeeded for targetSha
+      // 2b. Fails closed when db-migrate.yml only succeeded for staging while TARGET_ENV is production
+      const wrongEnvFailures: string[] = [];
+      await runStandaloneGate(
+        {
+          rest: {
+            actions: {
+              listWorkflowRuns: 'listWorkflowRuns',
+              listJobsForWorkflowRun: 'listJobsForWorkflowRun',
+            },
+          },
+          paginate: async (fn: unknown) =>
+            fn === 'listJobsForWorkflowRun'
+              ? [
+                {
+                  id: 19,
+                  name: 'Execute Database Migrations',
+                  conclusion: 'success',
+                  steps: [
+                    { name: 'Verify Manual Migration Confirmation', conclusion: 'success' },
+                    { name: 'Record Target Environment (staging)', conclusion: 'success' },
+                  ],
+                },
+              ]
+              : [{ id: 10, run_number: 14, conclusion: 'success', head_sha: mainSha }],
+        },
+        { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
+        { setFailed: (msg: string) => wrongEnvFailures.push(msg), info: () => undefined }
+      );
+      expect(wrongEnvFailures).toHaveLength(1);
+      expect(wrongEnvFailures[0]).toContain(
+        `no completed successful db-migrate.yml workflow run found for commit ${mainSha} (production)`
+      );
+
+      // 3. Succeeds when both ci.yml and db-migrate.yml succeeded for targetSha and TARGET_ENV
       const bothFailures: string[] = [];
       const bothInfos: string[] = [];
       await runStandaloneGate(
         {
-          rest: { actions: { listWorkflowRuns: 'listWorkflowRuns' } },
-          paginate: async () => [{ id: 10, run_number: 15, conclusion: 'success', head_sha: mainSha }],
+          rest: {
+            actions: {
+              listWorkflowRuns: 'listWorkflowRuns',
+              listJobsForWorkflowRun: 'listJobsForWorkflowRun',
+            },
+          },
+          paginate: async (fn: unknown) =>
+            fn === 'listJobsForWorkflowRun'
+              ? [
+                {
+                  id: 20,
+                  name: 'Execute Database Migrations',
+                  conclusion: 'success',
+                  steps: [
+                    { name: 'Verify Manual Migration Confirmation', conclusion: 'success' },
+                    { name: 'Record Target Environment (production)', conclusion: 'success' },
+                  ],
+                },
+              ]
+              : [{ id: 10, run_number: 15, conclusion: 'success', head_sha: mainSha }],
         },
         { repo: { owner: 'OwnerOrg', repo: 'Wedding_Website' } },
         { setFailed: (msg: string) => bothFailures.push(msg), info: (msg: string) => bothInfos.push(msg) }
       );
       expect(bothFailures).toHaveLength(0);
-      expect(bothInfos[0]).toContain('Verified CI run #15 and database migration run #15');
+      expect(bothInfos[0]).toContain('Verified CI run #15 and database migration run #15 (production)');
     } finally {
       if (prevSha === undefined) delete process.env.TARGET_SHA;
       else process.env.TARGET_SHA = prevSha;
@@ -1954,5 +2117,62 @@ process.exit(1);
     expect(offlineSummary).toContain('ALTER TABLE "Rsvp" ADD COLUMN "notes" TEXT');
     expect(offlineSummary).not.toContain('PENDING MIGRATIONS DETECTED');
     expect(offlineSummary).not.toContain('20261120020000_old_four');
+  });
+
+  it('removes rollback_environment from workflow_dispatch in deploy.yml and deploy-provider.yml, binds deploy environment only on workflow_call, and preserves explicit GH_TOKEN auth on git fetch with persist-credentials: false', () => {
+    const deployDoc = parseDocument(deployYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
+      jobs?: {
+        staging?: { with?: Record<string, string> };
+        production?: { with?: Record<string, string> };
+      };
+    };
+    const providerDoc = parseDocument(deployProviderYml, { version: '1.2', strict: true }).toJS() as {
+      on?: {
+        workflow_dispatch?: { inputs?: Record<string, unknown> };
+        workflow_call?: { inputs?: Record<string, unknown> };
+      };
+      jobs?: {
+        deploy?: {
+          environment?: string;
+          steps?: Array<{ uses?: string; with?: Record<string, unknown> }>;
+        };
+      };
+    };
+
+    expect(deployDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('rollback_environment');
+    expect(deployDoc.on?.workflow_call?.inputs).toHaveProperty('rollback_environment');
+    expect(providerDoc.on?.workflow_dispatch?.inputs).not.toHaveProperty('rollback_environment');
+    expect(providerDoc.on?.workflow_call?.inputs).toHaveProperty('rollback_environment');
+
+    expect(providerDoc.jobs?.deploy?.environment).toBe(
+      "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || inputs.environment || 'production' }}"
+    );
+    expect(deployDoc.jobs?.staging?.with?.rollback_environment).toBe(
+      "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}"
+    );
+    expect(deployDoc.jobs?.production?.with?.rollback_environment).toBe(
+      "${{ (github.event_name == 'workflow_call' && inputs.rollback_environment) || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}"
+    );
+
+    const checkoutSteps = (providerDoc.jobs?.deploy?.steps ?? []).filter((s) =>
+      s.uses?.startsWith('actions/checkout@')
+    );
+    expect(checkoutSteps.length).toBeGreaterThan(0);
+    for (const step of checkoutSteps) {
+      expect(step.with?.['persist-credentials']).toBe(false);
+    }
+
+    for (const script of [
+      extractStepRunScript(deployYml, 'Resolve Target Commit SHA'),
+      extractStepRunScript(deployYml, 'Align Workspace to Verified Commit SHA'),
+      extractStepRunScript(deployProviderYml, 'Resolve Standalone Promotion Commit & Main Ancestry'),
+    ]) {
+      expect(script).toContain('http.${ORIGIN_SERVER}/.extraheader=AUTHORIZATION: basic');
+      expect(script).toContain('git "${GIT_AUTH_ARGS[@]}" fetch');
+    }
   });
 });

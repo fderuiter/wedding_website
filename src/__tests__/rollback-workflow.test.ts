@@ -12,6 +12,7 @@ import { parseDocument } from 'yaml';
 const ROOT_DIR = process.cwd();
 const WORKFLOWS_DIR = path.join(ROOT_DIR, '.github', 'workflows');
 const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
+const DEPLOY_STAGE_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-stage.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const ROLLBACK_YML_PATH = path.join(WORKFLOWS_DIR, 'rollback.yml');
 
@@ -177,6 +178,7 @@ async function runBashStepAsync(
 
 describe('Rollback & Provider Deployment Workflows', () => {
   const deployYml = fs.readFileSync(DEPLOY_YML_PATH, 'utf8');
+  const deployStageYml = fs.readFileSync(DEPLOY_STAGE_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
   const rollbackYml = fs.readFileSync(ROLLBACK_YML_PATH, 'utf8');
 
@@ -217,11 +219,13 @@ describe('Rollback & Provider Deployment Workflows', () => {
       );
     });
 
-    it('keeps permissions: contents: read at the root of rollback.yml and avoids direct template interpolation in run blocks', () => {
+    it('keeps permissions: contents: read at the root of rollback.yml and deploy-stage.yml and avoids direct template interpolation in run blocks', () => {
       expect(rollbackYml).toMatch(/^permissions:\n\s+contents:\s*read/m);
+      expect(deployStageYml).toMatch(/^permissions:\n\s+contents:\s*read/m);
 
       for (const [name, content] of [
         ['rollback.yml', rollbackYml],
+        ['deploy-stage.yml', deployStageYml],
         ['deploy-provider.yml', deployProviderYml],
       ] as const) {
         const lines = content.split(/\r?\n/);
@@ -298,12 +302,14 @@ describe('Rollback & Provider Deployment Workflows', () => {
       }
     });
 
-    it('passes previous_image_tag, previous_image_digest, commit_sha, and provider from deploy.yml to rollback.yml without defaulting to latest', () => {
-      expect(deployYml).toContain('needs.staging-deploy-provider.outputs.previous_image_tag');
-      expect(deployYml).toContain('needs.production-deploy-provider.outputs.previous_image_tag');
-      expect(deployYml).toContain('needs.staging-deploy-provider.outputs.previous_image_digest');
-      expect(deployYml).toContain('needs.production-deploy-provider.outputs.previous_image_digest');
+    it('passes previous_image_tag, previous_image_digest, commit_sha, and provider from deploy.yml and deploy-stage.yml to rollback.yml without defaulting to latest', () => {
+      expect(deployYml).toContain('uses: ./.github/workflows/deploy-stage.yml');
+      expect(deployYml).toContain("previous_tag: ${{ inputs.previous_tag || '' }}");
       expect(deployYml).not.toContain("previous_tag: ${{ inputs.previous_tag || 'latest' }}");
+      expect(deployStageYml).toContain('needs.deploy-provider.outputs.previous_image_tag');
+      expect(deployStageYml).toContain('needs.deploy-provider.outputs.previous_image_digest');
+      expect(deployStageYml).toContain('commit_sha: ${{ inputs.commit_sha }}');
+      expect(deployStageYml).toContain('caller_holds_lock: true');
       expect(deployProviderYml).toContain('previous_image_tag:');
       expect(deployProviderYml).toContain('previous_image_digest:');
       expect(deployProviderYml).toContain('--fail-with-body');
@@ -314,24 +320,52 @@ describe('Rollback & Provider Deployment Workflows', () => {
         '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
       );
 
-      // Cloud Run service & region overrides forwarded across deploy.yml, deploy-provider.yml, and rollback.yml
+      // Cloud Run service & region overrides forwarded across deploy.yml, deploy-stage.yml, deploy-provider.yml, and rollback.yml
       expect(deployYml).toContain("cloud_run_service: ${{ inputs.cloud_run_service || '' }}");
       expect(deployYml).toContain("cloud_run_region: ${{ inputs.cloud_run_region || '' }}");
-      expect(deployYml).toContain(
-        "cloud_run_service: ${{ inputs.cloud_run_service || needs.production-deploy-provider.outputs.cloud_run_service || '' }}"
+      expect(deployStageYml).toContain(
+        "cloud_run_service: ${{ inputs.cloud_run_service || needs.deploy-provider.outputs.cloud_run_service || '' }}"
       );
-      expect(deployYml).toContain(
-        "cloud_run_region: ${{ inputs.cloud_run_region || needs.production-deploy-provider.outputs.cloud_run_region || '' }}"
+      expect(deployStageYml).toContain(
+        "cloud_run_region: ${{ inputs.cloud_run_region || needs.deploy-provider.outputs.cloud_run_region || '' }}"
       );
       expect(rollbackYml).toContain("cloud_run_service: ${{ inputs.cloud_run_service || '' }}");
       expect(rollbackYml).toContain("cloud_run_region: ${{ inputs.cloud_run_region || '' }}");
 
       // rollback.yml must never pause twice on production gates (verify job has no environment gate)
       const rollbackDoc = parseDocument(rollbackYml, { version: '1.2', strict: true }).toJS() as {
-        jobs?: Record<string, { environment?: unknown; timeout_minutes?: number; 'timeout-minutes'?: number }>;
+        on?: {
+          workflow_call?: {
+            inputs?: Record<string, { type?: string; default?: unknown; required?: boolean }>;
+          };
+        };
+        concurrency?: {
+          group?: string;
+          'cancel-in-progress'?: boolean;
+          queue?: string;
+        };
+        jobs?: Record<
+          string,
+          {
+            environment?: unknown;
+            timeout_minutes?: number;
+            'timeout-minutes'?: number;
+            with?: Record<string, unknown>;
+          }
+        >;
       };
       expect(rollbackDoc.jobs?.verify?.environment).toBeUndefined();
       expect(rollbackDoc.jobs?.verify?.['timeout-minutes']).toBe(5);
+      expect(rollbackDoc.on?.workflow_call?.inputs?.caller_holds_lock).toMatchObject({
+        type: 'boolean',
+        default: false,
+      });
+      expect(rollbackDoc.concurrency?.['cancel-in-progress']).toBe(false);
+      expect(rollbackDoc.concurrency?.queue).toBe('max');
+      expect(rollbackDoc.concurrency?.group).toContain("format('deploy-env-{0}', inputs.target_environment || 'production')");
+      expect(rollbackDoc.concurrency?.group).toContain('caller-rollback-');
+      expect(rollbackDoc.concurrency?.group).not.toContain('rollback_environment');
+      expect(rollbackDoc.jobs?.redeploy?.with?.caller_holds_lock).toBe(true);
     });
   });
 
@@ -2081,6 +2115,211 @@ process.exit(1);
         expect(res.summary).toContain('**Overall Rollback Status:** `FAILED`');
         expect(res.summary).not.toContain('**Overall Rollback Status:** `SUCCESS`');
         expect(res.summary).toContain(`**Failed Stage:** \`${tc.expectedStage}\``);
+      }
+    });
+
+    it('blocks rollback preflight when previous_digest matches CURRENT_SHA or lacks a prior successful deployment in target_environment, and succeeds when verified', async () => {
+      const verifyDeploymentScript = extractStepRunScript(
+        rollbackYml,
+        'Verify Rollback Digest Deployment History'
+      );
+      const recordFailureScript = extractStepRunScript(
+        rollbackYml,
+        'Record Preflight Failure Stage'
+      );
+
+      const healthySha = '1111111111111111111111111111111111111111';
+      const failingSha = '2222222222222222222222222222222222222222';
+      const healthyDigest =
+        'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const failingDigest =
+        'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const unpromotedDigest =
+        'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-verify-dep-bin-'));
+      fs.writeFileSync(
+        path.join(binDir, 'gh'),
+        `#!/usr/bin/env bash
+if [[ "$1" == "attestation" && "$2" == "verify" ]]; then
+  if [[ "$3" == *"${failingDigest}"* ]]; then
+    printf '[{"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"${failingSha}"}}}}]'
+    exit 0
+  fi
+  if [[ "$3" == *"${healthyDigest}"* ]]; then
+    printf '[{"verificationResult":{"signature":{"certificate":{"sourceRepositoryDigest":"${healthySha}"}}}}]'
+    exit 0
+  fi
+fi
+exit 1
+`,
+        { mode: 0o755 }
+      );
+      fs.writeFileSync(
+        path.join(binDir, 'docker'),
+        `#!/usr/bin/env bash
+if [[ "$1" == "login" ]]; then
+  exit 0
+fi
+if [[ "$1" == "buildx" && "$2" == "imagetools" && "$3" == "inspect" ]]; then
+  if [[ "$*" == *"--raw"* ]]; then
+    if [[ "$*" == *"${failingDigest}"* ]]; then
+      printf '{"annotations":{"org.opencontainers.image.revision":"${failingSha}"}}'
+      exit 0
+    fi
+    printf '{"annotations":{"org.opencontainers.image.revision":"${healthySha}"}}'
+    exit 0
+  fi
+  if [[ "$*" == *":${failingSha}"* ]]; then
+    printf '${failingDigest}\\n'
+    exit 0
+  fi
+fi
+exit 1
+`,
+        { mode: 0o755 }
+      );
+
+      const deployments = [
+        {
+          id: 702,
+          sha: failingSha,
+          environment: 'production',
+          payload: {
+            commit_sha: failingSha,
+            image_tag: failingSha,
+            image_digest: failingDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'failure' }],
+        },
+        {
+          id: 701,
+          sha: healthySha,
+          environment: 'production',
+          payload: {
+            commit_sha: healthySha,
+            image_tag: 'v1.2.2',
+            image_digest: healthyDigest,
+            dry_run: false,
+          },
+          // Superseded by auto_inactive: true on newer deployment, while retaining prior 'success'
+          statuses: [{ state: 'inactive' }, { state: 'success' }],
+        },
+        {
+          id: 700,
+          sha: '3333333333333333333333333333333333333333',
+          environment: 'staging',
+          payload: {
+            commit_sha: '3333333333333333333333333333333333333333',
+            image_tag: 'v1.2.3-rc1',
+            image_digest: unpromotedDigest,
+            dry_run: false,
+          },
+          statuses: [{ state: 'success' }],
+        },
+      ];
+
+      const apiServer = http.createServer((req, res) => {
+        const url = new URL(req.url || '/', 'http://127.0.0.1');
+        res.setHeader('Content-Type', 'application/json');
+        if (req.method === 'GET' && url.pathname === '/repos/example/wedding_website/deployments') {
+          const envFilter = url.searchParams.get('environment') || '';
+          const matched = deployments.filter((d) => !envFilter || d.environment === envFilter);
+          res.writeHead(200);
+          res.end(JSON.stringify(matched));
+          return;
+        }
+        const statusMatch = url.pathname.match(
+          /^\/repos\/example\/wedding_website\/deployments\/(\d+)\/statuses$/
+        );
+        if (req.method === 'GET' && statusMatch) {
+          const id = Number(statusMatch[1]);
+          const found = deployments.find((d) => d.id === id);
+          res.writeHead(200);
+          res.end(JSON.stringify(found?.statuses ?? []));
+          return;
+        }
+        res.writeHead(404);
+        res.end(JSON.stringify({ message: 'not found' }));
+      });
+
+      await new Promise<void>((resolve) => apiServer.listen(0, '127.0.0.1', () => resolve()));
+      const addr = apiServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const apiBase = `http://127.0.0.1:${port}`;
+
+      try {
+        // 1. Rejects previous_digest built from CURRENT_SHA
+        const sameShaRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: failingDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(sameShaRes.status).toBe(1);
+        expect(sameShaRes.stdout + sameShaRes.stderr).toContain('failing commit SHA');
+
+        // 2. Rejects staging-only / never-deployed digest when targeting production
+        const unpromotedRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: unpromotedDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(unpromotedRes.status).toBe(1);
+        expect(unpromotedRes.stdout + unpromotedRes.stderr).toContain(
+          "has no prior successful GitHub Deployment in environment 'production'"
+        );
+
+        // 3. Accepts healthy prior production deployment digest (even after auto_inactive)
+        const healthyRes = await runBashStepAsync(verifyDeploymentScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_test_token',
+          GITHUB_ACTOR_LOGIN: 'ci-bot',
+          GITHUB_REPOSITORY: 'example/wedding_website',
+          GITHUB_API_URL: apiBase,
+          REPO_OWNER: 'example',
+          SIGNER_WORKFLOW: 'example/wedding_website/.github/workflows/publish-artifact.yml',
+          TARGET_ENV: 'production',
+          EFFECTIVE_DIGEST: healthyDigest,
+          EFFECTIVE_TAG: '',
+          INPUT_COMMIT_SHA: failingSha,
+          CURRENT_SHA: failingSha,
+        });
+        expect(healthyRes.status).toBe(0);
+        expect(healthyRes.outputs.verified_deployment_id).toBe('701');
+        expect(healthyRes.outputs.verified_digest).toBe(healthyDigest);
+
+        // 4. Record Preflight Failure Stage reports Rollback Digest Deployment Verification
+        const failureStageRes = runBashStep(recordFailureScript, {
+          VALIDATE_OUTCOME: 'success',
+          VERIFY_DEPLOYMENT_OUTCOME: 'failure',
+          DB_CHECK_OUTCOME: 'skipped',
+        });
+        expect(failureStageRes.status).toBe(0);
+        expect(failureStageRes.outputs.failed_stage).toBe(
+          'Rollback Digest Deployment Verification'
+        );
+      } finally {
+        await new Promise<void>((resolve) => apiServer.close(() => resolve()));
+        fs.rmSync(binDir, { recursive: true, force: true });
       }
     });
   });

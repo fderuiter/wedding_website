@@ -3,15 +3,7 @@
 import Link from 'next/link';
 import type { PublicAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
-
-function cleanDisplayVenueField(value?: string | null): string {
-  if (!value || typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  const upper = trimmed.toUpperCase();
-  if (upper === 'TBD' || upper === 'TBD VENUE') return '';
-  return trimmed;
-}
+import { cleanOptionalSetupText } from '@/lib/setupCopy';
 
 export interface HomeFooterContentProps {
   config: PublicAppConfig;
@@ -20,7 +12,7 @@ export interface HomeFooterContentProps {
 export function HomeFooterContent({ config }: HomeFooterContentProps) {
   const partner1Display = (config.partner1Name || config.brideName || '').trim();
   const partner2Display = (config.partner2Name || config.groomName || '').trim();
-  const cleanVenueState = cleanDisplayVenueField(config.venueState);
+  const cleanVenueState = cleanOptionalSetupText(config.venueState);
 
   return (
     <>
@@ -36,7 +28,7 @@ export function HomeFooterContent({ config }: HomeFooterContentProps) {
         >
           About this site
         </Link>
-        <span aria-hidden="true" className="text-gray-400 dark:text-gray-600">
+        <span aria-hidden="true" className="text-muted-text">
           •
         </span>
         <Link

@@ -13,6 +13,7 @@ export type IconName =
   | 'Eye'
   | 'EyeOff'
   | 'ArrowLeft'
+  | 'ArrowRight'
   | 'ExternalLink'
   | 'ArrowUp'
   | 'ArrowDown'
@@ -50,7 +51,8 @@ export type IconName =
   | 'Image'
   | 'RotateCw'
   | 'ImageOff'
-  | 'Star';
+  | 'Star'
+  | 'Smartphone';
 
 interface IconProps extends React.ComponentPropsWithRef<'svg'> {
   name: IconName;
@@ -173,6 +175,13 @@ export function Icon({
         <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
           <path d="m12 19-7-7 7-7" />
           <path d="M19 12H5" />
+        </svg>
+      );
+    case 'ArrowRight':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <path d="M5 12h14" />
+          <path d="m12 5 7 7-7 7" />
         </svg>
       );
     case 'ExternalLink':
@@ -467,6 +476,13 @@ export function Icon({
       return (
         <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+      );
+    case 'Smartphone':
+      return (
+        <svg {...(commonProps as React.SVGProps<SVGSVGElement>)}>
+          <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+          <path d="M12 18h.01" />
         </svg>
       );
     default:

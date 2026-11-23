@@ -27,7 +27,7 @@ describe('AdminError Boundary', () => {
     const alerts = screen.getAllByRole('alert');
     expect(alerts.some((el) => el.getAttribute('aria-live') === 'assertive')).toBe(true);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Admin Portal Error' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Admin Portal Error' })).toBeInTheDocument();
     expect(screen.getAllByText(/unexpected error occurred while loading this administrative view/i).length).toBeGreaterThanOrEqual(1);
 
     const retryBtn = screen.getByRole('button', { name: 'Try Again' });

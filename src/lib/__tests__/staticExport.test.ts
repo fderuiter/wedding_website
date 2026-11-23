@@ -313,7 +313,7 @@ describe('Dual-mode static export mock adapter', () => {
     expect(photos[0].type).toBe('Photo');
   });
 
-  it('provides mock wedding party members without database queries when STATIC_EXPORT is enabled', async () => {
+  it('provides mock wedding party members across both partner sides without database queries when STATIC_EXPORT is enabled', async () => {
     process.env.STATIC_EXPORT = 'true';
 
     const members = await weddingPartyRepository.getMembers();
@@ -322,6 +322,8 @@ describe('Dual-mode static export mock adapter', () => {
     expect(members.length).toBe(ARCHETYPE_PRESETS.classic.weddingParty.length);
     expect(members[0].name).toBe(ARCHETYPE_PRESETS.classic.weddingParty[0].name);
     expect(members[0].photo?.url).toBeTruthy();
+    expect(members.some((m) => m.side === 'BRIDE')).toBe(true);
+    expect(members.some((m) => m.side === 'GROOM')).toBe(true);
   });
 });
 

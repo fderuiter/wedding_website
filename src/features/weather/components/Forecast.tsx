@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Icon, IconName } from '@/components/ui/Icon';
 import { apiClient } from '@/lib/apiClient';
 import { Button } from '@/components/ui/Button';
+import { Heading } from '@/components/ui/Layout';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
@@ -37,10 +38,10 @@ const getWeatherDescription = (code: number): string => {
 
 const getWeatherIcon = (code: number): { name: IconName, color: string } => {
   if (code <= 1) return { name: 'Sun', color: 'text-secondary' };
-  if (code <= 3) return { name: 'Cloud', color: 'text-gray-400' };
+  if (code <= 3) return { name: 'Cloud', color: 'text-muted-text' };
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return { name: 'CloudRain', color: 'text-blue-400' };
   if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return { name: 'CloudSnow', color: 'text-sky-300' };
-  return { name: 'Cloud', color: 'text-gray-400' };
+  return { name: 'Cloud', color: 'text-muted-text' };
 };
 
 /**
@@ -133,7 +134,9 @@ const Forecast: React.FC = () => {
         role="alert"
       >
         <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
-        <h2 className="text-xl font-bold">Unable to Load Weather</h2>
+        <Heading as="h2" variant="none" unstyledColor className="text-xl font-bold">
+          Unable to Load Weather
+        </Heading>
         <p className="text-base text-red-500 font-medium">
           Failed to load forecast. Please try again later.
         </p>

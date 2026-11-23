@@ -7,6 +7,7 @@ import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
 import { withBasePath } from '@/lib/basePath';
 
 export interface InvitationQRPreviewGuest {
@@ -31,13 +32,22 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
   guest,
 }) => {
   const { addToast } = useToast();
+  const { config } = useAdminSettings();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
 
   if (!guest) return null;
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const rsvpUrl = `${origin}${withBasePath('/guest')}?code=${encodeURIComponent(guest.code || '')}`;
+  const guestPath = withBasePath('/guest');
+  const basePathPrefix = guestPath.endsWith('/guest')
+    ? guestPath.slice(0, -'/guest'.length)
+    : '';
+  const rawBaseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
+  const baseOrigin =
+    basePathPrefix && rawBaseOrigin.endsWith(basePathPrefix)
+      ? rawBaseOrigin.slice(0, -basePathPrefix.length)
+      : rawBaseOrigin;
+  const rsvpUrl = `${baseOrigin}${guestPath}?code=${encodeURIComponent(guest.code || '')}`;
   const plusOneName = [guest.plusOneFirstName, guest.plusOneLastName].filter(Boolean).join(' ');
 
   const handleCopyLink = async () => {
@@ -113,7 +123,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
             </p>
           )}
           <div className="pt-1">
-            <span className="text-xs uppercase tracking-wider text-gray-500 font-semibold mr-1.5">
+            <span className="text-xs uppercase tracking-wider text-muted-text font-semibold mr-1.5">
               Code:
             </span>
             <code className="bg-gray-100 dark:bg-gray-800 text-red-600 dark:text-red-400 px-2 py-0.5 rounded font-mono font-bold text-sm">

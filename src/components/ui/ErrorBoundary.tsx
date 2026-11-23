@@ -3,11 +3,13 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 
 export interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode | ((error: Error, reset: () => void) => ReactNode);
   title?: string;
+  headingLevel?: HeadingLevel;
   message?: string;
   onReset?: () => void;
   className?: string;
@@ -59,6 +61,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
 
       const title = this.props.title || 'Something went wrong';
+      const headingLevel = this.props.headingLevel || 'h2';
       const message =
         this.props.message ||
         'An error occurred while displaying this section. You can try clicking below to reload it.';
@@ -75,7 +78,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <Icon name="AlertTriangle" className="w-8 h-8" />
           </div>
           <div>
-            <h3 className="text-xl font-bold mb-1 text-primary">{title}</h3>
+            <Heading
+              as={headingLevel}
+              variant="none"
+              unstyledColor
+              className="text-xl font-bold mb-1 text-primary"
+            >
+              {title}
+            </Heading>
             <p className="text-sm opacity-90 mb-4">{message}</p>
           </div>
           <Button onClick={this.reset} variant="primary" size="md">

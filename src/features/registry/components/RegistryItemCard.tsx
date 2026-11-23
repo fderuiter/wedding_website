@@ -202,6 +202,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
     isSubmitting,
     isSuccess,
     isSubmitDisabled,
+    invitationCodeInputRef,
 
     contributorName,
     email,
@@ -1514,15 +1515,21 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           <h3 className="font-semibold text-lg mb-3 text-primary">
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
           </h3>
-          <FormGroup state={codeError ? 'error' : 'default'} className="mb-3">
+          <FormGroup
+            state={codeError ? 'error' : 'default'}
+            busy={isBusy || isValidatingCode}
+            className="mb-3"
+          >
             <Label>Invitation Code (Optional)</Label>
             <div className="flex gap-2">
               <Input
+                ref={invitationCodeInputRef}
                 type="text"
                 placeholder="ABCDEF12"
                 value={invitationCode}
                 onChange={handleCodeChange}
-                disabled={isSubmitting || isValidatingCode || isCodeLocked}
+                busy={isBusy || isValidatingCode}
+                disabled={isCodeLocked}
               />
               {!isCodeLocked && (
                 <Button
@@ -1553,40 +1560,56 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               </p>
             )}
           </FormGroup>
-          <FormGroup state={fieldErrors.name ? 'error' : 'default'} className="mb-3">
-            <Label>
-              Your Name <span className="text-red-700 dark:text-red-400">*</span>
-            </Label>
+          <FormGroup
+            required
+            busy={isBusy}
+            state={fieldErrors.name ? 'error' : 'default'}
+            className="mb-3"
+          >
+            <Label>Your Name</Label>
             <Input
               type="text"
+              name="contributorName"
+              autoComplete="name"
+              required
+              busy={isBusy}
               placeholder="Jane Doe"
               value={contributorName}
               onChange={(e) => setContributorName(e.target.value)}
-              disabled={isSubmitting}
             />
             {fieldErrors.name && <FormMessage>{fieldErrors.name}</FormMessage>}
           </FormGroup>
-          <FormGroup state={fieldErrors.email ? 'error' : 'default'} className="mb-3">
+          <FormGroup
+            busy={isBusy}
+            state={fieldErrors.email ? 'error' : 'default'}
+            className="mb-3"
+          >
             <Label>Email Address (Optional)</Label>
             <Input
               type="email"
+              name="email"
+              autoComplete="email"
+              busy={isBusy}
               placeholder="jane@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              disabled={isSubmitting}
             />
             {fieldErrors.email && <FormMessage>{fieldErrors.email}</FormMessage>}
           </FormGroup>
           {!item.isGroupGift && requestedUnits > 1 && (
-            <FormGroup state={fieldErrors.units ? 'error' : 'default'} className="mb-3">
-              <Label>
-                Quantity to Claim <span className="text-red-700 dark:text-red-400">*</span>
-              </Label>
+            <FormGroup
+              required
+              busy={isBusy}
+              state={fieldErrors.units ? 'error' : 'default'}
+              className="mb-3"
+            >
+              <Label>Quantity to Claim</Label>
               <Select
                 data-testid="unit-quantity-select"
+                required
+                busy={isBusy}
                 value={String(selectedUnits)}
                 onChange={(e) => setSelectedUnits(Number(e.target.value))}
-                disabled={isBusy}
               >
                 {Array.from({ length: Math.max(1, remainingUnits) }, (_, idx) => idx + 1).map(
                   (unitOption) => (
@@ -1601,10 +1624,13 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             </FormGroup>
           )}
           {item.isGroupGift && (
-            <FormGroup state={fieldErrors.amount ? 'error' : 'default'} className="mb-3">
-              <Label>
-                Contribution Amount <span className="text-red-700 dark:text-red-400">*</span>
-              </Label>
+            <FormGroup
+              required
+              busy={isBusy}
+              state={fieldErrors.amount ? 'error' : 'default'}
+              className="mb-3"
+            >
+              <Label>Contribution Amount</Label>
               {remainingAmount > 0 && (
                 <div
                   role="group"
@@ -1663,13 +1689,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
               <Input
                 type="number"
+                required
+                busy={isBusy}
                 placeholder={`Up to ${formatCurrency(remainingAmount)}`}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min="0.01"
                 step="0.01"
                 max={remainingAmount}
-                disabled={isSubmitting}
               />
               {fieldErrors.amount && <FormMessage>{fieldErrors.amount}</FormMessage>}
             </FormGroup>
@@ -1783,6 +1810,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 Order &amp; Shipping Details (Optional)
               </p>
               <FormGroup
+                busy={isBusy}
                 state={fieldErrors.retailerOrderNumber ? 'error' : 'default'}
                 className="mb-0"
               >
@@ -1792,7 +1820,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   placeholder="e.g. 114-3941689-8772232"
                   value={retailerOrderNumber}
                   onChange={(e) => setRetailerOrderNumber(e.target.value)}
-                  disabled={isBusy}
+                  busy={isBusy}
                   maxLength={120}
                 />
                 {fieldErrors.retailerOrderNumber && (
@@ -1800,19 +1828,24 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 )}
               </FormGroup>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <FormGroup state={fieldErrors.carrier ? 'error' : 'default'} className="mb-0">
+                <FormGroup
+                  busy={isBusy}
+                  state={fieldErrors.carrier ? 'error' : 'default'}
+                  className="mb-0"
+                >
                   <Label>Shipping Carrier (Optional)</Label>
                   <Input
                     type="text"
                     placeholder="e.g. UPS, FedEx, USPS"
                     value={carrier}
                     onChange={(e) => setCarrier(e.target.value)}
-                    disabled={isBusy}
+                    busy={isBusy}
                     maxLength={100}
                   />
                   {fieldErrors.carrier && <FormMessage>{fieldErrors.carrier}</FormMessage>}
                 </FormGroup>
                 <FormGroup
+                  busy={isBusy}
                   state={fieldErrors.trackingNumber ? 'error' : 'default'}
                   className="mb-0"
                 >
@@ -1822,7 +1855,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                     placeholder="e.g. 1Z999AA10123456784"
                     value={trackingNumber}
                     onChange={(e) => setTrackingNumber(e.target.value)}
-                    disabled={isBusy}
+                    busy={isBusy}
                     maxLength={120}
                   />
                   {fieldErrors.trackingNumber && (
@@ -1857,7 +1890,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               </span>
               <Icon
                 name="ChevronDown"
-                className={`w-4 h-4 text-gray-500 transition-transform ${
+                className={`w-4 h-4 text-muted-text transition-transform ${
                   isReturnAddressOpen ||
                   fieldErrors.addressLine1 ||
                   fieldErrors.addressLine2 ||
@@ -1884,7 +1917,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 data-testid="contributor-return-address-fields"
                 className="px-3 pb-3 pt-1 space-y-2.5 border-t border-slate-200 dark:border-slate-700"
               >
-                <FormGroup state={fieldErrors.addressLine1 ? 'error' : 'default'} className="mb-0">
+                <FormGroup
+                  busy={isBusy}
+                  state={fieldErrors.addressLine1 ? 'error' : 'default'}
+                  className="mb-0"
+                >
                   <Label htmlFor={`return-address-line1-${item.id}`}>Address Line 1</Label>
                   <Input
                     id={`return-address-line1-${item.id}`}
@@ -1892,7 +1929,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                     placeholder="123 Maple Street"
                     value={addressLine1}
                     onChange={(e) => setAddressLine1(e.target.value)}
-                    disabled={isBusy}
+                    busy={isBusy}
                     maxLength={200}
                     autoComplete="address-line1"
                   />
@@ -1900,7 +1937,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                     <FormMessage>{fieldErrors.addressLine1}</FormMessage>
                   )}
                 </FormGroup>
-                <FormGroup state={fieldErrors.addressLine2 ? 'error' : 'default'} className="mb-0">
+                <FormGroup
+                  busy={isBusy}
+                  state={fieldErrors.addressLine2 ? 'error' : 'default'}
+                  className="mb-0"
+                >
                   <Label htmlFor={`return-address-line2-${item.id}`}>
                     Address Line 2 (Optional)
                   </Label>
@@ -1910,7 +1951,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                     placeholder="Apt 4B"
                     value={addressLine2}
                     onChange={(e) => setAddressLine2(e.target.value)}
-                    disabled={isBusy}
+                    busy={isBusy}
                     maxLength={200}
                     autoComplete="address-line2"
                   />
@@ -1919,7 +1960,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   )}
                 </FormGroup>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <FormGroup state={fieldErrors.city ? 'error' : 'default'} className="mb-0">
+                  <FormGroup
+                    busy={isBusy}
+                    state={fieldErrors.city ? 'error' : 'default'}
+                    className="mb-0"
+                  >
                     <Label htmlFor={`return-address-city-${item.id}`}>City</Label>
                     <Input
                       id={`return-address-city-${item.id}`}
@@ -1927,13 +1972,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                       placeholder="Austin"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      disabled={isBusy}
+                      busy={isBusy}
                       maxLength={100}
                       autoComplete="address-level2"
                     />
                     {fieldErrors.city && <FormMessage>{fieldErrors.city}</FormMessage>}
                   </FormGroup>
-                  <FormGroup state={fieldErrors.state ? 'error' : 'default'} className="mb-0">
+                  <FormGroup
+                    busy={isBusy}
+                    state={fieldErrors.state ? 'error' : 'default'}
+                    className="mb-0"
+                  >
                     <Label htmlFor={`return-address-state-${item.id}`}>State / Province</Label>
                     <Input
                       id={`return-address-state-${item.id}`}
@@ -1941,7 +1990,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                       placeholder="TX"
                       value={state}
                       onChange={(e) => setState(e.target.value)}
-                      disabled={isBusy}
+                      busy={isBusy}
                       maxLength={100}
                       autoComplete="address-level1"
                     />
@@ -1949,7 +1998,11 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   </FormGroup>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <FormGroup state={fieldErrors.zipCode ? 'error' : 'default'} className="mb-0">
+                  <FormGroup
+                    busy={isBusy}
+                    state={fieldErrors.zipCode ? 'error' : 'default'}
+                    className="mb-0"
+                  >
                     <Label htmlFor={`return-address-zip-${item.id}`}>ZIP / Postal Code</Label>
                     <Input
                       id={`return-address-zip-${item.id}`}
@@ -1957,13 +2010,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                       placeholder="78701"
                       value={zipCode}
                       onChange={(e) => setZipCode(e.target.value)}
-                      disabled={isBusy}
+                      busy={isBusy}
                       maxLength={20}
                       autoComplete="postal-code"
                     />
                     {fieldErrors.zipCode && <FormMessage>{fieldErrors.zipCode}</FormMessage>}
                   </FormGroup>
-                  <FormGroup state={fieldErrors.country ? 'error' : 'default'} className="mb-0">
+                  <FormGroup
+                    busy={isBusy}
+                    state={fieldErrors.country ? 'error' : 'default'}
+                    className="mb-0"
+                  >
                     <Label htmlFor={`return-address-country-${item.id}`}>Country (Optional)</Label>
                     <Input
                       id={`return-address-country-${item.id}`}
@@ -1971,7 +2028,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                       placeholder="United States"
                       value={country}
                       onChange={(e) => setCountry(e.target.value)}
-                      disabled={isBusy}
+                      busy={isBusy}
                       maxLength={100}
                       autoComplete="country-name"
                     />
@@ -1982,13 +2039,17 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             )}
           </div>
 
-          <FormGroup state={fieldErrors.message ? 'error' : 'default'} className="mb-3">
+          <FormGroup
+            busy={isBusy}
+            state={fieldErrors.message ? 'error' : 'default'}
+            className="mb-3"
+          >
             <Label>Personal Message (Optional)</Label>
             <Textarea
               placeholder="Warm wishes for the couple..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              disabled={isBusy}
+              busy={isBusy}
               maxLength={1000}
               rows={3}
             />
@@ -2038,7 +2099,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                   <li key={idx}>
                     <span className="font-medium">{c.name}</span>{' '}
                     {c.amount ? `(${formatCurrency(c.amount)})` : ''}
-                    {c.date ? <span className="ml-1 text-gray-400">{formatDate(c.date)}</span> : null}
+                    {c.date ? <span className="ml-1 text-muted-text">{formatDate(c.date)}</span> : null}
                   </li>
                 ))}
               </ul>

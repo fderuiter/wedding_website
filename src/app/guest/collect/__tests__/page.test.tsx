@@ -241,4 +241,46 @@ describe('GuestAddressCollectPage (/guest/collect)', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
   });
+
+  test('marks street, city, state, and postal code inputs required and surfaces field validation messages on HTTP 400', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        success: false,
+        error: 'Street address is required',
+        details: {
+          _errors: [],
+          addressLine1: { _errors: ['Street address is required'] },
+          city: { _errors: ['City is required'] },
+          state: { _errors: ['State or province is required'] },
+          zipCode: { _errors: ['ZIP or postal code is required'] },
+        },
+      }),
+    });
+
+    render(<GuestAddressCollectPage />);
+
+    const streetInput = screen.getByLabelText(/Street Address Line 1/i);
+    const cityInput = screen.getByLabelText(/City/i);
+    const stateInput = screen.getByLabelText(/State \/ Province/i);
+    const zipInput = screen.getByLabelText(/ZIP \/ Postal Code/i);
+
+    expect(streetInput).toBeRequired();
+    expect(cityInput).toBeRequired();
+    expect(stateInput).toBeRequired();
+    expect(zipInput).toBeRequired();
+
+    fireEvent.change(screen.getByLabelText(/Full Name/i), { target: { value: 'Postal Missing Guest' } });
+    fireEvent.submit(screen.getByRole('button', { name: /Submit Address/i }).closest('form')!);
+
+    expect(await screen.findByText('Street address is required')).toBeInTheDocument();
+    expect(screen.getByText('City is required')).toBeInTheDocument();
+    expect(screen.getByText('State or province is required')).toBeInTheDocument();
+    expect(screen.getByText('ZIP or postal code is required')).toBeInTheDocument();
+    expect(streetInput).toHaveAttribute('aria-invalid', 'true');
+    expect(cityInput).toHaveAttribute('aria-invalid', 'true');
+    expect(stateInput).toHaveAttribute('aria-invalid', 'true');
+    expect(zipInput).toHaveAttribute('aria-invalid', 'true');
+  });
 });

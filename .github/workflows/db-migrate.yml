@@ -40,6 +40,11 @@ on:
         required: false
         type: boolean
         default: true
+      caller_holds_lock:
+        description: 'Whether the calling workflow already holds the deploy-env-<environment> concurrency lock'
+        required: false
+        type: boolean
+        default: false
     secrets:
       DATABASE_URL:
         required: true
@@ -49,8 +54,9 @@ on:
         value: ${{ jobs.migrate.outputs.schema_compatibility_status }}
 
 concurrency:
-  group: db-migrate-${{ inputs.environment || 'production' }}
+  group: ${{ inputs.caller_holds_lock && format('caller-db-migrate-{0}-{1}-{2}', inputs.environment || 'production', github.run_id, github.run_attempt) || format('deploy-env-{0}', inputs.environment || 'production') }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   migrate:
@@ -80,10 +86,17 @@ jobs:
             exit 1
           fi
 
+      - name: Record Target Environment (${{ inputs.environment || 'production' }})
+        env:
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+        run: |
+          echo "Target migration environment: ${TARGET_ENV}"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Align Migration Workspace to Target Commit SHA
         if: inputs.commit_sha != ''
