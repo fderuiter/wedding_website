@@ -11,12 +11,14 @@ import { registryService } from '../../service';
 import { createRegistryRepository } from '../../repository';
 import { getAppConfig } from '@/lib/config';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance } from '@/lib/stripe';
 
 jest.mock('../../service', () => ({
   registryService: {
     getItemById: jest.fn(),
     contributeToItem: jest.fn(),
+    getActiveCatalogCapabilitiesSummary: jest.fn(),
   },
 }));
 
@@ -89,6 +91,11 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
       modules: { registry: true, groupGifting: true },
     });
     (isAdminRequest as jest.Mock).mockResolvedValue(false);
+    (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
+    (registryService.getActiveCatalogCapabilitiesSummary as jest.Mock).mockResolvedValue({
+      hasActivePhysicalItems: true,
+      hasActiveFundsOrGroupGifts: true,
+    });
     (registryService.getItemById as jest.Mock).mockResolvedValue(dualModeFund);
     (registryService.contributeToItem as jest.Mock).mockImplementation(async (_id, payload) => ({
       ...dualModeFund,
@@ -144,6 +151,72 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         },
       });
       expect(JSON.stringify(body)).not.toContain('sk_test_valid_secret_12345');
+    });
+
+    it('omits shippingAddress for guest_auth-only callers and when zero active PHYSICAL items exist, and omits defaultPaymentHandle without active funds or group gifts', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: { registry: true, groupGifting: true },
+        shippingRecipientName: 'Alex & Taylor',
+        shippingAddressLine1: '101 Maple Ave',
+        shippingCity: 'Seattle',
+        shippingState: 'WA',
+        shippingZip: '98101',
+        shippingCountry: 'United States',
+        defaultPaymentHandleType: 'Venmo',
+        defaultPaymentHandle: '@couple-venmo',
+      });
+
+      // 1. guest_auth-only caller (no guest_invite_session, not admin) -> shippingAddress omitted
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
+      (registryService.getActiveCatalogCapabilitiesSummary as jest.Mock).mockResolvedValueOnce({
+        hasActivePhysicalItems: true,
+        hasActiveFundsOrGroupGifts: true,
+      });
+      const guestOnlyRes = await getCapabilities(
+        new NextRequest('http://localhost:3000/api/registry/capabilities')
+      );
+      const guestOnlyBody = await guestOnlyRes.json();
+      expect(guestOnlyBody.data.shippingAddress).toBeUndefined();
+      expect(guestOnlyBody.data.defaultPaymentHandle).toBe('@couple-venmo');
+      expect(guestOnlyBody.data.defaultPaymentHandleType).toBe('Venmo');
+
+      // 2. Verified guest_invite_session, but zero active PHYSICAL items and zero active funds/group gifts -> both omitted
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'INVITE26',
+        guestName: 'Invited Household',
+      });
+      (registryService.getActiveCatalogCapabilitiesSummary as jest.Mock).mockResolvedValueOnce({
+        hasActivePhysicalItems: false,
+        hasActiveFundsOrGroupGifts: false,
+      });
+      const emptyCatalogRes = await getCapabilities(
+        new NextRequest('http://localhost:3000/api/registry/capabilities')
+      );
+      const emptyCatalogBody = await emptyCatalogRes.json();
+      expect(emptyCatalogBody.data.shippingAddress).toBeUndefined();
+      expect(emptyCatalogBody.data.defaultPaymentHandle).toBeUndefined();
+      expect(emptyCatalogBody.data.defaultPaymentHandleType).toBeUndefined();
+
+      // 3. Verified guest_invite_session with active PHYSICAL items -> shippingAddress included
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'INVITE26',
+        guestName: 'Invited Household',
+      });
+      (registryService.getActiveCatalogCapabilitiesSummary as jest.Mock).mockResolvedValueOnce({
+        hasActivePhysicalItems: true,
+        hasActiveFundsOrGroupGifts: false,
+      });
+      const verifiedPhysicalRes = await getCapabilities(
+        new NextRequest('http://localhost:3000/api/registry/capabilities')
+      );
+      const verifiedPhysicalBody = await verifiedPhysicalRes.json();
+      expect(verifiedPhysicalBody.data.shippingAddress).toEqual(
+        expect.objectContaining({
+          recipientName: 'Alex & Taylor',
+          addressLine1: '101 Maple Ave',
+        })
+      );
+      expect(verifiedPhysicalBody.data.defaultPaymentHandle).toBeUndefined();
     });
   });
 
@@ -209,7 +282,24 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
   });
 
   describe('POST /api/registry/contribute', () => {
-    it('records self-reported direct transfer with 0% fee (coverFee=false) without requiring paymentIntentId', async () => {
+    it('records self-reported direct transfer with 0% fee (coverFee=false) for verified invite sessions and returns 403 without one', async () => {
+      const unverifiedRes = await contributeToRegistry(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-dual-1',
+            name: 'Unverified Direct',
+            amount: 120,
+          }),
+        })
+      );
+      expect(unverifiedRes.status).toBe(403);
+      expect(registryService.contributeToItem).not.toHaveBeenCalled();
+
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'DUAL2026',
+        guestName: 'Sam Direct',
+      });
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
         method: 'POST',
         body: JSON.stringify({
@@ -228,7 +318,7 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
         name: 'Sam Direct',
         email: undefined,
         amount: 120,
-        code: undefined,
+        code: 'DUAL2026',
         message: 'Sent via Venmo!',
         coverFee: false,
       });
@@ -276,6 +366,10 @@ describe('Dual-Mode Registry Capabilities, PaymentIntent & Contribute APIs', () 
     });
 
     it('rejects unverified contribution when fund has no paymentHandle configured', async () => {
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'DUAL2026',
+        guestName: 'Blocked Guest',
+      });
       (registryService.getItemById as jest.Mock).mockResolvedValueOnce(unconfiguredFund);
 
       const req = new NextRequest('http://localhost:3000/api/registry/contribute', {

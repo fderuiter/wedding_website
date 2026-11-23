@@ -83,6 +83,19 @@ export function withApiMiddleware(
     let authLimit = 5;
     let authWindowMs = 15 * 60 * 1000;
     let prechecksCompleted = false;
+    let shouldClearRevokedInviteCookie = false;
+
+    const clearRevokedInviteCookie = (res: NextResponse | Response) => {
+      if ('cookies' in res && typeof (res as NextResponse).cookies?.set === 'function') {
+        (res as NextResponse).cookies.set(GUEST_INVITE_COOKIE, '', {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 0,
+        });
+      }
+    };
 
     try {
       let pathname = '/';
@@ -169,24 +182,21 @@ export function withApiMiddleware(
       } else if (req && !isInviteRevocationExcludedApiPath(normalizedPathname)) {
         const signedInvite = await getSignedGuestInviteSession(req);
         if (signedInvite) {
-          const hasFallbackAuth = (await isAdminRequest(req)) || (await isGuestRequest(req));
-          if (!hasFallbackAuth) {
-            const activeInvite = await getGuestInviteSession(req);
-            if (!activeInvite) {
+          const [hasFallbackAuth, activeInvite] = await Promise.all([
+            (async () => (await isAdminRequest(req)) || (await isGuestRequest(req)))(),
+            getGuestInviteSession(req),
+          ]);
+          if (!activeInvite) {
+            if (!hasFallbackAuth) {
               const unauthorizedResponse = NextResponse.json(
                 { success: false, error: 'Unauthorized' },
                 { status: 401 }
               );
               unauthorizedResponse.headers.set('x-api-version', 'v2');
-              unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                path: '/',
-                maxAge: 0,
-              });
+              clearRevokedInviteCookie(unauthorizedResponse);
               return unauthorizedResponse;
             }
+            shouldClearRevokedInviteCookie = true;
           }
         }
       }
@@ -211,6 +221,9 @@ export function withApiMiddleware(
       
       // We assume it's JSON unless it's explicitly something else, to handle test mocks
       if ((contentType && !contentType.includes('application/json')) || isAttachment) {
+        if (shouldClearRevokedInviteCookie) {
+          clearRevokedInviteCookie(response);
+        }
         return response as NextResponse;
       }
 
@@ -315,6 +328,10 @@ export function withApiMiddleware(
           finalResponse.headers.append('set-cookie', c);
         });
       }
+
+      if (shouldClearRevokedInviteCookie) {
+        clearRevokedInviteCookie(finalResponse);
+      }
       
       return finalResponse;
       
@@ -336,7 +353,7 @@ export function withApiMiddleware(
       }
 
       if (error instanceof ApiError && error.statusCode < 500) {
-        return NextResponse.json(
+        const apiErrorResponse = NextResponse.json(
           { 
             success: false, 
             error: error.message,
@@ -344,6 +361,10 @@ export function withApiMiddleware(
           },
           { status: error.statusCode }
         );
+        if (shouldClearRevokedInviteCookie) {
+          clearRevokedInviteCookie(apiErrorResponse);
+        }
+        return apiErrorResponse;
       }
 
       const apiVersion = 'v2';

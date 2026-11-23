@@ -49,7 +49,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     name,
     email,
     amount,
-    code,
     message,
     coverFee,
     paymentIntentId,
@@ -65,9 +64,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   } = parseResult.data;
 
   const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
-  const guestSessionSettledPromise = !code
-    ? settle(() => getGuestInviteSession(request))
-    : null;
+  const guestSessionSettledPromise = settle(() => getGuestInviteSession(request));
 
   let hasStripeConfigError = false;
   let stripeConfigError: unknown = null;
@@ -119,15 +116,23 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
 
-  let finalCode = code;
-  if (!finalCode && guestSessionSettledPromise) {
-    const sessionSettled = await guestSessionSettledPromise;
-    if (sessionSettled.status === 'rejected') {
-      throw sessionSettled.reason;
-    }
-    if (sessionSettled.value?.code) {
-      finalCode = sessionSettled.value.code;
-    }
+  const sessionSettled = await guestSessionSettledPromise;
+  if (sessionSettled.status === 'rejected') {
+    throw sessionSettled.reason;
+  }
+  const finalCode = sessionSettled.value?.code;
+
+  const isAdminSettled = await isAdminSettledPromise;
+  if (isAdminSettled.status === 'rejected') {
+    throw isAdminSettled.reason;
+  }
+  const isAdmin = isAdminSettled.value;
+
+  if (!paymentIntentId && !finalCode && !isAdmin) {
+    throw new ApiError(
+      403,
+      'A verified invitation code session is required to reserve gifts or record direct transfers.'
+    );
   }
 
   const effectiveCoverFee = isPayableGroupGift && !paymentIntentId ? false : Boolean(coverFee);
@@ -215,6 +220,7 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       config,
       requestUrl,
       isReservation,
+      verifiedInvitationCode: finalCode,
     });
     return notificationDispatchPromise;
   };
@@ -233,11 +239,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     await runNotifications();
   }
 
-  const isAdminSettled = await isAdminSettledPromise;
-  if (isAdminSettled.status === 'rejected') {
-    throw isAdminSettled.reason;
-  }
-  const isAdmin = isAdminSettled.value;
   if (!isAdmin) {
     let claimActions: GuestClaimActions | undefined;
     if (!stripePaymentIntentId) {
@@ -285,4 +286,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
   return NextResponse.json(sanitizeRegistryItem(updatedItem));
+}, {
+  limit: 20,
+  windowMs: 60 * 1000,
+  keyPrefix: 'registry-contribute',
 });

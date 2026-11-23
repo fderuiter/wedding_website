@@ -82,7 +82,30 @@ describe('POST /api/registry/contribute', () => {
     (registryService.contributeToItem as jest.Mock).mockResolvedValue(mockUpdatedItem);
   });
 
-  it('successfully processes contribution without an invitation code and strips relational contributors for non-admin callers', async () => {
+  it('returns HTTP 403 for zero-Stripe claims without a verified guest_invite_session or admin auth and ignores client body code', async () => {
+    const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'item-123',
+        name: 'Unverified Guest',
+        email: 'unverified@example.com',
+        amount: 50,
+        code: 'SPOOF123',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error).toMatch(/verified invitation code session is required/i);
+    expect(registryService.contributeToItem).not.toHaveBeenCalled();
+  });
+
+  it('successfully processes a zero-Stripe contribution with a verified guest_invite_session, ignores unverified body code, and strips relational contributors for non-admin callers', async () => {
+    (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+      code: 'INVITE26',
+      guestName: 'John Wellwisher',
+    });
     (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
       ...mockItem,
       amountContributed: 75,
@@ -135,7 +158,7 @@ describe('POST /api/registry/contribute', () => {
       name: 'John Wellwisher',
       email: 'john@example.com',
       amount: 50,
-      code: undefined,
+      code: 'INVITE26',
       message: 'Best wishes!',
       coverFee: false,
     });
@@ -218,13 +241,18 @@ describe('POST /api/registry/contribute', () => {
     expect(body.data.contributors[0]).not.toHaveProperty('email');
   });
 
-  it('accepts contribution when email is omitted/blank', async () => {
+  it('accepts contribution when email is omitted/blank for a verified invite session', async () => {
+    (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+      code: 'INVITE26',
+      guestName: 'Anonymous Friend',
+    });
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
       body: JSON.stringify({
         itemId: 'item-123',
         name: 'Anonymous Friend',
         amount: 25,
+        code: 'IGNORED8',
       }),
     });
 
@@ -235,7 +263,7 @@ describe('POST /api/registry/contribute', () => {
       name: 'Anonymous Friend',
       email: undefined,
       amount: 25,
-      code: undefined,
+      code: 'INVITE26',
       message: undefined,
       coverFee: false,
     });
@@ -643,7 +671,7 @@ describe('POST /api/registry/contribute', () => {
       expect(couplePayload.body).toContain('https://couple.wedding.test/admin/dashboard/thank-you-notes');
     });
 
-    it('includes payment handle and external transfer reminder for self-reported fund transfers', async () => {
+    it('includes payment handle and external transfer reminder for self-reported fund transfers, alerts the couple on RESERVED claims, and blocks unverified reservation email relays', async () => {
       const fundItem = {
         ...mockItem,
         id: 'fund-venmo-1',
@@ -659,6 +687,16 @@ describe('POST /api/registry/contribute', () => {
         contactEmail: 'couple@wedding.test',
         baseUrl: 'https://couple.wedding.test',
       });
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'JORDAN26',
+        guestName: 'Jordan Transfer',
+      });
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'inv-jordan-1',
+        code: 'JORDAN26',
+        email: 'jordan@example.com',
+        isSample: false,
+      });
       (registryService.getItemById as jest.Mock).mockResolvedValueOnce(fundItem);
       (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
         ...fundItem,
@@ -668,6 +706,8 @@ describe('POST /api/registry/contribute', () => {
             id: 'contrib-direct-1',
             name: 'Jordan Transfer',
             email: 'jordan@example.com',
+            invitationCodeId: 'inv-jordan-1',
+            status: 'RESERVED',
             amount: 75,
             coverFee: false,
             feeAmount: 0,
@@ -696,10 +736,11 @@ describe('POST /api/registry/contribute', () => {
         cancelToken: expect.any(String),
       });
 
-      // Couple alert is delayed while RESERVED; guest reservation email sends immediately with signed links
-      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+      // Both verified household guest reservation email AND couple reservation alert send immediately
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
 
       const guestPayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'jordan@example.com')?.[0];
+      expect(guestPayload).toBeDefined();
       expect(guestPayload.body).toContain('@alex-and-taylor');
       expect(guestPayload.body).toContain('Venmo');
       expect(guestPayload.body).toMatch(/finish sending your transfer externally/i);
@@ -708,7 +749,14 @@ describe('POST /api/registry/contribute', () => {
       expect(guestPayload.body).toContain('https://couple.wedding.test/guest/claim?token=');
       expect(guestPayload.body).toContain('https://couple.wedding.test/registry');
 
-      // Confirming the gift dispatches the couple alert email
+      const reservedCouplePayload = sendEmailSpy.mock.calls.find(
+        ([p]) => p.to === 'couple@wedding.test'
+      )?.[0];
+      expect(reservedCouplePayload).toBeDefined();
+      expect(reservedCouplePayload.subject).toContain('New Registry Reservation');
+      expect(reservedCouplePayload.body).toContain('Direct Transfer (Venmo) (Reserved)');
+
+      // Confirming the gift dispatches the couple confirmation alert email
       await dispatchConfirmedContributionAlert({
         contributor: {
           id: 'contrib-direct-1',
@@ -721,9 +769,59 @@ describe('POST /api/registry/contribute', () => {
         item: fundItem,
       });
 
-      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
-      const couplePayload = sendEmailSpy.mock.calls.find(([p]) => p.to === 'couple@wedding.test')?.[0];
-      expect(couplePayload.body).toContain('Direct Transfer (Venmo)');
+      expect(sendEmailSpy).toHaveBeenCalledTimes(3);
+      const confirmedCouplePayload = sendEmailSpy.mock.calls[2][0];
+      expect(confirmedCouplePayload.to).toBe('couple@wedding.test');
+      expect(confirmedCouplePayload.body).toContain('Direct Transfer (Venmo)');
+
+      // Mismatched client email on a RESERVED claim must NOT relay reservation email to arbitrary third-party address
+      sendEmailSpy.mockClear();
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'JORDAN26',
+        guestName: 'Jordan Transfer',
+      });
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'inv-jordan-1',
+        code: 'JORDAN26',
+        email: 'jordan@example.com',
+        isSample: false,
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce(fundItem);
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...fundItem,
+        amountContributed: 150,
+        contributors: [
+          {
+            id: 'contrib-relay-blocked-1',
+            name: 'Jordan Transfer',
+            email: 'arbitrary-victim@evil.test',
+            invitationCodeId: 'inv-jordan-1',
+            status: 'RESERVED',
+            amount: 75,
+            coverFee: false,
+            feeAmount: 0,
+          },
+        ],
+      });
+
+      const relayAttemptRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'fund-venmo-1',
+            name: 'Jordan Transfer',
+            email: 'arbitrary-victim@evil.test',
+            amount: 75,
+          }),
+        })
+      );
+      expect(relayAttemptRes.status).toBe(200);
+      // Couple alert still sends, but unverified victim address receives nothing
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+      expect(sendEmailSpy.mock.calls[0][0].to).toBe('couple@wedding.test');
+      expect(
+        sendEmailSpy.mock.calls.some(([p]) => p.to === 'arbitrary-victim@evil.test')
+      ).toBe(false);
     });
 
     it('escapes untrusted HTML and subject injection sequences in guest names, item titles, and notes', async () => {
@@ -742,6 +840,16 @@ describe('POST /api/registry/contribute', () => {
         contactEmail: 'couple@wedding.test',
         baseUrl: 'https://couple.wedding.test',
       });
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'SAFE2026',
+        guestName: 'Safe Household',
+      });
+      (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'inv-safe-1',
+        code: 'SAFE2026',
+        email: 'safe@example.com',
+        isSample: false,
+      });
       (registryService.getItemById as jest.Mock).mockResolvedValueOnce(unsafeItem);
       (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
         ...unsafeItem,
@@ -752,6 +860,7 @@ describe('POST /api/registry/contribute', () => {
             id: 'contrib-xss-1',
             name: '<script>alert("name")</script>',
             email: 'safe@example.com',
+            invitationCodeId: 'inv-safe-1',
             amount: 50,
             status: 'RESERVED',
             message: 'Congrats! <svg onload=alert(\'xss\')>',
@@ -773,7 +882,7 @@ describe('POST /api/registry/contribute', () => {
 
       const response = await POST(request);
       expect(response.status).toBe(200);
-      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
 
       await dispatchConfirmedContributionAlert({
         contributor: {
@@ -787,7 +896,7 @@ describe('POST /api/registry/contribute', () => {
         item: unsafeItem,
       });
 
-      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+      expect(sendEmailSpy).toHaveBeenCalledTimes(3);
 
       for (const [payload] of sendEmailSpy.mock.calls) {
         expect(payload.subject).not.toMatch(/[\r\n<>]/);
@@ -816,6 +925,16 @@ describe('POST /api/registry/contribute', () => {
           smtpHost: 'smtp.wedding.test',
           contactEmail: 'couple@wedding.test',
           baseUrl: 'https://couple.wedding.test',
+        });
+        (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+          code: 'JOHN2026',
+          guestName: 'John Wellwisher',
+        });
+        (prisma.invitationCode.findUnique as jest.Mock).mockResolvedValueOnce({
+          id: 'inv-john-1',
+          code: 'JOHN2026',
+          email: 'john@example.com',
+          isSample: false,
         });
 
         sendEmailSpy.mockResolvedValue({
@@ -1203,6 +1322,10 @@ describe('POST /api/registry/contribute', () => {
   });
 
   it('forwards optional contributor return address fields and strips PII from public responses', async () => {
+    (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+      code: 'ALEX2026',
+      guestName: 'Alex Giver',
+    });
     (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
       ...mockUpdatedItem,
       contributors: [

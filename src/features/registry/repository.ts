@@ -13,6 +13,7 @@ import {
   isStaticExportBuild,
 } from '@/lib/sampleData/builder';
 import type {
+  ActiveCatalogCapabilitiesSummary,
   IRegistryRepository,
   GetItemsOptions,
   PaginatedRegistryItems,
@@ -30,6 +31,8 @@ import {
   RegistryItemDTO,
 } from './schemas';
 import { isAddressComplete } from './utils/invitation';
+
+const MAX_ACTIVE_HOUSEHOLD_RESERVATIONS = 5;
 
 /**
  * @class RegistryRepository
@@ -162,6 +165,78 @@ class RegistryRepository implements IRegistryRepository {
       page: normalizedPage,
       limit: normalizedLimit,
       totalPages,
+    };
+  }
+
+  async getActiveCatalogCapabilitiesSummary(): Promise<ActiveCatalogCapabilitiesSummary> {
+    if (isStaticExportBuild()) {
+      const activeItems = buildArchetypeSeedData('classic').registryItems.filter(
+        (item) => !item.isSample && !item.purchased
+      );
+      return {
+        hasActivePhysicalItems: activeItems.some(
+          (item) => (item.itemType ?? 'PHYSICAL') === 'PHYSICAL'
+        ),
+        hasActiveFundsOrGroupGifts: activeItems.some(
+          (item) =>
+            item.itemType === 'CASH_FUND' ||
+            item.itemType === 'EXPERIENCE_FUND' ||
+            Boolean(item.isGroupGift)
+        ),
+      };
+    }
+
+    if (typeof this.client?.registryItem?.count === 'function') {
+      const [physicalCount, fundOrGroupCount] = await Promise.all([
+        this.client.registryItem.count({
+          where: {
+            isSample: false,
+            purchased: false,
+            itemType: 'PHYSICAL',
+          },
+        }),
+        this.client.registryItem.count({
+          where: {
+            isSample: false,
+            purchased: false,
+            OR: [
+              { itemType: { in: ['CASH_FUND', 'EXPERIENCE_FUND'] } },
+              { isGroupGift: true },
+            ],
+          },
+        }),
+      ]);
+
+      return {
+        hasActivePhysicalItems: Number(physicalCount) > 0,
+        hasActiveFundsOrGroupGifts: Number(fundOrGroupCount) > 0,
+      };
+    }
+
+    if (typeof this.client?.registryItem?.findMany === 'function') {
+      const activeItems = await this.client.registryItem.findMany({
+        where: {
+          isSample: false,
+          purchased: false,
+        },
+      });
+      const list = Array.isArray(activeItems) ? activeItems : [];
+      return {
+        hasActivePhysicalItems: list.some(
+          (item: any) => (item?.itemType ?? 'PHYSICAL') === 'PHYSICAL'
+        ),
+        hasActiveFundsOrGroupGifts: list.some(
+          (item: any) =>
+            item?.itemType === 'CASH_FUND' ||
+            item?.itemType === 'EXPERIENCE_FUND' ||
+            Boolean(item?.isGroupGift)
+        ),
+      };
+    }
+
+    return {
+      hasActivePhysicalItems: false,
+      hasActiveFundsOrGroupGifts: false,
     };
   }
 
@@ -441,24 +516,25 @@ class RegistryRepository implements IRegistryRepository {
         finalName = contribution.name || inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
         linkedInviteRecord = inviteRecord;
-      } else if (emailToSave && typeof txClient.invitationCode?.findMany === 'function') {
-        const normalizedLookupEmail = emailToSave.toLowerCase();
-        const emailMatches = await txClient.invitationCode.findMany({
-          where: {
-            email: { equals: normalizedLookupEmail, mode: 'insensitive' },
-            isSample: false,
-          },
-          take: 2,
-        });
-        if (
-          Array.isArray(emailMatches) &&
-          emailMatches.length === 1 &&
-          emailMatches[0] &&
-          !emailMatches[0].isSample
-        ) {
-          linkedInviteRecord = emailMatches[0];
-          invitationCodeId = linkedInviteRecord.id;
-          finalName = contribution.name || linkedInviteRecord.guestName;
+      }
+
+      if (!contribution.stripePaymentIntentId && invitationCodeId) {
+        if (typeof txClient.$queryRaw === 'function') {
+          await txClient.$queryRaw`SELECT id FROM "InvitationCode" WHERE id = ${invitationCodeId} FOR UPDATE`;
+        }
+        if (typeof txClient.contributor?.count === 'function') {
+          const activeHouseholdReservations = await txClient.contributor.count({
+            where: {
+              invitationCodeId,
+              status: 'RESERVED',
+            },
+          });
+          if (activeHouseholdReservations >= MAX_ACTIVE_HOUSEHOLD_RESERVATIONS) {
+            throw new ApiError(
+              429,
+              `Your household has reached the maximum of ${MAX_ACTIVE_HOUSEHOLD_RESERVATIONS} active unconfirmed gift reservations. Please confirm or cancel an existing reservation before claiming another gift.`
+            );
+          }
         }
       }
 
@@ -481,24 +557,31 @@ class RegistryRepository implements IRegistryRepository {
         }
       }
 
+      const hasAnyIncomingAddressField = Boolean(
+        addressLine1ToSave ||
+          addressLine2ToSave ||
+          cityToSave ||
+          stateToSave ||
+          zipCodeToSave ||
+          countryToSave
+      );
+
       if (
         linkedInviteRecord &&
-        typeof txClient.invitationCode?.update === 'function' &&
-        isAddressComplete({
-          addressLine1: addressLine1ToSave,
-          city: cityToSave,
-          state: stateToSave,
-          zipCode: zipCodeToSave,
-        })
+        hasAnyIncomingAddressField &&
+        typeof txClient.invitationCode?.update === 'function'
       ) {
         const existingComplete = isAddressComplete(linkedInviteRecord);
-        const sameStreetAndZip =
+        const conflictsWithExistingAddress =
           existingComplete &&
-          linkedInviteRecord.addressLine1?.trim().toLowerCase() ===
-            addressLine1ToSave?.toLowerCase() &&
-          linkedInviteRecord.zipCode?.trim().toLowerCase() === zipCodeToSave?.toLowerCase();
+          ((Boolean(addressLine1ToSave) &&
+            linkedInviteRecord.addressLine1?.trim().toLowerCase() !==
+              addressLine1ToSave?.toLowerCase()) ||
+            (Boolean(zipCodeToSave) &&
+              linkedInviteRecord.zipCode?.trim().toLowerCase() !==
+                zipCodeToSave?.toLowerCase()));
 
-        if (!existingComplete || sameStreetAndZip) {
+        if (!conflictsWithExistingAddress) {
           const backfillData: Record<string, string> = {};
           if (!linkedInviteRecord.addressLine1?.trim() && addressLine1ToSave) {
             backfillData.addressLine1 = addressLine1ToSave;
@@ -853,7 +936,10 @@ class RegistryRepository implements IRegistryRepository {
 
       const updated = await txClient.contributor.update({
         where: { id: contributorId },
-        data: { status: 'CONFIRMED' },
+        data: {
+          status: 'CONFIRMED',
+          alertEmailSentAt: null,
+        },
       });
       await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);
 
@@ -1216,6 +1302,12 @@ class RegistryRepository implements IRegistryRepository {
       }
       if (data.status !== undefined) {
         updatePayload.status = data.status;
+        if (
+          data.status === 'CONFIRMED' &&
+          this.normalizeStatus(existing.status) === 'RESERVED'
+        ) {
+          updatePayload.alertEmailSentAt = null;
+        }
         if (
           (data.status === 'CANCELLED' || data.status === 'REFUNDED') &&
           (existing.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'

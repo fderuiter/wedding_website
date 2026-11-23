@@ -20,6 +20,7 @@ import { formatCurrency, formatDate } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { useShareItem } from '../hooks/useShareItem';
+import { useRegistryCapabilities } from '../hooks/useRegistryCapabilities';
 import { useRegistryContributionMachine } from '../hooks/useRegistryContributionMachine';
 import {
   getPaymentUrl,
@@ -196,91 +197,6 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const [simulatedCardId, setSimulatedCardId] = useState<SimulatedTestCardId>('approved_visa');
   const [simulatedBillingZip, setSimulatedBillingZip] = useState('60611');
 
-  const {
-    isValidatingCode,
-    isCodeLocked,
-    isSubmitting,
-    isSuccess,
-    isSubmitDisabled,
-    invitationCodeInputRef,
-
-    contributorName,
-    email,
-    amount,
-    selectedUnits,
-    message,
-    coverFee,
-    invitationCode,
-    retailerOrderNumber,
-    carrier,
-    trackingNumber,
-    addressLine1,
-    addressLine2,
-    city,
-    state,
-    zipCode,
-    country,
-
-    paymentTransactionId,
-    claimActions,
-
-    fieldErrors,
-    codeError,
-    submissionError,
-
-    setContributorName,
-    setEmail,
-    setAmount,
-    setSelectedUnits,
-    setMessage,
-    setCoverFee,
-    setRetailerOrderNumber,
-    setCarrier,
-    setTrackingNumber,
-    setAddressLine1,
-    setAddressLine2,
-    setCity,
-    setState,
-    setZipCode,
-    setCountry,
-    setPaymentTransactionId,
-    setPhase,
-    setSubmissionError,
-
-    validateContribution,
-    handleCodeChange,
-    handleVerifyCode,
-    handleClearCode,
-    handleSubmit,
-    handlePresetClick,
-  } = useRegistryContributionMachine({ item, onContribute });
-
-  const { handleShare, copied } = useShareItem(item);
-  const toastContext = useOptionalToast();
-  const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
-  const [copiedAddress, setCopiedAddress] = useState(false);
-  const [isReturnAddressOpen, setIsReturnAddressOpen] = useState(false);
-  const [isCardProcessing, setIsCardProcessing] = useState(false);
-  const [postClaimOverride, setPostClaimOverride] = useState<{
-    key: string;
-    status: 'CONFIRMED' | 'CANCELLED';
-  } | null>(null);
-  const [isClaimActionPending, setIsClaimActionPending] = useState(false);
-  const [claimActionError, setClaimActionError] = useState<string | null>(null);
-  const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (receiptCopyTimerRef.current) {
-        clearTimeout(receiptCopyTimerRef.current);
-      }
-      if (addressCopyTimerRef.current) {
-        clearTimeout(addressCopyTimerRef.current);
-      }
-    };
-  }, []);
-
   const { requestedUnits, claimedUnits, remainingUnits } = getItemUnitCounts(item);
   const totalTargetAmount = getItemTotalTargetAmount(item);
   const remainingAmount = getItemRemainingAmount(item);
@@ -347,6 +263,97 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isCardMode = isDemoMode
     ? activePaymentMode === 'card'
     : isPayableGroupGift && activePaymentMode === 'card';
+  const requiresCodeVerification = !isDemoMode && !isAdmin && (isClaimMode || isDirectMode);
+
+  const {
+    isValidatingCode,
+    isCodeLocked,
+    isSubmitting,
+    isSuccess,
+    isSubmitDisabled,
+    invitationCodeInputRef,
+
+    contributorName,
+    email,
+    amount,
+    selectedUnits,
+    message,
+    coverFee,
+    invitationCode,
+    retailerOrderNumber,
+    carrier,
+    trackingNumber,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
+
+    paymentTransactionId,
+    claimActions,
+
+    fieldErrors,
+    codeError,
+    submissionError,
+
+    setContributorName,
+    setEmail,
+    setAmount,
+    setSelectedUnits,
+    setMessage,
+    setCoverFee,
+    setRetailerOrderNumber,
+    setCarrier,
+    setTrackingNumber,
+    setAddressLine1,
+    setAddressLine2,
+    setCity,
+    setState,
+    setZipCode,
+    setCountry,
+    setPaymentTransactionId,
+    setPhase,
+    setSubmissionError,
+
+    validateContribution,
+    handleCodeChange,
+    handleVerifyCode,
+    handleClearCode,
+    handleSubmit,
+    handlePresetClick,
+  } = useRegistryContributionMachine({
+    item,
+    onContribute,
+    requireVerifiedCode: requiresCodeVerification,
+  });
+
+  const { handleShare, copied } = useShareItem(item);
+  const toastContext = useOptionalToast();
+  const [copiedReceiptKey, setCopiedReceiptKey] = useState<string | null>(null);
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [isReturnAddressOpen, setIsReturnAddressOpen] = useState(false);
+  const [isCardProcessing, setIsCardProcessing] = useState(false);
+  const [postClaimOverride, setPostClaimOverride] = useState<{
+    key: string;
+    status: 'CONFIRMED' | 'CANCELLED';
+  } | null>(null);
+  const [isClaimActionPending, setIsClaimActionPending] = useState(false);
+  const [claimActionError, setClaimActionError] = useState<string | null>(null);
+  const receiptCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (receiptCopyTimerRef.current) {
+        clearTimeout(receiptCopyTimerRef.current);
+      }
+      if (addressCopyTimerRef.current) {
+        clearTimeout(addressCopyTimerRef.current);
+      }
+    };
+  }, []);
+
   const showFeeDisclosurePanel = isDemoMode ? isDirectMode || isCardMode : isPayableGroupGift;
   const isBusy = isSubmitting || isCardProcessing;
   const isEffectiveSubmitDisabled = isSubmitDisabled || isCardProcessing;
@@ -952,11 +959,25 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   const isVendorUrlSafe =
     item.vendorUrl && (item.vendorUrl.startsWith('http://') || item.vendorUrl.startsWith('https://'));
 
+  const canDisplayShippingAddress = isDemoMode || isAdmin || isCodeLocked;
+  const { shippingAddress: dynamicShippingAddress } = useRegistryCapabilities({
+    enabled:
+      shippingAddress === undefined &&
+      !isDemoMode &&
+      Boolean(isVendorUrlSafe) &&
+      canDisplayShippingAddress,
+  });
+  const effectiveShippingAddress = canDisplayShippingAddress
+    ? (shippingAddress !== undefined ? shippingAddress : dynamicShippingAddress)
+    : null;
+
   const formattedShippingText = useMemo(
-    () => (shippingAddress ? formatRegistryShippingAddress(shippingAddress) : ''),
-    [shippingAddress]
+    () => (effectiveShippingAddress ? formatRegistryShippingAddress(effectiveShippingAddress) : ''),
+    [effectiveShippingAddress]
   );
-  const hasFormattedShipping = Boolean(isVendorUrlSafe && shippingAddress && formattedShippingText);
+  const hasFormattedShipping = Boolean(
+    isVendorUrlSafe && effectiveShippingAddress && formattedShippingText
+  );
 
   const handleCopyShippingAddress = async () => {
     if (!formattedShippingText) return;
@@ -1516,16 +1537,20 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             {item.isGroupGift ? 'Contribute to this Gift' : 'Claim This Gift'}
           </h3>
           <FormGroup
+            required={requiresCodeVerification}
             state={codeError ? 'error' : 'default'}
             busy={isBusy || isValidatingCode}
             className="mb-3"
           >
-            <Label>Invitation Code (Optional)</Label>
+            <Label>
+              {requiresCodeVerification ? 'Invitation Code' : 'Invitation Code (Optional)'}
+            </Label>
             <div className="flex gap-2">
               <Input
                 ref={invitationCodeInputRef}
                 type="text"
                 placeholder="ABCDEF12"
+                required={requiresCodeVerification}
                 value={invitationCode}
                 onChange={handleCodeChange}
                 busy={isBusy || isValidatingCode}
@@ -1554,6 +1579,14 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
               )}
             </div>
             {codeError && <FormMessage>{codeError}</FormMessage>}
+            {requiresCodeVerification && !isCodeLocked && !codeError && (
+              <p
+                data-testid="invite-code-required-hint"
+                className="text-xs text-gray-600 dark:text-gray-400 mt-1"
+              >
+                Verify the 8-character code from your invitation to claim this gift.
+              </p>
+            )}
             {isCodeLocked && (
               <p className="text-sm text-green-700 dark:text-green-400 mt-1">
                 Code verified! Name pre-filled.

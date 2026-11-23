@@ -5,7 +5,10 @@ import { apiClient } from '@/lib/apiClient';
 import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe.client';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { DEMO_SHIPPING_ADDRESS } from '@/lib/demo/demoSeed';
+import { useGuestSession } from '../context/GuestSessionContext';
 import type { RegistryShippingAddress } from '../types';
+
+export const REGISTRY_CAPABILITIES_REFRESH_EVENT = 'registry-capabilities-refresh';
 
 interface RegistryCapabilitiesPayload extends StripeCapability {
   defaultPaymentHandleType?: string | null;
@@ -51,6 +54,8 @@ export function useRegistryCapabilities(
   const { enabled = true } = options;
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const { isVerified, invitationCode } = useGuestSession();
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [state, setState] = useState<InternalCapabilitiesState>(() => {
     const fallback = getClientEnvCapabilityFallback();
     return {
@@ -58,6 +63,19 @@ export function useRegistryCapabilities(
       hasLoaded: process.env.NODE_ENV === 'test',
     };
   });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleRefresh = () => {
+      setRefreshRevision((prev) => prev + 1);
+    };
+    window.addEventListener(REGISTRY_CAPABILITIES_REFRESH_EVENT, handleRefresh);
+    return () => {
+      window.removeEventListener(REGISTRY_CAPABILITIES_REFRESH_EVENT, handleRefresh);
+    };
+  }, []);
 
   useEffect(() => {
     if (!enabled || isDemoMode) {
@@ -108,7 +126,7 @@ export function useRegistryCapabilities(
     return () => {
       active = false;
     };
-  }, [enabled, isDemoMode]);
+  }, [enabled, isDemoMode, isVerified, invitationCode, refreshRevision]);
 
   if (enabled && isDemoMode) {
     return {

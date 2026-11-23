@@ -539,14 +539,15 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
-    test('allows request to proceed when caller also holds valid guest_auth or admin_auth cookie', async () => {
+    test('allows request to proceed when caller also holds valid guest_auth or admin_auth cookie while expiring revoked guest_invite_session and memoizing null', async () => {
       mockFindUnique.mockResolvedValue(null);
-      const handler = jest.fn().mockImplementation(() =>
-        new Response(JSON.stringify({ ok: true }), {
+      const handler = jest.fn(async (incomingReq: NextRequest) => {
+        const session = await getGuestInviteSession(incomingReq);
+        return new Response(JSON.stringify({ ok: true, inviteCode: session?.code ?? null }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
-        })
-      );
+        });
+      });
       const middleware = withApiMiddleware(handler);
 
       const revokedToken = await signGuestInviteSessionToken({
@@ -569,6 +570,11 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       });
       const guestRes = await middleware(guestReq, {});
       expect(guestRes.status).toBe(200);
+      const guestBody = await guestRes.json();
+      expect(guestBody.data.inviteCode).toBeNull();
+      const guestSetCookie = guestRes.headers.get('set-cookie') || '';
+      expect(guestSetCookie).toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(guestSetCookie).toContain('Max-Age=0');
 
       const adminReq = new NextRequest('http://localhost/api/photos', {
         headers: {
@@ -577,7 +583,11 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       });
       const adminRes = await middleware(adminReq, {});
       expect(adminRes.status).toBe(200);
+      const adminSetCookie = adminRes.headers.get('set-cookie') || '';
+      expect(adminSetCookie).toContain(`${GUEST_INVITE_COOKIE}=`);
+      expect(adminSetCookie).toContain('Max-Age=0');
       expect(handler).toHaveBeenCalledTimes(2);
+      expect(mockFindUnique).toHaveBeenCalledTimes(2);
     });
 
     test('exempts /api/registry/session from 401 middleware block so session route can return isVerified: false', async () => {

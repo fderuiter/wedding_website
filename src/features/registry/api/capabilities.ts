@@ -1,11 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { ApiError } from '@/utils/ApiError';
 import { getStripeCapability } from '@/lib/stripe';
+import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
+import { registryService } from '../service';
 
-export const GET = withApiMiddleware(async () => {
+export const GET = withApiMiddleware(async (request?: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('registry', config.modules)) {
     throw new ApiError(404, "Feature 'registry' is disabled");
@@ -37,17 +40,40 @@ export const GET = withApiMiddleware(async () => {
       shippingCandidate.country
   );
 
+  let canViewShippingAddress = false;
+  if (hasShippingAddress && request) {
+    const [isAdmin, guestSession] = await Promise.all([
+      isAdminRequest(request),
+      getGuestInviteSession(request),
+    ]);
+    canViewShippingAddress = Boolean(isAdmin || guestSession?.code);
+  }
+
+  const needsCatalogCheck =
+    Boolean(defaultPaymentHandle) || (hasShippingAddress && canViewShippingAddress);
+  const catalogSummary = needsCatalogCheck
+    ? await registryService.getActiveCatalogCapabilitiesSummary()
+    : {
+      hasActivePhysicalItems: false,
+      hasActiveFundsOrGroupGifts: false,
+    };
+
+  const shouldExposePaymentHandle =
+    Boolean(defaultPaymentHandle) && catalogSummary.hasActiveFundsOrGroupGifts;
+  const shouldExposeShippingAddress =
+    hasShippingAddress && canViewShippingAddress && catalogSummary.hasActivePhysicalItems;
+
   return NextResponse.json({
     success: true,
     data: {
       ...capability,
-      ...(defaultPaymentHandle
+      ...(shouldExposePaymentHandle
         ? {
           defaultPaymentHandle,
           defaultPaymentHandleType: defaultPaymentHandleType || null,
         }
         : {}),
-      ...(hasShippingAddress ? { shippingAddress: shippingCandidate } : {}),
+      ...(shouldExposeShippingAddress ? { shippingAddress: shippingCandidate } : {}),
     },
   });
 });

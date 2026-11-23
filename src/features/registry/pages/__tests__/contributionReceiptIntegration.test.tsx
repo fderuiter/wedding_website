@@ -286,8 +286,35 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     expect(window.location.search).not.toContain('item=fund-honeymoon');
   });
 
-  test('claims physical gift, shows Contribution Confirmed!, marks card Claimed, and closes on Done', async () => {
+  test('claims physical gift after verifying an 8-character code, refreshes shippingAddress, shows Contribution Confirmed!, marks card Claimed, and closes on Done', async () => {
+    let sessionVerified = false;
     server.use(
+      http.get('/api/registry/capabilities', () => {
+        return HttpResponse.json({
+          cardCheckoutEnabled: true,
+          stripePublishableKey: 'pk_test_live_123',
+          ...(sessionVerified
+            ? {
+              shippingAddress: {
+                recipientName: 'Alex & Jordan',
+                addressLine1: '742 Evergreen Terrace',
+                city: 'Portland',
+                state: 'OR',
+                zip: '97205',
+                country: 'United States',
+              },
+            }
+            : {}),
+        });
+      }),
+      http.get('/api/registry/validate-code', () => {
+        sessionVerified = true;
+        return HttpResponse.json({
+          valid: true,
+          guestName: 'Alex Guest',
+          code: 'KETTLE12',
+        });
+      }),
       http.post('/api/registry/contribute', async () => {
         const updatedGift: RegistryItem = {
           ...physicalGiftItem,
@@ -306,9 +333,24 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
     fireEvent.click(contributeBtn);
 
     const dialog = await screen.findByRole('dialog', { name: 'Pour-Over Electric Kettle' });
+    // Before verifying code, shippingAddress is hidden and claiming is blocked
+    expect(within(dialog).queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText(/Your Name/i), {
       target: { value: 'Alex Guest' },
     });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
+    expect(
+      await within(dialog).findByText(/Please verify your 8-character invitation code/i)
+    ).toBeInTheDocument();
+
+    // Verify 8-character code -> refreshes /api/registry/capabilities and displays shippingAddress
+    fireEvent.change(within(dialog).getByPlaceholderText('ABCDEF12'), {
+      target: { value: 'KETTLE12' },
+    });
+    expect(
+      await within(dialog).findByTestId('registry-shipping-address-card')
+    ).toHaveTextContent('742 Evergreen Terrace');
+
     fireEvent.click(within(dialog).getByRole('button', { name: 'Claim Gift' }));
 
     await waitFor(() => {
@@ -332,6 +374,13 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
   test('rolls back paginated cache and preserves guest inputs when contribution API fails, then succeeds on retry', async () => {
     let attempt = 0;
     server.use(
+      http.get('/api/registry/session', () => {
+        return HttpResponse.json({
+          isVerified: true,
+          invitationCode: 'KETTLE12',
+          guestName: 'Alex Retry',
+        });
+      }),
       http.post('/api/registry/contribute', async () => {
         attempt += 1;
         if (attempt === 1) {
@@ -384,6 +433,13 @@ describe('RegistryPage end-to-end contribution receipt and cache sync integratio
 
   test('resets contribution state when URL popstate switches selectedItem to a different item', async () => {
     server.use(
+      http.get('/api/registry/session', () => {
+        return HttpResponse.json({
+          isVerified: true,
+          invitationCode: 'KETTLE12',
+          guestName: 'Alex Guest',
+        });
+      }),
       http.post('/api/registry/contribute', async () => {
         return HttpResponse.json({
           ...physicalGiftItem,

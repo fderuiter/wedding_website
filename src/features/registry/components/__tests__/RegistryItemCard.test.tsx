@@ -74,6 +74,22 @@ const mockFundedGroupItem: RegistryItem = {
 const mockOnClose = jest.fn();
 const mockOnContribute = jest.fn().mockResolvedValue(undefined); // Mock async function
 
+async function unlockClaimWithInviteCode(code = 'INVITE26', guestName = 'Invited Household') {
+  (apiClient.get as jest.Mock).mockImplementation(async (url: string) => {
+    if (url.includes('/api/registry/validate-code')) {
+      return { valid: true, guestName, code };
+    }
+    if (url.includes('/api/registry/capabilities')) {
+      return { cardCheckoutEnabled: false, stripePublishableKey: null };
+    }
+    return { isVerified: false, invitationCode: null, guestName: null };
+  });
+  fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: code } });
+  await waitFor(() => {
+    expect(screen.getByText(/Code verified!/i)).toBeInTheDocument();
+  });
+}
+
 describe('RegistryItemCard Component', () => {
   beforeEach(() => {
     // Reset mocks before each test
@@ -433,8 +449,9 @@ describe('RegistryItemCard Component', () => {
     expect(mockOnContribute).not.toHaveBeenCalled();
   });
 
-  it('calls onContribute with correct details for single item claim', async () => {
+  it('calls onContribute with correct details for single item claim after verifying invitation code', async () => {
     render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+    await unlockClaimWithInviteCode('INVITE26', 'Claimer');
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Claimer' } });
     // Corrected button name
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
@@ -444,8 +461,14 @@ describe('RegistryItemCard Component', () => {
 
     await waitFor(() => {
       expect(mockOnContribute).toHaveBeenCalledTimes(1);
-      // For single items, amount sent is the full price
-      expect(mockOnContribute).toHaveBeenCalledWith(mockSingleItem.id, 'Claimer', mockSingleItem.price);
+      // For single items, amount sent is the full price alongside verified invitation code
+      expect(mockOnContribute).toHaveBeenCalledWith(
+        mockSingleItem.id,
+        'Claimer',
+        mockSingleItem.price,
+        'INVITE26',
+        undefined
+      );
     });
   });
 
@@ -456,12 +479,13 @@ describe('RegistryItemCard Component', () => {
       </Overlay>
     );
 
+    await unlockClaimWithInviteCode('INVITE26', 'Jane Contributor');
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Jane Contributor' } });
     fireEvent.change(screen.getByLabelText(/Personal Message/i), { target: { value: 'So happy for you both!' } });
     fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
     await waitFor(() => {
-      expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Jane Contributor', 100, undefined, 'So happy for you both!');
+      expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Jane Contributor', 100, 'INVITE26', 'So happy for you both!');
     });
   });
 
@@ -531,12 +555,43 @@ describe('RegistryItemCard Component', () => {
       });
     });
 
-    it('allows submission when invitation code field is empty (single gift claim)', async () => {
+    it('blocks single gift claim when invitation code is empty, then unlocks claim and refreshes shippingAddress after verifying 8-character code (AC 7)', async () => {
+      let codeVerified = false;
+      (apiClient.get as jest.Mock).mockImplementation(async (url: string) => {
+        if (url.includes('/api/registry/validate-code')) {
+          codeVerified = true;
+          return { valid: true, guestName: 'Guest Contributor', code: 'UNLOCK88' };
+        }
+        if (url.includes('/api/registry/capabilities')) {
+          return {
+            cardCheckoutEnabled: false,
+            stripePublishableKey: null,
+            ...(codeVerified
+              ? {
+                shippingAddress: {
+                  recipientName: 'Alex & Jordan',
+                  addressLine1: '500 Unlocked Terrace',
+                  city: 'Portland',
+                  state: 'OR',
+                  zip: '97205',
+                  country: 'United States',
+                },
+              }
+              : {}),
+          };
+        }
+        return { isVerified: false, invitationCode: null, guestName: null };
+      });
+
       render(
-        <Overlay isOpen={true} onClose={mockOnClose}>
-          <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
-        </Overlay>
+        <GuestSessionProvider>
+          <Overlay isOpen={true} onClose={mockOnClose}>
+            <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
+          </Overlay>
+        </GuestSessionProvider>
       );
+
+      expect(screen.queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
 
       const nameInput = screen.getByLabelText(/Your Name/i);
       fireEvent.change(nameInput, { target: { value: 'Guest Contributor' } });
@@ -544,8 +599,29 @@ describe('RegistryItemCard Component', () => {
       const submitButton = screen.getByRole('button', { name: 'Claim Gift' });
       fireEvent.click(submitButton);
 
+      expect(
+        await screen.findByText('Please verify your 8-character invitation code to claim this gift.')
+      ).toBeInTheDocument();
+      expect(mockOnContribute).not.toHaveBeenCalled();
+
+      fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), {
+        target: { value: 'UNLOCK88' },
+      });
+
+      expect(await screen.findByTestId('registry-shipping-address-card')).toHaveTextContent(
+        '500 Unlocked Terrace'
+      );
+
+      fireEvent.click(submitButton);
+
       await waitFor(() => {
-        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Guest Contributor', 100);
+        expect(mockOnContribute).toHaveBeenCalledWith(
+          'item-1',
+          'Guest Contributor',
+          100,
+          'UNLOCK88',
+          undefined
+        );
       });
     });
 
@@ -1100,6 +1176,7 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
+      await unlockClaimWithInviteCode('INVITE26', 'Well Wisher');
       const nameInput = screen.getByLabelText(/Your Name/i);
       const emailInput = screen.getByLabelText(/Email Address \(Optional\)/i);
       const submitBtn = screen.getByRole('button', { name: 'Claim Gift' });
@@ -1111,7 +1188,7 @@ describe('RegistryItemCard Component', () => {
       fireEvent.click(submitBtn);
 
       await waitFor(() => {
-        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Well Wisher', 100, undefined, undefined, false, 'wellwisher@example.com');
+        expect(mockOnContribute).toHaveBeenCalledWith('item-1', 'Well Wisher', 100, 'INVITE26', undefined, false, 'wellwisher@example.com');
       });
     });
 
@@ -1468,6 +1545,7 @@ describe('RegistryItemCard Component', () => {
       expect(unitSelect.options).toHaveLength(3);
       fireEvent.change(unitSelect, { target: { value: '2' } });
 
+      await unlockClaimWithInviteCode('INVITE26', 'Alex Buyer');
       fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Alex Buyer' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
@@ -1475,7 +1553,9 @@ describe('RegistryItemCard Component', () => {
         expect(mockOnContribute).toHaveBeenCalledWith(
           'item-multi-1',
           'Alex Buyer',
-          90
+          90,
+          'INVITE26',
+          undefined
         );
       });
     });
@@ -1520,6 +1600,10 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
+      // Hidden until guest verifies invitation code
+      expect(screen.queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+      await unlockClaimWithInviteCode('INVITE26', 'Morgan Guest');
+
       expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent('742 Evergreen Terrace');
       expect(screen.getByTestId('registry-shipping-address-card')).toHaveTextContent('Leave on covered porch');
 
@@ -1540,7 +1624,7 @@ describe('RegistryItemCard Component', () => {
           mockSingleItem.id,
           'Morgan Guest',
           100,
-          undefined,
+          'INVITE26',
           undefined,
           false,
           undefined,
@@ -1633,6 +1717,7 @@ describe('RegistryItemCard Component', () => {
         </ToastProvider>
       );
 
+      await unlockClaimWithInviteCode('INVITE26', 'Alex Claimer');
       fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Alex Claimer' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
@@ -1689,6 +1774,7 @@ describe('RegistryItemCard Component', () => {
         </ToastProvider>
       );
 
+      await unlockClaimWithInviteCode('INVITE26', 'Taylor Guest');
       fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Taylor Guest' } });
       fireEvent.click(screen.getByRole('button', { name: 'Claim Gift' }));
 
@@ -1719,6 +1805,7 @@ describe('RegistryItemCard Component', () => {
       </Overlay>
     );
 
+    await unlockClaimWithInviteCode('INVITE26', 'Jordan Donor');
     const toggleBtn = screen.getByTestId('toggle-return-address-button');
     expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('contributor-return-address-fields')).not.toBeInTheDocument();
@@ -1754,7 +1841,7 @@ describe('RegistryItemCard Component', () => {
         'item-1',
         'Jordan Donor',
         100,
-        undefined,
+        'INVITE26',
         undefined,
         false,
         undefined,

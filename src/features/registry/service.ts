@@ -1,6 +1,7 @@
 import { registryRepository } from './repository';
 import type { AdminUpdateContributorInput } from './schemas';
 import type {
+  ActiveCatalogCapabilitiesSummary,
   ContributorDeleteResult,
   ContributorLifecycleResult,
   ContributorRecord,
@@ -30,6 +31,22 @@ class RegistryService {
    */
   async getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems> {
     return this.repository.getAllItems(options);
+  }
+
+  /**
+   * Summarizes whether active non-sample physical items and funds/group gifts exist.
+   */
+  async getActiveCatalogCapabilitiesSummary(): Promise<ActiveCatalogCapabilitiesSummary> {
+    if (typeof this.repository.getActiveCatalogCapabilitiesSummary === 'function') {
+      return this.repository.getActiveCatalogCapabilitiesSummary();
+    }
+    if (typeof registryRepository.getActiveCatalogCapabilitiesSummary === 'function') {
+      return registryRepository.getActiveCatalogCapabilitiesSummary();
+    }
+    return {
+      hasActivePhysicalItems: false,
+      hasActiveFundsOrGroupGifts: false,
+    };
   }
 
   /**

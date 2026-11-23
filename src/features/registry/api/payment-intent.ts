@@ -38,7 +38,6 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     name,
     email,
     message,
-    code,
     addressLine1,
     addressLine2,
     city,
@@ -85,13 +84,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     }
   }
 
-  let finalCode = code;
-  if (!finalCode) {
-    const session = await getGuestInviteSession(request);
-    if (session?.code) {
-      finalCode = session.code;
-    }
-  }
+  const session = await getGuestInviteSession(request);
+  const finalCode = session?.code;
 
   const { baseAmount, feeAmount, totalChargeAmount, totalChargeCents, netPayout } =
     calculateContributionAmounts(amount, Boolean(coverFee));
@@ -200,4 +194,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     coverFee: Boolean(coverFee),
     netPayout,
   });
+}, {
+  limit: 30,
+  windowMs: 60 * 1000,
+  keyPrefix: 'registry-payment-intent',
 });

@@ -375,4 +375,58 @@ describe('POST /api/registry/payment-intent', () => {
       })
     );
   });
+
+  it('ignores unverified client code inputs and populates metadata.invitationCode only from verified guest_invite_session', async () => {
+    const { getGuestInviteSession } = jest.requireMock('@/core/auth/guestInviteSession') as {
+      getGuestInviteSession: jest.Mock;
+    };
+    getGuestInviteSession.mockResolvedValueOnce(null);
+
+    const unverifiedReq = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        name: 'Guest Auth Caller',
+        code: 'SPOOF888',
+      }),
+    });
+
+    const unverifiedRes = await POST(unverifiedReq);
+    expect(unverifiedRes.status).toBe(200);
+    expect(mockPaymentIntentsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          invitationCode: '',
+        }),
+      })
+    );
+
+    getGuestInviteSession.mockResolvedValueOnce({
+      code: 'VERIF888',
+      guestName: 'Verified Household',
+    });
+
+    const verifiedReq = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'fund-101',
+        amount: 100,
+        coverFee: false,
+        name: 'Verified Household',
+        code: 'OTHER999',
+      }),
+    });
+
+    const verifiedRes = await POST(verifiedReq);
+    expect(verifiedRes.status).toBe(200);
+    expect(mockPaymentIntentsCreate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          invitationCode: 'VERIF888',
+        }),
+      })
+    );
+  });
 });

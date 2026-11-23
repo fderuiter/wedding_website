@@ -13,6 +13,16 @@ import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
+import { REGISTRY_CAPABILITIES_REFRESH_EVENT } from './useRegistryCapabilities';
+
+const VERIFIED_CODE_REQUIRED_MESSAGE =
+  'Please verify your 8-character invitation code to claim this gift.';
+
+function notifyCapabilitiesRefresh() {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(REGISTRY_CAPABILITIES_REFRESH_EVENT));
+  }
+}
 
 export type ContributionPhase =
   | 'idle'
@@ -69,6 +79,7 @@ export interface UseRegistryContributionMachineOptions {
   initialState?: string;
   initialZipCode?: string;
   initialCountry?: string;
+  requireVerifiedCode?: boolean;
 }
 
 export interface UseRegistryContributionMachineReturn {
@@ -159,6 +170,7 @@ export function useRegistryContributionMachine({
   initialState = '',
   initialZipCode = '',
   initialCountry = '',
+  requireVerifiedCode = false,
 }: UseRegistryContributionMachineOptions): UseRegistryContributionMachineReturn {
   const {
     invitationCode: sessionCode,
@@ -189,6 +201,7 @@ export function useRegistryContributionMachine({
   const [zipCode, setZipCodeState] = useState(initialZipCode);
   const [country, setCountryState] = useState(initialCountry);
   const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
+  const [verifiedCodeState, setVerifiedCodeState] = useState<string | null>(null);
 
   // Partitioned error states
   const [fieldErrors, setFieldErrors] = useState<ContributionFieldErrors>({});
@@ -208,15 +221,20 @@ export function useRegistryContributionMachine({
     currentSessionKey && dismissedSessionKey !== currentSessionKey
   );
 
+  const invitationCode = isSessionSynced && sessionCode ? sessionCode : invitationCodeState;
+  const hasVerifiedCode = Boolean(
+    isSessionSynced || (verifiedCodeState && invitationCode === verifiedCodeState)
+  );
   const phase: ContributionPhase =
     isSessionSynced && (phaseState === 'idle' || phaseState === 'validating_code')
       ? 'code_locked'
-      : phaseState;
-  const invitationCode = isSessionSynced && sessionCode ? sessionCode : invitationCodeState;
+      : hasVerifiedCode && phaseState === 'idle'
+        ? 'code_locked'
+        : phaseState;
   const contributorName = hasEditedContributorName
     ? contributorNameState
     : contributorNameState || (isSessionSynced ? sessionGuestName || '' : '');
-  const codeError = isSessionSynced ? null : codeErrorState;
+  const codeError = hasVerifiedCode ? null : codeErrorState;
 
   // Clean up any pending validation request on unmount
   useEffect(() => {
@@ -414,6 +432,7 @@ export function useRegistryContributionMachine({
         const matched = findDemoGuestByCode(code);
         if (matched) {
           setInvitationCodeState(matched.code);
+          setVerifiedCodeState(matched.code);
           if (matched.guestName) {
             setContributorNameState(matched.guestName);
           }
@@ -426,6 +445,7 @@ export function useRegistryContributionMachine({
             guestName: matched.guestName,
             isVerified: true,
           });
+          notifyCapabilitiesRefresh();
           return true;
         }
         setPhase('idle');
@@ -459,6 +479,7 @@ export function useRegistryContributionMachine({
         if (data && data.valid) {
           const verifiedCode = data.code || code;
           setInvitationCodeState(verifiedCode);
+          setVerifiedCodeState(verifiedCode);
           if (data.guestName) {
             setContributorNameState(data.guestName);
           }
@@ -469,6 +490,7 @@ export function useRegistryContributionMachine({
             guestName: data.guestName || '',
             isVerified: true,
           });
+          notifyCapabilitiesRefresh();
           return true;
         } else {
           setPhase('idle');
@@ -508,6 +530,9 @@ export function useRegistryContributionMachine({
       if (currentSessionKey && val !== sessionCode) {
         setDismissedSessionKey(currentSessionKey);
       }
+      if (verifiedCodeState && val !== verifiedCodeState) {
+        setVerifiedCodeState(null);
+      }
 
       setInvitationCodeState(val);
       setCodeError(null);
@@ -527,7 +552,7 @@ export function useRegistryContributionMachine({
         setPhase('idle');
       }
     },
-    [currentSessionKey, sessionCode, phase, verifyCode]
+    [currentSessionKey, sessionCode, verifiedCodeState, phase, verifyCode]
   );
 
   // Action: Manual verification
@@ -544,7 +569,9 @@ export function useRegistryContributionMachine({
     if (currentSessionKey) {
       setDismissedSessionKey(currentSessionKey);
     }
+    setVerifiedCodeState(null);
     await clearSession();
+    notifyCapabilitiesRefresh();
     setPhase('idle');
     setInvitationCodeState('');
     setHasEditedContributorName(false);
@@ -626,6 +653,15 @@ export function useRegistryContributionMachine({
       }
     }
 
+    if (requireVerifiedCode && phase !== 'code_locked') {
+      setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
+      setCodeFailureCount((count) => count + 1);
+      if (phase !== 'idle') {
+        setPhase('idle');
+      }
+      return false;
+    }
+
     return true;
   }, [
     item,
@@ -647,6 +683,8 @@ export function useRegistryContributionMachine({
     state,
     zipCode,
     country,
+    requireVerifiedCode,
+    phase,
   ]);
 
   // Action: Submit contribution
@@ -737,6 +775,15 @@ export function useRegistryContributionMachine({
           setPhase('error');
           return;
         }
+      }
+
+      if (requireVerifiedCode && !paymentIntentId && !hasVerifiedCode && phase !== 'code_locked') {
+        setCodeError(VERIFIED_CODE_REQUIRED_MESSAGE);
+        setCodeFailureCount((count) => count + 1);
+        if (phase !== 'idle') {
+          setPhase('idle');
+        }
+        return;
       }
 
       const hasOrderDetails = Boolean(
@@ -876,6 +923,8 @@ export function useRegistryContributionMachine({
       state,
       zipCode,
       country,
+      requireVerifiedCode,
+      hasVerifiedCode,
       onContribute,
     ]
   );
@@ -889,7 +938,8 @@ export function useRegistryContributionMachine({
 
   // Deterministic flags
   const isValidatingCode = phase === 'validating_code';
-  const isCodeLocked = phase === 'code_locked';
+  const isCodeLocked =
+    phase === 'code_locked' || (hasVerifiedCode && phase !== 'validating_code');
   const isSubmitting = phase === 'submitting';
   const isSuccess = phase === 'success';
   const isSubmitDisabled = isValidatingCode || isSubmitting;

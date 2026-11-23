@@ -16,6 +16,7 @@ import { parseRegistryCsv, generateRegistryCsvTemplate } from '../utils/csv';
 import { registryService } from '../service';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 jest.unmock('@prisma/client');
 jest.unmock('@prisma/adapter-pg');
@@ -154,7 +155,7 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
       expect(adminDto.defaultPaymentHandle).toBe('@private-couple-venmo');
     });
 
-    it('blocks unauthenticated requests to GET /api/registry/capabilities in middleware with HTTP 401 and serves shipping details via capabilities when configured', async () => {
+    it('blocks unauthenticated requests to GET /api/registry/capabilities in middleware with HTTP 401 and gates shippingAddress and defaultPaymentHandle on verified sessions and active catalog items', async () => {
       process.env.GUEST_PASSCODE = 'celebrate2027';
       process.env.GUEST_SESSION_SECRET = '0123456789abcdef0123456789abcdef';
 
@@ -177,6 +178,28 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         defaultPaymentHandle: '@site-default',
       });
 
+      const catalogSummarySpy = jest
+        .spyOn(registryService, 'getActiveCatalogCapabilitiesSummary')
+        .mockResolvedValue({
+          hasActivePhysicalItems: true,
+          hasActiveFundsOrGroupGifts: true,
+        });
+
+      // guest_auth-only caller (no guest_invite_session) omits shippingAddress
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce(null);
+      const guestOnlyCapRes = await getCapabilities(
+        new NextRequest('http://localhost:3000/api/registry/capabilities')
+      );
+      expect(guestOnlyCapRes.status).toBe(200);
+      const guestOnlyBody = await guestOnlyCapRes.json();
+      expect(guestOnlyBody.data.shippingAddress).toBeUndefined();
+      expect(guestOnlyBody.data.defaultPaymentHandle).toBe('@site-default');
+
+      // Verified invite session + active physical items & funds returns both
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'SHIP2027',
+        guestName: 'Alex & Jordan Guest',
+      });
       const capRes = await getCapabilities(
         new NextRequest('http://localhost:3000/api/registry/capabilities')
       );
@@ -195,6 +218,8 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         phone: '(555) 234-5678',
         deliveryNotes: 'Front porch',
       });
+
+      catalogSummarySpy.mockRestore();
     });
   });
 
@@ -343,6 +368,10 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         contributors: [{ id: 'c-1', name: 'Guest', amount: 100 }],
       } as any);
 
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'INVITE01',
+        guestName: 'Guest',
+      });
       const unconfiguredRes = await contributePOST(
         new NextRequest('http://localhost:3000/api/registry/contribute', {
           method: 'POST',
@@ -361,6 +390,10 @@ describe('Registry Ledger, Multi-Quantity Capacity, Shipping Security Perimeter 
         modules: { registry: true, groupGifting: true },
         defaultPaymentHandleType: 'Venmo',
         defaultPaymentHandle: '@couple-default',
+      });
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'INVITE01',
+        guestName: 'Guest',
       });
 
       const fallbackRes = await contributePOST(

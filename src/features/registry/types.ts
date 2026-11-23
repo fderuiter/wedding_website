@@ -143,8 +143,14 @@ export interface ContributorAddressDetails {
   country?: string | null;
 }
 
+export interface ActiveCatalogCapabilitiesSummary {
+  hasActivePhysicalItems: boolean;
+  hasActiveFundsOrGroupGifts: boolean;
+}
+
 export interface IRegistryRepository {
   getAllItems(options?: GetItemsOptions): Promise<PaginatedRegistryItems>;
+  getActiveCatalogCapabilitiesSummary?(): Promise<ActiveCatalogCapabilitiesSummary>;
   getItemById(id: string, options?: { includeContributors?: boolean }): Promise<RegistryItemDTO | null>;
   createItem(data: CreateRegistryItemInput): Promise<RegistryItemDTO>;
   createBatchItems(items: CreateRegistryItemInput[]): Promise<RegistryItemDTO[]>;

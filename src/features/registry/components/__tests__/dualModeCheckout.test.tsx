@@ -123,11 +123,18 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
   const mockOnClose = jest.fn();
   const mockOnContribute = jest.fn().mockResolvedValue(undefined);
   let postSpy: jest.SpyInstance;
+  let getSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
     capturedElementsOptionsHistory.length = 0;
     latestElementsOptions = undefined;
+    getSpy = jest.spyOn(apiClient, 'get').mockImplementation(async (url: string) => {
+      if (url.includes('/api/registry/validate-code')) {
+        return { valid: true, guestName: 'Morgan Guest', code: 'INVITE26' };
+      }
+      return { isVerified: false, invitationCode: null, guestName: null };
+    });
     postSpy = jest.spyOn(apiClient, 'post').mockImplementation(async (_url, body) => {
       const payload = (body ?? {}) as {
         amount?: number;
@@ -147,6 +154,7 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
 
   afterEach(() => {
     postSpy.mockRestore();
+    getSpy.mockRestore();
   });
 
   it('Acceptance Criterion 2: opening a fund with a transfer handle without Stripe keys triggers zero requests to card endpoints', async () => {
@@ -200,6 +208,19 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
       target: { value: 'Enjoy gelato in Positano!' },
     });
 
+    // Submitting before code verification is blocked with clear inline guidance
+    fireEvent.click(screen.getByRole('button', { name: 'Record Direct Transfer' }));
+    expect(
+      await screen.findByText(/Please verify your 8-character invitation code/i)
+    ).toBeInTheDocument();
+    expect(mockOnContribute).not.toHaveBeenCalled();
+
+    // Verify 8-character invitation code to unlock non-card direct transfer
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    await waitFor(() => {
+      expect(screen.getByText(/Code verified!/i)).toBeInTheDocument();
+    });
+
     fireEvent.click(screen.getByRole('button', { name: 'Record Direct Transfer' }));
 
     await waitFor(() => {
@@ -207,7 +228,7 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
         'fund-hybrid-1',
         'Morgan Guest',
         125,
-        undefined,
+        'INVITE26',
         'Enjoy gelato in Positano!'
       );
     });
@@ -751,6 +772,10 @@ describe('Capability-Aware Dual-Mode Fund Checkout UI', () => {
 
     fireEvent.change(screen.getByLabelText(/Your Name/i), { target: { value: 'Morgan Guest' } });
     fireEvent.change(screen.getByLabelText(/Contribution Amount/i), { target: { value: '125' } });
+    fireEvent.change(screen.getByPlaceholderText('ABCDEF12'), { target: { value: 'INVITE26' } });
+    await waitFor(() => {
+      expect(screen.getByText(/Code verified!/i)).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Record Direct Transfer' }));
 
     expect(await screen.findByText('Direct Transfer Recorded!')).toBeInTheDocument();
