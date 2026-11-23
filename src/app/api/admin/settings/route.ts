@@ -137,7 +137,10 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: toPublicAppConfig(parsedUpdatedConfig) as any,
+      data: {
+        ...toPublicAppConfig(parsedUpdatedConfig),
+        features: parsedUpdatedConfig.features,
+      } as any,
       author: 'Admin',
     }
   });
@@ -206,7 +209,10 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     data: {
       entityType: 'AppConfig',
       entityId: newId,
-      data: toPublicAppConfig(parsedCreatedConfig) as any,
+      data: {
+        ...toPublicAppConfig(parsedCreatedConfig),
+        features: parsedCreatedConfig.features,
+      } as any,
       author: 'Admin',
     }
   });

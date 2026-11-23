@@ -1006,4 +1006,47 @@ describe('toAppConfigDbPayload mapper', () => {
     expect(json.data.showCountdown).toBe(false);
     expect(json.data.showAddToCalendar).toBe(false);
   });
+
+  it('preserves hidden section title and content in admin settings response and saved snapshot while stripping secrets', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const hiddenFeatures = [
+      {
+        id: 'story',
+        type: 'story',
+        title: 'Our Story',
+        content: 'Visible story',
+        visible: true,
+      },
+      {
+        id: 'custom-hidden',
+        type: 'custom',
+        title: 'Draft Schedule',
+        content: 'Unpublished rehearsal notes',
+        visible: false,
+      },
+    ];
+
+    (mockPrisma.snapshotVersion.create as jest.Mock).mockClear();
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...updatedConfig,
+      id: 'global',
+    });
+    (mockPrisma.appConfig.update as jest.Mock).mockResolvedValueOnce({
+      ...updatedConfig,
+      features: hiddenFeatures,
+      smtpPass: 'stored-smtp-secret',
+    });
+
+    const req = makeAuthReq(validConfigData);
+    const res = await PUT(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.data.features).toEqual(hiddenFeatures);
+    expect(json.data.smtpPass).toBeUndefined();
+
+    const snapshotCall = (mockPrisma.snapshotVersion.create as jest.Mock).mock.calls[0][0];
+    expect(snapshotCall.data.data.features).toEqual(hiddenFeatures);
+    expect(snapshotCall.data.data.smtpPass).toBeUndefined();
+  });
 });
