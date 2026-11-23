@@ -14,6 +14,8 @@ const rootDir = path.resolve(SCRIPT_DIR, '..');
 export const COMPOSE_ARGS = [
   '-p',
   'wedding-smoke-standalone',
+  '--env-file',
+  '.env.ci',
   '-f',
   'docker-compose.yml',
   '-f',

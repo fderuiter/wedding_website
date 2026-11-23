@@ -13,6 +13,8 @@ const rootDir = path.resolve(SCRIPT_DIR, '..');
 export const COMPOSE_ARGS = [
   '-p',
   'wedding-smoke-container',
+  '--env-file',
+  '.env.ci',
   '-f',
   'docker-compose.yml',
   '-f',

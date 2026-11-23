@@ -94,3 +94,4 @@ lerna-debug.log*
 
 # 8. TypeScript build caches
 tsconfig.tsbuildinfo
+*.tsbuildinfo

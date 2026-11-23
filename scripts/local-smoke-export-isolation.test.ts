@@ -42,6 +42,8 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(STANDALONE_COMPOSE_ARGS).toEqual([
         '-p',
         'wedding-smoke-standalone',
+        '--env-file',
+        '.env.ci',
         '-f',
         'docker-compose.yml',
         '-f',
@@ -50,6 +52,8 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(CONTAINER_COMPOSE_ARGS).toEqual([
         '-p',
         'wedding-smoke-container',
+        '--env-file',
+        '.env.ci',
         '-f',
         'docker-compose.yml',
         '-f',
