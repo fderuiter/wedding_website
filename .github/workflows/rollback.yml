@@ -108,6 +108,11 @@ on:
         required: false
         default: ''
         type: string
+      caller_holds_lock:
+        description: 'Whether the calling workflow already holds the deploy-env-<environment> concurrency lock'
+        required: false
+        default: false
+        type: boolean
     secrets:
       GCP_SA_KEY:
         required: false
@@ -121,8 +126,9 @@ on:
         required: false
 
 concurrency:
-  group: rollback-${{ inputs.target_environment || 'production' }}
+  group: ${{ inputs.caller_holds_lock && format('caller-rollback-{0}-{1}-{2}', inputs.target_environment || 'production', github.run_id, github.run_attempt) || format('deploy-env-{0}', inputs.target_environment || 'production') }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   preflight:
@@ -297,6 +303,7 @@ jobs:
       cloud_run_service: ${{ inputs.cloud_run_service || '' }}
       cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
+      caller_holds_lock: true
     secrets: inherit
 
   verify:

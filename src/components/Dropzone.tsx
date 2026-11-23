@@ -214,7 +214,7 @@ function Dropzone({
         <Icon
           name={isBusy ? 'Loader2' : 'UploadCloud'}
           className={cn(
-            'h-10 w-10 mb-2 text-gray-400 dark:text-gray-500',
+            'h-10 w-10 mb-2 text-muted-text',
             isBusy && 'animate-spin text-rose-500'
           )}
         />

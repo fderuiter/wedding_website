@@ -119,7 +119,7 @@ function AttractionsManagerModalContent({ isOpen, onClose }: AttractionsManagerM
         )}
 
         {isLoading && (
-          <div className="py-8 text-center text-gray-500">Loading attractions...</div>
+          <div className="py-8 text-center text-muted-text">Loading attractions...</div>
         )}
 
         {error && (
