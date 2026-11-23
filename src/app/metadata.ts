@@ -127,4 +127,32 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+interface PageMetadataOptions {
+  title: string;
+  description?: string;
+  canonical?: string;
+  noIndex?: boolean;
+}
+
+export function createPageMetadata({
+  title,
+  description,
+  canonical,
+  noIndex = false,
+}: PageMetadataOptions): Metadata {
+  return {
+    title,
+    ...(description ? { description } : {}),
+    ...(canonical ? { alternates: { canonical } } : {}),
+    ...(noIndex
+      ? {
+        robots: {
+          index: false,
+          follow: false,
+        },
+      }
+      : {}),
+  };
+}
+
 
