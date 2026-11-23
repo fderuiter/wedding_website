@@ -40,6 +40,7 @@ export default async function WeddingPartyPage() {
       <h1 className="text-4xl font-bold text-center mb-8 text-primary dark:text-primary">
         Wedding Party
       </h1>
+      <h2 className="sr-only">Wedding Party Members</h2>
       <WeddingPartyList members={members} />
     </div>
   );

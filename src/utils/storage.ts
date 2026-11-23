@@ -345,21 +345,62 @@ export class LocalStorageProvider implements StorageProvider {
   }
 }
 
+function readNormalizedS3Env(key: string): string | undefined {
+  const raw = process.env[key];
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  const unquoted =
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+      ? trimmed.slice(1, -1).trim()
+      : trimmed;
+  return unquoted.length > 0 ? unquoted : undefined;
+}
+
+function isCloudflareR2ApiEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === 'r2.cloudflarestorage.com' || host.endsWith('.r2.cloudflarestorage.com');
+  } catch {
+    return /(?:^|\/\/|\.)r2\.cloudflarestorage\.com(?:[:/]|$)/i.test(endpoint);
+  }
+}
+
+function getR2ConfigurationError(
+  region: string | undefined,
+  endpoint: string | undefined,
+  publicUrl: string | undefined
+): string | null {
+  if (region?.toLowerCase() === 'auto' && !endpoint) {
+    return 'Cloudflare R2 configurations with S3_REGION=auto must specify S3_ENDPOINT (for example, https://<ACCOUNT_ID>.r2.cloudflarestorage.com).';
+  }
+  if (endpoint && isCloudflareR2ApiEndpoint(endpoint) && !publicUrl) {
+    return 'Cloudflare R2 private API endpoints (*.r2.cloudflarestorage.com) cannot serve public assets directly; configure S3_PUBLIC_URL.';
+  }
+  return null;
+}
+
 class S3StorageProvider implements StorageProvider {
   private client: S3Client;
   private bucket: string;
   private publicUrl: string;
 
   constructor() {
-    const bucket = process.env.S3_BUCKET;
-    const region = process.env.S3_REGION;
-    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-    const endpoint = process.env.S3_ENDPOINT;
-    const publicUrl = process.env.S3_PUBLIC_URL;
+    const bucket = readNormalizedS3Env('S3_BUCKET');
+    const region = readNormalizedS3Env('S3_REGION');
+    const accessKeyId = readNormalizedS3Env('S3_ACCESS_KEY_ID');
+    const secretAccessKey = readNormalizedS3Env('S3_SECRET_ACCESS_KEY');
+    const endpoint = readNormalizedS3Env('S3_ENDPOINT');
+    const publicUrl = readNormalizedS3Env('S3_PUBLIC_URL');
 
     if (!bucket || !region || !accessKeyId || !secretAccessKey) {
       throw new Error('S3 Storage Provider requires all credentials to be configured.');
+    }
+
+    const r2Error = getR2ConfigurationError(region, endpoint, publicUrl);
+    if (r2Error) {
+      throw new Error(r2Error);
     }
 
     this.bucket = bucket;
@@ -492,10 +533,12 @@ class S3StorageProvider implements StorageProvider {
   }
 
   async validateConfig(): Promise<StorageValidationResult> {
-    const bucket = process.env.S3_BUCKET;
-    const region = process.env.S3_REGION;
-    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+    const bucket = readNormalizedS3Env('S3_BUCKET');
+    const region = readNormalizedS3Env('S3_REGION');
+    const accessKeyId = readNormalizedS3Env('S3_ACCESS_KEY_ID');
+    const secretAccessKey = readNormalizedS3Env('S3_SECRET_ACCESS_KEY');
+    const endpoint = readNormalizedS3Env('S3_ENDPOINT');
+    const publicUrl = readNormalizedS3Env('S3_PUBLIC_URL');
 
     if (!bucket || !region || !accessKeyId || !secretAccessKey) {
       const missing = [];
@@ -507,6 +550,14 @@ class S3StorageProvider implements StorageProvider {
       return {
         valid: false,
         error: `Incomplete S3 storage credentials: Missing ${missing.join(', ')}`,
+      };
+    }
+
+    const r2Error = getR2ConfigurationError(region, endpoint, publicUrl);
+    if (r2Error) {
+      return {
+        valid: false,
+        error: r2Error,
       };
     }
 
@@ -522,11 +573,20 @@ export function getStorageProvider(): StorageProvider {
   }
 
   const s3Keys = ['S3_BUCKET', 'S3_REGION', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const;
-  const presentKeys = s3Keys.filter((key) => !!process.env[key]);
+  const presentKeys = s3Keys.filter((key) => Boolean(readNormalizedS3Env(key)));
 
   if (presentKeys.length > 0 && presentKeys.length < s3Keys.length) {
-    const missingKeys = s3Keys.filter((key) => !process.env[key]);
+    const missingKeys = s3Keys.filter((key) => !readNormalizedS3Env(key));
     throw new Error(`Incomplete S3 credentials: Missing ${missingKeys.join(', ')}`);
+  }
+
+  const r2Error = getR2ConfigurationError(
+    readNormalizedS3Env('S3_REGION'),
+    readNormalizedS3Env('S3_ENDPOINT'),
+    readNormalizedS3Env('S3_PUBLIC_URL')
+  );
+  if (r2Error) {
+    throw new Error(r2Error);
   }
 
   if (presentKeys.length === s3Keys.length) {

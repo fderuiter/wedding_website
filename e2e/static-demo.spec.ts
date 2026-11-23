@@ -29,6 +29,7 @@ const STATIC_DEMO_ROUTES = [
   '/admin/dashboard/thank-you-notes',
   '/admin/dashboard/wedding-party',
   '/admin/login',
+  '/admin/setup',
   '/archive',
   '/guest',
   '/guest/claim',
@@ -53,13 +54,30 @@ interface RecordedViolation {
   route: string;
 }
 
-const violationsByRoute: Record<string, RecordedViolation[]> = {};
+function readPersistedViolations(): Record<string, RecordedViolation[]> {
+  if (!fs.existsSync(STATIC_VIOLATIONS_PATH)) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(STATIC_VIOLATIONS_PATH, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, RecordedViolation[]>;
+    }
+  } catch {
+    // Ignore malformed artifact and overwrite cleanly
+  }
+  return {};
+}
 
-function persistViolationsArtifact() {
+function persistViolationsArtifact(updates: Record<string, RecordedViolation[]>) {
+  const merged = {
+    ...readPersistedViolations(),
+    ...updates,
+  };
   fs.mkdirSync(path.dirname(STATIC_VIOLATIONS_PATH), { recursive: true });
   fs.writeFileSync(
     STATIC_VIOLATIONS_PATH,
-    `${JSON.stringify(violationsByRoute, null, 2)}\n`,
+    `${JSON.stringify(merged, null, 2)}\n`,
     'utf8'
   );
 }
@@ -135,13 +153,14 @@ function recordRouteViolations(
   key: string,
   violations: Array<{ id: string; description: string; impact?: string | null }>
 ) {
-  violationsByRoute[key] = violations.map((v) => ({
-    id: v.id,
-    description: v.description,
-    impact: v.impact ?? 'moderate',
-    route: key,
-  }));
-  persistViolationsArtifact();
+  persistViolationsArtifact({
+    [key]: violations.map((v) => ({
+      id: v.id,
+      description: v.description,
+      impact: v.impact ?? 'moderate',
+      route: key,
+    })),
+  });
 }
 
 test.describe('Static GitHub Pages Showcase', () => {
@@ -152,20 +171,22 @@ test.describe('Static GitHub Pages Showcase', () => {
   test.setTimeout(120000);
 
   test.beforeAll(() => {
+    const existing = readPersistedViolations();
+    const defaults: Record<string, RecordedViolation[]> = {};
     for (const route of STATIC_DEMO_ROUTES) {
-      violationsByRoute[route] = [];
+      if (!(route in existing)) {
+        defaults[route] = [];
+      }
     }
-    persistViolationsArtifact();
+    if (Object.keys(defaults).length > 0) {
+      persistViolationsArtifact(defaults);
+    }
   });
 
-  test.afterAll(() => {
-    persistViolationsArtifact();
-  });
-
-  test('exports all 31 showcase routes and serves the VitePress portal root cleanly', async ({
+  test('exports all 32 showcase routes and serves the VitePress portal root cleanly', async ({
     page,
   }) => {
-    expect(STATIC_DEMO_ROUTES).toHaveLength(31);
+    expect(STATIC_DEMO_ROUTES).toHaveLength(32);
 
     const demoDistDir = path.join(
       process.cwd(),
@@ -189,7 +210,7 @@ test.describe('Static GitHub Pages Showcase', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('returns HTTP 200, triggers 0 pageerror exceptions, keeps assets under subpath, and passes WCAG 2.2 AA across all 31 routes', async ({
+  test('returns HTTP 200, triggers 0 pageerror exceptions, keeps assets under subpath, and passes WCAG 2.2 AA across all 32 routes', async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
@@ -357,6 +378,17 @@ test.describe('Static GitHub Pages Showcase', () => {
         results.violations
       );
       expect(results.violations).toEqual([]);
+    }
+
+    // 5. /wedding-party and /admin/setup in light & dark themes
+    for (const extraRoute of ['/wedding-party', '/admin/setup'] as const) {
+      await page.goto(`${DEMO_BASE_PATH}${extraRoute}`, { waitUntil: 'load' });
+      for (const theme of ['light', 'dark'] as const) {
+        await setPageTheme(page, theme);
+        const results = await createAxeBuilder(page).analyze();
+        recordRouteViolations(`${extraRoute} (${theme})`, results.violations);
+        expect(results.violations).toEqual([]);
+      }
     }
 
     expect(pageErrors).toEqual([]);

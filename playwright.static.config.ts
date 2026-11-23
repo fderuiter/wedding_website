@@ -1,5 +1,16 @@
 import { chromium, defineConfig, devices } from '@playwright/test';
 import fs from 'fs';
+import path from 'path';
+
+if (process.env.TEST_WORKER_INDEX === undefined) {
+  const staticViolationsPath = path.join(
+    process.cwd(),
+    'test-results',
+    'static-demo-a11y-violations.json'
+  );
+  fs.mkdirSync(path.dirname(staticViolationsPath), { recursive: true });
+  fs.writeFileSync(staticViolationsPath, '{}\n', 'utf8');
+}
 
 function resolveChromiumLaunchOptions() {
   const explicitPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();

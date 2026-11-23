@@ -253,17 +253,29 @@ describe('RegistryCard', () => {
     expect(results).toHaveNoViolations();
   });
 
-  it('renders as an article without tabIndex, role, or aria-label when item is purchased to avoid focus traps', async () => {
+  it('remains clickable in read-only mode with View Details button and passes axe audit when item is purchased', async () => {
     const mockOnClick = jest.fn();
     const purchasedItem = { ...mockItem, purchased: true };
     const { container } = render(<RegistryCard item={purchasedItem} onClick={mockOnClick} />);
     const card = screen.getByTestId('registry-card');
 
     expect(card.tagName).toBe('ARTICLE');
-    expect(card).not.toHaveAttribute('tabIndex');
+    expect(card).toHaveAttribute('tabIndex', '-1');
     expect(card).not.toHaveAttribute('role');
     expect(card).not.toHaveAttribute('aria-label');
     expect(screen.queryByRole('button', { name: /contribute/i })).not.toBeInTheDocument();
+
+    const viewDetailsBtn = screen.getByRole('button', {
+      name: `View details for ${purchasedItem.name}`,
+    });
+    expect(viewDetailsBtn).toHaveTextContent('View Details');
+
+    fireEvent.click(viewDetailsBtn);
+    expect(mockOnClick).toHaveBeenCalledTimes(1);
+    expect(mockOnClick).toHaveBeenCalledWith(purchasedItem);
+
+    fireEvent.click(card);
+    expect(mockOnClick).toHaveBeenCalledTimes(2);
 
     const results = await axe(container);
     expect(results).toHaveNoViolations();

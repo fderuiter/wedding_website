@@ -6,9 +6,11 @@ import { substituteThankYouTemplateTokens } from '@/features/registry';
 
 expect.extend(toHaveNoViolations);
 
+const mockPush = jest.fn();
+
 jest.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: jest.fn(),
+    push: mockPush,
   }),
 }));
 
@@ -815,6 +817,142 @@ describe('ThankYouNotesPage', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ action: 'void' }),
+        })
+      );
+    });
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('routes Back to Registry to /admin/dashboard/registry, records offline gifts, and links household addresses', async () => {
+    mockPush.mockClear();
+    const invitations = [
+      {
+        id: 'inv-clara',
+        code: 'CLARA2026',
+        guestName: 'Aunt Clara',
+        householdName: 'Clara & Bob Household',
+        addressLine1: '742 Evergreen Terrace',
+        city: 'Springfield',
+        state: 'IL',
+        zipCode: '62704',
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith('/api/admin/invitation-codes/catalog')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, data: { items: invitations } }),
+        });
+      }
+      if (url.startsWith('/api/registry/items')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { items: [{ id: 'r1', name: 'Espresso Machine', category: 'Kitchen' }] },
+          }),
+        });
+      }
+      if (url === '/api/admin/thank-you-notes' && options?.method === 'POST') {
+        const body = JSON.parse(String(options.body));
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            success: true,
+            item: {
+              id: 'c-offline-new',
+              name: body.name,
+              amount: body.amount,
+              date: new Date().toISOString(),
+              thankYouStatus: 'Unsent',
+              invitationCodeId: body.invitationCodeId,
+              invitationCode: invitations[0],
+            },
+          }),
+        });
+      }
+      if (url === '/api/admin/thank-you-notes/c1' && options?.method === 'PATCH') {
+        const body = JSON.parse(String(options.body));
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...mockData.items[0],
+            invitationCodeId: body.invitationCodeId,
+            invitationCode: invitations[0],
+          }),
+        });
+      }
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockData,
+        });
+      }
+      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    // 1. Back to Registry navigates directly to /admin/dashboard/registry
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Registry' }));
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
+
+    // 2. Record Offline Gift form submission
+    fireEvent.click(screen.getByRole('button', { name: 'Record Offline Gift' }));
+    const householdSelect = await screen.findByLabelText('Household Mailing Address (Optional)');
+    await waitFor(() => {
+      expect(within(householdSelect).getByText(/Clara & Bob Household/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText('Contributor Name'), {
+      target: { value: 'Aunt Clara' },
+    });
+    fireEvent.change(screen.getByLabelText('Gift Value ($)'), {
+      target: { value: '250' },
+    });
+    fireEvent.change(householdSelect, {
+      target: { value: 'inv-clara' },
+    });
+    fireEvent.change(screen.getByLabelText('Gift Description / Card Message (Optional)'), {
+      target: { value: 'Wedding check in card box' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Offline Gift' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/thank-you-notes',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"invitationCodeId":"inv-clara"'),
+        })
+      );
+    });
+
+    // 3. Link household address on an existing unlinked contributor
+    fireEvent.click(screen.getByRole('button', { name: 'Link Address for Alice Johnson' }));
+    const rowHouseholdSelect = await screen.findByLabelText('Household address for Alice Johnson');
+    fireEvent.change(rowHouseholdSelect, { target: { value: 'inv-clara' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/thank-you-notes/c1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.stringContaining('"invitationCodeId":"inv-clara"'),
         })
       );
     });

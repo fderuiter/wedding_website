@@ -37,7 +37,12 @@ describe('/api/live perimeter and middleware exemptions', () => {
 
     const probePaths = ['/api/live', '/api/health', '/api/ready'];
     const probeMethods = ['GET', 'HEAD'] as const;
-    const probeHosts = ['healthcheck.railway.app', '169.254.1.1:3000', '127.0.0.1:3000'];
+    const probeHosts = [
+      'healthcheck.railway.app',
+      '169.254.1.1:3000',
+      '169.254.169.126:3000',
+      '127.0.0.1:3000',
+    ];
 
     for (const probePath of probePaths) {
       for (const method of probeMethods) {
@@ -114,14 +119,16 @@ describe('/api/live perimeter and middleware exemptions', () => {
       { path: '/uploads/photo.png', method: 'GET' },
     ];
 
-    for (const { path: targetPath, method } of nonProbeRequests) {
-      const req = new NextRequest(`http://127.0.0.1:3000${targetPath}`, {
-        method,
-        headers: { host: 'healthcheck.railway.app' },
-      });
-      const res = await middleware(req);
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: 'Invalid Host header' });
+    for (const host of ['healthcheck.railway.app', 'evil.attacker.invalid']) {
+      for (const { path: targetPath, method } of nonProbeRequests) {
+        const req = new NextRequest(`http://127.0.0.1:3000${targetPath}`, {
+          method,
+          headers: { host },
+        });
+        const res = await middleware(req);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ error: 'Invalid Host header' });
+      }
     }
   });
 

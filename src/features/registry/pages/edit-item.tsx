@@ -79,6 +79,7 @@ export default function EditRegistryItemPage() {
               mode="edit"
               initialValues={itemData}
               onSubmit={handleEdit}
+              onCancel={() => router.push('/admin/dashboard/registry')}
               isSubmitting={isSubmitting}
               submitLabel="Save Changes"
             />
