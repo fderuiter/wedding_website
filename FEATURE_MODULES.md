@@ -134,9 +134,9 @@ Capability negotiation is exposed via `GET /api/registry/capabilities` ([src/fea
 Registry pagination constants are centralized in [src/utils/registryPagination.ts](src/utils/registryPagination.ts#L6-L9):
 
 - **`REGISTRY_DEFAULT_PAGE_LIMIT = 20`**: Default server page size when `limit` is omitted on `GET /api/registry/items`.
-- **`REGISTRY_MAX_CATALOG_LIMIT = 500`**: Hard upper bound enforced in `RegistryRepository.getAllItems` ([src/features/registry/repository.ts](src/features/registry/repository.ts#L25-L43)). The storefront hook `useRegistry` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L105-L139)) fetches up to `500` items upfront (`GET /api/registry/items?page=1&limit=500`) to support instant client-side category, search, price, and availability filtering.
-- **Progressive Client Reveal (`12` + `8`)**: `useRegistry` initially renders `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` cards and reveals `REGISTRY_LOAD_MORE_INCREMENT = 8` additional items per batch ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L353-L377)).
-- **Deep-Link Fallback**: When a guest opens `/registry?item=<id>` for an item beyond the initial 500-item catalog slice, `useRegistry` fetches `GET /api/registry/items/[id]` directly so the modal still opens cleanly ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L121-L139)).
+- **`REGISTRY_MAX_CATALOG_LIMIT = 500`**: Hard upper bound enforced in `RegistryRepository.getAllItems` ([src/features/registry/repository.ts](src/features/registry/repository.ts#L25-L43)). The storefront hook `useRegistry` ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L107-L158)) fetches up to `500` items upfront (`GET /api/registry/items?page=1&limit=500`) to support instant client-side category, search, price, and availability filtering.
+- **Progressive Client Reveal (`12` + `8`)**: `useRegistry` initially renders `REGISTRY_INITIAL_VISIBLE_ITEMS = 12` cards and reveals `REGISTRY_LOAD_MORE_INCREMENT = 8` additional items per batch ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L339-L341)).
+- **Deep-Link Fallback**: When a guest opens `/registry?item=<id>` for an item beyond the initial 500-item catalog slice, `useRegistry` fetches `GET /api/registry/items/[id]` directly so the modal still opens cleanly ([src/features/registry/hooks/useRegistry.ts](src/features/registry/hooks/useRegistry.ts#L369-L420)).
 
 ---
 

@@ -22,9 +22,7 @@ export type GuestLoginMachineAction =
   | { type: 'LOGIN_FAILURE'; error: string }
   | { type: 'SET_PASSCODE'; passcode: string }
   | { type: 'SET_SHOW_PASSCODE'; show: boolean }
-  | { type: 'TOGGLE_SHOW_PASSCODE' }
-  | { type: 'SET_SHOW_HELP'; show: boolean }
-  | { type: 'RESET' };
+  | { type: 'SET_SHOW_HELP'; show: boolean };
 
 export const initialGuestLoginMachineState: GuestLoginMachineState = {
   status: 'idle',
@@ -116,22 +114,6 @@ function extractInitialCodeFromParams(
   return null;
 }
 
-export function selectIsLoading(state: GuestLoginMachineState): boolean {
-  return state.status === 'logging_in';
-}
-
-export function selectIsBusy(state: GuestLoginMachineState): boolean {
-  return state.status === 'logging_in';
-}
-
-export function selectIsLoginDisabled(state: GuestLoginMachineState): boolean {
-  return selectIsBusy(state);
-}
-
-export function selectIsAuthenticated(state: GuestLoginMachineState): boolean {
-  return state.status === 'authenticated';
-}
-
 function toPlainLoginErrorMessage(rawError: unknown, status: number): string {
   const trimmed = typeof rawError === 'string' ? rawError.trim() : '';
   if (status >= 500 || /^internal server error$/i.test(trimmed)) {
@@ -181,21 +163,10 @@ export function guestLoginMachineReducer(
         showPasscode: action.show,
       };
 
-    case 'TOGGLE_SHOW_PASSCODE':
-      return {
-        ...state,
-        showPasscode: !state.showPasscode,
-      };
-
     case 'SET_SHOW_HELP':
       return {
         ...state,
         showHelp: action.show,
-      };
-
-    case 'RESET':
-      return {
-        ...initialGuestLoginMachineState,
       };
 
     default:
@@ -359,10 +330,6 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     }
   }, [dispatch]);
 
-  const toggleShowPasscode = useCallback(() => {
-    dispatch({ type: 'TOGGLE_SHOW_PASSCODE' });
-  }, [dispatch]);
-
   const setShowHelp = useCallback((show: boolean) => {
     dispatch({ type: 'SET_SHOW_HELP', show });
   }, [dispatch]);
@@ -376,29 +343,19 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     };
   }, [cancelInFlightLogin]);
 
-  const isLoading = selectIsLoading(state);
-  const isBusy = selectIsBusy(state);
-  const isLoginDisabled = selectIsLoginDisabled(state);
-  const isAuthenticated = selectIsAuthenticated(state);
+  const loading = state.status === 'logging_in';
+  const isLoginDisabled = loading;
 
   return {
-    state,
-    dispatch,
     handleLogin,
     setPasscode,
     setShowPasscode,
-    toggleShowPasscode,
     setShowHelp,
-    cancelInFlightLogin,
-    isLoading,
-    isBusy,
     isLoginDisabled,
-    isAuthenticated,
     passcode: state.passcode,
     showPasscode: state.showPasscode,
     error: state.error,
-    loading: isLoading,
+    loading,
     showHelp: state.showHelp,
-    status: state.status,
   };
 }
