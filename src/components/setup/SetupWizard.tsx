@@ -242,7 +242,7 @@ function SetupWizardContent() {
         siteUrlInputRef.current?.focus();
         return;
       }
-    } catch (err) {
+    } catch {
       // If it's not a valid URL, it will fail backend validation anyway.
       // But we can also set an error here.
       setStep2ErrorField('siteUrl');
@@ -513,7 +513,7 @@ function SetupWizardContent() {
                   value={sampleArchetype}
                   onChange={(key) => {
                     setSampleArchetype(key);
-                    setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions']);
+                    setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs']);
                   }}
                   className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-transparent dark:bg-transparent p-0 border-0 rounded-none"
                   options={(Object.keys(ARCHETYPE_PRESETS) as ArchetypeId[]).map((key) => {
@@ -535,7 +535,7 @@ function SetupWizardContent() {
                   <div className="space-x-2 text-xs">
                     <button
                       type="button"
-                      onClick={() => setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions'])}
+                      onClick={() => setSelectedModules(['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'])}
                       className="text-primary underline hover:opacity-80"
                     >
                       Select All
@@ -592,13 +592,23 @@ function SetupWizardContent() {
                     </label>
                   </FormGroup>
 
-                  <FormGroup className="flex items-center space-x-3 cursor-pointer md:col-span-2">
+                  <FormGroup className="flex items-center space-x-3 cursor-pointer">
                     <label className="flex items-center space-x-3 cursor-pointer">
                       <Checkbox
                         checked={selectedModules.includes('attractions')}
                         onChange={() => toggleModule('attractions')}
                       />
                       <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Local Attractions & Hotel Blocks</span>
+                    </label>
+                  </FormGroup>
+
+                  <FormGroup className="flex items-center space-x-3 cursor-pointer">
+                    <label className="flex items-center space-x-3 cursor-pointer">
+                      <Checkbox
+                        checked={selectedModules.includes('faqs')}
+                        onChange={() => toggleModule('faqs')}
+                      />
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Wedding Q&amp;A &amp; Starter FAQs</span>
                     </label>
                   </FormGroup>
                 </div>

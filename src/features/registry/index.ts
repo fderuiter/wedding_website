@@ -25,6 +25,7 @@ export {
   GuestClaimQuerySchema,
   GuestClaimActionSchema,
   AdminContributorActionSchema,
+  InvitationCatalogQuerySchema,
 } from './schemas';
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
@@ -64,6 +65,8 @@ export type {
   BatchScrapeUrlsDTO,
   BatchCreateRegistryItemsDTO,
   ContributorStatus,
+  InvitationCatalogQueryDTO,
+  InvitationSubEventRsvpSummaryDTO,
 } from './schemas';
 export {
   signContributorActionToken,

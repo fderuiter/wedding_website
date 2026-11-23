@@ -222,11 +222,14 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const errors: string[] = [];
 
   const requiredFiles = [
+    '.nvmrc',
+    '.npmrc',
     '.env.example',
     '.env.test',
     'prisma.config.ts',
     'package.json',
     'tsconfig.json',
+    'tsconfig.build.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'eslint.config.mjs',
@@ -241,6 +244,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
     'AGENTS.md',
@@ -256,11 +260,14 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     return errors;
   }
 
+  const nvmrcRaw = fs.readFileSync(path.join(repoRoot, '.nvmrc'), 'utf8');
+  const npmrcRaw = fs.readFileSync(path.join(repoRoot, '.npmrc'), 'utf8');
   const envExampleRaw = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
   const envTestRaw = fs.readFileSync(path.join(repoRoot, '.env.test'), 'utf8');
   const prismaConfigRaw = fs.readFileSync(path.join(repoRoot, 'prisma.config.ts'), 'utf8');
   const packageJsonRaw = fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8');
   const tsconfigRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.json'), 'utf8');
+  const tsconfigBuildRaw = fs.readFileSync(path.join(repoRoot, 'tsconfig.build.json'), 'utf8');
   const composeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const ciComposeRaw = fs.readFileSync(path.join(repoRoot, 'docker-compose.ci.yml'), 'utf8');
   const testStandaloneRaw = fs.readFileSync(path.join(repoRoot, 'scripts/test-standalone.mjs'), 'utf8');
@@ -268,6 +275,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const playwrightConfigRaw = fs.readFileSync(path.join(repoRoot, 'playwright.config.ts'), 'utf8');
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
+  const pretestMjsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/pretest.mjs'), 'utf8');
   const a11yReportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/a11y-report.mjs'), 'utf8');
   const seedRaw = fs.readFileSync(path.join(repoRoot, 'scripts/seed.ts'), 'utf8');
   const verifyDocSyncRaw = fs.readFileSync(
@@ -276,6 +284,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   );
   const readmeRaw = fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8');
   const devSetupRaw = fs.readFileSync(path.join(repoRoot, 'docs/developer-setup.md'), 'utf8');
+  const versioningRaw = fs.readFileSync(path.join(repoRoot, 'docs/versioning.md'), 'utf8');
   const contributingRaw = fs.readFileSync(path.join(repoRoot, '.github/CONTRIBUTING.md'), 'utf8');
   const testingRaw = fs.readFileSync(path.join(repoRoot, '.github/TESTING.md'), 'utf8');
   const agentsRaw = fs.readFileSync(path.join(repoRoot, 'AGENTS.md'), 'utf8');
@@ -376,7 +385,129 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
 
-  const pkg = JSON.parse(packageJsonRaw) as { scripts?: Record<string, string> };
+  const pkg = JSON.parse(packageJsonRaw) as {
+    scripts?: Record<string, string>;
+    engines?: Record<string, string>;
+    devEngines?: {
+      runtime?: { name?: string; version?: string; onFail?: string };
+      packageManager?: { name?: string; version?: string; onFail?: string };
+    };
+    devDependencies?: Record<string, string>;
+  };
+
+  // Validate Node.js 22 LTS & npm@10.9.x toolchain parity across .nvmrc, .npmrc, package.json, pretest.mjs, and setup/versioning docs
+  const nvmrcTrimmed = nvmrcRaw.trim();
+  const nvmrcMajorMatch = nvmrcTrimmed.match(/^v?(\d+)(?:\.\d+\.\d+)?$/);
+  const expectedNodeMajor = nvmrcMajorMatch ? nvmrcMajorMatch[1] : '22';
+  if (!nvmrcMajorMatch || expectedNodeMajor !== '22') {
+    errors.push(`.nvmrc: Must pin Node.js 22 LTS major ("22"), found "${nvmrcTrimmed}"`);
+  }
+  if (!/^engine-strict\s*=\s*true\s*$/m.test(npmrcRaw)) {
+    errors.push('.npmrc: Must set "engine-strict=true" at the repository root');
+  }
+  const parseMajorFromRange = (range?: string): string | null => {
+    if (!range) return null;
+    const match = range.trim().match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\b|$)/i);
+    return match ? match[1] : null;
+  };
+  if (parseMajorFromRange(pkg.engines?.node) !== expectedNodeMajor) {
+    errors.push(
+      `package.json: "engines.node" ("${pkg.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+    );
+  }
+  if (parseMajorFromRange(pkg.engines?.npm) !== '10' || !pkg.engines?.npm?.includes('10.9')) {
+    errors.push(
+      `package.json: "engines.npm" ("${pkg.engines?.npm ?? ''}") must target npm ^10.9.0`
+    );
+  }
+  if (
+    pkg.devEngines?.runtime?.name !== 'node' ||
+    parseMajorFromRange(pkg.devEngines?.runtime?.version) !== expectedNodeMajor ||
+    pkg.devEngines?.runtime?.onFail !== 'error'
+  ) {
+    errors.push(
+      `package.json: "devEngines.runtime" must enforce Node.js ${expectedNodeMajor} with onFail: "error"`
+    );
+  }
+  if (
+    pkg.devEngines?.packageManager?.name !== 'npm' ||
+    parseMajorFromRange(pkg.devEngines?.packageManager?.version) !== '10' ||
+    !pkg.devEngines?.packageManager?.version?.includes('10.9') ||
+    pkg.devEngines?.packageManager?.onFail !== 'error'
+  ) {
+    errors.push(
+      'package.json: "devEngines.packageManager" must enforce npm ^10.9.0 with onFail: "error"'
+    );
+  }
+  if (parseMajorFromRange(pkg.devDependencies?.['@types/node']) !== expectedNodeMajor) {
+    errors.push(
+      `package.json: "@types/node" ("${pkg.devDependencies?.['@types/node'] ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+    );
+  }
+  if (pretestMjsRaw.includes('--legacy-peer-deps')) {
+    errors.push('scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI');
+  }
+  if (testingRaw.includes('--legacy-peer-deps')) {
+    errors.push('.github/TESTING.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap');
+  }
+  for (const [docLabel, docText] of [
+    ['README.md', readmeRaw],
+    ['docs/developer-setup.md', devSetupRaw],
+    ['AGENTS.md', agentsRaw],
+  ] as const) {
+    if (!docText.includes('.nvmrc')) {
+      errors.push(`${docLabel}: Must reference ".nvmrc" for Node.js ${expectedNodeMajor} LTS alignment`);
+    }
+    if (!docText.includes('10.9')) {
+      errors.push(`${docLabel}: Must reference "npm@10.9.x" matching package.json devEngines`);
+    }
+    if (!/\bnpm\s+ci\b/.test(docText)) {
+      errors.push(`${docLabel}: Must prescribe deterministic "npm ci" dependency installation`);
+    }
+    if (
+      new RegExp(`\\bNode\\.js\\s+v?(?!${expectedNodeMajor}\\b)\\d+(?:\\.x)?(?:\\s+LTS|\\+)`).test(
+        docText
+      )
+    ) {
+      errors.push(
+        `${docLabel}: Node.js major version does not match .nvmrc (expected Node.js ${expectedNodeMajor} LTS)`
+      );
+    }
+  }
+  const readmeInstallSection = extractMarkdownSection(
+    readmeRaw,
+    /^###\s+Installation\b/,
+    /^###?\s+/
+  );
+  if (!/\bnpm\s+ci\b/.test(readmeInstallSection) || /\bnpm\s+install\b/.test(readmeInstallSection)) {
+    errors.push(
+      'README.md: Installation section must prescribe "npm ci" rather than "npm install"'
+    );
+  }
+  const devSetupInstallSection = extractMarkdownSection(
+    devSetupRaw,
+    /^##\s+2\.\s+Cloning the Repository & Installing Dependencies\b/,
+    /^##\s+/
+  );
+  if (
+    !/\bnpm\s+ci\b/.test(devSetupInstallSection) ||
+    /\bnpm\s+install\b/.test(devSetupInstallSection)
+  ) {
+    errors.push(
+      'docs/developer-setup.md: Cloning the Repository & Installing Dependencies section must prescribe "npm ci" rather than "npm install"'
+    );
+  }
+  if (
+    !versioningRaw.includes(`node:${expectedNodeMajor}-bookworm-slim`) ||
+    /\bnode:\d+-alpine\b/.test(versioningRaw) ||
+    new RegExp(`\\bnode:(?!${expectedNodeMajor}-bookworm-slim\\b)\\d+-bookworm-slim\\b`).test(
+      versioningRaw
+    )
+  ) {
+    errors.push(
+      `docs/versioning.md: Must cite "node:${expectedNodeMajor}-bookworm-slim" (not stale alpine or mismatched Node.js major)`
+    );
+  }
   const scripts = pkg.scripts ?? {};
   const dbSeedCmd = scripts['db:seed'] ?? '';
   if (!/\bdotenv\s+-c\s+development\s+--\s+tsx\s+scripts\/seed\.ts\b/.test(dbSeedCmd)) {
@@ -457,19 +588,36 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     );
   }
 
-  const a11yJestIdx = a11yReportRaw.search(/['"]npm['"]\s*,\s*\[\s*['"]test['"]\s*\]/);
-  const a11ySeedIdx = a11yReportRaw.indexOf('scripts/seed.ts');
-  const a11yPlaywrightIdx = a11yReportRaw.search(
-    /['"]npx['"]\s*,\s*\[\s*['"]playwright['"]\s*,\s*['"]test['"]\s*\]/
+  if (!/node\s+scripts\/a11y-report\.mjs\s+--unit\b/.test(scripts['test:a11y:unit'] ?? '')) {
+    errors.push(
+      'package.json: "test:a11y:unit" must invoke "node scripts/a11y-report.mjs --unit"'
+    );
+  }
+  if (!/\bplaywright\s+test\b/.test(scripts['test:e2e'] ?? '')) {
+    errors.push('package.json: Missing "test:e2e" Playwright runner script');
+  }
+  if (!/\bplaywright\s+test\b.*--grep\s+@smoke\b/.test(scripts['test:e2e:smoke'] ?? '')) {
+    errors.push('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"');
+  }
+
+  const runA11ySuiteBody = a11yReportRaw.split('export function runA11ySuite')[1] ?? '';
+  const hasCoverageFalseUnitPass =
+    a11yReportRaw.includes('\'--coverage=false\'') &&
+    a11yReportRaw.includes('\'--runTestsByPath\'');
+  const a11yJestIdx = runA11ySuiteBody.indexOf('runA11yUnit(');
+  const a11ySeedIdx = runA11ySuiteBody.indexOf('scripts/seed.ts');
+  const a11yPlaywrightIdx = runA11ySuiteBody.search(
+    /['"]npx['"]\s*,\s*\[\s*['"]playwright['"]\s*,\s*['"]test['"]\s*,\s*['"]--grep['"]\s*,\s*['"]@a11y['"]\s*\]/
   );
   if (
+    !hasCoverageFalseUnitPass ||
     a11yJestIdx === -1 ||
     a11ySeedIdx === -1 ||
     a11yPlaywrightIdx === -1 ||
     !(a11yJestIdx < a11ySeedIdx && a11ySeedIdx < a11yPlaywrightIdx)
   ) {
     errors.push(
-      'scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts" after "npm test" and before "npx playwright test"'
+      'scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts" after runA11yUnit and before "npx playwright test --grep @a11y"'
     );
   }
 
@@ -725,9 +873,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
   }
 
-  // 6. AGENTS.md tsconfig.json exclude list & check-quality.ts step order
+  // 6. AGENTS.md tsconfig.json & tsconfig.build.json exclude lists & check-quality.ts step order
   const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
   const tsconfigExcludes = tsconfig.exclude ?? [];
+  const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as { exclude?: string[] };
+  const tsconfigBuildExcludes = tsconfigBuild.exclude ?? [];
   const agentsTsSection = extractMarkdownSection(
     agentsRaw,
     /^##\s+3\.\s+TypeScript Configuration Split\b/,
@@ -737,6 +887,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (!agentsTsSection.includes(`\`${excludePattern}\``)) {
       errors.push(
         `AGENTS.md: Missing tsconfig.json exclude entry "${excludePattern}" in TypeScript Configuration Split section`
+      );
+    }
+  }
+  for (const excludePattern of tsconfigBuildExcludes) {
+    if (!agentsTsSection.includes(`\`${excludePattern}\``)) {
+      errors.push(
+        `AGENTS.md: Missing tsconfig.build.json exclude entry "${excludePattern}" in TypeScript Configuration Split section`
       );
     }
   }

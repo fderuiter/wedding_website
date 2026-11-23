@@ -21,8 +21,18 @@ import {
   sanitizeRsvpClosedMessage,
 } from '@/utils/rsvpDeadline';
 import { cn } from '@/utils/cn';
+import { tokenizeSafeLinks } from '@/utils/linkifyText';
 
-export type GuestHelpCategory = 'passcode' | 'dietary' | 'registry';
+export type GuestHelpCategory = 'passcode' | 'dietary' | 'registry' | 'faq';
+
+export interface GuestHelpFaqItem {
+  id?: string;
+  question: string;
+  answer: string;
+  category?: string | null;
+  isVisible?: boolean | string | null;
+  displayOrder?: number | null;
+}
 
 export interface GuestHelpConfig {
   contactEmail?: string | null;
@@ -37,6 +47,7 @@ export interface GuestHelpConfig {
   rsvpDeadlineDate?: string | null;
   rsvpClosedMessage?: string | null;
   timezone?: string | null;
+  faqs?: GuestHelpFaqItem[] | null;
 }
 
 const SAFE_EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -191,11 +202,43 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
       passcode: null,
       dietary: null,
       registry: null,
+      faq: null,
     });
 
     const p1 = sanitizeConfigText(config?.partner1Name || config?.brideName, 60);
     const p2 = sanitizeConfigText(config?.partner2Name || config?.groomName, 60);
     const couple = p1 && p2 ? `${p1} & ${p2}` : p1 || p2;
+
+    const rawFaqs = config?.faqs;
+    const visibleCoupleFaqs = useMemo(() => {
+      if (!Array.isArray(rawFaqs)) return [];
+      return rawFaqs
+        .filter((item) => {
+          if (!item || item.isVisible === false || item.isVisible === 'false') return false;
+          const question = sanitizeConfigText(item.question, 300);
+          const answerTokens = tokenizeSafeLinks(item.answer);
+          const hasAnswer = answerTokens.some((token) =>
+            token.type === 'link' ? Boolean(token.label.trim()) : Boolean(token.value.trim())
+          );
+          return Boolean(question && hasAnswer);
+        })
+        .map((item, idx) => ({
+          id: item.id || `couple-faq-${idx}`,
+          question: sanitizeConfigText(item.question, 300),
+          answerTokens: tokenizeSafeLinks(item.answer),
+          category: sanitizeConfigText(item.category, 60),
+          displayOrder:
+            typeof item.displayOrder === 'number' && Number.isFinite(item.displayOrder)
+              ? item.displayOrder
+              : Number.MAX_SAFE_INTEGER,
+          originalIndex: idx,
+        }))
+        .sort((a, b) =>
+          a.displayOrder !== b.displayOrder
+            ? a.displayOrder - b.displayOrder
+            : a.originalIndex - b.originalIndex
+        );
+    }, [rawFaqs]);
 
     const emailContact = useMemo(
       () => getSafeHostEmailLink(config?.contactEmail ?? theme.contactEmail),
@@ -237,7 +280,7 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
       sanitizeRsvpClosedMessage(config?.rsvpClosedMessage) || DEFAULT_RSVP_CLOSED_MESSAGE;
 
     const resolvedTabs = useMemo(() => {
-      return HELP_TABS.map((tab) => {
+      const baseTabs = HELP_TABS.map((tab) => {
         if (tab.id !== 'dietary') return tab;
         if (!isRsvpCurrentlyOpen) {
           return {
@@ -272,17 +315,34 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
         }
         return tab;
       });
+
+      if (visibleCoupleFaqs.length > 0) {
+        return [
+          ...baseTabs,
+          {
+            id: 'faq' as GuestHelpCategory,
+            label: 'Wedding Q&A',
+            icon: 'HelpCircle' as IconName,
+            heading: couple ? `${couple}'s Wedding Q&A` : 'Wedding Q&A from the Hosts',
+            items: [] as [string, string][],
+          },
+        ];
+      }
+
+      return baseTabs;
     }, [
       isRsvpCurrentlyOpen,
       sanitizedClosedMessage,
       formattedCutoffDate,
       sanitizedTimezone,
+      visibleCoupleFaqs.length,
+      couple,
     ]);
 
     const activeTab = resolvedTabs.find((t) => t.id === activeCategory) ?? resolvedTabs[0];
 
     const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {
-      const len = HELP_TABS.length;
+      const len = resolvedTabs.length;
       const next =
         e.key === 'ArrowRight'
           ? (idx + 1) % len
@@ -295,7 +355,7 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
                 : null;
       if (next !== null) {
         e.preventDefault();
-        const target = HELP_TABS[next];
+        const target = resolvedTabs[next];
         setActiveCategory(target.id);
         tabRefs.current[target.id]?.focus();
       }
@@ -342,9 +402,12 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
           <div
             role="tablist"
             aria-label="Guest help topics"
-            className="grid grid-cols-3 gap-1 px-6 pt-2.5 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/70 dark:bg-zinc-900/60"
+            className={cn(
+              'grid gap-1 px-6 pt-2.5 border-b border-gray-200 dark:border-zinc-800 bg-gray-50/70 dark:bg-zinc-900/60',
+              resolvedTabs.length > 3 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
+            )}
           >
-            {HELP_TABS.map((tab, idx) => {
+            {resolvedTabs.map((tab, idx) => {
               const selected = tab.id === activeTab.id;
               return (
                 <button
@@ -389,33 +452,77 @@ export const GuestHelpModal = React.forwardRef<HTMLDivElement, GuestHelpModalPro
               className={cn('space-y-3 rounded-lg', FOCUS_RING)}
             >
               <h3 className={cn('text-sm sm:text-base', HEADING_SM_CLS)}>{activeTab.heading}</h3>
-              <ul className="space-y-2">
-                {activeTab.items.map(([title, detail], idx) => (
-                  <li
-                    key={title}
-                    className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/50 p-3 text-xs sm:text-sm"
-                  >
-                    <p className="font-semibold text-gray-900 dark:text-zinc-100">{title}</p>
-                    <p className="mt-0.5 text-gray-600 dark:text-zinc-300 leading-relaxed">{detail}</p>
-                    {activeTab.id === 'dietary' && !isRsvpCurrentlyOpen && idx === 0 && (
-                      <a
-                        href={`#${contactSectionId}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          contactSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-                          contactSectionRef.current?.focus();
-                        }}
-                        className={cn(
-                          'mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-primary-text,var(--color-primary,#B91C1C))] dark:text-red-300 underline',
-                          FOCUS_RING
+              {activeTab.id === 'faq' ? (
+                <ul className="space-y-2" data-testid="help-modal-couple-faqs">
+                  {visibleCoupleFaqs.map((faq) => (
+                    <li
+                      key={faq.id}
+                      className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/50 p-3 text-xs sm:text-sm"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="font-semibold text-gray-900 dark:text-zinc-100">
+                          {faq.question}
+                        </p>
+                        {faq.category && faq.category !== 'General' && (
+                          <span className="inline-flex items-center rounded-full bg-gray-200/80 dark:bg-zinc-700 px-2 py-0.5 text-[11px] font-medium text-gray-800 dark:text-zinc-200">
+                            {faq.category}
+                          </span>
                         )}
-                      >
-                        <span>Contact the hosts below</span>
-                      </a>
-                    )}
-                  </li>
-                ))}
-              </ul>
+                      </div>
+                      <p className="mt-1 text-gray-600 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">
+                        {faq.answerTokens.map((token, tokenIdx) =>
+                          token.type === 'link' ? (
+                            <a
+                              key={`${faq.id}-link-${tokenIdx}`}
+                              href={token.href}
+                              target={token.isExternal ? '_blank' : undefined}
+                              rel={token.isExternal ? 'noopener noreferrer' : undefined}
+                              className={cn(
+                                'underline underline-offset-2 font-medium text-[var(--color-primary-text,var(--color-primary,#B91C1C))] dark:text-red-300 hover:opacity-80 rounded-sm',
+                                FOCUS_RING
+                              )}
+                            >
+                              {token.label}
+                            </a>
+                          ) : (
+                            <React.Fragment key={`${faq.id}-text-${tokenIdx}`}>
+                              {token.value}
+                            </React.Fragment>
+                          )
+                        )}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="space-y-2">
+                  {activeTab.items.map(([title, detail], idx) => (
+                    <li
+                      key={title}
+                      className="rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-800/50 p-3 text-xs sm:text-sm"
+                    >
+                      <p className="font-semibold text-gray-900 dark:text-zinc-100">{title}</p>
+                      <p className="mt-0.5 text-gray-600 dark:text-zinc-300 leading-relaxed">{detail}</p>
+                      {activeTab.id === 'dietary' && !isRsvpCurrentlyOpen && idx === 0 && (
+                        <a
+                          href={`#${contactSectionId}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            contactSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+                            contactSectionRef.current?.focus();
+                          }}
+                          className={cn(
+                            'mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-primary-text,var(--color-primary,#B91C1C))] dark:text-red-300 underline',
+                            FOCUS_RING
+                          )}
+                        >
+                          <span>Contact the hosts below</span>
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <section
@@ -534,10 +641,12 @@ export function GuestHelpProvider({ children, config, pathname }: GuestHelpProvi
 
   const mergedConfig = useMemo<GuestHelpConfig | null>(() => {
     if (!config && !liveConfig && !triggerConfig) return null;
+    const resolvedFaqs = triggerConfig?.faqs ?? liveConfig?.faqs ?? config?.faqs;
     return {
       ...(config ?? {}),
       ...(liveConfig ?? {}),
       ...(triggerConfig ?? {}),
+      ...(resolvedFaqs !== undefined ? { faqs: resolvedFaqs } : {}),
     };
   }, [config, liveConfig, triggerConfig]);
 

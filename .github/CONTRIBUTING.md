@@ -53,11 +53,11 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
      - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
      - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
-     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (production app, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
+     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.build.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (workspace IDE project, isolated production app build, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
      - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
      - `npm test` - Run Jest unit and integration tests.
-     - `npx playwright test` - Run Playwright E2E and smoke tests against the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
-     - `npm run test:a11y` - Run Jest tests, reseed `wedding_test` (`npx tsx scripts/seed.ts`), run Playwright accessibility checks, and generate summary reports.
+     - `npm run test:e2e` / `npm run test:e2e:smoke` (`npx playwright test`) - Run Playwright E2E or `@smoke`-tagged browser tests in bundled Chromium against `http://localhost:3000` and the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
+     - `npm run test:a11y:unit` & `npm run test:a11y` - Run targeted `src/` `jest-axe` component suites (`--unit`), or chain component checks, `wedding_test` reseeding (`npx tsx scripts/seed.ts`), and `@a11y` Playwright WCAG 2.2 AA audits (`--run`) to generate `test-results/a11y-summary.md`.
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash
@@ -65,7 +65,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
     git commit -m "fix: Correct spelling on registry item description"
     ```
 
-    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm install`), which:
+    Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which:
     1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
     2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs twelve sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
 
@@ -120,7 +120,7 @@ All new utility functions placed in the global `src/utils/` folder must follow t
 
 ## Code Style
 
-* **TypeScript:** Strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`) is enforced across all four `tsconfig*.json` files. Explicitly define types and avoid `any`.
+* **TypeScript:** Strict mode (`strict`, `noUnusedLocals`, `noUnusedParameters`) is enforced across all five `tsconfig*.json` files. Explicitly define types and avoid `any`.
 * **React:** Functional components with Hooks are the way.
 * **Tailwind CSS:** Utility classes first. Avoid custom CSS unless absolutely necessary.
 * **Formatting & Imports (`eslint.config.mjs`):** Single quotes, 2-space indentation, semicolons, zero unused imports, no `require()` outside `.cjs`, and cross-feature imports strictly via `@/features/<domain>` public barrels are enforced as **errors** by `npm run lint` (use `npm run lint:fix` to auto-format).

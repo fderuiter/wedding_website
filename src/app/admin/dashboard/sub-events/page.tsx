@@ -12,7 +12,11 @@ import {
   type EditableSubEvent,
 } from '@/components/admin/SubEventEditorModal';
 import { formatSubEventSchedule } from '@/utils/dateTime';
-import type { SubEventDTO } from '@/features/sub-events';
+import type {
+  SubEventDTO,
+  RsvpSummaryResponse,
+  SubEventRsvpSummaryItem,
+} from '@/features/sub-events';
 
 type SubEvent = EditableSubEvent;
 
@@ -143,6 +147,25 @@ function sortSubEventsBySchedule(events: SubEvent[]): SubEvent[] {
   });
 }
 
+async function requestSubEventsRsvpSummary(): Promise<Record<string, SubEventRsvpSummaryItem> | null> {
+  try {
+    const res = await fetch('/api/admin/sub-events/rsvp-summary');
+    if (!res || !res.ok) return null;
+    const json = await res.json();
+    const payload: RsvpSummaryResponse | undefined = json?.data ?? json;
+    if (!payload || !Array.isArray(payload.subEvents)) return null;
+    const byId: Record<string, SubEventRsvpSummaryItem> = {};
+    for (const item of payload.subEvents) {
+      if (item && item.subEventId) {
+        byId[item.subEventId] = item;
+      }
+    }
+    return byId;
+  } catch {
+    return null;
+  }
+}
+
 function SubEventsMatrixPageContent() {
   const { addToast } = useToast();
   const {
@@ -153,6 +176,7 @@ function SubEventsMatrixPageContent() {
   const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
   const [accessMatrix, setAccessMatrix] = useState<Record<string, string[]>>({});
+  const [rsvpSummaryByEvent, setRsvpSummaryByEvent] = useState<Record<string, SubEventRsvpSummaryItem>>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Filters & Search
@@ -182,15 +206,28 @@ function SubEventsMatrixPageContent() {
   const [editingSubEvent, setEditingSubEvent] = useState<SubEvent | null>(null);
   const [deletingSubEvent, setDeletingSubEvent] = useState<SubEvent | null>(null);
 
+  const refreshRsvpSummary = useCallback(async () => {
+    const summaryMap = await requestSubEventsRsvpSummary();
+    if (summaryMap) {
+      setRsvpSummaryByEvent(summaryMap);
+    }
+  }, []);
+
   const fetchMatrix = useCallback(async () => {
     setIsLoading(true);
     try {
-      const snapshot = await requestAccessMatrix({
-        page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
-      });
+      const [snapshot, summaryMap] = await Promise.all([
+        requestAccessMatrix({
+          page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
+        }),
+        requestSubEventsRsvpSummary(),
+      ]);
       applyAccessMatrixSnapshot(snapshot, {
         setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
       });
+      if (summaryMap) {
+        setRsvpSummaryByEvent(summaryMap);
+      }
     } catch (err: unknown) {
       notifyAccessMatrixError(err, addToast);
     } finally {
@@ -202,14 +239,20 @@ function SubEventsMatrixPageContent() {
   useEffect(() => {
     let cancelled = false;
 
-    void requestAccessMatrix({
-      page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
-    })
-      .then((snapshot) => {
+    void Promise.all([
+      requestAccessMatrix({
+        page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
+      }),
+      requestSubEventsRsvpSummary(),
+    ])
+      .then(([snapshot, summaryMap]) => {
         if (cancelled) return;
         applyAccessMatrixSnapshot(snapshot, {
           setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
         });
+        if (summaryMap) {
+          setRsvpSummaryByEvent(summaryMap);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -283,6 +326,7 @@ function SubEventsMatrixPageContent() {
         throw new Error(errJson.error || 'Failed to update access');
       }
       addToast('Sub-event access updated.', 'success');
+      void refreshRsvpSummary();
     } catch (e: any) {
       setAccessMatrix(previousMatrix);
       addToast(e.message || 'Failed to update access. Reverted changes.', 'error');
@@ -681,8 +725,9 @@ function SubEventsMatrixPageContent() {
                 {/* Sub-Events Column Headers */}
                 {subEvents.map((evt) => {
                   const scheduleLabel = formatSubEventSchedule(evt.startTime, evt.endTime);
+                  const eventSummary = rsvpSummaryByEvent[evt.id];
                   return (
-                    <th key={evt.id} scope="col" className="p-3 font-semibold text-gray-900 dark:text-white min-w-[200px] border-l border-gray-200 dark:border-gray-700 align-top">
+                    <th key={evt.id} scope="col" className="p-3 font-semibold text-gray-900 dark:text-white min-w-[220px] border-l border-gray-200 dark:border-gray-700 align-top">
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between gap-1">
                           <span className="truncate font-bold" title={evt.title}>
@@ -706,6 +751,39 @@ function SubEventsMatrixPageContent() {
                           >
                             {scheduleLabel}
                           </span>
+                        )}
+
+                        {eventSummary && (
+                          <div
+                            className="flex flex-wrap gap-1 mt-1"
+                            data-testid={`sub-event-rsvp-badges-${evt.id}`}
+                          >
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700"
+                              title={
+                                eventSummary.attendingPlusOnes > 0
+                                  ? `${eventSummary.attendingCount} household(s) + ${eventSummary.attendingPlusOnes} plus-one(s)`
+                                  : `${eventSummary.attendingCount} attending`
+                              }
+                            >
+                              Attending: {eventSummary.attendingHeadcount}
+                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border border-rose-300 dark:border-rose-700">
+                              Declined: {eventSummary.declinedCount}
+                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600">
+                              Pending: {eventSummary.pendingCount}
+                            </span>
+                            {eventSummary.mealCounts.map((meal) => (
+                              <span
+                                key={meal.optionId}
+                                data-testid={`sub-event-meal-badge-${evt.id}-${meal.optionId}`}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200 border border-amber-200 dark:border-amber-800"
+                              >
+                                {meal.label}: {meal.count}
+                              </span>
+                            ))}
+                          </div>
                         )}
 
                         <div className="flex items-center gap-2 text-xs font-normal mt-0.5">

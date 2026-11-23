@@ -5,11 +5,14 @@ import { parseEnvAssignments, verifySetupGuides } from './verify-setup-guides';
 
 function copyFixtureFiles(srcRoot: string, destRoot: string): void {
   const filesToCopy = [
+    '.nvmrc',
+    '.npmrc',
     '.env.example',
     '.env.test',
     'prisma.config.ts',
     'package.json',
     'tsconfig.json',
+    'tsconfig.build.json',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'eslint.config.mjs',
@@ -24,6 +27,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
     'AGENTS.md',
@@ -196,7 +200,8 @@ describe('verify-setup-guides contract check', () => {
       agentsPath,
       fs
         .readFileSync(agentsPath, 'utf8')
-        .replace('`jest.setup.js`, ', '')
+        .replace(/`jest\.setup\.js`, /g, '')
+        .replace('`**/*.stories.tsx`, ', '')
         .replace(
           '8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
           '8. Verify Migration Compatibility (`npm run lint:migrations`)\n9. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n10. ESLint Code Linting (`npm run lint`)\n11. Knip Unused Export Analysis (`npm run lint:unused`)'
@@ -209,6 +214,7 @@ describe('verify-setup-guides contract check', () => {
         '.github/TESTING.md: Must report .env.test GUEST_PASSCODE value "build-fallback-guest-passcode"',
         expect.stringContaining('.github/TESTING.md: Must warn that scripts/test-standalone.mjs requires "npm run build"'),
         'AGENTS.md: Missing tsconfig.json exclude entry "jest.setup.js" in TypeScript Configuration Split section',
+        'AGENTS.md: Missing tsconfig.build.json exclude entry "**/*.stories.tsx" in TypeScript Configuration Split section',
         'AGENTS.md: Full Local Quality Gate section misorders check-quality.ts step "npm run lint:migrations"',
       ])
     );
@@ -218,7 +224,10 @@ describe('verify-setup-guides contract check', () => {
     const pkgPath = path.join(tempDir, 'package.json');
     fs.writeFileSync(
       pkgPath,
-      fs.readFileSync(pkgPath, 'utf8').replace('    "pretest:cov": "npm run pretest",\n', '')
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace('    "pretest:cov": "npm run pretest",\n', '')
+        .replace('    "test:e2e:smoke": "playwright test --grep @smoke",\n', '')
     );
 
     const preCommitPath = path.join(tempDir, '.githooks/pre-commit');
@@ -242,6 +251,7 @@ describe('verify-setup-guides contract check', () => {
       expect.arrayContaining([
         expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
         expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
+        expect.stringContaining('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"'),
         '.githooks/pre-commit: Must enforce check:static sub-script "check:runbooks"',
         expect.stringContaining('Commit Your Changes claims "twelve" sequential workspace checks, expected "eleven"'),
         '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
@@ -334,6 +344,45 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432'),
         expect.stringContaining('scripts/test-container.mjs: Must invoke isolated "docker-compose.ci.yml" override manifest'),
         expect.stringContaining('.env.example: Must not contain invalid 4-byte placeholder hash'),
+      ])
+    );
+  });
+
+  it('rejects Node.js/npm engine drift, --legacy-peer-deps pretest regressions, npm install bootstrap drift, and stale alpine versioning docs', () => {
+    fs.writeFileSync(path.join(tempDir, '.npmrc'), '# missing engine-strict\n');
+
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs.readFileSync(pkgPath, 'utf8').replace('"@types/node": "^22.12.0"', '"@types/node": "^26.6.5"')
+    );
+
+    const pretestPath = path.join(tempDir, 'scripts/pretest.mjs');
+    fs.writeFileSync(
+      pretestPath,
+      fs.readFileSync(pretestPath, 'utf8').replace("['ci']", "['ci', '--legacy-peer-deps']")
+    );
+
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      fs.readFileSync(readmePath, 'utf8').replace('    npm ci', '    npm install')
+    );
+
+    const versioningPath = path.join(tempDir, 'docs/versioning.md');
+    fs.writeFileSync(
+      versioningPath,
+      fs.readFileSync(versioningPath, 'utf8').replace('node:22-bookworm-slim', 'node:22-alpine')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        '.npmrc: Must set "engine-strict=true" at the repository root',
+        expect.stringContaining('package.json: "@types/node" ("^26.6.5") must target Node.js 22 matching .nvmrc'),
+        'scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI',
+        'README.md: Installation section must prescribe "npm ci" rather than "npm install"',
+        'docs/versioning.md: Must cite "node:22-bookworm-slim" (not stale alpine or mismatched Node.js major)',
       ])
     );
   });

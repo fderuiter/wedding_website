@@ -26,13 +26,14 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
       headers,
       data: {
         archetype: 'classic',
-        modules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
+        modules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'],
       },
     });
     expect(postRes.status()).toBe(200);
     const postBody = await postRes.json();
     expect(postBody.success).toBe(true);
     expect(postBody.createdCounts.registry).toBeGreaterThan(0);
+    expect(postBody.createdCounts.faqs).toBeGreaterThan(0);
 
     // Get status
     const getRes = await request.get('/api/admin/sample-data', { headers });
@@ -40,6 +41,7 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
     const getBody = await getRes.json();
     expect(getBody.hasSampleData).toBe(true);
     expect(getBody.counts.registry).toBeGreaterThan(0);
+    expect(getBody.counts.faqs).toBeGreaterThan(0);
   });
 
   test('prevents real contributions on sample registry items', async ({ request }) => {
@@ -179,42 +181,20 @@ test.describe('Sample Data Generator & Admin Workflow', () => {
       headers: { Cookie: `admin_auth=${adminCookie}` },
       data: {
         archetype: 'classic',
-        modules: ['registry', 'guests', 'weddingParty', 'attractions'],
+        modules: ['registry', 'guests', 'weddingParty', 'attractions', 'faqs'],
       },
     });
     expect(seedRes.status()).toBe(200);
 
     // Visit admin dashboard
     const banner = page.locator('[data-testid="sample-data-banner"]');
-    let attempt = 0;
-    while (attempt < 4) {
-      attempt++;
-      try {
-        await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded', timeout: 25000 });
-        await expect(banner).toBeVisible({ timeout: 20000 });
-        break;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (
-          attempt < 4 &&
-          (msg.includes('crashed') ||
-           msg.includes('closed') ||
-           msg.includes('Timeout') ||
-           msg.includes('timeout') ||
-           msg.includes('net::ERR_ABORTED'))
-        ) {
-          console.log(`[sample-data] Retry attempt ${attempt} due to: ${msg.slice(0, 80)}`);
-          await page.close().catch(() => {});
-          await seedAdminAndGuestAuthCookies(context, { adminCookieValue: adminCookie }).catch(() => {});
-          page = await context.newPage();
-        } else {
-          throw err;
-        }
-      }
-    }
+    await page.goto('/admin/dashboard', { waitUntil: 'domcontentloaded' });
+    expect(new URL(page.url()).pathname).toBe('/admin/dashboard');
+    await expect(banner).toBeVisible({ timeout: 20000 });
 
-    // Should contain "Sample Data Active"
+    // Should contain "Sample Data Active" and FAQ count badge
     await expect(banner).toContainText('Sample Data Active');
+    await expect(banner).toContainText('FAQs');
 
     // Click Purge Sample Data button in banner
     const purgeButton = banner.locator('button', { hasText: 'Purge Sample Data' });

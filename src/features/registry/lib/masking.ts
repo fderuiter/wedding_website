@@ -1,6 +1,6 @@
 function sanitizeContributor(contributor: any) {
   if (!contributor) return contributor;
-  const { email, ...rest } = contributor;
+  const { email: _email, ...rest } = contributor;
   return rest;
 }
 
