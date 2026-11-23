@@ -605,9 +605,13 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  const pageHeading =
+    p1 && p2 ? `Interactive 3D Heart — ${p1} & ${p2}` : 'Interactive 3D Heart';
+
   if (webglSupported === false) {
     return (
       <div ref={overlayRef} className="fixed inset-0 bg-black select-none" data-testid="webgl-fallback-container">
+        <h1 className="sr-only">{pageHeading}</h1>
         <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
           <button
             onClick={handleReset}
@@ -634,6 +638,7 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
 
   return (
     <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
+      <h1 className="sr-only">{pageHeading}</h1>
       <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
         <button
           onClick={handleReset}

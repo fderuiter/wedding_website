@@ -225,6 +225,10 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
   it('renders initial live region with "Heart is whole." and does not render easter egg DOM node', () => {
     render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
 
+    expect(
+      screen.getByRole('heading', { level: 1, name: /Interactive 3D Heart — Abbi & Fred/i })
+    ).toBeInTheDocument();
+
     const liveRegion = screen.getByRole('status');
     expect(liveRegion).toBeInTheDocument();
     expect(liveRegion).toHaveAttribute('aria-live', 'polite');

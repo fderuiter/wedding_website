@@ -174,7 +174,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     action?: ToastAction
   ) => {
     const id = generateSecureUUID();
-    setToasts((prev) => [...prev, { id, message, type, onConfirm, onCancel, action }]);
+    setToasts((prev) => {
+      if (type === 'error' && prev.some((t) => t.type === 'error' && t.message === message)) {
+        return prev;
+      }
+      return [...prev, { id, message, type, onConfirm, onCancel, action }];
+    });
   }, []);
 
   const confirm = useCallback((message: string): Promise<boolean> => {

@@ -11,8 +11,16 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useTheme } from '@/components/ThemeProvider';
+import type { ThemePreset } from '@/lib/theme/presets';
 import { MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
+import SetupWizard from '@/components/setup/SetupWizard';
+import {
+  ensureStaticDemoRuntime,
+  useStaticDemoPageOverrides,
+  StaticDemoMount,
+} from '@/lib/staticDemo/runtime';
 import {
   invalidateOnboardingMilestones,
   invalidateSampleDataCaches,
@@ -24,7 +32,6 @@ if (typeof window !== 'undefined' && window.navigator.userAgent.includes('Headle
 
 import type { PublicAppConfig } from '@/lib/config';
 import { withBasePath } from '@/lib/basePath';
-import SetupWizard from '@/components/setup/SetupWizard';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
 import { DemoToolbar } from '@/components/demo/DemoToolbar';
 
@@ -45,14 +52,34 @@ function RootLayoutInner({
   children,
   config: baseConfig,
   faqs: baseFaqs,
-}: Omit<RootLayoutClientProps, 'isStaticExport'>) {
+  queryClient,
+}: Omit<RootLayoutClientProps, 'isStaticExport'> & { queryClient: QueryClient }) {
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoOverrides = useStaticDemoPageOverrides();
+  const { setPreviewConfig } = useTheme();
   const [storageIsAdmin, setStorageIsAdmin] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
   const [mainPaddingTop, setMainPaddingTop] = useState(0);
+
+  useEffect(() => {
+    if (isDemoMode || !demoOverrides || typeof setPreviewConfig !== 'function') return;
+    if (typeof window !== 'undefined' && window !== window.parent) return;
+    setPreviewConfig({
+      themePreset: demoOverrides.config.themePreset as ThemePreset,
+      colorPrimary: demoOverrides.config.colorPrimary,
+      colorSecondary: demoOverrides.config.colorSecondary,
+    });
+  }, [
+    isDemoMode,
+    demoOverrides,
+    demoOverrides?.config.themePreset,
+    demoOverrides?.config.colorPrimary,
+    demoOverrides?.config.colorSecondary,
+    setPreviewConfig,
+  ]);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -69,21 +96,31 @@ function RootLayoutInner({
     };
   }, [isDemoMode]);
 
-  const isSetupPersona = isDemoMode && demo?.persona === 'setup';
-  const isAdmin = isDemoMode ? demo?.persona === 'admin' : storageIsAdmin;
+  const isSetupPersona = isDemoMode
+    ? demo?.persona === 'setup'
+    : Boolean(demoOverrides?.isSetupMode);
+  const isAdmin = isDemoMode
+    ? demo?.persona === 'admin'
+    : demoOverrides
+      ? demoOverrides.isAdminAuthenticated
+      : storageIsAdmin;
 
   const effectiveConfig = useMemo<PublicAppConfig>(() => {
-    if (!isDemoMode || !demo) return baseConfig;
-    return {
-      ...baseConfig,
-      ...demo.configOverrides,
-    };
-  }, [baseConfig, demo, isDemoMode]);
+    if (isDemoMode && demo) {
+      return {
+        ...(demoOverrides?.config ?? baseConfig),
+        ...demo.configOverrides,
+      };
+    }
+    return demoOverrides?.config ?? baseConfig;
+  }, [baseConfig, demo, demoOverrides, isDemoMode]);
 
   const effectiveFaqs = useMemo<ContentNodeDTO[] | undefined>(() => {
-    if (!isDemoMode || !demo) return baseFaqs;
-    return demo.activeDataset.faqs;
-  }, [baseFaqs, demo, isDemoMode]);
+    if (isDemoMode && demo) {
+      return demo.activeDataset.faqs;
+    }
+    return demoOverrides?.faqs ?? baseFaqs;
+  }, [baseFaqs, demo, demoOverrides, isDemoMode]);
 
   useLayoutEffect(() => {
     if (isSetupPersona || !headerRef.current) return;
@@ -193,7 +230,7 @@ function RootLayoutInner({
           )}
         </>
       )}
-      {isDemoMode && <DemoToolbar />}
+      {isDemoMode ? <DemoToolbar /> : <StaticDemoMount queryClient={queryClient} />}
     </GuestHelpProvider>
   );
 }
@@ -212,7 +249,11 @@ export default function RootLayoutClient({
   faqs,
   isStaticExport = false,
 }: RootLayoutClientProps) {
+  if (isStaticExport || process.env.NODE_ENV === 'test') {
+    ensureStaticDemoRuntime();
+  }
   const { addToast } = useToast();
+
   const [queryClient] = useState(() => {
     const client: QueryClient = new QueryClient({
       mutationCache: new MutationCache({
@@ -252,7 +293,7 @@ export default function RootLayoutClient({
   return (
     <QueryClientProvider client={queryClient}>
       <DemoProvider enabled={isStaticExport}>
-        <RootLayoutInner config={config} faqs={faqs}>
+        <RootLayoutInner config={config} faqs={faqs} queryClient={queryClient}>
           {children}
         </RootLayoutInner>
       </DemoProvider>

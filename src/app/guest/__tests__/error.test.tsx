@@ -24,7 +24,7 @@ describe('GuestError Boundary', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Guest Portal Error' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Guest Portal Error' })).toBeInTheDocument();
     expect(screen.getAllByText(/loading the guest mailing address portal/i).length).toBeGreaterThanOrEqual(1);
 
     const retryBtn = screen.getByRole('button', { name: 'Try Again' });

@@ -11,6 +11,7 @@ import {
   formatGuestMealSelections,
   formatGuestPlusOneNames,
 } from '@/features/registry';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 import {
   computeScaledTableDimensions,
   computeSeatPosition,
@@ -90,6 +91,7 @@ interface FloorplanCanvasProps {
   onAddTable?: () => void;
   placementMode?: boolean;
   onPlacementModeChange?: (active: boolean) => void;
+  emptyHeadingLevel?: HeadingLevel;
 }
 
 function getSeatInitials(displayName: string, isCompanion: boolean): string {
@@ -129,6 +131,7 @@ function FloorplanCanvasContent({
   onAddTable,
   placementMode,
   onPlacementModeChange,
+  emptyHeadingLevel = 'h2',
 }: FloorplanCanvasProps) {
   const { confirm } = useToast();
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1151,9 +1154,14 @@ function FloorplanCanvasContent({
               />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-heading">
+          <Heading
+            as={emptyHeadingLevel}
+            variant="none"
+            unstyledColor
+            className="text-lg font-bold text-heading"
+          >
             No Tables Created Yet
-          </h3>
+          </Heading>
           <p className="text-xs text-muted max-w-sm">
             Get started by adding your first reception table to the floorplan. You can configure table shape, capacity, and position.
           </p>

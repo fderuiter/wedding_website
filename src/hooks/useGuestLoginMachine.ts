@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
+import { useReducer, useState, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 import { withBasePath } from '@/lib/basePath';
@@ -210,6 +210,8 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
 
   const loginAbortControllerRef = useRef<AbortController | null>(null);
   const autoSubmittedCodeRef = useRef<string | null>(null);
+  const passcodeInputRef = useRef<HTMLInputElement | null>(null);
+  const [failureCount, setFailureCount] = useState(0);
 
   const cancelInFlightLogin = useCallback(() => {
     if (loginAbortControllerRef.current) {
@@ -263,6 +265,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
             type: 'LOGIN_FAILURE',
             error: toPlainLoginErrorMessage(data.error, res.status),
           });
+          setFailureCount((count) => count + 1);
         } else {
           stripCodeFromBrowserHistory();
           dispatch({ type: 'LOGIN_SUCCESS' });
@@ -276,6 +279,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
           type: 'LOGIN_FAILURE',
           error: 'A connection error occurred. Please try again.',
         });
+        setFailureCount((count) => count + 1);
       } finally {
         if (loginAbortControllerRef.current === controller) {
           loginAbortControllerRef.current = null;
@@ -330,6 +334,18 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
   }, [dispatch]);
 
   useEffect(() => {
+    if (failureCount === 0 || state.status !== 'idle' || state.showHelp) {
+      return;
+    }
+    const target =
+      passcodeInputRef.current ??
+      (typeof document !== 'undefined'
+        ? (document.getElementById('passcode') as HTMLInputElement | null)
+        : null);
+    target?.focus();
+  }, [failureCount, state.status, state.showHelp]);
+
+  useEffect(() => {
     return () => {
       if (loginAbortControllerRef.current) {
         autoSubmittedCodeRef.current = null;
@@ -346,6 +362,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
     setPasscode,
     setShowPasscode,
     setShowHelp,
+    passcodeInputRef,
     isLoginDisabled,
     passcode: state.passcode,
     showPasscode: state.showPasscode,
