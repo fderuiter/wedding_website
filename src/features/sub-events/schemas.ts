@@ -139,3 +139,168 @@ export const GetAccessMatrixQuerySchema = z.object({
 
 export type GetAccessMatrixQueryDTO = z.infer<typeof GetAccessMatrixQuerySchema>;
 
+export const AdminInvitationRsvpsQuerySchema = z.object({
+  invitationCodeId: z.string().trim().min(1, 'invitationCodeId is required.'),
+});
+
+export type AdminInvitationRsvpsQueryDTO = z.infer<typeof AdminInvitationRsvpsQuerySchema>;
+
+export const AdminSubEventRsvpOverrideItemSchema = z.object({
+  subEventId: z.string().trim().min(1, 'subEventId is required.'),
+  status: z.enum(['attending', 'declined', 'pending', 'clear']),
+  plusOneCount: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_RSVP_PLUS_ONE_COUNT, `Plus-one count cannot exceed ${MAX_RSVP_PLUS_ONE_COUNT}.`)
+    .optional(),
+  plusOneNames: z.array(z.string().trim().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
+  mealSelections: z.array(z.string().trim().max(100)).max(MAX_RSVP_PLUS_ONE_COUNT + 1).optional(),
+  dietaryNotes: z.string().trim().max(500).nullable().optional(),
+  customAnswers: z.record(z.string().max(100), z.string().max(1000)).optional(),
+});
+
+export type AdminSubEventRsvpOverrideItemDTO = z.infer<typeof AdminSubEventRsvpOverrideItemSchema>;
+
+export const AdminSingleGuestRsvpOverrideSchema = z.object({
+  invitationCodeId: z.string().trim().min(1, 'invitationCodeId is required.'),
+  clearAll: z.boolean().optional(),
+  overallAttendanceStatus: z.enum(['attending', 'declined', 'pending']).optional(),
+  plusOneCount: z.number().int().min(0).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
+  plusOneNames: z.array(z.string().trim().max(120)).max(MAX_RSVP_PLUS_ONE_COUNT).optional(),
+  rsvps: z.array(AdminSubEventRsvpOverrideItemSchema).max(50).optional(),
+});
+
+export type AdminSingleGuestRsvpOverrideDTO = z.infer<typeof AdminSingleGuestRsvpOverrideSchema>;
+
+export const AdminBatchAttendanceOverrideSchema = z.object({
+  invitationCodeIds: z
+    .array(z.string().trim().min(1, 'Invitation code ID cannot be empty.'))
+    .min(1, 'At least one invitationCodeId is required.')
+    .max(1000, 'Maximum of 1000 invitation code IDs per batch attendance override.'),
+  status: z.enum(['attending', 'declined', 'pending', 'clear']),
+  subEventIds: z.array(z.string().trim().min(1)).max(50).optional(),
+});
+
+export type AdminBatchAttendanceOverrideDTO = z.infer<typeof AdminBatchAttendanceOverrideSchema>;
+
+export const AdminUpdateInvitationRsvpsSchema = z.union([
+  AdminSingleGuestRsvpOverrideSchema,
+  AdminBatchAttendanceOverrideSchema,
+]);
+
+export type AdminUpdateInvitationRsvpsDTO = z.infer<typeof AdminUpdateInvitationRsvpsSchema>;
+
+export interface RsvpMealOptionCount {
+  optionId: string;
+  label: string;
+  dietaryTags: string[];
+  count: number;
+}
+
+export interface GlobalRsvpMealTotal extends RsvpMealOptionCount {
+  subEventId: string;
+  subEventTitle: string;
+}
+
+export interface RsvpDietaryBreakdown {
+  totalWithRestrictions: number;
+  glutenFree: number;
+  vegetarian: number;
+  vegan: number;
+  dairyFree: number;
+  nutFree: number;
+  halal: number;
+  kosher: number;
+  other: number;
+  kids: number;
+}
+
+export interface RsvpQuestionChoiceCount {
+  option: string;
+  count: number;
+}
+
+export interface RsvpQuestionTextResponse {
+  invitationCodeId: string;
+  guestName: string;
+  answer: string;
+}
+
+export interface RsvpQuestionBreakdown {
+  subEventId: string;
+  subEventTitle: string;
+  questionId: string;
+  prompt: string;
+  type: 'text' | 'choice';
+  totalResponses: number;
+  optionCounts: RsvpQuestionChoiceCount[];
+  textResponses: RsvpQuestionTextResponse[];
+}
+
+export interface SubEventRsvpSummaryItem {
+  subEventId: string;
+  title: string;
+  isPrivate: boolean;
+  invitedCount: number;
+  attendingCount: number;
+  attendingPlusOnes: number;
+  attendingHeadcount: number;
+  declinedCount: number;
+  pendingCount: number;
+  kidsCount: number;
+  mealCounts: RsvpMealOptionCount[];
+  dietaryCounts: RsvpDietaryBreakdown;
+  questionBreakdowns: RsvpQuestionBreakdown[];
+}
+
+export interface RsvpSummaryResponse {
+  global: {
+    totalInvitations: number;
+    attendingHouseholds: number;
+    declinedHouseholds: number;
+    pendingHouseholds: number;
+    attendingHeadcount: number;
+    attendingPlusOnes: number;
+    declinedHeadcount: number;
+    pendingHeadcount: number;
+    dietary: RsvpDietaryBreakdown;
+    mealTotals: GlobalRsvpMealTotal[];
+    questionBreakdowns: RsvpQuestionBreakdown[];
+  };
+  subEvents: SubEventRsvpSummaryItem[];
+}
+
+export interface AdminInvitationRsvpsDetail {
+  invitationCode: {
+    id: string;
+    code: string;
+    guestName: string;
+    used: boolean;
+    plusOneAllocations: number;
+    plusOneFirstName: string | null;
+    plusOneLastName: string | null;
+    dietaryNotes: string | null;
+    extraFields: Record<string, unknown> | null;
+  };
+  subEvents: Array<{
+    id: string;
+    title: string;
+    isPrivate: boolean;
+    hasAccess: boolean;
+    mealOptions: MealOptionDTO[];
+    customQuestions: CustomRsvpQuestionDTO[];
+  }>;
+  rsvps: Array<{
+    id: string;
+    subEventId: string;
+    status: 'attending' | 'declined' | 'pending';
+    plusOneCount: number;
+    plusOneNames: string[];
+    mealSelections: string[];
+    dietaryNotes: string | null;
+    customAnswers: Record<string, string>;
+  }>;
+}
+
+

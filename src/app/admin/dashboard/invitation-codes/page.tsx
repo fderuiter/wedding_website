@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAdminInvitationCodes } from '@/hooks/admin/useAdminInvitationCodes';
 import { useAdminSubEvents } from '@/hooks/admin/useAdminSubEvents';
 import { FormGroup, Label, Input, Select } from '@/components/ui/forms';
@@ -27,13 +28,123 @@ import {
   extractDietaryTags,
   matchDietaryCategory,
   getAttendanceStatus,
+  formatGuestPlusOneNames,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
   isAddressComplete,
   type InvitationCodeDTO,
 } from '@/features/registry';
-import type { SubEventDTO } from '@/features/sub-events';
+import type { RsvpSummaryResponse, SubEventDTO } from '@/features/sub-events';
 import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
+import { INVITATION_DEFAULT_PAGE_SIZE } from '@/utils/invitationPagination';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
+const RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
+
+interface GuestEventRsvpPill {
+  key: string;
+  title: string;
+  status: 'attending' | 'declined' | 'pending';
+  plusOneCount: number;
+}
+
+function getGuestAttendingPlusOneCount(item: InvitationCodeDTO): number {
+  if (getAttendanceStatus(item) !== 'attending') return 0;
+
+  if (Array.isArray(item.subEventRsvps)) {
+    const attendingRows = item.subEventRsvps.filter((r) => r.status === 'attending');
+    if (attendingRows.length > 0) {
+      return Math.max(0, ...attendingRows.map((r) => r.plusOneCount ?? 0));
+    }
+  }
+
+  const extra =
+    item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
+      ? (item.extraFields as Record<string, unknown>)
+      : null;
+
+  if (extra) {
+    if (typeof extra.attendingPlusOneCount === 'number' && Number.isFinite(extra.attendingPlusOneCount)) {
+      return Math.max(0, Math.trunc(extra.attendingPlusOneCount));
+    }
+    if (Array.isArray(extra.plusOneNames)) {
+      const namedCount = extra.plusOneNames.filter(
+        (v): v is string => typeof v === 'string' && Boolean(v.trim())
+      ).length;
+      if (namedCount > 0) return namedCount;
+    }
+  }
+
+  if (item.plusOneFirstName?.trim() || item.plusOneLastName?.trim()) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getGuestEventRsvpPills(
+  item: InvitationCodeDTO,
+  subEvents: EditableSubEvent[]
+): GuestEventRsvpPill[] {
+  const titleById = new Map<string, string>();
+  subEvents.forEach((evt) => {
+    titleById.set(evt.id, evt.title);
+  });
+
+  const extra =
+    item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
+      ? (item.extraFields as Record<string, unknown>)
+      : null;
+
+  if (extra && Array.isArray(extra.eventRsvps)) {
+    extra.eventRsvps.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const obj = entry as Record<string, unknown>;
+      if (typeof obj.subEventId === 'string' && typeof obj.subEventTitle === 'string' && obj.subEventTitle.trim()) {
+        if (!titleById.has(obj.subEventId)) {
+          titleById.set(obj.subEventId, obj.subEventTitle.trim());
+        }
+      }
+    });
+  }
+
+  if (Array.isArray(item.subEventRsvps) && item.subEventRsvps.length > 0) {
+    return item.subEventRsvps.map((rsvp) => ({
+      key: rsvp.id || rsvp.subEventId,
+      title: titleById.get(rsvp.subEventId) || 'Sub-Event',
+      status: rsvp.status,
+      plusOneCount: rsvp.status === 'attending' ? Math.max(0, rsvp.plusOneCount ?? 0) : 0,
+    }));
+  }
+
+  if (extra && Array.isArray(extra.eventRsvps)) {
+    const pills: GuestEventRsvpPill[] = [];
+    extra.eventRsvps.forEach((entry, idx) => {
+      if (!entry || typeof entry !== 'object') return;
+      const obj = entry as Record<string, unknown>;
+      const rawStatus = typeof obj.status === 'string' ? obj.status : '';
+      if (rawStatus !== 'attending' && rawStatus !== 'declined' && rawStatus !== 'pending') return;
+      const subEventId = typeof obj.subEventId === 'string' ? obj.subEventId : `evt-${idx}`;
+      const title =
+        (typeof obj.subEventTitle === 'string' && obj.subEventTitle.trim()) ||
+        titleById.get(subEventId) ||
+        'Sub-Event';
+      const plusOneCount =
+        rawStatus === 'attending' && typeof obj.plusOneCount === 'number'
+          ? Math.max(0, Math.trunc(obj.plusOneCount))
+          : 0;
+      pills.push({
+        key: subEventId,
+        title,
+        status: rawStatus,
+        plusOneCount,
+      });
+    });
+    return pills;
+  }
+
+  return [];
+}
 
 interface InvitationCodeRowInfoProps {
   item: InvitationCodeDTO;
@@ -53,6 +164,11 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
   }) {
     const hasAddress = isAddressComplete(item);
     const attendanceStatus = getAttendanceStatus(item);
+    const plusOneNamesDisplay = formatGuestPlusOneNames(item);
+    const attendingPlusOneCount = getGuestAttendingPlusOneCount(item);
+    const mealSelectionsDisplay = formatGuestMealSelections(item);
+    const customAnswersDisplay = formatGuestCustomAnswers(item);
+    const eventRsvpPills = getGuestEventRsvpPills(item, subEvents);
 
     return (
       <div>
@@ -82,10 +198,18 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
               👥 {item.partyGroup}
             </span>
           )}
+          {attendingPlusOneCount > 0 && (
+            <span
+              className="px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 font-semibold border border-emerald-200 dark:border-emerald-800"
+              data-testid="attending-plus-one-badge"
+            >
+              +{attendingPlusOneCount} Plus-{attendingPlusOneCount === 1 ? 'One' : 'Ones'} Attending
+            </span>
+          )}
         </div>
-        {(item.plusOneFirstName || item.plusOneLastName) && (
-          <div className="text-sm text-gray-600 dark:text-gray-300">
-            Plus-One: {[item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ')}
+        {plusOneNamesDisplay && (
+          <div className="text-sm text-gray-600 dark:text-gray-300" data-testid="plus-one-names">
+            Plus-One: {plusOneNamesDisplay}
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
@@ -154,6 +278,48 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
         {item.dietaryNotes && item.dietaryNotes.trim() && (
           <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
             <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
+          </div>
+        )}
+
+        {eventRsvpPills.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2" data-testid="guest-event-rsvp-pills">
+            {eventRsvpPills.map((pill) => {
+              const pillClasses =
+                pill.status === 'attending'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800'
+                  : pill.status === 'declined'
+                    ? 'bg-red-50 dark:bg-red-950/50 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'
+                    : 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800';
+              const statusLabel = pill.status.charAt(0).toUpperCase() + pill.status.slice(1);
+              return (
+                <span
+                  key={pill.key}
+                  className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${pillClasses}`}
+                  data-testid="event-rsvp-pill"
+                >
+                  {pill.title}: {statusLabel}
+                  {pill.plusOneCount > 0 ? ` (+${pill.plusOneCount})` : ''}
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {mealSelectionsDisplay && (
+          <div
+            className="mt-2 text-xs text-indigo-900 dark:text-indigo-200 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 px-2.5 py-1 rounded-lg"
+            data-testid="guest-meal-selections"
+          >
+            <span className="font-semibold">Meals:</span> {mealSelectionsDisplay}
+          </div>
+        )}
+
+        {customAnswersDisplay && (
+          <div
+            className="mt-1.5 text-xs text-sky-900 dark:text-sky-200 bg-sky-50/70 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 px-2.5 py-1 rounded-lg"
+            data-testid="guest-custom-answers"
+          >
+            <span className="font-semibold">Responses:</span> {customAnswersDisplay}
           </div>
         )}
 
@@ -270,6 +436,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
 
 export default function InvitationCodesDashboardPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { confirm, addToast } = useToast();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
 
@@ -283,9 +450,26 @@ export default function InvitationCodesDashboardPage() {
     removeBatch,
     updateBatch,
     batchUpdateTags,
+    batchUpdateAttendance,
     mergeDuplicates,
     fetchAll,
   } = useAdminInvitationCodes();
+
+  const { data: rsvpSummary } = useQuery<RsvpSummaryResponse | null>({
+    queryKey: RSVP_SUMMARY_QUERY_KEY,
+    queryFn: async () => {
+      if (typeof fetch !== 'function') return null;
+      try {
+        const res = await fetch('/api/admin/sub-events/rsvp-summary');
+        if (!res || !res.ok) return null;
+        const json = await res.json();
+        return (json?.data ?? json ?? null) as RsvpSummaryResponse | null;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 15_000,
+  });
 
   const {
     create: createSubEvent,
@@ -329,6 +513,8 @@ export default function InvitationCodesDashboardPage() {
   const [printLabelsList, setPrintLabelsList] = useState<PrintableInvitationCode[]>([]);
   const [bulkSubEventAction, setBulkSubEventAction] = useState<'grant' | 'revoke' | 'set'>('grant');
   const [bulkSelectedSubEventIds, setBulkSelectedSubEventIds] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(INVITATION_DEFAULT_PAGE_SIZE);
 
   const handleBatchSubEventAccess = async () => {
     if (selectedIds.length === 0) return;
@@ -548,13 +734,39 @@ export default function InvitationCodesDashboardPage() {
   }, [codes]);
 
   const attendanceCounts = useMemo(() => {
+    let attending = 0;
+    let declined = 0;
+    let pending = 0;
+    let attendingPlusOnes = 0;
+
+    for (const c of codes) {
+      const status = getAttendanceStatus(c);
+      if (status === 'attending') {
+        attending++;
+        attendingPlusOnes += getGuestAttendingPlusOneCount(c);
+      } else if (status === 'declined') {
+        declined++;
+      } else {
+        pending++;
+      }
+    }
+
+    const useServerGlobal =
+      Boolean(rsvpSummary?.global) && rsvpSummary!.global.totalInvitations === codes.length;
+
     return {
       all: codes.length,
-      attending: codes.filter((c) => getAttendanceStatus(c) === 'attending').length,
-      declined: codes.filter((c) => getAttendanceStatus(c) === 'declined').length,
-      pending: codes.filter((c) => getAttendanceStatus(c) === 'pending').length,
+      attending,
+      declined,
+      pending,
+      attendingHeadcount: useServerGlobal
+        ? rsvpSummary!.global.attendingHeadcount
+        : attending + attendingPlusOnes,
+      attendingPlusOnes: useServerGlobal
+        ? rsvpSummary!.global.attendingPlusOnes
+        : attendingPlusOnes,
     };
-  }, [codes]);
+  }, [codes, rsvpSummary]);
 
   const cateringSummary = useMemo(() => {
     let totalWithRestrictions = 0;
@@ -563,14 +775,49 @@ export default function InvitationCodesDashboardPage() {
     let vegan = 0;
     let dairyFree = 0;
     let nutFree = 0;
+    let kids = 0;
     let other = 0;
+    const clientMealMap = new Map<string, { optionId: string; label: string; count: number }>();
 
     for (const item of codes) {
+      if (getAttendanceStatus(item) === 'declined') continue;
+
       const hasNotes = Boolean(item.dietaryNotes && item.dietaryNotes.trim());
-      const restrictionTags = extractDietaryTags(item.extraFields).filter((t) => t !== 'kids');
+      const notes = hasNotes ? item.dietaryNotes!.trim() : '';
+      const allTags = extractDietaryTags(item.extraFields);
+      const restrictionTags = allTags.filter((t) => t !== 'kids');
+
+      if (matchDietaryCategory(notes, 'kids', allTags)) {
+        kids++;
+      }
+
+      const extra =
+        item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
+          ? (item.extraFields as Record<string, unknown>)
+          : null;
+      if (extra && Array.isArray(extra.mealSelections)) {
+        for (const entry of extra.mealSelections) {
+          if (!entry || typeof entry !== 'object') continue;
+          const selections = (entry as Record<string, unknown>).selections;
+          if (!Array.isArray(selections)) continue;
+          for (const sel of selections) {
+            if (!sel || typeof sel !== 'object') continue;
+            const s = sel as Record<string, unknown>;
+            const label = typeof s.label === 'string' ? s.label.trim() : '';
+            const optionId = typeof s.optionId === 'string' && s.optionId.trim() ? s.optionId.trim() : label;
+            if (!label) continue;
+            const existing = clientMealMap.get(label);
+            if (existing) {
+              existing.count += 1;
+            } else {
+              clientMealMap.set(label, { optionId, label, count: 1 });
+            }
+          }
+        }
+      }
+
       if (!hasNotes && restrictionTags.length === 0) continue;
       totalWithRestrictions++;
-      const notes = hasNotes ? item.dietaryNotes!.trim() : '';
 
       const gf = matchDietaryCategory(notes, 'gluten-free', restrictionTags);
       const veg = matchDietaryCategory(notes, 'vegetarian', restrictionTags);
@@ -587,16 +834,28 @@ export default function InvitationCodesDashboardPage() {
       if (oth) other++;
     }
 
+    const useServerSummary =
+      Boolean(rsvpSummary?.global) && rsvpSummary!.global.totalInvitations === codes.length;
+
+    const mealTotals =
+      useServerSummary && Array.isArray(rsvpSummary!.global.mealTotals)
+        ? rsvpSummary!.global.mealTotals
+        : Array.from(clientMealMap.values());
+
     return {
-      totalWithRestrictions,
-      glutenFree,
-      vegetarian,
-      vegan,
-      dairyFree,
-      nutFree,
-      other,
+      totalWithRestrictions: useServerSummary
+        ? rsvpSummary!.global.dietary.totalWithRestrictions
+        : totalWithRestrictions,
+      glutenFree: useServerSummary ? rsvpSummary!.global.dietary.glutenFree : glutenFree,
+      vegetarian: useServerSummary ? rsvpSummary!.global.dietary.vegetarian : vegetarian,
+      vegan: useServerSummary ? rsvpSummary!.global.dietary.vegan : vegan,
+      dairyFree: useServerSummary ? rsvpSummary!.global.dietary.dairyFree : dairyFree,
+      nutFree: useServerSummary ? rsvpSummary!.global.dietary.nutFree : nutFree,
+      kids: useServerSummary ? rsvpSummary!.global.dietary.kids : kids,
+      other: useServerSummary ? rsvpSummary!.global.dietary.other : other,
+      mealTotals,
     };
-  }, [codes]);
+  }, [codes, rsvpSummary]);
 
   const filteredCodes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -634,6 +893,9 @@ export default function InvitationCodesDashboardPage() {
       const matchesEmail = item.email ? item.email.toLowerCase().includes(query) : false;
       const matchesPlusOneFirstName = item.plusOneFirstName ? item.plusOneFirstName.toLowerCase().includes(query) : false;
       const matchesPlusOneLastName = item.plusOneLastName ? item.plusOneLastName.toLowerCase().includes(query) : false;
+      const matchesPlusOneNames = formatGuestPlusOneNames(item).toLowerCase().includes(query);
+      const matchesMeals = formatGuestMealSelections(item).toLowerCase().includes(query);
+      const matchesCustomAnswers = formatGuestCustomAnswers(item).toLowerCase().includes(query);
       const matchesAddress = [item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country]
         .filter(Boolean)
         .join(' ')
@@ -650,6 +912,9 @@ export default function InvitationCodesDashboardPage() {
         matchesEmail ||
         matchesPlusOneFirstName ||
         matchesPlusOneLastName ||
+        matchesPlusOneNames ||
+        matchesMeals ||
+        matchesCustomAnswers ||
         matchesAddress ||
         matchesDietary ||
         matchesHousehold ||
@@ -658,6 +923,14 @@ export default function InvitationCodesDashboardPage() {
       );
     });
   }, [codes, searchQuery, statusFilter, addressFilter, attendanceFilter, dietaryFilter, partyGroupFilter, selectedTagFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCodes.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedCodes = useMemo(() => {
+    const startIdx = (safeCurrentPage - 1) * pageSize;
+    return filteredCodes.slice(startIdx, startIdx + pageSize);
+  }, [filteredCodes, safeCurrentPage, pageSize]);
 
   const allFilteredSelected = useMemo(() => {
     if (filteredCodes.length === 0) return false;
@@ -710,6 +983,42 @@ export default function InvitationCodesDashboardPage() {
       setSelectedIds([]);
     } catch (e: any) {
       addToast(e.message || 'Failed to update invitation codes.', 'error');
+    }
+  };
+
+  const handleBatchAttendance = async (status: 'attending' | 'declined' | 'clear') => {
+    if (selectedIds.length === 0) return;
+    const count = selectedIds.length;
+    try {
+      if (typeof batchUpdateAttendance === 'function') {
+        await batchUpdateAttendance(selectedIds, status);
+      } else {
+        const res = await fetch('/api/admin/invitation-codes/rsvps', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            invitationCodeIds: selectedIds,
+            status,
+          }),
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || 'Failed to update RSVP attendance.');
+        }
+        await fetchAll?.();
+      }
+      void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+      const msg =
+        status === 'clear'
+          ? `Cleared RSVPs for ${count} guest(s).`
+          : `Marked ${count} guest(s) as ${status}.`;
+      addToast(msg, 'success');
+      setSelectedIds([]);
+    } catch (e: unknown) {
+      addToast(
+        e instanceof Error && e.message ? e.message : 'Failed to update RSVP attendance.',
+        'error'
+      );
     }
   };
 
@@ -1012,15 +1321,26 @@ export default function InvitationCodesDashboardPage() {
                 <span>🍽️</span> Catering & Dietary Summary
               </h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Overview of guest dietary requirements and restriction counts
+                Overview of attending & pending guest headcounts, meal selections, and dietary restrictions (declined excluded)
               </p>
             </div>
-            <div className="text-sm font-semibold text-primary dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-1 rounded-full self-start sm:self-auto border border-red-200 dark:border-red-800/40">
-              {cateringSummary.totalWithRestrictions} {cateringSummary.totalWithRestrictions === 1 ? 'Guest' : 'Guests'} with Dietary Notes
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              <div
+                className="text-xs font-semibold text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/50 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-800/60"
+                data-testid="rsvp-headcount-summary"
+              >
+                Attending: {attendanceCounts.attendingHeadcount}{' '}
+                {attendanceCounts.attendingHeadcount === 1 ? 'Guest' : 'Guests'} ({attendanceCounts.attending}{' '}
+                {attendanceCounts.attending === 1 ? 'Household' : 'Households'}
+                {attendanceCounts.attendingPlusOnes > 0 ? `, +${attendanceCounts.attendingPlusOnes} Plus-Ones` : ''})
+              </div>
+              <div className="text-sm font-semibold text-primary dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-3 py-1 rounded-full border border-red-200 dark:border-red-800/40">
+                {cateringSummary.totalWithRestrictions} {cateringSummary.totalWithRestrictions === 1 ? 'Guest' : 'Guests'} with Dietary Notes
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-center">
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
               <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Gluten-Free</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.glutenFree}</div>
@@ -1041,11 +1361,79 @@ export default function InvitationCodesDashboardPage() {
               <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Nut / Allergy</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.nutFree}</div>
             </div>
+            <div
+              className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700"
+              data-testid="catering-kids-tile"
+            >
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Kids</div>
+              <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.kids}</div>
+            </div>
             <div className="bg-gray-50 dark:bg-gray-700/40 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
               <div className="text-xs font-medium text-gray-500 dark:text-gray-400">Other</div>
               <div className="text-xl font-extrabold text-primary dark:text-white mt-0.5">{cateringSummary.other}</div>
             </div>
           </div>
+
+          {cateringSummary.mealTotals.length > 0 && (
+            <div
+              className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700/60"
+              data-testid="catering-meal-totals"
+            >
+              <div className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">
+                Entrée & Meal Counts
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {cateringSummary.mealTotals.map((meal) => (
+                  <span
+                    key={`${meal.optionId}-${meal.label}`}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800"
+                    data-testid="catering-meal-pill"
+                  >
+                    <span>{meal.label}:</span>
+                    <span>{meal.count}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {rsvpSummary?.global?.questionBreakdowns &&
+            rsvpSummary.global.questionBreakdowns.length > 0 && (
+            <div
+              className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700/60"
+              data-testid="catering-question-totals"
+            >
+              <div className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">
+                Custom RSVP Question Breakdown
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                {rsvpSummary.global.questionBreakdowns.map((q) => (
+                  <div
+                    key={`${q.subEventId}-${q.questionId}`}
+                    className="bg-gray-50 dark:bg-gray-700/40 p-2.5 rounded-lg border border-gray-100 dark:border-gray-700"
+                  >
+                    <div className="font-semibold text-gray-800 dark:text-gray-100">
+                      {q.subEventTitle}: {q.prompt}
+                    </div>
+                    <div className="text-gray-600 dark:text-gray-300 mt-1 flex flex-wrap gap-1.5">
+                      {q.type === 'choice'
+                        ? q.optionCounts.map(({ option, count }) => (
+                          <span
+                            key={option}
+                            className="px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-950/50 text-sky-800 dark:text-sky-200 border border-sky-200 dark:border-sky-800"
+                          >
+                            {option}: {count}
+                          </span>
+                        ))
+                        : (
+                          <span>{q.totalResponses} text {q.totalResponses === 1 ? 'response' : 'responses'}</span>
+                        )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-4 mb-6">
@@ -1058,6 +1446,7 @@ export default function InvitationCodesDashboardPage() {
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setSelectedIds([]);
+                  setCurrentPage(1);
                 }}
                 aria-label="Search invitation codes"
                 className="w-full"
@@ -1073,6 +1462,7 @@ export default function InvitationCodesDashboardPage() {
                   onChange={(e) => {
                     setPartyGroupFilter(e.target.value);
                     setSelectedIds([]);
+                    setCurrentPage(1);
                   }}
                   className="w-full sm:w-auto"
                 >
@@ -1098,6 +1488,7 @@ export default function InvitationCodesDashboardPage() {
                   onChange={(e) => {
                     setDietaryFilter(e.target.value);
                     setSelectedIds([]);
+                    setCurrentPage(1);
                   }}
                   className="w-full sm:w-auto"
                 >
@@ -1131,6 +1522,7 @@ export default function InvitationCodesDashboardPage() {
                 onChange={(val) => {
                   setSelectedTagFilter(val === '__all__' || selectedTagFilter === val ? null : val);
                   setSelectedIds([]);
+                  setCurrentPage(1);
                 }}
                 className="bg-transparent dark:bg-transparent p-0 border-0 rounded-none gap-2"
                 options={[
@@ -1170,6 +1562,7 @@ export default function InvitationCodesDashboardPage() {
                 onChange={(val) => {
                   setStatusFilter(val);
                   setSelectedIds([]);
+                  setCurrentPage(1);
                 }}
                 tabs={[
                   { value: 'all', label: `All (${counts.all})` },
@@ -1194,6 +1587,7 @@ export default function InvitationCodesDashboardPage() {
                 onChange={(val) => {
                   setAddressFilter(val);
                   setSelectedIds([]);
+                  setCurrentPage(1);
                 }}
                 options={[
                   { value: 'all', label: 'All Addresses' },
@@ -1218,6 +1612,7 @@ export default function InvitationCodesDashboardPage() {
                 onChange={(val) => {
                   setAttendanceFilter(val);
                   setSelectedIds([]);
+                  setCurrentPage(1);
                 }}
                 options={[
                   {
@@ -1255,8 +1650,8 @@ export default function InvitationCodesDashboardPage() {
             </div>
           )}
 
-          <div className="grid gap-4 pb-10" ref={containerRef}>
-            {filteredCodes.map((item) => (
+          <div className="grid gap-4 pb-6" ref={containerRef}>
+            {paginatedCodes.map((item) => (
               <InvitationCodeRow
                 key={item.id}
                 item={item}
@@ -1275,6 +1670,91 @@ export default function InvitationCodesDashboardPage() {
               <p className="text-gray-500 dark:text-gray-400">No invitation codes match your search or filter criteria.</p>
             )}
           </div>
+
+          {filteredCodes.length > 0 && (
+            <nav
+              aria-label="Guest invitation pagination"
+              data-testid="invitation-pagination-controls"
+              className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 mb-6"
+            >
+              <div className="flex flex-wrap items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
+                <span data-testid="invitation-pagination-range">
+                  Showing {(safeCurrentPage - 1) * pageSize + 1}–
+                  {Math.min(safeCurrentPage * pageSize, filteredCodes.length)} of {filteredCodes.length}
+                </span>
+                <div className="inline-flex items-center gap-2">
+                  <label htmlFor="invitation-page-size" className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                    Rows per page:
+                  </label>
+                  <FormGroup className="space-y-0">
+                    <Select
+                      id="invitation-page-size"
+                      aria-label="Rows per page"
+                      value={String(pageSize)}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="w-24 py-1 text-xs"
+                    >
+                      <option value="25">25</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="250">250</option>
+                    </Select>
+                  </FormGroup>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  aria-label="First page"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage(1)}
+                >
+                  First
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Previous page"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                >
+                  Previous
+                </Button>
+                <span
+                  className="text-xs font-semibold px-2 text-gray-700 dark:text-gray-200"
+                  data-testid="invitation-pagination-page-indicator"
+                >
+                  Page {safeCurrentPage} of {totalPages}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Next page"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                >
+                  Next
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Last page"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage(totalPages)}
+                >
+                  Last
+                </Button>
+              </div>
+            </nav>
+          )}
         </SegmentedTabPanel>
 
         {selectedIds.length > 0 && (
@@ -1315,6 +1795,15 @@ export default function InvitationCodesDashboardPage() {
               </Button>
               <Button size="sm" variant="secondary" onClick={() => setBulkSubEventModalOpen(true)}>
                 Sub-Event Access
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void handleBatchAttendance('attending')}>
+                Mark Attending
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void handleBatchAttendance('declined')}>
+                Mark Declined
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void handleBatchAttendance('clear')}>
+                Clear RSVPs
               </Button>
               <Button size="sm" variant="secondary" onClick={handleBatchMarkRedeemed}>
                 Mark as Redeemed
@@ -1740,6 +2229,10 @@ export default function InvitationCodesDashboardPage() {
           onClose={() => setEditingGuest(null)}
           guest={editingGuest}
           onSave={handleSaveGuest}
+          onRsvpUpdated={() => {
+            void fetchAll?.();
+            void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+          }}
         />
 
         <SubEventEditorModal

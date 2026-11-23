@@ -80,10 +80,10 @@ describe('Optimistic Seating Chart State Updates', () => {
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
         } as Response);
       }
-      if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+      if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
+          json: () => Promise.resolve({ items: JSON.parse(JSON.stringify(initialGuests)), total: initialGuests.length, page: 1, limit: 1000, totalPages: 1 }),
         } as Response);
       }
 
@@ -342,7 +342,7 @@ describe('Optimistic Seating Chart State Updates', () => {
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
         } as Response);
       }
-      if (urlStr.endsWith('/api/admin/invitation-codes')) {
+      if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
@@ -400,7 +400,7 @@ describe('Optimistic Seating Chart State Updates', () => {
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
         } as Response);
       }
-      if (urlStr.endsWith('/api/admin/invitation-codes')) {
+      if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
@@ -459,7 +459,7 @@ describe('Optimistic Seating Chart State Updates', () => {
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
         } as Response);
       }
-      if (urlStr.endsWith('/api/admin/invitation-codes')) {
+      if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
@@ -620,7 +620,7 @@ describe('Optimistic Seating Chart State Updates', () => {
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialTables))),
         } as Response);
       }
-      if (urlStr.endsWith('/api/admin/invitation-codes') && (!init || !init.method || init.method === 'GET')) {
+      if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve(JSON.parse(JSON.stringify(initialGuests))),
