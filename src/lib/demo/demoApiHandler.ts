@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
+import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
-import type { InvitationCodeDTO, RegistryItem } from '@/features/registry';
 import { formatCurrency } from '@/utils/intl';
+import type {
+  InvitationCodeDTO,
+  RegistryItem,
+} from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
@@ -42,10 +46,10 @@ function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
 }
 
-let demoEntitySeq = 0;
-function nextDemoEntityId(prefix: string): string {
-  demoEntitySeq += 1;
-  return `${prefix}-${Date.now()}-${demoEntitySeq}`;
+let demoIdSequence = 0;
+function nextDemoId(prefix: string): string {
+  demoIdSequence += 1;
+  return `${prefix}-${Date.now()}-${demoIdSequence}`;
 }
 
 const DISALLOWED_DEMO_PUBLIC_TEXT_PATTERN = /[<>]|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
@@ -115,7 +119,7 @@ function isDemoAddressCollectionOnly(partyTags: unknown): boolean {
   return normalizePartyTags(partyTags).includes('address-collection');
 }
 
-function substituteDemoThankYouTemplateTokens(
+function substituteThankYouTemplateTokens(
   template: string,
   tokens: { guestName?: string | null; giftName?: string | null; amount?: number | string | null }
 ): string {
@@ -216,7 +220,124 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
   }
 }
 
-async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
+type StaticDemoRouteRequestFn = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+) => Promise<Response | null>;
+
+function getStaticDemoRouteRequest(): StaticDemoRouteRequestFn | null {
+  if (typeof window === 'undefined') return null;
+  const installed = (
+    window as Window & {
+      __STATIC_DEMO_INSTALLED__?: { routeRequest?: StaticDemoRouteRequestFn };
+    }
+  ).__STATIC_DEMO_INSTALLED__;
+  return typeof installed?.routeRequest === 'function' ? installed.routeRequest : null;
+}
+
+function upsertInvitationsIntoStaticDemoStore(records: InvitationCodeDTO[]): void {
+  if (typeof window === 'undefined' || records.length === 0) return;
+  const store = (
+    window as Window & {
+      __STATIC_DEMO_INSTALLED__?: {
+        store?: {
+          mutate?: (
+            mutator: (draft: {
+              invitationCode: Array<Record<string, unknown>>;
+            }) => void
+          ) => void;
+        };
+      };
+    }
+  ).__STATIC_DEMO_INSTALLED__?.store;
+  if (typeof store?.mutate !== 'function') return;
+  const nowIso = new Date().toISOString();
+  store.mutate((draft) => {
+    for (const dto of records) {
+      const existing = draft.invitationCode.find(
+        (inv) => inv.id === dto.id || String(inv.code || '').toUpperCase() === dto.code.toUpperCase()
+      );
+      if (existing) {
+        existing.guestName = dto.guestName;
+        existing.householdName = dto.householdName ?? '';
+        existing.email = dto.email ?? null;
+        existing.addressLine1 = dto.addressLine1 ?? null;
+        existing.addressLine2 = dto.addressLine2 ?? null;
+        existing.city = dto.city ?? null;
+        existing.state = dto.state ?? null;
+        existing.zipCode = dto.zipCode ?? null;
+        existing.country = dto.country ?? null;
+        existing.dietaryNotes = dto.dietaryNotes ?? null;
+        existing.partyGroup = dto.partyGroup ?? '';
+        existing.partyTags = [...(dto.partyTags ?? [])];
+        existing.plusOneAllocations = dto.plusOneAllocations ?? 0;
+        if (dto.extraFields !== undefined) {
+          existing.extraFields = dto.extraFields;
+        }
+        existing.updatedAt = nowIso;
+      } else {
+        draft.invitationCode.push({
+          id: dto.id,
+          code: dto.code,
+          guestName: dto.guestName,
+          householdName: dto.householdName ?? '',
+          email: dto.email ?? null,
+          addressLine1: dto.addressLine1 ?? null,
+          addressLine2: dto.addressLine2 ?? null,
+          city: dto.city ?? null,
+          state: dto.state ?? null,
+          zipCode: dto.zipCode ?? null,
+          country: dto.country ?? null,
+          dietaryNotes: dto.dietaryNotes ?? null,
+          plusOneAllocations: dto.plusOneAllocations ?? 0,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          partyGroup: dto.partyGroup ?? '',
+          partyTags: [...(dto.partyTags ?? [])],
+          extraFields: dto.extraFields ?? null,
+          used: Boolean(dto.used),
+          usedAt: null,
+          tableId: dto.tableId ?? null,
+          seatNumber: dto.seatNumber ?? null,
+          plusOneSeatNumbers: dto.plusOneSeatNumbers ?? [],
+          isSample: Boolean(dto.isSample),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      }
+    }
+  });
+}
+
+async function delegateToStaticDemoRouter(
+  input: RequestInfo | URL | undefined,
+  init: RequestInit | undefined,
+  method: string,
+  path: string
+): Promise<Response | null> {
+  const staticRouteRequest = getStaticDemoRouteRequest();
+  if (!staticRouteRequest || !input) return null;
+  const delegated = await staticRouteRequest(input, init);
+  if (!delegated) return null;
+
+  if (path === '/api/guest/login' && method === 'POST' && delegated.ok) {
+    const body = await parseJsonBody(init);
+    const matched = typeof body.code === 'string' ? findDemoGuestByCode(body.code) : null;
+    if (matched) {
+      setDemoGuestSession({ invitationCode: matched.code, guestName: matched.guestName });
+    }
+  } else if (path === '/api/guest/logout' && method === 'POST') {
+    setDemoGuestSession(null);
+  }
+
+  return delegated;
+}
+
+async function handleDemoApi(
+  url: URL,
+  init?: RequestInit,
+  rawInput?: RequestInfo | URL
+): Promise<Response> {
   const method = (init?.method || 'GET').toUpperCase();
   const path = url.pathname;
 
@@ -399,7 +520,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
     if (method === 'POST') {
       const body = await parseJsonBody(init);
-      const id = nextDemoEntityId('demo-custom-item');
+      const id = nextDemoId('demo-custom-item');
       const newItem: RegistryItem = {
         id,
         name: String(body.name || 'Custom Gift'),
@@ -439,7 +560,11 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     const existing = currentItems.find((i) => i.id === itemId);
 
     if (method === 'GET') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      if (!existing) {
+        const seeded = findSeededRegistryItemById(itemId, { includeContributors: true });
+        if (seeded) return jsonResponse(seeded);
+        return jsonResponse({ error: 'Item not found' }, 404);
+      }
       return jsonResponse(existing);
     }
     if (method === 'DELETE') {
@@ -451,10 +576,12 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       return jsonResponse(existing);
     }
     if (method === 'PUT' || method === 'PATCH') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      const target =
+        existing ?? findSeededRegistryItemById(itemId, { includeContributors: true });
+      if (!target) return jsonResponse({ error: 'Item not found' }, 404);
       const body = await parseJsonBody(init);
       const updated: RegistryItem = {
-        ...existing,
+        ...target,
         ...(typeof body.name === 'string' ? { name: body.name } : {}),
         ...(typeof body.description === 'string' ? { description: body.description } : {}),
         ...(typeof body.category === 'string' ? { category: body.category } : {}),
@@ -462,7 +589,9 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       };
       mutateActiveDataset((current) => ({
         ...current,
-        registryItems: current.registryItems.map((i) => (i.id === itemId ? updated : i)),
+        registryItems: existing
+          ? current.registryItems.map((i) => (i.id === itemId ? updated : i))
+          : [updated, ...current.registryItems],
       }));
       return jsonResponse(updated);
     }
@@ -617,7 +746,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     }
 
     const createdGuest: InvitationCodeDTO = {
-      id: nextDemoEntityId('demo-collect'),
+      id: nextDemoId('demo-collect'),
       code: uniqueCode,
       guestName: payload.guestName.trim(),
       email: payload.email?.trim() || null,
@@ -641,6 +770,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       ...current,
       guests: [...current.guests, createdGuest],
     }));
+    upsertInvitationsIntoStaticDemoStore([createdGuest]);
 
     return jsonResponse({
       success: true,
@@ -724,7 +854,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           : 'round';
       const isLandmark = isDemoLandmarkShape(resolvedShape);
       const newTable: SeatingTableDTO = {
-        id: nextDemoEntityId('demo-table'),
+        id: nextDemoId('demo-table'),
         name: String(body.name || (isLandmark ? 'Landmark' : 'New Table')),
         shape: resolvedShape,
         capacity: isLandmark ? 0 : typeof body.capacity === 'number' ? body.capacity : 8,
@@ -994,7 +1124,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       const body = await parseJsonBody(init);
       const code = String(body.code || `GUEST${Date.now().toString().slice(-4)}`).toUpperCase();
       const newGuest: InvitationCodeDTO = {
-        id: nextDemoEntityId('demo-guest'),
+        id: nextDemoId('demo-guest'),
         code,
         guestName: String(body.guestName || 'Invited Guest'),
         householdName: typeof body.householdName === 'string' ? body.householdName : '',
@@ -1010,6 +1140,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         ...current,
         guests: [...current.guests, newGuest],
       }));
+      upsertInvitationsIntoStaticDemoStore([newGuest]);
       return jsonResponse({ success: true, data: newGuest }, 201);
     }
   }
@@ -1041,6 +1172,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           return updated;
         }),
       }));
+      upsertInvitationsIntoStaticDemoStore(updatedRecords);
     }
 
     return jsonResponse({
@@ -1064,7 +1196,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         ? (body.items as Array<Record<string, unknown>>)
         : [];
     const created: InvitationCodeDTO[] = records.map((rec, idx) => ({
-      id: `demo-imported-${Date.now()}-${idx}`,
+      id: `${nextDemoId('demo-imported')}-${idx}`,
       code: String(rec.code || `IMPORT${100 + idx}`).toUpperCase(),
       guestName: String(rec.guestName || `Imported Guest ${idx + 1}`),
       householdName: typeof rec.householdName === 'string' ? rec.householdName : '',
@@ -1079,6 +1211,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         ...current,
         guests: [...current.guests, ...created],
       }));
+      upsertInvitationsIntoStaticDemoStore(created);
     }
     return jsonResponse({
       success: true,
@@ -1107,7 +1240,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
           ? body.side
           : 'JOINT';
       const member: WeddingPartyMemberDTO = {
-        id: nextDemoEntityId('demo-party'),
+        id: nextDemoId('demo-party'),
         name: String(body.name || 'Party Member'),
         role: String(body.role || 'Attendant'),
         bio: String(body.bio || ''),
@@ -1139,7 +1272,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       const body = await parseJsonBody(init);
       const now = new Date();
       const attraction: AttractionDTO = {
-        id: nextDemoEntityId('demo-attraction'),
+        id: nextDemoId('demo-attraction'),
         name: String(body.name || 'Local Spot'),
         description: String(body.description || ''),
         category: String(body.category || 'Activities'),
@@ -1164,6 +1297,17 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         attractions: [...current.attractions, attraction],
       }));
       return jsonResponse({ success: true, data: attraction }, 201);
+    }
+  }
+
+  if (
+    path.startsWith('/api/admin/sub-events') ||
+    path === '/api/admin/invitation-codes/rsvps' ||
+    path.startsWith('/api/admin/broadcast')
+  ) {
+    const delegated = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+    if (delegated) {
+      return delegated;
     }
   }
 
@@ -1405,7 +1549,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
   if (path === '/api/admin/thank-you-notes' && method === 'POST') {
     const body = await parseJsonBody(init);
     const created = {
-      id: nextDemoEntityId('demo-offline-gift'),
+      id: nextDemoId('demo-offline-gift'),
       name: String(body.name || 'Offline Contributor').trim(),
       email: typeof body.email === 'string' ? body.email : null,
       amount: Number(body.amount || 50),
@@ -1486,7 +1630,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     const contactEmail = demoState.configOverrides.contactEmail || presetConfig.contactEmail;
 
     const rawBody = typeof body.body === 'string' ? body.body.trim() : '';
-    const renderedText = substituteDemoThankYouTemplateTokens(rawBody, {
+    const renderedText = substituteThankYouTemplateTokens(rawBody, {
       guestName: foundContributor.name,
       giftName: foundItem?.name || 'Wedding Gift',
       amount: foundContributor.amount,
@@ -1713,6 +1857,13 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     });
   }
 
+  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
+  // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
+  const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+  if (delegatedExtended) {
+    return delegatedExtended;
+  }
+
   // Safe fallback for read-only admin overview widgets on static export
   if (path.startsWith('/api/admin/') && method === 'GET') {
     const dataset = getActiveArchetypeDataset();
@@ -1750,7 +1901,7 @@ export function installDemoFetchInterceptor(): () => void {
           if (init?.signal?.aborted) {
             throw new DOMException('The operation was aborted.', 'AbortError');
           }
-          return handleDemoApi(apiUrl, init);
+          return handleDemoApi(apiUrl, init, input);
         }
       }
       return fallbackFetch(input, init);

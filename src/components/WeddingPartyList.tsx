@@ -5,6 +5,7 @@ import WeddingPartyCard from './WeddingPartyCard';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { cn } from '@/utils/cn';
+import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
 interface WeddingPartyListProps {
   members: WeddingPartyMemberDTO[];
@@ -21,6 +22,8 @@ const TABS: { id: TabFilter; label: string }[] = [
 
 const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMembers }) => {
   const demo = useOptionalDemo();
+  const demoOverrides = useStaticDemoPageOverrides();
+  const baseMembers = demoOverrides?.weddingParty ?? initialMembers;
   const [draftOverride, setDraftOverride] = useState<{
     base: WeddingPartyMemberDTO[];
     members: WeddingPartyMemberDTO[];
@@ -31,7 +34,7 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({ members: initialMem
     ? demo.activeDataset.weddingParty
     : draftOverride && draftOverride.base === initialMembers
       ? draftOverride.members
-      : initialMembers;
+      : baseMembers;
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window !== window.parent) {

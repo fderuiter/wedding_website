@@ -118,6 +118,131 @@ function syncTableGuests(
   }));
 }
 
+interface StaticDemoStoreBridge {
+  switchArchetype: (archetype: ArchetypeId) => unknown;
+  setSetupMode: (enabled: boolean) => unknown;
+  reset: (archetype?: ArchetypeId) => unknown;
+  mutate: <T>(
+    mutator: (draft: {
+      isAdminAuthenticated: boolean;
+      isSetupMode: boolean;
+      guestSession: {
+        code: string;
+        guestName: string;
+        sessionType: 'invite' | 'guest';
+      } | null;
+      appConfig: Array<Record<string, unknown>>;
+      registryItem: Array<{ isSample?: boolean }>;
+      invitationCode: Array<{ isSample?: boolean }>;
+      seatingTable: Array<{ isSample?: boolean }>;
+      weddingPartyMember: Array<{ isSample?: boolean }>;
+      attraction: Array<{ isSample?: boolean }>;
+      contentNode: Array<{ type: string; data?: Record<string, unknown> }>;
+    }) => T
+  ) => T;
+}
+
+function getStaticDemoStoreBridge(): StaticDemoStoreBridge | null {
+  if (typeof window === 'undefined') return null;
+  const installed = (
+    window as Window & {
+      __STATIC_DEMO_INSTALLED__?: { store?: StaticDemoStoreBridge };
+    }
+  ).__STATIC_DEMO_INSTALLED__;
+  return installed?.store ?? null;
+}
+
+function syncStaticDemoPersona(persona: DemoPersona, setupAuthenticated: boolean): void {
+  const bridge = getStaticDemoStoreBridge();
+  if (!bridge) return;
+  if (persona === 'admin') {
+    bridge.setSetupMode(false);
+    bridge.mutate((draft) => {
+      draft.isAdminAuthenticated = true;
+    });
+  } else if (persona === 'setup') {
+    bridge.setSetupMode(true);
+    bridge.mutate((draft) => {
+      draft.isAdminAuthenticated = setupAuthenticated;
+    });
+  } else {
+    bridge.setSetupMode(false);
+    bridge.mutate((draft) => {
+      draft.isAdminAuthenticated = false;
+    });
+  }
+}
+
+function syncStaticDemoThemePreset(themePreset: ThemePreset): void {
+  const bridge = getStaticDemoStoreBridge();
+  if (!bridge) return;
+  bridge.mutate((draft) => {
+    const cfg = draft.appConfig[0];
+    if (!cfg) return;
+    cfg.themePreset = themePreset;
+    cfg.colorPrimary = null;
+    cfg.colorSecondary = null;
+  });
+}
+
+function syncStaticDemoGuestSession(session: DemoGuestSession | null): void {
+  const bridge = getStaticDemoStoreBridge();
+  if (!bridge) return;
+  bridge.mutate((draft) => {
+    draft.guestSession = session
+      ? {
+        code: session.invitationCode,
+        guestName: session.guestName,
+        sessionType: 'guest',
+      }
+      : null;
+  });
+}
+
+function syncStaticDemoConfigOverrides(overrides: Partial<PublicAppConfig>): void {
+  const bridge = getStaticDemoStoreBridge();
+  if (!bridge) return;
+  bridge.mutate((draft) => {
+    const cfg = draft.appConfig[0];
+    if (!cfg) return;
+    if (typeof overrides.partner1Name === 'string' && overrides.partner1Name.trim()) {
+      cfg.partner1Name = overrides.partner1Name.trim();
+      cfg.brideName = overrides.partner1Name.trim();
+    }
+    if (typeof overrides.partner2Name === 'string' && overrides.partner2Name.trim()) {
+      cfg.partner2Name = overrides.partner2Name.trim();
+      cfg.groomName = overrides.partner2Name.trim();
+    }
+    if (overrides.weddingDate instanceof Date && !Number.isNaN(overrides.weddingDate.getTime())) {
+      cfg.weddingDate = overrides.weddingDate.toISOString();
+    }
+    if (typeof overrides.venueName === 'string') cfg.venueName = overrides.venueName;
+    if (typeof overrides.venueAddress === 'string') cfg.venueAddress = overrides.venueAddress;
+    if (typeof overrides.venueCity === 'string') cfg.venueCity = overrides.venueCity;
+    if (typeof overrides.venueState === 'string') cfg.venueState = overrides.venueState;
+    if (typeof overrides.venueZip === 'string') cfg.venueZip = overrides.venueZip;
+    if (typeof overrides.latitude === 'number' && Number.isFinite(overrides.latitude)) {
+      cfg.latitude = overrides.latitude;
+    }
+    if (typeof overrides.longitude === 'number' && Number.isFinite(overrides.longitude)) {
+      cfg.longitude = overrides.longitude;
+    }
+    if (typeof overrides.timezone === 'string' && overrides.timezone.trim()) {
+      cfg.timezone = overrides.timezone.trim();
+    }
+    if (typeof overrides.contactEmail === 'string') cfg.contactEmail = overrides.contactEmail;
+    if (typeof overrides.themePreset === 'string' && overrides.themePreset.trim()) {
+      cfg.themePreset = overrides.themePreset.trim();
+    }
+    if (typeof overrides.colorPrimary === 'string' && overrides.colorPrimary.trim()) {
+      cfg.colorPrimary = overrides.colorPrimary.trim();
+    }
+    if (typeof overrides.colorSecondary === 'string' && overrides.colorSecondary.trim()) {
+      cfg.colorSecondary = overrides.colorSecondary.trim();
+    }
+  });
+}
+
 let runtimeActive = false;
 let hasHydratedFromStorage = false;
 let state: DemoStoreState = createInitialDemoState(0);
@@ -204,6 +329,14 @@ export function hydrateDemoStateFromStorage(): void {
         parsed.claimTokens && typeof parsed.claimTokens === 'object' ? parsed.claimTokens : {},
       resetCounter: state.resetCounter,
     };
+    const bridge = getStaticDemoStoreBridge();
+    if (bridge) {
+      bridge.switchArchetype(state.archetype);
+      syncStaticDemoThemePreset(state.themePreset);
+      syncStaticDemoPersona(state.persona, state.setupAuthenticated);
+      syncStaticDemoConfigOverrides(state.configOverrides);
+      syncStaticDemoGuestSession(state.guestSession);
+    }
     emitChange();
   } catch {
     // Ignore malformed saved state
@@ -249,6 +382,7 @@ export function setDemoPersona(persona: DemoPersona): void {
     ...prev,
     persona,
   }));
+  syncStaticDemoPersona(persona, state.setupAuthenticated);
 }
 
 export function setDemoArchetype(archetype: ArchetypeId): void {
@@ -269,6 +403,13 @@ export function setDemoArchetype(archetype: ArchetypeId): void {
         : null,
     };
   });
+  const bridge = getStaticDemoStoreBridge();
+  if (bridge) {
+    bridge.switchArchetype(archetype);
+    syncStaticDemoPersona(state.persona, state.setupAuthenticated);
+    syncStaticDemoConfigOverrides(state.configOverrides);
+    syncStaticDemoGuestSession(state.guestSession);
+  }
 }
 
 export function setDemoThemePreset(themePreset: ThemePreset): void {
@@ -283,6 +424,7 @@ export function setDemoThemePreset(themePreset: ThemePreset): void {
       configOverrides: nextOverrides,
     };
   });
+  syncStaticDemoThemePreset(themePreset);
 }
 
 export function setDemoToolbarCollapsed(collapsed: boolean): void {
@@ -297,6 +439,7 @@ export function setDemoSetupAuthenticated(authenticated: boolean): void {
     ...prev,
     setupAuthenticated: authenticated,
   }));
+  syncStaticDemoPersona(state.persona, authenticated);
 }
 
 export function updateDemoConfigOverrides(overrides: Partial<PublicAppConfig>): void {
@@ -314,6 +457,7 @@ export function updateDemoConfigOverrides(overrides: Partial<PublicAppConfig>): 
       },
     };
   });
+  syncStaticDemoConfigOverrides(overrides);
 }
 
 export function applyDemoSampleSelection(archetype: ArchetypeId, modules: string[]): void {
@@ -326,6 +470,12 @@ export function applyDemoSampleSelection(archetype: ArchetypeId, modules: string
       [archetype]: buildArchetypeDataset(archetype),
     },
   }));
+  const bridge = getStaticDemoStoreBridge();
+  if (bridge) {
+    bridge.switchArchetype(archetype);
+    syncStaticDemoPersona(state.persona, state.setupAuthenticated);
+    syncStaticDemoConfigOverrides(state.configOverrides);
+  }
 }
 
 export function purgeDemoSampleData(): void {
@@ -353,6 +503,16 @@ export function purgeDemoSampleData(): void {
       },
     };
   });
+  getStaticDemoStoreBridge()?.mutate((draft) => {
+    draft.registryItem = draft.registryItem.filter((i) => !i.isSample);
+    draft.invitationCode = draft.invitationCode.filter((g) => !g.isSample);
+    draft.seatingTable = draft.seatingTable.filter((t) => !t.isSample);
+    draft.weddingPartyMember = draft.weddingPartyMember.filter((m) => !m.isSample);
+    draft.attraction = draft.attraction.filter((a) => !a.isSample);
+    draft.contentNode = draft.contentNode.filter(
+      (n) => !(n.type.toUpperCase() === 'FAQ' && Boolean(n.data?.isSample))
+    );
+  });
 }
 
 export function resetDemoState(): void {
@@ -368,6 +528,11 @@ export function resetDemoState(): void {
     } catch {
       // Ignore storage errors
     }
+  }
+  const bridge = getStaticDemoStoreBridge();
+  if (bridge) {
+    bridge.reset('classic');
+    syncStaticDemoPersona('guest', false);
   }
   emitChange();
 }
@@ -430,6 +595,7 @@ export function setDemoGuestSession(session: DemoGuestSession | null): void {
     ...prev,
     guestSession: session,
   }));
+  syncStaticDemoGuestSession(session);
 }
 
 export function updateDemoGuestAddress(

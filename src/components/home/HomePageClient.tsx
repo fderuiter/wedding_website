@@ -35,6 +35,7 @@ import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
 import { MediaImage } from '@/components/MediaImage';
+import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 import { withBasePath } from '@/lib/basePath';
 
 function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
@@ -112,28 +113,51 @@ export default function HomePageClient({
   attractions?: AttractionDTO[];
 }) {
   const demo = useOptionalDemo();
-  const [draftConfig, setConfig] = useState<PublicAppConfig>(initialConfig);
-  const [draftContentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
-  const [draftAttractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
-  const [hasDraftContent, setHasDraftContent] = useState(false);
+  const demoOverrides = useStaticDemoPageOverrides();
+  const [draftConfig, setDraftConfig] = useState<Partial<PublicAppConfig> | null>(null);
+  const [draftContentNodes, setDraftContentNodes] = useState<ContentNodeDTO[] | null>(null);
+  const [draftAttractions, setDraftAttractions] = useState<AttractionDTO[] | null>(null);
+  const hasDraftContent = draftContentNodes !== null;
 
   const isDemoMode = Boolean(demo?.isDemoMode);
   const demoConfigOverrides = demo?.configOverrides;
   const demoLogisticsNodes = demo?.activeDataset.logisticsNodes;
   const demoFaqs = demo?.activeDataset.faqs;
 
+  const baseConfig = useMemo<PublicAppConfig>(() => {
+    const seededConfig = demoOverrides?.config ?? initialConfig;
+    return isDemoMode && demoConfigOverrides
+      ? { ...seededConfig, ...demoConfigOverrides }
+      : seededConfig;
+  }, [demoConfigOverrides, demoOverrides?.config, initialConfig, isDemoMode]);
+
   const config = useMemo<PublicAppConfig>(
-    () => (isDemoMode && demoConfigOverrides ? { ...draftConfig, ...demoConfigOverrides } : draftConfig),
-    [demoConfigOverrides, draftConfig, isDemoMode]
+    () => (draftConfig ? { ...baseConfig, ...draftConfig } : baseConfig),
+    [baseConfig, draftConfig]
   );
-  const contentNodes = useMemo<ContentNodeDTO[]>(
-    () =>
-      isDemoMode && !hasDraftContent && demoLogisticsNodes && demoFaqs
-        ? [...demoLogisticsNodes, ...demoFaqs]
-        : draftContentNodes,
-    [demoFaqs, demoLogisticsNodes, draftContentNodes, hasDraftContent, isDemoMode]
-  );
-  const attractions = isDemoMode && demo ? demo.activeDataset.attractions : draftAttractions;
+
+  const contentNodes = useMemo<ContentNodeDTO[]>(() => {
+    if (draftContentNodes) return draftContentNodes;
+    if (isDemoMode && demoLogisticsNodes && demoFaqs) {
+      const sourceNodes = demoOverrides?.contentNodes ?? initialContentNodes;
+      const scheduleNodes = sourceNodes.filter((n) => n.type === 'Schedule');
+      return [...scheduleNodes, ...demoLogisticsNodes, ...demoFaqs];
+    }
+    return demoOverrides?.contentNodes ?? initialContentNodes;
+  }, [
+    demoFaqs,
+    demoLogisticsNodes,
+    demoOverrides?.contentNodes,
+    draftContentNodes,
+    initialContentNodes,
+    isDemoMode,
+  ]);
+
+  const attractions =
+    draftAttractions ??
+    (isDemoMode && demo
+      ? demo.activeDataset.attractions
+      : (demoOverrides?.attractions ?? initialAttractions));
   const isAdminPreview = useSyncExternalStore(
     subscribePreviewNoop,
     getAdminPreviewClientSnapshot,
@@ -169,12 +193,11 @@ export default function HomePageClient({
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'DRAFT_UPDATE') {
         if (event.data.draftType === 'config' && event.data.draftData) {
-          setConfig((prev) => ({ ...prev, ...event.data.draftData }));
+          setDraftConfig((prev) => ({ ...(prev ?? {}), ...event.data.draftData }));
         } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
-          setHasDraftContent(true);
-          setContentNodes(event.data.draftData);
+          setDraftContentNodes(event.data.draftData);
         } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
-          setAttractions(event.data.draftData);
+          setDraftAttractions(event.data.draftData);
         }
       }
     };
