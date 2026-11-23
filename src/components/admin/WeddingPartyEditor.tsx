@@ -10,7 +10,7 @@ import { cn } from '@/utils/cn';
 interface WeddingPartyEditorFormProps {
   values: Partial<WeddingPartyMemberDTO>;
   onChange: (_updatedFields: Partial<WeddingPartyMemberDTO>) => void;
-  onSubmit: (_e: React.FormEvent<HTMLFormElement>) => void;
+  onSubmit: (_e: React.SubmitEvent<HTMLFormElement>) => void;
   onCancel: () => void;
   bindFieldIds?: boolean;
   requireFields?: boolean;
@@ -50,7 +50,7 @@ export function WeddingPartyEditorForm({
   const resolvedOrder =
     values.order !== undefined && !Number.isNaN(values.order) ? values.order : 0;
 
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     onSubmit(e);
   };
@@ -251,7 +251,7 @@ export function WeddingPartyCard({
             <Button
               variant="outline"
               size="sm"
-              aria-label={`Move ${member.name || 'member'} up`}
+              srContext={member.name || 'member'}
               disabled={disableMoveUp || isTemp}
               onClick={() => onMove('up')}
             >
@@ -260,7 +260,7 @@ export function WeddingPartyCard({
             <Button
               variant="outline"
               size="sm"
-              aria-label={`Move ${member.name || 'member'} down`}
+              srContext={member.name || 'member'}
               disabled={disableMoveDown || isTemp}
               onClick={() => onMove('down')}
             >
