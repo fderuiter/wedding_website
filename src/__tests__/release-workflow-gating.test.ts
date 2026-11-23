@@ -103,8 +103,12 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
     expect(ciWorkflow).toMatch(
-      /deploy-docs:\n\s+needs:\s*verify\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
+      /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
     );
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/demo/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/storybook/index.html');
+    expect(ciWorkflow).toContain('docs-portal/.vitepress/dist/.nojekyll');
     expect(ciWorkflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');
@@ -133,6 +137,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).not.toContain('services:');
     expect(staticExportJob).toContain('path: .next-export/cache');
     expect(staticExportJob).toContain('npm run build:export');
+    expect(staticExportJob).toContain('name: demo-static');
 
     // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
     expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);
@@ -1484,7 +1489,10 @@ process.exit(1);
       scripts?: Record<string, string>;
     };
     expect(pkg.scripts?.prebuild).toBeUndefined();
-    expect(pkg.scripts?.postinstall).toBe('prisma generate');
+    expect(pkg.scripts?.postinstall).toBe(
+      'next typegen && prisma generate && node scripts/pretest.mjs --record-install-state'
+    );
+    expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');
 
     const verifySection = ciWorkflow.split(/\n  unit-test:\n/)[0] ?? '';

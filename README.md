@@ -2,7 +2,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
+**[Documentation Portal](https://fderuiter.github.io/wedding_website/)** | **[Live Demo](https://fderuiter.github.io/wedding_website/demo/)** | **[Storybook](https://fderuiter.github.io/wedding_website/storybook/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
 
 ## Table of Contents
 
@@ -47,7 +47,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
     *   **Filtering & Sorting:** Guests can browse registry items by category, price range, availability, and "Most Wanted" highlights.
 *   **Guest Households, RSVPs, Seating & Broadcasts:**
     *   **Household Invitation Sessions & Cutoffs:** Authenticate invited households with signed `GUEST_INVITE_COOKIE` sessions (`enforceActiveGuestPageSession` in [`src/core/auth/guestInviteSession.ts`](./src/core/auth/guestInviteSession.ts)), per-sub-event access matrices, and venue-timezone midnight RSVP cutoffs (`getVenueMidnightCutoffUtcMs`) with configurable grace periods (`0`–`168` hours in [`src/utils/rsvpDeadline.ts`](./src/utils/rsvpDeadline.ts)).
-    *   **Interactive Seating Chart:** Arrange reception tables, auto-assign or drag-and-drop eligible guests with undo support (`useSeatingState`), and print floorplans (`FloorplanCanvas` and `PrintableFloorplan` in [`src/app/admin/dashboard/seating-chart/page.tsx`](./src/app/admin/dashboard/seating-chart/page.tsx#L4-L20)).
+    *   **Interactive Seating Chart:** Arrange reception tables, auto-assign or drag-and-drop eligible guests with undo support (`useSeatingState`), and print floorplans (`FloorplanCanvas` and `PrintableFloorplan` in [`src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx`](./src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx#L4-L24)).
     *   **Multi-Provider Guest Broadcasts:** Compose targeted email and SMS announcements (`BroadcastModalForm` in [`src/components/admin/BroadcastModal.tsx`](./src/components/admin/BroadcastModal.tsx)) with audience filters, live previews, test sends, scheduled delivery, and retry logs across **Resend**, **SendGrid**, and **Twilio** adapters (see [`docs/BROADCASTS.md`](./docs/BROADCASTS.md)).
 *   **Moderated Photo Gallery & Media Pipeline:**
     *   **Curated & Guest Albums:** Display curated couple galleries alongside moderated guest photo uploads (`PhotosPage` in [`src/app/photos/page.tsx`](./src/app/photos/page.tsx)) with responsive lightbox viewing, live reception slideshows, and admin ZIP archive exports.
@@ -172,16 +172,20 @@ This project features an automated, zero-configuration local testing setup. Runn
 2. Waits for the database to be fully ready and accepting connections.
 3. Automatically provisions and synchronizes the Prisma schema to an isolated, dedicated test database (`wedding_test`). This ensures that executing the test suite will never delete, modify, or insert records into your default development database.
 
-To execute the unit and integration test suite:
+To execute the unit and integration test suite locally (without coverage overhead):
 
 ```bash
 npm test
+
+# Or run a targeted test file:
+npm test -- src/utils/__tests__/ApiError.test.ts
 ```
 
-To run tests in watch mode:
+To run tests in watch mode or enforce full repository coverage thresholds (`80%` lines, `68%` branches):
 
 ```bash
 npm run test:watch
+npm run test:cov
 ```
 
 ### First-Run Setup & Bootstrap

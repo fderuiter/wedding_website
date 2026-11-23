@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { RegistryItem, OrderTrackingDetails, GuestClaimActions } from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
+import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
@@ -302,6 +303,34 @@ export function useRegistryContributionMachine({
       const code = codeToVerify.trim().toUpperCase();
       if (!code) {
         setCodeError('Please enter an invitation code.');
+        return false;
+      }
+
+      if (isDemoRuntimeActive()) {
+        const matched = findDemoGuestByCode(code);
+        if (matched) {
+          const demoEmail = typeof matched.email === 'string' ? matched.email.trim() : '';
+          setInvitationCodeState(matched.code);
+          if (matched.guestName) {
+            setContributorNameState(matched.guestName);
+          }
+          if (!hasEditedEmail && demoEmail) {
+            setEmailState(demoEmail);
+          }
+          setDismissedSessionKey(null);
+          setPhase('code_locked');
+          setCodeError(null);
+          setSubmissionError(null);
+          setSession({
+            invitationCode: matched.code,
+            guestName: matched.guestName,
+            guestEmail: demoEmail,
+            isVerified: true,
+          });
+          return true;
+        }
+        setPhase('idle');
+        setCodeError('Invalid invitation code.');
         return false;
       }
 

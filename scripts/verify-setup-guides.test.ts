@@ -27,10 +27,12 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'scripts/a11y-report.mjs',
     'scripts/seed.ts',
     'scripts/verify-doc-sync.ts',
+    'scripts/build-export.mjs',
     'scripts/test-standalone.mjs',
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/runtime-contract.md',
     'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
@@ -196,14 +198,15 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects .env.test GUEST_PASSCODE drift, missing smoke test volume warnings, missing tsconfig exclusions, and misordered check-quality.ts steps', () => {
+  it('rejects .env.test GUEST_PASSCODE drift, missing smoke project isolation docs, stale db_data wipe warnings, missing tsconfig exclusions, and misordered check-quality.ts steps', () => {
     const testingPath = path.join(tempDir, '.github/TESTING.md');
     fs.writeFileSync(
       testingPath,
       fs
         .readFileSync(testingPath, 'utf8')
         .replace(/build-fallback-guest-passcode/g, 'playwright-e2e-guest-passcode')
-        .replace(/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
+        .replace(/docker compose(?:\s+(?:-p|--env-file|-f)\s+\S+)*\s+down\s+-v/g, 'docker compose stop')
+        .concat('\nDeleting local Docker Compose PostgreSQL volumes (`db_data`).\n')
     );
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
@@ -212,6 +215,7 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(agentsPath, 'utf8')
         .replace(/`jest\.setup\.js`, /g, '')
+        .replace(/`\.next\/export-stage`, /g, '')
         .replace('`**/*.stories.tsx`, ', '')
         .replace(
           '8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
@@ -219,14 +223,33 @@ describe('verify-setup-guides contract check', () => {
         )
     );
 
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs
+        .readFileSync(runtimeContractPath, 'utf8')
+        .replace(/\.next\/export-stage/g, '.legacy-stage')
+    );
+
+    const testContainerPath = path.join(tempDir, 'scripts/test-container.mjs');
+    fs.writeFileSync(
+      testContainerPath,
+      `${fs.readFileSync(testContainerPath, 'utf8').replace(/wedding-smoke-container/g, 'default-stack')}\n// lsof -ti:3000 | xargs kill -9\n`
+    );
+
     const errors = verifySetupGuides(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         '.github/TESTING.md: Must report .env.test GUEST_PASSCODE value "build-fallback-guest-passcode"',
-        expect.stringContaining('.github/TESTING.md: Must warn that scripts/test-standalone.mjs requires "npm run build"'),
+        expect.stringContaining('.github/TESTING.md: Must document that scripts/test-standalone.mjs requires "npm run build"'),
+        expect.stringContaining('.github/TESTING.md: Stale warning claiming smoke scripts delete/wipe local Docker Compose PostgreSQL volumes'),
         'AGENTS.md: Missing tsconfig.json exclude entry "jest.setup.js" in TypeScript Configuration Split section',
+        'AGENTS.md: Missing tsconfig.json exclude entry ".next/export-stage" in TypeScript Configuration Split section',
         'AGENTS.md: Missing tsconfig.build.json exclude entry "**/*.stories.tsx" in TypeScript Configuration Split section',
         'AGENTS.md: Full Local Quality Gate section misorders check-quality.ts step "npm run lint:migrations"',
+        expect.stringContaining('docs/runtime-contract.md: Must document staged static exports inside ".next/export-stage"'),
+        'scripts/test-container.mjs: Must isolate Docker Compose project via "-p wedding-smoke-container"',
+        'scripts/test-container.mjs: Must select a free loopback port instead of killing port 3000 processes',
       ])
     );
   });
@@ -483,7 +506,7 @@ describe('verify-setup-guides contract check', () => {
     const testingPath = path.join(tempDir, '.github/TESTING.md');
     fs.writeFileSync(
       testingPath,
-      fs.readFileSync(testingPath, 'utf8').replace(/--stage-only/g, '')
+      fs.readFileSync(testingPath, 'utf8').replace(/\.package-lock\.json/g, '.legacy-lock-marker')
     );
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
@@ -497,7 +520,7 @@ describe('verify-setup-guides contract check', () => {
       expect.arrayContaining([
         expect.stringContaining('scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment'),
         expect.stringContaining('jest.setup.js: Must preserve explicit DATABASE_URL'),
-        '.github/TESTING.md: Missing scripts/pretest.mjs step reference "--stage-only"',
+        '.github/TESTING.md: Missing scripts/pretest.mjs or coverage workflow reference ".package-lock.json"',
         'AGENTS.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap',
       ])
     );
@@ -527,6 +550,59 @@ describe('verify-setup-guides contract check', () => {
         'README.md: Table of Contents is missing entry for "Linting & Testing" (#linting--testing)',
         'README.md: Table of Contents links to nonexistent heading "#stale-section"',
         'README.md: Project Structure is missing root directory "packages"',
+      ])
+    );
+  });
+
+  it('rejects postinstall lock-hash omission, pretest portal/lifecycle regressions, missing TEST_DATABASE_URL support, and stale pretest guide claims', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace(
+          ' && node scripts/pretest.mjs --record-install-state',
+          ''
+        )
+    );
+
+    const pretestPath = path.join(tempDir, 'scripts/pretest.mjs');
+    fs.writeFileSync(
+      pretestPath,
+      fs
+        .readFileSync(pretestPath, 'utf8')
+        .replace(/TEST_DATABASE_URL/g, 'LEGACY_DB_OVERRIDE')
+        .concat('\n// stale process.env.npm_lifecycle_event && scripts/generate-portal.ts\n')
+    );
+
+    const checkQualityPath = path.join(tempDir, 'scripts/check-quality.ts');
+    fs.writeFileSync(
+      checkQualityPath,
+      fs.readFileSync(checkQualityPath, 'utf8').replace('npm run test:cov', 'npm test')
+    );
+
+    const testingPath = path.join(tempDir, '.github/TESTING.md');
+    fs.writeFileSync(
+      testingPath,
+      fs
+        .readFileSync(testingPath, 'utf8')
+        .replace(/TEST_DATABASE_URL/g, 'LEGACY_OVERRIDE_DOC')
+        .replace(
+          '### Pretest Lifecycle & Database Automation\n',
+          '### Pretest Lifecycle & Database Automation\n\nLegacy `npm_lifecycle_event` and `npx tsx scripts/generate-portal.ts` step.\n'
+        )
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'package.json: "postinstall" must record lockfile state via "scripts/pretest.mjs --record-install-state" or ".package-lock-hash"',
+        'scripts/pretest.mjs: Must not unconditionally run "scripts/generate-portal.ts" during test preflight',
+        'scripts/pretest.mjs: Must not inspect "npm_lifecycle_event" or fall back to "npm run build"',
+        'scripts/pretest.mjs: Must honor explicit "TEST_DATABASE_URL" overrides before falling back to local Docker defaults',
+        'scripts/check-quality.ts: Must run "npm run test:cov" to enforce global coverage thresholds',
+        '.github/TESTING.md: Missing scripts/pretest.mjs or coverage workflow reference "TEST_DATABASE_URL"',
+        '.github/TESTING.md: Pretest Lifecycle section must not claim scripts/pretest.mjs runs "npx tsx scripts/generate-portal.ts" or inspects "npm_lifecycle_event"',
       ])
     );
   });

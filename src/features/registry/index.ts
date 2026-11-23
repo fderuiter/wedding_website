@@ -34,6 +34,7 @@ export {
   InvitationCatalogQuerySchema,
 } from './schemas';
 export { registryService } from './service';
+export { registryRepository } from './repository';
 export { thankYouService, ThankYouService } from './thank-you.service';
 export type {
   ProgressMetrics,

@@ -35,8 +35,16 @@ async function getSecret(): Promise<string> {
 
 interface GuestTokenPayload {
   guest: boolean;
+  jti?: string;
   iat?: number;
   exp?: number;
+}
+
+function createPerLoginTokenId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 export async function signGuestToken(payload: GuestTokenPayload): Promise<string> {
@@ -44,16 +52,30 @@ export async function signGuestToken(payload: GuestTokenPayload): Promise<string
   if (!secret) {
     throw new Error('Guest auth secret is not configured');
   }
-  return signCompactToken(payload, secret);
+  const normalizedPayload: GuestTokenPayload = {
+    ...payload,
+    jti: payload.jti ?? createPerLoginTokenId(),
+  };
+  return signCompactToken(normalizedPayload, secret);
 }
 
-async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
+export async function verifyGuestToken(token: string): Promise<GuestTokenPayload | null> {
   if (!token || typeof token !== 'string') return null;
 
   try {
     const secret = await getSecret();
     if (!secret) return null;
-    return verifyCompactToken<GuestTokenPayload>(token, secret);
+    const payload = await verifyCompactToken<GuestTokenPayload>(token, secret);
+    if (!payload || payload.guest !== true) {
+      return null;
+    }
+
+    const now = Date.now();
+    if (payload.exp && payload.exp < now) {
+      return null;
+    }
+
+    return payload;
   } catch {
     return null;
   }
@@ -64,15 +86,5 @@ export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
   if (!cookieValue) return false;
 
   const payload = await verifyGuestToken(cookieValue);
-
-  if (!payload || payload.guest !== true) {
-    return false;
-  }
-
-  const now = Date.now();
-  if (payload.exp && payload.exp < now) {
-    return false;
-  }
-
-  return true;
+  return Boolean(payload && payload.guest === true);
 }
