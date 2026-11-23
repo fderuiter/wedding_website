@@ -20,100 +20,95 @@ export interface OverlayProps {
   'aria-modal'?: boolean | 'true' | 'false';
   'aria-labelledby'?: string;
   'aria-describedby'?: string;
+  ref?: React.Ref<HTMLDivElement>;
 }
 
-export const Overlay = React.forwardRef<HTMLDivElement, OverlayProps>(
-  (
-    {
-      isOpen,
-      onClose,
-      children,
-      className,
-      style,
-      id,
-      animationType = 'scale',
-      layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
-      role,
-      'aria-modal': ariaModal,
-      'aria-labelledby': ariaLabelledby,
-      'aria-describedby': ariaDescribedby,
+export function Overlay({
+  isOpen,
+  onClose,
+  children,
+  className,
+  style,
+  id,
+  animationType = 'scale',
+  layoutClassName = 'fixed inset-0 z-50 flex items-center justify-center p-4',
+  role,
+  'aria-modal': ariaModal,
+  'aria-labelledby': ariaLabelledby,
+  'aria-describedby': ariaDescribedby,
+  ref,
+}: OverlayProps) {
+  const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose);
+  const { themePreset } = useTheme();
+  const presetTokens = getPresetTokens(themePreset);
+  const durationNormal = parseDurationSec(presetTokens['--motion-duration-normal'], 0.2);
+
+  const setOverlayRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      overlayRef.current = node;
+      if (typeof ref === 'function') {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
+      }
     },
-    ref
-  ) => {
-    const { overlayRef, handleBackdropClick } = useOverlay(isOpen, onClose);
-    const { themePreset } = useTheme();
-    const presetTokens = getPresetTokens(themePreset);
-    const durationNormal = parseDurationSec(presetTokens['--motion-duration-normal'], 0.2);
+    [overlayRef, ref]
+  );
 
-    const setOverlayRef = useCallback(
-      (node: HTMLDivElement | null) => {
-        overlayRef.current = node;
-        if (typeof ref === 'function') {
-          ref(node);
-        } else if (ref) {
-          ref.current = node;
-        }
-      },
-      [overlayRef, ref]
-    );
+  // Transitions
+  const transitions = {
+    scale: {
+      initial: { opacity: 0, scale: 0.95 },
+      animate: { opacity: 1, scale: 1 },
+      exit: { opacity: 0, scale: 0.95 },
+      transition: { duration: durationNormal },
+    },
+    'slide-down': {
+      initial: { opacity: 0, y: -20 },
+      animate: { opacity: 1, y: 0 },
+      exit: { opacity: 0, y: -20 },
+      transition: { duration: durationNormal },
+    },
+    fade: {
+      initial: { opacity: 0 },
+      animate: { opacity: 1 },
+      exit: { opacity: 0 },
+      transition: { duration: durationNormal },
+    },
+  };
 
-    // Transitions
-    const transitions = {
-      scale: {
-        initial: { opacity: 0, scale: 0.95 },
-        animate: { opacity: 1, scale: 1 },
-        exit: { opacity: 0, scale: 0.95 },
-        transition: { duration: durationNormal },
-      },
-      'slide-down': {
-        initial: { opacity: 0, y: -20 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -20 },
-        transition: { duration: durationNormal },
-      },
-      fade: {
-        initial: { opacity: 0 },
-        animate: { opacity: 1 },
-        exit: { opacity: 0 },
-        transition: { duration: durationNormal },
-      },
-    };
+  const anim = transitions[animationType];
 
-    const anim = transitions[animationType];
-
-    return (
-      <AnimatePresence>
-        {isOpen && (
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          id={id}
+          className={cn(layoutClassName, 'bg-black/60 backdrop-blur-sm')}
+          style={{ backgroundColor: 'var(--dialog-backdrop, rgba(0, 0, 0, 0.6))' }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: durationNormal }}
+          onClick={handleBackdropClick}
+          aria-hidden={!isOpen ? true : undefined}
+          role={role}
+          aria-modal={ariaModal}
+          aria-labelledby={ariaLabelledby}
+          aria-describedby={ariaDescribedby}
+        >
           <motion.div
-            id={id}
-            className={cn(layoutClassName, 'bg-black/60 backdrop-blur-sm')}
-            style={{ backgroundColor: 'var(--dialog-backdrop, rgba(0, 0, 0, 0.6))' }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: durationNormal }}
-            onClick={handleBackdropClick}
-            aria-hidden={!isOpen ? true : undefined}
-            role={role}
-            aria-modal={ariaModal}
-            aria-labelledby={ariaLabelledby}
-            aria-describedby={ariaDescribedby}
+            ref={setOverlayRef}
+            className={cn(className)}
+            style={style}
+            onClick={(e) => e.stopPropagation()}
+            {...anim}
           >
-            <motion.div
-              ref={setOverlayRef}
-              className={cn(className)}
-              style={style}
-              onClick={(e) => e.stopPropagation()}
-              {...anim}
-            >
-              {children}
-            </motion.div>
+            {children}
           </motion.div>
-        )}
-      </AnimatePresence>
-    );
-  }
-);
-
-Overlay.displayName = 'Overlay';
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
