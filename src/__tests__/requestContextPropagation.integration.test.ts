@@ -37,8 +37,10 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import {
   GUEST_INVITE_COOKIE,
+  getGuestInviteSession,
   signGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
+import { runWithRequestContext } from '@/lib/requestContext';
 import { AppConfigSchema } from '@/features/content';
 import { subEventService } from '@/features/sub-events';
 import { base64urlDecode, hmacSha256 } from '@/utils/crypto';
@@ -736,5 +738,43 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     const schedule = await subEventService.getScheduleForGuest('DIRECT26');
     expect(schedule).toHaveLength(1);
     expect(schedule[0]?.id).toBe(event.id);
+  });
+
+  it('isolates session cache entries by NextRequest instance and signed session key', async () => {
+    await prisma.invitationCode.createMany({
+      data: [
+        { code: 'ISOA2026', guestName: 'Guest Alpha', isSample: false },
+        { code: 'ISOB2026', guestName: 'Guest Beta', isSample: false },
+      ],
+    });
+
+    const tokenA = await signGuestInviteSessionToken({
+      code: 'ISOA2026',
+      guestName: 'Guest Alpha',
+    });
+    const tokenB = await signGuestInviteSessionToken({
+      code: 'ISOB2026',
+      guestName: 'Guest Beta',
+    });
+
+    const reqA = new NextRequest('http://localhost/api/schedule', {
+      headers: { cookie: `${GUEST_INVITE_COOKIE}=${tokenA}` },
+    });
+    const reqB = new NextRequest('http://localhost/api/schedule', {
+      headers: { cookie: `${GUEST_INVITE_COOKIE}=${tokenB}` },
+    });
+
+    resetCounters();
+    await runWithRequestContext(reqA, async () => {
+      const sessionA1 = await getGuestInviteSession(reqA);
+      const sessionA2 = await getGuestInviteSession(reqA);
+      const sessionB = await getGuestInviteSession(reqB);
+
+      expect(sessionA1?.code).toBe('ISOA2026');
+      expect(sessionA2?.code).toBe('ISOA2026');
+      expect(sessionB?.code).toBe('ISOB2026');
+    });
+
+    expect(counters.invitationCodeSelects).toBe(2);
   });
 });

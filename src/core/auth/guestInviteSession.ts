@@ -107,6 +107,10 @@ async function resolveActiveInvitationSession(
   }
 }
 
+function buildGuestSessionCacheKey(payload: GuestInviteSessionPayload): string {
+  return `${payload.code}:${payload.guestName}:${payload.exp ?? ''}`;
+}
+
 const getCachedServerSignedGuestInviteSession = cache(() => getSignedGuestInviteSession());
 
 async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
@@ -114,14 +118,15 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
     return null;
   }
 
-  return getOrLoadGuestSession(undefined, async () => {
-    const signedPayload = await getCachedServerSignedGuestInviteSession();
-    if (!signedPayload) {
-      return null;
-    }
+  const signedPayload = await getCachedServerSignedGuestInviteSession();
+  if (!signedPayload) {
+    return null;
+  }
 
-    return resolveActiveInvitationSession(signedPayload);
-  });
+  const cacheKey = buildGuestSessionCacheKey(signedPayload);
+  return getOrLoadGuestSession(undefined, cacheKey, () =>
+    resolveActiveInvitationSession(signedPayload)
+  );
 }
 
 /**
@@ -137,14 +142,15 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
     return resolveServerCookieGuestInviteSession();
   }
 
-  return getOrLoadGuestSession(req, async () => {
-    const signedPayload = await getSignedGuestInviteSession(req);
-    if (!signedPayload) {
-      return null;
-    }
+  const signedPayload = await getSignedGuestInviteSession(req);
+  if (!signedPayload) {
+    return null;
+  }
 
-    return resolveActiveInvitationSession(signedPayload, req);
-  });
+  const cacheKey = buildGuestSessionCacheKey(signedPayload);
+  return getOrLoadGuestSession(req, cacheKey, () =>
+    resolveActiveInvitationSession(signedPayload, req)
+  );
 }
 
 export function buildGuestLoginRedirectTarget(callbackPath: string | null): string {

@@ -122,14 +122,14 @@ For standalone server streaming, `LocalStorageProvider` additionally exposes `op
 The application defines distinct file size, batch, and format validation rules for administrative asset uploads versus guest photo submissions:
 
 #### Administrative Upload Constraints
-- **Maximum File Size**: 5 MB (`MAX_UPLOAD_SIZE = 5 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L38-L45) and enforced by `AdminUploadSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L197-L211).
+- **Maximum File Size**: 5 MB (`MAX_UPLOAD_SIZE = 5 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L38-L45) and enforced by `AdminUploadSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L223-L237).
 - **Allowed MIME Types**: JPEG (`image/jpeg`), PNG (`image/png`), ICO (`image/x-icon`, `image/vnd.microsoft.icon`).
 - **Allowed Extensions**: `.jpg`, `.jpeg`, `.png`, `.ico`.
 - **Extension & MIME Consistency**: Uploaded file extensions must match declared MIME types (`MIME_TO_EXTENSIONS`).
 
 #### Guest Photo Upload Constraints
-- **Maximum File Size**: 10 MB per file (`MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L71-L82) and enforced per file by `SingleGuestPhotoSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L123-L146).
-- **Batch Upload Cap**: Maximum **10 photos per upload request** (`files: z.array(SingleGuestPhotoSchema).min(1).max(10)`), with optional `uploaderName` (`<= 100` chars) and `caption` (`<= 500` chars) validated in `GuestPhotoUploadSchema` ([src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L157-L195)).
+- **Maximum File Size**: 10 MB per file (`MAX_GUEST_PHOTO_SIZE = 10 * 1024 * 1024`), defined in [src/utils/validationPrimitives.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validationPrimitives.ts#L71-L82) and enforced per file by `SingleGuestPhotoSchema` in [src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L149-L172).
+- **Batch Upload Cap**: Maximum **10 photos per upload request** (`files: z.array(SingleGuestPhotoSchema).min(1).max(10)`), with optional `uploaderName` (`<= 100` chars) and `caption` (`<= 500` chars) validated in `GuestPhotoUploadSchema` ([src/utils/validation.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/validation.ts#L183-L221)).
 - **Allowed MIME Types**: JPEG (`image/jpeg`), PNG (`image/png`), WebP (`image/webp`), and HEIC/HEIF (`image/heic`, `image/heif`, `image/heic-sequence`, `image/heif-sequence`, or empty/`application/octet-stream` when paired with `.heic`/`.heif`).
 - **Allowed Extensions**: `.jpg`, `.jpeg`, `.png`, `.webp`, `.heic`, `.heif` (excluding `.ico`).
 

@@ -29,14 +29,16 @@ export interface HydratedGuestInvitation {
 }
 
 interface RequestContextStore {
-  guestSessionPromise: Promise<unknown> | null;
+  request?: object;
+  guestSessionsByKey: Map<string, Promise<unknown>>;
   invitationsByCode: Map<string, HydratedGuestInvitation>;
   appConfigByKey: Map<string, Promise<unknown>>;
 }
 
-function createRequestContextStore(): RequestContextStore {
+function createRequestContextStore(request?: object): RequestContextStore {
   return {
-    guestSessionPromise: null,
+    request,
+    guestSessionsByKey: new Map<string, Promise<unknown>>(),
     invitationsByCode: new Map<string, HydratedGuestInvitation>(),
     appConfigByKey: new Map<string, Promise<unknown>>(),
   };
@@ -48,14 +50,14 @@ const getServerRenderContextStore = cache(() => createRequestContextStore());
 
 function resolveRequestContextStore(req?: NextRequest): RequestContextStore {
   const activeStore = requestAsyncLocalStorage.getStore();
-  if (activeStore) {
+  if (activeStore && (!req || !activeStore.request || activeStore.request === req)) {
     return activeStore;
   }
 
   if (req && typeof req === 'object') {
     let existing = requestWeakMap.get(req);
     if (!existing) {
-      existing = createRequestContextStore();
+      existing = createRequestContextStore(req);
       requestWeakMap.set(req, existing);
     }
     return existing;
@@ -162,36 +164,39 @@ export async function runWithRequestContext<T>(
   req: NextRequest | undefined,
   fn: () => Promise<T> | T
 ): Promise<T> {
-  const store = createRequestContextStore();
-  if (req && typeof req === 'object') {
-    requestWeakMap.set(req, store);
+  const reqObj = req && typeof req === 'object' ? req : undefined;
+  const store = createRequestContextStore(reqObj);
+  if (reqObj) {
+    requestWeakMap.set(reqObj, store);
   }
 
   try {
     return await requestAsyncLocalStorage.run(store, fn);
   } finally {
-    if (req && typeof req === 'object' && requestWeakMap.get(req) === store) {
-      requestWeakMap.delete(req);
+    if (reqObj && requestWeakMap.get(reqObj) === store) {
+      requestWeakMap.delete(reqObj);
     }
   }
 }
 
 export function getOrLoadGuestSession<T>(
   req: NextRequest | undefined,
+  cacheKey: string,
   loader: () => Promise<T>
 ): Promise<T> {
   const store = resolveRequestContextStore(req);
-  if (store.guestSessionPromise) {
-    return store.guestSessionPromise as Promise<T>;
+  const existing = store.guestSessionsByKey.get(cacheKey) as Promise<T> | undefined;
+  if (existing) {
+    return existing;
   }
 
   const pending = loader().catch((err) => {
-    if (store.guestSessionPromise === pending) {
-      store.guestSessionPromise = null;
+    if (store.guestSessionsByKey.get(cacheKey) === pending) {
+      store.guestSessionsByKey.delete(cacheKey);
     }
     throw err;
   });
-  store.guestSessionPromise = pending;
+  store.guestSessionsByKey.set(cacheKey, pending);
   return pending;
 }
 
