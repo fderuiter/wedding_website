@@ -285,9 +285,9 @@ describe('Global Jest Setup (jest.setup.js)', () => {
   describe('scoped module.createRequire paths', () => {
     it('maps /pdfkit.js URLs to node_modules/pdfkit/js/pdfkit.js', () => {
       const pdfRequire = moduleModule.createRequire('http://localhost/pdfkit.js');
-      const resolvedFont = pdfRequire.resolve('./data/Helvetica.afm');
+      const resolvedFont = pdfRequire.resolve('./standard-fonts/Helvetica.cjs');
       expect(resolvedFont).toBe(
-        path.join(process.cwd(), 'node_modules', 'pdfkit', 'js', 'data', 'Helvetica.afm')
+        path.join(process.cwd(), 'node_modules', 'pdfkit', 'js', 'standard-fonts', 'Helvetica.cjs')
       );
     });
 

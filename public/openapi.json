@@ -10314,17 +10314,6 @@
         ],
         "summary": "POST /api/admin/logout",
         "description": "Endpoint for /api/admin/logout",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -10343,16 +10332,6 @@
                   "required": [
                     "success"
                   ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -13810,17 +13789,6 @@
         ],
         "summary": "GET /api/admin/me",
         "description": "Endpoint for /api/admin/me",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -13843,16 +13811,6 @@
                     "success",
                     "isAdmin"
                   ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -22631,17 +22589,6 @@
         ],
         "summary": "GET /api/og",
         "description": "Endpoint for /api/og",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "parameters": [
           {
             "name": "p1",
@@ -22698,24 +22645,6 @@
           },
           "400": {
             "description": "Bad Request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
