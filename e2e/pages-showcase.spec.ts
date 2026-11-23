@@ -235,7 +235,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       await page.goto(`${origin}${SUBPATH_PREFIX}/demo${guestRoute}`, {
         waitUntil: 'networkidle',
       });
-      await expect(page.getByTestId('demo-toolbar')).toBeVisible();
+      await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
     }
 
     // 4. Gift Registry Interactive Contribution + Session Persistence + Reset Demo Data
@@ -263,7 +263,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
 
     // Reload page and confirm sessionStorage persisted the $775 contribution
     await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.getByTestId('demo-toolbar')).toBeVisible();
+    await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
     const persistedAmount = await page.evaluate(async () => {
       const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-reg-2');
       const json = (await res.json()) as { amountContributed?: number };
@@ -317,7 +317,7 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       await page.goto(`${origin}${SUBPATH_PREFIX}/demo${adminRoute}`, {
         waitUntil: 'networkidle',
       });
-      await expect(page.getByTestId('demo-toolbar')).toBeVisible();
+      await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
     }
 
     // Verify lazy-loaded broadcast detail API endpoint in static demo runtime

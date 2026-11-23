@@ -52,6 +52,92 @@ function textResponse(
   return new Response(body, { status, headers });
 }
 
+function escapePdfText(raw: string): string {
+  return raw
+    .replace(/[^\x20-\x7e]/g, '-')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
+function pdfResponse(title: string, lines: string[], filename: string): Response {
+  const streamCommands = [
+    'BT',
+    '/F1 15 Tf',
+    '48 744 Td',
+    `(${escapePdfText(title)}) Tj`,
+    '/F1 10 Tf',
+    '0 -22 Td',
+  ];
+  lines.slice(0, 38).forEach((line, idx) => {
+    if (idx > 0) {
+      streamCommands.push('0 -15 Td');
+    }
+    streamCommands.push(`(${escapePdfText(line)}) Tj`);
+  });
+  streamCommands.push('ET');
+  const stream = streamCommands.join('\n');
+
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+  for (const obj of objects) {
+    offsets.push(pdf.length);
+    pdf += obj;
+  }
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+  return new Response(pdf, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+function getGuestPlusOneCount(invite: DemoInvitationCode, state: DemoState): number {
+  const rsvps = state.subEventRsvps.filter(
+    (r) => r.invitationCodeId === invite.id && r.status === 'attending'
+  );
+  if (rsvps.length > 0) {
+    return Math.max(0, ...rsvps.map((r) => r.plusOneCount ?? 0));
+  }
+  if (invite.plusOneFirstName || invite.plusOneLastName) {
+    return 1;
+  }
+  return 0;
+}
+
+function collectOccupiedTableSeats(
+  guests: DemoInvitationCode[],
+  tableId: string,
+  excludeIds?: Set<string>
+): Set<number> {
+  const used = new Set<number>();
+  for (const guest of guests) {
+    if (guest.tableId !== tableId) continue;
+    if (excludeIds?.has(guest.id)) continue;
+    if (guest.seatNumber) used.add(guest.seatNumber);
+    for (const extraSeat of guest.plusOneSeatNumbers ?? []) {
+      if (extraSeat > 0) used.add(extraSeat);
+    }
+  }
+  return used;
+}
+
 async function readJsonBody(init?: RequestInit, request?: Request): Promise<Record<string, unknown>> {
   try {
     if (init?.body && typeof init.body === 'string') {
@@ -1919,26 +2005,38 @@ export async function routeDemoApiRequest(
 
     if (Array.isArray(body.invitationCodeIds)) {
       const ids = body.invitationCodeIds as string[];
+      const idSet = new Set(ids);
       const tableId = body.tableId ? String(body.tableId) : null;
       const updatedGuests: DemoInvitationCode[] = [];
       updateDemoState((draft) => {
         const table = tableId ? draft.seatingTables.find((t) => t.id === tableId) : null;
-        const usedSeats = new Set(
-          draft.invitationCodes
-            .filter((g) => g.tableId === tableId && !ids.includes(g.id) && g.seatNumber)
-            .map((g) => g.seatNumber as number)
-        );
+        const usedSeats =
+          tableId && table
+            ? collectOccupiedTableSeats(draft.invitationCodes, tableId, idSet)
+            : new Set<number>();
         let seatCursor = 1;
         for (const id of ids) {
           const guest = draft.invitationCodes.find((g) => g.id === id);
           if (!guest) continue;
           guest.tableId = tableId;
-          if (tableId && table) {
+          if (tableId && table && table.capacity > 0) {
             while (usedSeats.has(seatCursor) && seatCursor <= table.capacity) {
               seatCursor += 1;
             }
             guest.seatNumber = seatCursor <= table.capacity ? seatCursor : null;
             if (guest.seatNumber) usedSeats.add(guest.seatNumber);
+            const plusOnes = getGuestPlusOneCount(guest, draft);
+            const allocatedPlusOnes: number[] = [];
+            for (let p = 0; p < plusOnes; p += 1) {
+              while (usedSeats.has(seatCursor) && seatCursor <= table.capacity) {
+                seatCursor += 1;
+              }
+              if (seatCursor <= table.capacity) {
+                allocatedPlusOnes.push(seatCursor);
+                usedSeats.add(seatCursor);
+              }
+            }
+            guest.plusOneSeatNumbers = allocatedPlusOnes;
           } else {
             guest.seatNumber = null;
             guest.plusOneSeatNumbers = [];
@@ -2004,7 +2102,15 @@ export async function routeDemoApiRequest(
 
   if (normalizedPath === '/api/admin/seating/auto-assign' && method === 'POST') {
     const body = await readJsonBody(init, requestObj);
-    const includePending = Boolean(body.includePending);
+    const includePending =
+      body.includePending !== undefined ? Boolean(body.includePending) : true;
+    const partyGroupFilter =
+      typeof body.partyGroup === 'string' && body.partyGroup.trim()
+        ? body.partyGroup.trim()
+        : null;
+    const partyTagsFilter = Array.isArray(body.partyTags)
+      ? (body.partyTags as string[]).filter(Boolean)
+      : [];
     const assignedGuests: DemoInvitationCode[] = [];
     let unassignedCount = 0;
 
@@ -2012,21 +2118,35 @@ export async function routeDemoApiRequest(
       const eligible = draft.invitationCodes.filter((inv) => {
         if (inv.tableId) return false;
         if (inv.partyTags.includes('address-collection')) return false;
+        if (partyGroupFilter && inv.partyGroup !== partyGroupFilter) return false;
+        if (
+          partyTagsFilter.length > 0 &&
+          !partyTagsFilter.some((tag) => inv.partyTags.includes(tag))
+        ) {
+          return false;
+        }
         const status = getGuestAttendance(inv, draft);
         return status === 'attending' || (includePending && status === 'pending');
       });
 
       for (const guest of eligible) {
+        const plusOnes = getGuestPlusOneCount(guest, draft);
+        const partyChairs = 1 + plusOnes;
         let placed = false;
         for (const table of draft.seatingTables) {
           if (table.capacity <= 0) continue;
-          const occupants = draft.invitationCodes.filter((g) => g.tableId === table.id);
-          if (occupants.length >= table.capacity) continue;
-          const used = new Set(occupants.map((o) => o.seatNumber).filter(Boolean));
-          let seat = 1;
-          while (used.has(seat) && seat <= table.capacity) seat += 1;
+          const used = collectOccupiedTableSeats(draft.invitationCodes, table.id);
+          if (used.size + partyChairs > table.capacity) continue;
+          const allocated: number[] = [];
+          for (let s = 1; s <= table.capacity && allocated.length < partyChairs; s += 1) {
+            if (!used.has(s)) {
+              allocated.push(s);
+            }
+          }
+          if (allocated.length < partyChairs) continue;
           guest.tableId = table.id;
-          guest.seatNumber = seat;
+          guest.seatNumber = allocated[0];
+          guest.plusOneSeatNumbers = allocated.slice(1);
           assignedGuests.push(guest);
           placed = true;
           break;
@@ -2045,16 +2165,67 @@ export async function routeDemoApiRequest(
   if (normalizedPath === '/api/admin/seating/export') {
     const format = searchParams.get('format')?.toLowerCase();
     const guestTables = state.seatingTables.filter((t) => t.capacity > 0);
+    const coupleLabel = [state.config.partner1Name, state.config.partner2Name]
+      .filter(Boolean)
+      .join(' & ');
+
+    if (format === 'pdf' || format === 'place-cards' || format === 'escort-cards') {
+      const lines: string[] = [];
+      for (const table of guestTables) {
+        const guests = state.invitationCodes
+          .filter((g) => g.tableId === table.id)
+          .sort((a, b) => (a.seatNumber ?? 99) - (b.seatNumber ?? 99));
+        if (format === 'pdf') {
+          lines.push(
+            `${table.name} (${table.shape}, capacity ${table.capacity}) - ${guests.length} party(ies)`
+          );
+        }
+        for (const g of guests) {
+          const seatDesc = g.seatNumber ? `Seat ${g.seatNumber}` : 'Unnumbered';
+          const plusOneName = [g.plusOneFirstName, g.plusOneLastName].filter(Boolean).join(' ');
+          lines.push(
+            `${table.name} | ${seatDesc} | ${g.guestName}${plusOneName ? ` + ${plusOneName}` : ''}`
+          );
+        }
+      }
+      if (lines.length === 0) {
+        lines.push('No seated guests yet.');
+      }
+      if (format === 'place-cards') {
+        return pdfResponse(
+          `${coupleLabel || 'Wedding'} - Place Cards`,
+          lines,
+          'seating-place-cards.pdf'
+        );
+      }
+      if (format === 'escort-cards') {
+        return pdfResponse(
+          `${coupleLabel || 'Wedding'} - Escort Cards`,
+          lines,
+          'seating-escort-cards.pdf'
+        );
+      }
+      return pdfResponse(
+        `${coupleLabel || 'Wedding'} - Seating Chart & Floorplan`,
+        lines,
+        'seating-chart.pdf'
+      );
+    }
+
     if (format === 'meals' || format === 'meal-counts') {
       const rows = ['Table Name,Table Shape,Capacity,Seated Guests,Entree Counts,Dietary Counts'];
       for (const table of guestTables) {
         const guests = state.invitationCodes.filter((g) => g.tableId === table.id);
+        const totalChairs = guests.reduce(
+          (sum, g) => sum + 1 + getGuestPlusOneCount(g, state),
+          0
+        );
         rows.push(
           [
             csvEscape(table.name),
             csvEscape(table.shape),
             csvEscape(table.capacity),
-            csvEscape(guests.length),
+            csvEscape(totalChairs),
             csvEscape('Chef Selection'),
             csvEscape(guests.filter((g) => g.dietaryNotes).length || 'None'),
           ].join(',')
@@ -2062,21 +2233,32 @@ export async function routeDemoApiRequest(
       }
       return textResponse(rows.join('\n'), 'text/csv; charset=utf-8', 'seating-meal-counts.csv');
     }
-    const rows = ['Table,Shape,Seat,PlusOneSeats,GuestName,Household,DietaryNotes'];
+
+    const rows = [
+      'Table Name,Table Shape,Capacity,Seat Number,Guest Name,Dietary Notes,Plus-One Name,Plus-One Seats,Attendance,Meal Selections,Table Meal Counts,Custom Answers',
+    ];
     for (const table of guestTables) {
       const guests = state.invitationCodes
         .filter((g) => g.tableId === table.id)
         .sort((a, b) => (a.seatNumber ?? 99) - (b.seatNumber ?? 99));
       for (const g of guests) {
+        const plusOneName = [g.plusOneFirstName, g.plusOneLastName].filter(Boolean).join(' ');
+        const rsvps = state.subEventRsvps.filter((r) => r.invitationCodeId === g.id);
+        const meals = rsvps.flatMap((r) => r.mealSelections).join('; ');
         rows.push(
           [
             csvEscape(table.name),
             csvEscape(table.shape),
+            csvEscape(table.capacity),
             csvEscape(g.seatNumber ?? ''),
-            csvEscape((g.plusOneSeatNumbers ?? []).join(' ')),
             csvEscape(g.guestName),
-            csvEscape(g.householdName ?? ''),
             csvEscape(g.dietaryNotes ?? ''),
+            csvEscape(plusOneName),
+            csvEscape((g.plusOneSeatNumbers ?? []).join(', ')),
+            csvEscape(getGuestAttendance(g, state)),
+            csvEscape(meals),
+            csvEscape('Chef Selection'),
+            csvEscape(''),
           ].join(',')
         );
       }
@@ -2525,7 +2707,17 @@ export async function routeDemoApiRequest(
             ...table,
             invitationCodes: state.invitationCodes
               .filter((g) => g.tableId === table.id)
-              .sort((a, b) => (a.seatNumber ?? 99) - (b.seatNumber ?? 99)),
+              .sort((a, b) => (a.seatNumber ?? 99) - (b.seatNumber ?? 99))
+              .map((g) => ({
+                ...g,
+                subEventRsvps: state.subEventRsvps
+                  .filter((r) => r.invitationCodeId === g.id)
+                  .map((r) => ({
+                    ...r,
+                    subEventTitle:
+                      state.subEvents.find((s) => s.id === r.subEventId)?.title ?? 'Event',
+                  })),
+              })),
           }));
         }
         const total = items.length;
@@ -2555,10 +2747,13 @@ export async function routeDemoApiRequest(
             ...body,
           };
           if (entity === 'seating-tables') {
+            const isLandmarkShape = ['dance-floor', 'bar', 'dj', 'buffet', 'cake'].includes(
+              String(body.shape ?? '')
+            );
             created.width = Number(body.width ?? (body.shape === 'rectangular' ? 180 : 130));
             created.height = Number(body.height ?? (body.shape === 'rectangular' ? 100 : 130));
             created.rotation = Number(body.rotation ?? 0);
-            created.capacity = Number(body.capacity ?? 8);
+            created.capacity = Number(body.capacity ?? (isLandmarkShape ? 0 : 8));
             created.x = Number(body.x ?? 220);
             created.y = Number(body.y ?? 220);
           }
@@ -2631,7 +2826,19 @@ export async function routeDemoApiRequest(
             const updatedState = getDemoState();
             return jsonResponse({
               ...(updated as Record<string, unknown>),
-              invitationCodes: updatedState.invitationCodes.filter((g) => g.tableId === subSegment),
+              invitationCodes: updatedState.invitationCodes
+                .filter((g) => g.tableId === subSegment)
+                .map((g) => ({
+                  ...g,
+                  subEventRsvps: updatedState.subEventRsvps
+                    .filter((r) => r.invitationCodeId === g.id)
+                    .map((r) => ({
+                      ...r,
+                      subEventTitle:
+                        updatedState.subEvents.find((s) => s.id === r.subEventId)?.title ??
+                        'Event',
+                    })),
+                })),
             });
           }
           return jsonResponse(updated);
@@ -2646,6 +2853,7 @@ export async function routeDemoApiRequest(
                 if (g.tableId === subSegment) {
                   g.tableId = null;
                   g.seatNumber = null;
+                  g.plusOneSeatNumbers = [];
                 }
               }
             }

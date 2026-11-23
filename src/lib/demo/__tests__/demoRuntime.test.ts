@@ -230,18 +230,52 @@ describe('stateful demo store & API router', () => {
     expect((await setupExitRes!.json()).success).toBe(true);
     expect(getDemoState().setupWizardPreview).toBe(false);
 
-    // 3. Seating Chart (tables, assign, auto-assign, export)
+    // 3. Seating Chart (tables, landmarks, assign, auto-assign, caterer/PDF exports)
+    const landmarkRes = await routeDemoApiRequest('http://localhost/api/admin/seating-tables', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        width: 220,
+        height: 180,
+        x: 400,
+        y: 300,
+      }),
+    });
+    expect(landmarkRes?.status).toBe(201);
+    expect((await landmarkRes!.json()).capacity).toBe(0);
+
     const tablesRes = await routeDemoApiRequest('http://localhost/api/admin/seating-tables');
     expect(tablesRes?.headers.get('X-Total-Count')).toBeTruthy();
     const tables = await tablesRes!.json();
     expect(Array.isArray(tables)).toBe(true);
 
+    // Default body (omitting includePending) matches UnassignedGuestPanel's default includePending=true
     const autoRes = await routeDemoApiRequest('http://localhost/api/admin/seating/auto-assign', {
       method: 'POST',
-      body: JSON.stringify({ includePending: true }),
     });
     const autoJson = await autoRes!.json();
     expect(autoJson.assignedCount).toBeGreaterThanOrEqual(1);
+    expect(
+      autoJson.assignedGuests.every((g: { tableId: string | null }) => g.tableId !== null)
+    ).toBe(true);
+
+    const pdfExportRes = await routeDemoApiRequest(
+      'http://localhost/api/admin/seating/export?format=place-cards'
+    );
+    expect(pdfExportRes?.headers.get('Content-Type')).toBe('application/pdf');
+    expect(pdfExportRes?.headers.get('Content-Disposition')).toContain('seating-place-cards.pdf');
+    expect((await pdfExportRes!.text()).startsWith('%PDF-1.4')).toBe(true);
+
+    const mealsExportRes = await routeDemoApiRequest(
+      'http://localhost/api/admin/seating/export?format=meals'
+    );
+    expect(mealsExportRes?.headers.get('Content-Type')).toContain('text/csv');
+    expect(await mealsExportRes!.text()).toContain('Entree Counts');
+
+    const csvExportRes = await routeDemoApiRequest('http://localhost/api/admin/seating/export');
+    expect(await csvExportRes!.text()).toContain('Plus-One Seats');
 
     // 4. Invitation Codes & Sub-Events Matrix
     const catRes = await routeDemoApiRequest('http://localhost/api/admin/invitation-codes/catalog');
