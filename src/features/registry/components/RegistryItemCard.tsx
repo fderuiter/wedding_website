@@ -31,7 +31,7 @@ import {
   calculateContributionAmounts,
   getStripePromise,
   isValidStripePublishableKey,
-} from '@/lib/stripe';
+} from '@/lib/stripe.client';
 import { apiClient } from '@/lib/apiClient';
 
 const FIXED_PRESETS = [50, 100, 250];
@@ -406,10 +406,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       const existingPaymentIntentId =
         latestSynced && !latestSynced.isMock ? latestSynced.paymentIntentId : undefined;
       const existingClientSecret =
-        latestSynced && !latestSynced.isMock
-          ? latestSynced.clientSecret ||
-            (paymentIntentData?.itemId === item.id ? paymentIntentData.clientSecret : undefined)
-          : undefined;
+        latestSynced && !latestSynced.isMock ? latestSynced.clientSecret : undefined;
 
       try {
         const res = await apiClient.post('/api/registry/payment-intent', {
@@ -499,7 +496,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
   ]);
 
   // Form submission handling direct transfer, physical claims, and embedded Stripe Elements confirmation
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
+  const handlePaymentSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!isPayableGroupGift) {
@@ -679,9 +676,19 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       if (intentId) {
         setPaymentTransactionId(intentId);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPhase('error');
-      setSubmissionError(err?.message || 'Payment processing failed. Please try again.');
+      const errorMessage =
+        err instanceof Error && err.message
+          ? err.message
+          : typeof err === 'object' &&
+              err !== null &&
+              'message' in err &&
+              typeof (err as { message?: unknown }).message === 'string' &&
+              (err as { message: string }).message
+            ? (err as { message: string }).message
+            : 'Payment processing failed. Please try again.';
+      setSubmissionError(errorMessage);
     } finally {
       setIsCardProcessing(false);
     }
@@ -1045,7 +1052,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
                 <AccessibleExternalLink
                   href={paymentUrl}
                   className="inline-flex items-center gap-1 text-xs text-primary dark:text-primary hover:underline font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
-                  aria-label={`Open payment link for ${effectiveHandleType || 'Payment App'}`}
+                  srContext={`for ${effectiveHandleType || 'Payment App'}`}
                   showIcon
                   iconClassName="w-3.5 h-3.5"
                 >
@@ -1114,7 +1121,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
           size="sm"
           onClick={handleShare}
           className="inline-flex items-center gap-1.5 text-sm"
-          aria-label={`Share ${item.name}`}
+          srContext={`for ${item.name}`}
         >
           <Icon name={copied ? 'Check' : 'Share2'} className="w-4 h-4" />
           {copied ? 'Link Copied!' : 'Share Gift'}

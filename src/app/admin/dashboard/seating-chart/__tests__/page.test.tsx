@@ -5,9 +5,35 @@ import { useSeatingState } from '@/features/seating';
 
 // Mock useSeatingState
 jest.mock('@/features/seating', () => {
-  const actual = jest.requireActual('@/features/seating');
+  const {
+    FloorplanCanvas,
+    UnassignedGuestPanel,
+    TableModal,
+    PrintableFloorplan,
+    resolveDetailedSeatAssignments,
+    resolveSeatAssignments,
+    ADDRESS_COLLECTION_TAG,
+    getDietaryBadges,
+    getGuestAttendanceStatus,
+    getGuestCompanionNames,
+    getGuestPartySize,
+    getGuestsHeadcount,
+    isGuestEligibleForSeating,
+  } = jest.requireActual('@/features/seating');
   return {
-    ...actual,
+    FloorplanCanvas,
+    UnassignedGuestPanel,
+    TableModal,
+    PrintableFloorplan,
+    resolveDetailedSeatAssignments,
+    resolveSeatAssignments,
+    ADDRESS_COLLECTION_TAG,
+    getDietaryBadges,
+    getGuestAttendanceStatus,
+    getGuestCompanionNames,
+    getGuestPartySize,
+    getGuestsHeadcount,
+    isGuestEligibleForSeating,
     useSeatingState: jest.fn(),
   };
 });
@@ -259,5 +285,138 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     expect(undoBtn).not.toBeDisabled();
     fireEvent.click(undoBtn);
     expect(mockUndoLastBatchAction).toHaveBeenCalledTimes(1);
+  });
+
+  test('renders companion names, entrée selections, KIDS badges, and custom answers in table inspector', () => {
+    const tableWithEnrichedGuest = {
+      ...mockTable,
+      capacity: 4,
+      invitationCodes: [
+        {
+          id: 'g-enriched',
+          guestName: 'Elena Gilbert',
+          code: 'ELENA01',
+          tableId: 'table-1',
+          seatNumber: 1,
+          used: true,
+          dietaryNotes: null,
+          extraFields: {
+            attendanceStatus: 'attending',
+            plusOneNames: ['Damon Salvatore', 'Bonnie Bennett'],
+            dietaryTags: ['kids'],
+            mealSummary:
+              'Reception - Elena Gilbert: Herb Salmon; Bonnie Bennett: Kids Pasta (kids)',
+            customAnswersSummary: 'Reception - Need shuttle?: Yes',
+          },
+        },
+      ],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [tableWithEnrichedGuest],
+      allGuests: tableWithEnrichedGuest.invitationCodes,
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      unassignGuest: mockUnassignGuest,
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Table 1 - Head Table, shape/i }));
+
+    expect(screen.getByTestId('inspector-companion-names')).toHaveTextContent(
+      '+1: Damon Salvatore, Bonnie Bennett'
+    );
+    expect(screen.getByTestId('inspector-meal-selections')).toHaveTextContent('Herb Salmon');
+    expect(screen.getByTestId('inspector-meal-selections')).toHaveTextContent('Kids Pasta');
+    expect(screen.getByTestId('inspector-dietary-badge')).toHaveTextContent('KIDS');
+    expect(screen.getByTestId('inspector-custom-answers')).toHaveTextContent(
+      'Need shuttle?: Yes'
+    );
+  });
+
+  it('prompts via alertdialog before deleting an occupied table from the inspector and shows party seat ranges', async () => {
+    const mockClearTableSeats = jest.fn();
+    const mockUndoLastBatchAction = jest.fn();
+    const mockAssignGuestsToTable = jest.fn();
+
+    const occupiedCoupleTable = {
+      ...mockTable,
+      capacity: 8,
+      invitationCodes: [
+        {
+          id: 'g-couple-seated',
+          guestName: 'Jordan Taylor',
+          code: 'CPL10',
+          tableId: 'table-1',
+          seatNumber: 1,
+          used: true,
+          plusOneAllocations: 1,
+          extraFields: {
+            attending: true,
+            plusOneCount: 1,
+            plusOneNames: ['Morgan Taylor'],
+          },
+        },
+      ],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [occupiedCoupleTable],
+      allGuests: occupiedCoupleTable.invitationCodes,
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: mockAssignGuestsToTable,
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: mockClearTableSeats,
+      undoLastBatchAction: mockUndoLastBatchAction,
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    // Select occupied table via single-click on Seat 1 dot
+    fireEvent.click(screen.getByLabelText('Seat 1: Jordan Taylor'));
+    expect(mockUnassignGuest).not.toHaveBeenCalled();
+
+    // Inspector shows 2 seated out of 8 capacity and Seats 1, 2 range with companion name
+    expect(screen.getByText('(round, 8 capacity, 2 seated)')).toBeInTheDocument();
+    expect(screen.getByText('Seats 1, 2: Jordan Taylor (+1: Morgan Taylor)')).toBeInTheDocument();
+
+    // Clicking Delete Table on occupied table prompts for confirmation
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Table' }));
+    const confirmDialog = await screen.findByRole('alertdialog');
+    expect(confirmDialog).toHaveTextContent(/2 seated guests will become unassigned/i);
+    expect(mockDeleteTable).not.toHaveBeenCalled();
+
+    // Cancel keeps the table
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockDeleteTable).not.toHaveBeenCalled();
+
+    // Click Delete Table again and confirm
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Table' }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(mockDeleteTable).toHaveBeenCalledWith('table-1');
+    });
   });
 });

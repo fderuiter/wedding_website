@@ -1,8 +1,10 @@
 import {
   PLUS_ONE_NAME_MAX_LENGTH,
   mergeDietaryNotes,
+  normalizeGuestPhone,
   normalizeInvitationCode,
   normalizePartyTags,
+  sanitizeGuestPhoneInput,
   validateInvitationGuestFieldsWithColumns,
 } from './invitationValidation';
 
@@ -12,6 +14,7 @@ export interface ParsedCsvRow {
   guestName: string;
   code: string;
   email?: string;
+  phone?: string;
   addressLine1?: string;
   addressLine2?: string;
   city?: string;
@@ -25,7 +28,7 @@ export interface ParsedCsvRow {
   householdName?: string;
   partyGroup?: string;
   partyTags?: string[];
-  extraFields?: Record<string, string>;
+  extraFields?: Record<string, string | string[]>;
   isValid: boolean;
   errors: string[];
   fieldErrors?: Record<string, string[]>;
@@ -41,6 +44,7 @@ export interface CsvParseResult {
   guestLastNameCol?: string;
   suggestedCodeCol: string;
   suggestedEmailCol: string;
+  suggestedPhoneCol?: string;
   suggestedAddressLine1Col: string;
   suggestedAddressLine2Col: string;
   suggestedCityCol: string;
@@ -49,6 +53,7 @@ export interface CsvParseResult {
   suggestedCountryCol: string;
   suggestedDietaryNotesCol: string;
   suggestedPlusOneCol: string;
+  suggestedPlusOneNameCol?: string;
   suggestedPlusOneFirstNameCol?: string;
   suggestedPlusOneLastNameCol?: string;
   suggestedHouseholdNameCol?: string;
@@ -63,6 +68,7 @@ export interface ColumnMappingOptions {
   guestLastNameCol?: string;
   codeCol?: string;
   emailCol?: string;
+  phoneCol?: string;
   addressLine1Col?: string;
   addressLine2Col?: string;
   cityCol?: string;
@@ -71,6 +77,7 @@ export interface ColumnMappingOptions {
   countryCol?: string;
   dietaryNotesCol?: string;
   plusOneCol?: string;
+  plusOneNameCol?: string;
   plusOneFirstNameCol?: string;
   plusOneLastNameCol?: string;
   householdNameCol?: string;
@@ -95,6 +102,7 @@ export function detectCsvHeaders(headers: string[]): {
   guestLastNameCol: string;
   suggestedCodeCol: string;
   suggestedEmailCol: string;
+  suggestedPhoneCol: string;
   suggestedAddressLine1Col: string;
   suggestedAddressLine2Col: string;
   suggestedCityCol: string;
@@ -103,6 +111,7 @@ export function detectCsvHeaders(headers: string[]): {
   suggestedCountryCol: string;
   suggestedDietaryNotesCol: string;
   suggestedPlusOneCol: string;
+  suggestedPlusOneNameCol: string;
   suggestedPlusOneFirstNameCol: string;
   suggestedPlusOneLastNameCol: string;
   suggestedHouseholdNameCol: string;
@@ -114,6 +123,7 @@ export function detectCsvHeaders(headers: string[]): {
   let suggestedGuestLastNameCol = '';
   let suggestedCodeCol = '';
   let suggestedEmailCol = '';
+  let suggestedPhoneCol = '';
   let suggestedAddressLine1Col = '';
   let suggestedAddressLine2Col = '';
   let suggestedCityCol = '';
@@ -122,6 +132,7 @@ export function detectCsvHeaders(headers: string[]): {
   let suggestedCountryCol = '';
   let suggestedDietaryNotesCol = '';
   let suggestedPlusOneCol = '';
+  let suggestedPlusOneNameCol = '';
   let suggestedPlusOneFirstNameCol = '';
   let suggestedPlusOneLastNameCol = '';
   let suggestedHouseholdNameCol = '';
@@ -198,6 +209,18 @@ export function detectCsvHeaders(headers: string[]): {
         suggestedEmailCol = h;
       }
     }
+    if (!suggestedPhoneCol) {
+      if (
+        lower.includes('phone') ||
+        lower.includes('mobile') ||
+        lower.includes('cell') ||
+        lower.includes('telephone') ||
+        lower === 'tel' ||
+        lower.includes('sms')
+      ) {
+        suggestedPhoneCol = h;
+      }
+    }
     if (!suggestedAddressLine1Col) {
       if (
         lower.includes('address line 1') ||
@@ -248,15 +271,42 @@ export function detectCsvHeaders(headers: string[]): {
       }
     }
     if (!suggestedDietaryNotesCol) {
+      const isMealSelectionHeader =
+        lower.includes('meal selection') ||
+        lower.includes('meal choice') ||
+        lower.includes('meal option') ||
+        lower.includes('meal summary') ||
+        lower === 'meal' ||
+        lower === 'meals';
       if (
-        lower.includes('diet') ||
-        lower.includes('dietary') ||
-        lower.includes('allerg') ||
-        lower.includes('food') ||
-        lower.includes('meal') ||
-        lower.includes('restriction')
+        !isMealSelectionHeader &&
+        (lower.includes('diet') ||
+          lower.includes('dietary') ||
+          lower.includes('allerg') ||
+          lower.includes('food') ||
+          lower.includes('meal') ||
+          lower.includes('restriction'))
       ) {
         suggestedDietaryNotesCol = h;
+      }
+    }
+    if (!suggestedPlusOneNameCol) {
+      if (
+        (lower === 'plus-one name' ||
+          lower === 'plus one name' ||
+          lower === 'plusone name' ||
+          lower === 'plus-one names' ||
+          lower === 'plus one names' ||
+          lower === '+1 name' ||
+          lower === '+1 names' ||
+          lower === 'companion name' ||
+          lower === 'companion names' ||
+          lower === 'guest 2 name' ||
+          lower === 'guest2 name') &&
+        !lower.includes('first') &&
+        !lower.includes('last')
+      ) {
+        suggestedPlusOneNameCol = h;
       }
     }
     if (!suggestedPlusOneFirstNameCol) {
@@ -343,6 +393,7 @@ export function detectCsvHeaders(headers: string[]): {
       suggestedGuestFirstNameCol,
       suggestedGuestLastNameCol,
       suggestedEmailCol,
+      suggestedPhoneCol,
       suggestedAddressLine1Col,
       suggestedAddressLine2Col,
       suggestedCityCol,
@@ -351,6 +402,7 @@ export function detectCsvHeaders(headers: string[]): {
       suggestedCountryCol,
       suggestedDietaryNotesCol,
       suggestedPlusOneCol,
+      suggestedPlusOneNameCol,
       suggestedPlusOneFirstNameCol,
       suggestedPlusOneLastNameCol,
       suggestedHouseholdNameCol,
@@ -374,6 +426,7 @@ export function detectCsvHeaders(headers: string[]): {
     guestLastNameCol: suggestedGuestLastNameCol,
     suggestedCodeCol,
     suggestedEmailCol,
+    suggestedPhoneCol,
     suggestedAddressLine1Col,
     suggestedAddressLine2Col,
     suggestedCityCol,
@@ -382,6 +435,7 @@ export function detectCsvHeaders(headers: string[]): {
     suggestedCountryCol,
     suggestedDietaryNotesCol,
     suggestedPlusOneCol,
+    suggestedPlusOneNameCol,
     suggestedPlusOneFirstNameCol,
     suggestedPlusOneLastNameCol,
     suggestedHouseholdNameCol,
@@ -408,6 +462,7 @@ export function parseCsvContent(text: string): CsvParseResult {
       guestLastNameCol: '',
       suggestedCodeCol: '',
       suggestedEmailCol: '',
+      suggestedPhoneCol: '',
       suggestedAddressLine1Col: '',
       suggestedAddressLine2Col: '',
       suggestedCityCol: '',
@@ -416,6 +471,7 @@ export function parseCsvContent(text: string): CsvParseResult {
       suggestedCountryCol: '',
       suggestedDietaryNotesCol: '',
       suggestedPlusOneCol: '',
+      suggestedPlusOneNameCol: '',
       suggestedPlusOneFirstNameCol: '',
       suggestedPlusOneLastNameCol: '',
       suggestedHouseholdNameCol: '',
@@ -532,6 +588,7 @@ export function validateSingleCsvRow(
     guestLastNameCol = '',
     codeCol = '',
     emailCol = '',
+    phoneCol = '',
     addressLine1Col = '',
     addressLine2Col = '',
     cityCol = '',
@@ -540,6 +597,7 @@ export function validateSingleCsvRow(
     countryCol = '',
     dietaryNotesCol = '',
     plusOneCol = '',
+    plusOneNameCol = '',
     plusOneFirstNameCol = '',
     plusOneLastNameCol = '',
     householdNameCol = '',
@@ -557,6 +615,7 @@ export function validateSingleCsvRow(
         guestLastNameCol,
         codeCol,
         emailCol,
+        phoneCol,
         addressLine1Col,
         addressLine2Col,
         cityCol,
@@ -565,6 +624,7 @@ export function validateSingleCsvRow(
         countryCol,
         dietaryNotesCol,
         plusOneCol,
+        plusOneNameCol,
         plusOneFirstNameCol,
         plusOneLastNameCol,
         householdNameCol,
@@ -587,6 +647,11 @@ export function validateSingleCsvRow(
   }
   const code = codeCol ? normalizeInvitationCode(r[codeCol]) : '';
   const email = emailCol ? (r[emailCol] || '').trim() : (r['email'] || r['Email'] || '').trim();
+  const rawPhone = sanitizeGuestPhoneInput(
+    phoneCol
+      ? r[phoneCol]
+      : (r['phone'] ?? r['Phone Number'] ?? r['Phone'] ?? r['Mobile'] ?? r['phoneNumber'] ?? '')
+  );
   const addressLine1 = addressLine1Col ? (r[addressLine1Col] || '').trim() : (r['addressLine1'] || r['Address Line 1'] || r['Address'] || '').trim();
   const addressLine2 = addressLine2Col ? (r[addressLine2Col] || '').trim() : (r['addressLine2'] || r['Address Line 2'] || '').trim();
   const city = cityCol ? (r[cityCol] || '').trim() : (r['city'] || r['City'] || '').trim();
@@ -595,8 +660,22 @@ export function validateSingleCsvRow(
   const country = countryCol ? (r[countryCol] || '').trim() : (r['country'] || r['Country'] || '').trim();
   const dietaryNotes = dietaryNotesCol ? (r[dietaryNotesCol] || '').trim() : (r['dietaryNotes'] || r['Dietary Notes'] || '').trim();
   const rawPlusOne = plusOneCol ? (r[plusOneCol] || '').trim() : (r['plusOneAllocations'] || r['Plus Ones'] || '').trim();
-  const plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
-  const plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
+  let plusOneFirstName = plusOneFirstNameCol ? (r[plusOneFirstNameCol] || '').trim() : (r['plusOneFirstName'] || r['Plus-One First Name'] || r['Plus One First Name'] || '').trim();
+  let plusOneLastName = plusOneLastNameCol ? (r[plusOneLastNameCol] || '').trim() : (r['plusOneLastName'] || r['Plus-One Last Name'] || r['Plus One Last Name'] || '').trim();
+  const rawPlusOneFullName = plusOneNameCol
+    ? (r[plusOneNameCol] || '').trim()
+    : (r['plusOneName'] || r['Plus-One Name'] || r['Plus One Name'] || '').trim();
+  let parsedPlusOneNames: string[] | undefined;
+  if (rawPlusOneFullName) {
+    const parsedCompanion = parsePlusOneNameCell(rawPlusOneFullName);
+    if (!plusOneFirstName && !plusOneLastName) {
+      plusOneFirstName = parsedCompanion.firstName;
+      plusOneLastName = parsedCompanion.lastName;
+    }
+    if (parsedCompanion.plusOneNames && parsedCompanion.plusOneNames.length > 0) {
+      parsedPlusOneNames = parsedCompanion.plusOneNames;
+    }
+  }
   const householdName = householdNameCol ? (r[householdNameCol] || '').trim() : (r['householdName'] || r['Household Name'] || r['Household'] || '').trim();
   const partyGroup = partyGroupCol ? (r[partyGroupCol] || '').trim() : (r['partyGroup'] || r['Party Group'] || r['Party Side'] || r['Family Side'] || r['Side'] || '').trim();
   const rawPartyTags = partyTagsCol ? (r[partyTagsCol] || '').trim() : (r['partyTags'] || r['Party Tags'] || r['Tags'] || '').trim();
@@ -619,6 +698,7 @@ export function validateSingleCsvRow(
       plusOneLastName,
       householdName,
       partyGroup,
+      extraFields: rawPhone ? { phone: rawPhone } : undefined,
     },
     { mode: 'row' }
   );
@@ -641,7 +721,7 @@ export function validateSingleCsvRow(
   }
 
   // Collect extra fields
-  const extraFields: Record<string, string> = {};
+  const extraFields: Record<string, string | string[]> = {};
 
   if (extraCols && Array.isArray(extraCols)) {
     extraCols.forEach((col) => {
@@ -657,12 +737,22 @@ export function validateSingleCsvRow(
     });
   }
 
+  const normalizedPhone =
+    rawPhone && !fieldErrors.phone ? normalizeGuestPhone(rawPhone) || undefined : undefined;
+  if (normalizedPhone) {
+    extraFields.phone = normalizedPhone;
+  }
+  if (parsedPlusOneNames && parsedPlusOneNames.length > 0) {
+    extraFields.plusOneNames = parsedPlusOneNames;
+  }
+
   return {
     rowIndex: idx + 1,
     raw: r,
     guestName,
     code,
     email: email || undefined,
+    phone: normalizedPhone ?? (rawPhone || undefined),
     addressLine1: addressLine1 || undefined,
     addressLine2: addressLine2 || undefined,
     city: city || undefined,
@@ -777,6 +867,7 @@ export interface EditableCsvRow {
   guestName: string;
   code: string;
   email: string;
+  phone?: string;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -790,7 +881,7 @@ export interface EditableCsvRow {
   householdName: string;
   partyGroup: string;
   partyTags: string;
-  extraFields: Record<string, string>;
+  extraFields: Record<string, string | string[]>;
 }
 
 export interface FailedCsvExportRow {
@@ -811,6 +902,27 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
   return {
     firstName: parts[0].slice(0, PLUS_ONE_NAME_MAX_LENGTH),
     lastName: parts.slice(1).join(' ').slice(0, PLUS_ONE_NAME_MAX_LENGTH),
+  };
+}
+
+export function parsePlusOneNameCell(rawValue: string): {
+  firstName: string;
+  lastName: string;
+  plusOneNames?: string[];
+} {
+  const names = rawValue
+    .split(',')
+    .map((part) => part.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .map((part) => part.slice(0, PLUS_ONE_NAME_MAX_LENGTH * 2));
+  if (names.length === 0) {
+    return { firstName: '', lastName: '' };
+  }
+  const firstSplit = splitFullName(names[0]);
+  return {
+    firstName: firstSplit.firstName,
+    lastName: firstSplit.lastName,
+    plusOneNames: names.length > 1 ? names : undefined,
   };
 }
 
@@ -902,26 +1014,30 @@ export function consolidateHouseholdCsvRows(
       extraCompanionStartIdx = 1;
     }
 
-    // Preserve any companion plus-one names or 3rd+ household member names in extraFields
-    const additionalGuestNames: string[] = [];
+    // Preserve all consolidated companion names in extraFields.plusOneNames
+    const allCompanionNames: string[] = [];
+    const primaryCompanionFullName = combineFirstAndLastName(plusOneFirstName, plusOneLastName);
+    if (primaryCompanionFullName) {
+      allCompanionNames.push(primaryCompanionFullName);
+    }
     if (extraCompanionStartIdx === 1 && (companions[0].plusOneFirstName || companions[0].plusOneLastName)) {
       const compPlusOne = combineFirstAndLastName(
         companions[0].plusOneFirstName,
         companions[0].plusOneLastName
       );
-      if (compPlusOne) additionalGuestNames.push(compPlusOne);
+      if (compPlusOne) allCompanionNames.push(compPlusOne);
     }
     for (let c = extraCompanionStartIdx; c < companions.length; c++) {
-      const compName = companions[c].guestName.trim();
-      if (compName) additionalGuestNames.push(compName);
+      const compName = companions[c].guestName.trim().replace(/\s+/g, ' ');
+      if (compName) allCompanionNames.push(compName);
       const compPlusOne = combineFirstAndLastName(
         companions[c].plusOneFirstName,
         companions[c].plusOneLastName
       );
-      if (compPlusOne) additionalGuestNames.push(compPlusOne);
+      if (compPlusOne) allCompanionNames.push(compPlusOne);
     }
 
-    // Allocations: preserve malformed string if any; else Math.max(sum of explicit allocations, companions.length + companion plus-ones)
+    // Allocations: preserve malformed string if any; else Math.max(sum of explicit allocations, allCompanionNames.length, companions.length)
     let malformedAlloc: string | null = null;
     let explicitSum = 0;
     for (const item of bucket.items) {
@@ -936,7 +1052,7 @@ export function consolidateHouseholdCsvRows(
     const resolvedAllocations =
       malformedAlloc !== null
         ? malformedAlloc
-        : String(Math.max(explicitSum, companions.length));
+        : String(Math.max(explicitSum, allCompanionNames.length, companions.length));
 
     const mergedDietary = mergeDietaryNotes(bucket.items.map((item) => item.dietaryNotes)) || '';
     const mergedTags = normalizePartyTags(
@@ -947,25 +1063,47 @@ export function consolidateHouseholdCsvRows(
       { dedupe: true }
     ).join(', ');
 
-    const mergedExtra: Record<string, string> = {};
+    const mergedExtra: Record<string, string | string[]> = {};
+    const existingPlusOneNames: string[] = [];
     for (let k = bucket.items.length - 1; k >= 0; k--) {
       const ef = bucket.items[k].extraFields;
       if (ef) {
         for (const [fieldKey, fieldVal] of Object.entries(ef)) {
-          if (fieldVal && fieldVal.trim()) {
+          if (fieldKey === 'additionalGuests') {
+            continue;
+          }
+          if (fieldKey === 'plusOneNames' && Array.isArray(fieldVal)) {
+            for (const n of fieldVal) {
+              if (typeof n === 'string' && n.trim()) {
+                existingPlusOneNames.push(n.trim());
+              }
+            }
+            continue;
+          }
+          if (typeof fieldVal === 'string' && fieldVal.trim()) {
             mergedExtra[fieldKey] = fieldVal.trim();
           }
         }
       }
     }
-    if (additionalGuestNames.length > 0) {
-      const existingAdditional = mergedExtra.additionalGuests
-        ? `${mergedExtra.additionalGuests}, ${additionalGuestNames.join(', ')}`
-        : additionalGuestNames.join(', ');
-      mergedExtra.additionalGuests = existingAdditional;
+
+    for (const existingName of existingPlusOneNames) {
+      if (!allCompanionNames.includes(existingName)) {
+        allCompanionNames.push(existingName);
+      }
     }
 
-    consolidated.push({
+    if (allCompanionNames.length > 0) {
+      mergedExtra.plusOneNames = allCompanionNames;
+    }
+
+    const consolidatedPhone = pickFirst((r) =>
+      sanitizeGuestPhoneInput(
+        r.phone ?? (typeof r.extraFields?.phone === 'string' ? r.extraFields.phone : '')
+      )
+    );
+
+    const consolidatedRow: EditableCsvRow = {
       guestName: primary.guestName.trim() || pickFirst((r) => r.guestName),
       code: pickFirst((r) => r.code),
       email: pickFirst((r) => r.email),
@@ -983,7 +1121,12 @@ export function consolidateHouseholdCsvRows(
       partyGroup: pickFirst((r) => r.partyGroup),
       partyTags: mergedTags,
       extraFields: mergedExtra,
-    });
+    };
+    if (consolidatedPhone) {
+      consolidatedRow.phone = consolidatedPhone;
+    }
+
+    consolidated.push(consolidatedRow);
   }
 
   return consolidated;
@@ -993,6 +1136,7 @@ const FAILED_ROWS_STANDARD_HEADERS = [
   'Guest Name',
   'Invitation Code',
   'Email',
+  'Phone Number',
   'Address Line 1',
   'Address Line 2',
   'City',
@@ -1024,19 +1168,24 @@ export function generateFailedRowsCsv(
   ).filter(
     (col) =>
       col !== 'Validation Errors' &&
+      col !== 'phone' &&
+      col !== 'plusOneNames' &&
       !(FAILED_ROWS_STANDARD_HEADERS as readonly string[]).includes(col)
   );
 
   const headers = [...FAILED_ROWS_STANDARD_HEADERS, ...dynamicExtraCols, 'Validation Errors'];
 
   const records = failedRows.map(({ row, errors }) => {
+    const phoneCell =
+      row.phone || (typeof row.extraFields?.phone === 'string' ? row.extraFields.phone : '');
     const rec: Record<string, unknown> = {
       'Guest Name': row.guestName,
       'Invitation Code': row.code,
       Email: row.email,
+      'Phone Number': phoneCell,
       'Address Line 1': row.addressLine1,
       'Address Line 2': row.addressLine2,
-      City: row.city,
+      'City': row.city,
       State: row.state,
       'ZIP Code': row.zipCode,
       Country: row.country,
@@ -1049,7 +1198,8 @@ export function generateFailedRowsCsv(
       'Party Tags': row.partyTags,
     };
     for (const col of dynamicExtraCols) {
-      rec[col] = row.extraFields?.[col] ?? '';
+      const val = row.extraFields?.[col];
+      rec[col] = Array.isArray(val) ? val.join(', ') : (val ?? '');
     }
     rec['Validation Errors'] = errors.join('; ');
     return rec;

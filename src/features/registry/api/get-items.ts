@@ -64,8 +64,16 @@ export const GET = withApiMiddleware(async (req?: NextRequest) => {
 
   if (isAdmin) {
     result.items = sanitizeRegistryItems(result.items);
+  } else if (result && Array.isArray(result.items)) {
+    return NextResponse.json({
+      ...result,
+      items: result.items.map(maskRegistryItem),
+    });
   } else {
-    result.items = result.items.map(maskRegistryItem);
+    const rawResult: unknown = result;
+    if (Array.isArray(rawResult)) {
+      return NextResponse.json(rawResult.map(maskRegistryItem));
+    }
   }
 
   return NextResponse.json(result);

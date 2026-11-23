@@ -942,7 +942,7 @@ describe('ThankYouNotesPage', () => {
     });
 
     // 3. Link household address on an existing unlinked contributor
-    fireEvent.click(screen.getByRole('button', { name: 'Link household address for Alice Johnson' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Link Address for Alice Johnson' }));
     const rowHouseholdSelect = await screen.findByLabelText('Household address for Alice Johnson');
     fireEvent.change(rowHouseholdSelect, { target: { value: 'inv-clara' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

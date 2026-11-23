@@ -33,10 +33,18 @@ jest.mock('@/lib/prisma', () => ({
 jest.mock('@/lib/config', () => {
   const actual = jest.requireActual('@/lib/config');
   return {
+    ...actual,
     getAppConfig: jest.fn(),
+    sanitizeAppConfigForBackup: jest.fn((config) =>
+      actual.sanitizeAppConfigForBackup(config),
+    ),
     toPublicAppConfig: jest.fn((config) => actual.toPublicAppConfig(config)),
     toAdminAppConfig: jest.fn((config) => actual.toAdminAppConfig(config)),
-    isMultisiteEnabled: jest.fn(() => process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1'),
+    isMultisiteEnabled: jest.fn(
+      () =>
+        process.env.MULTISITE_ENABLED === 'true' ||
+        process.env.MULTISITE_ENABLED === '1',
+    ),
   };
 });
 
@@ -49,15 +57,34 @@ jest.mock('next/cache', () => ({
 }));
 
 import { prisma } from '@/lib/prisma';
-import { getAppConfig, toPublicAppConfig, toAdminAppConfig } from '@/lib/config';
+import {
+  getAppConfig,
+  sanitizeAppConfigForBackup,
+  toAdminAppConfig,
+} from '@/lib/config';
+import {
+  APP_CONFIG_BACKUP_KEYS,
+  APP_CONFIG_SECRET_KEYS,
+} from '@/lib/backupPersistence';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { revalidatePath } from 'next/cache';
-import { AppConfigSchema, CreateAppConfigProfileSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
+import {
+  AppConfigSchema,
+  CreateAppConfigProfileSchema,
+  UpdateAppConfigSchema,
+  toAppConfigDbPayload,
+} from '@/features/content';
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
-const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
-const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
-const mockRevalidatePath = revalidatePath as jest.MockedFunction<typeof revalidatePath>;
+const mockGetAppConfig = getAppConfig as jest.MockedFunction<
+  typeof getAppConfig
+>;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<
+  typeof isAdminRequest
+>;
+const mockRevalidatePath = revalidatePath as jest.MockedFunction<
+  typeof revalidatePath
+>;
 
 const validConfigData = {
   partner1Name: 'TestBride',
@@ -244,7 +271,7 @@ describe('PUT /api/admin/settings', () => {
         data: expect.objectContaining({
           faviconUrl: '/uploads/abc123.ico',
         }),
-      })
+      }),
     );
   });
 
@@ -261,7 +288,7 @@ describe('PUT /api/admin/settings', () => {
         data: expect.objectContaining({
           ogImageUrl: '/uploads/def456.jpg',
         }),
-      })
+      }),
     );
   });
 
@@ -276,9 +303,10 @@ describe('PUT /api/admin/settings', () => {
     expect(mockPrisma.appConfig.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          seoKeywords: '{{brideName}} and {{groomName}} wedding, wedding website',
+          seoKeywords:
+            '{{brideName}} and {{groomName}} wedding, wedding website',
         }),
-      })
+      }),
     );
   });
 
@@ -298,14 +326,17 @@ describe('PUT /api/admin/settings', () => {
           themePreset: 'modern',
           themeTokens: customTokens,
         }),
-      })
+      }),
     );
   });
 
   it('strips stale light preset defaults from previous preset during PUT save while keeping explicit overrides', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const { getPresetTokens } = await import('@/lib/theme/presets');
-    const classicDefaults = getPresetTokens('classic', 'light') as unknown as Record<string, unknown>;
+    const classicDefaults = getPresetTokens(
+      'classic',
+      'light',
+    ) as unknown as Record<string, unknown>;
     const hydratedClassicTokens: Record<string, string> = {};
     for (const [k, v] of Object.entries(classicDefaults)) {
       if (k.startsWith('--') && typeof v === 'string') {
@@ -329,7 +360,7 @@ describe('PUT /api/admin/settings', () => {
             '--btn-radius': '0.625rem',
           },
         }),
-      })
+      }),
     );
   });
 
@@ -354,7 +385,7 @@ describe('PUT /api/admin/settings', () => {
           layoutCardPadding: '2.5rem',
           layoutBorderRadius: '0.5rem',
         }),
-      })
+      }),
     );
   });
 
@@ -375,7 +406,7 @@ describe('PUT /api/admin/settings', () => {
           ogImageUrl: '/uploads/og.jpg',
           seoKeywords: 'custom keyword one, custom keyword two',
         }),
-      })
+      }),
     );
   });
 
@@ -415,7 +446,12 @@ describe('PUT /api/admin/settings', () => {
 
   it('returns 400 when ogImageUrl or faviconUrl contains parent traversal or backslashes', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    for (const badUrl of ['/../canary-outside-public.svg', '/%2e%2e/canary-outside-public.svg', '/images\\og.svg', '/images/og.svg\0']) {
+    for (const badUrl of [
+      '/../canary-outside-public.svg',
+      '/%2e%2e/canary-outside-public.svg',
+      '/images\\og.svg',
+      '/images/og.svg\0',
+    ]) {
       const req = makeAuthReq({
         ...validConfigData,
         ogImageUrl: badUrl,
@@ -425,7 +461,6 @@ describe('PUT /api/admin/settings', () => {
     }
     expect(mockPrisma.appConfig.update).not.toHaveBeenCalled();
   });
-
 
   it('does not call revalidatePath when update fails with invalid coordinates', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
@@ -440,7 +475,9 @@ describe('PUT /api/admin/settings', () => {
 
   it('returns 500 when prisma update throws', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    (mockPrisma.appConfig.update as jest.Mock).mockRejectedValue(new Error('DB connection failed'));
+    (mockPrisma.appConfig.update as jest.Mock).mockRejectedValue(
+      new Error('DB connection failed'),
+    );
 
     const req = makeAuthReq(validConfigData);
     const res = await PUT(req);
@@ -452,7 +489,9 @@ describe('PUT /api/admin/settings', () => {
 
   it('does not call revalidatePath when prisma throws', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    (mockPrisma.appConfig.update as jest.Mock).mockRejectedValue(new Error('DB error'));
+    (mockPrisma.appConfig.update as jest.Mock).mockRejectedValue(
+      new Error('DB error'),
+    );
 
     const req = makeAuthReq(validConfigData);
     await PUT(req);
@@ -464,9 +503,48 @@ describe('PUT /api/admin/settings', () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const savedRecord = {
       ...updatedConfig,
+      subdomain: null,
+      brandMonogram: 'A&T',
+      brandLogoUrl: null,
+      brandLogoAlt: null,
+      heroImageUrl: null,
+      heroImageAlt: null,
+      brandWatermarkUrl: null,
+      brandWatermarkAlt: null,
+      badgeGraphicUrl: null,
+      badgeGraphicAlt: null,
+      rsvpOpen: false,
+      rsvpDeadlineDate: '2026-08-15',
+      rsvpGracePeriodHours: 48,
+      rsvpClosedMessage: 'RSVPs closed',
+      emailProvider: 'smtp',
+      smtpHost: 'smtp.stored.example.com',
+      smtpPort: 587,
+      smtpUser: 'mailer',
       smtpPass: 'stored-smtp-pass',
+      smtpFrom: 'invites@example.com',
+      smtpSecure: true,
+      resendApiKey: 're_stored_secret',
+      resendFrom: 'resend@example.com',
+      sendgridApiKey: 'SG.stored_secret',
+      sendgridFrom: 'sendgrid@example.com',
+      smsProvider: 'twilio',
       twilioAccountSid: 'AC_STORED',
       twilioAuthToken: 'stored-twilio-token',
+      twilioFromNumber: '+15551234567',
+      broadcastBatchSize: 75,
+      broadcastBatchDelayMs: 750,
+      shippingRecipientName: 'Alex & Taylor',
+      shippingAddressLine1: '100 Maple St',
+      shippingAddressLine2: 'Apt 4B',
+      shippingCity: 'Chicago',
+      shippingState: 'IL',
+      shippingZip: '60601',
+      shippingCountry: 'USA',
+      shippingPhone: '555-0199',
+      shippingDeliveryNotes: 'Leave with concierge',
+      defaultPaymentHandleType: 'Venmo',
+      defaultPaymentHandle: '@alex-taylor',
     };
     (mockPrisma.appConfig.update as jest.Mock).mockResolvedValue(savedRecord);
 
@@ -475,7 +553,7 @@ describe('PUT /api/admin/settings', () => {
 
     expect(res.status).toBe(200);
     const parsedSaved = AppConfigSchema.parse(savedRecord);
-    expect(toPublicAppConfig).toHaveBeenCalledWith(parsedSaved);
+    expect(sanitizeAppConfigForBackup).toHaveBeenCalledWith(parsedSaved);
     expect(toAdminAppConfig).toHaveBeenCalledWith(parsedSaved);
 
     const json = await res.json();
@@ -484,10 +562,36 @@ describe('PUT /api/admin/settings', () => {
     expect(json.data.smtpPass).toBeUndefined();
     expect(json.data.twilioAuthToken).toBeUndefined();
 
-    const snapshotCall = (mockPrisma.snapshotVersion.create as jest.Mock).mock.calls[0][0];
-    expect(snapshotCall.data.data.smtpPass).toBeUndefined();
-    expect(snapshotCall.data.data.twilioAccountSid).toBeUndefined();
-    expect(snapshotCall.data.data.twilioAuthToken).toBeUndefined();
+    const snapshotCall = (mockPrisma.snapshotVersion.create as jest.Mock).mock
+      .calls[0][0];
+    const snapData = snapshotCall.data.data;
+    expect(Object.keys(snapData).sort()).toEqual(
+      [...APP_CONFIG_BACKUP_KEYS].sort(),
+    );
+    expect(snapData.twilioAccountSid).toBe('AC_STORED');
+    expect(snapData.rsvpGracePeriodHours).toBe(48);
+    expect(snapData.shippingRecipientName).toBe('Alex & Taylor');
+    expect(snapData.defaultPaymentHandle).toBe('@alex-taylor');
+
+    for (const secretKey of APP_CONFIG_SECRET_KEYS) {
+      expect(snapData[secretKey]).toBeUndefined();
+    }
+    for (const virtualKey of [
+      'multisiteEnabled',
+      'isRsvpOpen',
+      'typographyScale',
+      'spacingScale',
+      'borderTreatment',
+      'brandDimensions',
+      'brandLogoWidth',
+      'brandLogoHeight',
+      'brandHeroHeight',
+      'brandWatermarkWidth',
+      'brandWatermarkOpacity',
+      'brandBadgeSize',
+    ]) {
+      expect(snapData[virtualKey]).toBeUndefined();
+    }
   });
 
   it('preserves stored secrets when password inputs are blank and rotates when provided', async () => {
@@ -535,7 +639,7 @@ describe('PUT /api/admin/settings', () => {
         data: expect.objectContaining({
           timezone: 'Europe/Paris',
         }),
-      })
+      }),
     );
   });
 
@@ -563,9 +667,12 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
 
   it('GET with list=true returns only canonical global profile in single-site mode', async () => {
     mockGetAppConfig.mockResolvedValue(updatedConfig as any);
-    const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
-      headers: { cookie: 'admin_auth=valid-token' }
-    });
+    const req = new NextRequest(
+      'http://localhost/api/admin/settings?list=true',
+      {
+        headers: { cookie: 'admin_auth=valid-token' },
+      },
+    );
     const res = await GET(req);
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -575,9 +682,12 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
 
   it('GET with id passes global to getAppConfig in single-site mode', async () => {
     mockGetAppConfig.mockResolvedValue(updatedConfig as any);
-    const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
-      headers: { cookie: 'admin_auth=valid-token' }
-    });
+    const req = new NextRequest(
+      'http://localhost/api/admin/settings?id=profile-1',
+      {
+        headers: { cookie: 'admin_auth=valid-token' },
+      },
+    );
     const res = await GET(req);
     expect(res.status).toBe(200);
     expect(mockGetAppConfig).toHaveBeenCalledWith('global');
@@ -590,8 +700,8 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
       body: JSON.stringify({
         brideName: 'StagingBride',
         groomName: 'StagingGroom',
-        subdomain: 'staging'
-      })
+        subdomain: 'staging',
+      }),
     });
     const res = await POST(req);
     expect(res.status).toBe(400);
@@ -616,14 +726,32 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
 
   it('GET with list=true lists all profiles', async () => {
     const mockConfigs = [
-      { ...updatedConfig, id: 'global', partner1Name: 'Abby', partner2Name: 'Fred', brideName: 'Abby' },
-      { ...updatedConfig, id: 'profile-1', partner1Name: 'Staging', partner2Name: 'Test', brideName: 'Staging', subdomain: 'staging' }
+      {
+        ...updatedConfig,
+        id: 'global',
+        partner1Name: 'Abby',
+        partner2Name: 'Fred',
+        brideName: 'Abby',
+      },
+      {
+        ...updatedConfig,
+        id: 'profile-1',
+        partner1Name: 'Staging',
+        partner2Name: 'Test',
+        brideName: 'Staging',
+        subdomain: 'staging',
+      },
     ];
-    const mockFindMany = jest.spyOn(prisma.appConfig, 'findMany').mockResolvedValue(mockConfigs as any);
+    const mockFindMany = jest
+      .spyOn(prisma.appConfig, 'findMany')
+      .mockResolvedValue(mockConfigs as any);
 
-    const req = new NextRequest('http://localhost/api/admin/settings?list=true', {
-      headers: { cookie: 'admin_auth=valid-token' }
-    });
+    const req = new NextRequest(
+      'http://localhost/api/admin/settings?list=true',
+      {
+        headers: { cookie: 'admin_auth=valid-token' },
+      },
+    );
     const res = await GET(req);
 
     if (res.status !== 200) {
@@ -639,9 +767,12 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
 
   it('GET with id fetches a specific profile', async () => {
     mockGetAppConfig.mockResolvedValue(updatedConfig as any);
-    const req = new NextRequest('http://localhost/api/admin/settings?id=profile-1', {
-      headers: { cookie: 'admin_auth=valid-token' }
-    });
+    const req = new NextRequest(
+      'http://localhost/api/admin/settings?id=profile-1',
+      {
+        headers: { cookie: 'admin_auth=valid-token' },
+      },
+    );
     const res = await GET(req);
 
     expect(res.status).toBe(200);
@@ -649,17 +780,19 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
   });
 
   it('POST /api/admin/settings creates a new profile', async () => {
-    const mockCreate = jest.spyOn(prisma.appConfig, 'create').mockResolvedValue({
-      ...updatedConfig,
-      id: 'profile-new',
-      partner1Name: 'StagingBride',
-      partner2Name: 'StagingGroom',
-      brideName: 'StagingBride',
-      groomName: 'StagingGroom',
-      subdomain: 'staging',
-      weddingDate: new Date(),
-      baseUrl: 'https://example.com',
-    } as any);
+    const mockCreate = jest
+      .spyOn(prisma.appConfig, 'create')
+      .mockResolvedValue({
+        ...updatedConfig,
+        id: 'profile-new',
+        partner1Name: 'StagingBride',
+        partner2Name: 'StagingGroom',
+        brideName: 'StagingBride',
+        groomName: 'StagingGroom',
+        subdomain: 'staging',
+        weddingDate: new Date(),
+        baseUrl: 'https://example.com',
+      } as any);
 
     const req = new NextRequest('http://localhost/api/admin/settings', {
       method: 'POST',
@@ -667,8 +800,8 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
       body: JSON.stringify({
         partner1Name: 'StagingBride',
         partner2Name: 'StagingGroom',
-        subdomain: 'staging'
-      })
+        subdomain: 'staging',
+      }),
     });
     const res = await POST(req);
 
@@ -684,10 +817,12 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
   });
 
   it('POST /api/admin/settings fails if subdomain is already in use', async () => {
-    const mockFindUnique = jest.spyOn(prisma.appConfig, 'findUnique').mockResolvedValue({
-      id: 'existing-profile',
-      subdomain: 'staging'
-    } as any);
+    const mockFindUnique = jest
+      .spyOn(prisma.appConfig, 'findUnique')
+      .mockResolvedValue({
+        id: 'existing-profile',
+        subdomain: 'staging',
+      } as any);
 
     const req = new NextRequest('http://localhost/api/admin/settings', {
       method: 'POST',
@@ -695,8 +830,8 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
       body: JSON.stringify({
         brideName: 'NewBride',
         groomName: 'NewGroom',
-        subdomain: 'staging'
-      })
+        subdomain: 'staging',
+      }),
     });
     const res = await POST(req);
 
@@ -874,14 +1009,17 @@ describe('toAppConfigDbPayload mapper', () => {
       rsvpOpen: false,
       rsvpDeadlineDate: '2026-08-15',
       rsvpGracePeriodHours: 48,
-      rsvpClosedMessage: '<img src=x onerror=alert(1)>Please email hosts@wedding.example',
+      rsvpClosedMessage:
+        '<img src=x onerror=alert(1)>Please email hosts@wedding.example',
     });
     const dbPayload = toAppConfigDbPayload(parsed);
 
     expect(dbPayload.rsvpOpen).toBe(false);
     expect(dbPayload.rsvpDeadlineDate).toBe('2026-08-15');
     expect(dbPayload.rsvpGracePeriodHours).toBe(48);
-    expect(dbPayload.rsvpClosedMessage).toBe('Please email hosts@wedding.example');
+    expect(dbPayload.rsvpClosedMessage).toBe(
+      'Please email hosts@wedding.example',
+    );
 
     // Clearing cutoff date with null or empty string normalizes to ''
     const cleared = toAppConfigDbPayload(
@@ -889,7 +1027,7 @@ describe('toAppConfigDbPayload mapper', () => {
         ...baseInput,
         rsvpDeadlineDate: null,
         rsvpGracePeriodHours: '0',
-      })
+      }),
     );
     expect(cleared.rsvpDeadlineDate).toBe('');
     expect(cleared.rsvpGracePeriodHours).toBe(0);
@@ -899,7 +1037,7 @@ describe('toAppConfigDbPayload mapper', () => {
       UpdateAppConfigSchema.parse({
         ...baseInput,
         rsvpGracePeriodHours: 10,
-      })
+      }),
     ).toThrow(/Grace period must be 0, 12, 24, 48, 72, or 168 hours/i);
   });
 
@@ -908,13 +1046,27 @@ describe('toAppConfigDbPayload mapper', () => {
     process.env.MULTISITE_ENABLED = 'true';
     try {
       mockIsAdminRequest.mockResolvedValue(true);
-      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce(null);
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce(
+        null,
+      );
       (mockPrisma.appConfig.create as jest.Mock).mockResolvedValueOnce({
         ...updatedConfig,
         id: 'profile-custom',
+        subdomain: 'custom-site',
+        brandMonogram: null,
+        brandLogoUrl: null,
+        brandLogoAlt: null,
+        heroImageUrl: null,
+        heroImageAlt: null,
+        brandWatermarkUrl: null,
+        brandWatermarkAlt: null,
+        badgeGraphicUrl: null,
+        badgeGraphicAlt: null,
       });
 
-      const parsedMinimal = CreateAppConfigProfileSchema.parse({ id: 'profile-custom' });
+      const parsedMinimal = CreateAppConfigProfileSchema.parse({
+        id: 'profile-custom',
+      });
       expect(parsedMinimal.id).toBe('profile-custom');
       expect(parsedMinimal.venueName).toBe('TBD Venue');
       expect(parsedMinimal.partner1Name).toBe('Partner 1');
@@ -926,7 +1078,10 @@ describe('toAppConfigDbPayload mapper', () => {
           cookie: 'admin_auth=valid-token',
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ id: 'profile-custom', subdomain: 'custom-site' }),
+        body: JSON.stringify({
+          id: 'profile-custom',
+          subdomain: 'custom-site',
+        }),
       });
 
       const res = await POST(req);
@@ -938,8 +1093,21 @@ describe('toAppConfigDbPayload mapper', () => {
             subdomain: 'custom-site',
             venueName: 'TBD Venue',
           }),
-        })
+        }),
       );
+
+      const postSnap = (
+        mockPrisma.snapshotVersion.create as jest.Mock
+      ).mock.calls.at(-1)?.[0];
+      expect(postSnap.data.entityId).toBe('profile-custom');
+      expect(Object.keys(postSnap.data.data).sort()).toEqual(
+        [...APP_CONFIG_BACKUP_KEYS].sort(),
+      );
+      for (const secretKey of APP_CONFIG_SECRET_KEYS) {
+        expect(postSnap.data.data[secretKey]).toBeUndefined();
+      }
+      expect(postSnap.data.data.multisiteEnabled).toBeUndefined();
+      expect(postSnap.data.data.typographyScale).toBeUndefined();
     } finally {
       process.env.MULTISITE_ENABLED = prevMultisite;
     }
@@ -976,10 +1144,12 @@ describe('toAppConfigDbPayload mapper', () => {
       ...updatedConfig,
       id: 'global',
     });
-    (mockPrisma.appConfig.update as jest.Mock).mockImplementationOnce(async ({ data }) => ({
-      ...updatedConfig,
-      ...data,
-    }));
+    (mockPrisma.appConfig.update as jest.Mock).mockImplementationOnce(
+      async ({ data }) => ({
+        ...updatedConfig,
+        ...data,
+      }),
+    );
 
     const req = makeAuthReq({
       ...validConfigData,
@@ -998,12 +1168,55 @@ describe('toAppConfigDbPayload mapper', () => {
           showCountdown: false,
           showAddToCalendar: false,
         }),
-      })
+      }),
     );
 
     const json = await res.json();
     expect(json.data.modules).toEqual(expectedResolvedModules);
     expect(json.data.showCountdown).toBe(false);
     expect(json.data.showAddToCalendar).toBe(false);
+  });
+  it('preserves hidden section title and content in admin settings response and saved snapshot while stripping secrets', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const hiddenFeatures = [
+      {
+        id: 'story',
+        type: 'story',
+        title: 'Our Story',
+        content: 'Visible story',
+        visible: true,
+      },
+      {
+        id: 'custom-hidden',
+        type: 'custom',
+        title: 'Draft Schedule',
+        content: 'Unpublished rehearsal notes',
+        visible: false,
+      },
+    ];
+
+    (mockPrisma.snapshotVersion.create as jest.Mock).mockClear();
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      ...updatedConfig,
+      id: 'global',
+    });
+    (mockPrisma.appConfig.update as jest.Mock).mockResolvedValueOnce({
+      ...updatedConfig,
+      features: hiddenFeatures,
+      smtpPass: 'stored-smtp-secret',
+    });
+
+    const req = makeAuthReq(validConfigData);
+    const res = await PUT(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.data.features).toEqual(hiddenFeatures);
+    expect(json.data.smtpPass).toBeUndefined();
+
+    const snapshotCall = (mockPrisma.snapshotVersion.create as jest.Mock).mock
+      .calls[0][0];
+    expect(snapshotCall.data.data.features).toEqual(hiddenFeatures);
+    expect(snapshotCall.data.data.smtpPass).toBeUndefined();
   });
 });

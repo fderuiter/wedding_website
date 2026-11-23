@@ -28,11 +28,10 @@ jest.mock('framer-motion', () => {
   };
 
   const createTag = (Tag: any) => {
-    const Mocked = ReactActual.forwardRef(({ children, ...props }: any, ref: any) =>
-      ReactActual.createElement(Tag, { ref, ...stripMotionProps(props) }, children)
-    );
-    Mocked.displayName = `Motion(${String(Tag)})`;
-    return Mocked;
+    function MockedMotionTag({ children, ref, ...props }: any) {
+      return ReactActual.createElement(Tag, { ref, ...stripMotionProps(props) }, children);
+    }
+    return MockedMotionTag;
   };
 
   return {

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import SubEventsMatrixPage from '../page';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -121,6 +121,173 @@ describe('SubEventsMatrixPage', () => {
       expect(screen.getByText('Alice Smith')).toBeInTheDocument();
       expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
     });
+  });
+
+  test('debounces rapid 7-character search typing to send 1 matrix request after 250ms pause', async () => {
+    jest.useFakeTimers();
+    try {
+      render(<SubEventsMatrixPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      });
+
+      const countAccessGets = () =>
+        (global.fetch as jest.Mock).mock.calls.filter(
+          ([url, opts]) =>
+            typeof url === 'string' &&
+            url.startsWith('/api/admin/sub-events/access?') &&
+            (!opts || !opts.method || opts.method === 'GET')
+        ).length;
+
+      expect(countAccessGets()).toBe(1);
+
+      const searchInput = screen.getByPlaceholderText(/Search guest, code, household/i);
+      const strokes = ['B', 'Br', 'Bri', 'Brid', 'Brida', 'Bridal', 'Bridal0'];
+
+      for (const stroke of strokes) {
+        fireEvent.change(searchInput, { target: { value: stroke } });
+        expect(searchInput).toHaveValue(stroke);
+        act(() => {
+          jest.advanceTimersByTime(100);
+        });
+      }
+
+      // Still within 250ms of the final keystroke -> zero additional requests sent during typing
+      expect(countAccessGets()).toBe(1);
+
+      // Advance past the remaining 150ms of the 250ms debounce window
+      act(() => {
+        jest.advanceTimersByTime(160);
+      });
+
+      await waitFor(() => {
+        expect(countAccessGets()).toBe(2);
+      });
+
+      const accessGetCalls = (global.fetch as jest.Mock).mock.calls.filter(
+        ([url, opts]) =>
+          typeof url === 'string' &&
+          url.startsWith('/api/admin/sub-events/access?') &&
+          (!opts || !opts.method || opts.method === 'GET')
+      );
+      expect(accessGetCalls[1][0]).toContain('search=Bridal0');
+      expect(accessGetCalls[1][0]).toContain('page=1');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('Clear Filters immediately resets search and filter selections and fetches page one without waiting for debounce', async () => {
+    jest.useFakeTimers();
+    try {
+      render(<SubEventsMatrixPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      });
+
+      const getAccessUrls = () =>
+        (global.fetch as jest.Mock).mock.calls
+          .filter(
+            ([url, opts]) =>
+              typeof url === 'string' &&
+              url.startsWith('/api/admin/sub-events/access?') &&
+              (!opts || !opts.method || opts.method === 'GET')
+          )
+          .map(([url]) => url as string);
+
+      // Select a tag filter and type a search query, let debounce settle
+      fireEvent.change(screen.getByLabelText('Filter by Party Tag'), {
+        target: { value: 'Bridal Party' },
+      });
+      const searchInput = screen.getByPlaceholderText(/Search guest, code, household/i);
+      fireEvent.change(searchInput, { target: { value: 'Alice' } });
+      act(() => {
+        jest.advanceTimersByTime(250);
+      });
+
+      await waitFor(() => {
+        const urls = getAccessUrls();
+        expect(urls[urls.length - 1]).toContain('search=Alice');
+        expect(urls[urls.length - 1]).toContain('partyTag=Bridal+Party');
+      });
+
+      const countBeforeClear = getAccessUrls().length;
+
+      // Click Clear Filters -> must reset immediately and fetch page 1 without advancing timers!
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Filters' }));
+
+      expect(searchInput).toHaveValue('');
+      expect(screen.getByLabelText('Filter by Party Tag')).toHaveValue('all');
+
+      await waitFor(() => {
+        expect(getAccessUrls().length).toBe(countBeforeClear + 1);
+      });
+
+      const clearedUrl = getAccessUrls()[getAccessUrls().length - 1];
+      expect(clearedUrl).toContain('page=1');
+      expect(clearedUrl).not.toContain('search=');
+      expect(clearedUrl).not.toContain('partyTag=');
+
+      // Also verify Clear Filters fetches page 1 immediately when clicked while a search debounce is still pending
+      fireEvent.change(searchInput, { target: { value: 'Bob' } });
+      const countWhilePending = getAccessUrls().length;
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Filters' }));
+
+      expect(searchInput).toHaveValue('');
+      await waitFor(() => {
+        expect(getAccessUrls().length).toBe(countWhilePending + 1);
+      });
+      expect(getAccessUrls()[getAccessUrls().length - 1]).toContain('page=1');
+      expect(getAccessUrls()[getAccessUrls().length - 1]).not.toContain('search=');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('bulk column actions apply the current search input value even if the debounce timer is still pending', async () => {
+    jest.useFakeTimers();
+    try {
+      render(<SubEventsMatrixPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Rehearsal Dinner')).toBeInTheDocument();
+      });
+
+      const searchInput = screen.getByPlaceholderText(/Search guest, code, household/i);
+      fireEvent.change(searchInput, { target: { value: 'Alice' } });
+
+      // Only 50ms elapsed (< 250ms debounce still pending!) -> click column Grant All immediately
+      act(() => {
+        jest.advanceTimersByTime(50);
+      });
+      const grantAllBtn = screen.getByTitle(/Grant Rehearsal Dinner access to all 2 matching guests/i);
+      fireEvent.click(grantAllBtn);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/sub-events/access/batch',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            subEventIds: ['se-rehearsal'],
+            action: 'grant',
+            search: 'Alice',
+          }),
+        })
+      );
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          'Access granted for column across matching guests.',
+          'success'
+        );
+        expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+        expect(screen.queryByText('Bob Jones')).not.toBeInTheDocument();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('filters guests by selected party tag', async () => {
@@ -596,5 +763,108 @@ describe('SubEventsMatrixPage', () => {
 
     const axeResults = await axe(container);
     expect(axeResults).toHaveNoViolations();
+  });
+
+  test('keeps Edit and Delete column headers mounted when 0 invitation codes match and passes existingSubEvents to modal', async () => {
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/admin/sub-events/access')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                subEvents: mockMatrixData.subEvents,
+                invitationCodes: [],
+                pagination: { total: 0, page: 1, limit: 25, totalPages: 1 },
+                filterOptions: { partyTags: [], partyGroups: [], householdNames: [] },
+              },
+            }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    }) as any;
+
+    render(<SubEventsMatrixPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('No invitation codes match your filter criteria.')
+      ).toBeInTheDocument();
+    });
+
+    // Sub-event column headers with Edit and Delete controls remain mounted even with 0 guest rows
+    expect(
+      screen.getByRole('button', { name: 'Edit sub-event Rehearsal Dinner' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Delete sub-event Rehearsal Dinner' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Edit sub-event Main Ceremony' })
+    ).toBeInTheDocument();
+
+    // Opening "+ Create New Sub-Event" renders Existing Sub-Events switcher inside modal
+    fireEvent.click(screen.getByRole('button', { name: /\+ Create New Sub-Event/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Create New Sub-Event' });
+    expect(within(dialog).getByText(/Existing Sub-Events/i)).toBeInTheDocument();
+  });
+
+  test('renders per-guest eventRsvps status, companions, meals, answers, and dietary notes inside matrix cells', async () => {
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/admin/sub-events/access')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                subEvents: mockMatrixData.subEvents,
+                invitationCodes: [
+                  {
+                    ...mockMatrixData.invitationCodes[0],
+                    eventRsvps: {
+                      'se-rehearsal': {
+                        status: 'attending',
+                        plusOneCount: 1,
+                        plusOneNames: ['Jordan Smith'],
+                        dietaryNotes: 'No peanuts',
+                        meals: [
+                          {
+                            attendee: 'Alice Smith',
+                            optionId: 'm-salmon',
+                            label: 'Herb Salmon',
+                            dietaryTags: ['gluten-free'],
+                          },
+                          {
+                            attendee: 'Jordan Smith',
+                            optionId: 'm-kids',
+                            label: 'Kids Pasta',
+                            dietaryTags: ['kids'],
+                          },
+                        ],
+                        answers: [{ prompt: 'Need shuttle?', answer: 'Yes' }],
+                      },
+                    },
+                  },
+                ],
+                pagination: { total: 1, page: 1, limit: 25, totalPages: 1 },
+                filterOptions: { partyTags: [], partyGroups: [], householdNames: [] },
+              },
+            }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    }) as any;
+
+    render(<SubEventsMatrixPage />);
+
+    const cellRsvp = await screen.findByTestId('matrix-cell-rsvp-inv-1-se-rehearsal');
+    expect(cellRsvp).toHaveTextContent('Attending (+1)');
+    expect(cellRsvp).toHaveTextContent('+1: Jordan Smith');
+    expect(cellRsvp).toHaveTextContent('Alice Smith: Herb Salmon (gluten-free)');
+    expect(cellRsvp).toHaveTextContent('Jordan Smith: Kids Pasta (kids)');
+    expect(cellRsvp).toHaveTextContent('Need shuttle?: Yes');
+    expect(cellRsvp).toHaveTextContent('Dietary: No peanuts');
   });
 });

@@ -138,9 +138,14 @@ describe('AddRegistryItemPage Tabbed Navigation', () => {
       'barware.csv',
       { type: 'text/csv' }
     );
-    fireEvent.drop(screen.getByRole('button', { name: /Upload CSV file drop zone/i }), {
-      dataTransfer: { files: [csvFile] },
-    });
+    fireEvent.drop(
+      screen.getByRole('button', {
+        name: /Click to upload or drag and drop your CSV file here/i,
+      }),
+      {
+        dataTransfer: { files: [csvFile] },
+      }
+    );
     expect(await screen.findByText('Crystal Carafe')).toBeInTheDocument();
     expect(screen.getByText('barware.csv')).toBeInTheDocument();
 

@@ -5,7 +5,7 @@ import { cn } from '@/utils/cn';
 /**
  * Props for the CategoryFilter component.
  */
-export interface CategoryFilterProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'> {
+export interface CategoryFilterProps extends Omit<React.ComponentPropsWithRef<'div'>, 'onChange'> {
   /** A list of all available category strings. */
   categories: string[];
   /** A list of the currently selected category strings. */
@@ -21,57 +21,51 @@ export interface CategoryFilterProps extends Omit<React.HTMLAttributes<HTMLDivEl
  * @description A component that renders a list of checkboxes for filtering items by category.
  * It allows users to select multiple categories to filter a list of items.
  */
-export const CategoryFilter = React.forwardRef<HTMLDivElement, CategoryFilterProps>(
-  (
-    {
-      categories,
-      selected,
-      onChange,
-      className,
-      label,
-      'aria-label': ariaLabel,
-      'aria-labelledby': ariaLabelledBy,
-      role = 'group',
-      ...props
-    },
-    ref
-  ) => {
-    const handleToggle = (category: string) => {
-      if (selected.includes(category)) {
-        onChange(selected.filter(c => c !== category));
-      } else {
-        onChange([...selected, category]);
-      }
-    };
+export function CategoryFilter({
+  categories,
+  selected,
+  onChange,
+  className,
+  label,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy,
+  role = 'group',
+  ref,
+  ...props
+}: CategoryFilterProps) {
+  const handleToggle = (category: string) => {
+    if (selected.includes(category)) {
+      onChange(selected.filter(c => c !== category));
+    } else {
+      onChange([...selected, category]);
+    }
+  };
 
-    const computedAriaLabel = ariaLabelledBy
-      ? undefined
-      : (ariaLabel || label || 'Filter by category');
+  const computedAriaLabel = ariaLabelledBy
+    ? undefined
+    : (ariaLabel || label || 'Filter by category');
 
-    return (
-      <div
-        ref={ref}
-        role={role}
-        aria-label={computedAriaLabel}
-        aria-labelledby={ariaLabelledBy}
-        className={cn('flex flex-wrap gap-2 mb-4', className)}
-        {...props}
-      >
-        {categories.map(category => (
-          <FormGroup key={category} className="inline-flex items-center space-y-0 mr-2">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                checked={selected.includes(category)}
-                onChange={() => handleToggle(category)}
-              />
-              <Label className="font-normal cursor-pointer">{category}</Label>
-            </div>
-          </FormGroup>
-        ))}
-      </div>
-    );
-  }
-);
-
-CategoryFilter.displayName = 'CategoryFilter';
+  return (
+    <div
+      ref={ref}
+      role={role}
+      aria-label={computedAriaLabel}
+      aria-labelledby={ariaLabelledBy}
+      className={cn('flex flex-wrap gap-2 mb-4', className)}
+      {...props}
+    >
+      {categories.map(category => (
+        <FormGroup key={category} className="inline-flex items-center space-y-0 mr-2">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              checked={selected.includes(category)}
+              onChange={() => handleToggle(category)}
+            />
+            <Label className="font-normal cursor-pointer">{category}</Label>
+          </div>
+        </FormGroup>
+      ))}
+    </div>
+  );
+}
 

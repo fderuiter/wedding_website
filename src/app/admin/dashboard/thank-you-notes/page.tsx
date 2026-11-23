@@ -449,7 +449,7 @@ export default function ThankYouNotesPage() {
     setIsOfflineFormOpen(false);
   };
 
-  const handleCreateOfflineGift = async (e: React.FormEvent) => {
+  const handleCreateOfflineGift = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const trimmedName = offlineName.trim();
     const parsedAmount = Number(offlineAmount);
@@ -1094,7 +1094,7 @@ export default function ThankYouNotesPage() {
                           <button
                             type="button"
                             onClick={() => startEditing(item)}
-                            aria-label={`Link household address for ${item.name}`}
+                            aria-label={`Link Address for ${item.name}`}
                             className="text-[11px] font-medium text-primary underline hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary rounded"
                           >
                             Link Address

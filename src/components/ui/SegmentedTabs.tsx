@@ -7,8 +7,11 @@ import { Icon } from './Icon';
 export interface SegmentedTabItem<T extends string = string> {
   value: T;
   label: React.ReactNode;
+  count?: number | string;
+  icon?: React.ReactNode;
   disabled?: boolean;
   'aria-label'?: string;
+  'data-testid'?: string;
   id?: string;
   panelId?: string;
   content?: React.ReactNode;
@@ -20,7 +23,7 @@ type TablistAccessibleLabel =
   | { 'aria-labelledby': string; 'aria-label'?: string };
 
 export type SegmentedTabsProps<T extends string = string> = Omit<
-  React.HTMLAttributes<HTMLDivElement>,
+  React.ComponentPropsWithRef<'div'>,
   'onChange' | 'aria-label' | 'aria-labelledby' | 'role'
 > &
   TablistAccessibleLabel & {
@@ -30,10 +33,11 @@ export type SegmentedTabsProps<T extends string = string> = Omit<
     idPrefix?: string;
     panelId?: string;
     size?: 'sm' | 'md';
+    variant?: 'segmented' | 'pills';
     panelClassName?: string;
   };
 
-export interface SegmentedTabPanelProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface SegmentedTabPanelProps extends React.ComponentPropsWithRef<'div'> {
   id: string;
   tabId: string;
 }
@@ -62,8 +66,16 @@ function findNextEnabledTabIndex<T extends string>(
   return -1;
 }
 
-export const SegmentedTabPanel = React.forwardRef<HTMLDivElement, SegmentedTabPanelProps>(
-  ({ id, tabId, className, tabIndex = 0, children, ...props }, ref) => (
+export function SegmentedTabPanel({
+  id,
+  tabId,
+  className,
+  tabIndex = 0,
+  children,
+  ref,
+  ...props
+}: SegmentedTabPanelProps) {
+  return (
     <div
       ref={ref}
       id={id}
@@ -75,14 +87,10 @@ export const SegmentedTabPanel = React.forwardRef<HTMLDivElement, SegmentedTabPa
     >
       {children}
     </div>
-  )
-);
-SegmentedTabPanel.displayName = 'SegmentedTabPanel';
+  );
+}
 
-function SegmentedTabsInner<T extends string = string>(
-  props: SegmentedTabsProps<T>,
-  ref: React.ForwardedRef<HTMLDivElement>
-) {
+export function SegmentedTabs<T extends string = string>(props: SegmentedTabsProps<T>) {
   const {
     tabs,
     value,
@@ -90,10 +98,12 @@ function SegmentedTabsInner<T extends string = string>(
     idPrefix,
     panelId,
     size = 'md',
+    variant = 'segmented',
     className,
     panelClassName,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledBy,
+    ref,
     ...rest
   } = props;
 
@@ -142,12 +152,17 @@ function SegmentedTabsInner<T extends string = string>(
   };
 
   const sizeStyles = {
-    sm: 'px-3 py-1.5 text-xs',
-    md: 'px-4 py-2 text-sm',
+    sm: variant === 'pills' ? 'px-3.5 py-1.5 text-xs' : 'px-3 py-1.5 text-xs',
+    md: variant === 'pills' ? 'px-5 py-2.5 text-sm' : 'px-4 py-2 text-sm',
   };
 
   const activeTabItem = tabs.find((tab) => tab.value === value) ?? tabs[0];
   const activeTabId = activeTabItem ? getTabId(activeTabItem) : `${resolvedPrefix}-tab-0`;
+
+  const containerStyles =
+    variant === 'pills'
+      ? 'flex flex-wrap items-center justify-center gap-3'
+      : 'inline-flex flex-wrap items-center rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700';
 
   const tablistElement = (
     <div
@@ -155,16 +170,28 @@ function SegmentedTabsInner<T extends string = string>(
       role="tablist"
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      className={cn(
-        'inline-flex flex-wrap items-center rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700',
-        className
-      )}
+      className={cn(containerStyles, className)}
       {...rest}
     >
       {tabs.map((tab, index) => {
         const isActive = tab.value === value;
         const tabId = getTabId(tab);
         const targetPanelId = tab.panelId ?? sharedPanelId;
+
+        const tabVariantStyles =
+          variant === 'pills'
+            ? isActive
+              ? 'rounded-full bg-[var(--color-primary,#B91C1C)] text-white shadow-md font-semibold border border-transparent focus-visible:ring-offset-2 forced-colors:outline forced-colors:outline-2'
+              : 'rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200 font-semibold border border-transparent hover:bg-stone-200 dark:hover:bg-stone-700 hover:text-stone-900 dark:hover:text-white focus-visible:ring-offset-2'
+            : isActive
+              ? 'rounded-md bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold border border-primary/50 underline decoration-2 underline-offset-4 forced-colors:outline forced-colors:outline-2'
+              : 'rounded-md text-gray-600 dark:text-gray-300 font-medium border border-transparent hover:text-gray-900 dark:hover:text-white';
+
+        const badgeStyles = isActive
+          ? variant === 'pills'
+            ? 'bg-[var(--badge-inverse-bg,#ffffff)] text-[var(--badge-inverse-text,#991b1b)] forced-colors:border forced-colors:border-[ButtonText]'
+            : 'bg-[var(--color-primary,#B91C1C)] text-white forced-colors:border forced-colors:border-[ButtonText]'
+          : 'bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-100';
 
         return (
           <button
@@ -178,6 +205,7 @@ function SegmentedTabsInner<T extends string = string>(
             aria-selected={isActive}
             aria-controls={targetPanelId}
             aria-label={tab['aria-label']}
+            data-testid={tab['data-testid']}
             disabled={tab.disabled}
             tabIndex={tab.disabled ? -1 : index === rovingIndex ? 0 : -1}
             onClick={() => {
@@ -187,22 +215,33 @@ function SegmentedTabsInner<T extends string = string>(
             }}
             onKeyDown={(e) => handleKeyDown(e, index)}
             className={cn(
-              'inline-flex items-center justify-center gap-1.5 font-medium rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed',
+              'inline-flex items-center justify-center gap-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:forced-colors:outline focus-visible:forced-colors:outline-2 disabled:opacity-50 disabled:cursor-not-allowed',
               sizeStyles[size],
-              isActive
-                ? 'bg-white dark:bg-gray-700 text-primary dark:text-white shadow-sm font-semibold border border-primary/50 underline decoration-2 underline-offset-4 forced-colors:outline forced-colors:outline-2'
-                : 'text-gray-600 dark:text-gray-300 border border-transparent hover:text-gray-900 dark:hover:text-white',
+              tabVariantStyles,
               tab.className
             )}
           >
-            {isActive && (
+            {tab.icon !== undefined ? (
+              tab.icon
+            ) : isActive ? (
               <Icon
                 name="Check"
                 className="h-3.5 w-3.5 shrink-0"
                 aria-hidden="true"
               />
-            )}
+            ) : null}
             <span>{tab.label}</span>
+            {tab.count !== undefined && (
+              <span
+                data-testid="tab-count-badge"
+                className={cn(
+                  'text-xs px-2 py-0.5 rounded-full font-semibold leading-tight',
+                  badgeStyles
+                )}
+              >
+                {tab.count}
+              </span>
+            )}
           </button>
         );
       })}
@@ -228,11 +267,3 @@ function SegmentedTabsInner<T extends string = string>(
     </div>
   );
 }
-
-export const SegmentedTabs = React.forwardRef(SegmentedTabsInner) as (<
-  T extends string = string,
->(
-  _props: SegmentedTabsProps<T> & { ref?: React.ForwardedRef<HTMLDivElement> }
-) => React.ReactElement) & { displayName?: string };
-
-SegmentedTabs.displayName = 'SegmentedTabs';

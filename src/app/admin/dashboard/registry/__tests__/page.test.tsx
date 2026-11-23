@@ -576,7 +576,7 @@ describe('AdminRegistryPage', () => {
     expect(results).toHaveNoViolations();
   });
 
-  it('supports priority toggling and arrow reordering from mobile card controls', async () => {
+  it('supports priority toggling, arrow reordering, edit, delete, and desktop-scoped fund badges across mobile and desktop trees', async () => {
     const std1 = createMockRegistryItem({
       id: 'mob-1',
       name: 'Mobile Gift One',
@@ -586,19 +586,38 @@ describe('AdminRegistryPage', () => {
     const std2 = createMockRegistryItem({
       id: 'mob-2',
       name: 'Mobile Gift Two',
+      itemType: 'CASH_FUND',
+      paymentHandle: null,
+      purchased: false,
+      isSample: false,
       isMostWanted: false,
       displayOrder: 1,
     });
 
+    let currentItems = [std1, std2];
+
     mockFetch.mockImplementation((url: string, options?: RequestInit) => {
       if (url === '/api/registry/items?limit=500') {
-        return Promise.resolve({ ok: true, json: async () => [std1, std2] });
+        return Promise.resolve({ ok: true, json: async () => currentItems });
+      }
+      if (url.includes('/api/registry/capabilities')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cardCheckoutEnabled: false,
+            defaultPaymentHandle: null,
+          }),
+        });
       }
       if (url === '/api/admin/registry-items' && options?.method === 'PUT') {
         return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
       }
       if (url === '/api/admin/registry-items/mob-2' && options?.method === 'PUT') {
         return Promise.resolve({ ok: true, json: async () => ({ id: 'mob-2', isMostWanted: true }) });
+      }
+      if (url === '/api/registry/items/mob-1' && options?.method === 'DELETE') {
+        currentItems = [std2];
+        return Promise.resolve({ ok: true });
       }
       return Promise.reject(new Error(`Unhandled request: ${url}`));
     });
@@ -608,6 +627,14 @@ describe('AdminRegistryPage', () => {
     const moveDownButtons = await screen.findAllByRole('button', {
       name: 'Move Mobile Gift One down',
     });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unconfigured-fund-badge-mob-2')).toHaveTextContent(
+        'Checkout Disabled'
+      );
+    });
+    expect(screen.getAllByText('Checkout Disabled')).toHaveLength(2);
+
     fireEvent.click(moveDownButtons[1]);
 
     await waitFor(() => {
@@ -645,6 +672,76 @@ describe('AdminRegistryPage', () => {
           method: 'PUT',
           body: JSON.stringify({ isMostWanted: true }),
         })
+      );
+    });
+
+    const mobileEditBtn = screen.getAllByRole('button', {
+      name: 'Edit registry item: Mobile Gift Two',
+    })[1];
+    expect(mobileEditBtn).toHaveClass('flex-1');
+    fireEvent.click(mobileEditBtn);
+    expect(mockPush).toHaveBeenCalledWith('/registry/edit-item/mob-2');
+
+    const mobileDeleteBtn = screen.getAllByRole('button', {
+      name: 'Delete registry item: Mobile Gift One',
+    })[1];
+    expect(mobileDeleteBtn).toHaveClass('flex-1');
+    fireEvent.click(mobileDeleteBtn);
+
+    const confirmButton = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/registry/items/mob-1',
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryAllByText('Mobile Gift One')).toHaveLength(0);
+    });
+  });
+
+  it('uses fallback aria-labels and item ID announcements when item name is empty', async () => {
+    const unnamedA = createMockRegistryItem({
+      id: 'unnamed-a',
+      name: '',
+      isSample: true,
+      purchased: true,
+      isMostWanted: false,
+      displayOrder: 0,
+    });
+    const unnamedB = createMockRegistryItem({
+      id: 'unnamed-b',
+      name: '',
+      isMostWanted: false,
+      displayOrder: 1,
+    });
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/registry/items?limit=500') {
+        return Promise.resolve({ ok: true, json: async () => [unnamedA, unnamedB] });
+      }
+      if (url === '/api/admin/registry-items' && options?.method === 'PUT') {
+        return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
+      }
+      return Promise.reject(new Error(`Unhandled request: ${url}`));
+    });
+
+    renderWithProviders(<AdminRegistryPage />);
+
+    expect(await screen.findAllByRole('button', { name: 'Most Wanted: unnamed item' })).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: 'Edit unnamed item' })).toHaveLength(4);
+    expect(screen.getAllByRole('button', { name: 'Delete unnamed item' })).toHaveLength(4);
+    expect(screen.getAllByLabelText('Reorder unnamed-a')).toHaveLength(2);
+    expect(screen.getAllByText('Sample')).toHaveLength(2);
+    expect(screen.getByText('Claimed')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Move unnamed-a down' })[1]);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('registry-live-announcement')).toHaveTextContent(
+        'Moved unnamed-a down to position 2 of 2'
       );
     });
   });

@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useRef } from 'react';
+import Link from 'next/link';
 import { RegistryItem } from '../types';
 import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
@@ -187,7 +188,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     }, 50);
   };
 
-  const handleScrape = async (e: React.FormEvent) => {
+  const handleScrape = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (isFund) return; // Bypass scraper for cash or experience funds
 
@@ -284,7 +285,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
 
@@ -329,11 +330,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
   const handleCancel = () => {
     clearPersistedFormState();
-    if (onCancel) {
-      onCancel();
-    } else if (typeof window !== 'undefined') {
-      window.location.assign('/admin/dashboard/registry');
-    }
+    onCancel?.();
   };
 
   return (
@@ -580,14 +577,24 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
         <div className="mt-2 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleCancel}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
+          {onCancel || isSubmitting ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancel}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+          ) : (
+            <Link
+              href="/admin/dashboard/registry"
+              onClick={clearPersistedFormState}
+              className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800 transition-colors"
+            >
+              Cancel
+            </Link>
+          )}
           <Button
             type="button"
             variant="outline"

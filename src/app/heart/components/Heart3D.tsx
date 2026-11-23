@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { Text } from '@react-three/drei';
 import { useTheme } from '../../../components/ThemeProvider';
+import { HEART_FONT_URL } from '../constants';
 
 export function Heart3D({
   scale,
@@ -83,6 +84,7 @@ export function Heart3D({
       {(!shardSide || shardSide === 'right') && <mesh geometry={geom} material={silver} />}
       {(!shardSide || shardSide === 'left') && (
         <Text
+          font={HEART_FONT_URL}
           position={[-1, 0.1, 0.71]}
           fontSize={0.35}
           anchorX="center"
@@ -95,6 +97,7 @@ export function Heart3D({
       )}
       {(!shardSide || shardSide === 'right') && (
         <Text
+          font={HEART_FONT_URL}
           position={[1, 0.1, 0.71]}
           fontSize={0.35}
           anchorX="center"
