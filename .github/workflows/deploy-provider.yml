@@ -111,6 +111,11 @@ on:
         required: false
         default: ''
         type: string
+      caller_holds_lock:
+        description: 'Whether the calling workflow already holds the deploy-env-<environment> concurrency lock'
+        required: false
+        default: false
+        type: boolean
     secrets:
       GCP_SA_KEY:
         required: false
@@ -154,8 +159,9 @@ on:
         value: ${{ jobs.deploy.outputs.cloud_run_region }}
 
 concurrency:
-  group: deploy-provider-${{ inputs.environment || 'production' }}
+  group: ${{ inputs.caller_holds_lock && format('caller-deploy-provider-{0}-{1}-{2}', inputs.environment || 'production', github.run_id, github.run_attempt) || format('deploy-env-{0}', inputs.environment || 'production') }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   deploy:
