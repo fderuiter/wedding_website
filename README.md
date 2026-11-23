@@ -31,7 +31,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
 *   **Guest Photo Uploads & Moderation:**
     *   Mobile-friendly guest photo gallery uploads (`Media`) with worker-offloaded `HEIC`/`HEIF` transcoding, backed by local disk or S3/R2 object storage and administrative **moderation** queues.
 *   **Scheduled Broadcasts & Communications:**
-    *   Cohort-filtered announcements and scheduled email/SMS **broadcasts** (`BroadcastMessage`, `BroadcastRecipient`) across Resend, SendGrid, and Twilio adapters processed via `/api/cron/broadcasts`.
+    *   Cohort-filtered announcements, digital invitation cards, and scheduled email/SMS **broadcasts** (`BroadcastMessage`, `BroadcastRecipient`) across native SMTP, Resend, SendGrid, and Twilio adapters processed via `/api/cron/broadcasts`.
 *   **Custom Gift Registry, Cash Funds & Payments:**
     *   Physical gifts and dedicated cash/experience funds (`RegistryItem`, `Contributor`), single/batch product URL scraping and CSV imports, partial group gifting with live progress bars, peer-to-peer payment handles, and optional Stripe card checkout with webhook verification.
 *   **3D Interactive Experiences & Theme Studio:**
@@ -56,7 +56,7 @@ This project is built with a modern, full-stack TypeScript architecture.
 
 ## Setup & Installation
 
-Requires **Node.js v22.x LTS** (pinned in [`.nvmrc`](./.nvmrc)), **`npm@10.9.x`** (enforced via [`.npmrc`](./.npmrc) and [`package.json`](./package.json)), and **PostgreSQL 15+**.
+Requires **Node.js v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](./.nvmrc)), **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and [`package.json`](./package.json)), and **PostgreSQL 15+**.
 
 ```bash
 git clone https://github.com/fderuiter/wedding_website.git

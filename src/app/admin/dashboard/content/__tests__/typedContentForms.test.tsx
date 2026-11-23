@@ -281,4 +281,70 @@ describe('Content Hub Typed Forms, URL Import & Readable Previews', () => {
     const afterHiding = await contentSvc.getPublicPhotos();
     expect(afterHiding).toHaveLength(0);
   });
+
+  it('edits and clears Photo caption and uploaderName without retaining stale extraData keys, and sets Schedule preview iframe to /?preview=true#schedule', async () => {
+    mockNodesData = [
+      {
+        id: 'guest-photo-node',
+        type: 'Photo',
+        tags: ['gallery', 'guest-upload'],
+        createdAt: new Date('2026-06-20T20:00:00.000Z'),
+        updatedAt: new Date('2026-06-20T20:05:00.000Z'),
+        data: {
+          url: '/uploads/photos/sparklers.jpg',
+          title: 'Sparkler exit!',
+          caption: 'Typo in caption',
+          uploaderName: 'Aunt Clara',
+          altText: 'Sparklers',
+          status: 'APPROVED',
+          isVisible: true,
+        },
+      },
+      {
+        id: 'sched-node-1',
+        type: 'Schedule',
+        tags: ['Schedule'],
+        createdAt: new Date('2026-06-20T12:00:00.000Z'),
+        updatedAt: new Date('2026-06-20T12:00:00.000Z'),
+        data: {
+          title: 'Cocktail Hour',
+          startTime: '2026-09-19T17:00:00.000Z',
+          endTime: '2026-09-19T18:00:00.000Z',
+          locationName: 'Courtyard',
+        },
+      },
+    ];
+
+    render(
+      <ToastProvider>
+        <ContentDashboardPage />
+      </ToastProvider>
+    );
+
+    // Edit guest photo caption & uploaderName
+    fireEvent.click(screen.getByRole('button', { name: 'Edit content: Photo' }));
+    const captionInput = screen.getByLabelText(/^caption$/i) as HTMLInputElement;
+    const uploaderInput = screen.getByLabelText(/^uploader name$/i) as HTMLInputElement;
+    expect(captionInput.value).toBe('Typo in caption');
+    expect(uploaderInput.value).toBe('Aunt Clara');
+
+    // Clear caption and update uploaderName
+    fireEvent.change(captionInput, { target: { value: '   ' } });
+    fireEvent.change(uploaderInput, { target: { value: 'Aunt Clara & Uncle Joe' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    const savedPayload = mockUpdate.mock.calls[0][1];
+    expect(savedPayload.data.caption).toBeUndefined();
+    expect('caption' in savedPayload.data).toBe(false);
+    expect(savedPayload.data.uploaderName).toBe('Aunt Clara & Uncle Joe');
+
+    // Verify Schedule editor configures live preview iframe src as /?preview=true#schedule
+    fireEvent.click(screen.getByRole('button', { name: 'Edit content: Schedule' }));
+    const previewIframe = screen.getByTitle('Live Preview') as HTMLIFrameElement;
+    expect(previewIframe.getAttribute('src')).toBe('/?preview=true#schedule');
+  });
 });

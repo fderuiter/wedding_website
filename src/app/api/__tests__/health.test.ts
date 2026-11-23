@@ -49,11 +49,39 @@ describe('Health and Readiness Endpoints', () => {
       expect(status).toBe('ok');
     });
 
-    it('returns 503 with Cache-Control: no-store when database query fails', async () => {
-      mockQueryRaw.mockRejectedValue(new Error('Connection refused'));
+    it('returns 503 with status, database, and timestamp in development mode when database query fails', async () => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+      mockQueryRaw.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:5432'));
       const res = await healthRoute();
       expect(res.status).toBe(503);
       expect(res.headers.get('Cache-Control')).toBe('no-store');
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.status).toBe('degraded');
+      expect(json.database).toBe('disconnected');
+      expect(typeof json.timestamp).toBe('string');
+      expect(json.error).toBe('Database connection failed');
+    });
+
+    it('preserves status, database, and timestamp with sanitized error text in production mode without leaking driver strings', async () => {
+      (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+      mockQueryRaw.mockRejectedValue(
+        new Error(
+          'FATAL: password authentication failed for postgresql://wedding:supersecret@10.0.0.12:5432/wedding'
+        )
+      );
+      const res = await healthRoute();
+      expect(res.status).toBe(503);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
+      const json = await res.json();
+      expect(json.success).toBe(false);
+      expect(json.status).toBe('degraded');
+      expect(json.database).toBe('disconnected');
+      expect(typeof json.timestamp).toBe('string');
+      expect(json.error).toBe('Database connection failed');
+      expect(JSON.stringify(json)).not.toContain('postgresql://');
+      expect(JSON.stringify(json)).not.toContain('supersecret');
+      expect(json.referenceId).toBeUndefined();
     });
   });
 

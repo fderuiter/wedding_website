@@ -338,7 +338,15 @@ export function getStripeCapability() {
       'src/app/api/ready/route.ts',
       'function buildSchemaUnavailableResponse() { return {}; }\nexport async function GET() { return buildSchemaUnavailableResponse(); }\n',
     );
+    writeFixture(
+      tempDir,
+      'src/app/api/health/route.ts',
+      'export const GET = withApiMiddleware(async () => ({}), { isHealthProbe: true });\n',
+    );
     const schemaAwareResult = verifySpecContracts(tempDir);
+    expect(schemaAwareResult.errors).toContain(
+      'public/openapi.json: GET /api/health must document HTTP "503" isHealthProbe schema with success=false, status="degraded", database="disconnected", timestamp, and error',
+    );
     expect(schemaAwareResult.errors).toContain(
       'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database enum ["connected", "disconnected"], error, and timestamp',
     );

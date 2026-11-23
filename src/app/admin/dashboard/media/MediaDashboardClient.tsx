@@ -61,13 +61,62 @@ function MediaDashboardContent({
   const [isEditing, setIsEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
+  const [pendingEdits, setPendingEdits] = useState<
+    Record<string, { caption: string; uploaderName: string }>
+  >({});
   const [isExporting, setIsExporting] = useState(false);
   const { confirm, addToast } = useToast();
 
+  const getPendingDraft = (photo: PendingPhoto) => {
+    const existing = pendingEdits[photo.id];
+    if (existing) {
+      return existing;
+    }
+    const photoData = photo.data || {};
+    return {
+      caption: String(photo.caption ?? photoData.caption ?? ''),
+      uploaderName: String(photo.uploaderName ?? photoData.uploaderName ?? ''),
+    };
+  };
+
+  const updatePendingDraft = (
+    photo: PendingPhoto,
+    patch: Partial<{ caption: string; uploaderName: string }>
+  ) => {
+    setPendingEdits((prev) => {
+      const base = prev[photo.id] ?? {
+        caption: String(photo.caption ?? photo.data?.caption ?? ''),
+        uploaderName: String(photo.uploaderName ?? photo.data?.uploaderName ?? ''),
+      };
+      return {
+        ...prev,
+        [photo.id]: {
+          ...base,
+          ...patch,
+        },
+      };
+    });
+  };
+
   const handleApprove = async (id: string) => {
     try {
-      await apiClient.patch('/api/admin/photos/moderation', { id, action: 'approve' });
+      const draftOverride = pendingEdits[id];
+      const payload = draftOverride
+        ? {
+          id,
+          action: 'approve',
+          caption: draftOverride.caption,
+          uploaderName: draftOverride.uploaderName,
+        }
+        : { id, action: 'approve' };
+      await apiClient.patch('/api/admin/photos/moderation', payload);
       setPendingPhotos((prev) => prev.filter((p) => p.id !== id));
+      setPendingEdits((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       setA11yNotice('Photo approved successfully.');
       fetchMedia(page, { background: true });
     } catch (e) {
@@ -152,7 +201,14 @@ function MediaDashboardContent({
       if (currentMedia.id) {
         await apiClient.put(`/api/media/${currentMedia.id}`, currentMedia);
       } else {
-        await apiClient.post('/api/media', currentMedia);
+        const createPayload: Record<string, unknown> = { ...currentMedia };
+        if (typeof createPayload.caption === 'string' && !createPayload.caption.trim()) {
+          delete createPayload.caption;
+        }
+        if (typeof createPayload.uploaderName === 'string' && !createPayload.uploaderName.trim()) {
+          delete createPayload.uploaderName;
+        }
+        await apiClient.post('/api/media', createPayload);
       }
       setIsEditing(false);
       fetchMedia(page, { background: true });
@@ -365,13 +421,13 @@ function MediaDashboardContent({
                 {pendingPhotos.map((photo) => {
                   const photoData = photo.data || {};
                   const imageUrl = photo.url || photoData.url;
-                  const uploaderName = (photo.uploaderName || photoData.uploaderName)?.trim() || undefined;
-                  const caption = (photo.caption || photoData.caption)?.trim() || undefined;
+                  const draft = getPendingDraft(photo);
+                  const uploaderName = draft.uploaderName.trim() || undefined;
+                  const caption = draft.caption.trim() || undefined;
+                  const hasDraftEdit = Boolean(pendingEdits[photo.id]);
                   const title =
                     caption ||
-                    photo.title ||
-                    photoData.title ||
-                    photoData.altText ||
+                    (!hasDraftEdit ? photo.title || photoData.title || photoData.altText : undefined) ||
                     (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
                   const createdDate = photo.createdAt ? new Date(photo.createdAt).toLocaleString() : 'Recently';
                   const isSelected = selectedPendingIds.includes(photo.id);
@@ -422,9 +478,50 @@ function MediaDashboardContent({
                             <span className="truncate">Uploaded by {uploaderName}</span>
                           </div>
                         )}
-                        <div className="text-xs text-stone-500 dark:text-stone-400 mb-4 flex items-center gap-1">
+                        <div className="text-xs text-stone-500 dark:text-stone-400 mb-3 flex items-center gap-1">
                           <Icon name="Calendar" className="w-3 h-3 text-stone-400" />
                           <span>Submitted {createdDate}</span>
+                        </div>
+
+                        <div className="space-y-2 mb-3">
+                          <div>
+                            <label
+                              htmlFor={`pending-caption-${photo.id}`}
+                              className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1"
+                            >
+                              Caption
+                            </label>
+                            <Input
+                              id={`pending-caption-${photo.id}`}
+                              type="text"
+                              maxLength={500}
+                              placeholder="Optional guest caption"
+                              value={draft.caption}
+                              onChange={(e) =>
+                                updatePendingDraft(photo, { caption: e.target.value })
+                              }
+                              data-testid={`pending-caption-input-${photo.id}`}
+                            />
+                          </div>
+                          <div>
+                            <label
+                              htmlFor={`pending-uploader-${photo.id}`}
+                              className="block text-xs font-medium text-stone-700 dark:text-stone-300 mb-1"
+                            >
+                              Uploader Name
+                            </label>
+                            <Input
+                              id={`pending-uploader-${photo.id}`}
+                              type="text"
+                              maxLength={100}
+                              placeholder="Optional guest name"
+                              value={draft.uploaderName}
+                              onChange={(e) =>
+                                updatePendingDraft(photo, { uploaderName: e.target.value })
+                              }
+                              data-testid={`pending-uploader-input-${photo.id}`}
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -481,6 +578,30 @@ function MediaDashboardContent({
             <FormGroup>
               <Label>Alternative Text</Label>
               <Input type="text" value={currentMedia.altText || ''} onChange={e => setCurrentMedia({...currentMedia, altText: e.target.value})} disabled={currentMedia.isDecorative} />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="media-caption-input">Caption</Label>
+              <Input
+                id="media-caption-input"
+                type="text"
+                maxLength={500}
+                placeholder="Optional gallery caption"
+                value={currentMedia.caption ?? ''}
+                onChange={(e) => setCurrentMedia({ ...currentMedia, caption: e.target.value })}
+                data-testid="media-caption-input"
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label htmlFor="media-uploader-input">Uploader Name</Label>
+              <Input
+                id="media-uploader-input"
+                type="text"
+                maxLength={100}
+                placeholder="Optional guest name"
+                value={currentMedia.uploaderName ?? ''}
+                onChange={(e) => setCurrentMedia({ ...currentMedia, uploaderName: e.target.value })}
+                data-testid="media-uploader-input"
+              />
             </FormGroup>
             <FormGroup className="md:col-span-2">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -569,13 +690,36 @@ function MediaDashboardContent({
                     )}
                   </div>
                   <div className="text-sm truncate mb-1" title={m.url}>{m.url}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">{m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}</div>
-                  <div className="mt-auto flex justify-between gap-2">
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                    {m.isDecorative ? 'Decorative' : m.altText || 'No Alt Text'}
+                  </div>
+                  {(m.caption || m.uploaderName) && (
+                    <div className="text-xs text-stone-600 dark:text-stone-300 mb-3 space-y-0.5">
+                      {m.caption && (
+                        <div className="truncate" data-testid={`media-card-caption-${m.id}`}>
+                          Caption: {m.caption}
+                        </div>
+                      )}
+                      {m.uploaderName && (
+                        <div className="truncate" data-testid={`media-card-uploader-${m.id}`}>
+                          By {m.uploaderName}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-auto pt-2 flex justify-between gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
                       aria-label={m.altText ? `Edit media: ${m.altText}` : 'Edit unnamed item'}
-                      onClick={() => { setCurrentMedia(m); setIsEditing(true); }}
+                      onClick={() => {
+                        setCurrentMedia({
+                          ...m,
+                          caption: m.caption ?? '',
+                          uploaderName: m.uploaderName ?? '',
+                        });
+                        setIsEditing(true);
+                      }}
                       className="flex-1"
                     >
                       Edit

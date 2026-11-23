@@ -594,6 +594,49 @@ describe('verify-deployment-runbooks', () => {
     expect(verifyDeploymentRunbooks(tempDir)).toEqual([]);
   });
 
+  it('rejects PostgreSQL < 15 claims, /api/health liveness prose, Docker Compose npx migrate claims, and missing Dependabot >= 23.0.0 rules', () => {
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    fs.writeFileSync(
+      deploymentPath,
+      fs
+        .readFileSync(deploymentPath, 'utf8')
+        .replace('PostgreSQL 15 or higher', 'PostgreSQL 14 or higher')
+        .replace(
+          'dedicated `migration` task service executes `./node_modules/.bin/prisma migrate deploy` offline',
+          'dedicated `migration` task service executes `npx prisma migrate deploy`'
+        )
+        .replace(
+          /## Health Checks & Liveness Probes[\s\S]*?---/,
+          '## Health Checks & Liveness Probes\n\nContainers and orchestrators query `/api/health` for liveness and readiness monitoring.\n\n---'
+        )
+    );
+
+    const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
+    fs.writeFileSync(
+      dependabotPath,
+      fs.readFileSync(dependabotPath, 'utf8').replace(/versions:\s*\[">= 23\.0\.0"\]\n/g, '')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('DEPLOYMENT.md: References unsupported PostgreSQL < 15 floor'),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Must document offline `./node_modules/.bin/prisma migrate deploy` (not `npx prisma migrate deploy`) for the Docker Compose `migration` service'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Must direct container and orchestrator liveness probes to `/api/live` instead of `/api/health`'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: `## Health Checks & Liveness Probes` section must direct container liveness probes to `/api/live`'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `node` under `docker` ecosystem'
+        ),
+      ])
+    );
+  });
+
   it('rejects gcloud run deploy commands missing TRUST_PROXY=2 and Compose manifests missing TRUST_PROXY: ${TRUST_PROXY:-1}', () => {
     const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
     fs.writeFileSync(
@@ -761,7 +804,7 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
-  it('rejects stale PostgreSQL 14, Compose npx migration claims, /api/health liveness claims, /opt/prisma-cli under /app, missing 503 stripping, and missing 15s graceful shutdown docs', () => {
+  it('rejects stale PostgreSQL 14, Compose npx migration claims, /api/health liveness claims, /opt/prisma-cli under /app, missing 503 isHealthProbe fields, and missing 15s graceful shutdown docs', () => {
     const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
     fs.writeFileSync(
       runtimeContractPath,
@@ -770,7 +813,7 @@ describe('verify-deployment-runbooks', () => {
         .replace(/outside `\/app` at `\/opt\/prisma-cli`/g, 'packaged under `/app` at `/opt/prisma-cli`')
         .replace(/\/app\/scripts\/generate-password-hash\.mjs/g, '/app/scripts')
         .replace(/5000ms/g, '1000ms')
-        .replace(/strip(?:s|ping) `status`, `database`, and `timestamp`/g, 'returns full payload')
+        .replace(/"status": "degraded"/g, '"status": "removed"')
         .replace(/\^10\.9\.0/g, '^9.0.0')
     );
 
@@ -804,7 +847,7 @@ describe('verify-deployment-runbooks', () => {
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          'docs/runtime-contract.md: Must document Node `^22.12.0` and `npm` `^10.9.0` (`devEngines` in `package.json`)'
+          'docs/runtime-contract.md: Must document Node `>=22.22.1 <23.0.0` and `npm` `^10.9.0` (`devEngines` in `package.json`)'
         ),
         expect.stringContaining('docs/runtime-contract.md: Must state that Dockerfile installs `/opt/prisma-cli` outside `/app`'),
         expect.stringContaining('docs/runtime-contract.md: Stale claim that `/opt/prisma-cli` is packaged under `/app`'),
@@ -812,7 +855,7 @@ describe('verify-deployment-runbooks', () => {
           'docs/runtime-contract.md: Must state that Dockerfile copies `/app/scripts/generate-password-hash.mjs`'
         ),
         expect.stringContaining(
-          'docs/runtime-contract.md: Must document that `withApiMiddleware` strips `status`, `database`, and `timestamp`'
+          'docs/runtime-contract.md: Must document that `GET /api/health` (`isHealthProbe`) preserves `status`, `database`, and `timestamp`'
         ),
         expect.stringContaining('docs/runtime-contract.md: Must document Prisma `globalThis` pool sharing'),
         expect.stringContaining('DEPLOYMENT.md: References stale "PostgreSQL 14" instead of PostgreSQL 15+'),

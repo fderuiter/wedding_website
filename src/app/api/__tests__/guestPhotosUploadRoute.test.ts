@@ -5,6 +5,7 @@ import { resetStorageProvider } from '@/utils/storage';
 import { writeFile } from 'fs/promises';
 import { mediaRepository } from '@/features/media';
 import { contentRepository } from '@/features/content';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 jest.mock('fs/promises', () => {
   const actual = jest.requireActual('fs/promises');
@@ -43,6 +44,10 @@ jest.mock('@/features/content', () => ({
       data: { url: '/uploads/photos/photo.png' },
     }),
   },
+}));
+
+jest.mock('@/core/auth/guestInviteSession', () => ({
+  getGuestInviteSession: jest.fn().mockResolvedValue(null),
 }));
 
 const mockWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
@@ -116,6 +121,7 @@ describe('POST /api/guest/photos/upload', () => {
     mockWriteFile.mockResolvedValue(undefined);
     resetStorageProvider();
     mockGetAppConfig.mockResolvedValue({ modules: ['gallery'] });
+    (getGuestInviteSession as jest.Mock).mockResolvedValue(null);
   });
 
   describe('feature toggle validation', () => {
@@ -523,6 +529,42 @@ describe('POST /api/guest/photos/upload', () => {
           }),
         }),
         'Guest'
+      );
+    });
+
+    it('attributes upload to active guest_session household when uploaderName is omitted or blank', async () => {
+      (getGuestInviteSession as jest.Mock).mockResolvedValueOnce({
+        code: 'RIVERA26',
+        guestName: '  The Rivera Family  ',
+        guestIds: ['guest-1'],
+      });
+
+      const jpegFile = {
+        name: 'IMG_5522.JPG',
+        size: 2048,
+        type: 'image/jpeg',
+        arrayBuffer: async () =>
+          VALID_JPEG_BUF.buffer.slice(
+            VALID_JPEG_BUF.byteOffset,
+            VALID_JPEG_BUF.byteOffset + VALID_JPEG_BUF.byteLength
+          ),
+      };
+      const req = makeRequest({ file: jpegFile as any, uploaderName: '   ' });
+      const res = await POST(req);
+
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.data[0].uploaderName).toBe('The Rivera Family');
+      expect(json.data[0].title).toBe('Photo by The Rivera Family');
+      expect(getGuestInviteSession).toHaveBeenCalledWith(req);
+      expect(contentRepository.createNode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            uploaderName: 'The Rivera Family',
+            title: 'Photo by The Rivera Family',
+          }),
+        }),
+        'The Rivera Family'
       );
     });
   });
