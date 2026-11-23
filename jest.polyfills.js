@@ -2,10 +2,8 @@
 import { createRequire } from 'node:module';
 import { TextDecoder, TextEncoder } from 'node:util';
 import { ReadableStream, TransformStream, WritableStream } from 'node:stream/web';
-import { BroadcastChannel } from 'node:worker_threads';
+import { BroadcastChannel, MessagePort } from 'node:worker_threads';
 import { Blob, File } from 'node:buffer';
-
-class MessagePortPolyfill extends EventTarget {}
 
 const polyfills = {
   TextDecoder,
@@ -14,7 +12,7 @@ const polyfills = {
   TransformStream,
   WritableStream,
   BroadcastChannel,
-  MessagePort: MessagePortPolyfill,
+  MessagePort,
   Blob,
   File,
 };

@@ -16,21 +16,14 @@ export const PATCH = withApiMiddleware(async (request: NextRequest, { params }: 
   const body = await request.json();
   const parsed = PhotoModerationSchema.safeParse(body);
   if (!parsed.success) {
-    throw new ApiError(400, 'Invalid moderation payload');
+    throw new ApiError(400, parsed.error.issues[0]?.message || 'Invalid moderation payload');
   }
 
-  let action: 'approve' | 'reject';
-  if (body.action) {
-    action = String(body.action).toLowerCase() as 'approve' | 'reject';
-  } else if (body.status) {
-    action = String(body.status).toUpperCase() === 'APPROVED' ? 'approve' : 'reject';
-  } else {
-    throw new ApiError(400, "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required");
-  }
-
-  if (action !== 'approve' && action !== 'reject') {
-    throw new ApiError(400, "Invalid moderation action. Must be 'approve' or 'reject'");
-  }
+  const action: 'approve' | 'reject' = parsed.data.action
+    ? (String(parsed.data.action).toLowerCase() as 'approve' | 'reject')
+    : String(parsed.data.status).toUpperCase() === 'APPROVED'
+      ? 'approve'
+      : 'reject';
 
   const hasMetadataOverrides =
     parsed.data.caption !== undefined || parsed.data.uploaderName !== undefined;

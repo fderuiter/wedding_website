@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 
 export interface SlideshowPhoto {
@@ -59,8 +60,8 @@ export function ReceptionSlideshowClient({
   const isControlsFocusedRef = useRef(false);
   const wasPlayingRef = useRef(isPlaying);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const headerRef = useRef<HTMLElement | null>(null);
-  const controlsRef = useRef<HTMLElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
 
   // Derive initial timestamp cursor from provided initial photos (preferring updatedAt over createdAt)
   const initialLatestTimestamp = useMemo(() => {
@@ -476,7 +477,7 @@ export function ReceptionSlideshowClient({
       />
 
       {/* Top Header Information Overlay */}
-      <header
+      <div
         ref={headerRef}
         className={`relative z-20 flex items-center justify-between p-6 transition-opacity duration-500 focus-within:opacity-100 focus-within:pointer-events-auto ${
           shouldShowControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
@@ -511,10 +512,10 @@ export function ReceptionSlideshowClient({
           <span className="text-stone-500">/</span>
           <span>{photos.length}</span>
         </div>
-      </header>
+      </div>
 
       {/* Main Active Photo Presentation Stage */}
-      <main
+      <div
         className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 md:p-8"
         data-testid="slideshow-stage"
       >
@@ -558,12 +559,11 @@ export function ReceptionSlideshowClient({
             </p>
           </div>
         )}
-      </main>
+      </div>
 
       {/* Toggleable QR Code Overlay for Reception Guests */}
       {showQrCode && (
-        <aside
-          role="complementary"
+        <section
           aria-label="Guest Photo Upload QR Code"
           className="fixed bottom-24 right-6 z-40 max-w-xs md:max-w-sm rounded-2xl p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in"
           data-testid="slideshow-qr-overlay"
@@ -620,11 +620,11 @@ export function ReceptionSlideshowClient({
               {resolvedUploadUrl}
             </span>
           </div>
-        </aside>
+        </section>
       )}
 
       {/* Bottom Floating Control Bar */}
-      <footer
+      <div
         ref={controlsRef}
         role="toolbar"
         aria-label="Slideshow Controls"
@@ -695,23 +695,35 @@ export function ReceptionSlideshowClient({
             role="group"
             aria-label="Cycle speed duration"
           >
-            {([5, 8, 10] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setDuration(s)}
-                data-testid={`slideshow-duration-${s}s-btn`}
-                aria-pressed={duration === s}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-full transition focus:outline-none focus:ring-2 focus:ring-white ${
-                  duration === s
-                    ? 'bg-white text-stone-900 shadow-sm'
-                    : 'text-stone-300 hover:text-white hover:bg-white/10'
-                }`}
-                aria-label={`Cycle photo every ${s} seconds`}
-              >
-                {s}s
-              </button>
-            ))}
+            {([5, 8, 10] as const).map((s) => {
+              const isSelected = duration === s;
+              return (
+                <Button
+                  key={s}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  pressed={isSelected}
+                  srContext={`cycle photo every ${s} seconds`}
+                  onClick={() => setDuration(s)}
+                  data-testid={`slideshow-duration-${s}s-btn`}
+                  style={
+                    {
+                      '--btn-ghost-bg': isSelected ? '#ffffff' : 'transparent',
+                      '--btn-ghost-text': isSelected ? '#1c1917' : '#d6d3d1',
+                      '--btn-ghost-hover-bg': isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '9999px',
+                      fontWeight: 600,
+                    } as React.CSSProperties
+                  }
+                  className={`!h-auto min-h-[24px] !px-2.5 !py-1 rounded-full !ring-offset-0 focus-visible:!ring-white focus-visible:!ring-offset-0 ${
+                    isSelected ? 'shadow-sm' : 'hover:!text-white'
+                  }`}
+                >
+                  {s}s
+                </Button>
+              );
+            })}
           </div>
 
           <div className="h-5 w-px bg-white/20 mx-1 hidden sm:block" aria-hidden="true" />
@@ -790,7 +802,7 @@ export function ReceptionSlideshowClient({
             )}
           </button>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

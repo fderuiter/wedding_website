@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { seedGuestAuthCookies } from './helpers/auth';
 
-test.describe('Guest Photos Empty State', { tag: '@smoke' }, () => {
+test.describe('Guest Photos Empty State', () => {
   test('displays guest photos empty state container when no guest photos exist', async ({ context, page }, testInfo) => {
     const validJpeg = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=', 'base64');
     await context.route(/cdn\.jsdelivr\.net/, (route) => route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));

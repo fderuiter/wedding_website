@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { QueryClient, QueryClientProvider, QueryClientContext } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
@@ -166,6 +166,40 @@ async function requestSubEventsRsvpSummary(): Promise<Record<string, SubEventRsv
   }
 }
 
+async function executeAccessMatrixFetch(params: {
+  query: AccessMatrixQuery;
+  setters: AccessMatrixSetters;
+  setRsvpSummaryByEvent: React.Dispatch<
+    React.SetStateAction<Record<string, SubEventRsvpSummaryItem>>
+  >;
+  setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  addToast: ReturnType<typeof useToast>['addToast'];
+  isCancelled?: () => boolean;
+}): Promise<void> {
+  const { query, setters, setRsvpSummaryByEvent, setIsLoading, addToast, isCancelled } = params;
+  try {
+    const [snapshot, summaryMap] = await Promise.all([
+      requestAccessMatrix(query),
+      requestSubEventsRsvpSummary(),
+    ]);
+    if (isCancelled?.()) return;
+    applyAccessMatrixSnapshot(snapshot, setters);
+    if (summaryMap) {
+      setRsvpSummaryByEvent(summaryMap);
+    }
+  } catch (err: unknown) {
+    if (!isCancelled?.()) {
+      notifyAccessMatrixError(err, addToast);
+    }
+  } finally {
+    if (!isCancelled?.()) {
+      setIsLoading(false);
+    }
+  }
+}
+
+const SEARCH_DEBOUNCE_MS = 250;
+
 function SubEventsMatrixPageContent() {
   const { addToast } = useToast();
   const {
@@ -181,6 +215,7 @@ function SubEventsMatrixPageContent() {
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>('all');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string>('all');
   const [selectedHouseholdFilter, setSelectedHouseholdFilter] = useState<string>('all');
@@ -206,6 +241,8 @@ function SubEventsMatrixPageContent() {
   const [editingSubEvent, setEditingSubEvent] = useState<SubEvent | null>(null);
   const [deletingSubEvent, setDeletingSubEvent] = useState<SubEvent | null>(null);
 
+  const latestRequestIdRef = useRef<number>(0);
+
   const refreshRsvpSummary = useCallback(async () => {
     const summaryMap = await requestSubEventsRsvpSummary();
     if (summaryMap) {
@@ -213,62 +250,97 @@ function SubEventsMatrixPageContent() {
     }
   }, []);
 
-  const fetchMatrix = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [snapshot, summaryMap] = await Promise.all([
-        requestAccessMatrix({
-          page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
-        }),
-        requestSubEventsRsvpSummary(),
-      ]);
-      applyAccessMatrixSnapshot(snapshot, {
-        setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
-      });
-      if (summaryMap) {
-        setRsvpSummaryByEvent(summaryMap);
-      }
-    } catch (err: unknown) {
-      notifyAccessMatrixError(err, addToast);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, addToast]);
-
-  // Fetch matrix when page or filters or pageSize change
   useEffect(() => {
-    let cancelled = false;
-
-    void Promise.all([
-      requestAccessMatrix({
-        page: currentPage, limit: pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter,
-      }),
-      requestSubEventsRsvpSummary(),
-    ])
-      .then(([snapshot, summaryMap]) => {
-        if (cancelled) return;
-        applyAccessMatrixSnapshot(snapshot, {
-          setSubEvents, setInvitationCodes, setTotalRecords, setTotalPages, setFilterOptions, setAccessMatrix,
-        });
-        if (summaryMap) {
-          setRsvpSummaryByEvent(summaryMap);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          notifyAccessMatrixError(err, addToast);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      });
+    if (searchQuery === debouncedSearchQuery) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setIsLoading(true);
+      setDebouncedSearchQuery(searchQuery);
+      setCurrentPage(1);
+    }, SEARCH_DEBOUNCE_MS);
 
     return () => {
-      cancelled = true;
+      clearTimeout(timer);
     };
-  }, [currentPage, pageSize, searchQuery, selectedTagFilter, selectedGroupFilter, selectedHouseholdFilter, addToast]);
+  }, [searchQuery, debouncedSearchQuery]);
+
+  const matrixSetters = useMemo<AccessMatrixSetters>(
+    () => ({
+      setSubEvents,
+      setInvitationCodes,
+      setTotalRecords,
+      setTotalPages,
+      setFilterOptions,
+      setAccessMatrix,
+    }),
+    []
+  );
+
+  const fetchMatrix = useCallback(
+    async (overrides?: Partial<AccessMatrixQuery>) => {
+      const requestId = ++latestRequestIdRef.current;
+      setIsLoading(true);
+      await executeAccessMatrixFetch({
+        query: {
+          page: overrides?.page ?? currentPage,
+          limit: overrides?.limit ?? pageSize,
+          searchQuery: overrides?.searchQuery ?? debouncedSearchQuery,
+          selectedTagFilter: overrides?.selectedTagFilter ?? selectedTagFilter,
+          selectedGroupFilter: overrides?.selectedGroupFilter ?? selectedGroupFilter,
+          selectedHouseholdFilter: overrides?.selectedHouseholdFilter ?? selectedHouseholdFilter,
+        },
+        setters: matrixSetters,
+        setRsvpSummaryByEvent,
+        setIsLoading,
+        addToast,
+        isCancelled: () => latestRequestIdRef.current !== requestId,
+      });
+    },
+    [
+      currentPage,
+      pageSize,
+      debouncedSearchQuery,
+      selectedTagFilter,
+      selectedGroupFilter,
+      selectedHouseholdFilter,
+      matrixSetters,
+      addToast,
+    ]
+  );
+
+  // Fetch matrix when page, debounced search, filters, or pageSize change
+  useEffect(() => {
+    const requestId = ++latestRequestIdRef.current;
+    void executeAccessMatrixFetch({
+      query: {
+        page: currentPage,
+        limit: pageSize,
+        searchQuery: debouncedSearchQuery,
+        selectedTagFilter,
+        selectedGroupFilter,
+        selectedHouseholdFilter,
+      },
+      setters: matrixSetters,
+      setRsvpSummaryByEvent,
+      setIsLoading,
+      addToast,
+      isCancelled: () => latestRequestIdRef.current !== requestId,
+    });
+
+    return () => {
+      latestRequestIdRef.current += 1;
+    };
+  }, [
+    currentPage,
+    pageSize,
+    debouncedSearchQuery,
+    selectedTagFilter,
+    selectedGroupFilter,
+    selectedHouseholdFilter,
+    matrixSetters,
+    addToast,
+  ]);
 
   // Unique filter values
   const allTags = useMemo(() => {
@@ -360,7 +432,13 @@ function SubEventsMatrixPageContent() {
         `Access ${action === 'grant' ? 'granted' : 'revoked'} for column across matching guests.`,
         'success'
       );
-      fetchMatrix();
+      if (debouncedSearchQuery !== searchQuery) {
+        setIsLoading(true);
+        setDebouncedSearchQuery(searchQuery);
+        setCurrentPage(1);
+      } else {
+        void fetchMatrix({ searchQuery });
+      }
     } catch (e: any) {
       addToast(e.message || 'Batch update failed.', 'error');
     }
@@ -567,9 +645,7 @@ function SubEventsMatrixPageContent() {
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
-                setCurrentPage(1);
                 setSelectedRowIds([]);
-                setIsLoading(true);
               }}
               className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-600 focus:ring-primary focus:border-primary text-gray-900 dark:text-white"
             />
@@ -582,6 +658,7 @@ function SubEventsMatrixPageContent() {
               value={selectedTagFilter}
               onChange={(e) => {
                 setSelectedTagFilter(e.target.value);
+                setDebouncedSearchQuery(searchQuery);
                 setCurrentPage(1);
                 setSelectedRowIds([]);
                 setIsLoading(true);
@@ -604,6 +681,7 @@ function SubEventsMatrixPageContent() {
               value={selectedGroupFilter}
               onChange={(e) => {
                 setSelectedGroupFilter(e.target.value);
+                setDebouncedSearchQuery(searchQuery);
                 setCurrentPage(1);
                 setSelectedRowIds([]);
                 setIsLoading(true);
@@ -626,6 +704,7 @@ function SubEventsMatrixPageContent() {
               value={selectedHouseholdFilter}
               onChange={(e) => {
                 setSelectedHouseholdFilter(e.target.value);
+                setDebouncedSearchQuery(searchQuery);
                 setCurrentPage(1);
                 setSelectedRowIds([]);
                 setIsLoading(true);
@@ -650,13 +729,32 @@ function SubEventsMatrixPageContent() {
               variant="secondary"
               size="sm"
               onClick={() => {
+                const willTriggerEffectFetch =
+                  debouncedSearchQuery !== '' ||
+                  selectedTagFilter !== 'all' ||
+                  selectedGroupFilter !== 'all' ||
+                  selectedHouseholdFilter !== 'all' ||
+                  currentPage !== 1;
+
                 setSearchQuery('');
+                setDebouncedSearchQuery('');
                 setSelectedTagFilter('all');
                 setSelectedGroupFilter('all');
                 setSelectedHouseholdFilter('all');
                 setCurrentPage(1);
                 setSelectedRowIds([]);
-                setIsLoading(true);
+
+                if (willTriggerEffectFetch) {
+                  setIsLoading(true);
+                } else {
+                  void fetchMatrix({
+                    page: 1,
+                    searchQuery: '',
+                    selectedTagFilter: 'all',
+                    selectedGroupFilter: 'all',
+                    selectedHouseholdFilter: 'all',
+                  });
+                }
               }}
             >
               Clear Filters
@@ -672,6 +770,7 @@ function SubEventsMatrixPageContent() {
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
+              setDebouncedSearchQuery(searchQuery);
               setCurrentPage(1);
               setSelectedRowIds([]);
               setIsLoading(true);

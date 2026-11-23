@@ -229,6 +229,39 @@ describe('POST /api/guest/photos/upload', () => {
       expect(mockWriteFile).not.toHaveBeenCalled();
     });
 
+    it('returns 400 and writes zero files when any file in a multi-file batch fails sanitization', async () => {
+      const validPng = {
+        name: 'valid-first.png',
+        size: 1024,
+        type: 'image/png',
+        arrayBuffer: async () =>
+          VALID_PNG_BUF.buffer.slice(VALID_PNG_BUF.byteOffset, VALID_PNG_BUF.byteOffset + VALID_PNG_BUF.byteLength),
+      };
+      const validJpeg = {
+        name: 'valid-second.jpg',
+        size: 1024,
+        type: 'image/jpeg',
+        arrayBuffer: async () =>
+          VALID_JPEG_BUF.buffer.slice(VALID_JPEG_BUF.byteOffset, VALID_JPEG_BUF.byteOffset + VALID_JPEG_BUF.byteLength),
+      };
+      const corruptThird = {
+        name: 'corrupt-third.jpg',
+        size: 1024,
+        type: 'image/jpeg',
+        arrayBuffer: async () => new Uint8Array([255, 216, 255, 224, 0, 0, 0]).buffer,
+      };
+
+      const req = makeRequest({ files: [validPng, validJpeg, corruptThird] as Partial<File>[] });
+      const res = await POST(req);
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('Image sanitization failed. The file may be corrupt or invalid.');
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mediaRepository.createMedia).not.toHaveBeenCalled();
+      expect(contentRepository.createNode).not.toHaveBeenCalled();
+    });
+
     it('returns 400 when batch payload exceeds 10 files limit', async () => {
       const defaultFile = {
         name: 'guest-photo.png',
@@ -306,6 +339,85 @@ describe('POST /api/guest/photos/upload', () => {
       expect(json.data[1].status).toBe('PENDING');
 
       expect(mediaRepository.createMedia).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves exact input order, attribution, and bounded concurrency on a 10-photo mixed batch', async () => {
+      let inFlightWrites = 0;
+      let peakInFlightWrites = 0;
+
+      mockWriteFile.mockImplementation(async () => {
+        inFlightWrites += 1;
+        peakInFlightWrites = Math.max(peakInFlightWrites, inFlightWrites);
+        await new Promise((r) => setTimeout(r, 15));
+        inFlightWrites -= 1;
+      });
+
+      let mediaSeq = 0;
+      (mediaRepository.createMedia as jest.Mock).mockImplementation(async (input: { url: string; altText: string }) => {
+        const idx = ++mediaSeq;
+        // Earlier calls resolve slower than later calls to verify strict output order preservation
+        await new Promise((r) => setTimeout(r, Math.max(2, (11 - idx) * 4)));
+        return {
+          id: `media-${idx}`,
+          url: input.url,
+          altText: input.altText,
+          createdAt: new Date(`2026-06-01T00:00:0${idx % 10}Z`),
+        };
+      });
+
+      (contentRepository.createNode as jest.Mock).mockImplementation(async (input: { data: { mediaId: string; url: string } }) => ({
+        id: `node-for-${input.data.mediaId}`,
+        type: 'Photo',
+        data: input.data,
+      }));
+
+      const formats = [
+        { ext: 'jpg', mime: 'image/jpeg', buf: VALID_JPEG_BUF },
+        { ext: 'png', mime: 'image/png', buf: VALID_PNG_BUF },
+        { ext: 'webp', mime: 'image/webp', buf: VALID_WEBP_BUF },
+        { ext: 'heic', mime: 'image/heic', buf: VALID_HEIC_BUF },
+      ];
+
+      const tenFiles = Array.from({ length: 10 }, (_, idx) => {
+        const spec = formats[idx % formats.length];
+        const padded = String(idx + 1).padStart(2, '0');
+        return {
+          name: `reception-${padded}.${spec.ext}`,
+          size: spec.buf.byteLength,
+          type: spec.mime,
+          arrayBuffer: async () =>
+            spec.buf.buffer.slice(spec.buf.byteOffset, spec.buf.byteOffset + spec.buf.byteLength),
+        };
+      });
+
+      const req = makeRequest({
+        files: tenFiles as Partial<File>[],
+        uploaderName: 'Uncle Bob',
+        caption: 'Dance floor highlights',
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(201);
+
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.data).toHaveLength(10);
+
+      expect(peakInFlightWrites).toBeGreaterThan(1);
+      expect(peakInFlightWrites).toBeLessThanOrEqual(4);
+
+      const expectedFilenames = tenFiles.map((f) => f.name);
+      expect(json.data.map((item: { originalFilename: string }) => item.originalFilename)).toEqual(
+        expectedFilenames
+      );
+
+      for (const item of json.data) {
+        expect(item.uploaderName).toBe('Uncle Bob');
+        expect(item.caption).toBe('Dance floor highlights');
+        expect(item.title).toBe('Dance floor highlights');
+        expect(item.status).toBe('PENDING');
+        expect(item.isVisible).toBe(false);
+      }
     });
 
     it('accepts valid JPEG image', async () => {

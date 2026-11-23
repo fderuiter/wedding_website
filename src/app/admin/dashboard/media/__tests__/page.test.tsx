@@ -56,7 +56,9 @@ describe('MediaDashboardPage', () => {
     fireEvent.click(addButtons[0]);
 
     expect(screen.getByText('Create Media')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /file upload dropzone/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /drag and drop an image file here, or click to browse/i })
+    ).toBeInTheDocument();
   });
 
   it('uploads dropped image, populates URL input and default alt text from filename', async () => {
@@ -77,7 +79,9 @@ describe('MediaDashboardPage', () => {
     const addButton = screen.getAllByRole('button', { name: 'Add Media' })[0];
     fireEvent.click(addButton);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', {
+      name: /drag and drop an image file here, or click to browse/i,
+    });
     const file = new File(['image bytes'], 'sample-photo.png', { type: 'image/png' });
 
     fireEvent.drop(dropzone, {
@@ -152,7 +156,9 @@ describe('MediaDashboardPage', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Add Media' })[0]);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', {
+      name: /drag and drop an image file here, or click to browse/i,
+    });
     const file = new File(['image bytes'], 'gallery-vows.jpg', { type: 'image/jpeg' });
     fireEvent.drop(dropzone, { dataTransfer: { files: [file] } });
 
@@ -192,7 +198,9 @@ describe('MediaDashboardPage', () => {
     const addButton = screen.getAllByRole('button', { name: 'Add Media' })[0];
     fireEvent.click(addButton);
 
-    const dropzone = screen.getByRole('button', { name: /file upload dropzone/i });
+    const dropzone = screen.getByRole('button', {
+      name: /drag and drop an image file here, or click to browse/i,
+    });
     const hugeFile = new File(['x'.repeat(6 * 1024 * 1024)], 'huge.png', { type: 'image/png' });
 
     fireEvent.drop(dropzone, {
@@ -361,45 +369,148 @@ describe('MediaDashboardPage', () => {
     confirmSpy.mockRestore();
   });
 
-  it('allows multi-selection and triggering bulk zip export', async () => {
+  it('allows multi-selection and triggering native POST zip export without blob buffering', async () => {
     const existingMedia = [
       { id: '1', url: '/uploads/ring.jpg', altText: 'Wedding Ring', isDecorative: false },
       { id: '2', url: '/uploads/cake.jpg', altText: 'Wedding Cake', isDecorative: false },
     ];
     mockGet.mockResolvedValueOnce(existingMedia);
 
+    const blobSpy = jest.fn();
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      blob: jest.fn().mockResolvedValue(new Blob(['fake zip bytes'], { type: 'application/zip' })),
+      status: 200,
+      blob: blobSpy,
     } as unknown as Response);
 
-    window.URL.createObjectURL = jest.fn().mockReturnValue('blob:http://localhost/test');
-    window.URL.revokeObjectURL = jest.fn();
+    window.URL.createObjectURL = jest.fn();
+    let submittedFormFields: Array<{ name: string; value: string }> = [];
+    let submittedFormAction = '';
+    let submittedFormMethod = '';
+    const formSubmitSpy = jest
+      .spyOn(HTMLFormElement.prototype, 'submit')
+      .mockImplementation(function (this: HTMLFormElement) {
+        submittedFormAction = this.getAttribute('action') ?? '';
+        submittedFormMethod = this.method.toUpperCase();
+        submittedFormFields = Array.from(this.querySelectorAll('input')).map((input) => ({
+          name: input.name,
+          value: input.value,
+        }));
+      });
 
-    render(<MediaDashboardPage />);
+    try {
+      render(<MediaDashboardPage />);
 
-    await waitFor(() => {
-      expect(screen.getByText('/uploads/ring.jpg')).toBeInTheDocument();
-      expect(screen.getByText('/uploads/cake.jpg')).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(screen.getByText('/uploads/ring.jpg')).toBeInTheDocument();
+        expect(screen.getByText('/uploads/cake.jpg')).toBeInTheDocument();
+      });
 
-    const checkbox1 = screen.getByTestId('media-checkbox-1');
-    fireEvent.click(checkbox1);
+      const checkbox1 = screen.getByTestId('media-checkbox-1');
+      fireEvent.click(checkbox1);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('export-selected-admin-btn')).toBeInTheDocument();
-      expect(screen.getByText('Export Selected (1) (.zip)')).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(screen.getByTestId('export-selected-admin-btn')).toBeInTheDocument();
+        expect(screen.getByText('Export Selected (1) (.zip)')).toBeInTheDocument();
+      });
 
-    const exportSelectedBtn = screen.getByTestId('export-selected-admin-btn');
-    fireEvent.click(exportSelectedBtn);
+      const exportSelectedBtn = screen.getByTestId('export-selected-admin-btn');
+      fireEvent.click(exportSelectedBtn);
 
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith('/api/media/export', expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ ids: ['1'] }),
-      }));
-    });
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/media/export',
+          expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({
+              ids: ['1'],
+              filename: 'selected-media.zip',
+              preflight: true,
+            }),
+          })
+        );
+        expect(formSubmitSpy).toHaveBeenCalledTimes(1);
+      });
+
+      expect(submittedFormMethod).toBe('POST');
+      expect(submittedFormAction).toBe('/api/media/export');
+      expect(submittedFormFields).toEqual([
+        { name: 'ids', value: '1' },
+        { name: 'filename', value: 'selected-media.zip' },
+      ]);
+      expect(blobSpy).not.toHaveBeenCalled();
+      expect(window.URL.createObjectURL).not.toHaveBeenCalled();
+    } finally {
+      formSubmitSpy.mockRestore();
+    }
+  });
+
+  it('triggers native GET <a download> for Export All and surfaces accessible alerts on preflight failure', async () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGet.mockResolvedValue([
+      { id: '1', url: '/uploads/ring.jpg', altText: 'Wedding Ring', isDecorative: false },
+    ]);
+
+    const blobSpy = jest.fn();
+    let clickedDownloadHref = '';
+    let clickedDownloadAttr = '';
+    const origAnchorClick = HTMLAnchorElement.prototype.click;
+    const anchorClickSpy = jest
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        if (this.hasAttribute('download')) {
+          clickedDownloadHref = this.getAttribute('href') ?? '';
+          clickedDownloadAttr = this.getAttribute('download') ?? '';
+          return;
+        }
+        origAnchorClick.call(this);
+      });
+
+    try {
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        blob: blobSpy,
+      } as unknown as Response);
+
+      render(<MediaDashboardPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('/uploads/ring.jpg')).toBeInTheDocument();
+      });
+
+      const exportAllBtn = screen.getByTestId('export-all-admin-btn');
+      fireEvent.click(exportAllBtn);
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/media/export?preflight=1&filename=media-export.zip'
+        );
+        expect(clickedDownloadHref).toBe('/api/media/export?filename=media-export.zip');
+        expect(clickedDownloadAttr).toBe('media-export.zip');
+        expect(exportAllBtn).not.toBeDisabled();
+      });
+      expect(blobSpy).not.toHaveBeenCalled();
+
+      // Preflight HTTP 404 / 500 failure shows accessible error toast without navigating
+      clickedDownloadHref = '';
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      } as unknown as Response);
+
+      fireEvent.click(exportAllBtn);
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/failed to export media archive.*retry/i);
+      expect(clickedDownloadHref).toBe('');
+      await waitFor(() => {
+        expect(exportAllBtn).not.toBeDisabled();
+      });
+    } finally {
+      anchorClickSpy.mockRestore();
+      consoleSpy.mockRestore();
+    }
   });
 
   it('displays polite live region announcement and skeleton placeholders while media query is pending', () => {

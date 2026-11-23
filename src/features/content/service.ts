@@ -14,6 +14,12 @@ export class ContentService {
   }
 
   async getPublicPhotos(options?: GetNodesByTypeOptions) {
+    if (typeof this.repo.getPublicPhotos === 'function') {
+      return options !== undefined
+        ? await this.repo.getPublicPhotos(options)
+        : await this.repo.getPublicPhotos();
+    }
+
     const nodes = options !== undefined
       ? await this.repo.getNodesByType('Photo', options)
       : await this.repo.getNodesByType('Photo');

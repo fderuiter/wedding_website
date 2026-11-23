@@ -186,12 +186,15 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
         ],
       };
 
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: true, data: mockResult }),
-      } as Response);
+      let resolveAutoAssign!: (res: Response) => void;
+      jest.spyOn(global, 'fetch').mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveAutoAssign = resolve;
+          })
+      );
 
-      const { rerender } = render(
+      const { container, rerender } = render(
         <ToastProvider>
           <UnassignedGuestPanel
             {...defaultProps}
@@ -204,8 +207,18 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       expect(screen.getByText('Jane Doe')).toBeInTheDocument();
       expect(screen.getByText('John Smith')).toBeInTheDocument();
 
-      const autoAssignBtn = screen.getByRole('button', { name: /auto-assign all/i });
+      const autoAssignBtn = screen.getByRole('button', { name: 'Auto-Assign All' });
       fireEvent.click(autoAssignBtn);
+
+      expect(await screen.findByRole('button', { name: 'Auto-Assigning...' })).toBeDisabled();
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
+
+      resolveAutoAssign({
+        ok: true,
+        json: async () => ({ success: true, data: mockResult }),
+      } as Response);
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith('/api/admin/seating/auto-assign', {
@@ -277,7 +290,9 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       expect(emptyNotice.className).not.toContain('text-gray-400');
       expect(emptyNotice.className).not.toContain('text-gray-500');
 
-      const results = await axe(container);
+      const results = await axe(container, {
+        rules: { 'label-content-name-mismatch': { enabled: true } },
+      });
       expect(results).toHaveNoViolations();
     });
 
@@ -413,7 +428,7 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       expect(screen.getByTestId('household-group-card')).toBeInTheDocument();
 
       const seatHouseholdBtn = screen.getByRole('button', {
-        name: /seat vance family household \(2 guests\)/i,
+        name: 'Seat Household for Vance Family (2 guests)',
       });
       fireEvent.click(seatHouseholdBtn);
 
@@ -441,7 +456,9 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       const dfBadge = dietaryBadges.find((b) => b.textContent?.includes('DF'));
       expect(dfBadge).toHaveAttribute('title', 'Dairy-Free');
 
-      const results = await axe(container);
+      const results = await axe(container, {
+        rules: { 'label-content-name-mismatch': { enabled: true } },
+      });
       expect(results).toHaveNoViolations();
     });
   });

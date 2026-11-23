@@ -186,3 +186,142 @@ describe('ContentRepository.getNodesByType', () => {
   });
 });
 
+describe('ContentRepository.getPublicPhotos', () => {
+  let mockPrisma: any;
+  let repo: ContentRepository;
+
+  beforeEach(() => {
+    mockPrisma = {
+      contentNode: {
+        findMany: jest.fn(),
+      },
+      media: {
+        findMany: jest.fn(),
+      },
+    };
+    repo = new ContentRepository(mockPrisma);
+  });
+
+  it('filters approved visible Photo rows in SQL ordered by createdAt desc without querying media when no candidate mediaIds exist', async () => {
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([
+      {
+        id: 'pub-1',
+        type: 'Photo',
+        tags: ['gallery'],
+        data: { url: '/uploads/photos/p1.jpg', status: 'APPROVED', isVisible: true },
+        createdAt: new Date('2026-06-20T18:00:00.000Z'),
+        updatedAt: new Date('2026-06-20T18:00:00.000Z'),
+      },
+    ]);
+
+    const result = await repo.getPublicPhotos();
+
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: {
+        type: 'Photo',
+        AND: [
+          { data: { path: ['status'], equals: 'APPROVED' } },
+          { data: { path: ['isVisible'], equals: true } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(mockPrisma.media.findMany).not.toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('pub-1');
+  });
+
+  it('applies since cursor and bounded limit (capped at 100) with pre-limit entity media exclusion', async () => {
+    const sinceDate = new Date('2026-06-20T18:00:00.000Z');
+    mockPrisma.media.findMany.mockResolvedValueOnce([{ id: 'bound-media-1' }]);
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
+
+    await repo.getPublicPhotos({ since: '2026-06-20T18:00:00.000Z', limit: 200 });
+
+    expect(mockPrisma.media.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { weddingPartyMembers: { some: {} } },
+          { attractions: { some: {} } },
+          { registryItems: { some: {} } },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
+      where: {
+        type: 'Photo',
+        updatedAt: { gt: sinceDate },
+        AND: [
+          { data: { path: ['status'], equals: 'APPROVED' } },
+          { data: { path: ['isVisible'], equals: true } },
+          {
+            OR: expect.arrayContaining([
+              { tags: { has: 'guest-upload' } },
+              { data: { path: ['publishToGallery'], equals: true } },
+              expect.objectContaining({
+                NOT: {
+                  OR: [{ data: { path: ['mediaId'], equals: 'bound-media-1' } }],
+                },
+              }),
+            ]),
+          },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  });
+
+  it('excludes entity-bound media on unbounded requests unless publishToGallery is true or tagged guest-upload, and accepts legacy URLs', async () => {
+    mockPrisma.contentNode.findMany.mockResolvedValueOnce([
+      {
+        id: 'legacy-approved',
+        type: 'Photo',
+        tags: ['gallery'],
+        data: { url: '/../legacy-stored-photo.jpg', status: 'APPROVED', isVisible: true },
+        createdAt: new Date('2026-06-20T18:03:00.000Z'),
+        updatedAt: new Date('2026-06-20T18:03:00.000Z'),
+      },
+      {
+        id: 'bound-hidden',
+        type: 'Photo',
+        tags: ['gallery'],
+        data: { url: '/uploads/kettle.jpg', status: 'APPROVED', isVisible: true, mediaId: 'reg-1' },
+        createdAt: new Date('2026-06-20T18:02:00.000Z'),
+        updatedAt: new Date('2026-06-20T18:02:00.000Z'),
+      },
+      {
+        id: 'bound-published',
+        type: 'Photo',
+        tags: ['gallery', 'curated'],
+        data: {
+          url: '/uploads/party.jpg',
+          status: 'APPROVED',
+          isVisible: true,
+          mediaId: 'party-1',
+          publishToGallery: true,
+        },
+        createdAt: new Date('2026-06-20T18:01:00.000Z'),
+        updatedAt: new Date('2026-06-20T18:01:00.000Z'),
+      },
+    ]);
+    mockPrisma.media.findMany.mockResolvedValueOnce([{ id: 'reg-1' }]);
+
+    const result = await repo.getPublicPhotos();
+
+    expect(mockPrisma.media.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['reg-1'] },
+        OR: [
+          { weddingPartyMembers: { some: {} } },
+          { attractions: { some: {} } },
+          { registryItems: { some: {} } },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(result.map((n) => n.id)).toEqual(['legacy-approved', 'bound-published']);
+  });
+});
+

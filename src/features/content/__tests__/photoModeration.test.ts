@@ -2,8 +2,9 @@ import { ContentService } from '../service';
 import { IContentRepository } from '../types';
 
 describe('Photo Moderation Service & Visibility Rules', () => {
-  let mockRepo: jest.Mocked<Omit<Required<IContentRepository>, 'getPendingPhotos'>> & {
+  let mockRepo: jest.Mocked<Omit<Required<IContentRepository>, 'getPendingPhotos' | 'getPublicPhotos'>> & {
     getPendingPhotos?: jest.Mock;
+    getPublicPhotos?: jest.Mock;
   };
   let service: ContentService;
 
@@ -65,6 +66,32 @@ describe('Photo Moderation Service & Visibility Rules', () => {
 
       expect(publicPhotos).toHaveLength(2);
       expect(publicPhotos.map((p) => p.id)).toEqual(['photo-approved', 'photo-legacy']);
+    });
+
+    it('delegates to repo.getPublicPhotos when repo implements it', async () => {
+      const since = new Date('2026-06-20T18:00:00.000Z');
+      const delegatedPhotos = [
+        {
+          id: 'photo-delegated',
+          type: 'Photo' as const,
+          tags: ['gallery'],
+          data: { url: '/delegated.png', status: 'APPROVED' as const, isVisible: true },
+          createdAt: new Date('2026-06-20T18:05:00.000Z'),
+          updatedAt: new Date('2026-06-20T18:05:00.000Z'),
+        },
+      ];
+
+      mockRepo.getPublicPhotos = jest.fn().mockResolvedValueOnce(delegatedPhotos);
+
+      const result = await service.getPublicPhotos({ since, limit: 25 });
+
+      expect(mockRepo.getPublicPhotos).toHaveBeenCalledWith({ since, limit: 25 });
+      expect(mockRepo.getNodesByType).not.toHaveBeenCalled();
+      expect(result).toEqual(delegatedPhotos);
+
+      mockRepo.getPublicPhotos.mockResolvedValueOnce(delegatedPhotos);
+      await service.getPublicPhotos();
+      expect(mockRepo.getPublicPhotos).toHaveBeenLastCalledWith();
     });
 
     it('includes out-of-order approved guest uploads where createdAt < since and updatedAt > since', async () => {
