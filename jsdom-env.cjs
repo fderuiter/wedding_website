@@ -15,6 +15,11 @@ class CustomEnvironment extends JSDOMEnvironment {
     this.global.WritableStream = WritableStream;
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
+    const { MessagePort } = require('node:worker_threads');
+    this.global.MessagePort = this.global.MessagePort || MessagePort;
+    const { setImmediate, clearImmediate } = require('node:timers');
+    this.global.setImmediate = this.global.setImmediate || setImmediate;
+    this.global.clearImmediate = this.global.clearImmediate || clearImmediate;
     this.global.BroadcastChannel = globalThis.BroadcastChannel || class BroadcastChannel {
       constructor(name) { this.name = name; }
       postMessage() {}
