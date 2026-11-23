@@ -50,6 +50,20 @@ describe('backupPersistence helpers', () => {
       expect(secretKey in stripped).toBe(false);
     }
     expect(payloadWithSecrets.smtpPass).toBe('smtp-secret');
+
+    const softDeletedWithSecrets = {
+      deleted: true,
+      previous: {
+        ...cleanPayload,
+        resendApiKey: 'resend-secret',
+      },
+    };
+    const strippedSoftDeleted = stripAppConfigSecrets(softDeletedWithSecrets);
+    expect(strippedSoftDeleted).toEqual({
+      deleted: true,
+      previous: cleanPayload,
+    });
+    expect(softDeletedWithSecrets.previous.resendApiKey).toBe('resend-secret');
   });
 
   it('parses optional dates across nullish, Date, ISO string, numeric, invalid, and object inputs', () => {
@@ -58,6 +72,7 @@ describe('backupPersistence helpers', () => {
     expect(parseOptionalDate(undefined)).toBeNull();
     expect(parseOptionalDate('')).toBeNull();
     expect(parseOptionalDate(now)).toBe(now);
+    expect(parseOptionalDate(new Date('invalid-date'))).toBeNull();
     expect(parseOptionalDate('2026-09-19T16:00:00.000Z')?.toISOString()).toBe(
       '2026-09-19T16:00:00.000Z',
     );

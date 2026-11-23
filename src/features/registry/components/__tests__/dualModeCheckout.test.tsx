@@ -8,7 +8,7 @@ import RegistryItemForm from '../RegistryItemForm';
 import type { RegistryItem } from '@/features/registry';
 import { createMockRegistryItem } from '@/testing/factories/registryFactory';
 import { apiClient } from '@/lib/apiClient';
-import { getStripePromise } from '@/lib/stripe';
+import { getStripePromise } from '@/lib/stripe.client';
 
 interface CapturedElementsOptions {
   mode?: string;
@@ -81,8 +81,8 @@ jest.mock('@stripe/react-stripe-js', () => {
   };
 });
 
-jest.mock('@/lib/stripe', () => {
-  const actual = jest.requireActual('@/lib/stripe');
+jest.mock('@/lib/stripe.client', () => {
+  const actual = jest.requireActual('@/lib/stripe.client');
   return {
     ...actual,
     getStripePromise: jest.fn(() => Promise.resolve({ mockStripeClient: true })),

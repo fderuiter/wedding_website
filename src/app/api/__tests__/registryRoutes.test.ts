@@ -260,6 +260,69 @@ describe('Registry API routes', () => {
       expect(json.data).toEqual(paginatedData);
     });
 
+    it('masks purchaserName as Anonymous for non-admin callers while preserving empty values', async () => {
+      mockIsAdminRequest.mockResolvedValue(false);
+      const paginatedData = {
+        items: [
+          { id: '1', name: 'Claimed Gift', purchased: true, purchaserName: 'Marker Buyer Identity', contributors: [] },
+          { id: '2', name: 'Null Buyer Gift', purchased: false, purchaserName: null, contributors: [] },
+          { id: '3', name: 'Empty Buyer Gift', purchased: false, purchaserName: '', contributors: [] },
+          { id: '4', name: 'Undefined Buyer Gift', purchased: false, contributors: [] },
+        ],
+        total: 4,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      };
+      mockGetAllItems.mockResolvedValue(paginatedData);
+      const res = await getItems(new Request('http://localhost/api/registry/items') as unknown as NextRequest);
+      expect(res.status).toBe(200);
+      expect(mockGetAllItems).toHaveBeenCalledWith(expect.objectContaining({ includeContributors: false }));
+      const json = await res.json();
+      expect(json.data).toEqual({
+        items: [
+          { id: '1', name: 'Claimed Gift', purchased: true, purchaserName: 'Anonymous', contributors: [] },
+          { id: '2', name: 'Null Buyer Gift', purchased: false, purchaserName: null, contributors: [] },
+          { id: '3', name: 'Empty Buyer Gift', purchased: false, purchaserName: '', contributors: [] },
+          { id: '4', name: 'Undefined Buyer Gift', purchased: false, contributors: [] },
+        ],
+        total: 4,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      });
+    });
+
+    it('preserves real purchaserName for admin callers on catalog read', async () => {
+      mockIsAdminRequest.mockResolvedValue(true);
+      const paginatedData = {
+        items: [
+          {
+            id: '1',
+            name: 'Claimed Gift',
+            purchased: true,
+            purchaserName: 'Marker Buyer Identity',
+            contributors: [
+              { name: 'Marker Buyer Identity', email: 'buyer@example.com', amount: 120, date: '2026-01-01' },
+            ],
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 20,
+        totalPages: 1,
+      };
+      mockGetAllItems.mockResolvedValue(paginatedData);
+      const res = await getItems(new Request('http://localhost/api/registry/items') as unknown as NextRequest);
+      expect(res.status).toBe(200);
+      expect(mockGetAllItems).toHaveBeenCalledWith(expect.objectContaining({ includeContributors: true }));
+      const json = await res.json();
+      expect(json.data.items[0].purchaserName).toBe('Marker Buyer Identity');
+      expect(json.data.items[0].contributors).toEqual([
+        { name: 'Marker Buyer Identity', amount: 120, date: '2026-01-01' },
+      ]);
+    });
+
     it('returns 400 when query parameters fail validation', async () => {
       const req = new Request('http://localhost/api/registry/items?limit=501');
       const res = await getItems(req as unknown as NextRequest);
@@ -305,6 +368,75 @@ describe('Registry API routes', () => {
         expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: true });
         const json = await res.json();
         expect(json.data).toEqual(item);
+      });
+
+      it('masks purchaserName as Anonymous for non-admin single-item requests while preserving empty values', async () => {
+        mockIsAdminRequest.mockResolvedValue(false);
+        const claimedItem = {
+          id: itemId,
+          name: 'Lamp',
+          purchased: true,
+          purchaserName: 'Marker Buyer Identity',
+          contributors: [],
+        };
+        mockGetItemById.mockResolvedValueOnce(claimedItem);
+        const claimedRes = await getItemByIdRoute(new Request(baseUrl) as unknown as NextRequest, { params: mockParams });
+        expect(claimedRes.status).toBe(200);
+        expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: false });
+        const claimedJson = await claimedRes.json();
+        expect(claimedJson.data).toEqual({
+          ...claimedItem,
+          purchaserName: 'Anonymous',
+        });
+
+        const unclaimedNullItem = {
+          id: itemId,
+          name: 'Lamp',
+          purchased: false,
+          purchaserName: null,
+          contributors: [],
+        };
+        mockGetItemById.mockResolvedValueOnce(unclaimedNullItem);
+        const nullRes = await getItemByIdRoute(new Request(baseUrl) as unknown as NextRequest, { params: mockParams });
+        expect((await nullRes.json()).data.purchaserName).toBeNull();
+
+        const unclaimedEmptyItem = {
+          id: itemId,
+          name: 'Lamp',
+          purchased: false,
+          purchaserName: '',
+          contributors: [],
+        };
+        mockGetItemById.mockResolvedValueOnce(unclaimedEmptyItem);
+        const emptyRes = await getItemByIdRoute(new Request(baseUrl) as unknown as NextRequest, { params: mockParams });
+        expect((await emptyRes.json()).data.purchaserName).toBe('');
+      });
+
+      it('preserves real purchaserName for admin single-item requests', async () => {
+        mockIsAdminRequest.mockResolvedValue(true);
+        const claimedItem = {
+          id: itemId,
+          name: 'Lamp',
+          purchased: true,
+          purchaserName: 'Marker Buyer Identity',
+          contributors: [
+            { name: 'Marker Buyer Identity', email: 'buyer@example.com', amount: 100, date: '2026-01-01' },
+          ],
+        };
+        mockGetItemById.mockResolvedValue(claimedItem);
+        const res = await getItemByIdRoute(new Request(baseUrl) as unknown as NextRequest, { params: mockParams });
+        expect(res.status).toBe(200);
+        expect(mockGetItemById).toHaveBeenCalledWith(itemId, { includeContributors: true });
+        const json = await res.json();
+        expect(json.data).toEqual({
+          id: itemId,
+          name: 'Lamp',
+          purchased: true,
+          purchaserName: 'Marker Buyer Identity',
+          contributors: [
+            { name: 'Marker Buyer Identity', amount: 100, date: '2026-01-01' },
+          ],
+        });
       });
 
       it('returns 404 when item not found', async () => {

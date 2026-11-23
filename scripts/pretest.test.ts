@@ -121,19 +121,23 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
 
       const pretestEnv: Record<string, string | undefined> = {
         DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding_dev?schema=public',
+        POSTGRES_URL_NON_POOLING: 'postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public',
         PGUSER: 'personal_dev_user',
       };
       const resolvedPretest = resolveTestEnvironment({ rootDir: tempDir, env: pretestEnv });
       expect(resolvedPretest).toBe(DEFAULT_TEST_DATABASE_URL);
       expect(pretestEnv.DATABASE_URL).toBe(DEFAULT_TEST_DATABASE_URL);
+      expect(pretestEnv.POSTGRES_URL_NON_POOLING).toBeUndefined();
       expect(pretestEnv.PGUSER).toBeUndefined();
       expect(pretestEnv.GUEST_PASSCODE).toBe('build-fallback-guest-passcode');
 
       const jestEnv = evaluateJestSetupEnvIife(tempDir, {
         DATABASE_URL: 'postgresql://wedding:wedding123@localhost:5432/wedding_dev?schema=public',
+        POSTGRES_URL_NON_POOLING: 'postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public',
         PGUSER: 'personal_dev_user',
       });
       expect(jestEnv.DATABASE_URL).toBe(DEFAULT_TEST_DATABASE_URL);
+      expect(jestEnv.POSTGRES_URL_NON_POOLING).toBeUndefined();
       expect(jestEnv.PGUSER).toBeUndefined();
       expect(jestEnv.GUEST_PASSCODE).toBe('build-fallback-guest-passcode');
     });
@@ -240,6 +244,7 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       await main({
         rootDir: tempDir,
         env,
+        ensureDatabase: async () => {},
         probeTcp: async (host: string, port: number) => {
           probeCalls.push({ host, port });
           return true;
@@ -255,7 +260,7 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
 
       expect(probeCalls).toEqual([{ host: '127.0.0.1', port: 5439 }]);
       expect(commands.map((c) => `${c.cmd} ${c.args.join(' ')}`)).toEqual([
-        'npx prisma db push --accept-data-loss',
+        'npx prisma migrate deploy',
         'npx tsx scripts/generate-portal.ts --stage-only',
       ]);
       expect(commands[0]?.env?.DATABASE_URL).toBe(customCiDbUrl);
@@ -284,6 +289,7 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       await main({
         rootDir: tempDir,
         env,
+        ensureDatabase: async () => {},
         probeTcp: async (host: string, port: number) => {
           events.push(`probe:${host}:${port}`);
           return false;
@@ -318,15 +324,58 @@ describe('CI-aware pretest & Jest setup environment orchestration', () => {
       // Verify TCP probe ran BEFORE docker compose up -d db
       const probeIdx = events.indexOf('probe:localhost:5432');
       const composeUpIdx = events.indexOf(
-        'spawn:docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db'
+        'spawn:docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml up -d db'
       );
       expect(probeIdx).toBeGreaterThan(-1);
       expect(composeUpIdx).toBeGreaterThan(probeIdx);
 
       // Verify isolated DATABASE_URL from .env.test
       expect(env.DATABASE_URL).toBe(DEFAULT_TEST_DATABASE_URL);
-      expect(events).toContain('spawn:npx prisma db push --accept-data-loss');
+      expect(events).toContain('spawn:npx prisma migrate deploy');
       expect(events).toContain('spawn:npx tsx scripts/generate-portal.ts --stage-only');
+    });
+
+    it('resets isolated test schema and retries prisma migrate deploy on P3005 error', async () => {
+      fs.writeFileSync(path.join(tempDir, 'package-lock.json'), '{"lockfileVersion":3}\n', 'utf8');
+      const nmDir = path.join(tempDir, 'node_modules');
+      fs.mkdirSync(path.join(nmDir, '.prisma/client'), { recursive: true });
+      fs.writeFileSync(path.join(nmDir, '.package-lock.json'), '{"lockfileVersion":3}\n', 'utf8');
+      fs.writeFileSync(path.join(nmDir, '.prisma/client/index.js'), 'export {};\n', 'utf8');
+
+      const resetCalls: Array<{ url: string; schema: string }> = [];
+      let migrateAttempts = 0;
+
+      await main({
+        rootDir: tempDir,
+        env: {
+          CI: 'true',
+          npm_lifecycle_event: 'pretest',
+          DATABASE_URL: DEFAULT_TEST_DATABASE_URL,
+        },
+        ensureDatabase: async () => {},
+        resetSchema: async (url: string, schema: string) => {
+          resetCalls.push({ url, schema });
+        },
+        probeTcp: async () => true,
+        spawnSync: (cmd: string, args: string[]) => {
+          if (cmd === 'npx' && args.join(' ') === 'prisma migrate deploy') {
+            migrateAttempts += 1;
+            if (migrateAttempts === 1) {
+              return {
+                status: 1,
+                stderr: Buffer.from('Error: P3005 The database schema is not empty.\n'),
+              };
+            }
+          }
+          return { status: 0 };
+        },
+        exit: (code: number) => {
+          throw new Error(`Unexpected exit(${code})`);
+        },
+      });
+
+      expect(migrateAttempts).toBe(2);
+      expect(resetCalls).toEqual([{ url: DEFAULT_TEST_DATABASE_URL, schema: 'public' }]);
     });
   });
 });
