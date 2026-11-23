@@ -457,10 +457,7 @@ function resolveActivePgPool(poolOverride?: Pool | null): Pool | undefined {
   if (testPoolOverride !== undefined) {
     return testPoolOverride ?? undefined;
   }
-  if (
-    (process.env.NODE_ENV || env.NODE_ENV) === 'test' &&
-    isMockedFunction(prismaModule.prisma?.$disconnect)
-  ) {
+  if (isMockedFunction(prismaModule.prisma?.$disconnect)) {
     return undefined;
   }
   if (typeof prismaModule.getPgPool === 'function') {

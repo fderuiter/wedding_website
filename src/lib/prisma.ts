@@ -20,7 +20,9 @@ const globalForPrisma = globalThis as unknown as GlobalPrismaState;
 const createPrismaRuntime = (): { prisma: PrismaClient; pool: Pool } => {
   console.log('DEBUG [createPrismaClient]: Initializing PostgreSQL database client');
   const { poolConfig, adapterOptions } = buildPostgresRuntimeConfig(env.DATABASE_URL);
-  const pool = new Pool(poolConfig);
+  const pool = new Pool(
+    env.NODE_ENV === 'test' ? { ...poolConfig, allowExitOnIdle: true } : poolConfig
+  );
   const adapter = new PrismaPg(pool, adapterOptions);
   const client = new PrismaClient({ adapter });
   return { prisma: client, pool };

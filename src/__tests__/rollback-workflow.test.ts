@@ -781,8 +781,444 @@ fi
 
         expect(receivedHeaders['x-hub-signature-256']).toBe(`sha256=${expectedBodySig}`);
         expect(receivedHeaders['x-deploy-signature-256']).toBe(`sha256=${expectedTimestampSig}`);
+
+        // Verify payload is multi-line jq -n formatted JSON where re-serializing via JSON.stringify would break HMAC
+        expect(receivedBody).toContain('\n  "image":');
+        const compactReserialized = JSON.stringify(JSON.parse(receivedBody));
+        expect(compactReserialized).not.toBe(receivedBody);
+        const brokenCompactSig = crypto
+          .createHmac('sha256', webhookSecret)
+          .update(compactReserialized)
+          .digest('hex');
+        expect(`sha256=${brokenCompactSig}`).not.toBe(receivedHeaders['x-hub-signature-256']);
+
+        // Reference stateless webhook receiver check (constant-time signature comparison + 300s timestamp window)
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        expect(Math.abs(nowSeconds - Number(timestampHeader))).toBeLessThanOrEqual(300);
+        expect(
+          crypto.timingSafeEqual(
+            Buffer.from(String(receivedHeaders['x-hub-signature-256'])),
+            Buffer.from(`sha256=${expectedBodySig}`)
+          )
+        ).toBe(true);
+        expect(
+          crypto.timingSafeEqual(
+            Buffer.from(String(receivedHeaders['x-deploy-signature-256'])),
+            Buffer.from(`sha256=${expectedTimestampSig}`)
+          )
+        ).toBe(true);
+
+        // Verify digest field is omitted cleanly when IMAGE_DIGEST is empty while preserving both HMAC formulas
+        const noDigestRes = await runBashStepAsync(webhookScript, {
+          IMAGE_URI: 'ghcr.io/example/wedding_website:v1.0.0',
+          IMAGE_DIGEST: '',
+          TARGET_ENV: 'staging',
+          DEPLOY_WEBHOOK_URL: `http://127.0.0.1:${port}/deploy`,
+          DEPLOY_WEBHOOK_SECRET: webhookSecret,
+        });
+        expect(noDigestRes.status).toBe(0);
+        expect(JSON.parse(receivedBody)).toEqual({
+          image: 'ghcr.io/example/wedding_website:v1.0.0',
+          environment: 'staging',
+        });
+        const noDigestTs = String(receivedHeaders['x-deploy-timestamp'] || '');
+        expect(receivedHeaders['x-hub-signature-256']).toBe(
+          `sha256=${crypto.createHmac('sha256', webhookSecret).update(receivedBody).digest('hex')}`
+        );
+        expect(receivedHeaders['x-deploy-signature-256']).toBe(
+          `sha256=${crypto.createHmac('sha256', webhookSecret).update(`${noDigestTs}.${receivedBody}`).digest('hex')}`
+        );
       } finally {
         await new Promise<void>(resolve => server.close(() => resolve()));
+      }
+    });
+
+    it('captures the prior production tag and sha256 digest for docker-host after staging and dry_run runs', async () => {
+      const captureScript = extractStepRunScript(deployProviderYml, 'Capture Active Image Tag Before Rollout');
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-docker-prod-'));
+      const prodPriorSha = '1111111111111111111111111111111111111111';
+      const stagingSha = '2222222222222222222222222222222222222222';
+      const dryRunSha = '3333333333333333333333333333333333333333';
+      const incomingSha = '4444444444444444444444444444444444444444';
+      const prodPriorDigest = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const incomingDigest = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+      const dockerShim = path.join(binDir, 'docker');
+      fs.writeFileSync(
+        dockerShim,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'login') process.exit(0);
+if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
+  const ref = args[args.length - 1];
+  const map = {
+    'ghcr.io/fderuiter/wedding_website:${prodPriorSha}': '${prodPriorDigest}',
+    'ghcr.io/fderuiter/wedding_website:${stagingSha}': 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    'ghcr.io/fderuiter/wedding_website:${dryRunSha}': 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+    'ghcr.io/fderuiter/wedding_website:v1.2.0': 'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  };
+  if (map[ref]) {
+    process.stdout.write(map[ref]);
+    process.exit(0);
+  }
+  process.exit(1);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      let standaloneProviderWins = false;
+      const apiServer = http.createServer((req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        const url = req.url ?? '';
+        if (url.includes('/actions/workflows/deploy.yml/runs')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              workflow_runs: [
+                {
+                  id: 404,
+                  event: 'workflow_dispatch',
+                  conclusion: 'success',
+                  head_sha: dryRunSha,
+                  head_branch: 'main',
+                  updated_at: '2026-11-22T12:04:00Z',
+                },
+                {
+                  id: 403,
+                  event: 'workflow_run',
+                  conclusion: 'success',
+                  head_sha: stagingSha,
+                  head_branch: 'main',
+                  updated_at: '2026-11-22T12:03:00Z',
+                },
+                {
+                  id: 401,
+                  event: 'workflow_run',
+                  conclusion: 'success',
+                  head_sha: prodPriorSha,
+                  head_branch: 'main',
+                  updated_at: '2026-11-22T12:01:00Z',
+                },
+              ],
+            })
+          );
+          return;
+        }
+        if (url.includes('/actions/workflows/deploy-provider.yml/runs')) {
+          const runs = [
+            {
+              id: 402,
+              event: 'workflow_dispatch',
+              conclusion: 'success',
+              head_sha: stagingSha,
+              head_branch: 'main',
+              updated_at: '2026-11-22T12:02:00Z',
+            },
+          ];
+          if (standaloneProviderWins) {
+            runs.unshift({
+              id: 405,
+              event: 'workflow_dispatch',
+              conclusion: 'success',
+              head_sha: prodPriorSha,
+              head_branch: 'v1.2.0',
+              updated_at: '2026-11-22T12:05:00Z',
+            });
+          }
+          res.writeHead(200);
+          res.end(JSON.stringify({ workflow_runs: runs }));
+          return;
+        }
+        if (url.includes('/deployments?environment=production')) {
+          res.writeHead(200);
+          res.end(JSON.stringify([{ sha: prodPriorSha, ref: standaloneProviderWins ? 'v1.2.0' : 'main' }]));
+          return;
+        }
+        if (url.includes('/actions/runs/404/jobs')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              jobs: [
+                {
+                  name: 'Production Provider Deployment / Deploy Release Artifact to Provider',
+                  conclusion: 'success',
+                  steps: [{ name: 'Dry-run Provider Adapter Validation', conclusion: 'success' }],
+                },
+                { name: 'Production Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+              ],
+            })
+          );
+          return;
+        }
+        if (url.includes('/actions/runs/403/jobs')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              jobs: [
+                {
+                  name: 'Staging Provider Deployment / Deploy Release Artifact to Provider',
+                  conclusion: 'success',
+                  steps: [{ name: 'Dry-run Provider Adapter Validation', conclusion: 'skipped' }],
+                },
+                { name: 'Staging Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+                { name: 'Production Provider Deployment', conclusion: 'skipped', steps: [] },
+                { name: 'Production Post-Deployment Health Verification', conclusion: 'skipped', steps: [] },
+              ],
+            })
+          );
+          return;
+        }
+        if (url.includes('/actions/runs/402/jobs')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              jobs: [
+                {
+                  name: 'Deploy Release Artifact to Provider',
+                  conclusion: 'success',
+                  steps: [
+                    { name: 'Record Target Environment (staging)', conclusion: 'success' },
+                    { name: 'Record Target Environment (production)', conclusion: 'skipped' },
+                    { name: 'Dry-run Provider Adapter Validation', conclusion: 'skipped' },
+                  ],
+                },
+              ],
+            })
+          );
+          return;
+        }
+        if (url.includes('/actions/runs/401/jobs')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              jobs: [
+                {
+                  name: 'Production Provider Deployment / Deploy Release Artifact to Provider',
+                  conclusion: 'success',
+                  steps: [{ name: 'Dry-run Provider Adapter Validation', conclusion: 'skipped' }],
+                },
+                { name: 'Production Post-Deployment Health Verification', conclusion: 'success', steps: [] },
+              ],
+            })
+          );
+          return;
+        }
+        if (url.includes('/actions/runs/405/jobs')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              jobs: [
+                {
+                  name: 'Deploy Release Artifact to Provider',
+                  conclusion: 'success',
+                  steps: [
+                    { name: 'Record Target Environment (staging)', conclusion: 'skipped' },
+                    { name: 'Record Target Environment (production)', conclusion: 'success' },
+                    { name: 'Dry-run Provider Adapter Validation', conclusion: 'skipped' },
+                  ],
+                },
+              ],
+            })
+          );
+          return;
+        }
+        res.writeHead(404);
+        res.end('{}');
+      });
+
+      await new Promise<void>(resolve => apiServer.listen(0, '127.0.0.1', () => resolve()));
+      const addr = apiServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+
+      try {
+        const res = await runBashStepAsync(captureScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          PROVIDER: 'docker-host',
+          TARGET_ENV: 'production',
+          INCOMING_TAG: incomingSha,
+          INCOMING_DIGEST: incomingDigest,
+          CURRENT_SHA: incomingSha,
+          DRY_RUN: 'false',
+          GITHUB_TOKEN: 'ghs_mock_token',
+          GITHUB_ACTOR_LOGIN: 'octocat',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+        });
+
+        expect(res.status).toBe(0);
+        expect(res.outputs.previous_image_tag).toBe(prodPriorSha);
+        expect(res.outputs.previous_image_digest).toBe(prodPriorDigest);
+        expect(res.outputs.previous_tag_source).toBe('workflow-runs');
+
+        // Also verify newer standalone deploy-provider.yml production tag run is selected ahead of older deploy.yml run
+        standaloneProviderWins = true;
+        const standaloneRes = await runBashStepAsync(captureScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          PROVIDER: 'docker-host',
+          TARGET_ENV: 'production',
+          INCOMING_TAG: incomingSha,
+          INCOMING_DIGEST: incomingDigest,
+          CURRENT_SHA: incomingSha,
+          DRY_RUN: 'false',
+          GITHUB_TOKEN: 'ghs_mock_token',
+          GITHUB_ACTOR_LOGIN: 'octocat',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          GITHUB_API_URL: `http://127.0.0.1:${port}`,
+        });
+        expect(standaloneRes.status).toBe(0);
+        expect(standaloneRes.outputs.previous_image_tag).toBe('v1.2.0');
+        expect(standaloneRes.outputs.previous_image_digest).toBe(
+          'sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+        );
+        expect(standaloneRes.outputs.previous_tag_source).toBe('workflow-runs');
+      } finally {
+        await new Promise<void>(resolve => apiServer.close(() => resolve()));
+        fs.rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+
+    it('skips unpublished HEAD^1 commits lacking a GHCR tag and selects the latest GHCR-published release for rollback.yml', async () => {
+      const captureScript = extractStepRunScript(deployProviderYml, 'Capture Active Image Tag Before Rollout');
+      const resolveScript = extractStepRunScript(deployProviderYml, 'Resolve Artifact Image URI');
+      const rollbackValidateScript = extractStepRunScript(rollbackYml, 'Log Rollback Request Details');
+      const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-git-ghcr-'));
+      const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-docker-ghcr-'));
+      const publishedDigest = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+      const incomingDigest = 'sha256:8888888888888888888888888888888888888888888888888888888888888888';
+
+      execSync('git init -b main', { cwd: repoDir, stdio: 'ignore' });
+      execSync('git config user.name "Test"', { cwd: repoDir, stdio: 'ignore' });
+      execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoDir, 'a.txt'), 'release-1');
+      execSync('git add a.txt && git commit -m "published release"', { cwd: repoDir, stdio: 'ignore' });
+      const publishedSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+
+      fs.writeFileSync(path.join(repoDir, 'a.txt'), 'intermediate-unpublished');
+      execSync('git add a.txt && git commit -m "unpublished HEAD^1"', { cwd: repoDir, stdio: 'ignore' });
+      const unpublishedParentSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+
+      fs.writeFileSync(path.join(repoDir, 'a.txt'), 'head-commit');
+      execSync('git add a.txt && git commit -m "head commit"', { cwd: repoDir, stdio: 'ignore' });
+      const headSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+
+      // Shallow clone simulation with fetch-depth=2 (only HEAD and unpublished HEAD^1 locally)
+      const shallowDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mock-shallow-'));
+      execSync(`git clone --depth=2 "file://${repoDir}" "${shallowDir}"`, { stdio: 'ignore' });
+
+      const dockerShim = path.join(binDir, 'docker');
+      fs.writeFileSync(
+        dockerShim,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'login') process.exit(0);
+if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
+  const ref = args[args.length - 1];
+  // HEAD^1 (${unpublishedParentSha}) is NOT published in GHCR; ${publishedSha} IS published
+  if (ref === 'ghcr.io/fderuiter/wedding_website:${publishedSha}') {
+    process.stdout.write('${publishedDigest}');
+    process.exit(0);
+  }
+  process.exit(1);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      const apiServer = http.createServer((req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        const url = req.url ?? '';
+        if (url.includes('/actions/workflows/')) {
+          res.writeHead(200);
+          res.end(JSON.stringify({ workflow_runs: [] }));
+          return;
+        }
+        if (url.includes('/deployments')) {
+          res.writeHead(200);
+          res.end(JSON.stringify([]));
+          return;
+        }
+        if (url.includes('/commits?')) {
+          res.writeHead(200);
+          res.end(
+            JSON.stringify([
+              { sha: headSha },
+              { sha: unpublishedParentSha },
+              { sha: publishedSha },
+            ])
+          );
+          return;
+        }
+        res.writeHead(404);
+        res.end('{}');
+      });
+
+      await new Promise<void>(resolve => apiServer.listen(0, '127.0.0.1', () => resolve()));
+      const addr = apiServer.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+
+      try {
+        const captureRes = await runBashStepAsync(
+          captureScript,
+          {
+            PATH: `${binDir}:${process.env.PATH || ''}`,
+            PROVIDER: 'docker-host',
+            TARGET_ENV: 'production',
+            INCOMING_TAG: headSha,
+            INCOMING_DIGEST: incomingDigest,
+            CURRENT_SHA: headSha,
+            DRY_RUN: 'false',
+            GITHUB_TOKEN: 'ghs_mock_token',
+            GITHUB_ACTOR_LOGIN: 'octocat',
+            GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+            GITHUB_API_URL: `http://127.0.0.1:${port}`,
+          },
+          shallowDir
+        );
+
+        expect(captureRes.status).toBe(0);
+        expect(captureRes.outputs.previous_image_tag).not.toBe(unpublishedParentSha);
+        expect(captureRes.outputs.previous_image_tag).toBe(publishedSha);
+        expect(captureRes.outputs.previous_image_digest).toBe(publishedDigest);
+        expect(captureRes.outputs.previous_tag_source).toBe('github-commits-api');
+
+        // Verify rollback.yml preflight + deploy-provider.yml Resolve Artifact Image URI succeed with exit code 0
+        const rollbackPreflight = runBashStep(rollbackValidateScript, {
+          TARGET_ENV: 'production',
+          ROLLBACK_ENV: 'production-rollback',
+          PREVIOUS_TAG: captureRes.outputs.previous_image_tag,
+          PREVIOUS_DIGEST: captureRes.outputs.previous_image_digest,
+          PROVIDER: 'docker-host',
+          REASON: 'Automated post-deployment health check failure',
+          DRY_RUN: 'false',
+          CURRENT_SHA: headSha,
+        });
+        expect(rollbackPreflight.status).toBe(0);
+        expect(rollbackPreflight.outputs.effective_tag).toBe(publishedSha);
+        expect(rollbackPreflight.outputs.effective_digest).toBe(publishedDigest);
+
+        const resolveRes = runBashStep(resolveScript, {
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+          GH_TOKEN: 'ghs_mock_token',
+          GITHUB_ACTOR_LOGIN: 'octocat',
+          GITHUB_REPOSITORY: 'fderuiter/wedding_website',
+          RAW_DIGEST: rollbackPreflight.outputs.effective_digest,
+          RAW_TAG: rollbackPreflight.outputs.effective_tag,
+          TARGET_ENV: 'production',
+          ROLLBACK_ENV: 'production-rollback',
+          PROVIDER: 'docker-host',
+          DRY_RUN: 'false',
+        });
+        expect(resolveRes.status).toBe(0);
+        expect(resolveRes.outputs.image_digest).toBe(publishedDigest);
+        expect(resolveRes.outputs.image_uri).toBe(`ghcr.io/fderuiter/wedding_website@${publishedDigest}`);
+      } finally {
+        await new Promise<void>(resolve => apiServer.close(() => resolve()));
+        fs.rmSync(shallowDir, { recursive: true, force: true });
+        fs.rmSync(repoDir, { recursive: true, force: true });
+        fs.rmSync(binDir, { recursive: true, force: true });
       }
     });
   });

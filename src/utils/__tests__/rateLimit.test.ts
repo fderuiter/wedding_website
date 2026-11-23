@@ -144,6 +144,7 @@ describe('rateLimit', () => {
         );
       } finally {
         warnSpy.mockRestore();
+        setNodeEnv(originalNodeEnv);
       }
     });
   });
