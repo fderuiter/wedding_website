@@ -2,7 +2,11 @@
 
 import { useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
+} from '@/features/registry';
 import { ServerExportTokens, ThemePreset } from '@/lib/theme/presets';
 import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
@@ -118,35 +122,55 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                     {sortedSeatEntries.map((entry) => {
                       const { guest, seatNumber, isCompanion, companionIndex, displayName } = entry;
                       const dietaryBadges = !isCompanion
-                        ? getDietaryBadges(guest.dietaryNotes, guest.extraFields)
+                        ? getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags)
                         : [];
+                      const mealSelections = !isCompanion ? formatGuestMealSelections(guest) : '';
+                      const customAnswers = !isCompanion ? formatGuestCustomAnswers(guest) : '';
 
                       return (
                         <li
                           key={isCompanion ? `${guest.id}-companion-${companionIndex}` : guest.id}
-                          className="flex justify-between items-center gap-2 border-b border-dashed py-0.5"
+                          className="border-b border-dashed py-1 space-y-0.5"
                           style={{ borderColor: 'var(--print-border)' }}
                         >
-                          <span className="font-medium flex items-center flex-wrap gap-1">
-                            <span>
-                              Seat {seatNumber}: {displayName}
-                            </span>
-                            {dietaryBadges.map((badge) => (
-                              <span
-                                key={badge.category}
-                                data-testid="printable-dietary-badge"
-                                className="text-[10px] font-semibold px-1.5 py-0.2 rounded border"
-                                style={{
-                                  backgroundColor: 'var(--print-badge-bg)',
-                                  borderColor: 'var(--print-border)',
-                                  color: 'var(--print-text)',
-                                }}
-                              >
-                                {badge.label}
+                          <div className="flex justify-between items-center gap-2">
+                            <span className="font-medium flex items-center flex-wrap gap-1">
+                              <span>
+                                Seat {seatNumber}: {displayName}
                               </span>
-                            ))}
-                          </span>
-                          <span className="font-mono text-[10px] opacity-75">{guest.code}</span>
+                              {dietaryBadges.map((badge) => (
+                                <span
+                                  key={badge.category}
+                                  data-testid="printable-dietary-badge"
+                                  className="text-[10px] font-semibold px-1.5 py-0.2 rounded border"
+                                  style={{
+                                    backgroundColor: 'var(--print-badge-bg)',
+                                    borderColor: 'var(--print-border)',
+                                    color: 'var(--print-text)',
+                                  }}
+                                >
+                                  {badge.label}
+                                </span>
+                              ))}
+                            </span>
+                            <span className="font-mono text-[10px] opacity-75">{guest.code}</span>
+                          </div>
+                          {mealSelections && (
+                            <div
+                              data-testid="printable-meal-selections"
+                              className="text-[10px] opacity-85 pl-3"
+                            >
+                              Meals: {mealSelections}
+                            </div>
+                          )}
+                          {customAnswers && (
+                            <div
+                              data-testid="printable-custom-answers"
+                              className="text-[10px] opacity-85 pl-3"
+                            >
+                              Responses: {customAnswers}
+                            </div>
+                          )}
                         </li>
                       );
                     })}
@@ -172,7 +196,11 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
           </h2>
           <div className="grid grid-cols-3 gap-2 text-xs">
             {printableUnassignedGuests.map((guest) => {
-              const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+              const dietaryBadges = getDietaryBadges(
+                guest.dietaryNotes,
+                guest.extraFields,
+                guest.partyTags
+              );
               const companions = getGuestCompanionNames(guest);
               const hasNamedCompanion = companions.some(
                 (c) => !c.startsWith(`${guest.guestName} (+`)
@@ -183,35 +211,49 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                     ? ` (+${companions.length}: ${companions.join(', ')})`
                     : ` (+${companions.length})`
                   : '';
+              const mealSelections = formatGuestMealSelections(guest);
+              const customAnswers = formatGuestCustomAnswers(guest);
               return (
                 <div
                   key={guest.id}
-                  className="p-1.5 border rounded flex justify-between items-center gap-1"
+                  className="p-1.5 border rounded space-y-0.5"
                   style={{
                     borderColor: 'var(--print-border)',
                     backgroundColor: 'var(--print-badge-bg)',
                   }}
                 >
-                  <span className="flex items-center flex-wrap gap-1">
-                    <span>
-                      {guest.guestName}
-                      {companionSuffix}
-                    </span>
-                    {dietaryBadges.map((badge) => (
-                      <span
-                        key={badge.category}
-                        data-testid="printable-dietary-badge"
-                        className="text-[10px] font-semibold px-1 rounded border"
-                        style={{
-                          borderColor: 'var(--print-border)',
-                          color: 'var(--print-text)',
-                        }}
-                      >
-                        {badge.shortLabel}
+                  <div className="flex justify-between items-center gap-1">
+                    <span className="flex items-center flex-wrap gap-1">
+                      <span>
+                        {guest.guestName}
+                        {companionSuffix}
                       </span>
-                    ))}
-                  </span>
-                  <span className="font-mono text-[10px] opacity-75">{guest.code}</span>
+                      {dietaryBadges.map((badge) => (
+                        <span
+                          key={badge.category}
+                          data-testid="printable-dietary-badge"
+                          className="text-[10px] font-semibold px-1 rounded border"
+                          style={{
+                            borderColor: 'var(--print-border)',
+                            color: 'var(--print-text)',
+                          }}
+                        >
+                          {badge.shortLabel}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="font-mono text-[10px] opacity-75">{guest.code}</span>
+                  </div>
+                  {mealSelections && (
+                    <div data-testid="printable-meal-selections" className="text-[10px] opacity-85">
+                      Meals: {mealSelections}
+                    </div>
+                  )}
+                  {customAnswers && (
+                    <div data-testid="printable-custom-answers" className="text-[10px] opacity-85">
+                      Responses: {customAnswers}
+                    </div>
+                  )}
                 </div>
               );
             })}

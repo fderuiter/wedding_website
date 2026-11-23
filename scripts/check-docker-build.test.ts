@@ -27,7 +27,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
         name: 'wedding-website-fixture',
         private: true,
         engines: {
-          node: '^22.12.0',
+          node: '22.x',
           npm: '^10.9.0',
         },
         devEngines: {
@@ -268,6 +268,27 @@ describe('check-docker-build', () => {
       lineNumber: 9,
     });
     expect(violations[0].reason).toContain('does not match');
+    expect(violations[0].reason).toContain('docker-compose.yml:3');
+  });
+
+  it('rejects mismatched external image tags (postgres:18-alpine vs postgres:15-alpine) across docker-compose.yml and workflows', () => {
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(`postgres:15-alpine@${POSTGRES_DIGEST}`, `postgres:18-alpine@${ALT_DIGEST}`)
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      filePath: '.github/workflows/ci.yml',
+      lineNumber: 9,
+      imageRef: `postgres:15-alpine@${POSTGRES_DIGEST}`,
+    });
+    expect(violations[0].reason).toContain('postgres:15-alpine');
+    expect(violations[0].reason).toContain('postgres:18-alpine');
     expect(violations[0].reason).toContain('docker-compose.yml:3');
   });
 
@@ -847,6 +868,33 @@ describe('check-docker-build', () => {
         }),
       ])
     );
+  });
+
+  it('accepts Dependabot postgres digest updates in docker-compose.yml alone when ci.yml shares verify.outputs.db_image', () => {
+    const bumpedDigest = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+    const liveCiYml = fs.readFileSync(
+      path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, '.github', 'workflows', 'ci.yml'), liveCiYml);
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${bumpedDigest}`,
+        '  app:',
+        '    image: wedding-website:latest',
+        '    init: true',
+        '    stop_grace_period: 15s',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([]);
   });
 
   describe('standalone output verification (pre-build vs --require-standalone)', () => {
