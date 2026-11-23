@@ -279,8 +279,7 @@ describe('SettingsPage View State', () => {
 
     render(<SettingsPage />);
 
-    const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
-    fireEvent.change(presetSelect, { target: { value: 'romantic' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Romantic Preset/i }));
 
     const saveButtons = screen.getAllByRole('button', { name: /save/i });
     await act(async () => {
@@ -328,8 +327,7 @@ describe('SettingsPage View State', () => {
 
     render(<SettingsPage />);
 
-    const presetSelect = screen.getByLabelText(/Select Theme Preset/i);
-    fireEvent.change(presetSelect, { target: { value: 'editorial' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Editorial Preset/i }));
 
     const saveButtons = screen.getAllByRole('button', { name: /save/i });
     await act(async () => {
@@ -345,5 +343,36 @@ describe('SettingsPage View State', () => {
         },
       })
     );
+  });
+
+  it('does not mark optional venue or narrative inputs as HTML5 required when blank after setup', () => {
+    (useAdminSettings as jest.Mock).mockReturnValue({
+      config: {
+        id: 'global',
+        partner1Name: 'Alex',
+        partner2Name: 'Taylor',
+        weddingDate: '2027-10-10',
+        venueName: '',
+        venueAddress: '',
+        venueCity: '',
+        venueState: '',
+        venueZip: '',
+      },
+      loading: false,
+      saving: false,
+      error: null,
+      saveSettings: mockSaveSettings,
+      profiles: [],
+      loadingList: false,
+      createProfile: mockCreateProfile,
+      creating: false,
+      fetchAll: mockFetchAll,
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByLabelText(/Venue Name/i)).not.toBeRequired();
+    expect(screen.getByLabelText(/^City$/i)).not.toBeRequired();
+    expect(screen.getByLabelText(/^State$/i)).not.toBeRequired();
   });
 });

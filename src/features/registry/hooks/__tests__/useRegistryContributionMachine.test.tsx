@@ -595,5 +595,32 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.isSuccess).toBe(false);
       expect(result.current.isSubmitting).toBe(false);
     });
+
+    it('keeps focus on invitationCodeInputRef when 8-character auto-verification fails', async () => {
+      (apiClient.get as jest.Mock).mockResolvedValueOnce({ valid: false });
+
+      const codeEl = document.createElement('input');
+      document.body.appendChild(codeEl);
+
+      try {
+        const { result } = renderHook(() =>
+          useRegistryContributionMachine({
+            item: mockSingleItem,
+            onContribute: mockOnContribute,
+          })
+        );
+        result.current.invitationCodeInputRef.current = codeEl;
+
+        await act(async () => {
+          result.current.handleCodeChange('BADCODE8');
+        });
+
+        expect(result.current.isValidatingCode).toBe(false);
+        expect(result.current.codeError).toBe('Invalid invitation code.');
+        expect(document.activeElement).toBe(codeEl);
+      } finally {
+        codeEl.remove();
+      }
+    });
   });
 });

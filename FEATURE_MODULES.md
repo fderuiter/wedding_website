@@ -80,10 +80,10 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L290-L474) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L571-L620))**:
+- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L344-L535) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L632-L681))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
-  - In the `details` section ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L290-L345)), renders `InteractiveTimeline` when structured `Schedule` or `startTime` entries exist in `contentNodes`, and falls back to `Logistics` ceremony/reception summary cards (`ceremonyTitle`, `receptionTitle`) when no structured timeline entries are present.
+  - In the `details` section ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L344-L399)), renders `InteractiveTimeline` when structured `Schedule` or `startTime` entries exist in `contentNodes`, and falls back to `Logistics` ceremony/reception summary cards (`ceremonyTitle`, `receptionTitle`) when no structured timeline entries are present.
   - Hides homepage hotel block cards and the `/things-to-do` local guide link when `attractions` is disabled, hides the homepage photo gallery link when `gallery` is disabled, and hides the 3D experience callout when `interactive3D` is disabled.
 - **UI Pages Skipping Server-Side `isFeatureEnabled`**:
   - **Admin Dashboard Overview & Subpages**: `/admin/dashboard` renders a decoupled administrative overview (`OnboardingChecklist` + module-aware workflow cards) without querying registry items so core guest invitations, seating, and settings remain accessible when `registry` is disabled, while subpages (`/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) do not throw HTTP 404 on direct URL navigation so administrators can still curate underlying records while a guest-facing module is turned off.

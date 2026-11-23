@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, FormMessage } from '@/components/ui/forms';
@@ -29,6 +29,7 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
   const [draftCode, setDraftCode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const code = draftCode ?? defaultCode;
 
@@ -37,15 +38,18 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
     const cleanCode = code.trim().toUpperCase();
     if (!cleanCode) {
       setErrorMessage('Please enter an invitation code.');
+      inputRef.current?.focus();
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage(null);
 
+    let didSucceed = false;
     try {
       const success = await recoverSession(cleanCode);
       if (success) {
+        didSucceed = true;
         if (onSuccess) onSuccess();
         onClose();
       } else {
@@ -55,16 +59,18 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
       setErrorMessage(err instanceof Error ? err.message : 'An error occurred during session recovery.');
     } finally {
       setIsSubmitting(false);
+      if (!didSucceed) {
+        inputRef.current?.focus();
+      }
     }
   };
 
   return (
     <form onSubmit={handleSubmit} className="mt-4 space-y-4" noValidate>
-      <FormGroup state={errorMessage ? 'error' : 'default'}>
-        <Label htmlFor="recovery-invitation-code">
-          Invitation Code <span className="text-red-500">*</span>
-        </Label>
+      <FormGroup required busy={isSubmitting} state={errorMessage ? 'error' : 'default'}>
+        <Label htmlFor="recovery-invitation-code">Invitation Code</Label>
         <Input
+          ref={inputRef}
           id="recovery-invitation-code"
           type="text"
           placeholder="e.g. ABCDEF12"
@@ -73,7 +79,8 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
             setDraftCode(e.target.value.toUpperCase());
             setErrorMessage(null);
           }}
-          disabled={isSubmitting}
+          required
+          busy={isSubmitting}
           autoFocus
         />
         {errorMessage && <FormMessage>{errorMessage}</FormMessage>}
@@ -91,7 +98,7 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
         <Button
           type="submit"
           variant="primary"
-          disabled={isSubmitting || !code.trim()}
+          aria-disabled={isSubmitting || !code.trim()}
           aria-busy={isSubmitting}
         >
           {isSubmitting ? (

@@ -1771,4 +1771,114 @@ describe('RegistryItemCard Component', () => {
       );
     });
   });
+
+  it('exposes name/email autoComplete tokens, required + aria-required="true" with aria-hidden asterisks, and retains focus across 8-char auto-verification and async submission', async () => {
+    let resolveValidate: ((val: { valid: boolean }) => void) | null = null;
+    (apiClient.get as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/registry/validate-code')) {
+        return new Promise((resolve) => {
+          resolveValidate = resolve;
+        });
+      }
+      return Promise.resolve({ isVerified: false });
+    });
+
+    let resolveSubmit: (() => void) | null = null;
+    const pendingContribute = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        })
+    );
+
+    const multiUnitPhysicalItem: RegistryItem = {
+      ...mockSingleItem,
+      id: 'multi-unit-a11y',
+      isGroupGift: false,
+      quantity: 3,
+    };
+
+    const { container, rerender } = render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={multiUnitPhysicalItem}
+          onClose={mockOnClose}
+          onContribute={pendingContribute}
+        />
+      </Overlay>
+    );
+
+    const nameInput = screen.getByLabelText(/Your Name/i) as HTMLInputElement;
+    const emailInput = screen.getByLabelText(/Email Address/i) as HTMLInputElement;
+    const unitSelect = screen.getByTestId('unit-quantity-select') as HTMLSelectElement;
+    const codeInput = screen.getByPlaceholderText('ABCDEF12') as HTMLInputElement;
+
+    expect(nameInput).toHaveAttribute('autocomplete', 'name');
+    expect(emailInput).toHaveAttribute('autocomplete', 'email');
+
+    expect(nameInput).toBeRequired();
+    expect(nameInput).toHaveAttribute('aria-required', 'true');
+    expect(unitSelect).toBeRequired();
+    expect(unitSelect).toHaveAttribute('aria-required', 'true');
+
+    // Visual asterisks on required labels are hidden from assistive tech
+    const requiredLabels = Array.from(container.querySelectorAll('label[data-required="true"]'));
+    expect(requiredLabels.length).toBeGreaterThanOrEqual(2);
+    for (const label of requiredLabels) {
+      const hiddenAsterisk = label.querySelector('[aria-hidden="true"]');
+      expect(hiddenAsterisk).not.toBeNull();
+      expect(hiddenAsterisk).toHaveTextContent('*');
+    }
+
+    // 8-character auto-verification retains focus on codeInput via readOnly + aria-busy
+    codeInput.focus();
+    fireEvent.change(codeInput, { target: { value: 'WRONG888' } });
+
+    expect(codeInput).not.toBeDisabled();
+    expect(codeInput).toHaveAttribute('readonly');
+    expect(codeInput).toHaveAttribute('aria-busy', 'true');
+    expect(document.activeElement).toBe(codeInput);
+
+    resolveValidate!({ valid: false });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid invitation code/i)).toBeInTheDocument();
+    });
+    expect(codeInput).toHaveAttribute('aria-invalid', 'true');
+    expect(codeInput).not.toHaveAttribute('readonly');
+    expect(document.activeElement).toBe(codeInput);
+
+    // Rerender group gift to verify Contribution Amount required semantics & submit focus retention
+    rerender(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={mockGroupItem}
+          onClose={mockOnClose}
+          onContribute={pendingContribute}
+        />
+      </Overlay>
+    );
+
+    const groupNameInput = screen.getByLabelText(/Your Name/i) as HTMLInputElement;
+    const amountInput = screen.getByLabelText(/Contribution Amount/i) as HTMLInputElement;
+    expect(amountInput).toBeRequired();
+    expect(amountInput).toHaveAttribute('aria-required', 'true');
+
+    fireEvent.change(groupNameInput, { target: { value: 'Alex Guest' } });
+    amountInput.focus();
+    fireEvent.change(amountInput, { target: { value: '50' } });
+    fireEvent.submit(amountInput.closest('form')!);
+
+    expect(amountInput).not.toBeDisabled();
+    expect(amountInput).toHaveAttribute('readonly');
+    expect(amountInput).toHaveAttribute('aria-busy', 'true');
+    expect(document.activeElement).toBe(amountInput);
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    resolveSubmit!();
+    await waitFor(() => {
+      expect(pendingContribute).toHaveBeenCalled();
+    });
+  });
 });

@@ -5,8 +5,9 @@ import InteractiveTimeline, {
   type ScheduleRsvpStatusInfo,
 } from '@/components/schedule/InteractiveTimeline';
 import { Button } from '@/components/ui/Button';
-import { FormGroup, Label, Input } from '@/components/ui/forms';
+import { FormGroup, FormMessage, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
+import { useOptionalToast } from '@/components/ui/ToastProvider';
 import {
   GuestHelpTrigger,
   getSafeHostEmailLink,
@@ -29,6 +30,7 @@ export default function GuestAddressPage() {
     isAuthenticated,
   } = useGuestAddressPortal();
   const theme = useTheme();
+  const toastContext = useOptionalToast();
   const [rsvpStatus, setRsvpStatus] = useState<ScheduleRsvpStatusInfo | null>(null);
 
   const emailContact = useMemo(
@@ -41,6 +43,11 @@ export default function GuestAddressPage() {
   );
 
   const { form, code, guestName, error, status } = state;
+  const hasActiveErrorToast = Boolean(
+    error &&
+      Array.isArray(toastContext?.toasts) &&
+      toastContext.toasts.some((toast) => toast.type === 'error' && toast.message === error)
+  );
 
   if (isLoading) {
     return (
@@ -68,9 +75,10 @@ export default function GuestAddressPage() {
             </p>
           </div>
 
-          {error && (
+          {error && status === 'error' && (
             <div
-              role="alert"
+              id="guest-portal-error-alert"
+              role={hasActiveErrorToast ? undefined : 'alert'}
               data-testid="guest-portal-error-alert"
               className="rounded-2xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 p-4 text-sm text-rose-800 dark:text-rose-200 space-y-3"
             >
@@ -81,24 +89,22 @@ export default function GuestAddressPage() {
                 />
                 <p className="font-medium leading-snug">{error}</p>
               </div>
-              {status === 'error' && (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetry}
-                    disabled={isValidating}
-                  >
-                    Retry
-                  </Button>
-                </div>
-              )}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRetry}
+                  disabled={isValidating}
+                >
+                  Retry
+                </Button>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleValidateCode} className="space-y-4">
-            <FormGroup>
+          <form onSubmit={handleValidateCode} noValidate className="space-y-4">
+            <FormGroup state={error ? 'error' : 'default'} busy={isValidating}>
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="guest-invitation-code" className="mb-0">
                   Invitation Code
@@ -112,11 +118,23 @@ export default function GuestAddressPage() {
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="e.g. LOVE2026"
                 className="uppercase font-mono tracking-wider"
+                busy={isValidating}
+                aria-describedby={
+                  error && status === 'error' ? 'guest-portal-error-alert' : undefined
+                }
                 required
               />
+              {error && status !== 'error' && (
+                <FormMessage
+                  id="guest-invitation-code-error"
+                  role={hasActiveErrorToast ? 'none' : undefined}
+                >
+                  {error}
+                </FormMessage>
+              )}
             </FormGroup>
 
-            <Button type="submit" className="w-full" disabled={isValidating}>
+            <Button type="submit" className="w-full" disabled={isValidating} aria-busy={isValidating}>
               {isValidating ? 'Verifying Code...' : 'Access Guest Portal'}
             </Button>
           </form>
@@ -288,7 +306,7 @@ export default function GuestAddressPage() {
 
           {error && (
             <div
-              role="alert"
+              role={hasActiveErrorToast ? undefined : 'alert'}
               data-testid="guest-address-save-error-alert"
               className="rounded-2xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30 p-4 text-sm text-rose-800 dark:text-rose-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
             >
@@ -306,22 +324,28 @@ export default function GuestAddressPage() {
           )}
 
           <form onSubmit={handleSaveAddress} className="space-y-4">
-            <FormGroup>
+            <FormGroup busy={isSaving}>
               <Label htmlFor="address-line1">Address Line 1</Label>
               <Input
                 id="address-line1"
+                name="addressLine1"
                 type="text"
+                autoComplete="address-line1"
+                busy={isSaving}
                 value={form.addressLine1}
                 onChange={(e) => setField('addressLine1', e.target.value)}
                 placeholder="123 Main Street"
               />
             </FormGroup>
 
-            <FormGroup>
+            <FormGroup busy={isSaving}>
               <Label htmlFor="address-line2">Address Line 2 (Optional)</Label>
               <Input
                 id="address-line2"
+                name="addressLine2"
                 type="text"
+                autoComplete="address-line2"
+                busy={isSaving}
                 value={form.addressLine2}
                 onChange={(e) => setField('addressLine2', e.target.value)}
                 placeholder="Apt 4B, Suite 100"
@@ -329,22 +353,28 @@ export default function GuestAddressPage() {
             </FormGroup>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormGroup>
+              <FormGroup busy={isSaving}>
                 <Label htmlFor="address-city">City</Label>
                 <Input
                   id="address-city"
+                  name="city"
                   type="text"
+                  autoComplete="address-level2"
+                  busy={isSaving}
                   value={form.city}
                   onChange={(e) => setField('city', e.target.value)}
                   placeholder="San Francisco"
                 />
               </FormGroup>
 
-              <FormGroup>
+              <FormGroup busy={isSaving}>
                 <Label htmlFor="address-state">State / Province / Region</Label>
                 <Input
                   id="address-state"
+                  name="state"
                   type="text"
+                  autoComplete="address-level1"
+                  busy={isSaving}
                   value={form.state}
                   onChange={(e) => setField('state', e.target.value)}
                   placeholder="CA"
@@ -353,22 +383,28 @@ export default function GuestAddressPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormGroup>
+              <FormGroup busy={isSaving}>
                 <Label htmlFor="address-zip">ZIP / Postal Code</Label>
                 <Input
                   id="address-zip"
+                  name="zipCode"
                   type="text"
+                  autoComplete="postal-code"
+                  busy={isSaving}
                   value={form.zipCode}
                   onChange={(e) => setField('zipCode', e.target.value)}
                   placeholder="94102"
                 />
               </FormGroup>
 
-              <FormGroup>
+              <FormGroup busy={isSaving}>
                 <Label htmlFor="address-country">Country</Label>
                 <Input
                   id="address-country"
+                  name="country"
                   type="text"
+                  autoComplete="country-name"
+                  busy={isSaving}
                   value={form.country}
                   onChange={(e) => setField('country', e.target.value)}
                   placeholder="United States"
@@ -377,7 +413,7 @@ export default function GuestAddressPage() {
             </div>
 
             <div className="pt-4 flex items-center justify-end gap-3">
-              <Button type="submit" disabled={isSaving}>
+              <Button type="submit" disabled={isSaving} aria-busy={isSaving}>
                 {isSaving ? 'Saving...' : 'Save Mailing Address'}
               </Button>
             </div>
