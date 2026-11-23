@@ -120,28 +120,30 @@ class RegistryRepository implements IRegistryRepository {
     return item ? RegistryItemSchema.parse(item) : null;
   }
 
-  /**
-   * Creates a new registry item in the database.
-   * @param {Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>} data - The data for the new item.
-   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the newly created registry item.
-   */
-  async createItem(data: CreateRegistryItemInput) {
+  private async persistItem(
+    client: any,
+    data: CreateRegistryItemInput,
+    options: {
+      auditAuthor: string;
+      fallbackCategory: string | undefined;
+    }
+  ): Promise<RegistryItemDTO> {
     let mediaId = data.imageId;
     if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
-      const media = await this.client.media.create({
+      const media = await client.media.create({
         data: {
           url: data.imageUrl || '/images/placeholder.png',
           altText: data.imageAlt,
           isDecorative: data.imageDecorative || false,
-        }
+        },
       });
       mediaId = media.id;
     } else if (!mediaId) {
-      const media = await this.client.media.create({
+      const media = await client.media.create({
         data: {
           url: '/images/placeholder.png',
-          isDecorative: true
-        }
+          isDecorative: true,
+        },
       });
       mediaId = media.id;
     }
@@ -149,7 +151,7 @@ class RegistryRepository implements IRegistryRepository {
     const itemType = data.itemType || 'PHYSICAL';
     const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
 
-    const item = await this.client.registryItem.create({
+    const item = await client.registryItem.create({
       data: {
         itemType,
         paymentHandleType: data.paymentHandleType || null,
@@ -157,7 +159,10 @@ class RegistryRepository implements IRegistryRepository {
         name: data.name,
         price: data.price,
         quantity: isFund ? 1 : (data.quantity ?? 1),
-        category: data.category,
+        category:
+          options.fallbackCategory !== undefined
+            ? data.category || options.fallbackCategory
+            : data.category,
         description: data.description || '',
         imageId: mediaId,
         vendorUrl: data.vendorUrl || null,
@@ -165,15 +170,29 @@ class RegistryRepository implements IRegistryRepository {
         isMostWanted: data.isMostWanted ?? false,
         displayOrder: data.displayOrder ?? 0,
         contributors: {
-          create: []
-        }
+          create: [],
+        },
       },
-      include: { image: true, 
-        contributors: true
-      }
+      include: {
+        image: true,
+        contributors: true,
+      },
     });
-    await createAuditSnapshot('RegistryItem', item.id, item, 'Guest/User', this.client);
+
+    await createAuditSnapshot('RegistryItem', item.id, item, options.auditAuthor, client);
     return RegistryItemSchema.parse(item);
+  }
+
+  /**
+   * Creates a new registry item in the database.
+   * @param {Omit<RegistryItemDTO, 'id' | 'contributors' | 'createdAt' | 'updatedAt' | 'amountContributed' | 'purchased'>} data - The data for the new item.
+   * @returns {Promise<RegistryItemDTO>} A promise that resolves to the newly created registry item.
+   */
+  async createItem(data: CreateRegistryItemInput) {
+    return this.persistItem(this.client, data, {
+      auditAuthor: 'Guest/User',
+      fallbackCategory: undefined,
+    });
   }
 
   /**
@@ -188,56 +207,11 @@ class RegistryRepository implements IRegistryRepository {
       const createdItems: RegistryItemDTO[] = [];
 
       for (const data of items) {
-        let mediaId = data.imageId;
-        if (!mediaId && (data.imageUrl || data.imageAlt || data.imageDecorative !== undefined)) {
-          const media = await txClient.media.create({
-            data: {
-              url: data.imageUrl || '/images/placeholder.png',
-              altText: data.imageAlt,
-              isDecorative: data.imageDecorative || false,
-            }
-          });
-          mediaId = media.id;
-        } else if (!mediaId) {
-          const media = await txClient.media.create({
-            data: {
-              url: '/images/placeholder.png',
-              isDecorative: true
-            }
-          });
-          mediaId = media.id;
-        }
-
-        const itemType = data.itemType || 'PHYSICAL';
-        const isFund = itemType === 'CASH_FUND' || itemType === 'EXPERIENCE_FUND';
-
-        const item = await txClient.registryItem.create({
-          data: {
-            itemType,
-            paymentHandleType: data.paymentHandleType || null,
-            paymentHandle: data.paymentHandle || null,
-            name: data.name,
-            price: data.price,
-            quantity: isFund ? 1 : (data.quantity ?? 1),
-            category: data.category || 'Uncategorized',
-            description: data.description || '',
-            imageId: mediaId,
-            vendorUrl: data.vendorUrl || null,
-            isGroupGift: isFund ? true : (data.isGroupGift ?? false),
-            isMostWanted: data.isMostWanted ?? false,
-            displayOrder: data.displayOrder ?? 0,
-            contributors: {
-              create: []
-            }
-          },
-          include: {
-            image: true,
-            contributors: true
-          }
+        const createdItem = await this.persistItem(txClient, data, {
+          auditAuthor: 'Admin',
+          fallbackCategory: 'Uncategorized',
         });
-
-        await createAuditSnapshot('RegistryItem', item.id, item, 'Admin', txClient);
-        createdItems.push(RegistryItemSchema.parse(item));
+        createdItems.push(createdItem);
       }
 
       return createdItems;
