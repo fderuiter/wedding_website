@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
 import tls from 'node:tls';
+import { validateAndResolveHost } from '@/utils/ssrf';
+import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
 import {
   StationeryCardConfig,
   parseStationeryCardDirective,
@@ -50,6 +52,41 @@ export function formatEmailHtmlBody(
 
 function sanitizeSmtpHeaderValue(value: string): string {
   return value.replace(/[\r\n]+/g, ' ').trim();
+}
+
+function normalizeSmtpHost(host?: string | null): string {
+  if (typeof host !== 'string') return '';
+  return host.trim().replace(/^\[|\]$/g, '').trim().toLowerCase();
+}
+
+function resolveSniServername(host: string): string | undefined {
+  const clean = host.replace(/^\[|\]$/g, '').trim();
+  if (!clean || net.isIP(clean) !== 0) {
+    return undefined;
+  }
+  return clean;
+}
+
+function resolveValidatedSmtpPort(rawPort: unknown): number | null {
+  if (
+    rawPort === undefined ||
+    rawPort === null ||
+    (typeof rawPort === 'string' && rawPort.trim() === '')
+  ) {
+    return 587;
+  }
+  if (typeof rawPort === 'string') {
+    const trimmed = rawPort.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return isAllowedSmtpPort(parsed) ? parsed : null;
+  }
+  if (typeof rawPort === 'number') {
+    return isAllowedSmtpPort(rawPort) ? rawPort : null;
+  }
+  return null;
 }
 
 function encodeMimeHeaderIfNeeded(value: string): string {
@@ -155,7 +192,6 @@ function buildMultipartMimeMessage(params: {
 interface SmtpResponse {
   code: number;
   lines: string[];
-  message: string;
 }
 
 class SmtpSocketSession {
@@ -279,11 +315,10 @@ class SmtpSocketSession {
         return {
           code: Number(finalMatch[1]),
           lines: collected,
-          message: collected.join('\n'),
         };
       }
 
-      throw new Error(`Invalid SMTP server response: ${line}`);
+      throw new Error('Invalid SMTP server response');
     }
   }
 
@@ -327,7 +362,7 @@ class SmtpSocketSession {
     const underlying = this.rawSocket || (this.socket as net.Socket);
     const tlsSock = tls.connect({
       socket: underlying,
-      servername: net.isIP(host) ? undefined : host,
+      servername: resolveSniServername(host),
       rejectUnauthorized,
     });
 
@@ -412,12 +447,14 @@ async function openSmtpSession(params: {
   timeoutMs: number;
 }): Promise<SmtpSocketSession> {
   const { host, port, secure, rejectUnauthorized, timeoutMs } = params;
+  const resolved = await validateAndResolveHost(host);
+  const servername = resolveSniServername(host);
 
   if (secure) {
     const tlsSock = tls.connect({
-      host,
+      host: resolved.address,
       port,
-      servername: net.isIP(host) ? undefined : host,
+      servername,
       rejectUnauthorized,
     });
     tlsSock.setTimeout(timeoutMs);
@@ -448,7 +485,11 @@ async function openSmtpSession(params: {
     return session;
   }
 
-  const rawSock = net.connect({ host, port });
+  const rawSock = net.connect({
+    host: resolved.address,
+    port,
+    family: resolved.family,
+  });
   rawSock.setTimeout(timeoutMs);
   const session = new SmtpSocketSession(rawSock, rawSock);
 
@@ -491,13 +532,13 @@ async function authenticateSmtpSession(
     await session.writeCommand('AUTH LOGIN\r\n', timeoutMs);
     const step1 = await session.readResponse(timeoutMs);
     if (step1.code !== 334) {
-      throw new Error(`SMTP AUTH LOGIN rejected (${step1.code}): ${step1.message}`);
+      throw new Error(`SMTP AUTH LOGIN rejected (${step1.code})`);
     }
 
     await session.writeCommand(`${Buffer.from(cleanUser, 'utf8').toString('base64')}\r\n`, timeoutMs);
     const step2 = await session.readResponse(timeoutMs);
     if (step2.code !== 334) {
-      throw new Error(`SMTP AUTH LOGIN username rejected (${step2.code}): ${step2.message}`);
+      throw new Error(`SMTP AUTH LOGIN username rejected (${step2.code})`);
     }
 
     await session.writeCommand(`${Buffer.from(cleanPass, 'utf8').toString('base64')}\r\n`, timeoutMs);
@@ -595,7 +636,7 @@ async function executeSmtpTransaction(params: {
     if (greeting.code !== 220) {
       return {
         success: false,
-        error: `Unexpected SMTP greeting (${greeting.code}): ${greeting.message}`,
+        error: `Unexpected SMTP greeting (${greeting.code})`,
       };
     }
 
@@ -608,11 +649,12 @@ async function executeSmtpTransaction(params: {
     if (ehloResp.code !== 250) {
       return {
         success: false,
-        error: `SMTP EHLO rejected (${ehloResp.code}): ${ehloResp.message}`,
+        error: `SMTP EHLO rejected (${ehloResp.code})`,
       };
     }
 
     let capabilities = parseEhloCapabilities(ehloResp.lines);
+    let isTlsEncrypted = secure;
 
     if (!secure) {
       if (port === 587 && !capabilities.supportsStartTls) {
@@ -628,11 +670,12 @@ async function executeSmtpTransaction(params: {
         if (startTlsResp.code !== 220) {
           return {
             success: false,
-            error: `SMTP STARTTLS rejected (${startTlsResp.code}): ${startTlsResp.message}`,
+            error: `SMTP STARTTLS rejected (${startTlsResp.code})`,
           };
         }
 
         await session.upgradeToTls(cleanHost, rejectUnauthorized, timeoutMs);
+        isTlsEncrypted = true;
 
         await session.writeCommand(`EHLO ${ehloHost}\r\n`, timeoutMs);
         const postTlsEhlo = await session.readResponse(timeoutMs);
@@ -646,13 +689,26 @@ async function executeSmtpTransaction(params: {
       }
     }
 
-    if (user.trim().length > 0) {
-      if (!pass) {
+    const cleanUser = user.trim();
+    const hasUser = cleanUser.length > 0;
+    const hasPass = pass.trim().length > 0;
+
+    if (hasUser || hasPass) {
+      if (!hasUser) {
+        return { success: false, error: 'SMTP Username required' };
+      }
+      if (!hasPass) {
         return { success: false, error: 'SMTP Password required' };
+      }
+      if (!isTlsEncrypted) {
+        return {
+          success: false,
+          error: 'SMTP TLS or STARTTLS is required before authentication',
+        };
       }
       await authenticateSmtpSession(
         session,
-        user.trim(),
+        cleanUser,
         pass,
         capabilities.authMechanisms,
         timeoutMs
@@ -668,7 +724,7 @@ async function executeSmtpTransaction(params: {
       if (mailFromResp.code !== 250) {
         return {
           success: false,
-          error: `SMTP MAIL FROM rejected (${mailFromResp.code}): ${mailFromResp.message}`,
+          error: `SMTP MAIL FROM rejected (${mailFromResp.code})`,
         };
       }
 
@@ -677,7 +733,7 @@ async function executeSmtpTransaction(params: {
       if (rcptResp.code !== 250 && rcptResp.code !== 251) {
         return {
           success: false,
-          error: `SMTP RCPT TO rejected (${rcptResp.code}): ${rcptResp.message}`,
+          error: `SMTP RCPT TO rejected (${rcptResp.code})`,
         };
       }
 
@@ -686,7 +742,7 @@ async function executeSmtpTransaction(params: {
       if (dataResp.code !== 354) {
         return {
           success: false,
-          error: `SMTP DATA rejected (${dataResp.code}): ${dataResp.message}`,
+          error: `SMTP DATA rejected (${dataResp.code})`,
         };
       }
 
@@ -704,7 +760,7 @@ async function executeSmtpTransaction(params: {
       if (queuedResp.code !== 250) {
         return {
           success: false,
-          error: `SMTP message rejected (${queuedResp.code}): ${queuedResp.message}`,
+          error: `SMTP message rejected (${queuedResp.code})`,
         };
       }
     }
@@ -905,7 +961,13 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
       return { success: false, error: 'SMTP Host is missing in settings' };
     }
 
-    const port = Number(this.config.smtpPort) || 587;
+    const port = resolveValidatedSmtpPort(this.config.smtpPort);
+    if (port === null) {
+      return {
+        success: false,
+        error: 'SMTP Port must be 25, 465, 587, or 2525',
+      };
+    }
     const secure = Boolean(this.config.smtpSecure) || port === 465;
     const user =
       typeof this.config.smtpUser === 'string' ? this.config.smtpUser.trim() : '';
@@ -1004,10 +1066,22 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
         const apiKey = this.resolveSecret(input.sendgridApiKey, this.config.sendgridApiKey);
         if (!apiKey) return { success: false, error: 'SendGrid API Key required' };
       } else if (provider === 'smtp') {
+        const normalizedInputHost = normalizeSmtpHost(input.smtpHost);
+        const normalizedStoredHost = normalizeSmtpHost(this.config.smtpHost);
         const host = input.smtpHost?.trim() || this.config.smtpHost?.trim();
         if (!host) return { success: false, error: 'SMTP Host required' };
 
-        const port = Number(input.smtpPort ?? this.config.smtpPort) || 587;
+        const rawPort =
+          input.smtpPort !== undefined && input.smtpPort !== null
+            ? input.smtpPort
+            : this.config.smtpPort;
+        const port = resolveValidatedSmtpPort(rawPort);
+        if (port === null) {
+          return {
+            success: false,
+            error: 'SMTP Port must be 25, 465, 587, or 2525',
+          };
+        }
         const explicitSecure =
           input.smtpSecure !== undefined && input.smtpSecure !== null
             ? Boolean(input.smtpSecure)
@@ -1019,7 +1093,12 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
             ? input.smtpUser
             : this.config.smtpUser;
         const user = typeof userRaw === 'string' ? userRaw.trim() : '';
-        const pass = this.resolveSecret(input.smtpPass, this.config.smtpPass);
+        const canReuseStoredPass =
+          !normalizedInputHost || normalizedInputHost === normalizedStoredHost;
+        const pass = this.resolveSecret(
+          input.smtpPass,
+          canReuseStoredPass ? this.config.smtpPass : undefined
+        );
         if (user && !pass) return { success: false, error: 'SMTP Password required' };
         if (!user && pass) return { success: false, error: 'SMTP Username required' };
 

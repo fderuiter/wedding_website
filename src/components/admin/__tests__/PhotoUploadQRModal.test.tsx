@@ -130,6 +130,7 @@ describe('PhotoUploadQRModal Component', () => {
 
     fireEvent.click(screen.getByTestId('switch-photo-qr-print-view-btn'));
     expect(document.body.classList.contains('printing-qr-labels')).toBe(true);
+    expect(document.body.classList.contains('printing-qr-portal')).toBe(false);
 
     // Default template is Table Cards (4 per sheet)
     const select = screen.getByTestId('photo-qr-print-template-select') as HTMLSelectElement;

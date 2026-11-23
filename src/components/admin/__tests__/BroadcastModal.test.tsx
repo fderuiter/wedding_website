@@ -580,6 +580,45 @@ describe('BroadcastModal Component', () => {
     expect(onViewDeliveryLogs).toHaveBeenCalledTimes(1);
   });
 
+  it('queries countRecipients on the server for every filter state and displays 122 matched recipients instead of a 50-row slice', async () => {
+    mockCountRecipients = jest
+      .fn()
+      .mockResolvedValueOnce({
+        recipientCount: 122,
+        matchedCount: 122,
+        missingContactCount: 4,
+      })
+      .mockResolvedValueOnce({
+        recipientCount: 80,
+        matchedCount: 80,
+        missingContactCount: 2,
+      });
+
+    const partialGuestsSlice = Array.from({ length: 50 }, (_, idx) => ({
+      id: `g-${idx + 1}`,
+      guestName: `Household ${idx + 1}`,
+      email: `guest${idx + 1}@example.com`,
+      used: false,
+    }));
+
+    render(<BroadcastModal {...defaultProps} guests={partialGuestsSlice} />);
+
+    await waitFor(() => {
+      expect(mockCountRecipients).toHaveBeenCalledWith(undefined);
+      expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('122 matched guests');
+      expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('4 missing email');
+    });
+
+    fireEvent.change(screen.getByLabelText('RSVP Status'), {
+      target: { value: 'attending' },
+    });
+
+    await waitFor(() => {
+      expect(mockCountRecipients).toHaveBeenCalledWith({ attendanceStatus: 'attending' });
+      expect(screen.getByTestId('broadcast-audience-counts')).toHaveTextContent('80 matched guests');
+    });
+  });
+
   it('preselects initialTemplateId="formal-invitation" and renders the themed HTML stationery card in Live Preview', async () => {
     mockPreviewBroadcast.mockResolvedValueOnce({
       subject: 'Formal Invitation: Sarah & Dan',
