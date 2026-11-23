@@ -43,7 +43,8 @@
     "pretest:cov": "npm run pretest",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage --runInBand",
+    "test:cov": "NODE_OPTIONS=--max-old-space-size=4096 jest --coverage --maxWorkers=1",
+    "test:cov:html": "COVERAGE_HTML=true npm run test:cov",
     "test:a11y": "node scripts/a11y-report.mjs --run",
     "test:a11y:unit": "node scripts/a11y-report.mjs --unit",
     "test:e2e": "playwright test",
@@ -77,7 +78,7 @@
     "check:all": "npm run quality",
     "scaffold": "node scripts/scaffold-feature.mjs",
     "prepare": "node -e 'import(\"fs\").then(f => f.existsSync(\"./scripts/install-git-hooks.js\") && import(\"./scripts/install-git-hooks.js\"))'",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && node scripts/pretest.mjs --record-install-state"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1173.0",
