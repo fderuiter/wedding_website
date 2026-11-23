@@ -134,16 +134,16 @@ const HELP_TABS: readonly {
     heading: 'Event RSVPs & Severe Allergy Notes',
     items: [
       [
-        'Submitting allergy & dietary notes',
-        'On each event card, mark Attending, enter allergies or meal needs (nut, shellfish, dairy, celiac) in Dietary Requirements / Notes, and click Save RSVP.',
+        'Companion full names & entrée menus',
+        'On each event card, mark Attending, enter the full first and last name for every attending plus-one companion (shared across your schedule), and choose a plated entrée or Kids Meal option for each guest on events with a dinner menu.',
       ],
       [
-        'Updating responses & plus-ones',
-        'Revisit your schedule anytime before the deadline to update attendance, allocated plus-ones, or allergy notes.',
+        'Custom RSVP prompts & updating responses',
+        'Answer any event-specific text or multiple-choice RSVP prompts (such as shuttle seating or song requests) and click Save RSVP. Revisit your schedule anytime before the deadline to update attendance, companions, entrées, or answers.',
       ],
       [
-        'Severe allergies',
-        'For life-threatening cross-contamination needs, please also contact the hosts below to coordinate with catering.',
+        'Allergy & cross-contamination notes',
+        'Enter allergies or dietary restrictions (nut, shellfish, dairy, celiac) in Dietary Requirements / Notes. For severe or life-threatening cross-contamination needs, please also contact the hosts below to coordinate directly with catering.',
       ],
     ],
   },
@@ -296,12 +296,12 @@ export function GuestHelpModal({
           items: [
             ['Online RSVPs are closed', sanitizedClosedMessage],
             [
-              'Requesting attendance or Dietary Requirements / Notes updates',
-              'Online changes to attendance, plus-one counts, and Dietary Requirements / Notes are locked. Please reach out to the hosts below for urgent headcount or allergy updates.',
+              'Requesting companion, entrée, prompt, or Dietary Requirements / Notes updates',
+              'Online changes to attendance, plus-one companion full names, structured entrée or Kids Meal selections, custom RSVP prompts, and Dietary Requirements / Notes are locked. Please reach out to the hosts below for headcount, meal, or severe allergy and cross-contamination updates.',
             ],
             [
               'Saved responses & mailing address',
-              'You can still view your saved RSVP summary, export calendar events, and update your postal mailing address in the Guest Portal.',
+              'You can still view your saved RSVP summary (including companion names, entrée choices, and custom prompt answers), export calendar events, and update your postal mailing address in the Guest Portal.',
             ],
           ] as [string, string][],
         };
@@ -314,7 +314,7 @@ export function GuestHelpModal({
             tab.items[0],
             [
               'RSVP deadline & updating responses',
-              `Please submit or update your attendance, allocated plus-ones, or allergy notes by ${formattedCutoffDate}${tzDetail}.`,
+              `Answer any custom RSVP prompts (such as shuttle seating or song requests) and submit or update your attendance, companion full names, entrée selections, or allergy notes by ${formattedCutoffDate}${tzDetail}.`,
             ],
             tab.items[2],
           ] as [string, string][],
