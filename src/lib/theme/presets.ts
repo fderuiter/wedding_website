@@ -373,8 +373,8 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--form-label-text': '#111827',
     '--form-message-text': '#6b7280',
     '--form-error-text': '#dc2626',
-    '--form-success-text': '#16a34a',
-    '--form-warning-text': '#ca8a04',
+    '--form-success-text': '#15803d',
+    '--form-warning-text': '#a16207',
 
     '--schedule-card-bg': '#ffffff',
     '--schedule-card-border': '#e5e7eb',
@@ -662,8 +662,8 @@ export const THEME_PRESETS: Record<ThemePreset, ComponentTokens> = {
     '--form-label-text': '#0f172a',
     '--form-message-text': '#64748b',
     '--form-error-text': '#e11d48',
-    '--form-success-text': '#059669',
-    '--form-warning-text': '#d97706',
+    '--form-success-text': '#047857',
+    '--form-warning-text': '#b45309',
 
     '--schedule-card-bg': '#ffffff',
     '--schedule-card-border': '#f1f5f9',

@@ -256,9 +256,9 @@ test('Form components apply CSS custom properties for default and feedback state
     </FormGroup>
   );
 
-  expect(screen.getByTestId('label').className).toContain('text-[var(--form-success-text,#16a34a)]');
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-success-text,#15803d)]');
   expect(screen.getByTestId('input').className).toContain('border-[var(--input-success-border,#22c55e)]');
-  expect(screen.getByTestId('message').className).toContain('text-[var(--form-success-text,#16a34a)]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-success-text,#15803d)]');
 
   // Rerender with warning state
   rerender(
@@ -269,9 +269,9 @@ test('Form components apply CSS custom properties for default and feedback state
     </FormGroup>
   );
 
-  expect(screen.getByTestId('label').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
+  expect(screen.getByTestId('label').className).toContain('text-[var(--form-warning-text,#a16207)]');
   expect(screen.getByTestId('input').className).toContain('border-[var(--input-warning-border,#f59e0b)]');
-  expect(screen.getByTestId('message').className).toContain('text-[var(--form-warning-text,#ca8a04)]');
+  expect(screen.getByTestId('message').className).toContain('text-[var(--form-warning-text,#a16207)]');
 });
 
 test('Standalone Input renders outside of FormGroup without throwing', () => {
@@ -568,6 +568,43 @@ test('Busy mode sets readOnly and aria-busy on text inputs without dropping focu
   fireEvent.keyDown(checkbox, { key: ' ' });
   expect(onCheckboxChange).not.toHaveBeenCalled();
 
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('FormGroup group mode names composite widgets via role="group" + aria-labelledby without dangling htmlFor', async () => {
+  const { container } = render(
+    <FormGroup group>
+      <Label>Card &amp; Digital Wallet Details</Label>
+      <div data-testid="embedded-widget">Embedded Payment Element</div>
+      <FormMessage>Encrypted via TLS</FormMessage>
+    </FormGroup>
+  );
+
+  const group = screen.getByRole('group', { name: 'Card & Digital Wallet Details' });
+  expect(group).toBeInTheDocument();
+
+  const labelEl = container.querySelector('label');
+  expect(labelEl).not.toBeNull();
+  expect(labelEl).not.toHaveAttribute('for');
+  expect(group).toHaveAttribute('aria-labelledby', labelEl?.id);
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('FormGroup as="fieldset" renders semantic fieldset and legend without htmlFor', async () => {
+  const { container } = render(
+    <FormGroup as="fieldset">
+      <Label>Price Range</Label>
+      <input type="range" min={0} max={100} defaultValue={20} aria-label="Minimum price" />
+      <input type="range" min={0} max={100} defaultValue={80} aria-label="Maximum price" />
+    </FormGroup>
+  );
+
+  const fieldset = screen.getByRole('group', { name: 'Price Range' });
+  expect(fieldset.tagName).toBe('FIELDSET');
+  const legend = container.querySelector('legend');
+  expect(legend).not.toBeNull();
+  expect(legend).toHaveTextContent('Price Range');
+  expect(container.querySelector('label[for]')).toBeNull();
   expect(await axe(container)).toHaveNoViolations();
 });
 

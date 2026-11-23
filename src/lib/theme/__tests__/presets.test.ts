@@ -395,4 +395,35 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(resolved.colorPrimary).toBeDefined();
     });
   });
+
+  it('maintains >= 4.5:1 WCAG AA contrast for badge and form validation tokens across all presets in light and dark modes', () => {
+    function getLuminance(hex: string): number {
+      const cleanHex = hex.replace(/^#/, '');
+      const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+      const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+      const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+      const transform = (val: number) =>
+        val <= 0.03928 ? val / 12.92 : Math.pow((val + 0.055) / 1.055, 2.4);
+      return 0.2126 * transform(r) + 0.7152 * transform(g) + 0.0722 * transform(b);
+    }
+
+    function getContrast(hex1: string, hex2: string): number {
+      const l1 = getLuminance(hex1);
+      const l2 = getLuminance(hex2);
+      return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    }
+
+    for (const presetKey of THEME_PRESET_KEYS) {
+      for (const mode of ['light', 'dark'] as const) {
+        const tokens = getPresetTokens(presetKey, mode);
+        const cardBg = tokens['--card-bg'];
+        const tagBg = tokens['--schedule-tag-bg'];
+
+        expect(getContrast(tokens['--schedule-tag-text'], tagBg)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(tokens['--form-error-text'], cardBg)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(tokens['--form-success-text'], cardBg)).toBeGreaterThanOrEqual(4.5);
+        expect(getContrast(tokens['--form-warning-text'], cardBg)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
 });

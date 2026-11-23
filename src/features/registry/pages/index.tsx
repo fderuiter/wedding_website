@@ -83,7 +83,7 @@ function RegistryPageContent() {
     syncItemInCache,
   } = useRegistry();
 
-  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+  const [isLoadingMoreState, setIsLoadingMoreState] = useState(false);
   const isLoadingMore = useRef(false);
   const loadMoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const counterRef = useRef<HTMLParagraphElement>(null);
@@ -105,25 +105,50 @@ function RegistryPageContent() {
     wasButtonFocused.current = document.activeElement === buttonRef.current;
     
     isLoadingMore.current = true;
-    setLiveAnnouncement('Loading more gifts...');
+    setIsLoadingMoreState(true);
     
     loadMoreTimerRef.current = setTimeout(() => {
       setVisibleItemsCount(prevCount =>
         Math.min(prevCount + REGISTRY_LOAD_MORE_INCREMENT, filteredItems.length)
       );
       isLoadingMore.current = false;
+      setIsLoadingMoreState(false);
       loadMoreTimerRef.current = null;
     }, 500);
   }, [setVisibleItemsCount, visibleItems.length, filteredItems.length]);
 
+  const hasCategorySelection = Array.isArray(categoryFilter)
+    ? categoryFilter.length > 0
+    : Boolean(categoryFilter && categoryFilter !== 'All');
+  const hasPriceSelection =
+    Array.isArray(priceRange) &&
+    priceRange.length === 2 &&
+    (priceRange[0] > minPrice || priceRange[1] < maxPrice);
+  const hasSortSelection = Boolean(
+    sortOption && sortOption !== 'default' && (sortOption as string) !== 'recommended'
+  );
+  const hasActiveFilters = Boolean(
+    (searchQuery && searchQuery.trim() !== '') ||
+      hasCategorySelection ||
+      hasPriceSelection ||
+      showGroupGiftsOnly ||
+      showAvailableOnly ||
+      hasSortSelection
+  );
+
+  const liveAnnouncement = isLoadingMoreState
+    ? 'Loading more gifts...'
+    : visibleItems.length > 0
+      ? `Showing ${visibleItems.length} of ${filteredItems.length} gifts`
+      : !isLoading && !error && items.length > 0
+        ? 'Showing 0 of 0 gifts'
+        : '';
+
   useEffect(() => {
-    if (!isLoadingMore.current && visibleItems.length > 0) {
-      setLiveAnnouncement(`Showing ${visibleItems.length} of ${filteredItems.length} gifts`);
-      
-      if (wasButtonFocused.current && visibleItems.length >= filteredItems.length) {
-        counterRef.current?.focus();
-        wasButtonFocused.current = false;
-      }
+    if (isLoadingMore.current) return;
+    if (visibleItems.length > 0 && wasButtonFocused.current && visibleItems.length >= filteredItems.length) {
+      counterRef.current?.focus();
+      wasButtonFocused.current = false;
     }
   }, [visibleItems.length, filteredItems.length]);
 
@@ -151,25 +176,6 @@ function RegistryPageContent() {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
   };
-
-  const hasCategorySelection = Array.isArray(categoryFilter)
-    ? categoryFilter.length > 0
-    : Boolean(categoryFilter && categoryFilter !== 'All');
-  const hasPriceSelection =
-    Array.isArray(priceRange) &&
-    priceRange.length === 2 &&
-    (priceRange[0] > minPrice || priceRange[1] < maxPrice);
-  const hasSortSelection = Boolean(
-    sortOption && sortOption !== 'default' && (sortOption as string) !== 'recommended'
-  );
-  const hasActiveFilters = Boolean(
-    (searchQuery && searchQuery.trim() !== '') ||
-      hasCategorySelection ||
-      hasPriceSelection ||
-      showGroupGiftsOnly ||
-      showAvailableOnly ||
-      hasSortSelection
-  );
 
   return (
     <ErrorBoundary title="Registry Error" message="An unexpected error occurred while displaying the registry.">
@@ -213,7 +219,7 @@ function RegistryPageContent() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery?.('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-0.5"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 min-w-6 min-h-6 flex items-center justify-center text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary rounded p-1"
                   aria-label="Clear search query"
                 >
                   <Icon name="X" className="w-4 h-4" />
@@ -318,7 +324,6 @@ function RegistryPageContent() {
             variants={gridVariants}
             initial="hidden"
             animate="visible"
-            aria-live="polite"
           >
             {visibleItems.map((item) => (
               <motion.div key={item.id} variants={cardVariants}>
@@ -337,6 +342,7 @@ function RegistryPageContent() {
           </motion.div>
         ) : (
           <EmptyState
+            role="status"
             message="No gifts match the current filters. Try adjusting your search!"
             onAction={handleClearFilters}
             actionLabel="Clear Filters"
