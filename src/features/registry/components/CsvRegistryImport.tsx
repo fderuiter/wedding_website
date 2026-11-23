@@ -173,7 +173,7 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
             <button
               type="button"
               onClick={handleDownloadTemplate}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors shrink-0"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors shrink-0"
             >
               <svg
                 className="w-3.5 h-3.5"
@@ -207,7 +207,7 @@ export const CsvRegistryImport: React.FC<CsvRegistryImportProps> = ({ onSuccess 
               <span className="font-semibold text-stone-800 dark:text-stone-200">{fileName}</span>
             ) : (
               <>
-                <span className="text-amber-600 dark:text-amber-400 font-semibold underline">
+                <span className="text-amber-800 dark:text-amber-300 font-semibold underline">
                   Click to upload
                 </span>{' '}
                 or drag and drop your CSV file here

@@ -271,4 +271,23 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     // Broken announcement takes precedence over secret message
     expect(liveRegion).toHaveTextContent('Heart is broken.');
   });
+
+  it('does not mount a drei Html portal inside the Canvas Suspense fallback and isolates Environment errors', () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const drei = jest.requireMock('@react-three/drei') as { Environment: () => React.ReactNode };
+    const originalEnvironment = drei.Environment;
+    drei.Environment = () => {
+      throw new Error('Could not load venice_sunset_1k.hdr: Failed to fetch');
+    };
+
+    try {
+      render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+      expect(screen.getByRole('heading', { level: 1, name: 'Interactive Heart' })).toBeInTheDocument();
+      expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reset heart' }).className).toContain('text-gray-900');
+    } finally {
+      drei.Environment = originalEnvironment;
+      consoleErrorSpy.mockRestore();
+    }
+  });
 });

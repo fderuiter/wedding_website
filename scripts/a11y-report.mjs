@@ -74,6 +74,31 @@ export function generateReport(options = {}) {
       '⚠️ Incomplete: Playwright accessibility artifact (`test-results/playwright-a11y-violations.json`) was not found.\n\n';
   }
 
+  const staticDemoFile = path.join(cwd, 'test-results', 'static-demo-a11y-violations.json');
+  const requireStaticDemo = Boolean(options.requireStaticDemo);
+  if (fs.existsSync(staticDemoFile) || requireStaticDemo) {
+    report += '### Static Demo Level (Playwright)\n';
+    if (fs.existsSync(staticDemoFile)) {
+      const parsedStatic = JSON.parse(fs.readFileSync(staticDemoFile, 'utf8'));
+      const staticViolations = normalizePlaywrightViolations(parsedStatic);
+      if (staticViolations.length === 0) {
+        report += '✅ No accessibility violations found in static demo pages.\n\n';
+      } else {
+        totalViolations += staticViolations.length;
+        report += `❌ Found ${staticViolations.length} violations in static demo pages.\n`;
+        staticViolations.forEach((v) => {
+          const routeLabel = v.route ? ` (\`${v.route}\`)` : '';
+          report += `- **${v.id}**${routeLabel}: ${v.description} (${v.impact})\n`;
+        });
+        report += '\n';
+      }
+    } else {
+      incompleteSuites.push('static-demo');
+      report +=
+        '⚠️ Incomplete: Static demo accessibility artifact (`test-results/static-demo-a11y-violations.json`) was not found.\n\n';
+    }
+  }
+
   if (incompleteSuites.length > 0) {
     report += `**Status:** Incomplete (${incompleteSuites.join(', ')} results missing)\n`;
   }
@@ -217,7 +242,10 @@ export function main(argv = process.argv.slice(2), options = {}) {
     return;
   }
 
-  const { totalViolations } = generateReport(options);
+  const { totalViolations } = generateReport({
+    ...options,
+    requireStaticDemo: Boolean(options.requireStaticDemo || argv.includes('--require-static-demo')),
+  });
   if (totalViolations > 0) {
     process.exit(1);
     return;

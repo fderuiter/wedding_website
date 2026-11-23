@@ -129,12 +129,12 @@ const Forecast: React.FC = () => {
   if (error || !weatherData || !weatherData.daily) {
     return (
       <div
-        className="bg-white/25 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-white/20 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
+        className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-lg rounded-[var(--radius-card)] shadow-2xl p-[var(--card-padding)] border border-gray-200 dark:border-gray-700 max-w-[var(--container-max-w)] mx-auto text-center flex flex-col items-center justify-center min-h-[300px] space-y-4"
         role="alert"
       >
         <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
         <h2 className="text-xl font-bold">Unable to Load Weather</h2>
-        <p className="text-base text-red-500 font-medium">
+        <p className="text-base text-red-700 dark:text-red-300 font-medium">
           Failed to load forecast. Please try again later.
         </p>
         <Button onClick={fetchWeather} variant="primary" size="md">

@@ -27,6 +27,8 @@ const ALLOWLIST_PREFIXES = [
   'test-results/',
   'build/',
   'dist/',
+  'out/',
+  'storybook-static/',
   'docs-portal/.vitepress/dist/',
   'docs-portal/.vitepress/cache/',
   'docs-portal/.vitepress/.temp/',

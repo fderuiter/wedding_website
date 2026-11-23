@@ -3,12 +3,18 @@ import React from 'react';
 interface AdminEditorContainerProps {
   children: React.ReactNode;
   title?: string;
+  headingLevel?: 'h1' | 'h2';
 }
 
-export const AdminEditorContainer: React.FC<AdminEditorContainerProps> = ({ children, title }) => {
+export const AdminEditorContainer: React.FC<AdminEditorContainerProps> = ({
+  children,
+  title,
+  headingLevel = 'h2',
+}) => {
+  const HeadingTag = headingLevel;
   return (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-8 border border-primary dark:border-gray-700 max-w-4xl mx-auto">
-      {title && <h2 className="text-2xl font-bold mb-4">{title}</h2>}
+      {title && <HeadingTag className="text-2xl font-bold mb-4">{title}</HeadingTag>}
       {children}
     </div>
   );

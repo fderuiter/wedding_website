@@ -258,13 +258,13 @@ function RegistryPageContent() {
         {error ? (
           <div
             role="alert"
-            className="p-8 rounded-2xl bg-white/10 dark:bg-gray-800/90 border border-primary/30 text-center shadow-xl max-w-xl mx-auto my-8 flex flex-col items-center justify-center space-y-4"
+            className="p-8 rounded-2xl bg-white/90 dark:bg-gray-800/90 border border-primary/30 text-center shadow-xl max-w-xl mx-auto my-8 flex flex-col items-center justify-center space-y-4"
           >
             <div className="p-3 rounded-full bg-primary/10 text-primary">
               <Icon name="AlertTriangle" className="w-8 h-8" />
             </div>
             <h2 className="text-2xl font-bold text-primary">Unable to Load Registry</h2>
-            <p className="text-base text-red-500 font-medium">
+            <p className="text-base text-red-700 dark:text-red-300 font-medium">
               Error loading registry: {error instanceof Error ? error.message : String(error)}
             </p>
             <Button onClick={() => refetch()} variant="primary" size="md">

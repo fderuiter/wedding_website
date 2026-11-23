@@ -221,13 +221,13 @@ function Dropzone({
         <p id={promptId} className="text-sm font-medium text-gray-700 dark:text-gray-200">
           {isBusy ? busyLabel : label}
         </p>
-
-        {hasHint && (
-          <p id={hintId} className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {hint}
-          </p>
-        )}
       </div>
+
+      {hasHint && (
+        <p id={hintId} className="mt-2 text-center text-xs text-gray-600 dark:text-gray-400">
+          {hint}
+        </p>
+      )}
 
       {activeError && (
         <p id={errorId} role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">

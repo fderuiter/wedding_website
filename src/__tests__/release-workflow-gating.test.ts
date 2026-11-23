@@ -86,12 +86,36 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(onSection).toContain('branches: [ main ]');
     expect(onSection).toContain('pull_request:');
 
-    for (const jobId of ['verify:', 'unit-test:', 'build:', 'container-arm64:', 'e2e-test:', 'deploy-docs:']) {
+    for (const jobId of [
+      'verify:',
+      'unit-test:',
+      'build:',
+      'container-arm64:',
+      'static-demo-e2e:',
+      'e2e-test:',
+      'deploy-docs:',
+    ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
     expect(ciWorkflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
     expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');
+
+    const staticDemoSection =
+      ciWorkflow.split(/\n  e2e-test:\n/)[0]?.split(/\n  static-demo-e2e:\n/)[1] ?? '';
+    expect(staticDemoSection).toContain('needs: verify');
+    expect(staticDemoSection).not.toContain('services:');
+    expect(staticDemoSection).toContain('run: npm run test:e2e:static');
+    expect(staticDemoSection).toContain('name: static-demo-a11y-violations');
+
+    const a11ySection =
+      ciWorkflow.split(/\n  deploy-docs:\n/)[0]?.split(/\n  a11y-report:\n/)[1] ?? '';
+    expect(a11ySection).toContain('needs: [unit-test, e2e-test, static-demo-e2e]');
+    expect(a11ySection).toContain('name: static-demo-a11y-violations');
+    expect(a11ySection).toContain('run: node scripts/a11y-report.mjs --require-static-demo');
+
+    const deployDocsSection = ciWorkflow.split(/\n  deploy-docs:\n/)[1] ?? '';
+    expect(deployDocsSection).toContain('needs: [verify, static-demo-e2e]');
 
     const trivyMatches =
       ciWorkflow.match(/aquasecurity\/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25/g) ?? [];

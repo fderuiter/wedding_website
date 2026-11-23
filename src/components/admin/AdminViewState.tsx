@@ -166,11 +166,11 @@ function AdminErrorCard({
         className
       )}
     >
-      <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+      <div className="p-3 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
         <Icon name="AlertTriangle" className="w-8 h-8" />
       </div>
       <div>
-        <h3 className="text-xl font-bold mb-1 text-red-600 dark:text-red-400">{title}</h3>
+        <h2 className="text-xl font-bold mb-1 text-red-700 dark:text-red-400">{title}</h2>
         <p className="text-sm opacity-90 mb-4">{formattedMessage}</p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3">

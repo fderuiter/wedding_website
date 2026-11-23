@@ -49,6 +49,7 @@
     "test:a11y:unit": "node scripts/a11y-report.mjs --unit",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:static": "playwright test --config=playwright.static.config.ts",
     "test:standalone": "node scripts/test-standalone.mjs",
     "test:container": "node scripts/test-container.mjs",
     "migrate:dev": "dotenv -c development -- prisma migrate dev",

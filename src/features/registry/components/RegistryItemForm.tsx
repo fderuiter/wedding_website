@@ -314,7 +314,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="form">
       <FormGroup className="col-span-1 md:col-span-2">
-        <Label>Item Type <span className="text-red-500">*</span></Label>
+        <Label>Item Type <span className="text-red-700 dark:text-red-400">*</span></Label>
         <Select
           name="itemType"
           value={values.itemType || 'PHYSICAL'}
@@ -404,23 +404,23 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
       )}
 
       <FormGroup>
-        <Label>Item Name <span className="text-red-500">*</span></Label>
+        <Label>Item Name <span className="text-red-700 dark:text-red-400">*</span></Label>
         <Input ref={nameInputRef} type="text" name="name" value={values.name || ''} onChange={handleChange} required aria-required="true" />
       </FormGroup>
 
       <FormGroup>
-        <Label>Category <span className="text-red-500">*</span></Label>
+        <Label>Category <span className="text-red-700 dark:text-red-400">*</span></Label>
         <Input ref={categoryInputRef} type="text" name="category" value={values.category || ''} onChange={handleChange} required aria-required="true" />
       </FormGroup>
 
       <FormGroup>
-        <Label>{isFund ? 'Target Goal Amount ($)' : 'Price ($)'} <span className="text-red-500">*</span></Label>
+        <Label>{isFund ? 'Target Goal Amount ($)' : 'Price ($)'} <span className="text-red-700 dark:text-red-400">*</span></Label>
         <Input ref={priceInputRef} type="number" name="price" value={values.price ?? ''} onChange={handleChange} step="0.01" required aria-required="true" />
       </FormGroup>
 
       {!isFund && (
         <FormGroup>
-          <Label>Quantity <span className="text-red-500">*</span></Label>
+          <Label>Quantity <span className="text-red-700 dark:text-red-400">*</span></Label>
           <Input type="number" name="quantity" value={values.quantity ?? 1} onChange={handleChange} required aria-required="true" />
         </FormGroup>
       )}

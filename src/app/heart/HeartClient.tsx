@@ -4,7 +4,7 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { Environment, Html, Text } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
-import { Suspense, useRef, useState, useEffect } from 'react';
+import { Component, Suspense, useRef, useState, useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { Physics, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { ActiveCollisionTypes, RigidBodyType } from '@dimforge/rapier3d-compat';
@@ -481,6 +481,21 @@ function WebGLFallback({
   );
 }
 
+class SceneEnvironmentBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return null;
+    }
+    return this.props.children;
+  }
+}
+
 function PerformanceTracker({
   currentTier,
   onTierChange,
@@ -569,15 +584,16 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
   if (!webglSupported) {
     return (
       <div ref={overlayRef} className="fixed inset-0 bg-black select-none" data-testid="webgl-fallback-container">
+        <h1 className="sr-only">Interactive Heart</h1>
         <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
           <button
             onClick={handleReset}
-            className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white"
+            className="rounded bg-white/85 px-3 py-1 text-sm font-medium text-gray-900 hover:bg-white"
             aria-label="Reset heart"
           >
             Reset
           </button>
-          <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
+          <Link href="/" className="rounded bg-white/85 px-3 py-1 text-sm font-medium text-gray-900 hover:bg-white">
             Back Home
           </Link>
         </div>
@@ -595,15 +611,16 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
 
   return (
     <div ref={overlayRef} className="fixed inset-0 bg-black select-none">
+      <h1 className="sr-only">Interactive Heart</h1>
       <div className="absolute top-0 right-0 z-[60] m-4 flex gap-2">
         <button
           onClick={handleReset}
-          className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white"
+          className="rounded bg-white/85 px-3 py-1 text-sm font-medium text-gray-900 hover:bg-white"
           aria-label="Reset heart"
         >
           Reset
         </button>
-        <Link href="/" className="rounded bg-white/80 px-3 py-1 text-sm hover:bg-white">
+        <Link href="/" className="rounded bg-white/85 px-3 py-1 text-sm font-medium text-gray-900 hover:bg-white">
           Back Home
         </Link>
       </div>
@@ -611,10 +628,16 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
         <ambientLight intensity={lighting?.ambientIntensity ?? 0.8} />
         <directionalLight position={[5, 8, 5]} intensity={lighting?.directionalIntensity ?? 1.6} />
         <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
-        <Suspense fallback={<Html>Loading…</Html>}>
+        <Suspense fallback={null}>
           <Physics key={resetKey} gravity={[0, 0, 0]}>
             {performanceTier !== 'low' && <Sparkles />}
-            {performanceTier !== 'low' && <Environment preset="sunset" />}
+            {performanceTier !== 'low' && (
+              <SceneEnvironmentBoundary>
+                <Suspense fallback={null}>
+                  <Environment preset="sunset" />
+                </Suspense>
+              </SceneEnvironmentBoundary>
+            )}
             <PhysicsHeart 
               scale={scale} 
               interacted={interacted} 

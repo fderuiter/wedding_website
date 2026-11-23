@@ -11,10 +11,14 @@ import {
 } from '@/components/guest/GuestHelpModal';
 import { GlobalRadialGlow } from '@/components/ui/GlobalRadialGlow';
 import { useToast } from '@/components/ui/ToastProvider';
-import { MotionGlobalConfig } from 'framer-motion';
+import { MotionConfig, MotionGlobalConfig } from 'framer-motion';
 import type { ContentNodeDTO } from '@/features/content';
 
-if (typeof window !== 'undefined' && window.navigator.userAgent.includes('HeadlessChrome')) {
+if (
+  typeof window !== 'undefined' &&
+  (window.navigator.userAgent.includes('HeadlessChrome') ||
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+) {
   MotionGlobalConfig.skipAnimations = true;
 }
 
@@ -114,6 +118,11 @@ export default function RootLayoutClient({
   const isStandalonePage = isHeartPage || isSlideshowPage;
   const isAdminDashboardPage =
     pathname === '/admin/dashboard' || pathname?.startsWith('/admin/dashboard/');
+  const normalizedPathname = pathname && pathname !== '/' ? pathname.replace(/\/+$/, '') : pathname;
+  const hasOwnMainLandmark =
+    isAdminDashboardPage ||
+    normalizedPathname === '/guest/claim' ||
+    normalizedPathname === '/guest/collect';
 
   const handleLogout = async () => {
     try {
@@ -148,27 +157,29 @@ export default function RootLayoutClient({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <GuestHelpProvider config={helpConfig} pathname={pathname}>
-        <GlobalRadialGlow />
-        {!isStandalonePage && (
-          <Navbar
-            headerRef={headerRef}
-            isAdmin={isAdmin}
-            handleLogout={handleLogout}
-            config={config}
-            hasVisibleFaqs={faqs ? faqs.length > 0 : undefined}
-          />
-        )}
-        {isAdminDashboardPage ? (
-          <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-            {children}
-          </div>
-        ) : (
-          <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-            {children}
-          </main>
-        )}
-      </GuestHelpProvider>
+      <MotionConfig reducedMotion="user">
+        <GuestHelpProvider config={helpConfig} pathname={pathname}>
+          <GlobalRadialGlow />
+          {!isStandalonePage && (
+            <Navbar
+              headerRef={headerRef}
+              isAdmin={isAdmin}
+              handleLogout={handleLogout}
+              config={config}
+              hasVisibleFaqs={faqs ? faqs.length > 0 : undefined}
+            />
+          )}
+          {hasOwnMainLandmark ? (
+            <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+              {children}
+            </div>
+          ) : (
+            <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+              {children}
+            </main>
+          )}
+        </GuestHelpProvider>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }

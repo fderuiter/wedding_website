@@ -197,4 +197,24 @@ describe('Forecast Component', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('renders high-contrast error alert with no axe violations when forecast fetch fails', async () => {
+    server.use(
+      http.get('/api/weather', () => {
+        return new HttpResponse(null, { status: 404 });
+      })
+    );
+
+    const { container } = render(<Forecast />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.className).toContain('bg-white/90');
+    expect(alert.className).toContain('dark:bg-gray-900/90');
+    const errorParagraph = screen.getByText(/Failed to load forecast\. Please try again later\./i);
+    expect(errorParagraph.className).toContain('text-red-700');
+    expect(errorParagraph.className).toContain('dark:text-red-300');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

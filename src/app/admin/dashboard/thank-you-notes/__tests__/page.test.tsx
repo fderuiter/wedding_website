@@ -822,4 +822,30 @@ describe('ThankYouNotesPage', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('renders high-contrast error alert with no axe violations when contributor fetch fails', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({ error: 'Failed to load contributors' }),
+        });
+      }
+      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    const errorBanner = await screen.findByText(/Error: Failed to fetch thank-you notes\./i);
+    expect(errorBanner.className).toContain('text-red-700');
+    expect(errorBanner.className).toContain('dark:text-red-400');
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

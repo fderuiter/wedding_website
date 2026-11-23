@@ -132,6 +132,43 @@ describe('a11y-report', () => {
       expect(report).toContain('**Status:** Incomplete (jest, playwright results missing)');
       expect(report).toContain('**Total Accessibility Violations:** 0');
     });
+
+    it('aggregates static demo Playwright violations and marks missing static-demo artifact incomplete when required', () => {
+      const missingResult = generateReport({ cwd: tempDir, requireStaticDemo: true });
+      expect(missingResult.incompleteSuites).toEqual(['jest', 'playwright', 'static-demo']);
+      expect(missingResult.report).toContain('### Static Demo Level (Playwright)');
+      expect(missingResult.report).toContain(
+        '⚠️ Incomplete: Static demo accessibility artifact (`test-results/static-demo-a11y-violations.json`) was not found.'
+      );
+
+      const resultsDir = path.join(tempDir, 'test-results');
+      fs.mkdirSync(resultsDir, { recursive: true });
+      fs.writeFileSync(path.join(resultsDir, 'jest-a11y-violations.json'), '[]');
+      fs.writeFileSync(path.join(resultsDir, 'playwright-a11y-violations.json'), '{}');
+      fs.writeFileSync(
+        path.join(resultsDir, 'static-demo-a11y-violations.json'),
+        JSON.stringify({
+          '/registry/add-item': [
+            {
+              id: 'color-contrast',
+              description: 'Elements must meet minimum color contrast ratio thresholds',
+              impact: 'serious',
+            },
+          ],
+        })
+      );
+
+      const { report, totalViolations, incompleteSuites } = generateReport({
+        cwd: tempDir,
+        requireStaticDemo: true,
+      });
+      expect(incompleteSuites).toEqual([]);
+      expect(totalViolations).toBe(1);
+      expect(report).toContain('❌ Found 1 violations in static demo pages.');
+      expect(report).toContain(
+        '- **color-contrast** (`/registry/add-item`): Elements must meet minimum color contrast ratio thresholds (serious)'
+      );
+    });
   });
 
   describe('standalone CLI exit codes', () => {
@@ -181,9 +218,9 @@ describe('a11y-report', () => {
   });
 
   describe('findJestAxeSuites & runA11yUnit', () => {
-    it('discovers all 49 src/ jest-axe suites in the live repository', () => {
+    it('discovers all 50 src/ jest-axe suites in the live repository', () => {
       const suites = findJestAxeSuites(process.cwd());
-      expect(suites).toHaveLength(49);
+      expect(suites).toHaveLength(50);
       expect(suites.every((p: string) => p.startsWith('src/') && p.endsWith('.test.tsx'))).toBe(
         true
       );

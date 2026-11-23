@@ -231,7 +231,7 @@ export const BatchUrlScraper: React.FC<BatchUrlScraperProps> = ({ onSuccess }) =
             type="button"
             onClick={handleScrape}
             disabled={urlCount === 0 || urlCount > 20 || isScraping || isSubmitting}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-700 hover:bg-amber-800 dark:bg-amber-700 dark:hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-colors"
           >
             {isScraping ? (
               <>

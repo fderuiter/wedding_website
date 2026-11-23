@@ -61,7 +61,7 @@ export default function AddRegistryItemPage() {
   };
 
   return (
-    <AdminEditorContainer title="Add Registry Items">
+    <AdminEditorContainer title="Add Registry Items" headingLevel="h1">
       {/* Tab Navigation */}
       <div className="mb-6 border-b border-stone-200 dark:border-stone-700">
         <nav
@@ -79,8 +79,8 @@ export default function AddRegistryItemPage() {
             onKeyDown={(e) => handleTabKeyDown(e, 'single')}
             className={`whitespace-nowrap pb-3 px-3 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
               activeTab === 'single'
-                ? 'border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400 font-semibold'
-                : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300 dark:text-stone-400 dark:hover:text-stone-200'
+                ? 'border-amber-800 text-amber-800 dark:border-amber-400 dark:text-amber-300 font-semibold'
+                : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
             Single Item
@@ -96,8 +96,8 @@ export default function AddRegistryItemPage() {
             onKeyDown={(e) => handleTabKeyDown(e, 'batch')}
             className={`whitespace-nowrap pb-3 px-3 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
               activeTab === 'batch'
-                ? 'border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400 font-semibold'
-                : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300 dark:text-stone-400 dark:hover:text-stone-200'
+                ? 'border-amber-800 text-amber-800 dark:border-amber-400 dark:text-amber-300 font-semibold'
+                : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
             Batch URLs
@@ -113,8 +113,8 @@ export default function AddRegistryItemPage() {
             onKeyDown={(e) => handleTabKeyDown(e, 'csv')}
             className={`whitespace-nowrap pb-3 px-3 text-sm font-medium border-b-2 transition-colors cursor-pointer ${
               activeTab === 'csv'
-                ? 'border-amber-600 text-amber-600 dark:border-amber-500 dark:text-amber-400 font-semibold'
-                : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300 dark:text-stone-400 dark:hover:text-stone-200'
+                ? 'border-amber-800 text-amber-800 dark:border-amber-400 dark:text-amber-300 font-semibold'
+                : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300 dark:text-stone-300 dark:hover:text-stone-100'
             }`}
           >
             CSV Import

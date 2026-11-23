@@ -1121,11 +1121,26 @@ describe('ReceptionSlideshowClient', () => {
 
     const secondaryControls = screen.getByTestId('slideshow-secondary-controls');
     const playPauseBtn = screen.getByTestId('slideshow-play-pause-btn');
+    const speed5Btn = screen.getByTestId('slideshow-duration-5s-btn');
+    const speed8Btn = screen.getByTestId('slideshow-duration-8s-btn');
+    const speed10Btn = screen.getByTestId('slideshow-duration-10s-btn');
+
+    expect(speed5Btn).toHaveAccessibleName(/^5s\b/i);
+    expect(speed8Btn).toHaveAccessibleName(/^8s\b/i);
+    expect(speed10Btn).toHaveAccessibleName(/^10s\b/i);
+    expect(speed8Btn).toHaveAttribute('aria-pressed', 'true');
+    expect(speed5Btn).toHaveAttribute('aria-pressed', 'false');
+    expect(speed10Btn).toHaveAttribute('aria-pressed', 'false');
 
     const axeRules = { rules: { 'label-content-name-mismatch': { enabled: true } } };
     expect(await axe(container, axeRules)).toHaveNoViolations();
     expect(await axe(secondaryControls, axeRules)).toHaveNoViolations();
     expect(await axe(playPauseBtn, axeRules)).toHaveNoViolations();
+
+    fireEvent.click(speed5Btn);
+    expect(speed5Btn).toHaveAttribute('aria-pressed', 'true');
+    expect(speed8Btn).toHaveAttribute('aria-pressed', 'false');
+    expect(await axe(secondaryControls, axeRules)).toHaveNoViolations();
 
     fireEvent.click(playPauseBtn);
     expect(await axe(container, axeRules)).toHaveNoViolations();
