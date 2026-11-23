@@ -16,7 +16,7 @@ import {
   generateFeatureBarrelsTable,
   updateFeatureModulesMd,
 } from '../../scripts/generate-docs';
-import { AppConfigSchema } from '../features/content/schemas';
+import { AppConfigSchema } from '@/features/content';
 import { DEFAULT_MODULE_CONFIG, FEATURE_METADATA } from '../lib/modules';
 
 describe('Documentation Generator - getZodType & Spec Tables', () => {

@@ -258,7 +258,14 @@ const eslintConfig = [
         {
           patterns: [
             {
-              group: ['@/features/*/*'],
+              group: [
+                '@/features/*/*',
+                '../features/*/*',
+                '../../features/*/*',
+                '../../../features/*/*',
+                '../../../../features/*/*',
+                '../../../../../features/*/*',
+              ],
               message: 'Features should only be imported via their public index.ts exported interfaces to prevent cross-domain leakage.',
             },
           ],
