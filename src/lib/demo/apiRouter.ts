@@ -1941,6 +1941,7 @@ export async function routeDemoApiRequest(
             if (guest.seatNumber) usedSeats.add(guest.seatNumber);
           } else {
             guest.seatNumber = null;
+            guest.plusOneSeatNumbers = [];
           }
           updatedGuests.push(guest);
         }
@@ -1953,6 +1954,7 @@ export async function routeDemoApiRequest(
         invitationCodeId: string;
         tableId: string | null;
         seatNumber?: number | null;
+        plusOneSeatNumbers?: number[];
       }>;
       const updatedGuests: DemoInvitationCode[] = [];
       updateDemoState((draft) => {
@@ -1961,6 +1963,11 @@ export async function routeDemoApiRequest(
           if (!guest) continue;
           guest.tableId = entry.tableId || null;
           guest.seatNumber = entry.tableId ? (entry.seatNumber ?? null) : null;
+          guest.plusOneSeatNumbers = entry.tableId
+            ? Array.isArray(entry.plusOneSeatNumbers)
+              ? entry.plusOneSeatNumbers.map(Number)
+              : (guest.plusOneSeatNumbers ?? [])
+            : [];
           updatedGuests.push(guest);
         }
       });
@@ -1971,6 +1978,9 @@ export async function routeDemoApiRequest(
     const tableId = body.tableId ? String(body.tableId) : null;
     const seatNumber =
       body.seatNumber !== null && body.seatNumber !== undefined ? Number(body.seatNumber) : null;
+    const plusOneSeatNumbers = Array.isArray(body.plusOneSeatNumbers)
+      ? body.plusOneSeatNumbers.map(Number)
+      : undefined;
     let updatedGuest: DemoInvitationCode | null = null;
     updateDemoState((draft) => {
       const guest = draft.invitationCodes.find((g) => g.id === invitationCodeId);
@@ -1983,6 +1993,9 @@ export async function routeDemoApiRequest(
       }
       guest.tableId = tableId;
       guest.seatNumber = tableId ? seatNumber : null;
+      guest.plusOneSeatNumbers = tableId
+        ? (plusOneSeatNumbers ?? guest.plusOneSeatNumbers ?? [])
+        : [];
       updatedGuest = guest;
     });
     if (!updatedGuest) return jsonResponse({ error: 'Guest not found' }, 404);
@@ -2006,6 +2019,7 @@ export async function routeDemoApiRequest(
       for (const guest of eligible) {
         let placed = false;
         for (const table of draft.seatingTables) {
+          if (table.capacity <= 0) continue;
           const occupants = draft.invitationCodes.filter((g) => g.tableId === table.id);
           if (occupants.length >= table.capacity) continue;
           const used = new Set(occupants.map((o) => o.seatNumber).filter(Boolean));
@@ -2029,8 +2043,27 @@ export async function routeDemoApiRequest(
   }
 
   if (normalizedPath === '/api/admin/seating/export') {
-    const rows = ['Table,Shape,Seat,GuestName,Household,DietaryNotes'];
-    for (const table of state.seatingTables) {
+    const format = searchParams.get('format')?.toLowerCase();
+    const guestTables = state.seatingTables.filter((t) => t.capacity > 0);
+    if (format === 'meals' || format === 'meal-counts') {
+      const rows = ['Table Name,Table Shape,Capacity,Seated Guests,Entree Counts,Dietary Counts'];
+      for (const table of guestTables) {
+        const guests = state.invitationCodes.filter((g) => g.tableId === table.id);
+        rows.push(
+          [
+            csvEscape(table.name),
+            csvEscape(table.shape),
+            csvEscape(table.capacity),
+            csvEscape(guests.length),
+            csvEscape('Chef Selection'),
+            csvEscape(guests.filter((g) => g.dietaryNotes).length || 'None'),
+          ].join(',')
+        );
+      }
+      return textResponse(rows.join('\n'), 'text/csv; charset=utf-8', 'seating-meal-counts.csv');
+    }
+    const rows = ['Table,Shape,Seat,PlusOneSeats,GuestName,Household,DietaryNotes'];
+    for (const table of guestTables) {
       const guests = state.invitationCodes
         .filter((g) => g.tableId === table.id)
         .sort((a, b) => (a.seatNumber ?? 99) - (b.seatNumber ?? 99));
@@ -2040,6 +2073,7 @@ export async function routeDemoApiRequest(
             csvEscape(table.name),
             csvEscape(table.shape),
             csvEscape(g.seatNumber ?? ''),
+            csvEscape((g.plusOneSeatNumbers ?? []).join(' ')),
             csvEscape(g.guestName),
             csvEscape(g.householdName ?? ''),
             csvEscape(g.dietaryNotes ?? ''),

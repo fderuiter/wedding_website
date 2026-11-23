@@ -103,6 +103,7 @@ export interface DemoInvitationCode {
   addressUpdatedAt: string | null;
   tableId: string | null;
   seatNumber: number | null;
+  plusOneSeatNumbers?: number[];
   allowedSubEventIds: string[];
   extraFields: Record<string, unknown>;
   isSample: boolean;
@@ -113,7 +114,17 @@ export interface DemoInvitationCode {
 export interface DemoSeatingTable {
   id: string;
   name: string;
-  shape: 'round' | 'rectangular' | 'square' | 'head' | 'sweetheart';
+  shape:
+    | 'round'
+    | 'rectangular'
+    | 'square'
+    | 'head'
+    | 'sweetheart'
+    | 'dance-floor'
+    | 'bar'
+    | 'dj'
+    | 'buffet'
+    | 'cake';
   capacity: number;
   x: number;
   y: number;
