@@ -18,7 +18,7 @@ import {
   isSiteInitialized,
 } from '@/lib/config';
 import { ThemeProvider, ThemeMode } from '@/components/ThemeProvider';
-import SetupWizard from '@/components/setup/SetupWizard';
+import SetupWizard from '@/components/setup/LazySetupWizard';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { cookies } from 'next/headers';
 import { generateThemeStylesheet } from '@/lib/theme/stylesheet';

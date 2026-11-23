@@ -1682,6 +1682,161 @@ export function checkDockerBuild(
         });
       }
     }
+
+    const standaloneNextDir = path.join(standaloneDir, '.next');
+    const standaloneChunksDir = path.join(standaloneStaticDir, 'chunks');
+    if (fs.existsSync(standaloneChunksDir) && fs.statSync(standaloneChunksDir).isDirectory()) {
+      const eagerChunkRoutes = new Map<string, Set<string>>();
+      const recordEagerChunk = (chunkRef: string, routeLabel: string): void => {
+        if (!chunkRef.endsWith('.js')) return;
+        const chunkFile = path.basename(chunkRef);
+        let routeSet = eagerChunkRoutes.get(chunkFile);
+        if (!routeSet) {
+          routeSet = new Set<string>();
+          eagerChunkRoutes.set(chunkFile, routeSet);
+        }
+        routeSet.add(routeLabel);
+      };
+
+      let hasManifestMetadata = false;
+      const buildManifestPath = path.join(standaloneNextDir, 'build-manifest.json');
+      if (fs.existsSync(buildManifestPath)) {
+        hasManifestMetadata = true;
+        try {
+          const buildManifest = JSON.parse(fs.readFileSync(buildManifestPath, 'utf8')) as {
+            rootMainFiles?: string[];
+          };
+          for (const chunkRef of buildManifest.rootMainFiles ?? []) {
+            recordEagerChunk(chunkRef, '<rootMainFiles>');
+          }
+        } catch (err) {
+          violations.push({
+            filePath: '.next/standalone/.next/build-manifest.json',
+            lineNumber: 1,
+            lineContent: '',
+            imageRef: 'build-manifest.json',
+            reason: `Failed to parse .next/standalone/.next/build-manifest.json: ${(err as Error).message}`,
+          });
+        }
+      }
+
+      const standaloneServerAppDir = path.join(standaloneNextDir, 'server', 'app');
+      if (fs.existsSync(standaloneServerAppDir) && fs.statSync(standaloneServerAppDir).isDirectory()) {
+        hasManifestMetadata = true;
+        const manifestStack = [standaloneServerAppDir];
+        const manifestPattern =
+          /globalThis\.__RSC_MANIFEST\[("(?:[^"\\]|\\.)*")\]\s*=\s*(\{[\s\S]*?\});\s*$/gm;
+        while (manifestStack.length > 0) {
+          const currentDir = manifestStack.pop()!;
+          for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+            const entryPath = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+              manifestStack.push(entryPath);
+            } else if (entry.isFile() && entry.name.endsWith('_client-reference-manifest.js')) {
+              const rawManifest = fs.readFileSync(entryPath, 'utf8');
+              manifestPattern.lastIndex = 0;
+              let match: RegExpExecArray | null;
+              while ((match = manifestPattern.exec(rawManifest)) !== null) {
+                try {
+                  const routeName = JSON.parse(match[1]) as string;
+                  const parsedManifest = JSON.parse(match[2]) as {
+                    entryJSFiles?: Record<string, string[]>;
+                  };
+                  for (const chunkList of Object.values(parsedManifest.entryJSFiles ?? {})) {
+                    for (const chunkRef of chunkList) {
+                      recordEagerChunk(chunkRef, routeName);
+                    }
+                  }
+                } catch (err) {
+                  const relManifestPath = path
+                    .relative(rootDir, entryPath)
+                    .split(path.sep)
+                    .join('/');
+                  violations.push({
+                    filePath: relManifestPath,
+                    lineNumber: 1,
+                    lineContent: '',
+                    imageRef: entry.name,
+                    reason: `Failed to parse ${relManifestPath}: ${(err as Error).message}`,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (!hasManifestMetadata) {
+        for (const entry of fs.readdirSync(standaloneChunksDir, { withFileTypes: true })) {
+          if (entry.isFile() && entry.name.endsWith('.js')) {
+            recordEagerChunk(entry.name, '<standalone-chunks>');
+          }
+        }
+      }
+
+      const forbiddenStandaloneChunkMarkers: ReadonlyArray<{
+        marker: string;
+        category: 'demo' | 'setup';
+        allowedRoutes: ReadonlySet<string>;
+      }> = [
+        {
+          marker: 'wedding_showcase_demo_v1',
+          category: 'demo',
+          allowedRoutes: new Set<string>(),
+        },
+        {
+          marker: 'installDemoFetchInterceptor',
+          category: 'demo',
+          allowedRoutes: new Set<string>(),
+        },
+        {
+          marker: 'Interactive Demo Controls',
+          category: 'demo',
+          allowedRoutes: new Set<string>(),
+        },
+        {
+          marker: 'Non-Charging Demo Checkout',
+          category: 'demo',
+          allowedRoutes: new Set<string>(),
+        },
+        {
+          marker: 'Step 3: Sample Data Selection',
+          category: 'setup',
+          allowedRoutes: new Set<string>(['/admin/setup/page']),
+        },
+        {
+          marker: 'Import Guest Invitation Codes',
+          category: 'setup',
+          allowedRoutes: new Set<string>(['/admin/dashboard/invitation-codes/page']),
+        },
+      ];
+
+      for (const [chunkName, routes] of eagerChunkRoutes.entries()) {
+        const chunkPath = path.join(standaloneChunksDir, chunkName);
+        if (!fs.existsSync(chunkPath) || !fs.statSync(chunkPath).isFile()) {
+          continue;
+        }
+        const chunkContent = fs.readFileSync(chunkPath, 'utf8');
+        for (const rule of forbiddenStandaloneChunkMarkers) {
+          if (!chunkContent.includes(rule.marker)) {
+            continue;
+          }
+          const disallowedRoutes = [...routes]
+            .filter((route) => !rule.allowedRoutes.has(route))
+            .sort();
+          if (disallowedRoutes.length > 0) {
+            const relChunkPath = `.next/standalone/.next/static/chunks/${chunkName}`;
+            violations.push({
+              filePath: relChunkPath,
+              lineNumber: 1,
+              lineContent: '',
+              imageRef: rule.marker,
+              reason: `${relChunkPath} eagerly bundles ${rule.category} marker "${rule.marker}" into standalone route(s): ${disallowedRoutes.slice(0, 3).join(', ')}. Isolate demo and setup modules behind next/dynamic.`,
+            });
+          }
+        }
+      }
+    }
     const forbiddenStandalonePaths = [
       ['node_modules', 'pdfkit', 'js', 'pdfkit.standalone.js'],
       ['node_modules', 'pdfkit', 'js', 'pdfkit.browser.js'],

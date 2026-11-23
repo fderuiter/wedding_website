@@ -9,7 +9,10 @@ import {
 } from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
-import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
+import {
+  findDemoGuestByCode,
+  isDemoRuntimeActive,
+} from '@/lib/demo/demoRuntimeBridge';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';

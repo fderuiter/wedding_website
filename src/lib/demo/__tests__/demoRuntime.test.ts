@@ -900,4 +900,27 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       window.fetch = originalFetch;
     }
   });
+
+  it('initializes archetype datasets lazily on demand instead of building all 3 at load', () => {
+    resetDemoState();
+    const initialState = getDemoState();
+
+    // Before reading any archetype dataset, zero datasets are materialized
+    expect(Object.keys(JSON.parse(JSON.stringify(initialState.datasets)))).toEqual([]);
+
+    // Reading the active ('classic') dataset builds only 'classic'
+    const classicDataset = getActiveArchetypeDataset();
+    expect(classicDataset.registryItems.length).toBeGreaterThan(0);
+    expect(Object.keys(JSON.parse(JSON.stringify(getDemoState().datasets)))).toEqual([
+      'classic',
+    ]);
+
+    // Switching to 'destination' and reading active dataset builds 'destination' while leaving 'romantic' unbuilt
+    setDemoArchetype('destination');
+    const destinationDataset = getActiveArchetypeDataset();
+    expect(destinationDataset.guests[0].city).toBe('Miami');
+    expect(
+      Object.keys(JSON.parse(JSON.stringify(getDemoState().datasets))).sort()
+    ).toEqual(['classic', 'destination']);
+  });
 });

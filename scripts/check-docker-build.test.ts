@@ -1277,5 +1277,83 @@ describe('check-docker-build', () => {
         ])
       );
     });
+
+    it('rejects demo and setup markers in eager standalone route chunks while permitting lazy dynamic chunks and /admin/setup', () => {
+      writeValidStandaloneBundle(tempDir);
+      const standaloneNextDir = path.join(tempDir, '.next', 'standalone', '.next');
+      const chunksDir = path.join(standaloneNextDir, 'static', 'chunks');
+      const serverAppDir = path.join(standaloneNextDir, 'server', 'app');
+      fs.mkdirSync(path.join(serverAppDir, 'admin', 'setup'), { recursive: true });
+
+      // Lazy on-demand demo chunk (not in rootMainFiles or route entryJSFiles) + /admin/setup chunk
+      fs.writeFileSync(
+        path.join(chunksDir, 'lazy-demo.js'),
+        'export const k = "wedding_showcase_demo_v1"; export const u = "Interactive Demo Controls";\n'
+      );
+      fs.writeFileSync(
+        path.join(chunksDir, 'admin-setup-only.js'),
+        'export const s = "Step 3: Sample Data Selection";\n'
+      );
+      fs.writeFileSync(
+        path.join(standaloneNextDir, 'build-manifest.json'),
+        JSON.stringify({ rootMainFiles: ['static/chunks/main.js'] })
+      );
+      fs.writeFileSync(
+        path.join(serverAppDir, 'page_client-reference-manifest.js'),
+        `globalThis.__RSC_MANIFEST = globalThis.__RSC_MANIFEST || {};\nglobalThis.__RSC_MANIFEST["/page"] = ${JSON.stringify(
+          {
+            entryJSFiles: {
+              '[project]/src/app/layout': ['static/chunks/main.js'],
+            },
+          }
+        )};\n`
+      );
+      fs.writeFileSync(
+        path.join(serverAppDir, 'admin', 'setup', 'page_client-reference-manifest.js'),
+        `globalThis.__RSC_MANIFEST = globalThis.__RSC_MANIFEST || {};\nglobalThis.__RSC_MANIFEST["/admin/setup/page"] = ${JSON.stringify(
+          {
+            entryJSFiles: {
+              '[project]/src/app/admin/setup/page': ['static/chunks/admin-setup-only.js'],
+            },
+          }
+        )};\n`
+      );
+
+      // Clean isolation passes
+      expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual([]);
+
+      // Leaking demo and setup markers into /page or rootMainFiles fails
+      fs.writeFileSync(
+        path.join(chunksDir, 'main.js'),
+        [
+          'const storeKey = "wedding_showcase_demo_v1";',
+          'const checkout = "Non-Charging Demo Checkout";',
+          'const wizard = "Step 3: Sample Data Selection";',
+          'const csv = "Import Guest Invitation Codes";',
+        ].join('\n')
+      );
+
+      const { violations } = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static/chunks/main.js',
+            imageRef: 'wedding_showcase_demo_v1',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static/chunks/main.js',
+            imageRef: 'Non-Charging Demo Checkout',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static/chunks/main.js',
+            imageRef: 'Step 3: Sample Data Selection',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static/chunks/main.js',
+            imageRef: 'Import Guest Invitation Codes',
+          }),
+        ])
+      );
+    });
   });
 });

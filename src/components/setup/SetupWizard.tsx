@@ -24,9 +24,9 @@ import {
   type SetupWizardPersistedState,
 } from '@/hooks/useSetupWizardMachine';
 import { invalidateSampleDataCaches } from '@/lib/adminCacheSync';
+import dynamic from 'next/dynamic';
 import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
-import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
@@ -72,6 +72,16 @@ function isDefaultUrl(url: string): boolean {
 }
 
 type Step2ErrorField = 'partner1' | 'partner2' | 'siteUrl' | 'contactEmail';
+
+const CsvImportWizardModal = dynamic(
+  () =>
+    import('@/components/admin/CsvImportWizardModal').then(
+      (mod) => mod.CsvImportWizardModal
+    ),
+  {
+    loading: () => null,
+  }
+);
 
 function useSafeRouter() {
   try {
@@ -166,6 +176,7 @@ function SetupWizardContent({
   const queryClient = useQueryClient();
   const demo = useOptionalDemo();
   const isDemoMode = Boolean(demo?.isDemoMode);
+  const [hasOpenedCsvModal, setHasOpenedCsvModal] = useState(false);
   const normalizedInitialSavedConfig = initialSavedConfig
     ? {
       ...initialSavedConfig,
@@ -1269,7 +1280,10 @@ function SetupWizardContent({
                 type="button"
                 variant="primary"
                 disabled={loading}
-                onClick={() => openModal('csv')}
+                onClick={() => {
+                  setHasOpenedCsvModal(true);
+                  openModal('csv');
+                }}
                 className="flex-1 py-3"
               >
                 Import Guest List CSV
@@ -1370,14 +1384,16 @@ function SetupWizardContent({
             onClose={closeModal}
           />
 
-          <CsvImportWizardModal
-            isOpen={activeModal === 'csv'}
-            onClose={closeModal}
-            onImportComplete={handleGuestImportComplete}
-            existingCodes={invitationCodes
-              .map((c) => c.code)
-              .filter((code): code is string => Boolean(code && code.trim()))}
-          />
+          {(hasOpenedCsvModal || activeModal === 'csv') && (
+            <CsvImportWizardModal
+              isOpen={activeModal === 'csv'}
+              onClose={closeModal}
+              onImportComplete={handleGuestImportComplete}
+              existingCodes={invitationCodes
+                .map((c) => c.code)
+                .filter((code): code is string => Boolean(code && code.trim()))}
+            />
+          )}
         </>
       )}
     </main>

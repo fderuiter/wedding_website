@@ -7,6 +7,7 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import { Overlay } from '@/components/ui/Overlay';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
 import RegistryItemCard from '../RegistryItemCard';
+import type { SimulatedTestCardId } from '../SimulatedCardCheckout';
 import { GuestSessionProvider } from '@/features/registry';
 import { resetDemoState, setDemoArchetype } from '@/lib/demo/demoStore';
 
@@ -21,7 +22,13 @@ jest.mock('next/navigation', () => ({
   }),
 }));
 
-function LiveDemoRegistryItemHarness({ itemIndex = 3 }: { itemIndex?: number }) {
+function LiveDemoRegistryItemHarness({
+  itemIndex = 3,
+  initialSimulatedCardId,
+}: {
+  itemIndex?: number;
+  initialSimulatedCardId?: SimulatedTestCardId;
+}) {
   const demo = useOptionalDemo();
   const item = demo?.activeDataset.registryItems[itemIndex];
   if (!demo || !item) return null;
@@ -68,6 +75,7 @@ function LiveDemoRegistryItemHarness({ itemIndex = 3 }: { itemIndex?: number }) 
           titleId={modalTitleId}
           onClose={jest.fn()}
           onContribute={handleContribute}
+          initialSimulatedCardId={initialSimulatedCardId}
         />
       </Overlay>
     </main>
@@ -77,9 +85,11 @@ function LiveDemoRegistryItemHarness({ itemIndex = 3 }: { itemIndex?: number }) 
 function renderDemoItemModal({
   enabled = true,
   itemIndex = 3,
+  initialSimulatedCardId,
 }: {
   enabled?: boolean;
   itemIndex?: number;
+  initialSimulatedCardId?: SimulatedTestCardId;
 } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -91,7 +101,10 @@ function renderDemoItemModal({
         <ToastProvider>
           <DemoProvider enabled={enabled}>
             <GuestSessionProvider>
-              <LiveDemoRegistryItemHarness itemIndex={itemIndex} />
+              <LiveDemoRegistryItemHarness
+                itemIndex={itemIndex}
+                initialSimulatedCardId={initialSimulatedCardId}
+              />
             </GuestSessionProvider>
           </DemoProvider>
         </ToastProvider>
@@ -159,20 +172,42 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
     expect(screen.queryByTestId('simulated-card-checkout')).not.toBeInTheDocument();
   });
 
-  it('unlocks physical claim, direct transfer, and non-charging simulated card checkout on sample items without loading js.stripe.com', () => {
+  it('blocks declined simulated cards even if a guest submits before SimulatedCardCheckout finishes loading', async () => {
+    // Run BEFORE any test triggers SimulatedCardCheckout's dynamic chunk resolution
+    renderDemoItemModal({
+      enabled: true,
+      itemIndex: 3,
+      initialSimulatedCardId: 'declined_insufficient_funds',
+    });
+
+    // Wait for ActiveDemoProvider to mount RegistryItemCard, then submit immediately
+    const nameInput = await screen.findByLabelText(/Your Name/i);
+    fireEvent.change(nameInput, { target: { value: 'Fast Submitter' } });
+    fireEvent.change(screen.getByLabelText(/Contribution Amount/i), {
+      target: { value: '75' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Submit Contribution$/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/Your test card ending in 0002 was declined/i);
+    expect(screen.queryByText(/Contribution Confirmed!/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('live-item-contributed')).toHaveTextContent('0');
+  });
+
+  it('unlocks physical claim, direct transfer, and non-charging simulated card checkout on sample items without loading js.stripe.com', async () => {
     // Index 0 in classic archetype is KitchenAid Stand Mixer (PHYSICAL)
     renderDemoItemModal({ enabled: true, itemIndex: 0 });
 
+    expect(await screen.findByTestId('payment-mode-claim')).toBeInTheDocument();
     expect(screen.queryByText(/Demo \/ Sample Registry Item/i)).not.toBeInTheDocument();
 
     // All three modes are selectable
-    expect(screen.getByTestId('payment-mode-claim')).toBeInTheDocument();
     expect(screen.getByTestId('payment-mode-direct')).toBeInTheDocument();
     expect(screen.getByTestId('payment-mode-card')).toBeInTheDocument();
 
-    // Switch to Card Checkout on physical item
+    // Switch to Card Checkout on physical item (lazy-loads SimulatedCardCheckout)
     fireEvent.click(screen.getByTestId('payment-mode-card'));
-    expect(screen.getByTestId('simulated-card-checkout')).toBeInTheDocument();
+    expect(await screen.findByTestId('simulated-card-checkout')).toBeInTheDocument();
     expect(screen.getByText(/Non-Charging Demo Checkout/i)).toBeInTheDocument();
 
     expect(document.querySelectorAll('script[src*="js.stripe.com"]')).toHaveLength(0);
@@ -182,7 +217,7 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
     // Index 3 in classic archetype is Honeymoon Experience Fund ($1,500 CASH_FUND)
     renderDemoItemModal({ enabled: true, itemIndex: 3 });
 
-    expect(screen.getByTestId('simulated-card-checkout')).toBeInTheDocument();
+    expect(await screen.findByTestId('simulated-card-checkout')).toBeInTheDocument();
     expect(screen.getByTestId('live-item-contributed')).toHaveTextContent('0');
 
     // Fill contributor name and $100 amount
@@ -228,6 +263,8 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
   it('displays an inline error alert on declined test card and leaves item funding totals unchanged', async () => {
     renderDemoItemModal({ enabled: true, itemIndex: 3 });
 
+    expect(await screen.findByTestId('simulated-card-checkout')).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText(/Your Name/i), {
       target: { value: 'Declined Tester' },
     });
@@ -249,7 +286,7 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
     setDemoArchetype('destination');
     renderDemoItemModal({ enabled: true, itemIndex: 0 });
 
-    const codeInput = screen.getByLabelText(/Invitation Code/i);
+    const codeInput = await screen.findByLabelText(/Invitation Code/i);
     fireEvent.change(codeInput, { target: { value: 'RODRIGUEZ2026' } });
     fireEvent.click(screen.getByRole('button', { name: /Verify/i }));
 
@@ -258,10 +295,10 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
     });
   });
 
-  it('supports roving arrow-key navigation across simulated test cards and billing ZIP input', () => {
+  it('supports roving arrow-key navigation across simulated test cards and billing ZIP input', async () => {
     renderDemoItemModal({ enabled: true, itemIndex: 3 });
 
-    const visaBtn = screen.getByTestId('simulated-card-option-approved_visa');
+    const visaBtn = await screen.findByTestId('simulated-card-option-approved_visa');
     const mastercardBtn = screen.getByTestId('simulated-card-option-approved_mastercard');
     const declinedBtn = screen.getByTestId('simulated-card-option-declined_insufficient_funds');
 
@@ -292,6 +329,7 @@ describe('SimulatedCardCheckout & Demo Registry Item Flows', () => {
 
   it('has zero axe accessibility violations on SimulatedCardCheckout inside RegistryItemCard', async () => {
     const { baseElement } = renderDemoItemModal({ enabled: true, itemIndex: 3 });
+    expect(await screen.findByTestId('simulated-card-checkout')).toBeInTheDocument();
     const results = await axe(baseElement);
     expect(results).toHaveNoViolations();
   });

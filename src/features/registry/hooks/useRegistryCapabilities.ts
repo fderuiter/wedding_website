@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/apiClient';
 import { isValidStripePublishableKey, type StripeCapability } from '@/lib/stripe.client';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
-import { DEMO_SHIPPING_ADDRESS } from '@/lib/demo/demoSeed';
 import type { RegistryShippingAddress } from '../types';
 
 interface RegistryCapabilitiesPayload extends StripeCapability {
@@ -110,13 +109,13 @@ export function useRegistryCapabilities(
     };
   }, [enabled, isDemoMode]);
 
-  if (enabled && isDemoMode) {
+  if (enabled && isDemoMode && demo) {
     return {
       cardCheckoutEnabled: true,
       stripePublishableKey: null,
       defaultPaymentHandleType: 'Venmo',
       defaultPaymentHandle: '@alex-and-taylor',
-      shippingAddress: DEMO_SHIPPING_ADDRESS,
+      shippingAddress: demo.shippingAddress,
       isCapabilitiesLoading: false,
     };
   }
