@@ -60,6 +60,7 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
     normalizedPathname === '/api/admin/setup' ||
     normalizedPathname === '/api/health' ||
     normalizedPathname === '/api/live' ||
+    normalizedPathname === '/api/og' ||
     normalizedPathname === '/api/ready'
   );
 }
@@ -67,11 +68,11 @@ function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean 
 export function withApiMiddleware(
   handler: OptionalReqRouteHandler,
   options?: ApiMiddlewareOptions
-): (req?: NextRequest, context?: any) => Promise<NextResponse>;
+): (req?: NextRequest | Request, context?: any) => Promise<NextResponse>;
 export function withApiMiddleware(
   handler: RouteHandler,
   options?: ApiMiddlewareOptions
-): (req: NextRequest, context?: any) => Promise<NextResponse>;
+): (req: NextRequest | Request, context?: any) => Promise<NextResponse>;
 export function withApiMiddleware(
   handler: RouteHandler | OptionalReqRouteHandler,
   options?: ApiMiddlewareOptions
@@ -395,6 +396,8 @@ export function withApiMiddleware(
     }
   };
 
-  return async (req?: NextRequest, context?: any): Promise<NextResponse> =>
-    runWithRequestContext(req, () => executeWithMiddleware(req, context));
+  return async (req?: NextRequest | Request, context?: any): Promise<NextResponse> =>
+    runWithRequestContext(req as NextRequest | undefined, () =>
+      executeWithMiddleware(req as NextRequest | undefined, context)
+    );
 }

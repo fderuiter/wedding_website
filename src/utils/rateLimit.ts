@@ -26,6 +26,7 @@ interface RateLimitStore {
 
 interface RateLimitBehaviorOptions {
   increment?: boolean;
+  ipOnly?: boolean;
 }
 
 export type RateLimitBucket = 'general' | 'auth';
@@ -98,6 +99,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/live',
   '/api/media',
   '/api/media/export',
+  '/api/og',
   '/api/photos',
   '/api/photos/upload',
   '/api/ready',
@@ -740,7 +742,8 @@ export async function rateLimit(
     return null;
   }
 
-  const identifier = isLockoutEndpoint ? getClientIp(req) : await getSessionOrIp(req);
+  const identifier =
+    isLockoutEndpoint || behavior?.ipOnly ? getClientIp(req) : await getSessionOrIp(req);
   const key = buildRateLimitKey(rawPathname, identifier, keyPrefix);
   const now = Date.now();
   const info = generalStore.map.get(key);
