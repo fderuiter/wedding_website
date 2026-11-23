@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { ApiClient } from '@/lib/apiClient';
+import {
+  ApiClient,
+  attachResponsePaginationMeta,
+  getResponsePaginationMeta,
+  type ApiPaginationMeta,
+} from '@/lib/apiClient';
 import { generateSecureUUID } from '@/utils/uuid';
 import { ADMIN_ONBOARDING_MILESTONES_QUERY_KEY } from '@/lib/adminCacheSync';
 
@@ -34,14 +39,39 @@ function isPaginatedEntityCache<T>(value: unknown): value is PaginatedEntityCach
   );
 }
 
-function extractEntityItems<T>(res: unknown): T[] {
-  if (Array.isArray(res)) {
-    return res as T[];
-  }
+function extractEntityPaginationMeta<T>(res: unknown, items: T[]): ApiPaginationMeta {
+  const attached = getResponsePaginationMeta(res);
   if (isPaginatedEntityCache<T>(res)) {
-    return res.items;
+    const meta: ApiPaginationMeta = {
+      ...(typeof res.total === 'number' ? { totalCount: res.total } : {}),
+      ...(typeof res.page === 'number' ? { page: res.page } : {}),
+      ...(typeof res.limit === 'number' ? { limit: res.limit } : {}),
+      ...(typeof res.totalPages === 'number' ? { totalPages: res.totalPages } : {}),
+      ...(attached ?? {}),
+    };
+    if (meta.totalCount === undefined) {
+      meta.totalCount = items.length;
+    }
+    return meta;
   }
-  return [];
+  if (attached && Object.keys(attached).length > 0) {
+    return {
+      totalCount: attached.totalCount ?? items.length,
+      ...attached,
+    };
+  }
+  return { totalCount: items.length };
+}
+
+function extractEntityItems<T>(res: unknown): T[] {
+  let items: T[] = [];
+  if (Array.isArray(res)) {
+    items = [...(res as T[])];
+  } else if (isPaginatedEntityCache<T>(res)) {
+    items = [...res.items];
+  }
+  const meta = extractEntityPaginationMeta(res, items);
+  return attachResponsePaginationMeta(items, meta);
 }
 
 function unwrapEntityResponse<T>(res: unknown): T {
@@ -61,7 +91,19 @@ function updateEntityCache<T>(
     return nextItems.length > 0 ? nextItems : old;
   }
   if (Array.isArray(old)) {
-    return updater(old);
+    const nextItems = updater(old);
+    const prevMeta = getResponsePaginationMeta(old);
+    if (prevMeta) {
+      const nextTotal =
+        typeof prevMeta.totalCount === 'number'
+          ? Math.max(0, prevMeta.totalCount + totalDelta)
+          : nextItems.length;
+      return attachResponsePaginationMeta(nextItems, {
+        ...prevMeta,
+        totalCount: nextTotal,
+      });
+    }
+    return nextItems;
   }
   if (isPaginatedEntityCache<T>(old)) {
     const nextItems = updater(old.items);
@@ -118,6 +160,7 @@ export function useEntityOrchestration<T extends { id: string }>({
       const res = await apiClient.get<unknown>(fetchEndpoint ?? endpoint);
       return extractEntityItems<T>(res);
     },
+    structuralSharing: false,
     enabled,
   });
 
@@ -320,8 +363,13 @@ export function useEntityOrchestration<T extends { id: string }>({
     },
   });
 
+  const paginationMeta = getResponsePaginationMeta(data);
+  const totalCount = paginationMeta?.totalCount ?? data.length;
+
   return {
     data,
+    totalCount,
+    paginationMeta,
     isLoading,
     isError,
     error,

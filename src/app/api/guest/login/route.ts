@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
 import { GuestLoginSchema } from '@/utils/validation';
@@ -72,7 +73,13 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     return response;
   }
 
-  let invite: { id?: string; code: string; guestName: string; isSample?: boolean } | null = null;
+  let invite: {
+    id?: string;
+    code: string;
+    guestName: string;
+    isSample?: boolean;
+    partyTags?: string[];
+  } | null = null;
   if (trimmedCode.length > 0) {
     if (typeof prisma.invitationCode?.findFirst === 'function') {
       invite = await prisma.invitationCode.findFirst({
@@ -88,7 +95,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  if (invite && !invite.isSample) {
+  if (invite && !invite.isSample && !hasAddressCollectionTag(invite.partyTags)) {
     if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
       await prisma.broadcastRecipient.updateMany({
         where: {

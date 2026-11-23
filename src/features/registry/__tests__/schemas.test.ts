@@ -13,6 +13,25 @@ import {
 } from '@/utils/registryPagination';
 
 describe('Registry Zod v4 Schema Validation', () => {
+  const validPostalFields = {
+    addressLine1: '123 Maple St',
+    city: 'Denver',
+    state: 'CO',
+    zipCode: '80202',
+  };
+
+  it('requires addressLine1, city, state, and zipCode in PublicAddressCollectSchema', () => {
+    for (const requiredKey of ['addressLine1', 'city', 'state', 'zipCode'] as const) {
+      const incomplete = {
+        guestName: 'Alex Guest',
+        ...validPostalFields,
+        [requiredKey]: '   ',
+      };
+      const result = PublicAddressCollectSchema.safeParse(incomplete);
+      expect(result.success).toBe(false);
+    }
+  });
+
   it('enforces bounded 500-item catalog limit while retaining default limit of 20 on RegistryQuerySchema', () => {
     const defaultParsed = RegistryQuerySchema.safeParse({});
     expect(defaultParsed.success).toBe(true);
@@ -82,6 +101,7 @@ describe('Registry Zod v4 Schema Validation', () => {
     const publicCollect = PublicAddressCollectSchema.safeParse({
       guestName: 'Alex Guest',
       email: '  alex@example.com  ',
+      ...validPostalFields,
     });
     expect(publicCollect.success).toBe(true);
     if (publicCollect.success) {
@@ -93,14 +113,27 @@ describe('Registry Zod v4 Schema Validation', () => {
     const whitespaceOnly = PublicAddressCollectSchema.safeParse({
       guestName: 'Alex Guest',
       email: '   ',
+      ...validPostalFields,
     });
     expect(whitespaceOnly.success).toBe(false);
     if (!whitespaceOnly.success) {
       expect(whitespaceOnly.error.issues[0].message).toBe('Invalid email address.');
     }
 
-    expect(PublicAddressCollectSchema.safeParse({ guestName: 'Alex Guest', email: '' }).success).toBe(true);
-    expect(PublicAddressCollectSchema.safeParse({ guestName: 'Alex Guest', email: null }).success).toBe(true);
+    expect(
+      PublicAddressCollectSchema.safeParse({
+        guestName: 'Alex Guest',
+        email: '',
+        ...validPostalFields,
+      }).success
+    ).toBe(true);
+    expect(
+      PublicAddressCollectSchema.safeParse({
+        guestName: 'Alex Guest',
+        email: null,
+        ...validPostalFields,
+      }).success
+    ).toBe(true);
   });
 
   it('extends media association fields on RegistryItemBaseSchema', () => {
@@ -123,6 +156,7 @@ describe('Registry Zod v4 Schema Validation', () => {
     expect(
       PublicAddressCollectSchema.safeParse({
         guestName: '<b data-canary="guest-html-marker">CanaryGuest</b>',
+        ...validPostalFields,
       }).success
     ).toBe(false);
 
@@ -130,12 +164,14 @@ describe('Registry Zod v4 Schema Validation', () => {
       PublicAddressCollectSchema.safeParse({
         guestName: 'Valid Guest',
         householdName: '<i data-canary="household-html-marker">CanaryHousehold</i>',
+        ...validPostalFields,
       }).success
     ).toBe(false);
 
     expect(
       PublicAddressCollectSchema.safeParse({
         guestName: 'Guest\r\nHeader',
+        ...validPostalFields,
       }).success
     ).toBe(false);
 
@@ -143,6 +179,7 @@ describe('Registry Zod v4 Schema Validation', () => {
       PublicAddressCollectSchema.safeParse({
         guestName: 'Valid Guest',
         householdName: 'Household\u0000Null',
+        ...validPostalFields,
       }).success
     ).toBe(false);
   });
@@ -152,6 +189,7 @@ describe('Registry Zod v4 Schema Validation', () => {
       guestName: "  Élodie O'Connor-St. Clair, Jr.  ",
       householdName: "  Famille O'Connor & Müller-Søren.  ",
       email: 'elodie@example.com',
+      ...validPostalFields,
     });
 
     expect(parsed.success).toBe(true);

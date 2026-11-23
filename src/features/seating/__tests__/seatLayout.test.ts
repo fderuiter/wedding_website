@@ -1,4 +1,5 @@
 import {
+  computeScaledTableDimensions,
   computeSeatPosition,
   repackTableSeatNumbers,
   resolveDetailedSeatAssignments,
@@ -237,6 +238,89 @@ describe('seatLayout shared seating geometry and seat resolution', () => {
       const repacked = repackTableSeatNumbers([coupleAtSeat8, singleAtSeat2], 6);
       expect(repacked.get('g-single-2')).toBe(2);
       expect(repacked.get('g-couple-high')).toBe(3);
+    });
+  });
+
+  describe('computeScaledTableDimensions (WCAG 2.5.8 target spacing across capacities 1..50)', () => {
+    it('preserves user dimensions for zero-capacity landmarks and low-capacity standard tables', () => {
+      expect(
+        computeScaledTableDimensions({
+          shape: 'dance-floor',
+          capacity: 0,
+          width: 220,
+          height: 180,
+          rotation: 45,
+        })
+      ).toEqual({ width: 220, height: 180 });
+
+      expect(
+        computeScaledTableDimensions({
+          shape: 'round',
+          capacity: 8,
+          width: 120,
+          height: 120,
+          rotation: 0,
+        })
+      ).toEqual({ width: 120, height: 120 });
+
+      expect(
+        computeScaledTableDimensions({
+          shape: 'rectangular',
+          capacity: 8,
+          width: 250,
+          height: 100,
+          rotation: 0,
+        })
+      ).toEqual({ width: 250, height: 100 });
+    });
+
+    it('guarantees >= 24px screen-axis separation across capacities 1..50, shapes, and rotation angles', () => {
+      const shapes = ['round', 'rectangular', 'square', 'head', 'sweetheart'] as const;
+      const rotations = [0, 15, 30, 45, 60, 90];
+
+      for (const shape of shapes) {
+        for (const capacity of [1, 2, 4, 8, 12, 20, 32, 50]) {
+          for (const rotation of rotations) {
+            const { width, height } = computeScaledTableDimensions({
+              shape,
+              capacity,
+              width: 120,
+              height: 100,
+              rotation,
+            });
+            expect(width).toBeGreaterThanOrEqual(120);
+            expect(height).toBeGreaterThanOrEqual(100);
+
+            if (capacity < 2) continue;
+
+            const rad = (rotation * Math.PI) / 180;
+            const screenPositions = Array.from({ length: capacity }, (_, idx) => {
+              const local = computeSeatPosition({
+                shape,
+                width,
+                height,
+                capacity,
+                seatNumber: idx + 1,
+                offset: 18,
+              });
+              const dx = local.x - width / 2;
+              const dy = local.y - height / 2;
+              return {
+                x: dx * Math.cos(rad) - dy * Math.sin(rad),
+                y: dx * Math.sin(rad) + dy * Math.cos(rad),
+              };
+            });
+
+            for (let i = 0; i < screenPositions.length; i++) {
+              for (let j = i + 1; j < screenPositions.length; j++) {
+                const distX = Math.abs(screenPositions[i].x - screenPositions[j].x);
+                const distY = Math.abs(screenPositions[i].y - screenPositions[j].y);
+                expect(Math.max(distX, distY)).toBeGreaterThanOrEqual(24);
+              }
+            }
+          }
+        }
+      }
     });
   });
 });

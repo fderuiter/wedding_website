@@ -22,6 +22,10 @@ export interface GuestInviteSessionPayload {
   exp?: number;
 }
 
+export async function getGuestSessionSecret(): Promise<string> {
+  return resolveGuestSigningSecret();
+}
+
 /**
  * Signs a guest invitation payload into a JWT-like compact token with 7-day expiration.
  */
@@ -40,7 +44,7 @@ export async function signGuestInviteSessionToken(
     iat,
     exp,
   };
-  const secret = resolveGuestSigningSecret();
+  const secret = await getGuestSessionSecret();
   return signCompactToken(fullPayload, secret);
 }
 
@@ -53,7 +57,7 @@ export async function verifyGuestInviteSessionToken(
   if (!token || typeof token !== 'string') return null;
 
   try {
-    const secret = resolveGuestSigningSecret();
+    const secret = await getGuestSessionSecret();
     const payload = await verifyCompactToken<GuestInviteSessionPayload>(token, secret);
     if (!payload || !payload.code || !payload.guestName) {
       return null;

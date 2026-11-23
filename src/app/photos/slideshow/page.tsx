@@ -1,4 +1,5 @@
 import { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { contentService } from '@/features/content';
 import type { ContentNodeDTO } from '@/features/content';
@@ -6,6 +7,12 @@ import { withPageQuery } from '@/lib/query-wrapper';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
+import { buildSignedPhotoUploadUrl } from '@/core/auth/photoUploadToken';
+import {
+  isHostAllowed,
+  resolveRequestHost,
+  resolveRequestProtocol,
+} from '@/utils/hostValidation';
 import { ReceptionSlideshowClient, SlideshowPhoto } from '@/components/photos/ReceptionSlideshowClient';
 
 export const metadata: Metadata = {
@@ -24,6 +31,10 @@ export const metadata: Metadata = {
  */
 export default async function PhotosSlideshowPage() {
   await enforceActiveGuestPageSession();
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
   const config = await getAppConfig();
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();
@@ -68,9 +79,47 @@ export default async function PhotosSlideshowPage() {
     })
     .filter((item): item is SlideshowPhoto => item !== null);
 
-  const uploadUrl = config.baseUrl
-    ? `${config.baseUrl.replace(/\/$/, '')}/photos?tab=guest`
-    : undefined;
+  let uploadUrl: string | undefined;
+  if (isStaticExport) {
+    uploadUrl = config.baseUrl
+      ? `${config.baseUrl.replace(/\/$/, '')}/photos?tab=guest`
+      : undefined;
+  } else {
+    let headerHost: string | undefined;
+    let headerProto: 'http' | 'https' | undefined;
+    try {
+      const headerStore = await headers();
+      if (headerStore && typeof headerStore.get === 'function') {
+        headerHost = resolveRequestHost(headerStore) ?? undefined;
+        headerProto =
+          resolveRequestProtocol(
+            headerStore,
+            process.env.NODE_ENV === 'production' ? 'https' : 'http'
+          ) ?? undefined;
+      }
+    } catch {
+      // Request headers may be unavailable in isolated unit test renders
+    }
+
+    const cleanConfigured = config.baseUrl?.trim().replace(/\/+$/, '') || '';
+    let origin = cleanConfigured;
+    if (!origin && headerHost && isHostAllowed(headerHost)) {
+      const protocol =
+        headerProto === 'https' || headerProto === 'http'
+          ? headerProto
+          : process.env.NODE_ENV === 'production'
+            ? 'https'
+            : 'http';
+      origin = `${protocol}://${headerHost}`;
+    }
+
+    try {
+      const signed = await buildSignedPhotoUploadUrl(origin, config.guestPhotoQrTokenVersion);
+      uploadUrl = signed.uploadUrl;
+    } catch {
+      uploadUrl = origin ? `${origin}/photos?tab=guest` : '/photos?tab=guest';
+    }
+  }
 
   return (
     <ReceptionSlideshowClient

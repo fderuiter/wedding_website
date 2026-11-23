@@ -15,7 +15,11 @@ import {
   type RsvpCutoffEvaluation,
 } from '@/utils/rsvpDeadline';
 import { isPrivateContentNode } from '@/features/content';
-import { getAttendanceStatus, extractDietaryTags } from '@/features/registry';
+import {
+  getAttendanceStatus,
+  extractDietaryTags,
+  hasAddressCollectionTag,
+} from '@/features/registry';
 import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 import {
   SubEventRsvpSubmissionItem,
@@ -2111,7 +2115,9 @@ export class SubEventService {
       ]);
 
     const inviteList: any[] = Array.isArray(invitations)
-      ? (isStatic ? invitations : invitations.filter((inv: any) => !inv?.isSample))
+      ? invitations.filter(
+        (inv: any) => (isStatic || !inv?.isSample) && !hasAddressCollectionTag(inv?.partyTags)
+      )
       : [];
     const subEventList: any[] = Array.isArray(subEvents) ? subEvents : [];
     const inviteById = new Map<string, any>(inviteList.map((inv) => [inv.id, inv]));

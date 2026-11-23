@@ -4,6 +4,7 @@ import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 import { resolveTenantClaimsForSigning } from '@/core/auth/tenantClaims.node';
+import { hasAddressCollectionTag } from '@/features/registry';
 
 export const GET = withApiMiddleware(async (request: NextRequest) => {
   const { searchParams } = new URL(request.url);
@@ -17,7 +18,7 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     where: { code }
   });
 
-  if (!invite || invite.isSample) {
+  if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
     throw new ApiError(404, 'Invalid invitation code.');
   }
 

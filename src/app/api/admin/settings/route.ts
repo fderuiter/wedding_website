@@ -53,12 +53,39 @@ async function resolveVenueCoordinatesIfZero<
   return data;
 }
 
+function normalizeSmtpHost(host: string | null | undefined): string {
+  if (typeof host !== 'string') return '';
+  return host.trim().replace(/^\[|\]$/g, '').trim().toLowerCase();
+}
+
+function canPreserveExistingSmtpPass(params: {
+  incomingHost: string | null | undefined;
+  existingHost: string | null | undefined;
+  smtpPort: number | null | undefined;
+  smtpSecure: boolean | null | undefined;
+}): boolean {
+  if (normalizeSmtpHost(params.incomingHost) !== normalizeSmtpHost(params.existingHost)) {
+    return false;
+  }
+  const resolvedPort = params.smtpPort ?? 587;
+  const tlsOrStartTlsApplies =
+    Boolean(params.smtpSecure) ||
+    resolvedPort === 465 ||
+    resolvedPort === 587 ||
+    resolvedPort === 2525;
+  return tlsOrStartTlsApplies;
+}
+
 function resolveSecretField(
   incoming: string | null | undefined,
   existingValue: string | null | undefined,
+  allowExistingFallback = true,
 ): string {
   if (typeof incoming === 'string' && incoming.trim().length > 0) {
     return incoming;
+  }
+  if (!allowExistingFallback) {
+    return '';
   }
   return existingValue ?? '';
 }
@@ -189,10 +216,23 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
       ...validData,
       themeTokens: cleanedThemeTokens,
     }),
+    autoApproveGuestPhotos:
+      typeof validData.autoApproveGuestPhotos === 'boolean'
+        ? validData.autoApproveGuestPhotos
+        : existing.autoApproveGuestPhotos,
     modules: mergedModules,
     showCountdown: mergedModules.countdown,
     showAddToCalendar: mergedModules.addToCalendar,
-    smtpPass: resolveSecretField(validData.smtpPass, existing.smtpPass),
+    smtpPass: resolveSecretField(
+      validData.smtpPass,
+      existing.smtpPass,
+      canPreserveExistingSmtpPass({
+        incomingHost: validData.smtpHost,
+        existingHost: existing.smtpHost,
+        smtpPort: validData.smtpPort,
+        smtpSecure: validData.smtpSecure,
+      }),
+    ),
     resendApiKey: resolveSecretField(
       validData.resendApiKey,
       existing.resendApiKey,
