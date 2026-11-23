@@ -1465,6 +1465,15 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
     );
   }
+  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
+  if (fs.existsSync(rolloutComposePath)) {
+    const rolloutComposeRaw = fs.readFileSync(rolloutComposePath, 'utf8');
+    if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-1\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
+      errors.push(
+        'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+      );
+    }
+  }
   for (const schemaKey of envSchemaKeys) {
     if (!composeContract.appEnvMap.has(schemaKey)) {
       errors.push(
