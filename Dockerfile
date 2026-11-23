@@ -3,7 +3,7 @@
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS base
 WORKDIR /app
 
-# Install OpenSSL and tini once for Prisma TLS, PID 1 signal forwarding, and zombie reaping
+# Install OpenSSL, CA certificates, and binutils for Prisma TLS, ELF stripping, and $PREFIX/etc/npmrc
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -11,143 +11,48 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends \
     openssl \
     ca-certificates \
-    tini && \
+    binutils && \
     mkdir -p /usr/local/etc && \
-    printf 'update-notifier=false\n' | tee /usr/local/etc/npmrc > /etc/npmrc
+    printf 'update-notifier=false\n' > /usr/local/etc/npmrc && \
+    strip --strip-unneeded /usr/local/bin/node
 
-# Isolated Prisma CLI stage (excludes Studio, @prisma/dev, and builder devDependencies; pinned to package-lock.json)
+# Isolated Prisma CLI stage pinned via committed lockfile (excludes Studio, @prisma/dev, fast-check, and @prisma/fetch-engine)
 FROM base AS prisma-cli
 WORKDIR /opt/prisma-cli
-COPY package-lock.json /tmp/package-lock.json
+COPY docker/prisma-cli/package.json docker/prisma-cli/package-lock.json ./
+COPY docker/prisma-cli/stubs ./stubs
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    node -e ' \
-      const fs = require("fs"); \
-      const path = require("path"); \
-      const lock = JSON.parse(fs.readFileSync("/tmp/package-lock.json", "utf8")); \
-      const srcPackages = lock.packages || {}; \
-      const prismaVersion = srcPackages["node_modules/prisma"]?.version; \
-      const configVersion = srcPackages["node_modules/@prisma/config"]?.version; \
-      const effectVersion = srcPackages["node_modules/effect"]?.version; \
-      if (!prismaVersion || !configVersion || !effectVersion) { \
-        throw new Error("Missing required Prisma CLI package entries in package-lock.json"); \
-      } \
-      const stubs = { \
-        "@prisma/studio-core": { \
-          dir: "stubs/studio-core", \
-          pkg: { \
-            name: "@prisma/studio-core", \
-            version: "0.0.0-disabled", \
-            private: true, \
-            exports: { \
-              "./data/bff": "./index.cjs", \
-              "./data/mysql2": "./index.cjs", \
-              "./data/node-sqlite": "./index.cjs", \
-              "./data/postgresjs": "./index.cjs" \
-            } \
-          }, \
-          code: "module.exports = {};\n" \
-        }, \
-        "@prisma/dev": { \
-          dir: "stubs/prisma-dev", \
-          pkg: { \
-            name: "@prisma/dev", \
-            version: "0.0.0-disabled", \
-            private: true, \
-            exports: { ".": "./index.cjs", "./internal/state": "./index.cjs" } \
-          }, \
-          code: "module.exports = { ServerState: { scan: async () => [] } };\n" \
-        }, \
-        "mysql2": { \
-          dir: "stubs/mysql2", \
-          pkg: { name: "mysql2", version: "0.0.0-disabled", private: true, main: "index.cjs" }, \
-          code: "module.exports = {};\n" \
-        }, \
-        "postgres": { \
-          dir: "stubs/postgres", \
-          pkg: { name: "postgres", version: "0.0.0-disabled", private: true, main: "index.cjs" }, \
-          code: "module.exports = {};\n" \
-        } \
-      }; \
-      for (const stub of Object.values(stubs)) { \
-        const fullDir = path.join("/opt/prisma-cli", stub.dir); \
-        fs.mkdirSync(fullDir, { recursive: true }); \
-        fs.writeFileSync(path.join(fullDir, "package.json"), JSON.stringify(stub.pkg, null, 2) + "\n"); \
-        fs.writeFileSync(path.join(fullDir, "index.cjs"), stub.code); \
-      } \
-      const rootPkg = { \
-        name: "prisma-cli-isolated", \
-        private: true, \
-        dependencies: { \
-          "@prisma/config": configVersion, \
-          "prisma": prismaVersion \
-        }, \
-        overrides: { \
-          "effect": effectVersion, \
-          "@prisma/studio-core": "file:stubs/studio-core", \
-          "@prisma/dev": "file:stubs/prisma-dev", \
-          "mysql2": "file:stubs/mysql2", \
-          "postgres": "file:stubs/postgres" \
-        } \
-      }; \
-      fs.writeFileSync("/opt/prisma-cli/package.json", JSON.stringify(rootPkg, null, 2) + "\n"); \
-      const outPackages = { "": { name: rootPkg.name, dependencies: rootPkg.dependencies } }; \
-      for (const [pkgName, stub] of Object.entries(stubs)) { \
-        outPackages[stub.dir] = { name: stub.pkg.name, version: stub.pkg.version }; \
-        outPackages["node_modules/" + pkgName] = { resolved: stub.dir, link: true }; \
-      } \
-      function resolveKey(parentKey, depName) { \
-        let prefix = parentKey; \
-        while (true) { \
-          const candidate = prefix ? prefix + "/node_modules/" + depName : "node_modules/" + depName; \
-          if (srcPackages[candidate]) return candidate; \
-          const prevIdx = prefix.lastIndexOf("/node_modules/"); \
-          if (prevIdx === -1) break; \
-          prefix = prefix.slice(0, prevIdx); \
-        } \
-        return "node_modules/" + depName; \
-      } \
-      const queue = ["node_modules/@prisma/config", "node_modules/prisma"]; \
-      const visited = new Set(); \
-      while (queue.length > 0) { \
-        const key = queue.shift(); \
-        if (visited.has(key)) continue; \
-        visited.add(key); \
-        const pkgName = key.replace(/^(?:.*\/)?node_modules\//, ""); \
-        if (stubs[pkgName]) continue; \
-        const entry = srcPackages[key]; \
-        if (!entry) throw new Error("Lockfile missing reachable package: " + key); \
-        const cloned = { ...entry }; \
-        delete cloned.dev; \
-        delete cloned.devOptional; \
-        if (cloned.dependencies) { \
-          cloned.dependencies = { ...cloned.dependencies }; \
-          for (const dep of Object.keys(cloned.dependencies)) { \
-            if (stubs[dep]) cloned.dependencies[dep] = "file:" + stubs[dep].dir; \
-            else queue.push(resolveKey(key, dep)); \
-          } \
-        } \
-        if (cloned.optionalDependencies) { \
-          for (const dep of Object.keys(cloned.optionalDependencies)) { \
-            if (!stubs[dep]) { \
-              const optKey = resolveKey(key, dep); \
-              if (srcPackages[optKey]) queue.push(optKey); \
-            } \
-          } \
-        } \
-        outPackages[key] = cloned; \
-      } \
-      fs.writeFileSync("/opt/prisma-cli/package-lock.json", JSON.stringify({ \
-        name: rootPkg.name, \
-        lockfileVersion: lock.lockfileVersion || 3, \
-        requires: true, \
-        packages: outPackages \
-      }, null, 2) + "\n"); \
-      fs.unlinkSync("/tmp/package-lock.json"); \
-    ' && \
-    npm ci --omit=dev --no-audit --no-fund && \
+    npm ci --install-links --omit=dev --no-audit --no-fund && \
     /opt/prisma-cli/node_modules/.bin/prisma --version | grep -q "schema-engine-cli" && \
+    printf '%s\n' \
+      '"use strict";' \
+      'Object.defineProperty(exports, "__esModule", { value: true });' \
+      > /opt/prisma-cli/node_modules/effect/dist/cjs/FastCheck.js && \
+    printf '%s\n' \
+      '"use strict";' \
+      'const fs = require("fs");' \
+      'const path = require("path");' \
+      'const { enginesVersion } = require("@prisma/engines-version");' \
+      'const engineDir = path.join(__dirname, "../");' \
+      'module.exports = {' \
+      '  enginesVersion,' \
+      '  getEnginesPath: () => engineDir,' \
+      '  ensureNeededBinariesExist: async () => {' \
+      '    if (!fs.readdirSync(engineDir).some((f) => f.startsWith("schema-engine-"))) {' \
+      '      throw new Error("Offline runtime: schema-engine binary missing");' \
+      '    }' \
+      '  },' \
+      '};' \
+      > /opt/prisma-cli/node_modules/@prisma/engines/dist/index.js && \
     rm -rf \
       /opt/prisma-cli/package-lock.json \
+      /opt/prisma-cli/stubs \
+      /opt/prisma-cli/node_modules/fast-check \
+      /opt/prisma-cli/node_modules/pure-rand \
+      /opt/prisma-cli/node_modules/@prisma/fetch-engine \
+      /opt/prisma-cli/node_modules/@prisma/engines/scripts \
+      /opt/prisma-cli/node_modules/@prisma/engines/dist/scripts \
+      /opt/prisma-cli/node_modules/@prisma/get-platform/dist/test-utils \
       /opt/prisma-cli/node_modules/prisma/build/studio.js \
       /opt/prisma-cli/node_modules/prisma/build/studio.css \
       /opt/prisma-cli/node_modules/prisma/build/xdg-open \
@@ -155,11 +60,14 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
       /opt/prisma-cli/node_modules/prisma/build/*.mysql.* \
       /opt/prisma-cli/node_modules/prisma/build/*.sqlite.* \
       /opt/prisma-cli/node_modules/prisma/build/*.sqlserver.* \
+      /opt/prisma-cli/node_modules/prisma/build/schema_engine_bg.* \
+      /opt/prisma-cli/node_modules/prisma/build/query_compiler_* \
       /opt/prisma-cli/node_modules/effect/src \
       /opt/prisma-cli/node_modules/effect/dist/esm \
       /opt/prisma-cli/node_modules/effect/dist/dts \
       /opt/prisma-cli/node_modules/.cache && \
     find /opt/prisma-cli/node_modules -type f \( -name "*.d.ts" -o -name "*.map" \) -delete && \
+    find /opt/prisma-cli/node_modules -type f \( -name "schema-engine-*" -o -name "*.node" \) -exec strip --strip-unneeded {} + && \
     /opt/prisma-cli/node_modules/.bin/prisma --version | grep -q "schema-engine-cli"
 
 # Builder stage
@@ -181,11 +89,26 @@ RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
     rm -rf \
       /app/public/mockServiceWorker.js \
       /app/.next/standalone/public/mockServiceWorker.js \
+      /app/.next/standalone/src \
       /app/.next/standalone/node_modules/@img/sharp-libvips-linuxmusl-* \
       /app/.next/standalone/node_modules/@img/sharp-linuxmusl-* \
       /app/.next/standalone/node_modules/@img/sharp-wasm32 \
-      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.standalone.js && \
-    find /app/.next/standalone/node_modules -type f \( -name "*.d.ts" -o -name "*.map" \) -delete && \
+      /app/.next/standalone/node_modules/pdfkit/.yarn \
+      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.standalone.js \
+      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.browser.js \
+      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.browser.mjs \
+      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.browser.old.js \
+      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.browser.old.mjs \
+      /app/.next/standalone/node_modules/pdfkit/js/pdfkit.old.js \
+      /app/.next/standalone/node_modules/pdfkit/lib/fs/browser.js \
+      /app/.next/standalone/node_modules/pdfkit/lib/zlib/browser.js \
+      /app/.next/standalone/node_modules/pdfkit/lib/stream/browser.js \
+      /app/.next/standalone/node_modules/fontkit/dist/browser.cjs \
+      /app/.next/standalone/node_modules/fontkit/dist/browser-module.mjs \
+      /app/.next/standalone/node_modules/fontkit/src && \
+    find /app/.next/standalone/node_modules -type d \( -name "test" -o -name "tests" -o -name "__tests__" \) -prune -exec rm -rf {} + && \
+    find /app/.next/standalone -type f \( -name "*.nft.json" -o -name "*.d.ts" -o -name "*.map" -o -path "*/src/*.ts" -o -path "*/src/*.tsx" \) -delete && \
+    find /app/.next/standalone/node_modules -type f -name "*.node" -exec strip --strip-unneeded {} + && \
     node -e ' \
       const fs = require("fs"); \
       const pkgPath = "/app/.next/standalone/package.json"; \
@@ -194,12 +117,23 @@ RUN --mount=type=cache,target=/app/.next/cache,sharing=locked \
       fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); \
     '
 
-# Runner stage
-FROM base AS runner
+# Runner stage: minimal Debian Bookworm runtime with stripped Node.js v22 binary and zero npm/npx/corepack/yarn
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 
-RUN addgroup --system --gid 1001 nodejs && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+    tini \
+    libstdc++6 && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --ingroup nodejs nextjs
+
+COPY --from=base /usr/local/bin/node /usr/local/bin/node
 
 # Copy entrypoint script and install isolated Prisma CLI wrapper on system PATH (owned by root:root)
 COPY docker-entrypoint.sh /usr/local/bin/
@@ -228,7 +162,7 @@ COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-p
 # Link ./node_modules/.bin/prisma (root:root), pre-create runtime cache/upload mountpoints, and strip setuid/setgid bits
 RUN mkdir -p /app/node_modules/.bin /app/.next/cache /app/public/uploads && \
     ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \
-    chown nextjs:nodejs /app/.next/cache /app/public/uploads && \
+    chown -R nextjs:nodejs /app/.next/cache /app/public/uploads && \
     find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
 USER nextjs
@@ -238,7 +172,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\*\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.js"]

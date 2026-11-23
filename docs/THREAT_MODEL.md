@@ -33,7 +33,7 @@ This application is a reusable, self-hostable wedding website template built on 
 +-----------------------------------------------------------------------------------+
                                        |
                                        v
-[Perimeter Control: Edge Middleware (`src/middleware.ts` — `isHostAllowed` Host Validation)]
+[Perimeter Control: Edge Middleware (`src/middleware.ts` — `isHostAllowed` & Probe `isHostSyntaxValid`)]
                                        |
                                        v
 [Scheduled Cron Gate: Edge Middleware (`/api/cron/*` `Authorization: Bearer <CRON_SECRET>`)]
@@ -58,7 +58,7 @@ This application is a reusable, self-hostable wedding website template built on 
 
 ### Active Security Controls
 
-1. **Perimeter Host Validation**: All incoming requests are filtered against `ALLOWED_HOSTS` in Edge Middleware (`src/middleware.ts`) before routing, preventing HTTP Host Header poisoning and cache poisoning.
+1. **Perimeter Host Validation**: Incoming requests to all application routes, webhooks, scheduled cron endpoints, uploads, and non-read-only probe methods are filtered against `ALLOWED_HOSTS` (`isHostAllowed` in `src/utils/hostValidation.ts`) in Edge Middleware (`src/middleware.ts`) before routing, preventing HTTP Host Header poisoning and cache poisoning. Stateless read-only (`GET` and `HEAD`) health probes (`/api/live`, `/api/health`, and `/api/ready`, which never read `Host` or construct URLs and return `Cache-Control: no-store`) enforce syntactic `Host` validation (`isHostSyntaxValid`) to block empty, whitespace, comma-separated, CRLF, and invalid-port headers while permitting orchestrator/internal probe hosts (e.g., `healthcheck.railway.app`, pod IPs, and loopback).
 2. **Scheduled Cron Bearer Authentication**: Edge Middleware (`src/middleware.ts`) intercepts `/api/cron` and `/api/cron/*` routes prior to cookie authentication and validates `Authorization: Bearer <CRON_SECRET>` using constant-time byte comparison (`timingSafeEqualJS`), rejecting unauthorized requests with `401 Unauthorized` in production (allowing non-empty Bearer tokens without `CRON_SECRET` only in non-production environments).
 3. **Password & Token Security**:
    - `ADMIN_PASSWORD` hashed using native `scrypt` with random salt.
@@ -69,7 +69,7 @@ This application is a reusable, self-hostable wedding website template built on 
 5. **Rate Limiting**: IP-based rate limiting executed inside `withApiMiddleware` (`src/utils/withApiMiddleware.ts`), gating forwarded IP headers behind `TRUST_PROXY` (`false` by default), isolating authentication and lookup lockouts (5 attempts per 15 minutes on `/api/admin/login`, `POST /api/admin/setup`, `/api/guest/login`, `/api/guest/lookup`, and `/api/registry/validate-code`) in a dedicated bounded store, exempting `/api/health` and `/api/live`, and normalizing dynamic API paths under the standard throttle (100 requests per minute).
 6. **SSRF Protections**: Registry scraper uses `safeFetch` which resolves DNS hostnames with `{ all: true }`, blocking private IPv4, IPv6, loopback, CGNAT, link-local metadata (e.g. `169.254.169.254`), and reserved ranges across all redirect hops.
 7. **File Upload Sanitization**: Uploaded images are passed through Sharp image processor sanitization, enforcing normalized file extensions and stripping dangerous metadata.
-8. **Log Redaction, Broadcast Safeguards, & DTO Secret Masking**: Logger automatically redacts sensitive key patterns (`password`, `passcode`, `secret`, `cookie`, `authorization`, `token`) prior to console emission, while `toPublicAppConfig`, `sanitizeAppConfigForBackup`, and `toAdminAppConfig` ([src/lib/config.ts](../src/lib/config.ts#L281-L474)) strip raw email/SMS provider secrets from PostgreSQL `AppConfig` payloads. Broadcast dispatchers sanitize CRLF headers, HTML-escape template variables, exclude `address-collection` leads unless explicitly targeted, and keep default `smtp` / `none` providers inert without live API keys (see [Guest Broadcasts & Messaging](./BROADCASTS.md)).
+8. **Log Redaction, Broadcast Safeguards, & DTO Secret Masking**: Logger automatically redacts sensitive key patterns (`password`, `passcode`, `secret`, `cookie`, `authorization`, `token`) prior to console emission, while `toPublicAppConfig`, `sanitizeAppConfigForBackup`, and `toAdminAppConfig` ([src/lib/config.ts](../src/lib/config.ts#L484-L634)) strip raw email/SMS provider secrets from PostgreSQL `AppConfig` payloads. Broadcast dispatchers sanitize CRLF headers, HTML-escape template variables, exclude `address-collection` leads unless explicitly targeted, and keep default `smtp` / `none` providers inert without live API keys (see [Guest Broadcasts & Messaging](./BROADCASTS.md)).
 9. **Defense in Depth & Least-Privilege Container Runtime**: Security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Strict-Transport-Security`, `Content-Security-Policy`) enforced on all responses, production `/api/ready` responses mask internal database error details, and OCI/Compose containers enforce `root:root` immutable `/app` code ownership, stripped setuid/setgid bits, `read_only: true` root filesystems (`tmpfs` for `/tmp` and `/app/.next/cache`), `cap_drop: [ALL]`, and `no-new-privileges:true`.
 
 ---

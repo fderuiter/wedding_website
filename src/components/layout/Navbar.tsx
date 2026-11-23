@@ -25,7 +25,7 @@ import {
   useGuestHelp,
 } from '@/components/guest/GuestHelpModal';
 import { deriveBrandMonogram } from '@/features/content';
-import { withBasePath } from '@/lib/basePath';
+import { MediaImage } from '@/components/MediaImage';
 
 /**
  * @interface NavbarProps
@@ -355,8 +355,8 @@ export default function Navbar({
                 className="flex items-center min-h-[24px] min-w-[24px] text-2xl font-bold text-[var(--color-primary-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 rounded"
               >
                 {brandLogoUrl ? (
-                  <img
-                    src={withBasePath(brandLogoUrl)}
+                  <MediaImage
+                    src={brandLogoUrl}
                     alt={brandLogoAlt}
                     className="h-10 max-h-12 w-auto object-contain"
                   />

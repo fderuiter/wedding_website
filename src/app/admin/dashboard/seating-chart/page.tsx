@@ -20,7 +20,12 @@ import {
 } from '@/features/seating';
 import { Dialog } from '@/components/ui/Dialog';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestPlusOneNames,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
+} from '@/features/registry';
 import { withBasePath } from '@/lib/basePath';
 
 function SeatingChartAdminContent() {
@@ -74,7 +79,11 @@ function SeatingChartAdminContent() {
         (g.code ? g.code.toLowerCase().includes(normalizedQuery) : false) ||
         (g.householdName && g.householdName.toLowerCase().includes(normalizedQuery)) ||
         (g.partyGroup && g.partyGroup.toLowerCase().includes(normalizedQuery)) ||
-        (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery)))
+        (g.partyTags && g.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery))) ||
+        (g.dietaryNotes && g.dietaryNotes.toLowerCase().includes(normalizedQuery)) ||
+        formatGuestPlusOneNames(g).toLowerCase().includes(normalizedQuery) ||
+        formatGuestMealSelections(g).toLowerCase().includes(normalizedQuery) ||
+        formatGuestCustomAnswers(g).toLowerCase().includes(normalizedQuery)
       );
     });
 
@@ -403,7 +412,14 @@ function SeatingChartAdminContent() {
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {selectedTable.invitationCodes.map((guest) => {
                         const isDeclined = getGuestAttendanceStatus(guest) === 'declined';
-                        const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+                        const dietaryBadges = getDietaryBadges(
+                          guest.dietaryNotes,
+                          guest.extraFields,
+                          guest.partyTags
+                        );
+                        const companionNames = formatGuestPlusOneNames(guest);
+                        const mealSelections = formatGuestMealSelections(guest);
+                        const customAnswers = formatGuestCustomAnswers(guest);
                         const visibleTags = (guest.partyTags || []).filter(
                           (tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG
                         );
@@ -418,7 +434,7 @@ function SeatingChartAdminContent() {
                           <span
                             key={guest.id}
                             data-testid={isDeclined ? 'inspector-declined-guest-chip' : 'inspector-guest-chip'}
-                            className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded ${
+                            className={`inline-flex flex-wrap items-center gap-1 text-[11px] px-2 py-0.5 rounded ${
                               isDeclined
                                 ? 'bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
                                 : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
@@ -428,6 +444,14 @@ function SeatingChartAdminContent() {
                               {seatPrefix}: {guest.guestName}
                               {companions.length > 0 ? ` (+${companions.length}: ${companions.join(', ')})` : ''}
                             </span>
+                            {companionNames && (
+                              <span
+                                data-testid="inspector-companion-names"
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-600/80 text-slate-800 dark:text-slate-100 font-medium"
+                              >
+                                +1: {companionNames}
+                              </span>
+                            )}
                             {isDeclined && (
                               <span
                                 data-testid="seated-declined-badge"
@@ -441,6 +465,14 @@ function SeatingChartAdminContent() {
                                 (🏠 {guest.householdName})
                               </span>
                             )}
+                            {mealSelections && (
+                              <span
+                                data-testid="inspector-meal-selections"
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+                              >
+                                🍽️ {mealSelections}
+                              </span>
+                            )}
                             {dietaryBadges.map((badge) => (
                               <span
                                 key={badge.category}
@@ -451,6 +483,14 @@ function SeatingChartAdminContent() {
                                 🍽️ {badge.shortLabel}
                               </span>
                             ))}
+                            {customAnswers && (
+                              <span
+                                data-testid="inspector-custom-answers"
+                                className="text-[9px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-200 dark:border-sky-800 font-medium"
+                              >
+                                💬 {customAnswers}
+                              </span>
+                            )}
                             {visibleTags.length > 0 && (
                               <span className="text-[9px] text-blue-800 dark:text-blue-200 ml-0.5">
                                 [{visibleTags.join(', ')}]

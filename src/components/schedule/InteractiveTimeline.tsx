@@ -361,12 +361,13 @@ export default function InteractiveTimeline({
           : Array.isArray(json.plusOneNames)
             ? json.plusOneNames
             : null;
-        if (Array.isArray(rawSavedNames)) {
-          setApiSavedPlusOneNames(
-            rawSavedNames.filter(
-              (n: unknown): n is string => typeof n === 'string' && n.trim().length > 0
-            )
-          );
+        const resolvedSavedNames = Array.isArray(rawSavedNames)
+          ? rawSavedNames.filter(
+            (n: unknown): n is string => typeof n === 'string' && n.trim().length > 0
+          )
+          : null;
+        if (resolvedSavedNames !== null) {
+          setApiSavedPlusOneNames(resolvedSavedNames);
         } else if (json.savedPlusOneNames === null || json.plusOneNames === null) {
           setApiSavedPlusOneNames(null);
         }
@@ -404,7 +405,7 @@ export default function InteractiveTimeline({
             userRsvp: item.userRsvp !== undefined ? item.userRsvp : null,
           }));
           setSubEventsFromApi(mapped);
-          initializeEvents(mapped);
+          initializeEvents(mapped, resolvedSavedNames);
         }
         setScheduleLoadError(null);
       } else if (res.status >= 500 && initialNodes.length === 0 && emptyStateMessage) {
@@ -1179,6 +1180,11 @@ export default function InteractiveTimeline({
                                         className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
                                       >
                                         <option value="">Select an entrée...</option>
+                                        {selectedMealId && !selectedMealObj && (
+                                          <option value={selectedMealId}>
+                                            {`${selectedMealId} (Unavailable — previously selected)`}
+                                          </option>
+                                        )}
                                         {eventMealOptions.map((opt) => (
                                           <option key={opt.id} value={opt.id}>
                                             {opt.dietaryTags.length > 0
@@ -1240,6 +1246,11 @@ export default function InteractiveTimeline({
                                           className="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
                                         >
                                           <option value="">Select an option...</option>
+                                          {currentAnswer && !question.options.includes(currentAnswer) && (
+                                            <option value={currentAnswer}>
+                                              {`${currentAnswer} (Unavailable — previously selected)`}
+                                            </option>
+                                          )}
                                           {question.options.map((choice) => (
                                             <option key={choice} value={choice}>
                                               {choice}

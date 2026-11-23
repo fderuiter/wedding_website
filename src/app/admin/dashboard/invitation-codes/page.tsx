@@ -65,6 +65,9 @@ function getGuestAttendingPlusOneCount(item: InvitationCodeDTO): number {
       : null;
 
   if (extra) {
+    if (typeof extra.plusOneCount === 'number' && Number.isFinite(extra.plusOneCount)) {
+      return Math.max(0, Math.trunc(extra.plusOneCount));
+    }
     if (typeof extra.attendingPlusOneCount === 'number' && Number.isFinite(extra.attendingPlusOneCount)) {
       return Math.max(0, Math.trunc(extra.attendingPlusOneCount));
     }
@@ -665,6 +668,8 @@ export default function InvitationCodesDashboardPage() {
         addToast('Sub-event created successfully.', 'success');
       }
       fetchSubEventsAndMatrix();
+      void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+      void fetchAll?.();
     } catch (e: unknown) {
       addToast(
         e instanceof Error && e.message
@@ -694,6 +699,8 @@ export default function InvitationCodesDashboardPage() {
       }
       addToast('Sub-event deleted successfully.', 'success');
       fetchSubEventsAndMatrix();
+      void queryClient.invalidateQueries({ queryKey: RSVP_SUMMARY_QUERY_KEY });
+      void fetchAll?.();
     } catch (e: unknown) {
       addToast(
         e instanceof Error && e.message ? e.message : 'Failed to delete sub-event.',
@@ -735,12 +742,13 @@ export default function InvitationCodesDashboardPage() {
   }, [codes]);
 
   const attendanceCounts = useMemo(() => {
+    const nonSampleCodes = codes.filter((c) => !c.isSample);
     let attending = 0;
     let declined = 0;
     let pending = 0;
     let attendingPlusOnes = 0;
 
-    for (const c of codes) {
+    for (const c of nonSampleCodes) {
       const status = getAttendanceStatus(c);
       if (status === 'attending') {
         attending++;
@@ -753,10 +761,11 @@ export default function InvitationCodesDashboardPage() {
     }
 
     const useServerGlobal =
-      Boolean(rsvpSummary?.global) && rsvpSummary!.global.totalInvitations === codes.length;
+      Boolean(rsvpSummary?.global) &&
+      rsvpSummary!.global.totalInvitations === nonSampleCodes.length;
 
     return {
-      all: codes.length,
+      all: nonSampleCodes.length,
       attending,
       declined,
       pending,
@@ -770,6 +779,7 @@ export default function InvitationCodesDashboardPage() {
   }, [codes, rsvpSummary]);
 
   const cateringSummary = useMemo(() => {
+    const nonSampleCodes = codes.filter((c) => !c.isSample);
     let totalWithRestrictions = 0;
     let glutenFree = 0;
     let vegetarian = 0;
@@ -780,32 +790,42 @@ export default function InvitationCodesDashboardPage() {
     let other = 0;
     const clientMealMap = new Map<string, { optionId: string; label: string; count: number }>();
 
-    for (const item of codes) {
-      if (getAttendanceStatus(item) === 'declined') continue;
+    for (const item of nonSampleCodes) {
+      const attendanceStatus = getAttendanceStatus(item);
+      if (attendanceStatus === 'declined') continue;
 
       const hasNotes = Boolean(item.dietaryNotes && item.dietaryNotes.trim());
       const notes = hasNotes ? item.dietaryNotes!.trim() : '';
       const allTags = extractDietaryTags(item.extraFields);
       const restrictionTags = allTags.filter((t) => t !== 'kids');
 
-      if (matchDietaryCategory(notes, 'kids', allTags)) {
-        kids++;
-      }
-
+      let itemStructuredKidsPlates = 0;
       const extra =
         item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
           ? (item.extraFields as Record<string, unknown>)
           : null;
-      if (extra && Array.isArray(extra.mealSelections)) {
+      if (attendanceStatus === 'attending' && extra && Array.isArray(extra.mealSelections)) {
         for (const entry of extra.mealSelections) {
           if (!entry || typeof entry !== 'object') continue;
-          const selections = (entry as Record<string, unknown>).selections;
-          if (!Array.isArray(selections)) continue;
+          const entryObj = entry as Record<string, unknown>;
+          const selections = Array.isArray(entryObj.selections)
+            ? entryObj.selections
+            : typeof entryObj.label === 'string'
+              ? [entryObj]
+              : [];
           for (const sel of selections) {
             if (!sel || typeof sel !== 'object') continue;
             const s = sel as Record<string, unknown>;
             const label = typeof s.label === 'string' ? s.label.trim() : '';
             const optionId = typeof s.optionId === 'string' && s.optionId.trim() ? s.optionId.trim() : label;
+            const selTags = Array.isArray(s.dietaryTags)
+              ? s.dietaryTags
+                .filter((t): t is string => typeof t === 'string')
+                .map((t) => t.trim().toLowerCase())
+              : [];
+            if (selTags.includes('kids')) {
+              itemStructuredKidsPlates += 1;
+            }
             if (!label) continue;
             const existing = clientMealMap.get(label);
             if (existing) {
@@ -815,6 +835,15 @@ export default function InvitationCodesDashboardPage() {
             }
           }
         }
+      }
+
+      const hasKidsPartyTag = Boolean(
+        item.partyTags?.some((t) => /^(kid|kids|child|children|kids[- ]meal)$/i.test(t.trim()))
+      );
+      if (itemStructuredKidsPlates > 0) {
+        kids += itemStructuredKidsPlates;
+      } else if (matchDietaryCategory(notes, 'kids', allTags) || hasKidsPartyTag) {
+        kids += 1;
       }
 
       if (!hasNotes && restrictionTags.length === 0) continue;
@@ -836,7 +865,8 @@ export default function InvitationCodesDashboardPage() {
     }
 
     const useServerSummary =
-      Boolean(rsvpSummary?.global) && rsvpSummary!.global.totalInvitations === codes.length;
+      Boolean(rsvpSummary?.global) &&
+      rsvpSummary!.global.totalInvitations === nonSampleCodes.length;
 
     const mealTotals =
       useServerSummary && Array.isArray(rsvpSummary!.global.mealTotals)
@@ -1442,7 +1472,7 @@ export default function InvitationCodesDashboardPage() {
             <FormGroup className="relative flex-1 max-w-md space-y-0">
               <Input
                 type="text"
-                placeholder="Search by name, code, email, household, tag..."
+                placeholder="Search by name, code, companion, meal, response, household, tag..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);

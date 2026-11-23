@@ -1012,6 +1012,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'ARCHITECTURE.md',
     'CHANGELOG.md',
     'DEPLOYMENT.md',
     'docs/upgrading.md',
@@ -1022,6 +1023,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    'scripts/generate-docs.ts',
     '.github/dependabot.yml',
     '.github/workflows/ci.yml',
     '.github/workflows/storybook.yml',
@@ -1315,9 +1317,44 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // Verify unescaped commas in gcloud --set-env-vars across all runbooks
+  for (const [relPath, content] of runbookContents.entries()) {
+    for (const line of extractFencedLogicalLines(content)) {
+      if (!/\bgcloud\b/.test(line)) {
+        continue;
+      }
+      const envVarsFlagRegex = /--(?:set|update)-env-vars(?:=|\s+)(?:"([^"]*)"|'([^']*)'|(\S+))/g;
+      let envFlagMatch: RegExpExecArray | null;
+      while ((envFlagMatch = envVarsFlagRegex.exec(line)) !== null) {
+        const rawSpec = envFlagMatch[1] ?? envFlagMatch[2] ?? envFlagMatch[3] ?? '';
+        let delimiter = ',';
+        let body = rawSpec;
+        const customDelimMatch = rawSpec.match(/^\^(.+?)\^(.*)$/);
+        if (customDelimMatch) {
+          delimiter = customDelimMatch[1];
+          body = customDelimMatch[2];
+        }
+        const entries = body.split(delimiter).filter((item) => item.length > 0);
+        const hasMalformedEntry =
+          entries.length === 0 ||
+          entries.some((entry) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(entry));
+        if (hasMalformedEntry) {
+          errors.push(
+            `${relPath}: Unescaped delimiter/comma in gcloud \`--set-env-vars\` value "${rawSpec}" (use \`^|^KEY=VAL1,VAL2|...\` custom delimiter escaping)`
+          );
+        }
+      }
+    }
+  }
+
   const gcpMigrateJobLines = gcpFencedLines.filter((line) =>
-    /\bgcloud\s+run\s+jobs\s+create\b/.test(line)
+    /\bgcloud\s+run\s+jobs\s+(?:create|update)\s+wedding-migrate\b/.test(line)
   );
+  if (gcpMigrateJobLines.length === 0) {
+    errors.push(
+      'docs/deployment/gcp-cloud-run.md: Missing `gcloud run jobs create wedding-migrate` secondary migration command'
+    );
+  }
   if (
     gcpMigrateJobLines.length === 0 ||
     !gcpMigrateJobLines.some((line) => line.includes('./node_modules/.bin/prisma,migrate,deploy'))
@@ -1326,13 +1363,32 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
     );
   }
+  for (const jobLine of gcpMigrateJobLines) {
+    if (!/--(?:set|add)-cloudsql-instances(?:=|\s+)\S+/.test(jobLine)) {
+      errors.push(
+        'docs/deployment/gcp-cloud-run.md: `wedding-migrate` Cloud Run Job must attach Cloud SQL via `--set-cloudsql-instances` (or `--add-cloudsql-instances`)'
+      );
+    }
+  }
+
+  for (const [relPath, content] of runbookContents.entries()) {
+    const invalidProbeFlagMatches = content.match(/--(?:startup|liveness)-probe-[a-z0-9-]+/gi) ?? [];
+    for (const invalidFlag of Array.from(new Set(invalidProbeFlagMatches))) {
+      errors.push(
+        `${relPath}: Invalid Cloud Run CLI flag "${invalidFlag}"; use composite \`--liveness-probe=httpGet.path=...,httpGet.port=...\` or Knative \`startupProbe\` / \`livenessProbe\` YAML blocks`
+      );
+    }
+  }
 
   if (
-    !gcpMd.includes('--startup-probe-request-path=/api/health') ||
-    !gcpMd.includes('--liveness-probe-request-path=/api/live')
+    !gcpMd.includes('--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30') ||
+    !gcpMd.includes('startupProbe:') ||
+    !gcpMd.includes('livenessProbe:') ||
+    !gcpMd.includes('path: /api/health') ||
+    !gcpMd.includes('path: /api/live')
   ) {
     errors.push(
-      'docs/deployment/gcp-cloud-run.md: Must configure `--startup-probe-request-path=/api/health` and `--liveness-probe-request-path=/api/live`'
+      'docs/deployment/gcp-cloud-run.md: Must document `--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30` and Knative `startupProbe` (`/api/health`) and `livenessProbe` (`/api/live`) YAML blocks'
     );
   }
 
@@ -1520,6 +1576,33 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  const dockerSection1 = extractSectionSlice(dockerMd, /^##\s+1\.\s+Database\b/, '## ');
+  const dockerSection6 = extractSectionSlice(dockerMd, /^##\s+6\.\s+Build\s+&\s+Deploy\b/, '## ');
+  for (const [secLabel, secContent] of [
+    ['Section 1', dockerSection1],
+    ['Section 6', dockerSection6],
+  ] as const) {
+    if (/^\s*(?:DATABASE_URL|POSTGRES_URL_NON_POOLING)=["']/m.test(secContent)) {
+      errors.push(
+        `docs/deployment/docker-vps.md (${secLabel}): Must not wrap \`.env\` DATABASE_URL / POSTGRES_URL_NON_POOLING values in quotes (breaks \`docker run --env-file\`)`
+      );
+    }
+  }
+  const dockerSection6FencedLines = extractFencedLogicalLines(dockerSection6);
+  const hasHostNodeHashCmd = dockerSection6FencedLines.some(
+    (line) =>
+      line.includes('generate-password-hash.mjs') && !/\bdocker\b/.test(line)
+  );
+  const hasDockerHashCmd = dockerSection6FencedLines.some(
+    (line) =>
+      line.includes('generate-password-hash.mjs') && /\bdocker\b/.test(line)
+  );
+  if (hasHostNodeHashCmd || !hasDockerHashCmd) {
+    errors.push(
+      'docs/deployment/docker-vps.md (Section 6): Must generate `ADMIN_HASH` inside Docker (`docker run --rm ... node scripts/generate-password-hash.mjs ...`) without requiring host `node`'
+    );
+  }
+
   const dockerRollbackSection = extractSectionSlice(dockerMd, /^##\s+8\.\s+Rollback\b/, '## ');
   const rollbackLines = extractFencedLogicalLines(dockerRollbackSection);
   for (const line of rollbackLines) {
@@ -1539,6 +1622,82 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
           `docs/deployment/docker-vps.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\``
         );
       }
+      if (/\$\{DB_(?:USER|PASSWORD|NAME)\b/.test(line)) {
+        errors.push(
+          `docs/deployment/docker-vps.md: Rollback \`docker run\` command must not expand unset host \${DB_*} variables over \`--env-file .env\`: \`${line}\``
+        );
+      }
+    }
+  }
+
+  // Verify Railway & Render PaaS runbook invariants (HOSTNAME=0.0.0.0, Pre-Deploy Command, Nixpacks devDependencies + postbuild, healthcheck.railway.app)
+  const railwayRenderMd = runbookContents.get('docs/deployment/railway-render.md') ?? '';
+  if (/\bRelease\s+Command\b/i.test(railwayRenderMd)) {
+    errors.push(
+      'docs/deployment/railway-render.md: References nonexistent Render "Release Command" (must use Render "Pre-Deploy Command")'
+    );
+  }
+  if (!/\bPre-Deploy\s+Command\b/.test(railwayRenderMd)) {
+    errors.push(
+      'docs/deployment/railway-render.md: Must document Render `Pre-Deploy Command` for `npx prisma migrate deploy`'
+    );
+  }
+  if (!/\|\s*`HOSTNAME`\s*\|/.test(railwayRenderMd) || !railwayRenderMd.includes('HOSTNAME=0.0.0.0')) {
+    errors.push(
+      'docs/deployment/railway-render.md: Must document `HOSTNAME` (`HOSTNAME=0.0.0.0`) in Section 2 and Nixpacks setup'
+    );
+  }
+  const railwayBuildSection = extractSectionSlice(
+    railwayRenderMd,
+    /^##\s+6\.\s+Build\s+&\s+Deploy\b/,
+    '## '
+  );
+  if (
+    !railwayBuildSection.includes('npm ci --include=dev') ||
+    !railwayBuildSection.includes('npm run postbuild')
+  ) {
+    errors.push(
+      'docs/deployment/railway-render.md (Section 6): Railway Nixpacks instructions must include `npm ci --include=dev` and `npm run postbuild`'
+    );
+  }
+  if (!railwayRenderMd.includes('healthcheck.railway.app')) {
+    errors.push(
+      'docs/deployment/railway-render.md: Must document `healthcheck.railway.app` probe host support'
+    );
+  }
+
+  // Verify Section 4 Asset Storage lists all six S3_* keys across all four provider guides
+  const providerGuides = [
+    'docs/deployment/docker-vps.md',
+    'docs/deployment/gcp-cloud-run.md',
+    'docs/deployment/railway-render.md',
+    'docs/deployment/vercel.md',
+  ] as const;
+  const requiredS3SectionKeys = [
+    'S3_BUCKET',
+    'S3_REGION',
+    'S3_ACCESS_KEY_ID',
+    'S3_SECRET_ACCESS_KEY',
+    'S3_ENDPOINT',
+    'S3_PUBLIC_URL',
+  ] as const;
+  for (const guideRelPath of providerGuides) {
+    const guideText = runbookContents.get(guideRelPath) ?? '';
+    const assetSection = extractSectionSlice(guideText, /^##\s+4\.\s+Asset\s+Storage\b/, '## ');
+    if (!assetSection) {
+      errors.push(`${guideRelPath}: Missing "## 4. Asset Storage" section`);
+      continue;
+    }
+    const missingS3Keys = requiredS3SectionKeys.filter((key) => !assetSection.includes(key));
+    if (missingS3Keys.length > 0) {
+      errors.push(
+        `${guideRelPath} (Section 4): Missing S3 configuration keys: ${missingS3Keys.join(', ')}`
+      );
+    }
+    if (!assetSection.includes('r2.cloudflarestorage.com') || !assetSection.includes('storage.googleapis.com')) {
+      errors.push(
+        `${guideRelPath} (Section 4): Must document both Cloudflare R2 (\`*.r2.cloudflarestorage.com\`) and Google Cloud Storage (\`https://storage.googleapis.com\`) S3_ENDPOINT examples`
+      );
     }
   }
 
@@ -1647,6 +1806,36 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  const architectureMd = fs.readFileSync(path.join(repoRoot, 'ARCHITECTURE.md'), 'utf8');
+  const staleArchitectureNodeRegex = new RegExp(
+    `^-\\s+\\*\\*Node\\.js\\*\\*:\\s*v(?!${expectedNodeMajor}\\b)\\d+`,
+    'm'
+  );
+  if (
+    !architectureMd.includes(`- **Node.js**: v${expectedNodeMajor}.x`) ||
+    staleArchitectureNodeRegex.test(architectureMd)
+  ) {
+    errors.push(
+      `ARCHITECTURE.md: Must specify \`- **Node.js**: v${expectedNodeMajor}.x\` matching .nvmrc`
+    );
+  }
+
+  const generateDocsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/generate-docs.ts'), 'utf8');
+  const generateEnvSpecsSection =
+    generateDocsRaw.split('export function generateEnvSpecs')[1]?.split('// 4. Update ARCHITECTURE.md')[0] ?? '';
+  const staleGenerateDocsNodeLiteralRegex = new RegExp(
+    `['"\`]v?(?!${expectedNodeMajor}\\b)\\d+\\.x['"\`]`
+  );
+  if (
+    !generateEnvSpecsSection ||
+    !generateEnvSpecsSection.includes(`${expectedNodeMajor}.x`) ||
+    staleGenerateDocsNodeLiteralRegex.test(generateEnvSpecsSection)
+  ) {
+    errors.push(
+      `scripts/generate-docs.ts: \`generateEnvSpecs\` must specify Node.js \`${expectedNodeMajor}.x\` matching .nvmrc`
+    );
+  }
+
   const workflowsCheckDir = path.join(repoRoot, '.github/workflows');
   const workflowYamlEntries = fs
     .readdirSync(workflowsCheckDir)
@@ -1672,9 +1861,19 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       if (!isSeq(stepsNode)) {
         continue;
       }
+      let jobHasSetupNode = false;
+      let jobInvokesNodeRuntime = false;
       for (const stepItem of stepsNode.items) {
         if (!isMap(stepItem)) {
           continue;
+        }
+        const runNode: unknown = stepItem.get('run', true);
+        if (
+          isScalar(runNode) &&
+          typeof runNode.value === 'string' &&
+          /(?:^|\s|&&|\|\||;)(?:node|npm|npx)\s/.test(runNode.value)
+        ) {
+          jobInvokesNodeRuntime = true;
         }
         const usesNode: unknown = stepItem.get('uses', true);
         if (
@@ -1684,6 +1883,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         ) {
           continue;
         }
+        jobHasSetupNode = true;
         setupNodeStepCount += 1;
         const withNode: unknown = stepItem.get('with', true);
         const versionFileNode: unknown = isMap(withNode)
@@ -1701,6 +1901,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
             `${wfRelPath} (job "${jobKey}"): \`actions/setup-node\` must set \`node-version-file: '.nvmrc'\` without hardcoded \`node-version\``
           );
         }
+      }
+      if (jobInvokesNodeRuntime && !jobHasSetupNode) {
+        errors.push(
+          `${wfRelPath} (job "${jobKey}"): Workflow job invokes node/npm/npx without \`actions/setup-node\` bound to \`.nvmrc\``
+        );
       }
     }
   }
@@ -1755,10 +1960,65 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `node` under `docker` ecosystem'
     );
   }
+  if (!hasDependabotMajorIgnore('docker-compose', 'postgres')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `postgres` under `docker-compose` ecosystem'
+    );
+  }
   if (!hasDependabotMajorIgnore('npm', '@types/node')) {
     errors.push(
       '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
     );
+  }
+
+  // Verify PostgreSQL 15 parity across docker-compose.yml, .github/workflows/ci.yml, and runtime/deployment docs
+  const expectedPostgresMajor = '15';
+  const expectedPostgresImagePrefix = `postgres:${expectedPostgresMajor}-alpine@sha256:`;
+  const mismatchedPostgresImageRegex = new RegExp(
+    `\\bpostgres:(?!//|${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}\\b)[A-Za-z0-9][A-Za-z0-9._@-]*`
+  );
+  if (
+    !composeRaw.includes(expectedPostgresImagePrefix) ||
+    mismatchedPostgresImageRegex.test(composeRaw)
+  ) {
+    errors.push(
+      `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
+    );
+  }
+  const ciDelegatesPostgresImageToCompose =
+    ciWorkflowRaw.includes('docker-compose.yml') &&
+    ciWorkflowRaw.includes('["services", "db", "image"]') &&
+    ciWorkflowRaw.includes('steps.resolve-db-image.outputs.db_image') &&
+    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
+  if (
+    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
+    mismatchedPostgresImageRegex.test(ciWorkflowRaw)
+  ) {
+    errors.push(
+      `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` (or \`\${{ needs.verify.outputs.db_image }}\`) matching docker-compose.yml`
+    );
+  }
+  if (
+    !runtimeContractMd.includes(`PostgreSQL version **${expectedPostgresMajor}.0 or higher**`) ||
+    !runtimeContractMd.includes(`PostgreSQL ${expectedPostgresMajor}-alpine`) ||
+    new RegExp(`PostgreSQL\\s+(?!${expectedPostgresMajor}-alpine\\b)\\d+-alpine`).test(runtimeContractMd)
+  ) {
+    errors.push(
+      `docs/runtime-contract.md: Must specify PostgreSQL ${expectedPostgresMajor}.0+ and \`PostgreSQL ${expectedPostgresMajor}-alpine\` matching docker-compose.yml`
+    );
+  }
+  for (const [docLabel, docContent] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/README.md', deploymentOverviewMd],
+  ] as const) {
+    if (
+      !docContent.includes(`PostgreSQL ${expectedPostgresMajor}+`) ||
+      new RegExp(`\\bPostgreSQL\\s+(?!${expectedPostgresMajor}\\+)\\d+\\+`).test(docContent)
+    ) {
+      errors.push(
+        `${docLabel}: Must specify \`PostgreSQL ${expectedPostgresMajor}+\` matching docker-compose.yml`
+      );
+    }
   }
 
   // Verify standalone /uploads/* rewrite and nosniff upload route contract
@@ -1771,12 +2031,54 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push('src/app/api/uploads/[...path]/route.ts: Must set `X-Content-Type-Options: nosniff` on responses');
   }
 
-  // Verify middleware webhook & uploads exclusions preserve ALLOWED_HOSTS check
+  // Verify container healthchecks call loopback /api/live directly without Host header overrides
+  const forbiddenHealthcheckHostOverride = /fetch\([^\r\n]*\/api\/live[^\r\n]*headers\s*:\s*\{\s*Host\b/i;
+  if (forbiddenHealthcheckHostOverride.test(dockerfileRaw)) {
+    errors.push('Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+  if (forbiddenHealthcheckHostOverride.test(composeRaw)) {
+    errors.push('docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
+  if (
+    fs.existsSync(rolloutComposePath) &&
+    forbiddenHealthcheckHostOverride.test(fs.readFileSync(rolloutComposePath, 'utf8'))
+  ) {
+    errors.push(
+      'docker-compose.rollout.yml: `app-standby` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
+    );
+  }
+  if (forbiddenHealthcheckHostOverride.test(dockerMd)) {
+    errors.push('docs/deployment/docker-vps.md: Documented `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
+  }
+
+  // Verify middleware probe syntax validation & webhook/uploads exclusions preserve ALLOWED_HOSTS check
   const middlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/middleware.ts'), 'utf8');
   const hostCheckIdx = middlewareRaw.indexOf('!isHostAllowed(');
+  const syntaxCheckIdx = middlewareRaw.indexOf('!isHostSyntaxValid(');
   const excludedGuardIdx = middlewareRaw.indexOf('const isExcluded');
   if (hostCheckIdx === -1 || excludedGuardIdx === -1 || hostCheckIdx > excludedGuardIdx) {
     errors.push('src/middleware.ts: `isHostAllowed` perimeter check must execute before `isExcluded` evaluation');
+  }
+  if (syntaxCheckIdx === -1 || syntaxCheckIdx > excludedGuardIdx) {
+    errors.push('src/middleware.ts: `isHostSyntaxValid` probe perimeter check must execute before `isExcluded` evaluation');
+  }
+  if (
+    !middlewareRaw.includes('isReadOnlyProbeRequest ? !isHostSyntaxValid(host) : !isHostAllowed(host)') ||
+    !middlewareRaw.includes("method === 'GET' || method === 'HEAD'")
+  ) {
+    errors.push(
+      'src/middleware.ts: Must validate `GET` and `HEAD` probes on `/api/live`, `/api/health`, and `/api/ready` with `isHostSyntaxValid` while enforcing `isHostAllowed` on all other requests'
+    );
+  }
+  if (
+    !runtimeContractMd.includes('startupProbe') ||
+    !runtimeContractMd.includes('--liveness-probe') ||
+    !runtimeContractMd.includes('healthcheck.railway.app')
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document `startupProbe`, `--liveness-probe`, and `healthcheck.railway.app` probe host behavior'
+    );
   }
   if (!middlewareRaw.includes("normalizedPath === '/api/registry/webhook/stripe'")) {
     errors.push('src/middleware.ts: Must exclude `/api/registry/webhook/stripe` from session cookie checks');
@@ -2657,6 +2959,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       if (/:latest(?:\s|$)/.test(line)) {
         errors.push(
           `docs/upgrading.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\` (Remediation: Deploy wedding-website:previous)`
+        );
+      }
+      if (/\$\{DB_(?:USER|PASSWORD|NAME)\b/.test(line)) {
+        errors.push(
+          `docs/upgrading.md: Rollback \`docker run\` command must not expand unset host \${DB_*} variables over \`--env-file .env\`: \`${line}\` (Remediation: Load DATABASE_URL from --env-file .env)`
         );
       }
     }

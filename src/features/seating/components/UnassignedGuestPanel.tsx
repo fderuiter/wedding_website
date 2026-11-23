@@ -4,7 +4,12 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestPlusOneNames,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
+} from '@/features/registry';
 import { SeatingTableDTO } from '../schemas';
 import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
@@ -407,7 +412,20 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
       const matchesGroup = guest.partyGroup ? guest.partyGroup.toLowerCase().includes(term) : false;
       const matchesTags = guest.partyTags ? guest.partyTags.some((t) => t.toLowerCase().includes(term)) : false;
       const matchesDiet = guest.dietaryNotes ? guest.dietaryNotes.toLowerCase().includes(term) : false;
-      return matchesName || matchesCode || matchesHousehold || matchesGroup || matchesTags || matchesDiet;
+      const matchesCompanions = formatGuestPlusOneNames(guest).toLowerCase().includes(term);
+      const matchesMeals = formatGuestMealSelections(guest).toLowerCase().includes(term);
+      const matchesAnswers = formatGuestCustomAnswers(guest).toLowerCase().includes(term);
+      return (
+        matchesName ||
+        matchesCode ||
+        matchesHousehold ||
+        matchesGroup ||
+        matchesTags ||
+        matchesDiet ||
+        matchesCompanions ||
+        matchesMeals ||
+        matchesAnswers
+      );
     });
   }, [eligibleGuests, rsvpFilter, partyGroupFilter, partyTagFilter, currentSearchQuery]);
 
@@ -565,64 +583,96 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
 
   const renderGuestBadges = (guest: InvitationCodeDTO) => {
     const status = getGuestAttendanceStatus(guest);
-    const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+    const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags);
     const partySize = getGuestPartySize(guest);
     const companions = partySize > 1 ? getGuestCompanionNames(guest) : [];
+    const companionNames = formatGuestPlusOneNames(guest);
+    const mealSelections = formatGuestMealSelections(guest);
+    const customAnswers = formatGuestCustomAnswers(guest);
 
     return (
-      <div className="flex flex-wrap gap-1 pt-0.5">
-        <span
-          data-testid="guest-rsvp-badge"
-          className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
-            status === 'attending'
-              ? 'bg-green-50 text-green-800 border-green-300 dark:bg-green-950/70 dark:text-green-200 dark:border-green-800'
-              : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-800'
-          }`}
-        >
-          {status === 'attending' ? 'Attending' : 'Pending'}
-        </span>
-
-        {partySize > 1 && (
+      <div className="space-y-1 pt-0.5">
+        <div className="flex flex-wrap gap-1">
           <span
-            data-testid="guest-party-size-badge"
-            title={`Party of ${partySize}: ${[guest.guestName, ...companions].join(', ')}`}
-            className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-300 dark:border-sky-800 font-semibold"
+            data-testid="guest-rsvp-badge"
+            className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium border ${
+              status === 'attending'
+                ? 'bg-green-50 text-green-800 border-green-300 dark:bg-green-950/70 dark:text-green-200 dark:border-green-800'
+                : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/70 dark:text-amber-200 dark:border-amber-800'
+            }`}
           >
-            +{partySize - 1} ({partySize} seats)
+            {status === 'attending' ? 'Attending' : 'Pending'}
           </span>
+
+          {partySize > 1 && (
+            <span
+              data-testid="guest-party-size-badge"
+              title={`Party of ${partySize}: ${[guest.guestName, ...companions].join(', ')}`}
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-800 dark:bg-sky-950/70 dark:text-sky-200 border border-sky-300 dark:border-sky-800 font-semibold"
+            >
+              +{partySize - 1} ({partySize} seats)
+            </span>
+          )}
+
+          {companionNames && (
+            <span
+              data-testid="guest-companion-badge"
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-medium"
+            >
+              +1: {companionNames}
+            </span>
+          )}
+
+          {guest.partyGroup && (
+            <span
+              data-testid="guest-party-group-badge"
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+            >
+              {guest.partyGroup}
+            </span>
+          )}
+
+          {dietaryBadges.map((badge) => (
+            <span
+              key={badge.category}
+              data-testid="guest-dietary-badge"
+              title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
+              className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
+            >
+              🍽️ {badge.shortLabel}
+            </span>
+          ))}
+
+          {guest.partyTags &&
+            guest.partyTags
+              .filter((tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG)
+              .map((tag) => (
+                <span
+                  key={tag}
+                  className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
+                >
+                  #{tag}
+                </span>
+              ))}
+        </div>
+        {mealSelections && (
+          <p
+            data-testid="guest-meal-selections"
+            className="text-[10px] text-indigo-800 dark:text-indigo-200 truncate"
+            title={mealSelections}
+          >
+            Meals: {mealSelections}
+          </p>
         )}
-
-        {guest.partyGroup && (
-          <span
-            data-testid="guest-party-group-badge"
-            className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-800 font-medium"
+        {customAnswers && (
+          <p
+            data-testid="guest-custom-answers"
+            className="text-[10px] text-sky-800 dark:text-sky-200 truncate"
+            title={customAnswers}
           >
-            {guest.partyGroup}
-          </span>
+            Responses: {customAnswers}
+          </p>
         )}
-
-        {dietaryBadges.map((badge) => (
-          <span
-            key={badge.category}
-            data-testid="guest-dietary-badge"
-            title={guest.dietaryNotes ? `${badge.label}: ${guest.dietaryNotes}` : badge.label}
-            className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-semibold"
-          >
-            🍽️ {badge.shortLabel}
-          </span>
-        ))}
-
-        {guest.partyTags &&
-          guest.partyTags
-            .filter((tag) => tag.trim().toLowerCase() !== ADDRESS_COLLECTION_TAG)
-            .map((tag) => (
-              <span
-                key={tag}
-                className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-medium"
-              >
-                #{tag}
-              </span>
-            ))}
       </div>
     );
   };

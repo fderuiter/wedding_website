@@ -11,11 +11,13 @@ import type {
   GetItemsOptions,
   PaginatedRegistryItems,
   CreateRegistryItemInput,
+  ContributorDeleteResult,
   ContributorLifecycleResult,
   ContributorRecord,
   StripeLedgerReconciliationResult,
 } from './types';
 import {
+  AdminUpdateContributorInput,
   ContributorSchema,
   ContributorStatus,
   RegistryItemSchema,
@@ -592,14 +594,16 @@ class RegistryRepository implements IRegistryRepository {
       ? activeNames.length > 0
         ? activeNames.join(', ')
         : null
-      : item.purchaserName ?? null;
+      : activeNetCents === 0
+        ? null
+        : item.purchaserName ?? null;
 
     const updatedItem = await txClient.registryItem.update({
       where: { id: itemId },
       data: {
         amountContributed: nextAmountContributed,
         purchased: nextPurchased,
-        ...(!isGroupGift ? { purchaserName: nextPurchaserName } : {}),
+        ...(!isGroupGift || activeNetCents === 0 ? { purchaserName: nextPurchaserName } : {}),
       },
       include: { image: true, contributors: true },
     });
@@ -923,6 +927,205 @@ class RegistryRepository implements IRegistryRepository {
         previousStatus,
         previousRefundedAmount: prevRefundedCents / 100,
         refundedAmount: nextRefundedAmount,
+      };
+    });
+  }
+
+  async unclaimItem(
+    itemId: string,
+    options: { confirmVerifiedPayment?: boolean } = {},
+    author: string = 'Admin'
+  ): Promise<RegistryItemDTO> {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      if (typeof txClient.$queryRaw === 'function') {
+        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${itemId} FOR UPDATE`;
+      }
+
+      const item = await txClient.registryItem.findUnique({
+        where: { id: itemId },
+        include: { image: true, contributors: true },
+      });
+
+      if (!item) {
+        throw new ApiError(404, 'Registry item not found.');
+      }
+
+      const contributorsList: any[] = Array.isArray(item.contributors) ? item.contributors : [];
+      const activeContributors = contributorsList.filter((c) => {
+        const status = this.normalizeStatus(c?.status);
+        return status === 'RESERVED' || status === 'CONFIRMED';
+      });
+
+      const hasVerifiedPayment = activeContributors.some((c) =>
+        Boolean(c?.stripePaymentIntentId || c?.stripeChargeId)
+      );
+
+      if (hasVerifiedPayment && !options.confirmVerifiedPayment) {
+        throw new ApiError(
+          409,
+          'Explicit admin confirmation is required before releasing a claim with a verified Stripe payment.'
+        );
+      }
+
+      for (const contributor of activeContributors) {
+        if (!contributor?.id) continue;
+        const shouldMarkThankYouNotNeeded =
+          (contributor.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent';
+        const cancelledContributor = await txClient.contributor.update({
+          where: { id: contributor.id },
+          data: {
+            status: 'CANCELLED',
+            ...(shouldMarkThankYouNotNeeded ? { thankYouStatus: 'Not Needed' } : {}),
+          },
+        });
+        await createAuditSnapshot(
+          'Contributor',
+          cancelledContributor.id,
+          cancelledContributor,
+          author,
+          txClient
+        );
+      }
+
+      const updatedItem = await txClient.registryItem.update({
+        where: { id: itemId },
+        data: {
+          purchased: false,
+          amountContributed: 0,
+          purchaserName: null,
+        },
+        include: { image: true, contributors: true },
+      });
+
+      await createAuditSnapshot('RegistryItem', updatedItem.id, updatedItem, author, txClient);
+      return RegistryItemSchema.parse(updatedItem);
+    });
+  }
+
+  async updateContributor(
+    contributorId: string,
+    data: Partial<AdminUpdateContributorInput>,
+    author: string = 'Admin'
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null }> {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const located = await txClient.contributor.findUnique({
+        where: { id: contributorId },
+      });
+      if (!located) {
+        throw new ApiError(404, 'Contribution record not found.');
+      }
+
+      if (located.registryItemId && typeof txClient.$queryRaw === 'function') {
+        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${located.registryItemId} FOR UPDATE`;
+      }
+
+      const existing =
+        (await txClient.contributor.findUnique({ where: { id: contributorId } })) ?? located;
+
+      const hasVerifiedPayment = Boolean(
+        existing.stripePaymentIntentId || existing.stripeChargeId
+      );
+      if (hasVerifiedPayment && !data.confirmVerifiedPayment) {
+        throw new ApiError(
+          409,
+          'Explicit admin confirmation is required before editing a verified Stripe contribution.'
+        );
+      }
+
+      const updatePayload: Record<string, unknown> = {};
+      if (data.name !== undefined) {
+        updatePayload.name = data.name.trim();
+      }
+      if (data.email !== undefined) {
+        updatePayload.email = data.email && data.email.trim() ? data.email.trim() : null;
+      }
+      if (data.amount !== undefined) {
+        updatePayload.amount = data.amount;
+      }
+      if (data.message !== undefined) {
+        updatePayload.message = data.message && data.message.trim() ? data.message.trim() : null;
+      }
+      if (data.status !== undefined) {
+        updatePayload.status = data.status;
+        if (
+          (data.status === 'CANCELLED' || data.status === 'REFUNDED') &&
+          (existing.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'
+        ) {
+          updatePayload.thankYouStatus = 'Not Needed';
+        }
+      }
+
+      const updated =
+        Object.keys(updatePayload).length > 0
+          ? await txClient.contributor.update({
+            where: { id: contributorId },
+            data: updatePayload,
+          })
+          : existing;
+
+      await createAuditSnapshot('Contributor', updated.id, updated, author, txClient);
+
+      const item = await this.recomputeItemLedger(txClient, updated.registryItemId);
+      if (item) {
+        await createAuditSnapshot('RegistryItem', item.id, item, author, txClient);
+      }
+
+      return {
+        contributor: ContributorSchema.parse(updated),
+        item,
+      };
+    });
+  }
+
+  async deleteContributor(
+    contributorId: string,
+    options: { confirmVerifiedPayment?: boolean } = {},
+    author: string = 'Admin'
+  ): Promise<ContributorDeleteResult> {
+    return executeInTransaction(this.client, async (txClient: any) => {
+      const located = await txClient.contributor.findUnique({
+        where: { id: contributorId },
+      });
+      if (!located) {
+        throw new ApiError(404, 'Contribution record not found.');
+      }
+
+      if (located.registryItemId && typeof txClient.$queryRaw === 'function') {
+        await txClient.$queryRaw`SELECT id FROM "RegistryItem" WHERE id = ${located.registryItemId} FOR UPDATE`;
+      }
+
+      const existing =
+        (await txClient.contributor.findUnique({ where: { id: contributorId } })) ?? located;
+
+      const hasVerifiedPayment = Boolean(
+        existing.stripePaymentIntentId || existing.stripeChargeId
+      );
+      if (hasVerifiedPayment && !options.confirmVerifiedPayment) {
+        throw new ApiError(
+          409,
+          'Explicit admin confirmation is required before deleting a verified Stripe contribution.'
+        );
+      }
+
+      await txClient.contributor.delete({
+        where: { id: contributorId },
+      });
+      await createAuditSnapshot(
+        'Contributor',
+        contributorId,
+        { deleted: true, ...existing },
+        author,
+        txClient
+      );
+
+      const item = await this.recomputeItemLedger(txClient, existing.registryItemId);
+      if (item) {
+        await createAuditSnapshot('RegistryItem', item.id, item, author, txClient);
+      }
+
+      return {
+        deletedId: contributorId,
+        item,
       };
     });
   }

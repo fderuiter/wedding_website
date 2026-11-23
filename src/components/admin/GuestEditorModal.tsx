@@ -166,7 +166,12 @@ type GuestEditorFormProps =
     onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
     rsvpOverrideSlot?: React.ReactNode;
     rsvpDirty?: boolean;
-    onSaveRsvpOverrides?: () => Promise<void>;
+    onSaveRsvpOverrides?: (_profileContext?: {
+      guestName: string;
+      plusOneFirstName: string | null;
+      plusOneLastName: string | null;
+    }) => Promise<void>;
+    onProfileCompanionChange?: (_firstName: string, _lastName: string) => void;
   });
 
 function GuestEditorFormInner(props: GuestEditorFormProps) {
@@ -193,6 +198,12 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
     const next = { ...formState, [field]: value };
     setFormState(next);
     onDirtyChange?.(isGuestFormDirty(next, initialFormState) || rsvpDirty);
+    if (
+      props.mode === 'edit' &&
+      (field === 'plusOneFirstName' || field === 'plusOneLastName')
+    ) {
+      props.onProfileCompanionChange?.(next.plusOneFirstName, next.plusOneLastName);
+    }
     if (validationError) setValidationError(null);
   };
 
@@ -318,7 +329,11 @@ function GuestEditorFormInner(props: GuestEditorFormProps) {
       if (props.mode === 'edit') {
         await props.onSave(props.guest.id, payload);
         if (props.rsvpDirty && props.onSaveRsvpOverrides) {
-          await props.onSaveRsvpOverrides();
+          await props.onSaveRsvpOverrides({
+            guestName: trimmedName,
+            plusOneFirstName: normalizedPlusOneFirstName,
+            plusOneLastName: normalizedPlusOneLastName,
+          });
         }
       } else {
         await props.onCreate(payload);
@@ -659,6 +674,15 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
   const [directPlusOneNames, setDirectPlusOneNames] = useState<string>(() =>
     formatGuestPlusOneNames(guest)
   );
+  const [sharedCompanionNames, setSharedCompanionNames] = useState<string[]>(() => {
+    const formatted = formatGuestPlusOneNames(guest);
+    return formatted
+      ? formatted
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean)
+      : [];
+  });
   const [subEvents, setSubEvents] = useState<AdminInvitationRsvpsDetail['subEvents']>([]);
   const [eventDrafts, setEventDrafts] = useState<Record<string, EventRsvpDraft>>({});
 
@@ -678,22 +702,60 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       })
       .then((detail) => {
         if (cancelled || !detail || !Array.isArray(detail.subEvents)) return;
-        const rsvpMap = new Map(
-          (Array.isArray(detail.rsvps) ? detail.rsvps : []).map((r) => [r.subEventId, r])
-        );
+        const rsvpList = Array.isArray(detail.rsvps) ? detail.rsvps : [];
+        const rsvpMap = new Map(rsvpList.map((r) => [r.subEventId, r]));
+
+        const discoveredNames: string[] = [];
+        for (const r of rsvpList) {
+          if (Array.isArray(r.plusOneNames)) {
+            r.plusOneNames.forEach((rawName, idx) => {
+              const trimmed = typeof rawName === 'string' ? rawName.trim() : '';
+              if (trimmed && !discoveredNames[idx]) {
+                discoveredNames[idx] = trimmed;
+              }
+            });
+          }
+        }
+        const detailGuestFallback = detail.invitationCode
+          ? formatGuestPlusOneNames(detail.invitationCode)
+          : formatGuestPlusOneNames(guest);
+        if (detailGuestFallback) {
+          detailGuestFallback
+            .split(',')
+            .map((n) => n.trim())
+            .filter(Boolean)
+            .forEach((n, idx) => {
+              if (!discoveredNames[idx]) {
+                discoveredNames[idx] = n;
+              }
+            });
+        }
+
         const initialDrafts: Record<string, EventRsvpDraft> = {};
         for (const se of detail.subEvents) {
           const existing = rsvpMap.get(se.id);
-          initialDrafts[se.id] = existing
-            ? {
+          if (existing) {
+            const poCount = existing.plusOneCount ?? 0;
+            const rawExistingNames = Array.isArray(existing.plusOneNames)
+              ? [...existing.plusOneNames]
+              : [];
+            if (existing.status === 'attending' && poCount > 0) {
+              for (let i = 0; i < poCount; i++) {
+                if (!rawExistingNames[i]?.trim() && discoveredNames[i]) {
+                  rawExistingNames[i] = discoveredNames[i];
+                }
+              }
+            }
+            initialDrafts[se.id] = {
               status: existing.status,
-              plusOneCount: existing.plusOneCount ?? 0,
-              plusOneNames: Array.isArray(existing.plusOneNames) ? existing.plusOneNames : [],
+              plusOneCount: poCount,
+              plusOneNames: rawExistingNames,
               mealSelections: Array.isArray(existing.mealSelections) ? existing.mealSelections : [],
               dietaryNotes: existing.dietaryNotes ?? '',
               customAnswers: existing.customAnswers ? { ...existing.customAnswers } : {},
-            }
-            : {
+            };
+          } else {
+            initialDrafts[se.id] = {
               status: 'unresponded',
               plusOneCount: 0,
               plusOneNames: [],
@@ -701,6 +763,10 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
               dietaryNotes: '',
               customAnswers: {},
             };
+          }
+        }
+        if (discoveredNames.some(Boolean)) {
+          setSharedCompanionNames(discoveredNames);
         }
         setSubEvents(detail.subEvents);
         setEventDrafts(initialDrafts);
@@ -712,7 +778,7 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [guest.id]);
+  }, [guest]);
 
   const markRsvpDirty = (nextRsvpDirty: boolean) => {
     setRsvpDirty(nextRsvpDirty);
@@ -724,7 +790,68 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
     onCombinedDirtyChange(nextProfileDirty || rsvpDirty);
   };
 
-  const updateEventDraft = (subEventId: string, updater: (_prev: EventRsvpDraft) => EventRsvpDraft) => {
+  const handleProfileCompanionChange = (firstName: string, lastName: string) => {
+    const nextSlot0 = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ').trim();
+    const prevSlot0 = sharedCompanionNames[0] ?? '';
+
+    setSharedCompanionNames((prev) => {
+      const next = [...prev];
+      next[0] = nextSlot0;
+      return next;
+    });
+
+    setDirectPlusOneNames((prev) => {
+      const parts = prev
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean);
+      if (parts.length === 0 || parts[0] === prevSlot0) {
+        if (nextSlot0) {
+          parts[0] = nextSlot0;
+        } else {
+          parts.shift();
+        }
+        return parts.join(', ');
+      }
+      return prev;
+    });
+
+    setEventDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [id, draft] of Object.entries(prev)) {
+        if (draft.status === 'attending' && draft.plusOneCount > 0) {
+          const cur0 = (draft.plusOneNames[0] ?? '').trim();
+          if (!cur0 || cur0 === prevSlot0) {
+            const nextNames = [...draft.plusOneNames];
+            nextNames[0] = nextSlot0;
+            next[id] = { ...draft, plusOneNames: nextNames };
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  };
+
+  const updateEventDraft = (
+    subEventId: string,
+    updater: (_prev: EventRsvpDraft) => EventRsvpDraft,
+    editedPlusOneSlot?: { index: number; value: string }
+  ) => {
+    const prevSharedValue =
+      editedPlusOneSlot !== undefined
+        ? (sharedCompanionNames[editedPlusOneSlot.index] ?? '')
+        : '';
+
+    if (editedPlusOneSlot !== undefined) {
+      setSharedCompanionNames((prev) => {
+        const next = [...prev];
+        next[editedPlusOneSlot.index] = editedPlusOneSlot.value;
+        return next;
+      });
+    }
+
     setEventDrafts((prev) => {
       const current = prev[subEventId] ?? {
         status: 'unresponded',
@@ -734,17 +861,63 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
         dietaryNotes: '',
         customAnswers: {},
       };
-      return {
+      const updated = updater(current);
+      if (updated.status === 'attending' && updated.plusOneCount > 0 && !editedPlusOneSlot) {
+        const prefilledNames = [...updated.plusOneNames];
+        let prefilled = false;
+        for (let idx = 0; idx < updated.plusOneCount; idx++) {
+          if (!prefilledNames[idx]?.trim() && sharedCompanionNames[idx]?.trim()) {
+            prefilledNames[idx] = sharedCompanionNames[idx];
+            prefilled = true;
+          }
+        }
+        if (prefilled) {
+          updated.plusOneNames = prefilledNames;
+        }
+      }
+
+      const nextMap: Record<string, EventRsvpDraft> = {
         ...prev,
-        [subEventId]: updater(current),
+        [subEventId]: updated,
       };
+
+      if (editedPlusOneSlot !== undefined) {
+        const { index, value } = editedPlusOneSlot;
+        for (const [otherId, otherDraft] of Object.entries(prev)) {
+          if (otherId === subEventId) continue;
+          if (otherDraft.status !== 'declined' && otherDraft.plusOneCount > index) {
+            const existingSlot = otherDraft.plusOneNames[index] ?? '';
+            if (!existingSlot.trim() || existingSlot === prevSharedValue) {
+              const syncedNames = [...otherDraft.plusOneNames];
+              syncedNames[index] = value;
+              nextMap[otherId] = {
+                ...otherDraft,
+                plusOneNames: syncedNames,
+              };
+            }
+          }
+        }
+      }
+
+      return nextMap;
     });
     setClearAllPending(false);
     markRsvpDirty(true);
   };
 
-  const handleSaveRsvpOverrides = async () => {
+  const handleSaveRsvpOverrides = async (profileContext?: {
+    guestName: string;
+    plusOneFirstName: string | null;
+    plusOneLastName: string | null;
+  }) => {
     if (!rsvpDirty) return;
+
+    const profileSlot0 = profileContext
+      ? [profileContext.plusOneFirstName, profileContext.plusOneLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+      : '';
 
     let bodyPayload: Record<string, unknown>;
     if (clearAllPending) {
@@ -757,17 +930,20 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       for (const se of subEvents) {
         const draft = eventDrafts[se.id];
         if (!draft || draft.status === 'unresponded') continue;
+        const poCount = draft.status === 'attending' ? Math.max(0, draft.plusOneCount) : 0;
+        const resolvedPoNames =
+          draft.status === 'attending' ? draft.plusOneNames.slice(0, poCount) : [];
+        if (draft.status === 'attending' && poCount > 0 && !resolvedPoNames[0]?.trim() && profileSlot0) {
+          resolvedPoNames[0] = profileSlot0;
+        }
         rsvpsPayload.push({
           subEventId: se.id,
           status: draft.status,
-          plusOneCount: draft.status === 'attending' ? Math.max(0, draft.plusOneCount) : 0,
-          plusOneNames:
-            draft.status === 'attending'
-              ? draft.plusOneNames.slice(0, Math.max(0, draft.plusOneCount))
-              : [],
+          plusOneCount: poCount,
+          plusOneNames: resolvedPoNames,
           mealSelections:
             draft.status === 'attending'
-              ? draft.mealSelections.slice(0, 1 + Math.max(0, draft.plusOneCount))
+              ? draft.mealSelections.slice(0, 1 + poCount)
               : [],
           dietaryNotes: draft.dietaryNotes.trim() || null,
           customAnswers: draft.status !== 'declined' ? draft.customAnswers : {},
@@ -785,6 +961,9 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
         .map((n) => n.trim())
         .filter(Boolean)
         .slice(0, parsedPlusOnes);
+      if (overallStatus === 'attending' && parsedPlusOnes > 0 && !parsedNames[0] && profileSlot0) {
+        parsedNames[0] = profileSlot0;
+      }
       bodyPayload = {
         invitationCodeId: guest.id,
         overallAttendanceStatus: overallStatus,
@@ -1020,11 +1199,15 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                               maxLength={120}
                               value={draft.plusOneNames[idx] ?? ''}
                               onChange={(e) =>
-                                updateEventDraft(se.id, (prev) => {
-                                  const nextNames = [...prev.plusOneNames];
-                                  nextNames[idx] = e.target.value;
-                                  return { ...prev, plusOneNames: nextNames };
-                                })
+                                updateEventDraft(
+                                  se.id,
+                                  (prev) => {
+                                    const nextNames = [...prev.plusOneNames];
+                                    nextNames[idx] = e.target.value;
+                                    return { ...prev, plusOneNames: nextNames };
+                                  },
+                                  { index: idx, value: e.target.value }
+                                )
                               }
                               placeholder={`Plus-One #${idx + 1} full name`}
                             />
@@ -1063,6 +1246,14 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                                 className={selectControlClassName}
                               >
                                 <option value="">-- Select meal --</option>
+                                {draft.mealSelections[attendeeIdx] &&
+                                  !se.mealOptions.some(
+                                    (opt) => opt.id === draft.mealSelections[attendeeIdx]
+                                  ) && (
+                                  <option value={draft.mealSelections[attendeeIdx]}>
+                                    {`${draft.mealSelections[attendeeIdx]} (Unavailable — previously selected)`}
+                                  </option>
+                                )}
                                 {se.mealOptions.map((opt) => (
                                   <option key={opt.id} value={opt.id}>
                                     {opt.label}
@@ -1108,6 +1299,11 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                               className={selectControlClassName}
                             >
                               <option value="">-- Select response --</option>
+                              {currentVal && !q.options.includes(currentVal) && (
+                                <option value={currentVal}>
+                                  {`${currentVal} (Unavailable — previously selected)`}
+                                </option>
+                              )}
                               {q.options.map((opt) => (
                                 <option key={opt} value={opt}>
                                   {opt}
@@ -1155,6 +1351,7 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       rsvpOverrideSlot={rsvpOverrideSection}
       rsvpDirty={rsvpDirty}
       onSaveRsvpOverrides={handleSaveRsvpOverrides}
+      onProfileCompanionChange={handleProfileCompanionChange}
       onDirtyChange={handleProfileDirtyChange}
     />
   );

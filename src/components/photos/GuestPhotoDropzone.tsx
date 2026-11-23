@@ -1,7 +1,13 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import {
+  UploadAlert,
+  UploadProgressBar,
+  UploadStatusNotice,
+} from '@/components/ui/UploadStatus';
 import {
   MAX_GUEST_PHOTO_SIZE,
   GUEST_PHOTO_ACCEPTED_TYPES,
@@ -48,7 +54,6 @@ interface GuestPhotoDropzoneProps {
 export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploads, setUploads] = useState<UploadStatus[]>([]);
-  const [globalError, setGlobalError] = useState<string | null>(null);
   const [uploaderName, setUploaderName] = useState('');
   const [caption, setCaption] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -266,7 +271,6 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
   }, []);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
-    setGlobalError(null);
     const fileArray = Array.from(files);
 
     if (fileArray.length === 0) return;
@@ -421,9 +425,12 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
         <div>
           <label
             htmlFor="guest-photo-uploader-name"
-            className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1"
+            className="block text-sm font-medium text-stone-800 dark:text-stone-200 mb-1"
           >
-            Your Name <span className="text-stone-500 dark:text-stone-400 font-normal">(optional)</span>
+            Your Name{' '}
+            <span className="text-[var(--color-muted-text,#4b5563)] font-normal">
+              (optional)
+            </span>
           </label>
           <input
             id="guest-photo-uploader-name"
@@ -434,15 +441,18 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             onChange={(e) => setUploaderName(e.target.value)}
             placeholder="e.g. Aunt Clara"
             data-testid="guest-photo-uploader-name"
-            className="w-full rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)] focus:border-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2"
           />
         </div>
         <div>
           <label
             htmlFor="guest-photo-caption"
-            className="block text-sm font-medium text-stone-700 dark:text-stone-300 mb-1"
+            className="block text-sm font-medium text-stone-800 dark:text-stone-200 mb-1"
           >
-            Caption or Note <span className="text-stone-500 dark:text-stone-400 font-normal">(optional)</span>
+            Caption or Note{' '}
+            <span className="text-[var(--color-muted-text,#4b5563)] font-normal">
+              (optional)
+            </span>
           </label>
           <input
             id="guest-photo-caption"
@@ -453,7 +463,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             onChange={(e) => setCaption(e.target.value)}
             placeholder="e.g. Sparkler exit!"
             data-testid="guest-photo-caption"
-            className="w-full rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-500 dark:placeholder:text-stone-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full rounded-xl border border-[var(--color-surface-border,#6b7280)] bg-white dark:bg-stone-900 px-3.5 py-2 text-sm text-stone-900 dark:text-stone-100 placeholder:text-[var(--color-muted-text,#4b5563)] focus:border-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2"
           />
         </div>
       </div>
@@ -487,10 +497,10 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
           }
         }}
         data-testid="guest-photo-dropzone"
-        className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+        className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary,#B91C1C))] focus-visible:ring-offset-2 focus-visible:forced-colors:outline focus-visible:forced-colors:outline-2 ${
           isDragging
-            ? 'border-primary bg-primary/10 scale-[1.01]'
-            : 'border-stone-300 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-900/40 hover:border-primary/60 hover:bg-stone-100/80 dark:hover:bg-stone-900/80'
+            ? 'border-[var(--color-primary,#B91C1C)] bg-primary/10 scale-[1.01]'
+            : 'border-[var(--color-surface-border,#6b7280)] bg-stone-50/60 dark:bg-stone-900/40 hover:border-[var(--color-primary,#B91C1C)] hover:bg-stone-100/80 dark:hover:bg-stone-900/80'
         }`}
       >
         <div className="flex flex-col items-center justify-center space-y-3">
@@ -498,42 +508,37 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
             <Icon name="Upload" className="w-8 h-8" />
           </div>
           <div>
-            <p className="text-lg font-semibold text-stone-800 dark:text-stone-200">
+            <p className="text-lg font-semibold text-stone-800 dark:text-stone-100">
               {isDragging ? 'Drop your photos here!' : 'Share Your Wedding Photos'}
             </p>
-            <p className="text-sm text-stone-600 dark:text-stone-400 mt-1">
-              Drag and drop image files here, or <span className="text-primary font-medium underline">browse files</span>
+            <p className="text-sm text-stone-700 dark:text-stone-200 mt-1">
+              Drag and drop image files here, or{' '}
+              <span className="text-primary font-semibold underline">browse files</span>
             </p>
           </div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">
+          <p className="text-xs text-[var(--color-muted-text,#4b5563)]">
             Supports JPEG, PNG, WebP, and HEIC (up to 10 MB per file)
           </p>
         </div>
       </div>
 
-      {globalError && (
-        <div
-          role="alert"
-          className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-600 dark:text-red-400 text-sm flex items-center gap-2"
-        >
-          <Icon name="AlertTriangle" className="w-4 h-4 shrink-0" />
-          <span>{globalError}</span>
-        </div>
-      )}
-
       {uploads.length > 0 && (
         <div className="mt-6 space-y-3" data-testid="upload-progress-container">
-          <h4 className="text-sm font-semibold text-stone-700 dark:text-stone-300 flex items-center justify-between">
-            <span>Upload Status</span>
-            <button
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-stone-800 dark:text-stone-200">
+              Upload Status
+            </h2>
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleClearStatus}
-              className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+              className="text-[var(--color-muted-text,#4b5563)] hover:text-stone-900 dark:hover:text-stone-100"
               data-testid="clear-status-button"
             >
               Clear status
-            </button>
-          </h4>
+            </Button>
+          </div>
 
           <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
             {uploads.map((item) => (
@@ -542,85 +547,105 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
                 data-testid={`upload-status-item-${item.id}`}
                 className="p-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm flex flex-col gap-2"
               >
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 truncate pr-2">
-                    <Icon name="Image" className="w-4 h-4 text-stone-400 shrink-0" />
-                    <span className="font-medium text-stone-700 dark:text-stone-300 truncate">
+                <div className="flex items-center justify-between text-sm gap-2">
+                  <div className="flex items-center gap-2 min-w-0 pr-2">
+                    <Icon
+                      name="Image"
+                      className="w-4 h-4 text-[var(--color-muted-text,#4b5563)] shrink-0"
+                    />
+                    <span className="font-medium text-stone-800 dark:text-stone-100 truncate">
                       {item.filename}
                     </span>
-                    <span className="text-xs text-stone-400 shrink-0">
+                    <span className="text-xs text-[var(--color-muted-text,#4b5563)] shrink-0">
                       ({(item.size / (1024 * 1024)).toFixed(1)} MB)
                     </span>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
                     {item.status === 'pending' && (
-                      <span className="text-xs text-stone-400 dark:text-stone-500 flex items-center gap-1 font-medium" data-testid="upload-pending-badge">
-                        Queued
+                      <span
+                        role="status"
+                        aria-live="polite"
+                        className="text-xs text-[var(--color-muted-text,#4b5563)] flex items-center gap-1 font-medium"
+                        data-testid="upload-pending-badge"
+                      >
+                        <span className="sr-only">{`${item.filename}: `}</span>
+                        <span>Queued</span>
                       </span>
                     )}
                     {item.status === 'uploading' && (
                       <span className="text-xs text-primary flex items-center gap-1 font-medium">
                         <Icon name="Loader2" className="w-3.5 h-3.5 animate-spin" />
-                        Uploading...
+                        <span>Uploading...</span>
                       </span>
                     )}
                     {item.status === 'success' && (
-                      <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium" data-testid="upload-success-badge">
-                        <Icon name="Check" className="w-3.5 h-3.5" />
-                        Uploaded (Pending Review)
+                      <span
+                        className="text-xs text-[var(--color-warning-text,#78350f)] flex items-center gap-1 font-medium"
+                        data-testid="upload-success-badge"
+                      >
+                        <Icon name="Check" className="w-3.5 h-3.5 shrink-0" />
+                        <span>Uploaded (Pending Review)</span>
                       </span>
                     )}
                     {item.status === 'error' && (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1 font-medium" data-testid="upload-error-badge">
-                          <Icon name="AlertTriangle" className="w-3.5 h-3.5" />
-                          Failed
+                        <span
+                          className="text-xs text-[var(--color-error-text,#dc2626)] flex items-center gap-1 font-medium"
+                          data-testid="upload-error-badge"
+                        >
+                          <Icon name="AlertTriangle" className="w-3.5 h-3.5 shrink-0" />
+                          <span>Failed</span>
                         </span>
                         {item.file && (
-                          <button
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
                             onClick={() => handleRetry(item.id)}
                             data-testid={`retry-upload-${item.id}`}
-                            className="text-xs px-2 py-0.5 rounded bg-red-100 hover:bg-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 font-medium transition-colors flex items-center gap-1"
+                            srContext={`upload for ${item.filename}`}
+                            className="gap-1 px-2.5 border-[var(--color-error-text,#dc2626)] text-[var(--color-error-text,#dc2626)] hover:bg-red-50 dark:hover:bg-red-950/40"
                           >
-                            <Icon name="RotateCw" className="w-3 h-3" />
-                            Retry
-                          </button>
+                            <Icon name="RotateCw" className="w-3.5 h-3.5 shrink-0" />
+                            <span>Retry</span>
+                          </Button>
                         )}
                       </div>
                     )}
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="sm"
                       onClick={() => removeUploadItem(item.id)}
-                      className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-0.5 rounded"
-                      aria-label="Remove item"
+                      className="w-8 px-0 text-[var(--color-muted-text,#4b5563)] hover:text-stone-900 dark:hover:text-stone-100 shrink-0"
+                      aria-label={`Remove ${item.filename}`}
                     >
-                      <Icon name="X" className="w-4 h-4" />
-                    </button>
+                      <Icon name="X" className="w-4 h-4 shrink-0" />
+                    </Button>
                   </div>
                 </div>
 
                 {item.status === 'uploading' && (
-                  <div className="w-full bg-stone-100 dark:bg-stone-800 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                      style={{ width: `${item.progress}%` }}
-                    />
-                  </div>
+                  <UploadProgressBar value={item.progress} filename={item.filename} />
                 )}
 
                 {item.status === 'success' && (
-                  <p className="text-xs text-amber-700 dark:text-amber-300 font-medium bg-amber-500/10 p-2 rounded-lg border border-amber-500/20 flex items-center gap-1.5" data-testid="upload-pending-notice">
-                    <Icon name="Info" className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span>Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.</span>
-                  </p>
+                  <UploadStatusNotice data-testid="upload-pending-notice">
+                    <span className="sr-only">{`${item.filename}: `}</span>
+                    <span>
+                      Uploaded! Your photo is waiting for couple approval before appearing in the public gallery.
+                    </span>
+                  </UploadStatusNotice>
                 )}
 
                 {item.status === 'error' && item.errorMessage && (
-                  <p className="text-xs text-red-600 dark:text-red-400 font-medium" data-testid="upload-error-message">
-                    {item.errorMessage}
-                  </p>
+                  <UploadAlert data-testid="upload-error-message">
+                    {!item.errorMessage.includes(item.filename) && (
+                      <span className="sr-only">{`${item.filename}: `}</span>
+                    )}
+                    <span>{item.errorMessage}</span>
+                  </UploadAlert>
                 )}
               </div>
             ))}

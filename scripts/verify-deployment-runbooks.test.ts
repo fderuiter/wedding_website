@@ -13,6 +13,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'docker-entrypoint.sh',
     'docker-compose.yml',
     'docker-compose.ci.yml',
+    'docker-compose.rollout.yml',
     'next.config.ts',
     'vercel.json',
     'src/env.ts',
@@ -22,6 +23,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'ARCHITECTURE.md',
     'CHANGELOG.md',
     'DEPLOYMENT.md',
     'docs/upgrading.md',
@@ -32,6 +34,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'docs/deployment/gcp-cloud-run.md',
     'docs/deployment/docker-vps.md',
     'docs/deployment/railway-render.md',
+    'scripts/generate-docs.ts',
     '.github/dependabot.yml',
   ];
 
@@ -314,12 +317,18 @@ describe('verify-deployment-runbooks', () => {
         "if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')"
       );
     fs.writeFileSync(deployProviderPath, brokenWorkflow);
+    const expectedLine =
+      brokenWorkflow
+        .split(/\r?\n/)
+        .findIndex((line) =>
+          line.includes("if: !(inputs.dry_run && inputs.image_digest == '' && inputs.image_tag == 'latest')")
+        ) + 1;
 
     const errors = verifyDeploymentRunbooks(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          '.github/workflows/deploy-provider.yml:285: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)'
+          `.github/workflows/deploy-provider.yml:${expectedLine}: Invalid YAML 1.2 tag/warning (TAG_RESOLVE_FAILED)`
         ),
       ])
     );
@@ -436,17 +445,46 @@ describe('verify-deployment-runbooks', () => {
     expect(JSON.stringify(errors)).not.toContain('STRONG_PASSWORD');
   });
 
-  it('rejects Node.js major version drift across Dockerfile, setup-node workflows, runtime docs, and dependabot.yml', () => {
+  it('rejects Node.js and PostgreSQL major version drift across Dockerfile, compose, workflows, generate-docs.ts, runtime/architecture docs, and dependabot.yml', () => {
     const dockerfilePath = path.join(tempDir, 'Dockerfile');
     fs.writeFileSync(
       dockerfilePath,
       fs.readFileSync(dockerfilePath, 'utf8').replace('node:22-bookworm-slim@', 'node:26-bookworm-slim@')
     );
 
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs.readFileSync(composePath, 'utf8').replace('postgres:15-alpine@', 'postgres:18-alpine@')
+    );
+
     const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
     fs.writeFileSync(
       storybookWorkflowPath,
       fs.readFileSync(storybookWorkflowPath, 'utf8').replace("node-version-file: '.nvmrc'", 'node-version: 22')
+    );
+
+    const publishWorkflowPath = path.join(tempDir, '.github/workflows/publish-artifact.yml');
+    fs.writeFileSync(
+      publishWorkflowPath,
+      fs
+        .readFileSync(publishWorkflowPath, 'utf8')
+        .replace(
+          / {6}- uses: actions\/setup-node@[^\n]+\n {8}with:\n {10}node-version-file: '\.nvmrc'\n\n/,
+          ''
+        )
+    );
+
+    const generateDocsPath = path.join(tempDir, 'scripts/generate-docs.ts');
+    fs.writeFileSync(
+      generateDocsPath,
+      fs.readFileSync(generateDocsPath, 'utf8').replace("'22.x'", "'26.x'")
+    );
+
+    const architecturePath = path.join(tempDir, 'ARCHITECTURE.md');
+    fs.writeFileSync(
+      architecturePath,
+      fs.readFileSync(architecturePath, 'utf8').replace('- **Node.js**: v22.x', '- **Node.js**: v26.x')
     );
 
     const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
@@ -458,7 +496,10 @@ describe('verify-deployment-runbooks', () => {
     const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
     fs.writeFileSync(
       dependabotPath,
-      fs.readFileSync(dependabotPath, 'utf8').replace('@types/node', '@types/legacy-node')
+      fs
+        .readFileSync(dependabotPath, 'utf8')
+        .replace('@types/node', '@types/legacy-node')
+        .replace('dependency-name: "postgres"', 'dependency-name: "legacy-postgres"')
     );
 
     const errors = verifyDeploymentRunbooks(tempDir);
@@ -466,12 +507,119 @@ describe('verify-deployment-runbooks', () => {
       expect.arrayContaining([
         expect.stringContaining('Dockerfile: Must pin `node:22-bookworm-slim@sha256:<64-hex>` matching .nvmrc'),
         expect.stringContaining(
+          'docker-compose.yml: `db` service must pin `postgres:15-alpine@sha256:<64-hex>` to preserve `db_data` volume compatibility'
+        ),
+        expect.stringContaining(
           ".github/workflows/storybook.yml (job \"build\"): `actions/setup-node` must set `node-version-file: '.nvmrc'`"
         ),
+        expect.stringContaining(
+          '.github/workflows/publish-artifact.yml (job "build"): Workflow job invokes node/npm/npx without `actions/setup-node` bound to `.nvmrc`'
+        ),
+        expect.stringContaining(
+          'scripts/generate-docs.ts: `generateEnvSpecs` must specify Node.js `22.x` matching .nvmrc'
+        ),
+        expect.stringContaining('ARCHITECTURE.md: Must specify `- **Node.js**: v22.x` matching .nvmrc'),
         expect.stringContaining('docs/runtime-contract.md: Must specify Node.js v22.x LTS and `node:22-bookworm-slim`'),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `postgres` under `docker-compose` ecosystem'
+        ),
         expect.stringContaining(
           '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
         ),
+      ])
+    );
+  });
+
+  it('rejects invalid Cloud Run probe flags, unescaped --set-env-vars commas, npx wedding-migrate jobs, Docker host node / ${DB_*} rollbacks, Render Release Command, Nixpacks omissions, and missing Section 4 S3_ENDPOINT keys', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--args="./node_modules/.bin/prisma,migrate,deploy"',
+          '--command="npx" \\\n    --args="prisma,migrate,deploy"'
+        )
+        .replace('    --set-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \\\n', '')
+        .replace(
+          '--set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"',
+          '--set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app"'
+        )
+        .replace(
+          '--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30',
+          '--startup-probe-request-path=/api/health'
+        )
+    );
+
+    const dockerPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerPath,
+      fs
+        .readFileSync(dockerPath, 'utf8')
+        .replace(
+          'DATABASE_URL=postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer',
+          'DATABASE_URL="postgresql://wedding_user:secure_password@db_host:5432/wedding_db?schema=public&sslmode=prefer"'
+        )
+        .replace(
+          'ADMIN_HASH=$(docker run --rm wedding-website:latest node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")',
+          'ADMIN_HASH=$(node scripts/generate-password-hash.mjs "replace-with-strong-admin-password")'
+        )
+        .replace(
+          '--env-file .env \\\n           -e E2E_TEST=false',
+          '--env-file .env \\\n           -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \\\n           -e E2E_TEST=false'
+        )
+    );
+
+    const railwayPath = path.join(tempDir, 'docs/deployment/railway-render.md');
+    fs.writeFileSync(
+      railwayPath,
+      fs
+        .readFileSync(railwayPath, 'utf8')
+        .replace('Pre-Deploy Command', 'Release Command')
+        .replace('npm ci --include=dev && npm run build && npm run postbuild', 'npm run build')
+        .replace(/healthcheck\.railway\.app/g, 'removed-probe-host')
+    );
+
+    const vercelPath = path.join(tempDir, 'docs/deployment/vercel.md');
+    const vercelText = fs.readFileSync(vercelPath, 'utf8');
+    const sec4Start = vercelText.indexOf('## 4. Asset Storage');
+    const sec5Start = vercelText.indexOf('## 5. Custom Domain');
+    fs.writeFileSync(
+      vercelPath,
+      vercelText.slice(0, sec4Start) +
+        vercelText.slice(sec4Start, sec5Start).replace(/S3_ENDPOINT/g, 'REMOVED_S3_KEY') +
+        vercelText.slice(sec5Start)
+    );
+
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace(
+          '--env-file .env \\\n     -e E2E_TEST=false',
+          '--env-file .env \\\n     -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \\\n     -e E2E_TEST=false'
+        )
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Invalid Cloud Run CLI flag "--startup-probe-request-path"'),
+        expect.stringContaining('Unescaped delimiter/comma in gcloud `--set-env-vars`'),
+        expect.stringContaining('must not override ENTRYPOINT with `--command`'),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
+        ),
+        expect.stringContaining('`wedding-migrate` Cloud Run Job must attach Cloud SQL via `--set-cloudsql-instances`'),
+        expect.stringContaining('docs/deployment/docker-vps.md (Section 1): Must not wrap `.env` DATABASE_URL'),
+        expect.stringContaining('docs/deployment/docker-vps.md (Section 6): Must generate `ADMIN_HASH` inside Docker'),
+        expect.stringContaining('docs/deployment/docker-vps.md: Rollback `docker run` command must not expand unset host ${DB_*} variables'),
+        expect.stringContaining('docs/upgrading.md: Rollback `docker run` command must not expand unset host ${DB_*} variables'),
+        expect.stringContaining('References nonexistent Render "Release Command"'),
+        expect.stringContaining('Railway Nixpacks instructions must include `npm ci --include=dev` and `npm run postbuild`'),
+        expect.stringContaining('docs/deployment/railway-render.md: Must document `healthcheck.railway.app`'),
+        expect.stringContaining('docs/deployment/vercel.md (Section 4): Missing S3 configuration keys: S3_ENDPOINT'),
       ])
     );
   });
@@ -515,6 +663,85 @@ describe('verify-deployment-runbooks', () => {
         ),
         expect.stringContaining(
           'Dockerfile: Must write `update-notifier=false` to `/usr/local/etc/npmrc`'
+        ),
+      ])
+    );
+  });
+
+  it('rejects invalid Cloud Run --startup-probe-* / --liveness-probe-* flags and Host overrides in container healthchecks', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs
+        .readFileSync(gcpPath, 'utf8')
+        .replace(
+          '--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30',
+          '--startup-probe-request-path=/api/health --liveness-probe-request-path=/api/live'
+        )
+    );
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      `${fs.readFileSync(runtimeContractPath, 'utf8')}\nLegacy flag: \`--startup-probe-request-path=/api/health\`\n`
+    );
+
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    fs.writeFileSync(
+      dockerfilePath,
+      fs
+        .readFileSync(dockerfilePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const rolloutComposePath = path.join(tempDir, 'docker-compose.rollout.yml');
+    fs.writeFileSync(
+      rolloutComposePath,
+      fs
+        .readFileSync(rolloutComposePath, 'utf8')
+        .replace(
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live')",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}})"
+        )
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Invalid Cloud Run CLI flag "--startup-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Invalid Cloud Run CLI flag "--liveness-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document `--liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30`'
+        ),
+        expect.stringContaining(
+          'docs/runtime-contract.md: Invalid Cloud Run CLI flag "--startup-probe-request-path"'
+        ),
+        expect.stringContaining(
+          'Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
+        ),
+        expect.stringContaining(
+          'docker-compose.rollout.yml: `app-standby` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`'
         ),
       ])
     );

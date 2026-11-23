@@ -1,11 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { QueryClientContext } from '@tanstack/react-query';
 import { OnboardingChecklist } from '@/components/admin/OnboardingChecklist';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { FeatureId, isFeatureEnabled } from '@/lib/modules';
 import { withBasePath } from '@/lib/basePath';
+import {
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+  ADMIN_SAMPLE_DATA_QUERY_KEY,
+  ADMIN_SETTINGS_QUERY_KEY,
+  subscribeToAdminCacheSync,
+} from '@/lib/adminCacheSync';
 
 interface OverviewWorkflowCard {
   id: string;
@@ -91,12 +98,15 @@ const OVERVIEW_WORKFLOWS: OverviewWorkflowCard[] = [
  * and module-aware quick navigation to active wedding planning workflows.
  */
 export default function AdminDashboardPage() {
+  const queryClient = useContext(QueryClientContext);
   const [moduleConfig, setModuleConfig] = useState<unknown>(undefined);
+  const [setupIncomplete, setSetupIncomplete] = useState(false);
+  const [checklistRefreshTick, setChecklistRefreshTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadModuleConfig = async () => {
+    async function loadSettingsState() {
       try {
         const res = await fetch(withBasePath('/api/admin/settings'));
         if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
@@ -104,20 +114,40 @@ export default function AdminDashboardPage() {
         if (cancelled) return;
         const payload =
           raw && typeof raw === 'object' && 'data' in raw && raw.data ? raw.data : raw;
-        if (payload && typeof payload === 'object' && 'modules' in payload) {
-          setModuleConfig((payload as { modules?: unknown }).modules);
+        if (payload && typeof payload === 'object') {
+          if ('modules' in payload) {
+            setModuleConfig((payload as { modules?: unknown }).modules);
+          }
+          if ('setupCompleted' in payload) {
+            setSetupIncomplete((payload as { setupCompleted?: boolean }).setupCompleted === false);
+          }
         }
       } catch {
         // Gracefully ignore network or mock errors so overview remains available
       }
-    };
+    }
 
-    void loadModuleConfig();
+    void loadSettingsState();
+
+    const unsubscribe = subscribeToAdminCacheSync(
+      queryClient,
+      ['settings', 'sample-data', 'milestones'],
+      [
+        ADMIN_SETTINGS_QUERY_KEY,
+        ADMIN_SAMPLE_DATA_QUERY_KEY,
+        ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+      ],
+      () => {
+        setChecklistRefreshTick((prev) => prev + 1);
+        void loadSettingsState();
+      }
+    );
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   const visibleWorkflows = OVERVIEW_WORKFLOWS.filter((workflow) => {
     if (!workflow.featureId) return true;
@@ -136,9 +166,19 @@ export default function AdminDashboardPage() {
               Review setup milestones and jump directly to your active wedding tools.
             </p>
           </div>
+          {setupIncomplete && (
+            <Link
+              href="/admin/setup"
+              data-testid="resume-setup-wizard-link"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <span>Resume Setup Wizard</span>
+              <Icon name="ChevronRight" className="w-4 h-4" />
+            </Link>
+          )}
         </div>
 
-        <OnboardingChecklist />
+        <OnboardingChecklist refreshTrigger={checklistRefreshTick} />
 
         <section aria-labelledby="admin-workflows-heading" data-testid="admin-overview-workflows">
           <h2

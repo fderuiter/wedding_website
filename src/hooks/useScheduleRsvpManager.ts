@@ -103,6 +103,14 @@ function getEventPromptValidationError(
         return `Please select an entrée option for all ${expectedPartySize} attending guests.`;
       }
     }
+
+    for (let pIdx = 0; pIdx < effectivePlusOneCount; pIdx++) {
+      if (!(current.plusOneNames[pIdx] ?? '').trim()) {
+        return effectivePlusOneCount === 1
+          ? 'Please enter the full name for your attending plus-one guest.'
+          : `Please enter full names for all ${effectivePlusOneCount} attending plus-one guests.`;
+      }
+    }
   }
 
   if (meta.customQuestions.length > 0) {
@@ -247,8 +255,38 @@ function buildSubmissionPayloadItem(
   return payloadItem;
 }
 
+function extractSharedPlusOneNames(
+  events?: ScheduleRsvpEventInit[],
+  defaults?: string[] | null
+): string[] {
+  const shared: string[] = [];
+  if (Array.isArray(events)) {
+    for (const ev of events) {
+      if (ev.isReadOnly || !Array.isArray(ev.userRsvp?.plusOneNames)) continue;
+      ev.userRsvp.plusOneNames.forEach((raw, idx) => {
+        const trimmed = typeof raw === 'string' ? raw.trim() : '';
+        if (trimmed && !shared[idx]) {
+          shared[idx] = trimmed;
+        }
+      });
+    }
+  }
+  if (Array.isArray(defaults)) {
+    defaults.forEach((raw, idx) => {
+      const trimmed = typeof raw === 'string' ? raw.trim() : '';
+      if (trimmed && !shared[idx]) {
+        shared[idx] = trimmed;
+      }
+    });
+  }
+  return shared;
+}
+
 export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) {
   const apiEndpoint = options?.apiEndpoint || '/api/rsvp';
+  const sharedPlusOneNamesRef = useRef<string[]>(
+    extractSharedPlusOneNames(options?.initialEvents, options?.defaultPlusOneNames)
+  );
   const eventMetaRef = useRef<Record<string, EventPromptMeta>>((() => {
     const meta: Record<string, EventPromptMeta> = {};
     if (options?.initialEvents) {
@@ -294,55 +332,54 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
   const optionsRef = useRef(options);
   useEffect(() => {
     optionsRef.current = options;
+    if (Array.isArray(options?.defaultPlusOneNames)) {
+      options.defaultPlusOneNames.forEach((raw, idx) => {
+        const trimmed = typeof raw === 'string' ? raw.trim() : '';
+        if (trimmed && !sharedPlusOneNamesRef.current[idx]) {
+          sharedPlusOneNamesRef.current[idx] = trimmed;
+        }
+      });
+    }
   }, [options]);
 
-  const initializeEvents = useCallback((events: ScheduleRsvpEventInit[]) => {
-    events.forEach((ev) => {
-      if (ev.isReadOnly) {
-        delete eventMetaRef.current[ev.id];
-        return;
-      }
-      eventMetaRef.current[ev.id] = {
-        title: ev.title,
-        mealOptions: normalizeMealOptions(ev.mealOptions),
-        customQuestions: normalizeCustomQuestions(ev.customQuestions),
-      };
-    });
+  const initializeEvents = useCallback(
+    (events: ScheduleRsvpEventInit[], defaultNamesOverride?: string[] | null) => {
+      const discovered = extractSharedPlusOneNames(
+        events,
+        defaultNamesOverride !== undefined
+          ? defaultNamesOverride
+          : optionsRef.current?.defaultPlusOneNames
+      );
+      discovered.forEach((name, idx) => {
+        if (name && !sharedPlusOneNamesRef.current[idx]) {
+          sharedPlusOneNamesRef.current[idx] = name;
+        }
+      });
 
-    setEventsMap((prev) => {
-      const next = { ...prev };
       events.forEach((ev) => {
         if (ev.isReadOnly) {
-          delete next[ev.id];
+          delete eventMetaRef.current[ev.id];
           return;
         }
-        const newBaseline = normalizeRsvpData(ev.userRsvp);
-        const existing = prev[ev.id];
-        if (!existing) {
-          next[ev.id] = {
-            id: ev.id,
-            baseline: newBaseline,
-            current: cloneRsvpData(newBaseline),
-            state: 'idle',
-            isDirty: false,
-            isSubmitting: false,
-            message: null,
-            error: null,
-          };
-        } else {
-          // If existing item is dirty, preserve user's pending edits but update baseline
-          if (existing.isDirty) {
-            const dirty = isRsvpDirty(existing.current, newBaseline);
+        eventMetaRef.current[ev.id] = {
+          title: ev.title,
+          mealOptions: normalizeMealOptions(ev.mealOptions),
+          customQuestions: normalizeCustomQuestions(ev.customQuestions),
+        };
+      });
+
+      setEventsMap((prev) => {
+        const next = { ...prev };
+        events.forEach((ev) => {
+          if (ev.isReadOnly) {
+            delete next[ev.id];
+            return;
+          }
+          const newBaseline = normalizeRsvpData(ev.userRsvp);
+          const existing = prev[ev.id];
+          if (!existing) {
             next[ev.id] = {
-              ...existing,
-              baseline: newBaseline,
-              isDirty: dirty,
-              state: dirty ? 'dirty' : 'idle',
-            };
-          } else {
-            // Not dirty, sync both baseline and current
-            next[ev.id] = {
-              ...existing,
+              id: ev.id,
               baseline: newBaseline,
               current: cloneRsvpData(newBaseline),
               state: 'idle',
@@ -351,12 +388,36 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
               message: null,
               error: null,
             };
+          } else {
+            // If existing item is dirty, preserve user's pending edits but update baseline
+            if (existing.isDirty) {
+              const dirty = isRsvpDirty(existing.current, newBaseline);
+              next[ev.id] = {
+                ...existing,
+                baseline: newBaseline,
+                isDirty: dirty,
+                state: dirty ? 'dirty' : 'idle',
+              };
+            } else {
+              // Not dirty, sync both baseline and current
+              next[ev.id] = {
+                ...existing,
+                baseline: newBaseline,
+                current: cloneRsvpData(newBaseline),
+                state: 'idle',
+                isDirty: false,
+                isSubmitting: false,
+                message: null,
+                error: null,
+              };
+            }
           }
-        }
+        });
+        return next;
       });
-      return next;
-    });
-  }, []);
+    },
+    []
+  );
 
   const updateRsvp = useCallback(
     (subEventId: string, updates: Partial<SubEventRsvpData>) => {
@@ -375,6 +436,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
           error: null,
         };
 
+        const prevSharedSnapshot = [...sharedPlusOneNamesRef.current];
         const nextStatus = updates.status ?? existing.current.status;
         const configuredMax = optionsRef.current?.maxPlusOnes;
         let nextPlusOnes = existing.current.plusOneCount;
@@ -405,13 +467,20 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             nextPlusOneNames = [];
           } else if (updates.plusOneNames !== undefined) {
             nextPlusOneNames = updates.plusOneNames.slice(0, nextPlusOnes);
+            nextPlusOneNames.forEach((val, idx) => {
+              sharedPlusOneNamesRef.current[idx] = val;
+            });
           } else {
             const baseNames = existing.current.plusOneNames.slice(0, nextPlusOnes);
             const defaults = optionsRef.current?.defaultPlusOneNames;
-            if (Array.isArray(defaults) && defaults.length > 0) {
-              for (let idx = baseNames.length; idx < nextPlusOnes; idx++) {
-                if (defaults[idx]) {
-                  baseNames[idx] = defaults[idx];
+            for (let idx = 0; idx < nextPlusOnes; idx++) {
+              if (!baseNames[idx]?.trim()) {
+                const candidate =
+                  sharedPlusOneNamesRef.current[idx]?.trim() ||
+                  (Array.isArray(defaults) ? defaults[idx]?.trim() : '');
+                if (candidate) {
+                  baseNames[idx] = candidate;
+                  sharedPlusOneNamesRef.current[idx] = candidate;
                 }
               }
             }
@@ -436,7 +505,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
 
         const dirty = isRsvpDirty(newCurrent, existing.baseline);
 
-        return {
+        const nextMap: Record<string, SubEventRsvpItemState> = {
           ...prev,
           [subEventId]: {
             ...existing,
@@ -448,6 +517,52 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
             error: null,
           },
         };
+
+        if (updates.plusOneNames !== undefined && nextStatus !== 'declined' && nextPlusOnes > 0) {
+          for (const [otherId, otherItem] of Object.entries(prev)) {
+            if (otherId === subEventId) continue;
+            if (otherItem.current.status === 'declined' || otherItem.current.plusOneCount <= 0) {
+              continue;
+            }
+            let otherChanged = false;
+            const syncedOtherNames = Array.from(
+              { length: otherItem.current.plusOneCount },
+              (_, idx) => otherItem.current.plusOneNames[idx] ?? ''
+            );
+            for (let idx = 0; idx < Math.min(nextPlusOnes, otherItem.current.plusOneCount); idx++) {
+              const editedVal = nextPlusOneNames[idx] ?? '';
+              const prevValOnTarget = existing.current.plusOneNames[idx] ?? '';
+              if (editedVal === prevValOnTarget) continue;
+              const existingOtherVal = syncedOtherNames[idx] ?? '';
+              const prevSharedVal = prevSharedSnapshot[idx] ?? '';
+              if (
+                !existingOtherVal.trim() ||
+                existingOtherVal === prevValOnTarget ||
+                existingOtherVal === prevSharedVal
+              ) {
+                syncedOtherNames[idx] = editedVal;
+                otherChanged = true;
+              }
+            }
+            if (otherChanged) {
+              const updatedOtherCurrent: SubEventRsvpData = {
+                ...otherItem.current,
+                plusOneNames: syncedOtherNames,
+              };
+              const otherDirty = isRsvpDirty(updatedOtherCurrent, otherItem.baseline);
+              nextMap[otherId] = {
+                ...otherItem,
+                current: updatedOtherCurrent,
+                isDirty: otherDirty,
+                state: otherDirty ? 'dirty' : 'idle',
+                message: null,
+                error: null,
+              };
+            }
+          }
+        }
+
+        return nextMap;
       });
     },
     []
