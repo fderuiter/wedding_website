@@ -570,11 +570,13 @@ export function collectOperatorEnvKeys(cwd: string = process.cwd()): {
     }
   }
 
-  const composePath = path.join(cwd, 'docker-compose.yml');
-  if (fs.existsSync(composePath)) {
-    const composeContent = fs.readFileSync(composePath, 'utf-8');
-    for (const key of parseComposeEnvKeys(composeContent)) {
-      recordKey(key, 'docker-compose.yml');
+  for (const composeRelPath of ['docker-compose.yml', 'docker-compose.rollout.yml']) {
+    const composePath = path.join(cwd, composeRelPath);
+    if (fs.existsSync(composePath)) {
+      const composeContent = fs.readFileSync(composePath, 'utf-8');
+      for (const key of parseComposeEnvKeys(composeContent)) {
+        recordKey(key, composeRelPath);
+      }
     }
   }
 

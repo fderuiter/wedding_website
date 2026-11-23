@@ -38,7 +38,7 @@ This document defines the authoritative, provider-neutral runtime contract for t
 
 ## 4. Environment Variable Matrix
 
-All operator-facing configuration across application runtime (`src/env.ts`, `src/lib/config.ts`), Next.js and VitePress build pipelines (`next.config.ts`, `scripts/build-export.mjs`, `docs-portal/.vitepress/config.mts`), and container orchestration (`Dockerfile`, `docker-compose.yml`) is supplied via environment variables. Core runtime variables are validated at startup by `src/env.ts` (Zod schema). Internal framework and test-runner flags (`NEXT_RUNTIME`, `npm_lifecycle_event`, and `JEST_WORKER_ID`) are managed automatically by Next.js, npm, and Jest rather than configured by operators.
+All operator-facing configuration across application runtime (`src/env.ts`, `src/lib/config.ts`), Next.js and VitePress build pipelines (`next.config.ts`, `scripts/build-export.mjs`, `docs-portal/.vitepress/config.mts`), and container orchestration (`Dockerfile`, `docker-compose.yml`, `docker-compose.rollout.yml`) is supplied via environment variables. Core runtime variables are validated at startup by `src/env.ts` (Zod schema). Internal framework and test-runner flags (`NEXT_RUNTIME`, `npm_lifecycle_event`, and `JEST_WORKER_ID`) are managed automatically by Next.js, npm, and Jest rather than configured by operators.
 
 ### Mandatory Runtime Variables
 | Variable | Default Value | Description & Validation Requirements |
@@ -102,9 +102,10 @@ These variables configure container port binding, static HTML export builds, Vit
 | `DB_PASSWORD` | *None* | Docker Compose (`docker-compose.yml`) | Mandatory PostgreSQL password (`${DB_PASSWORD:?...}`) interpolated into the `db` container (`POSTGRES_PASSWORD`) and fallback `migration`/`app` `DATABASE_URL` (CI smoke tests supply `wedding123` via `docker-compose.ci.yml`). |
 | `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and fallback `migration`/`app` `DATABASE_URL`. |
 | `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Loopback host TCP port published to container port `5432` for the `db` service (`127.0.0.1:${DB_PORT:-5432}:5432`). |
+| `STANDBY_PORT` | `3001` | Docker Compose Rollout (`docker-compose.rollout.yml`, `scripts/rollout-vps.sh`) | Loopback host TCP port published to container port `3000` for the temporary `app-standby` service during zero-downtime VPS rollouts (`127.0.0.1:${STANDBY_PORT:-3001}:3000`). |
 
 ### Optional Site Configuration Overrides (`SITE_*`)
-`src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:
+`src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`. Both `docker-compose.yml` (`app`) and `docker-compose.rollout.yml` (`app-standby`) forward all 32 `SITE_*` keys from the host environment (`${SITE_*:-}`), and `getEnvConfigOverrides` trims leading/trailing whitespace via `.trim()` while treating empty or whitespace-only strings as unset before validation and `isSiteInitialized` checks:
 | Variable | Default Value | Target `AppConfig` Field | Description |
 |---|---|---|---|
 | `SITE_PARTNER1_NAME` | *None* | `partner1Name` | Override Partner 1 display name (when non-empty). |
@@ -145,7 +146,7 @@ These variables configure container port binding, static HTML export builds, Vit
 ## 5. Statelessness & Filesystem Expectations
 
 - **Stateless Application Layer**: The application process is fully stateless and ephemeral.
-- **Local Filesystem & Read-Only Root Execution**: Scratch write operations to `/tmp` or `/app/.next/cache` (for Next.js `/_next/image` optimization) are temporary and must not be relied upon across container restarts or horizontal scaling. `docker-compose.yml` enforces `read_only: true`, `cap_drop: [ALL]`, and `security_opt: [no-new-privileges:true]` on both `migration` and `app`, mounting ephemeral `tmpfs` volumes at `/tmp` and `/app/.next/cache:uid=1001,gid=1001,mode=0755`.
+- **Local Filesystem & Read-Only Root Execution**: Scratch write operations to `/tmp` or `/app/.next/cache` (for Next.js `/_next/image` optimization) are temporary and must not be relied upon across container restarts or horizontal scaling. `docker-compose.yml` (and `docker-compose.rollout.yml` for `app-standby`) enforces `read_only: true`, `cap_drop: [ALL]`, and `security_opt: [no-new-privileges:true]` on application and migration containers (`NoNewPrivs: 1` across `db`, `migration`, `app`, and `app-standby`), `shm_size: "256mb"` on `db`, bounded `json-file` log rotation (`max-size: "10m"`, `max-file: "3"`), explicit `pids_limit` and `mem_limit` caps, and ephemeral `tmpfs` volumes at `/tmp` and `/app/.next/cache:uid=1001,gid=1001,mode=0755`.
 - **Data & Media Persistence**:
   - Application state, registry items, contributors, and content configurations are stored in PostgreSQL (`prisma/schema.prisma`).
   - Uploaded media files are stored in S3-compatible object storage when `S3_*` credentials are configured, or written to `/app/public/uploads` via `LocalStorageProvider` (`src/utils/storage.ts`) when backed by a persistent volume/disk (such as `uploads_data:/app/public/uploads` in `docker-compose.yml` or a Render Persistent Disk) and streamed dynamically at `/uploads/*` in standalone mode (`next.config.ts` server `rewrites()` + `src/app/api/uploads/[...path]/route.ts` with `X-Content-Type-Options: nosniff`).

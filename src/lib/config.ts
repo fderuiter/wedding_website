@@ -189,74 +189,142 @@ export function isSiteInitialized(config: AppConfigDTO | null | undefined): bool
   return true;
 }
 
+function readNonEmptySiteEnv(raw: string | undefined): string | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 /**
  * Extract site configuration overrides specified via environment variables (Layer 1 override).
  */
 function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   const overrides: Partial<LocalAppConfig> = {};
 
-  if (process.env.SITE_BRIDE_NAME) {
-    overrides.brideName = process.env.SITE_BRIDE_NAME;
-    overrides.partner1Name = process.env.SITE_BRIDE_NAME;
+  const siteBrideName = readNonEmptySiteEnv(process.env.SITE_BRIDE_NAME);
+  if (siteBrideName !== undefined) {
+    overrides.brideName = siteBrideName;
+    overrides.partner1Name = siteBrideName;
   }
-  if (process.env.SITE_GROOM_NAME) {
-    overrides.groomName = process.env.SITE_GROOM_NAME;
-    overrides.partner2Name = process.env.SITE_GROOM_NAME;
+  const siteGroomName = readNonEmptySiteEnv(process.env.SITE_GROOM_NAME);
+  if (siteGroomName !== undefined) {
+    overrides.groomName = siteGroomName;
+    overrides.partner2Name = siteGroomName;
   }
-  if (process.env.SITE_PARTNER1_NAME) {
-    overrides.partner1Name = process.env.SITE_PARTNER1_NAME;
-    overrides.brideName = process.env.SITE_PARTNER1_NAME;
+  const sitePartner1Name = readNonEmptySiteEnv(process.env.SITE_PARTNER1_NAME);
+  if (sitePartner1Name !== undefined) {
+    overrides.partner1Name = sitePartner1Name;
+    overrides.brideName = sitePartner1Name;
   }
-  if (process.env.SITE_PARTNER2_NAME) {
-    overrides.partner2Name = process.env.SITE_PARTNER2_NAME;
-    overrides.groomName = process.env.SITE_PARTNER2_NAME;
+  const sitePartner2Name = readNonEmptySiteEnv(process.env.SITE_PARTNER2_NAME);
+  if (sitePartner2Name !== undefined) {
+    overrides.partner2Name = sitePartner2Name;
+    overrides.groomName = sitePartner2Name;
   }
-  if (process.env.SITE_WEDDING_DATE !== undefined) {
-    overrides.weddingDate = new Date(process.env.SITE_WEDDING_DATE);
+
+  const siteWeddingDate = readNonEmptySiteEnv(process.env.SITE_WEDDING_DATE);
+  if (siteWeddingDate !== undefined) {
+    overrides.weddingDate = new Date(siteWeddingDate);
   }
-  if (process.env.SITE_BASE_URL !== undefined) overrides.baseUrl = process.env.SITE_BASE_URL;
-  if (process.env.SITE_VENUE_NAME) overrides.venueName = process.env.SITE_VENUE_NAME;
-  if (process.env.SITE_VENUE_ADDRESS !== undefined) overrides.venueAddress = process.env.SITE_VENUE_ADDRESS;
-  if (process.env.SITE_VENUE_CITY !== undefined) overrides.venueCity = process.env.SITE_VENUE_CITY;
-  if (process.env.SITE_VENUE_STATE !== undefined) overrides.venueState = process.env.SITE_VENUE_STATE;
-  if (process.env.SITE_VENUE_ZIP !== undefined) overrides.venueZip = process.env.SITE_VENUE_ZIP;
-  if (process.env.SITE_LATITUDE !== undefined) {
-    const parsed = parseFloat(process.env.SITE_LATITUDE);
-    overrides.latitude = isNaN(parsed) ? (process.env.SITE_LATITUDE as any) : parsed;
+
+  const siteBaseUrl = readNonEmptySiteEnv(process.env.SITE_BASE_URL);
+  if (siteBaseUrl !== undefined) overrides.baseUrl = siteBaseUrl;
+
+  const siteVenueName = readNonEmptySiteEnv(process.env.SITE_VENUE_NAME);
+  if (siteVenueName !== undefined) overrides.venueName = siteVenueName;
+
+  const siteVenueAddress = readNonEmptySiteEnv(process.env.SITE_VENUE_ADDRESS);
+  if (siteVenueAddress !== undefined) overrides.venueAddress = siteVenueAddress;
+
+  const siteVenueCity = readNonEmptySiteEnv(process.env.SITE_VENUE_CITY);
+  if (siteVenueCity !== undefined) overrides.venueCity = siteVenueCity;
+
+  const siteVenueState = readNonEmptySiteEnv(process.env.SITE_VENUE_STATE);
+  if (siteVenueState !== undefined) overrides.venueState = siteVenueState;
+
+  const siteVenueZip = readNonEmptySiteEnv(process.env.SITE_VENUE_ZIP);
+  if (siteVenueZip !== undefined) overrides.venueZip = siteVenueZip;
+
+  const siteLatitude = readNonEmptySiteEnv(process.env.SITE_LATITUDE);
+  if (siteLatitude !== undefined) {
+    const parsed = parseFloat(siteLatitude);
+    overrides.latitude = isNaN(parsed) ? (siteLatitude as any) : parsed;
   }
-  if (process.env.SITE_LONGITUDE !== undefined) {
-    const parsed = parseFloat(process.env.SITE_LONGITUDE);
-    overrides.longitude = isNaN(parsed) ? (process.env.SITE_LONGITUDE as any) : parsed;
+
+  const siteLongitude = readNonEmptySiteEnv(process.env.SITE_LONGITUDE);
+  if (siteLongitude !== undefined) {
+    const parsed = parseFloat(siteLongitude);
+    overrides.longitude = isNaN(parsed) ? (siteLongitude as any) : parsed;
   }
-  if (process.env.SITE_TIMEZONE) overrides.timezone = process.env.SITE_TIMEZONE;
-  if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
-  if (process.env.SITE_COLOR_SECONDARY) overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
-  if (process.env.SITE_THEME_PRESET) overrides.themePreset = process.env.SITE_THEME_PRESET as any;
-  if (process.env.SITE_THEME_TOKENS) {
+
+  const siteTimezone = readNonEmptySiteEnv(process.env.SITE_TIMEZONE);
+  if (siteTimezone !== undefined) overrides.timezone = siteTimezone;
+
+  const siteColorPrimary = readNonEmptySiteEnv(process.env.SITE_COLOR_PRIMARY);
+  if (siteColorPrimary !== undefined) overrides.colorPrimary = siteColorPrimary;
+
+  const siteColorSecondary = readNonEmptySiteEnv(process.env.SITE_COLOR_SECONDARY);
+  if (siteColorSecondary !== undefined) overrides.colorSecondary = siteColorSecondary;
+
+  const siteThemePreset = readNonEmptySiteEnv(process.env.SITE_THEME_PRESET);
+  if (siteThemePreset !== undefined) overrides.themePreset = siteThemePreset as any;
+
+  const siteThemeTokens = readNonEmptySiteEnv(process.env.SITE_THEME_TOKENS);
+  if (siteThemeTokens !== undefined) {
     try {
-      (overrides as any).themeTokens = JSON.parse(process.env.SITE_THEME_TOKENS);
+      (overrides as any).themeTokens = JSON.parse(siteThemeTokens);
     } catch {
       // Ignore malformed JSON in environment variable
     }
   }
-  if (process.env.SITE_SHOW_COUNTDOWN !== undefined) {
-    overrides.showCountdown = process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
+
+  const siteShowCountdown = readNonEmptySiteEnv(process.env.SITE_SHOW_COUNTDOWN);
+  if (siteShowCountdown !== undefined) {
+    overrides.showCountdown = siteShowCountdown.toLowerCase() === 'true';
   }
-  if (process.env.SITE_SHOW_ADD_TO_CALENDAR !== undefined) {
-    overrides.showAddToCalendar = process.env.SITE_SHOW_ADD_TO_CALENDAR.toLowerCase() === 'true';
+
+  const siteShowAddToCalendar = readNonEmptySiteEnv(process.env.SITE_SHOW_ADD_TO_CALENDAR);
+  if (siteShowAddToCalendar !== undefined) {
+    overrides.showAddToCalendar = siteShowAddToCalendar.toLowerCase() === 'true';
   }
-  if (process.env.SITE_SEO_TITLE !== undefined) overrides.seoTitle = process.env.SITE_SEO_TITLE;
-  if (process.env.SITE_SEO_DESCRIPTION !== undefined) overrides.seoDescription = process.env.SITE_SEO_DESCRIPTION;
-  if (process.env.SITE_BRAND_MONOGRAM !== undefined) overrides.brandMonogram = process.env.SITE_BRAND_MONOGRAM;
-  if (process.env.SITE_BRAND_LOGO_URL !== undefined) overrides.brandLogoUrl = process.env.SITE_BRAND_LOGO_URL;
-  if (process.env.SITE_BRAND_LOGO_ALT !== undefined) overrides.brandLogoAlt = process.env.SITE_BRAND_LOGO_ALT;
-  if (process.env.SITE_HERO_IMAGE_URL !== undefined) overrides.heroImageUrl = process.env.SITE_HERO_IMAGE_URL;
-  if (process.env.SITE_HERO_IMAGE_ALT !== undefined) overrides.heroImageAlt = process.env.SITE_HERO_IMAGE_ALT;
-  if (process.env.SITE_BRAND_WATERMARK_URL !== undefined) overrides.brandWatermarkUrl = process.env.SITE_BRAND_WATERMARK_URL;
-  if (process.env.SITE_BRAND_WATERMARK_ALT !== undefined) overrides.brandWatermarkAlt = process.env.SITE_BRAND_WATERMARK_ALT;
-  if (process.env.SITE_BADGE_GRAPHIC_URL !== undefined) overrides.badgeGraphicUrl = process.env.SITE_BADGE_GRAPHIC_URL;
-  if (process.env.SITE_BADGE_GRAPHIC_ALT !== undefined) overrides.badgeGraphicAlt = process.env.SITE_BADGE_GRAPHIC_ALT;
-  if (process.env.SITE_CONTACT_EMAIL !== undefined) overrides.contactEmail = process.env.SITE_CONTACT_EMAIL;
+
+  const siteSeoTitle = readNonEmptySiteEnv(process.env.SITE_SEO_TITLE);
+  if (siteSeoTitle !== undefined) overrides.seoTitle = siteSeoTitle;
+
+  const siteSeoDescription = readNonEmptySiteEnv(process.env.SITE_SEO_DESCRIPTION);
+  if (siteSeoDescription !== undefined) overrides.seoDescription = siteSeoDescription;
+
+  const siteBrandMonogram = readNonEmptySiteEnv(process.env.SITE_BRAND_MONOGRAM);
+  if (siteBrandMonogram !== undefined) overrides.brandMonogram = siteBrandMonogram;
+
+  const siteBrandLogoUrl = readNonEmptySiteEnv(process.env.SITE_BRAND_LOGO_URL);
+  if (siteBrandLogoUrl !== undefined) overrides.brandLogoUrl = siteBrandLogoUrl;
+
+  const siteBrandLogoAlt = readNonEmptySiteEnv(process.env.SITE_BRAND_LOGO_ALT);
+  if (siteBrandLogoAlt !== undefined) overrides.brandLogoAlt = siteBrandLogoAlt;
+
+  const siteHeroImageUrl = readNonEmptySiteEnv(process.env.SITE_HERO_IMAGE_URL);
+  if (siteHeroImageUrl !== undefined) overrides.heroImageUrl = siteHeroImageUrl;
+
+  const siteHeroImageAlt = readNonEmptySiteEnv(process.env.SITE_HERO_IMAGE_ALT);
+  if (siteHeroImageAlt !== undefined) overrides.heroImageAlt = siteHeroImageAlt;
+
+  const siteBrandWatermarkUrl = readNonEmptySiteEnv(process.env.SITE_BRAND_WATERMARK_URL);
+  if (siteBrandWatermarkUrl !== undefined) overrides.brandWatermarkUrl = siteBrandWatermarkUrl;
+
+  const siteBrandWatermarkAlt = readNonEmptySiteEnv(process.env.SITE_BRAND_WATERMARK_ALT);
+  if (siteBrandWatermarkAlt !== undefined) overrides.brandWatermarkAlt = siteBrandWatermarkAlt;
+
+  const siteBadgeGraphicUrl = readNonEmptySiteEnv(process.env.SITE_BADGE_GRAPHIC_URL);
+  if (siteBadgeGraphicUrl !== undefined) overrides.badgeGraphicUrl = siteBadgeGraphicUrl;
+
+  const siteBadgeGraphicAlt = readNonEmptySiteEnv(process.env.SITE_BADGE_GRAPHIC_ALT);
+  if (siteBadgeGraphicAlt !== undefined) overrides.badgeGraphicAlt = siteBadgeGraphicAlt;
+
+  const siteContactEmail = readNonEmptySiteEnv(process.env.SITE_CONTACT_EMAIL);
+  if (siteContactEmail !== undefined) overrides.contactEmail = siteContactEmail;
 
   return overrides;
 }
