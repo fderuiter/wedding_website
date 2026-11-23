@@ -633,14 +633,22 @@ describe('useScheduleRsvpManager', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('sends clearDietaryNotes: true when baseline dietary notes are intentionally cleared', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        success: true,
-        data: [{ id: 'r1', subEventId: 'event-prefill', status: 'attending', plusOneCount: 0, dietaryNotes: '' }],
-      }),
-    });
+  it('sends clearDietaryNotes: true when baseline dietary notes are intentionally cleared from pending or attending states', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [{ id: 'r1', subEventId: 'event-prefill', status: 'attending', plusOneCount: 0, dietaryNotes: '' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [{ id: 'r2', subEventId: 'event-attending', status: 'attending', plusOneCount: 1, dietaryNotes: '' }],
+        }),
+      });
 
     const { result } = renderHook(() =>
       useScheduleRsvpManager({
@@ -649,6 +657,11 @@ describe('useScheduleRsvpManager', () => {
             id: 'event-prefill',
             title: 'Ceremony',
             userRsvp: { status: 'pending', plusOneCount: 0, dietaryNotes: 'Peanut allergy' },
+          },
+          {
+            id: 'event-attending',
+            title: 'Reception',
+            userRsvp: { status: 'attending', plusOneCount: 1, dietaryNotes: 'No shellfish' },
           },
         ],
       })
@@ -662,13 +675,33 @@ describe('useScheduleRsvpManager', () => {
       await result.current.submitSingle('event-prefill');
     });
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/rsvp', {
+    expect(global.fetch).toHaveBeenNthCalledWith(1, '/api/rsvp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subEventId: 'event-prefill',
         status: 'attending',
         plusOneCount: 0,
+        dietaryNotes: '',
+        clearDietaryNotes: true,
+      }),
+    });
+
+    act(() => {
+      result.current.updateRsvp('event-attending', { dietaryNotes: '' });
+    });
+
+    await act(async () => {
+      await result.current.submitSingle('event-attending');
+    });
+
+    expect(global.fetch).toHaveBeenNthCalledWith(2, '/api/rsvp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subEventId: 'event-attending',
+        status: 'attending',
+        plusOneCount: 1,
         dietaryNotes: '',
         clearDietaryNotes: true,
       }),

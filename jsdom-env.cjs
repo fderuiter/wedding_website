@@ -32,9 +32,6 @@ class CustomEnvironment extends JSDOMEnvironment {
       addEventListener() {}
       removeEventListener() {}
     };
-    if (typeof this.global.MessagePort === 'undefined') {
-      this.global.MessagePort = class MessagePort {};
-    }
     this.global.crypto = require('node:crypto').webcrypto;
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {

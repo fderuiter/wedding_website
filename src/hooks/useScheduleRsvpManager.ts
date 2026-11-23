@@ -227,7 +227,7 @@ function buildSubmissionPayloadItem(
   };
 
   if (
-    item.baseline.status === 'pending' &&
+    !isDeclined &&
     item.baseline.dietaryNotes.trim().length > 0 &&
     item.current.dietaryNotes.trim().length === 0
   ) {

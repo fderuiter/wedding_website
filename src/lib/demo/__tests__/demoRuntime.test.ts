@@ -870,6 +870,22 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
           dietaryNotes: 'No shellfish',
         })
       );
+      const rsvpClearDietaryRes = await window.fetch('/api/rsvp', {
+        method: 'POST',
+        body: JSON.stringify({
+          subEventId: targetSubEventId,
+          status: 'attending',
+          plusOneCount: 1,
+          dietaryNotes: '',
+          clearDietaryNotes: true,
+        }),
+      });
+      expect(rsvpClearDietaryRes.status).toBe(200);
+      const scheduleAfterClear = await (await window.fetch('/api/schedule')).json();
+      const clearedNoteEvent = scheduleAfterClear.data.find(
+        (evt: { id: string }) => evt.id === targetSubEventId
+      );
+      expect(clearedNoteEvent.userRsvp.dietaryNotes).toBe('');
       const clearedGuestSession = await (
         await window.fetch('/api/guest/session', { method: 'DELETE' })
       ).json();

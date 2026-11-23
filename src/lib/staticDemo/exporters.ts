@@ -53,11 +53,14 @@ export function buildInvitationCodesCsv(
       'Country',
     ],
     invitations.map((inv) => {
+      const extraRecord =
+        inv.extraFields && typeof inv.extraFields === 'object' ? inv.extraFields : null;
+      const isDeclined =
+        typeof extraRecord?.attendanceStatus === 'string' &&
+        extraRecord.attendanceStatus.trim().toLowerCase() === 'declined';
       const confirmedPlusOnes =
-        inv.extraFields &&
-        typeof inv.extraFields === 'object' &&
-        typeof inv.extraFields.plusOneCount === 'number'
-          ? inv.extraFields.plusOneCount
+        extraRecord && typeof extraRecord.plusOneCount === 'number'
+          ? extraRecord.plusOneCount
           : null;
       return [
         inv.code,
@@ -66,7 +69,7 @@ export function buildInvitationCodesCsv(
         inv.householdName ?? '',
         inv.partyGroup ?? '',
         (inv.partyTags ?? []).join('; '),
-        confirmedPlusOnes ?? inv.plusOneAllocations ?? 0,
+        isDeclined ? 0 : (confirmedPlusOnes ?? inv.plusOneAllocations ?? 0),
         inv.dietaryNotes ?? '',
         inv.tableId ? (tableById.get(inv.tableId) ?? '') : '',
         inv.seatNumber ?? '',

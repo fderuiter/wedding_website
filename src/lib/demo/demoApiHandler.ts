@@ -762,10 +762,16 @@ async function handleDemoApi(
           .find((evt) => evt.id === subEventId)
           ?.rsvps.find((r) => r.invitationCodeId === seedGuest.id)
         : undefined;
-      const incomingDietary =
-        typeof entry.dietaryNotes === 'string' ? entry.dietaryNotes.trim() : '';
-      const clearDietaryNotes = entry.clearDietaryNotes === true;
-      const resolvedDietary = clearDietaryNotes
+      const rawDietary = entry.dietaryNotes;
+      const hasExplicitDietaryString = typeof rawDietary === 'string';
+      const incomingDietary = hasExplicitDietaryString ? rawDietary.trim() : '';
+      const hadExistingEventNote = Boolean(
+        existingOverride?.dietaryNotes?.trim() || seededRsvp?.dietaryNotes?.trim()
+      );
+      const shouldClearDietary =
+        entry.clearDietaryNotes === true ||
+        (status !== 'declined' && hasExplicitDietaryString && incomingDietary === '' && hadExistingEventNote);
+      const resolvedDietary = shouldClearDietary
         ? ''
         : incomingDietary ||
           existingOverride?.dietaryNotes ||

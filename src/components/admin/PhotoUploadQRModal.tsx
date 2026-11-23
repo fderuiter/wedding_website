@@ -453,7 +453,7 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
                     <div className="mt-1 text-[10px] text-stone-600">
                       Scan to upload wedding photos
                     </div>
-                    <div className="mt-0.5 text-[9px] uppercase tracking-wider text-muted-text font-sans">
+                    <div className="mt-0.5 text-[9px] uppercase tracking-wider text-stone-600 font-sans">
                       No login needed
                     </div>
                   </div>
