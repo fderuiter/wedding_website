@@ -13,11 +13,6 @@
     "src/**/*.test.{ts,tsx}",
     "src/testing/**/*.ts",
     "scripts/**/*.test.ts",
-    "src/features/**/admin.service.ts",
-    "src/features/**/index.ts",
-    "src/utils/storage.ts",
-    "src/utils/validation.ts",
-    "src/utils/backupValidation.ts",
     "scripts/*.ts",
     "scripts/*.mjs",
     "scripts/*.js"
@@ -29,18 +24,14 @@
     "eslint-rules/**/*.mjs"
   ],
   "github-actions": false,
-  "ignore": ["next-env.d.ts", ".next/**", ".next-export/**"],
   "ignoreDependencies": [
     "@electric-sql/pglite",
     "@electric-sql/pglite-socket",
-    "tailwindcss",
     "lint-staged",
-    "vitepress",
     "mermaid",
     "vitepress-plugin-mermaid",
     "swagger-ui-dist"
   ],
-  "ignoreUnresolved": ["./.next/dev/types/routes.d.ts", ".next/dev/types/routes.d.ts"],
   "rules": {
     "duplicates": "off",
     "files": "error",
@@ -49,8 +40,7 @@
     "namespaceMembers": "warn",
     "enumMembers": "warn",
     "types": "error",
-    "nsTypes": "error",
-    "duplicates": "off"
+    "nsTypes": "error"
   },
   "treatConfigHintsAsErrors": false
 }
