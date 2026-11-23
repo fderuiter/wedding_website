@@ -270,6 +270,7 @@ describe('HomePageClient', () => {
       act(() => {
         window.dispatchEvent(
           new MessageEvent('message', {
+            origin: window.location.origin,
             data: {
               type: 'DRAFT_UPDATE',
               draftType: 'config',
@@ -287,6 +288,73 @@ describe('HomePageClient', () => {
       expect(within(travelSection).getByText('Garage validation included.')).toBeInTheDocument();
       expect(within(travelSection).queryByRole('link', { name: /explore local guide & things to do/i })).not.toBeInTheDocument();
       expect(screen.queryByText('Preview Hotel Block')).not.toBeInTheDocument();
+
+      // Cross-origin DRAFT_UPDATE messages are rejected
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            origin: 'https://malicious.example.com',
+            data: {
+              type: 'DRAFT_UPDATE',
+              draftType: 'config',
+              draftData: {
+                travelAdvice: 'Spoofed cross-origin travel advice',
+              },
+            },
+          })
+        );
+      });
+      expect(screen.queryByText('Spoofed cross-origin travel advice')).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, 'parent', {
+        configurable: true,
+        value: originalParent,
+      });
+    }
+  });
+
+  test('binds #schedule anchor without duplicating #details or #schedule-timeline and renders live Schedule DRAFT_UPDATE nodes', () => {
+    const originalParent = window.parent;
+    Object.defineProperty(window, 'parent', {
+      configurable: true,
+      value: {} as Window,
+    });
+
+    try {
+      const { container } = render(<HomePageClient config={mockConfig} contentNodes={[]} />);
+
+      expect(container.querySelectorAll('#schedule')).toHaveLength(1);
+      expect(container.querySelectorAll('#details')).toHaveLength(1);
+
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            origin: window.location.origin,
+            data: {
+              type: 'DRAFT_UPDATE',
+              draftType: 'content',
+              draftData: [
+                {
+                  id: 'draft-sched-1',
+                  type: 'Schedule',
+                  tags: ['Schedule'],
+                  data: {
+                    title: 'Live Preview Rooftop Reception',
+                    startTime: '2026-12-31T20:00:00.000Z',
+                    endTime: '2026-12-31T23:00:00.000Z',
+                    locationName: 'Skyline Terrace',
+                    categoryTags: ['Reception'],
+                  },
+                },
+              ],
+            },
+          })
+        );
+      });
+
+      expect(screen.getByText('Live Preview Rooftop Reception')).toBeInTheDocument();
+      expect(screen.getByText('Skyline Terrace')).toBeInTheDocument();
+      expect(container.querySelectorAll('#schedule-timeline')).toHaveLength(1);
     } finally {
       Object.defineProperty(window, 'parent', {
         configurable: true,

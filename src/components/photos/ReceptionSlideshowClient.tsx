@@ -14,6 +14,7 @@ export interface SlideshowPhoto {
   uploaderName?: string;
   isGuestUpload?: boolean;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 interface ReceptionSlideshowClientProps {
@@ -61,17 +62,20 @@ export function ReceptionSlideshowClient({
   const headerRef = useRef<HTMLElement | null>(null);
   const controlsRef = useRef<HTMLElement | null>(null);
 
-  // Derive initial timestamp cursor from provided initial photos
+  // Derive initial timestamp cursor from provided initial photos (preferring updatedAt over createdAt)
   const initialLatestTimestamp = useMemo(() => {
     if (!initialPhotos || !Array.isArray(initialPhotos)) return null;
     let maxMs = -Infinity;
     let maxIso: string | null = null;
     for (const item of initialPhotos) {
-      if (typeof item !== 'string' && item.createdAt) {
-        const ms = new Date(item.createdAt).getTime();
-        if (!isNaN(ms) && ms > maxMs) {
-          maxMs = ms;
-          maxIso = item.createdAt;
+      if (typeof item !== 'string') {
+        const cursorValue = item.updatedAt || item.createdAt;
+        if (cursorValue) {
+          const ms = new Date(cursorValue).getTime();
+          if (!isNaN(ms) && ms > maxMs) {
+            maxMs = ms;
+            maxIso = cursorValue;
+          }
         }
       }
     }
@@ -94,9 +98,9 @@ export function ReceptionSlideshowClient({
   const resolvedUploadUrl = useMemo(() => {
     if (uploadUrl) return uploadUrl;
     if (typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}/photos`;
+      return `${window.location.origin}/photos?tab=guest`;
     }
-    return '/photos';
+    return '/photos?tab=guest';
   }, [uploadUrl]);
 
   // Helper to determine whether an element is an interactive control in the slideshow
@@ -241,42 +245,93 @@ export function ReceptionSlideshowClient({
 
       const data = await response.json();
       if (data?.photos && Array.isArray(data.photos) && data.photos.length > 0) {
-        for (const p of data.photos) {
-          if (p.createdAt) {
-            const ms = new Date(p.createdAt).getTime();
+        for (const p of data.photos as SlideshowPhoto[]) {
+          const cursorValue = p.updatedAt || p.createdAt;
+          if (cursorValue) {
+            const ms = new Date(cursorValue).getTime();
             if (!isNaN(ms)) {
-              const currentMs = latestTimestampRef.current ? new Date(latestTimestampRef.current).getTime() : -Infinity;
+              const currentMs = latestTimestampRef.current
+                ? new Date(latestTimestampRef.current).getTime()
+                : -Infinity;
               if (ms > currentMs) {
-                latestTimestampRef.current = p.createdAt;
+                latestTimestampRef.current = cursorValue;
               }
             }
           }
         }
 
+        const mapPolledSlide = (p: SlideshowPhoto): SlideshowPhoto => {
+          const caption = p.caption?.trim() || undefined;
+          const uploaderName = p.uploaderName?.trim() || undefined;
+          const explicitTitle = p.title?.trim() || undefined;
+          const explicitAltText = p.altText?.trim() || undefined;
+          return {
+            id: p.id,
+            url: p.url,
+            title:
+              explicitTitle ||
+              caption ||
+              explicitAltText ||
+              (uploaderName ? `Photo by ${uploaderName}` : 'Reception Photo'),
+            altText: explicitAltText || caption || explicitTitle,
+            ...(caption ? { caption } : {}),
+            ...(uploaderName ? { uploaderName } : {}),
+            isGuestUpload: Boolean(p.isGuestUpload),
+            createdAt: p.createdAt,
+            ...(p.updatedAt ? { updatedAt: p.updatedAt } : {}),
+          };
+        };
+
         setPhotos((prev) => {
-          const existingUrls = new Set(prev.map((p) => p.url));
-          const newPhotos: SlideshowPhoto[] = data.photos
+          const incomingById = new Map<string, SlideshowPhoto>();
+          const incomingByUrl = new Map<string, SlideshowPhoto>();
+
+          for (const raw of data.photos as SlideshowPhoto[]) {
+            if (!raw?.url || failedUrls.has(raw.url) || failedUrlsRef.current.has(raw.url)) {
+              continue;
+            }
+            const normalized = mapPolledSlide(raw);
+            if (normalized.id) {
+              incomingById.set(normalized.id, normalized);
+            }
+            incomingByUrl.set(normalized.url, normalized);
+          }
+
+          let didUpdateExisting = false;
+          const refreshedPrev = prev.map((existing) => {
+            const updated =
+              (existing.id ? incomingById.get(existing.id) : undefined) ||
+              incomingByUrl.get(existing.url);
+            if (!updated) {
+              return existing;
+            }
+            didUpdateExisting = true;
+            return {
+              ...existing,
+              ...updated,
+              caption: updated.caption,
+              uploaderName: updated.uploaderName,
+            };
+          });
+
+          const existingIds = new Set(
+            refreshedPrev.map((p) => p.id).filter((id): id is string => Boolean(id))
+          );
+          const existingUrls = new Set(refreshedPrev.map((p) => p.url));
+
+          const newPhotos: SlideshowPhoto[] = (data.photos as SlideshowPhoto[])
             .filter(
-              (p: SlideshowPhoto) =>
-                p.url &&
+              (p) =>
+                p?.url &&
+                (!p.id || !existingIds.has(p.id)) &&
                 !existingUrls.has(p.url) &&
                 !failedUrls.has(p.url) &&
                 !failedUrlsRef.current.has(p.url)
             )
-            .map((p: SlideshowPhoto) => ({
-              id: p.id,
-              url: p.url,
-              title: p.caption || p.title || p.altText || (p.uploaderName ? `Photo by ${p.uploaderName}` : 'Reception Photo'),
-              altText: p.altText || p.caption || p.title,
-              ...(p.caption ? { caption: p.caption } : {}),
-              ...(p.uploaderName ? { uploaderName: p.uploaderName } : {}),
-              isGuestUpload: Boolean(p.isGuestUpload),
-              createdAt: p.createdAt,
-            }));
+            .map(mapPolledSlide);
 
-          if (newPhotos.length > 0) {
-            // Append newly approved photos to the slideshow queue
-            return [...prev, ...newPhotos];
+          if (didUpdateExisting || newPhotos.length > 0) {
+            return [...refreshedPrev, ...newPhotos];
           }
           return prev;
         });

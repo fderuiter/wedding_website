@@ -1170,4 +1170,112 @@ describe('ReceptionSlideshowClient', () => {
     expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Late Night Tacos');
     expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent('Shared by Cousin Leo');
   });
+
+  it('defaults QR code link to /photos?tab=guest when uploadUrl is omitted, advances cursor using updatedAt on out-of-order approvals, and refreshes existing slide captions in-place', async () => {
+    const mockFetch = jest
+      .fn()
+      // First poll: returns an out-of-order approved photo (createdAt BEFORE initial updatedAt, updatedAt AFTER)
+      // plus an updated caption on existing slide 'slide-1'
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          photos: [
+            {
+              id: 'slide-1',
+              url: 'https://example.com/sparklers.jpg',
+              title: 'Polished Sparkler Send-Off',
+              caption: 'Polished Sparkler Send-Off',
+              uploaderName: 'Clara & Joe',
+              isGuestUpload: true,
+              createdAt: '2026-06-20T20:00:00.000Z',
+              updatedAt: '2026-06-20T21:10:00.000Z',
+            },
+            {
+              id: 'slide-early-upload',
+              url: 'https://example.com/early-upload.jpg',
+              title: 'Cocktail Hour Candid',
+              caption: 'Cocktail Hour Candid',
+              uploaderName: 'Uncle Bob',
+              isGuestUpload: true,
+              createdAt: '2026-06-20T19:00:00.000Z',
+              updatedAt: '2026-06-20T21:20:00.000Z',
+            },
+          ],
+        }),
+      })
+      // Second poll: clears caption and uploaderName on slide-1
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          photos: [
+            {
+              id: 'slide-1',
+              url: 'https://example.com/sparklers.jpg',
+              title: 'Guest Photo',
+              isGuestUpload: true,
+              createdAt: '2026-06-20T20:00:00.000Z',
+              updatedAt: '2026-06-20T21:25:00.000Z',
+            },
+          ],
+        }),
+      });
+    global.fetch = mockFetch;
+
+    render(
+      <ReceptionSlideshowClient
+        initialPhotos={[
+          {
+            id: 'slide-1',
+            url: 'https://example.com/sparklers.jpg',
+            title: 'Raw typo caption',
+            caption: 'Raw typo caption',
+            uploaderName: 'Aunt Clara',
+            isGuestUpload: true,
+            createdAt: '2026-06-20T20:00:00.000Z',
+            updatedAt: '2026-06-20T21:00:00.000Z',
+          },
+        ]}
+      />
+    );
+
+    // Pause slide rotation so slide-1 stays active while 30s polling intervals run
+    fireEvent.click(screen.getByTestId('slideshow-play-pause-btn'));
+
+    // Default fallback QR URL includes ?tab=guest
+    expect(screen.getByTestId('themed-qr-code').getAttribute('data-value')).toMatch(
+      /\/photos\?tab=guest$/
+    );
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Raw typo caption');
+
+    // First 30s poll uses initial updatedAt (21:00:00)
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      '/api/photos?since=2026-06-20T21%3A00%3A00.000Z'
+    );
+
+    // Existing slide-1 refreshed in-place without duplicating, and out-of-order slide appended (total = 2)
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent(
+      'Polished Sparkler Send-Off'
+    );
+    expect(screen.getByTestId('slideshow-photo-attribution')).toHaveTextContent(
+      'Shared by Clara & Joe'
+    );
+
+    // Second 30s poll uses advanced updatedAt cursor (21:20:00) and clears attribution in-place
+    await act(async () => {
+      jest.advanceTimersByTime(30000);
+    });
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      '/api/photos?since=2026-06-20T21%3A20%3A00.000Z'
+    );
+    expect(screen.getByTestId('slideshow-photo-title')).toHaveTextContent('Guest Photo');
+    expect(screen.queryByTestId('slideshow-photo-attribution')).not.toBeInTheDocument();
+  });
 });

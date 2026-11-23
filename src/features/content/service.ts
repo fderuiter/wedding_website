@@ -48,7 +48,8 @@ export class ContentService {
     // Public gallery endpoints return only photos with status APPROVED or isVisible true (excluding PENDING and REJECTED)
     return nodes
       .filter((node) => {
-        if (sinceTime !== null && node.createdAt && node.createdAt.getTime() <= sinceTime) {
+        const cursorDate = node.updatedAt ?? node.createdAt;
+        if (sinceTime !== null && cursorDate && cursorDate.getTime() <= sinceTime) {
           return false;
         }
 
@@ -122,7 +123,12 @@ export class ContentService {
     }) as any;
   }
 
-  async moderatePhoto(nodeId: string, action: 'approve' | 'reject', author: string = 'Admin') {
+  async moderatePhoto(
+    nodeId: string,
+    action: 'approve' | 'reject',
+    author: string = 'Admin',
+    metadata?: { caption?: string; uploaderName?: string }
+  ) {
     let node: any = null;
     if (typeof this.repo.getNodeById === 'function') {
       node = await this.repo.getNodeById(nodeId);
@@ -138,11 +144,67 @@ export class ContentService {
     const data = (node.data as any) || {};
 
     if (action === 'approve') {
-      const updatedData = {
+      const updatedData: Record<string, any> = {
         ...data,
         status: 'APPROVED',
         isVisible: true,
       };
+
+      const hasMetadataOverrides =
+        metadata !== undefined &&
+        (metadata.caption !== undefined || metadata.uploaderName !== undefined);
+
+      if (hasMetadataOverrides) {
+        if (metadata.caption !== undefined) {
+          const trimmedCaption = metadata.caption.trim();
+          if (trimmedCaption) {
+            updatedData.caption = trimmedCaption;
+          } else {
+            delete updatedData.caption;
+          }
+        }
+        if (metadata.uploaderName !== undefined) {
+          const trimmedUploader = metadata.uploaderName.trim();
+          if (trimmedUploader) {
+            updatedData.uploaderName = trimmedUploader;
+          } else {
+            delete updatedData.uploaderName;
+          }
+        }
+
+        const effectiveCaption =
+          typeof updatedData.caption === 'string' && updatedData.caption.trim()
+            ? updatedData.caption.trim()
+            : undefined;
+        const effectiveUploader =
+          typeof updatedData.uploaderName === 'string' && updatedData.uploaderName.trim()
+            ? updatedData.uploaderName.trim()
+            : undefined;
+        const isGuestNode = Boolean(node.tags?.includes('guest-upload'));
+        const previousAutoLabel =
+          data.caption || (data.uploaderName ? `Photo by ${data.uploaderName}` : 'Guest Photo');
+
+        if (isGuestNode || !data.title || data.title === previousAutoLabel) {
+          const nextTitle =
+            effectiveCaption ||
+            (effectiveUploader ? `Photo by ${effectiveUploader}` : 'Guest Photo');
+          updatedData.title = nextTitle;
+          updatedData.altText = nextTitle;
+        }
+
+        if (data.mediaId && updatedData.altText) {
+          try {
+            const { mediaRepository } = await import('@/features/media');
+            await mediaRepository.client?.media?.update?.({
+              where: { id: data.mediaId },
+              data: { altText: String(updatedData.altText) },
+            });
+          } catch {
+            // Ignore optional media altText sync failure
+          }
+        }
+      }
+
       if (typeof this.repo.updateNode === 'function') {
         return await this.repo.updateNode(nodeId, { data: updatedData }, author);
       }

@@ -83,7 +83,14 @@ export const PATCH = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, "Invalid moderation action. Must be 'approve' or 'reject'");
   }
 
-  const result = await contentService.moderatePhoto(id, action, 'Admin');
+  const hasMetadataOverrides =
+    parsed.data.caption !== undefined || parsed.data.uploaderName !== undefined;
+  const result = hasMetadataOverrides
+    ? await contentService.moderatePhoto(id, action, 'Admin', {
+      caption: parsed.data.caption,
+      uploaderName: parsed.data.uploaderName,
+    })
+    : await contentService.moderatePhoto(id, action, 'Admin');
 
   return NextResponse.json({
     success: true,

@@ -95,6 +95,10 @@ describe('GuestPhotoDropzone', () => {
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
 
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(screen.getByTestId('staged-uploads-bar')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
         '/api/guest/photos/upload',
@@ -138,6 +142,7 @@ describe('GuestPhotoDropzone', () => {
     });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(handleSuccess).toHaveBeenCalledWith(
@@ -173,6 +178,9 @@ describe('GuestPhotoDropzone', () => {
       },
     });
 
+    expect(global.fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
@@ -194,6 +202,7 @@ describe('GuestPhotoDropzone', () => {
     const validFile = new File(['corrupt data'], 'photo.jpg', { type: 'image/jpeg' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(screen.getByTestId('upload-error-badge')).toHaveTextContent('Failed');
@@ -211,6 +220,7 @@ describe('GuestPhotoDropzone', () => {
     const validFile = new File(['valid photo data'], 'retry-me.jpg', { type: 'image/jpeg' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(screen.getByTestId('upload-error-badge')).toHaveTextContent('Failed');
@@ -257,6 +267,9 @@ describe('GuestPhotoDropzone', () => {
     ];
 
     fireEvent.change(fileInput, { target: { files } });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(screen.getByTestId('confirm-upload-btn')).toHaveTextContent('Upload 4 Photos');
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     // Exactly 2 active uploads should be triggered initially
     await waitFor(() => {
@@ -339,6 +352,7 @@ describe('GuestPhotoDropzone', () => {
     const validFile = new File(['file data'], 'cancel-me.jpg', { type: 'image/jpeg' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -382,6 +396,7 @@ describe('GuestPhotoDropzone', () => {
     ];
 
     fireEvent.change(fileInput, { target: { files } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(2);
@@ -420,6 +435,7 @@ describe('GuestPhotoDropzone', () => {
     ];
 
     fireEvent.change(fileInput, { target: { files } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(2);
@@ -477,6 +493,9 @@ describe('GuestPhotoDropzone', () => {
       target: { files: [heicFile] },
     });
 
+    expect(global.fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
@@ -489,5 +508,60 @@ describe('GuestPhotoDropzone', () => {
     await waitFor(() => {
       expect(screen.getByTestId('upload-pending-notice')).toBeInTheDocument();
     });
+  });
+
+  it('prefills uploaderName from defaultUploaderName, applies attribution edited after file selection, keeps uploaderName, and resets caption on confirm', async () => {
+    const submittedPayloads: Array<{ uploaderName: FormDataEntryValue | null; caption: FormDataEntryValue | null }> = [];
+    (global.fetch as jest.Mock).mockImplementation(async (_url, options) => {
+      const fd = options?.body as FormData;
+      submittedPayloads.push({
+        uploaderName: fd.get('uploaderName'),
+        caption: fd.get('caption'),
+      });
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: [{ id: 'm-staged-1', url: '/uploads/photos/staged.jpg', status: 'PENDING', isVisible: false }],
+        }),
+      };
+    });
+
+    render(<GuestPhotoDropzone defaultUploaderName="The Rivera Family" />);
+
+    const uploaderInput = screen.getByTestId('guest-photo-uploader-name') as HTMLInputElement;
+    const captionInput = screen.getByTestId('guest-photo-caption') as HTMLInputElement;
+    expect(uploaderInput.value).toBe('The Rivera Family');
+
+    // Select a file FIRST before typing caption or editing uploaderName
+    const photoFile = new File(['jpeg-bytes'], 'table-toast.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByTestId('guest-photo-file-input'), {
+      target: { files: [photoFile] },
+    });
+
+    // Staged: no network request yet
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(screen.getByText('Ready to upload')).toBeInTheDocument();
+    expect(screen.getByTestId('confirm-upload-btn')).toHaveTextContent('Upload 1 Photo');
+
+    // Edit attribution AFTER file selection
+    fireEvent.change(uploaderInput, { target: { value: 'Elena Rivera' } });
+    fireEvent.change(captionInput, { target: { value: 'Cheers from Table 4!' } });
+
+    // Confirm upload
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    expect(submittedPayloads[0]).toEqual({
+      uploaderName: 'Elena Rivera',
+      caption: 'Cheers from Table 4!',
+    });
+
+    // uploaderName stays populated for subsequent uploads while caption is cleared
+    expect(uploaderInput.value).toBe('Elena Rivera');
+    expect(captionInput.value).toBe('');
   });
 });

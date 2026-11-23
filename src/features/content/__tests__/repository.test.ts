@@ -107,7 +107,7 @@ describe('ContentRepository.getNodesByType', () => {
     });
   });
 
-  it('filters createdAt with gt cursor when since is provided as a Date or ISO string', async () => {
+  it('filters updatedAt with gt cursor when since is provided as a Date or ISO string', async () => {
     const sinceDate = new Date('2026-06-20T18:00:00.000Z');
     mockPrisma.contentNode.findMany.mockResolvedValueOnce([]);
 
@@ -116,7 +116,7 @@ describe('ContentRepository.getNodesByType', () => {
     expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
       where: {
         type: 'Photo',
-        createdAt: { gt: sinceDate },
+        updatedAt: { gt: sinceDate },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -127,7 +127,7 @@ describe('ContentRepository.getNodesByType', () => {
     expect(mockPrisma.contentNode.findMany).toHaveBeenCalledWith({
       where: {
         type: 'Photo',
-        createdAt: { gt: sinceDate },
+        updatedAt: { gt: sinceDate },
       },
       orderBy: { createdAt: 'desc' },
     });

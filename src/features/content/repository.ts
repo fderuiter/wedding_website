@@ -126,7 +126,7 @@ export class ContentRepository implements IContentRepository {
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
       if (!isNaN(sinceDate.getTime())) {
-        where.createdAt = { gt: sinceDate };
+        where.updatedAt = { gt: sinceDate };
       }
     }
 

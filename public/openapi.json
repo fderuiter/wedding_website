@@ -617,6 +617,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -786,6 +794,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -971,6 +987,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -2546,6 +2570,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -2721,6 +2753,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -2955,6 +2995,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -7434,6 +7482,14 @@
                       "APPROVED",
                       "REJECTED"
                     ]
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 }
               }
@@ -7634,6 +7690,14 @@
                           "APPROVED",
                           "REJECTED"
                         ]
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       }
                     }
                   }
@@ -10392,6 +10456,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 }
               }
@@ -10610,6 +10682,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -11271,6 +11351,14 @@
                       "publishToGallery": {
                         "type": "boolean"
                       },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
                       "createdAt": {
                         "anyOf": [
                           {
@@ -11560,6 +11648,14 @@
                             },
                             "publishToGallery": {
                               "type": "boolean"
+                            },
+                            "caption": {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "uploaderName": {
+                              "type": "string",
+                              "maxLength": 100
                             },
                             "createdAt": {
                               "anyOf": [
@@ -11919,6 +12015,14 @@
                       },
                       "publishToGallery": {
                         "type": "boolean"
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       },
                       "createdAt": {
                         "anyOf": [

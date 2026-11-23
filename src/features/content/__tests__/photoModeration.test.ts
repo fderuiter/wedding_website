@@ -66,6 +66,40 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       expect(publicPhotos).toHaveLength(2);
       expect(publicPhotos.map((p) => p.id)).toEqual(['photo-approved', 'photo-legacy']);
     });
+
+    it('includes out-of-order approved guest uploads where createdAt < since and updatedAt > since', async () => {
+      const sinceCursor = new Date('2026-06-20T19:00:00.000Z');
+      mockRepo.getNodesByType.mockResolvedValueOnce([
+        {
+          id: 'photo-out-of-order',
+          type: 'Photo' as const,
+          tags: ['gallery', 'guest-upload'],
+          data: {
+            url: '/uploads/photos/early-upload-late-approve.jpg',
+            title: 'Cocktail Hour',
+            status: 'APPROVED',
+            isVisible: true,
+          },
+          createdAt: new Date('2026-06-20T18:15:00.000Z'), // uploaded BEFORE since
+          updatedAt: new Date('2026-06-20T19:10:00.000Z'), // approved AFTER since
+        },
+        {
+          id: 'photo-already-seen',
+          type: 'Photo' as const,
+          tags: ['gallery'],
+          data: { url: '/uploads/photos/old.jpg', status: 'APPROVED', isVisible: true },
+          createdAt: new Date('2026-06-20T18:00:00.000Z'),
+          updatedAt: new Date('2026-06-20T18:30:00.000Z'),
+        },
+      ]);
+
+      const incremental = await service.getPublicPhotos({ since: sinceCursor });
+      expect(mockRepo.getNodesByType).toHaveBeenCalledWith('Photo', {
+        since: sinceCursor,
+        limit: undefined,
+      });
+      expect(incremental.map((p) => p.id)).toEqual(['photo-out-of-order']);
+    });
   });
 
   describe('getPendingPhotos', () => {
@@ -159,6 +193,67 @@ describe('Photo Moderation Service & Visibility Rules', () => {
       );
       expect(result.data.status).toBe('APPROVED');
       expect(result.data.isVisible).toBe(true);
+    });
+
+    it('overrides or clears caption and uploaderName during approval and refreshes auto-derived guest title/altText', async () => {
+      const pendingNode = {
+        id: 'photo-edit-mod-1',
+        type: 'Photo' as const,
+        tags: ['gallery', 'guest-upload'],
+        data: {
+          url: '/uploads/photos/sparklers.jpg',
+          title: 'Typo captoin!',
+          altText: 'Typo captoin!',
+          caption: 'Typo captoin!',
+          uploaderName: 'Aunt Clara',
+          status: 'PENDING',
+          isVisible: false,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockRepo.getNodeById!.mockResolvedValueOnce(pendingNode);
+      mockRepo.updateNode!.mockImplementationOnce(async (_id, update) => ({
+        ...pendingNode,
+        data: update.data as any,
+      }));
+
+      const edited = await service.moderatePhoto('photo-edit-mod-1', 'approve', 'AdminUser', {
+        caption: '  Sparkler Send-Off!  ',
+        uploaderName: '  Aunt Clara & Uncle Joe  ',
+      });
+
+      expect(edited.data).toEqual(
+        expect.objectContaining({
+          status: 'APPROVED',
+          isVisible: true,
+          caption: 'Sparkler Send-Off!',
+          uploaderName: 'Aunt Clara & Uncle Joe',
+          title: 'Sparkler Send-Off!',
+          altText: 'Sparkler Send-Off!',
+        })
+      );
+
+      // Clearing caption falls back to uploaderName and deletes stale caption key
+      mockRepo.getNodeById!.mockResolvedValueOnce({
+        ...pendingNode,
+        data: edited.data,
+      });
+      mockRepo.updateNode!.mockImplementationOnce(async (_id, update) => ({
+        ...pendingNode,
+        data: update.data as any,
+      }));
+
+      const cleared = await service.moderatePhoto('photo-edit-mod-1', 'approve', 'AdminUser', {
+        caption: '   ',
+        uploaderName: '',
+      });
+
+      expect(cleared.data.caption).toBeUndefined();
+      expect(cleared.data.uploaderName).toBeUndefined();
+      expect(cleared.data.title).toBe('Guest Photo');
+      expect(cleared.data.altText).toBe('Guest Photo');
     });
 
     it('rejects a photo and deletes storage/database references', async () => {
