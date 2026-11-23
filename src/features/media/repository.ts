@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { MediaDTO, MediaSchema } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
+import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 
 export interface MediaPaginationOptions {
   page?: number;
@@ -16,21 +17,73 @@ export interface PaginatedMediaResult {
   totalPages: number;
 }
 
-type MediaWriteInput = Omit<MediaDTO, 'id' | 'createdAt' | 'updatedAt' | 'isSample'> & {
+type MediaWriteInput = Omit<
+  MediaDTO,
+  'id' | 'createdAt' | 'updatedAt' | 'isSample' | 'caption' | 'uploaderName'
+> & {
   isSample?: boolean;
   publishToGallery?: boolean;
+  caption?: string;
+  uploaderName?: string;
 };
+
+interface PhotoMetadataOverrides {
+  caption?: string;
+  uploaderName?: string;
+}
+
+function applyPhotoMetadataOverrides(
+  baseData: Record<string, any>,
+  overrides?: PhotoMetadataOverrides
+): Record<string, any> {
+  const next = { ...baseData };
+  if (!overrides) {
+    return next;
+  }
+  if (overrides.caption !== undefined) {
+    const trimmed = overrides.caption.trim();
+    if (trimmed) {
+      next.caption = trimmed;
+    } else {
+      delete next.caption;
+    }
+  }
+  if (overrides.uploaderName !== undefined) {
+    const trimmed = overrides.uploaderName.trim();
+    if (trimmed) {
+      next.uploaderName = trimmed;
+    } else {
+      delete next.uploaderName;
+    }
+  }
+  return next;
+}
 
 function buildGalleryPhotoData(
   media: { id: string; url: string; altText: string | null; isDecorative: boolean },
-  existingData?: Record<string, any>
-) {
+  existingData?: Record<string, any>,
+  overrides?: PhotoMetadataOverrides
+): Record<string, any> {
+  const withMetadata = applyPhotoMetadataOverrides(existingData || {}, overrides);
+  const effectiveCaption =
+    typeof withMetadata.caption === 'string' && withMetadata.caption.trim()
+      ? withMetadata.caption.trim()
+      : undefined;
+  const effectiveUploader =
+    typeof withMetadata.uploaderName === 'string' && withMetadata.uploaderName.trim()
+      ? withMetadata.uploaderName.trim()
+      : undefined;
   const effectiveLabel = !media.isDecorative && media.altText ? media.altText : undefined;
+  const fallbackGuestLabel =
+    effectiveCaption || (effectiveUploader ? `Photo by ${effectiveUploader}` : undefined);
+
   return {
-    ...(existingData || {}),
+    ...withMetadata,
     url: media.url,
-    title: effectiveLabel ?? (media.isDecorative ? undefined : existingData?.title),
-    altText: effectiveLabel,
+    title:
+      effectiveLabel ??
+      (media.isDecorative ? undefined : fallbackGuestLabel ?? withMetadata.title),
+    altText: effectiveLabel ?? (media.isDecorative ? undefined : fallbackGuestLabel),
     status: 'APPROVED' as const,
     isVisible: true,
     mediaId: media.id,
@@ -66,6 +119,22 @@ export class MediaRepository {
     const skip = (page - 1) * limit;
     const take = limit;
 
+    if (isStaticExportBuild()) {
+      const seedMedia = buildArchetypeSeedData('classic').media;
+      const total = seedMedia.length;
+      const data = seedMedia
+        .slice(skip, skip + take)
+        .map((item) => MediaSchema.parse(item));
+      const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages,
+      };
+    }
+
     const [total, mediaList] = await Promise.all([
       this.client.media.count(),
       this.client.media.findMany({
@@ -76,6 +145,7 @@ export class MediaRepository {
     ]);
 
     const publishedMediaIds = new Set<string>();
+    const metadataByMediaId = new Map<string, { caption?: string; uploaderName?: string }>();
     if (mediaList.length > 0 && typeof this.client.contentNode?.findMany === 'function') {
       const linkedNodes = await this.client.contentNode.findMany({
         where: {
@@ -92,19 +162,36 @@ export class MediaRepository {
 
       for (const node of linkedNodes) {
         const nodeData = node.data as Record<string, any> | null;
-        if (nodeData?.mediaId && isNodePublishedToGallery(nodeData)) {
-          publishedMediaIds.add(String(nodeData.mediaId));
+        if (nodeData?.mediaId) {
+          const mediaIdStr = String(nodeData.mediaId);
+          if (isNodePublishedToGallery(nodeData)) {
+            publishedMediaIds.add(mediaIdStr);
+          }
+          const caption =
+            typeof nodeData.caption === 'string' && nodeData.caption.trim()
+              ? nodeData.caption.trim()
+              : undefined;
+          const uploaderName =
+            typeof nodeData.uploaderName === 'string' && nodeData.uploaderName.trim()
+              ? nodeData.uploaderName.trim()
+              : undefined;
+          if (caption || uploaderName) {
+            metadataByMediaId.set(mediaIdStr, { caption, uploaderName });
+          }
         }
       }
     }
 
     const hasContentNodeLookup = typeof this.client.contentNode?.findMany === 'function';
-    const data = mediaList.map((m: any) =>
-      MediaSchema.parse({
+    const data = mediaList.map((m: any) => {
+      const photoMeta = metadataByMediaId.get(m.id);
+      return MediaSchema.parse({
         ...m,
         ...(hasContentNodeLookup ? { publishToGallery: publishedMediaIds.has(m.id) } : {}),
-      })
-    );
+        ...(photoMeta?.caption ? { caption: photoMeta.caption } : {}),
+        ...(photoMeta?.uploaderName ? { uploaderName: photoMeta.uploaderName } : {}),
+      });
+    });
     const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
 
     return {
@@ -117,7 +204,10 @@ export class MediaRepository {
   }
 
   async createMedia(data: MediaWriteInput, author: string = 'System') {
-    const { publishToGallery, ...mediaData } = data;
+    const { publishToGallery, caption, uploaderName, ...mediaData } = data;
+    const trimmedCaption = caption?.trim() || undefined;
+    const trimmedUploader = uploaderName?.trim() || undefined;
+
     return executeInTransaction(this.client, async (tx) => {
       const media = await tx.media.create({ data: mediaData });
       await createAuditSnapshot('Media', media.id, media, author, tx);
@@ -127,7 +217,7 @@ export class MediaRepository {
           data: {
             type: 'Photo',
             tags: ['gallery', 'curated'],
-            data: buildGalleryPhotoData(media),
+            data: buildGalleryPhotoData(media, undefined, { caption, uploaderName }),
           },
         });
         await createAuditSnapshot('ContentNode:Photo', photoNode.id, photoNode, author, tx);
@@ -136,20 +226,26 @@ export class MediaRepository {
       return MediaSchema.parse({
         ...media,
         ...(publishToGallery !== undefined ? { publishToGallery } : {}),
+        ...(trimmedCaption ? { caption: trimmedCaption } : {}),
+        ...(trimmedUploader ? { uploaderName: trimmedUploader } : {}),
       });
     });
   }
 
   async updateMedia(id: string, data: Partial<MediaWriteInput>, author: string = 'System') {
-    const { publishToGallery, ...mediaData } = data;
+    const { publishToGallery, caption, uploaderName, ...mediaData } = data;
+    const hasMetadataOverrides = caption !== undefined || uploaderName !== undefined;
+
     return executeInTransaction(this.client, async (tx) => {
-      const media =
+      let media =
         Object.keys(mediaData).length > 0
           ? await tx.media.update({ where: { id }, data: mediaData })
           : await tx.media.findUniqueOrThrow({ where: { id } });
       await createAuditSnapshot('Media', id, media, author, tx);
 
       let resolvedPublishState = publishToGallery;
+      let resolvedCaption: string | undefined = caption?.trim() || undefined;
+      let resolvedUploaderName: string | undefined = uploaderName?.trim() || undefined;
 
       if (tx.contentNode?.findMany) {
         const linkedNodes = await tx.contentNode.findMany({
@@ -168,27 +264,67 @@ export class MediaRepository {
               data: {
                 type: 'Photo',
                 tags: ['gallery', 'curated'],
-                data: buildGalleryPhotoData(media),
+                data: buildGalleryPhotoData(media, undefined, { caption, uploaderName }),
               },
             });
             await createAuditSnapshot('ContentNode:Photo', createdNode.id, createdNode, author, tx);
           } else {
             for (const existingNode of linkedNodes) {
+              const existingData = (existingNode.data as Record<string, any>) || {};
               const existingTags = Array.isArray(existingNode.tags) ? existingNode.tags : [];
               const nextTags = existingTags.includes('gallery')
                 ? existingTags
                 : ['gallery', ...existingTags];
+
+              let mediaForSync = media;
+              if (hasMetadataOverrides && !media.isDecorative) {
+                const previousAutoLabel =
+                  existingData.caption ||
+                  (existingData.uploaderName
+                    ? `Photo by ${existingData.uploaderName}`
+                    : 'Guest Photo');
+                const altWasAutoDerived =
+                  media.altText === existingData.title || media.altText === previousAutoLabel;
+                const callerDidNotChangeAlt =
+                  data.altText === undefined || data.altText === existingData.altText;
+                if (altWasAutoDerived && callerDidNotChangeAlt) {
+                  const nextAutoAlt =
+                    caption?.trim() ||
+                    (uploaderName?.trim() ? `Photo by ${uploaderName.trim()}` : 'Guest Photo');
+                  media = await tx.media.update({
+                    where: { id },
+                    data: { altText: nextAutoAlt },
+                  });
+                  mediaForSync = media;
+                }
+              }
+
+              const nextNodeData = buildGalleryPhotoData(mediaForSync, existingData, {
+                caption,
+                uploaderName,
+              });
+              resolvedCaption =
+                typeof nextNodeData.caption === 'string' && nextNodeData.caption.trim()
+                  ? nextNodeData.caption.trim()
+                  : undefined;
+              resolvedUploaderName =
+                typeof nextNodeData.uploaderName === 'string' && nextNodeData.uploaderName.trim()
+                  ? nextNodeData.uploaderName.trim()
+                  : undefined;
+
               const updatedNode = await tx.contentNode.update({
                 where: { id: existingNode.id },
                 data: {
                   tags: nextTags,
-                  data: buildGalleryPhotoData(media, (existingNode.data as Record<string, any>) || {}),
+                  data: nextNodeData,
                 },
               });
               await createAuditSnapshot('ContentNode:Photo', updatedNode.id, updatedNode, author, tx);
             }
           }
         } else if (publishToGallery === false) {
+          resolvedCaption = undefined;
+          resolvedUploaderName = undefined;
           for (const existingNode of linkedNodes) {
             await tx.contentNode.delete({ where: { id: existingNode.id } });
             await createAuditSnapshot(
@@ -205,9 +341,40 @@ export class MediaRepository {
           );
           for (const existingNode of linkedNodes) {
             const existingData = (existingNode.data as Record<string, any>) || {};
+            const withMetadata = applyPhotoMetadataOverrides(
+              existingData,
+              hasMetadataOverrides ? { caption, uploaderName } : undefined
+            );
+            const effectiveCaption =
+              typeof withMetadata.caption === 'string' && withMetadata.caption.trim()
+                ? withMetadata.caption.trim()
+                : undefined;
+            const effectiveUploader =
+              typeof withMetadata.uploaderName === 'string' && withMetadata.uploaderName.trim()
+                ? withMetadata.uploaderName.trim()
+                : undefined;
+
+            const previousAutoLabel =
+              existingData.caption ||
+              (existingData.uploaderName ? `Photo by ${existingData.uploaderName}` : 'Guest Photo');
+            const altWasAutoDerived =
+              media.altText === existingData.title || media.altText === previousAutoLabel;
+            const callerDidNotChangeAlt =
+              data.altText === undefined || data.altText === existingData.altText;
+
+            if (hasMetadataOverrides && !media.isDecorative && altWasAutoDerived && callerDidNotChangeAlt) {
+              const nextAutoAlt =
+                effectiveCaption ||
+                (effectiveUploader ? `Photo by ${effectiveUploader}` : 'Guest Photo');
+              media = await tx.media.update({
+                where: { id },
+                data: { altText: nextAutoAlt },
+              });
+            }
+
             const effectiveLabel = !media.isDecorative && media.altText ? media.altText : undefined;
             const syncedData = {
-              ...existingData,
+              ...withMetadata,
               url: media.url,
               altText: effectiveLabel,
               ...(effectiveLabel !== undefined
@@ -216,6 +383,9 @@ export class MediaRepository {
                   ? { title: undefined }
                   : {}),
             };
+            resolvedCaption = effectiveCaption;
+            resolvedUploaderName = effectiveUploader;
+
             const updatedNode = await tx.contentNode.update({
               where: { id: existingNode.id },
               data: { data: syncedData },
@@ -228,6 +398,8 @@ export class MediaRepository {
       return MediaSchema.parse({
         ...media,
         ...(resolvedPublishState !== undefined ? { publishToGallery: resolvedPublishState } : {}),
+        ...(resolvedCaption ? { caption: resolvedCaption } : {}),
+        ...(resolvedUploaderName ? { uploaderName: resolvedUploaderName } : {}),
       });
     });
   }

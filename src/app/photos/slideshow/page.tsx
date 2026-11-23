@@ -55,22 +55,31 @@ export default async function PhotosSlideshowPage() {
       if (!data?.url) return null;
       const caption = data.caption?.trim() || undefined;
       const uploaderName = data.uploaderName?.trim() || undefined;
+      const explicitTitle = data.title?.trim() || undefined;
+      const explicitAltText = data.altText?.trim() || undefined;
       return {
         id: n.id,
         url: data.url,
-        title: caption || data.title || data.altText || (uploaderName ? `Photo by ${uploaderName}` : 'Reception Photo'),
-        altText: data.altText || caption || data.title,
+        title:
+          explicitTitle ||
+          caption ||
+          explicitAltText ||
+          (uploaderName ? `Photo by ${uploaderName}` : 'Reception Photo'),
+        altText: explicitAltText || caption || explicitTitle,
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload: Boolean(n.tags?.includes('guest-upload')),
         createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : undefined,
+        ...(n.updatedAt ? { updatedAt: new Date(n.updatedAt).toISOString() } : {}),
       };
     })
     .filter((item): item is SlideshowPhoto => item !== null);
 
   let uploadUrl: string | undefined;
   if (isStaticExport) {
-    uploadUrl = config.baseUrl ? `${config.baseUrl.replace(/\/$/, '')}/photos` : undefined;
+    uploadUrl = config.baseUrl
+      ? `${config.baseUrl.replace(/\/$/, '')}/photos?tab=guest`
+      : undefined;
   } else {
     let headerHost: string | undefined;
     let headerProto: string | undefined;
@@ -101,7 +110,7 @@ export default async function PhotosSlideshowPage() {
       const signed = await buildSignedPhotoUploadUrl(origin, config.guestPhotoQrTokenVersion);
       uploadUrl = signed.uploadUrl;
     } catch {
-      uploadUrl = origin ? `${origin}/photos` : '/photos';
+      uploadUrl = origin ? `${origin}/photos?tab=guest` : '/photos?tab=guest';
     }
   }
 

@@ -9,6 +9,7 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { mediaRepository } from '@/features/media';
 import { contentRepository } from '@/features/content';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 
 const BATCH_SANITIZE_CONCURRENCY = 4;
 const BATCH_PERSIST_CONCURRENCY = 4;
@@ -77,7 +78,16 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   const files = parsed.data.files as File[];
-  const uploaderName = parsed.data.uploaderName;
+  let sessionUploaderName: string | undefined;
+  if (!parsed.data.uploaderName) {
+    try {
+      const inviteSession = await getGuestInviteSession(req);
+      sessionUploaderName = inviteSession?.guestName?.trim() || undefined;
+    } catch {
+      sessionUploaderName = undefined;
+    }
+  }
+  const uploaderName = parsed.data.uploaderName || sessionUploaderName;
   const caption = parsed.data.caption;
   const publicTitle = caption || (uploaderName ? `Photo by ${uploaderName}` : 'Guest Photo');
   const actorName = uploaderName || 'Guest';

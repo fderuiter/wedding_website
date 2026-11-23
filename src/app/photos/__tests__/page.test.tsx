@@ -51,7 +51,6 @@ jest.mock('@/core/auth/guestInviteSession', () => ({
 jest.mock('@/core/auth/photoUploadToken', () => ({
   getSignedPhotoUploadSession: jest.fn().mockResolvedValue(null),
 }));
-
 jest.mock('@/features/content', () => ({
   contentService: {
     getPublicPhotos: jest.fn().mockResolvedValue([]),
@@ -242,24 +241,45 @@ describe('PhotosPage', () => {
     );
   });
 
-  it('honors ?tab=guest searchParams even when curated photos exist', async () => {
+  it('activates guest tab via searchParams.tab=guest, prefills defaultUploaderName from getGuestInviteSession, and prioritizes title over caption', async () => {
+    (getGuestInviteSession as jest.Mock).mockResolvedValue({
+      code: 'RIVERA26',
+      guestName: 'The Rivera Household',
+      guestIds: ['g1'],
+    });
     (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([
       {
-        id: 'curated-1',
+        id: 'curated-node-1',
         type: 'Photo',
         tags: ['gallery', 'curated'],
-        data: { url: '/uploads/vows.jpg', title: 'Vows', status: 'APPROVED', isVisible: true },
+        data: {
+          url: '/uploads/curated-1.jpg',
+          title: 'Admin Edited Title',
+          caption: 'Old Caption',
+          status: 'APPROVED',
+          isVisible: true,
+        },
         createdAt: new Date(),
         updatedAt: new Date(),
       },
     ]);
 
-    const pageElement = await PhotosPage({ searchParams: Promise.resolve({ tab: 'guest' }) });
+    const pageElement = await PhotosPage({
+      searchParams: Promise.resolve({ tab: 'guest' }),
+    });
     render(pageElement);
 
     expect(PhotoGalleryClient).toHaveBeenCalledWith(
       expect.objectContaining({
         defaultTab: 'guest',
+        defaultUploaderName: 'The Rivera Household',
+        initialPhotos: [
+          expect.objectContaining({
+            id: 'curated-node-1',
+            title: 'Admin Edited Title',
+            caption: 'Old Caption',
+          }),
+        ],
       }),
       undefined
     );
@@ -304,23 +324,36 @@ describe('PhotosPage', () => {
     );
   });
 
-  it('guards cookie and searchParams reads when STATIC_EXPORT=true', async () => {
+  it('skips searchParams, isAdminRequest, getGuestInviteSession, and getSignedPhotoUploadSession when STATIC_EXPORT=true', async () => {
+    const prevStaticExport = process.env.STATIC_EXPORT;
     process.env.STATIC_EXPORT = 'true';
-    const searchParamsReject = Promise.reject(new Error('searchParams should not be read in static export'));
-    // Prevent unhandled rejection warning
-    searchParamsReject.catch(() => {});
-
-    const pageElement = await PhotosPage({ searchParams: searchParamsReject });
-    render(pageElement);
-
-    expect(getSignedPhotoUploadSession).not.toHaveBeenCalled();
-    expect(isAdminRequest).not.toHaveBeenCalled();
-    expect(PhotoGalleryClient).toHaveBeenCalledWith(
-      expect.objectContaining({
-        defaultTab: 'curated',
-        isAdmin: false,
-      }),
-      undefined
+    const dynamicSearchParams = Promise.reject(
+      new Error('searchParams should not be read during static export')
     );
+
+    try {
+      const pageElement = await PhotosPage({ searchParams: dynamicSearchParams });
+      render(pageElement);
+
+      expect(isAdminRequest).not.toHaveBeenCalled();
+      expect(getGuestInviteSession).not.toHaveBeenCalled();
+      expect(getSignedPhotoUploadSession).not.toHaveBeenCalled();
+      expect(PhotoGalleryClient).toHaveBeenCalledWith(
+        {
+          initialPhotos: [],
+          defaultTab: 'curated',
+          isAdmin: false,
+        },
+        undefined
+      );
+    } finally {
+      if (prevStaticExport === undefined) {
+        delete process.env.STATIC_EXPORT;
+      } else {
+        process.env.STATIC_EXPORT = prevStaticExport;
+      }
+      // Prevent unhandled rejection warning on the unused rejected promise
+      dynamicSearchParams.catch(() => {});
+    }
   });
 });

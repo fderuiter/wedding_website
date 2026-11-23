@@ -1,8 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import AddToCalendar from '../AddToCalendar';
 import { CalendarEvent } from '@/utils/calendar';
 import * as calendarUtils from '@/utils/calendar';
+
+expect.extend(toHaveNoViolations);
 
 // Mock the calendar utility functions
 jest.mock('@/utils/calendar', () => ({
@@ -180,14 +183,53 @@ describe('AddToCalendar', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it('links trigger button to dropdown container with aria-controls', () => {
+  it('links trigger button to role="menu" with unique per-instance IDs and passes jest-axe', async () => {
+    const { container } = render(
+      <div>
+        <AddToCalendar event={sampleEvent} eventId="event-a" />
+        <AddToCalendar event={{ ...sampleEvent, name: 'Second Event' }} eventId="event-b" />
+      </div>
+    );
+
+    const triggers = screen.getAllByRole('button', { name: 'Add to Calendar' });
+    expect(triggers).toHaveLength(2);
+
+    const firstTriggerId = triggers[0].getAttribute('id');
+    const secondTriggerId = triggers[1].getAttribute('id');
+    const firstMenuId = triggers[0].getAttribute('aria-controls');
+    const secondMenuId = triggers[1].getAttribute('aria-controls');
+
+    expect(firstTriggerId).toBeTruthy();
+    expect(secondTriggerId).toBeTruthy();
+    expect(firstTriggerId).not.toBe(secondTriggerId);
+
+    expect(firstMenuId).toMatch(/^add-to-calendar-menu-/);
+    expect(secondMenuId).toMatch(/^add-to-calendar-menu-/);
+    expect(firstMenuId).not.toBe(secondMenuId);
+
+    fireEvent.click(triggers[0]);
+    const menu = screen.getByRole('menu');
+    expect(menu).toHaveAttribute('id', firstMenuId);
+    expect(menu).toHaveAttribute('aria-labelledby', firstTriggerId);
+    expect(document.getElementById(firstMenuId!)).toBe(menu);
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('closes an open calendar menu on the first pointer click on its trigger button', () => {
     render(<AddToCalendar event={sampleEvent} />);
     const trigger = screen.getByRole('button', { name: 'Add to Calendar' });
-    expect(trigger).toHaveAttribute('aria-controls', 'add-to-calendar-menu');
 
     fireEvent.click(trigger);
-    const container = document.getElementById('add-to-calendar-menu');
-    expect(container).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.mouseDown(trigger);
+    fireEvent.mouseUp(trigger);
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
   it('opens menu when ArrowDown or ArrowUp key is pressed on closed trigger button', () => {

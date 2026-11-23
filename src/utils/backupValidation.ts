@@ -278,6 +278,12 @@ export const BackupContributorSchema = z.object({
 
   // Optional/Nullable fields
   email: z.email().max(255).nullable().optional().or(z.literal('')),
+  addressLine1: z.string().max(255).nullable().optional(),
+  addressLine2: z.string().max(255).nullable().optional(),
+  city: z.string().max(255).nullable().optional(),
+  state: z.string().max(255).nullable().optional(),
+  zipCode: z.string().max(50).nullable().optional(),
+  country: z.string().max(255).nullable().optional(),
   isPlusOne: z.boolean().optional(),
   amount: z.number().min(0).optional(),
   refundedAmount: z.number().min(0).optional(),
@@ -288,6 +294,7 @@ export const BackupContributorSchema = z.object({
   message: z.string().nullable().optional(),
   thankYouStatus: z.string().max(100).optional(),
   thankYouSentAt: z.date().nullable().optional(),
+  thankYouEmailSentAt: z.date().nullable().optional(),
   thankYouNote: z.string().nullable().optional(),
   stripePaymentIntentId: z.string().max(255).nullable().optional(),
   stripeChargeId: z.string().max(255).nullable().optional(),
@@ -481,7 +488,7 @@ const BackupSnapshotVersionSchema = z.object({
   author: z.string().max(255).nullable().optional(),
 });
 
-// Full database backup structure schema across all 15 Prisma models
+// Full database backup structure schema across the 15 domain Prisma models (excludes ephemeral AuthLockout rows)
 export const DatabaseBackupSchema = z.object({
   version: z.string().optional(),
   schemaVersion: z.string().optional(),

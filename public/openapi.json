@@ -758,6 +758,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -927,6 +935,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -1113,6 +1129,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -1174,6 +1198,30 @@
                               "nullable": true,
                               "type": "string"
                             },
+                            "addressLine1": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "addressLine2": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "city": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "state": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "zipCode": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "country": {
+                              "nullable": true,
+                              "type": "string"
+                            },
                             "isPlusOne": {
                               "default": false,
                               "type": "boolean"
@@ -1226,6 +1274,18 @@
                               "type": "string"
                             },
                             "thankYouSentAt": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "string",
+                                  "format": "date-time"
+                                }
+                              ]
+                            },
+                            "thankYouEmailSentAt": {
                               "nullable": true,
                               "anyOf": [
                                 {
@@ -1347,6 +1407,10 @@
                                   "type": "string"
                                 },
                                 "guestName": {
+                                  "type": "string"
+                                },
+                                "email": {
+                                  "nullable": true,
                                   "type": "string"
                                 },
                                 "householdName": {
@@ -3565,6 +3629,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -3740,6 +3812,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -3974,6 +4054,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -4799,6 +4887,10 @@
                         "sentCount": {
                           "type": "number"
                         },
+                        "viewedCount": {
+                          "type": "number",
+                          "nullable": true
+                        },
                         "failedCount": {
                           "type": "number"
                         },
@@ -5037,6 +5129,10 @@
                           },
                           "sentCount": {
                             "type": "number"
+                          },
+                          "viewedCount": {
+                            "type": "number",
+                            "nullable": true
                           },
                           "failedCount": {
                             "type": "number"
@@ -6621,7 +6717,35 @@
                               "type": "string",
                               "nullable": true
                             },
+                            "addressLine1": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "addressLine2": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "city": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "state": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "zipCode": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "country": {
+                              "type": "string",
+                              "nullable": true
+                            },
                             "message": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "thankYouEmailSentAt": {
                               "type": "string",
                               "nullable": true
                             },
@@ -10190,17 +10314,6 @@
         ],
         "summary": "POST /api/admin/logout",
         "description": "Endpoint for /api/admin/logout",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -10219,16 +10332,6 @@
                   "required": [
                     "success"
                   ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -11432,6 +11535,36 @@
                               }
                             ]
                           },
+                          "addressLine1": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "addressLine2": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "city": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "state": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
+                          "zipCode": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 50
+                          },
+                          "country": {
+                            "nullable": true,
+                            "type": "string",
+                            "maxLength": 255
+                          },
                           "isPlusOne": {
                             "type": "boolean"
                           },
@@ -11472,6 +11605,11 @@
                             "maxLength": 100
                           },
                           "thankYouSentAt": {
+                            "nullable": true,
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "thankYouEmailSentAt": {
                             "nullable": true,
                             "type": "string",
                             "format": "date-time"
@@ -13093,6 +13231,36 @@
                             }
                           ]
                         },
+                        "addressLine1": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "addressLine2": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "city": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "state": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "zipCode": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 50
+                        },
+                        "country": {
+                          "nullable": true,
+                          "type": "string",
+                          "maxLength": 255
+                        },
                         "isPlusOne": {
                           "type": "boolean"
                         },
@@ -13133,6 +13301,11 @@
                           "maxLength": 100
                         },
                         "thankYouSentAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "thankYouEmailSentAt": {
                           "nullable": true,
                           "type": "string",
                           "format": "date-time"
@@ -13632,17 +13805,6 @@
         ],
         "summary": "GET /api/admin/me",
         "description": "Endpoint for /api/admin/me",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -13665,16 +13827,6 @@
                     "success",
                     "isAdmin"
                   ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
                 }
               }
             }
@@ -13846,6 +13998,14 @@
                       "APPROVED",
                       "REJECTED"
                     ]
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "description": "Single-photo moderation decision when the target photo ID is supplied in the URL path. Requires either action ('approve' | 'reject') or status ('APPROVED' | 'REJECTED').",
@@ -14714,6 +14874,14 @@
                           "APPROVED",
                           "REJECTED"
                         ]
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       }
                     },
                     "description": "Single-photo moderation payload for the moderation queue endpoint. Requires a target photo identifier (id, nodeId, or photoId) and a moderation decision (action or status).",
@@ -15479,6 +15647,12 @@
                         },
                         "faqs": {
                           "type": "number"
+                        },
+                        "photos": {
+                          "type": "number"
+                        },
+                        "subEvents": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -15487,7 +15661,9 @@
                         "seating",
                         "weddingParty",
                         "attractions",
-                        "faqs"
+                        "faqs",
+                        "photos",
+                        "subEvents"
                       ]
                     }
                   },
@@ -15594,6 +15770,12 @@
                         },
                         "faqs": {
                           "type": "number"
+                        },
+                        "photos": {
+                          "type": "number"
+                        },
+                        "subEvents": {
+                          "type": "number"
                         }
                       },
                       "required": [
@@ -15602,7 +15784,9 @@
                         "seating",
                         "weddingParty",
                         "attractions",
-                        "faqs"
+                        "faqs",
+                        "photos",
+                        "subEvents"
                       ]
                     }
                   },
@@ -18563,7 +18747,101 @@
                   },
                   "invitationCodeId": {
                     "nullable": true,
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "addressLine1": {
+                    "anyOf": [
+                      {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "addressLine2": {
+                    "anyOf": [
+                      {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "city": {
+                    "anyOf": [
+                      {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "state": {
+                    "anyOf": [
+                      {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "zipCode": {
+                    "anyOf": [
+                      {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "country": {
+                    "anyOf": [
+                      {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "syncAddressToGuest": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -18633,7 +18911,35 @@
                       "type": "string",
                       "nullable": true
                     },
+                    "addressLine1": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "addressLine2": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "city": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "state": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "zipCode": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "country": {
+                      "type": "string",
+                      "nullable": true
+                    },
                     "message": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "thankYouEmailSentAt": {
                       "type": "string",
                       "nullable": true
                     },
@@ -18705,6 +19011,196 @@
                     "thankYouStatus",
                     "thankYouSentAt",
                     "transactionTimestamp"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/thank-you-notes/{id}/send-email": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/thank-you-notes/[id]/send-email",
+        "description": "Endpoint for /api/admin/thank-you-notes/[id]/send-email",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "preview",
+                      "test",
+                      "send"
+                    ]
+                  },
+                  "subject": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000
+                  },
+                  "recipientEmail": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "mode",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "test",
+                        "preview",
+                        "send"
+                      ]
+                    },
+                    "to": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "testRecipient": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "textBody": {
+                      "type": "string"
+                    },
+                    "htmlBody": {
+                      "type": "string"
+                    },
+                    "contributor": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "mode",
+                    "to",
+                    "subject",
+                    "textBody",
+                    "htmlBody"
                   ],
                   "additionalProperties": true
                 }
@@ -18973,6 +19469,14 @@
           },
           {
             "name": "template",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "skipUnaddressed",
             "in": "query",
             "required": false,
             "schema": {
@@ -19488,7 +19992,35 @@
                           "type": "string",
                           "nullable": true
                         },
+                        "addressLine1": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "addressLine2": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "city": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "state": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "zipCode": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "country": {
+                          "type": "string",
+                          "nullable": true
+                        },
                         "message": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "thankYouEmailSentAt": {
                           "type": "string",
                           "nullable": true
                         },
@@ -20379,66 +20911,20 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "message"
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
                       ]
                     },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "guestName": {
-                              "type": "string"
-                            },
-                            "partyTags": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "guestName",
-                            "partyTags"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "message",
-                        "data"
-                      ]
+                    "message": {
+                      "type": "string"
                     }
+                  },
+                  "required": [
+                    "success",
+                    "message"
                   ]
                 }
               }
@@ -21330,7 +21816,44 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "status",
+                    "timestamp",
+                    "database",
+                    "error"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "degraded"
+                      ]
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected"
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "Database connection failed"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -21437,6 +21960,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 }
               }
@@ -21482,6 +22013,14 @@
                         },
                         "publishToGallery": {
                           "type": "boolean",
+                          "nullable": true
+                        },
+                        "caption": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "uploaderName": {
+                          "type": "string",
                           "nullable": true
                         },
                         "createdAt": {
@@ -22103,6 +22642,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -22152,6 +22699,14 @@
                         },
                         "publishToGallery": {
                           "type": "boolean",
+                          "nullable": true
+                        },
+                        "caption": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "uploaderName": {
+                          "type": "string",
                           "nullable": true
                         },
                         "createdAt": {
@@ -22278,17 +22833,6 @@
         ],
         "summary": "GET /api/og",
         "description": "Endpoint for /api/og",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "parameters": [
           {
             "name": "p1",
@@ -22345,24 +22889,6 @@
           },
           "400": {
             "description": "Bad Request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {
@@ -23233,6 +23759,96 @@
                         ]
                       }
                     ]
+                  },
+                  "addressLine1": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "addressLine2": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "city": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "state": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "zipCode": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "country": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -23718,6 +24334,14 @@
                       },
                       "publishToGallery": {
                         "type": "boolean"
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       },
                       "createdAt": {
                         "anyOf": [
@@ -24268,6 +24892,14 @@
                             },
                             "publishToGallery": {
                               "type": "boolean"
+                            },
+                            "caption": {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "uploaderName": {
+                              "type": "string",
+                              "maxLength": 100
                             },
                             "createdAt": {
                               "anyOf": [
@@ -24928,6 +25560,14 @@
                       "publishToGallery": {
                         "type": "boolean"
                       },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
                       "createdAt": {
                         "anyOf": [
                           {
@@ -25233,6 +25873,96 @@
                   },
                   "code": {
                     "type": "string"
+                  },
+                  "addressLine1": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "addressLine2": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 150
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "city": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "state": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "zipCode": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "country": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
                   }
                 },
                 "required": [

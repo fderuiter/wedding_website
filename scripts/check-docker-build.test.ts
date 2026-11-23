@@ -28,13 +28,13 @@ function writeValidFixtureWorkspace(targetDir: string): void {
         name: 'wedding-website-fixture',
         private: true,
         engines: {
-          node: '22.x',
+          node: '>=22.22.1 <23.0.0',
           npm: '^10.9.0',
         },
         devEngines: {
           runtime: {
             name: 'node',
-            version: '^22.12.0',
+            version: '>=22.22.1 <23.0.0',
             onFail: 'error',
           },
           packageManager: {
@@ -70,7 +70,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
       '    npm ci --ignore-scripts',
       'COPY prisma ./prisma',
-      'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./',
+      'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json ./',
       'COPY assets ./assets',
       'COPY public ./public',
       'COPY src ./src',
@@ -153,6 +153,9 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '      db:',
       `        image: postgres:15-alpine@${POSTGRES_DIGEST}`,
       '    steps:',
+      '      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
+      '        with:',
+      "          node-version-file: '.nvmrc'",
       '      - run: npm test',
       '  deploy:',
       '    runs-on: ubuntu-latest',
@@ -681,6 +684,131 @@ describe('check-docker-build', () => {
     );
   });
 
+  it('ignores dev-only .next/ directories by default and enforces .next/standalone when requireStandalone is true', () => {
+    fs.mkdirSync(path.join(tempDir, '.next', 'cache'), { recursive: true });
+
+    // Default static check passes even when `next dev` created .next/ without .next/standalone
+    expect(checkDockerBuild(tempDir)).toEqual({ violations: [] });
+
+    // Post-build `--require-standalone` mode fails if .next/standalone is missing
+    const requiredMissing = checkDockerBuild(tempDir, { requireStandalone: true });
+    expect(requiredMissing.violations).toEqual([
+      expect.objectContaining({
+        filePath: '.next/standalone',
+        imageRef: '.next/standalone',
+      }),
+    ]);
+
+    // When .next/standalone exists, both modes validate server.js, .next/static, and public bundle hygiene
+    fs.mkdirSync(path.join(tempDir, '.next', 'standalone', '.next', 'static', 'chunks'), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(tempDir, '.next', 'standalone', 'public', 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, '.next', 'standalone', 'server.js'), 'console.log("ok");\n');
+    fs.writeFileSync(
+      path.join(tempDir, '.next', 'standalone', '.next', 'static', 'chunks', 'main.js'),
+      'console.log("chunk");\n'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, '.next', 'standalone', 'public', 'assets', 'favicon.png'),
+      'png-bytes'
+    );
+    expect(checkDockerBuild(tempDir, { requireStandalone: true })).toEqual({ violations: [] });
+  });
+
+  it('fails when Dockerfile, package.json, .nvmrc, or workflow node-version entries diverge', () => {
+    // 1. Divergent Dockerfile Node base image major
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    const validDockerfile = fs.readFileSync(dockerfilePath, 'utf8');
+    fs.writeFileSync(
+      dockerfilePath,
+      validDockerfile.replace('node:22-bookworm-slim@', 'node:26-bookworm-slim@')
+    );
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'node:26-bookworm-slim',
+          reason: expect.stringContaining('does not match expected "node:22-bookworm-slim" from .nvmrc'),
+        }),
+      ])
+    );
+    fs.writeFileSync(dockerfilePath, validDockerfile);
+
+    // 2. Divergent package.json engines.node and @types/node
+    const pkgPath = path.join(tempDir, 'package.json');
+    const validPkg = fs.readFileSync(pkgPath, 'utf8');
+    fs.writeFileSync(
+      pkgPath,
+      JSON.stringify(
+        {
+          name: 'wedding-website-fixture',
+          private: true,
+          engines: { node: '>=20.0.0 <21.0.0', npm: '^10.9.0' },
+          devEngines: {
+            runtime: { name: 'node', version: '>=22.22.1 <23.0.0', onFail: 'error' },
+            packageManager: { name: 'npm', version: '^10.9.0', onFail: 'error' },
+          },
+          devDependencies: { '@types/node': '^26.6.5' },
+        },
+        null,
+        2
+      )
+    );
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.node',
+          reason: expect.stringContaining('does not match .nvmrc ("22")'),
+        }),
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: '@types/node',
+          reason: expect.stringContaining('does not match .nvmrc ("22")'),
+        }),
+      ])
+    );
+    fs.writeFileSync(pkgPath, validPkg);
+
+    // 3. Divergent .nvmrc against Dockerfile and package.json
+    const nvmrcPath = path.join(tempDir, '.nvmrc');
+    fs.writeFileSync(nvmrcPath, '20\n');
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.node',
+          reason: expect.stringContaining('does not match .nvmrc ("20")'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'node:22-bookworm-slim',
+          reason: expect.stringContaining('does not match expected "node:20-bookworm-slim" from .nvmrc'),
+        }),
+      ])
+    );
+    fs.writeFileSync(nvmrcPath, '22\n');
+
+    // 4. Divergent workflow actions/setup-node node-version / node-version-file
+    const ciPath = path.join(tempDir, '.github', 'workflows', 'ci.yml');
+    const validCi = fs.readFileSync(ciPath, 'utf8');
+    fs.writeFileSync(
+      ciPath,
+      validCi.replace("node-version-file: '.nvmrc'", "node-version: '20'")
+    );
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.github/workflows/ci.yml',
+          imageRef: 'node-version',
+          reason: expect.stringContaining('does not match expected Node.js major "22" from .nvmrc'),
+        }),
+      ])
+    );
+    fs.writeFileSync(ciPath, validCi);
+  });
+
   it('rejects devEngines drift, /opt/prisma-cli under /app, broad /app/scripts copy, missing RUN_MIGRATIONS=1, and short stop_grace_period', () => {
     fs.writeFileSync(
       path.join(tempDir, 'package.json'),
@@ -689,13 +817,13 @@ describe('check-docker-build', () => {
           name: 'wedding-website-fixture',
           private: true,
           engines: {
-            node: '^22.12.0',
+            node: '>=22.22.1 <23.0.0',
             npm: '^9.0.0',
           },
           devEngines: {
             runtime: {
               name: 'node',
-              version: '^22.0.0',
+              version: '^20.0.0',
               onFail: 'warn',
             },
             packageManager: {
@@ -812,7 +940,7 @@ describe('check-docker-build', () => {
         'RUN --mount=type=cache,target=/root/.npm,sharing=locked \\',
         '    npm ci --ignore-scripts',
         'COPY prisma ./prisma',
-        'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json next-env.d.ts ./',
+        'COPY prisma.config.ts next.config.ts postcss.config.mjs tsconfig.json tsconfig.build.json ./',
         'COPY assets ./assets',
         'COPY public ./public',
         'COPY src ./src',
@@ -911,7 +1039,6 @@ describe('check-docker-build', () => {
       }),
     ]);
   });
-
   it('allows pull_policy: never services sharing a local build image across docker-compose.yml and docker-compose.rollout.yml', () => {
     fs.writeFileSync(
       path.join(tempDir, 'docker-compose.yml'),

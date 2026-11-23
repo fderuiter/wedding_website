@@ -16,15 +16,17 @@ interface AdminNavProps {
 
 export function AdminNav({ items }: AdminNavProps) {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
 
   return (
     <nav aria-label="Admin Navigation">
       <ul className="flex flex-wrap items-center gap-2">
         {items.map((item) => {
           const isActive =
-            pathname === item.href ||
+            normalizedPathname === item.href ||
             (item.href !== '/admin/dashboard' &&
-              Boolean(pathname?.startsWith(`${item.href}/`)));
+              Boolean(normalizedPathname?.startsWith(`${item.href}/`)));
 
           return (
             <li key={item.href}>

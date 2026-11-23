@@ -4,6 +4,7 @@ import React, { useState, useRef, useId } from 'react';
 import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * @interface AddToCalendarProps
@@ -36,14 +37,20 @@ export interface AddToCalendarProps {
 export default function AddToCalendar({ event, className, downloadUrl, eventId }: AddToCalendarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
+  const instanceId = useId().replace(/:/g, '');
+  const triggerId = `add-to-calendar-trigger-${instanceId}`;
+  const menuId = `add-to-calendar-menu-${instanceId}`;
 
-  const handleToggle = () => setIsOpen(!isOpen);
+  const handleToggle = () => setIsOpen((prev) => !prev);
 
-  const { overlayRef } = useOverlay(isOpen, () => {
-    setIsOpen(false);
-    triggerRef.current?.focus();
-  });
+  const { overlayRef } = useOverlay(
+    isOpen,
+    () => {
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    },
+    { triggerRef }
+  );
 
   const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -73,7 +80,7 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
       const directDownloadUrl = downloadUrl || (eventId ? `/api/schedule/${eventId}/ics` : (event.id ? `/api/schedule/${event.id}/ics` : undefined));
       if (directDownloadUrl) {
         const link = document.createElement('a');
-        link.href = directDownloadUrl;
+        link.href = withBasePath(directDownloadUrl);
         link.download = `${event.name}.ics`;
         document.body.appendChild(link);
         link.click();
@@ -96,16 +103,16 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
   };
 
   return (
-    <div className={`relative inline-block text-left ${className}`}>
+    <div className={`relative inline-block text-left ${className ?? ''}`}>
       <div>
         <button
           ref={triggerRef}
           type="button"
           className="btn-primary w-full rounded-full px-8 py-3"
-          id={menuId}
+          id={triggerId}
           aria-haspopup="true"
           aria-expanded={isOpen}
-          aria-controls="add-to-calendar-menu"
+          aria-controls={menuId}
           onClick={handleToggle}
           onKeyDown={handleTriggerKeyDown}
         >
@@ -115,11 +122,16 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
 
       {isOpen && (
         <div
-          id="add-to-calendar-menu"
           ref={overlayRef}
           className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 ring-1 ring-black/5 z-10"
         >
-          <div className="py-1" role="menu" aria-orientation="vertical" aria-labelledby={menuId}>
+          <div
+            id={menuId}
+            className="py-1"
+            role="menu"
+            aria-orientation="vertical"
+            aria-labelledby={triggerId}
+          >
             {calendarOptions.map((calendar) => (
               <button
                 key={calendar}

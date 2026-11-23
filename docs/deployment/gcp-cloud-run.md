@@ -40,35 +40,16 @@ Google Cloud Run provides a managed, serverless execution environment for contai
 
 ---
 
-## 2. Required Environment Variables
+## 2. Cloud Run Secrets & Service Configuration
 
-All sensitive values must be stored in **GCP Secret Manager** and attached to the Cloud Run service revision.
+For the complete environment variable matrix, defaults, and persisted `prisma/schema.prisma` entity rules, refer to the [Application Runtime Contract](../runtime-contract.md). On Cloud Run, attach sensitive values from **GCP Secret Manager** (`--set-secrets`) and pass non-secret routing flags via `--set-env-vars`:
 
-| Variable | Required | Source / Storage | Description |
-|---|---|---|---|
-| `NODE_ENV` | Yes | Cloud Run Env Var | Set to `production`. |
-| `DATABASE_URL` | Yes | Secret Manager | Connection string for Cloud SQL or external PostgreSQL (`datasource.url` in `prisma.config.ts`). |
-| `POSTGRES_URL_NON_POOLING` | No | Secret Manager | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` reads `DATABASE_URL` and requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
-| `ADMIN_PASSWORD` | Yes | Secret Manager | `scrypt:[saltBase64]:[keyBase64]` hash. |
-| `ALLOWED_HOSTS` | Yes | Cloud Run Env Var | Custom domain and Cloud Run default host (e.g. `wedding.mydomain.com,*.run.app`). Read-only (`GET` and `HEAD`) probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal Cloud Run pod-IP probes require no extra `ALLOWED_HOSTS` entries. |
-| `MULTISITE_ENABLED` | No | Cloud Run Env Var | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
-| `RUN_MIGRATIONS` | No | Cloud Run Env Var | Automatically run database migrations on container startup (`false`). |
-| `TRUST_PROXY` | No | Cloud Run Env Var | Trust `X-Forwarded-For` / `X-Real-IP` from Cloud Run ingress (`true` or hop count; default `false`). |
-| `GUEST_PASSCODE` | Yes | Secret Manager | Unique guest passcode required in production (default `wedding2026` is rejected in production). |
-| `GUEST_SESSION_SECRET` | Yes | Secret Manager | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
-| `HISTORY_VERSION_LIMIT` | No | Cloud Run Env Var | Retained history limit (e.g. `50`). |
-| `CRON_SECRET` | No | Secret Manager | Authorization key for background cron triggers. |
-| `S3_BUCKET` | Yes* | Secret Manager | Object storage bucket name for uploads. |
-| `S3_REGION` | Yes* | Secret Manager | Bucket region (`us-central1` or `auto`). |
-| `S3_ACCESS_KEY_ID` | Yes* | Secret Manager | HMAC / S3 API access key. |
-| `S3_SECRET_ACCESS_KEY` | Yes* | Secret Manager | HMAC / S3 API secret key. |
-| `S3_ENDPOINT` | No | Secret Manager | Custom endpoint for Cloudflare R2 / GCS S3 API. |
-| `S3_PUBLIC_URL` | No | Secret Manager | CDN URL prefix for asset delivery. |
-| `STRIPE_SECRET_KEY` | No | Secret Manager | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Cloud Run Env Var | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
-| `STRIPE_WEBHOOK_SECRET` | No | Secret Manager | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
-
-*\* Note: Cloud Run container filesystems are read-only and ephemeral; S3/R2 storage variables are strictly required for file uploads.*
+*   **GCP Secret Manager Secrets (`--set-secrets`)**:
+    *   **Core Credentials**: `DATABASE_URL` (Cloud SQL socket or external PostgreSQL URL bound to `datasource.url` in `prisma.config.ts`), `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`). If `DATABASE_URL` routes through PgBouncer, store a direct PostgreSQL URL (`DATABASE_URL_DIRECT` or `POSTGRES_URL_NON_POOLING` per `prisma.config.ts`) to pass as an explicit `DATABASE_URL` override during `prisma migrate deploy`.
+    *   **Object Storage (Required for Uploads)**: Because Cloud Run container filesystems are ephemeral and read-only, configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (plus optional `S3_ENDPOINT` and `S3_PUBLIC_URL` for Cloudflare R2 or GCS S3 Interop).
+    *   **Optional Integrations**: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (when enabling card checkout), and `CRON_SECRET` (when scheduling `/api/cron/broadcasts` via Cloud Scheduler).
+*   **Cloud Run Service Environment Variables (`--set-env-vars`)**:
+    *   Set `NODE_ENV=production`, `ALLOWED_HOSTS` (including your custom domain and `*.run.app`; read-only `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal Cloud Run pod-IP probes require no extra `ALLOWED_HOSTS` entries), `TRUST_PROXY=2` (so rate limiting resolves client IPs across Google Cloud external load balancer and Cloud Run ingress hops), and optional `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` when paired with `STRIPE_SECRET_KEY`.
 
 ---
 
@@ -364,7 +345,7 @@ gcloud run deploy wedding-website-staging \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-staging-db \
-    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|TRUST_PROXY=2|ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=STAGING_DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 
@@ -375,7 +356,7 @@ gcloud run deploy wedding-website \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
-    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|TRUST_PROXY=2|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 ```

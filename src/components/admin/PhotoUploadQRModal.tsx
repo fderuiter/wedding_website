@@ -7,6 +7,7 @@ import { FormGroup, Input, Label } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { withBasePath } from '@/lib/basePath';
 
 type PhotoPrintTemplateType = 'table_cards' | 'avery_5163' | 'avery_5160';
 
@@ -45,10 +46,12 @@ export const PhotoUploadQRModal: React.FC<PhotoUploadQRModalProps> = ({
     const origin =
       typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
     if (!uploadUrl) {
-      return origin ? `${origin}/photos?tab=guest` : '/photos?tab=guest';
+      const photosPath = withBasePath('/photos?tab=guest');
+      return origin ? `${origin}${photosPath}` : photosPath;
     }
-    if (uploadUrl.startsWith('/') && origin) {
-      return `${origin}${uploadUrl}`;
+    if (uploadUrl.startsWith('/')) {
+      const prefixed = withBasePath(uploadUrl);
+      return origin ? `${origin}${prefixed}` : prefixed;
     }
     return uploadUrl;
   }, [uploadUrl]);

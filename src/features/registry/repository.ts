@@ -6,6 +6,12 @@ import {
   REGISTRY_DEFAULT_PAGE_LIMIT,
   REGISTRY_MAX_CATALOG_LIMIT,
 } from '@/utils/registryPagination';
+import {
+  buildArchetypeSeedData,
+  findSeededContributorWithItem,
+  findSeededRegistryItemById,
+  isStaticExportBuild,
+} from '@/lib/sampleData/builder';
 import type {
   IRegistryRepository,
   GetItemsOptions,
@@ -23,6 +29,7 @@ import {
   RegistryItemSchema,
   RegistryItemDTO,
 } from './schemas';
+import { isAddressComplete } from './utils/invitation';
 
 /**
  * @class RegistryRepository
@@ -55,6 +62,49 @@ class RegistryRepository implements IRegistryRepository {
     );
     const skip = (normalizedPage - 1) * normalizedLimit;
     const take = normalizedLimit;
+
+    if (isStaticExportBuild()) {
+      let seeded = buildArchetypeSeedData('classic').registryItems.map((item) =>
+        includeContributors ? item : { ...item, contributors: [] }
+      );
+
+      if (category && category.trim()) {
+        const targetCategory = category.trim();
+        seeded = seeded.filter((item) => item.category === targetCategory);
+      }
+      if (minPrice !== undefined) {
+        seeded = seeded.filter((item) => item.price >= minPrice);
+      }
+      if (maxPrice !== undefined) {
+        seeded = seeded.filter((item) => item.price <= maxPrice);
+      }
+
+      if (sortBy === 'price-asc') {
+        seeded.sort((a, b) => a.price - b.price);
+      } else if (sortBy === 'price-desc') {
+        seeded.sort((a, b) => b.price - a.price);
+      } else {
+        seeded.sort((a, b) => {
+          const priorityDiff = Number(Boolean(b.isMostWanted)) - Number(Boolean(a.isMostWanted));
+          if (priorityDiff !== 0) return priorityDiff;
+          return (a.displayOrder ?? 0) - (b.displayOrder ?? 0);
+        });
+      }
+
+      const total = seeded.length;
+      const items = seeded
+        .slice(skip, skip + take)
+        .map((entry) => RegistryItemSchema.parse(entry));
+      const totalPages = Math.ceil(total / normalizedLimit);
+
+      return {
+        items,
+        total,
+        page: normalizedPage,
+        limit: normalizedLimit,
+        totalPages,
+      };
+    }
 
     const where: any = {};
     if (category && category.trim()) {
@@ -124,6 +174,11 @@ class RegistryRepository implements IRegistryRepository {
    */
   async getItemById(id: string, options: { includeContributors?: boolean } = {}) {
     const { includeContributors = false } = options;
+    if (isStaticExportBuild()) {
+      const seededItem = findSeededRegistryItemById(id, { includeContributors });
+      return seededItem ? RegistryItemSchema.parse(seededItem) : null;
+    }
+
     const include: { image: boolean; contributors?: boolean } = { image: true };
     if (includeContributors) {
       include.contributors = true;
@@ -307,6 +362,12 @@ class RegistryRepository implements IRegistryRepository {
       retailerOrderNumber?: string | null;
       carrier?: string | null;
       trackingNumber?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
     }
   ) {
     const runTransaction = async (txClient: any) => {
@@ -353,8 +414,20 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('This item has already been purchased.');
       }
 
+      const emailToSave =
+        contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
+      const trimOrNull = (value?: string | null) =>
+        value && value.trim() ? value.trim() : null;
+      const addressLine1ToSave = trimOrNull(contribution.addressLine1);
+      const addressLine2ToSave = trimOrNull(contribution.addressLine2);
+      const cityToSave = trimOrNull(contribution.city);
+      const stateToSave = trimOrNull(contribution.state);
+      const zipCodeToSave = trimOrNull(contribution.zipCode);
+      const countryToSave = trimOrNull(contribution.country);
+
       let finalName = contribution.name;
       let invitationCodeId: string | null = null;
+      let linkedInviteRecord: any = null;
 
       if (contribution.code && contribution.code.trim()) {
         const inviteRecord = await txClient.invitationCode.findUnique({
@@ -367,14 +440,26 @@ class RegistryRepository implements IRegistryRepository {
 
         finalName = contribution.name || inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
-
-        await txClient.invitationCode.update({
-          where: { id: inviteRecord.id },
-          data: {
-            used: true,
-            usedAt: new Date()
-          }
+        linkedInviteRecord = inviteRecord;
+      } else if (emailToSave && typeof txClient.invitationCode?.findMany === 'function') {
+        const normalizedLookupEmail = emailToSave.toLowerCase();
+        const emailMatches = await txClient.invitationCode.findMany({
+          where: {
+            email: { equals: normalizedLookupEmail, mode: 'insensitive' },
+            isSample: false,
+          },
+          take: 2,
         });
+        if (
+          Array.isArray(emailMatches) &&
+          emailMatches.length === 1 &&
+          emailMatches[0] &&
+          !emailMatches[0].isSample
+        ) {
+          linkedInviteRecord = emailMatches[0];
+          invitationCodeId = linkedInviteRecord.id;
+          finalName = contribution.name || linkedInviteRecord.guestName;
+        }
       }
 
       const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
@@ -396,6 +481,53 @@ class RegistryRepository implements IRegistryRepository {
         }
       }
 
+      if (
+        linkedInviteRecord &&
+        typeof txClient.invitationCode?.update === 'function' &&
+        isAddressComplete({
+          addressLine1: addressLine1ToSave,
+          city: cityToSave,
+          state: stateToSave,
+          zipCode: zipCodeToSave,
+        })
+      ) {
+        const existingComplete = isAddressComplete(linkedInviteRecord);
+        const sameStreetAndZip =
+          existingComplete &&
+          linkedInviteRecord.addressLine1?.trim().toLowerCase() ===
+            addressLine1ToSave?.toLowerCase() &&
+          linkedInviteRecord.zipCode?.trim().toLowerCase() === zipCodeToSave?.toLowerCase();
+
+        if (!existingComplete || sameStreetAndZip) {
+          const backfillData: Record<string, string> = {};
+          if (!linkedInviteRecord.addressLine1?.trim() && addressLine1ToSave) {
+            backfillData.addressLine1 = addressLine1ToSave;
+          }
+          if (!linkedInviteRecord.addressLine2?.trim() && addressLine2ToSave) {
+            backfillData.addressLine2 = addressLine2ToSave;
+          }
+          if (!linkedInviteRecord.city?.trim() && cityToSave) {
+            backfillData.city = cityToSave;
+          }
+          if (!linkedInviteRecord.state?.trim() && stateToSave) {
+            backfillData.state = stateToSave;
+          }
+          if (!linkedInviteRecord.zipCode?.trim() && zipCodeToSave) {
+            backfillData.zipCode = zipCodeToSave;
+          }
+          if (!linkedInviteRecord.country?.trim() && countryToSave) {
+            backfillData.country = countryToSave;
+          }
+
+          if (Object.keys(backfillData).length > 0) {
+            await txClient.invitationCode.update({
+              where: { id: linkedInviteRecord.id },
+              data: backfillData,
+            });
+          }
+        }
+      }
+
       const coverFee = Boolean(contribution.coverFee);
       const feeAmount = coverFee ? Math.round(contribution.amount * 0.025 * 100) / 100 : 0;
 
@@ -403,7 +535,6 @@ class RegistryRepository implements IRegistryRepository {
       const newTotal = newTotalCents / 100;
 
       const messageToSave = contribution.message && contribution.message.trim() ? contribution.message.trim() : null;
-      const emailToSave = contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
       const retailerOrderNumberToSave =
         contribution.retailerOrderNumber && contribution.retailerOrderNumber.trim()
           ? contribution.retailerOrderNumber.trim()
@@ -445,6 +576,12 @@ class RegistryRepository implements IRegistryRepository {
               feeAmount,
               message: messageToSave,
               date: transactionDate,
+              ...(addressLine1ToSave ? { addressLine1: addressLine1ToSave } : {}),
+              ...(addressLine2ToSave ? { addressLine2: addressLine2ToSave } : {}),
+              ...(cityToSave ? { city: cityToSave } : {}),
+              ...(stateToSave ? { state: stateToSave } : {}),
+              ...(zipCodeToSave ? { zipCode: zipCodeToSave } : {}),
+              ...(countryToSave ? { country: countryToSave } : {}),
               ...(retailerOrderNumberToSave ? { retailerOrderNumber: retailerOrderNumberToSave } : {}),
               ...(carrierToSave ? { carrier: carrierToSave } : {}),
               ...(trackingNumberToSave ? { trackingNumber: trackingNumberToSave } : {}),
@@ -520,6 +657,29 @@ class RegistryRepository implements IRegistryRepository {
     });
 
     return Boolean(result && result.count === 1);
+  }
+
+  /**
+   * Clears a claimed outbound email timestamp when provider delivery fails so
+   * gift confirmation receipts and host alerts can be retried cleanly.
+   */
+  async releaseContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void> {
+    if (!contributorId || typeof this.client?.contributor?.updateMany !== 'function') {
+      return;
+    }
+
+    const field = kind === 'confirmation' ? 'confirmationEmailSentAt' : 'alertEmailSentAt';
+    await this.client.contributor.updateMany({
+      where: {
+        id: contributorId,
+      },
+      data: {
+        [field]: null,
+      },
+    });
   }
 
   private normalizeStatus(rawStatus: unknown): ContributorStatus {
@@ -615,6 +775,15 @@ class RegistryRepository implements IRegistryRepository {
     contributorId: string
   ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null } | null> {
     if (!contributorId) return null;
+    if (isStaticExportBuild()) {
+      const found = findSeededContributorWithItem(contributorId);
+      if (!found) return null;
+      return {
+        contributor: ContributorSchema.parse(found.contributor),
+        item: found.item ? RegistryItemSchema.parse(found.item) : null,
+      };
+    }
+
     const contributor = await this.client.contributor.findUnique({
       where: { id: contributorId },
     });

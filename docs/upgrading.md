@@ -11,7 +11,7 @@ To ensure a smooth upgrade path for downstream adopters, the template adheres to
 > **Personal content and deployment configuration must remain outside frequently modified application internals.**
 
 ### Personal Content Isolation
-- **Database-Driven Content**: Personal details (e.g., couple's names, wedding date, venue details, story text, hero titles, theme colors, FAQs, wedding party members, attractions, registry items, guest invitations, seating tables, sub-events, RSVPs, broadcasts, and audit snapshots) are stored in PostgreSQL records across all 15 Prisma models (`AppConfig`, `ContentNode`, `Media`, `SeatingTable`, `InvitationCode`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`, `BroadcastMessage`, `BroadcastRecipient`, `SnapshotVersion`).
+- **Database-Driven Content**: Personal details (e.g., couple's names, wedding date, venue details, story text, hero titles, theme colors, FAQs, wedding party members, attractions, registry items, guest invitations, seating tables, sub-events, RSVPs, broadcasts, and audit snapshots) are stored in PostgreSQL records across the 15 domain Prisma models (`AppConfig`, `ContentNode`, `Media`, `SeatingTable`, `InvitationCode`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`, `BroadcastMessage`, `BroadcastRecipient`, `SnapshotVersion`), while ephemeral brute-force lockout counters in `AuthLockout` (16 Prisma models total) are managed automatically at runtime.
 - **Avoid Hardcoding Details**: Do not hardcode couple names, dates, or custom copy inside core React components (`src/app/` or `src/features/`). Modify content through the **Admin Dashboard** (`/admin/dashboard`) or database seeds rather than core source code files.
 - **Media Storage**: Upload custom images through the Admin Dashboard (persisted under `/app/public/uploads` via the `uploads_data` Docker volume or in S3/Cloudflare R2) or store static assets in `public/` using custom file names to avoid upstream merge conflicts.
 
@@ -43,7 +43,7 @@ git remote -v
 
 Before pulling upstream code or applying schema migrations:
 
-1. **Export Unified JSON Backup**: In `/admin/dashboard/maintenance`, click **Export All Data** to download a `schemaVersion: "2.0"` full-database JSON export covering all 15 Prisma models.
+1. **Export Unified JSON Backup**: In `/admin/dashboard/maintenance`, click **Export All Data** to download a `schemaVersion: "2.0"` full-database JSON export covering all 15 domain Prisma models (excluding ephemeral `AuthLockout` rows).
 2. **Tag Running Container Image (Docker Compose & Standalone Docker)**: Preserve the known-good image as `wedding-website:previous` so you can roll back immediately if needed:
    ```bash
    docker tag wedding-website:latest wedding-website:previous
@@ -267,7 +267,7 @@ If you edited `prisma/schema.prisma` directly in your local fork without generat
 ### Backup & Restore
 Before performing major version upgrades, export a unified full-database backup from the Admin Dashboard:
 1. Navigate to `/admin/dashboard/maintenance`.
-2. Click **Export All Data** to download a single `schemaVersion: "2.0"` JSON backup (`src/app/api/admin/maintenance/export/route.ts`) covering all 15 database models (site settings, content nodes, media metadata, seating tables, guest invitation codes, wedding party members, attractions and hotel blocks, registry items, gift contributors, sub-events, event access grants, RSVPs, broadcast messages, broadcast recipients, and snapshot history).
+2. Click **Export All Data** to download a single `schemaVersion: "2.0"` JSON backup (`src/app/api/admin/maintenance/export/route.ts`) covering all 15 domain database models (site settings, content nodes, media metadata, seating tables, guest invitation codes, wedding party members, attractions and hotel blocks, registry items, gift contributors, sub-events, event access grants, RSVPs, broadcast messages, broadcast recipients, and snapshot history; ephemeral `AuthLockout` counters are excluded).
 3. Back up your `.env` file (`DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `DATABASE_URL`, `STRIPE_*`, `S3_*`), persistent `uploads_data` media files, and outbound messaging provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) separately. For security, raw provider credentials and server environment secrets are redacted from JSON exports (non-secret delivery settings such as `emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, and `twilioFromNumber` are included).
 4. To restore after an upgrade or into a clean database, select your `.json` backup file on `/admin/dashboard/maintenance`, verify the pre-flight record counts across content, gifts, guests, seating, sub-events, RSVPs, and broadcasts, and click **Import Data** (legacy `1.0` backups are also accepted—obsolete virtual fields are stripped automatically and broken guest links on gifts are cleared when guest records are absent; restoring into an existing database preserves already-stored provider credentials if omitted from the backup). For accidental single-record edits, use `/admin/dashboard/history` to roll back individual versions.
 

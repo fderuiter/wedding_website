@@ -10,6 +10,7 @@ jest.mock('@/lib/prisma', () => ({
     invitationCode: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -23,9 +24,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     jest.clearAllMocks();
     resetRateLimitsForTesting();
     (mockPrisma.invitationCode.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.invitationCode.findMany as jest.Mock).mockResolvedValue([]);
   });
 
-  test('creates new InvitationCode with partyTags ["address-collection"] on valid submission', async () => {
+  test('creates new InvitationCode with partyTags ["address-collection"], saves notes in extraFields.householdNotes (not dietaryNotes), and returns enumeration-safe response', async () => {
     (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
       id: 'generated-id-1',
@@ -34,13 +36,14 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
 
     const payload = {
       guestName: 'Jane Prospect',
+      householdName: 'Prospect Family',
       email: 'jane@example.com',
       addressLine1: '789 Oak Ave',
       city: 'Austin',
       state: 'TX',
       zipCode: '78701',
       country: 'United States',
-      notes: 'Family of 3',
+      notes: 'Family of 3 - Baby Leo arriving in May',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -52,38 +55,63 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.message).toBe('Address submitted successfully.');
-    expect(body.data.id).toBe('generated-id-1');
-    expect(body.data.guestName).toBe('Jane Prospect');
-    expect(body.data.partyTags).toEqual(['address-collection']);
-    expect(body.data.code).toBeUndefined();
+    expect(body).toEqual({
+      success: true,
+      message: 'Address submitted successfully.',
+    });
+    expect(body.data).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('789 Oak Ave');
 
+    expect(mockPrisma.invitationCode.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { isSample: false },
+      })
+    );
     expect(mockPrisma.invitationCode.create).toHaveBeenCalledTimes(1);
     const createdData = (mockPrisma.invitationCode.create as jest.Mock).mock.calls[0][0].data;
     expect(createdData.guestName).toBe('Jane Prospect');
+    expect(createdData.householdName).toBe('Prospect Family');
     expect(createdData.partyTags).toEqual(['address-collection']);
     expect(createdData.addressLine1).toBe('789 Oak Ave');
-    expect(createdData.dietaryNotes).toBe('Family of 3');
+    expect(createdData.dietaryNotes).toBeNull();
+    expect(createdData.extraFields).toEqual({
+      householdNotes: 'Family of 3 - Baby Leo arriving in May',
+    });
   });
 
-  test('creates a new record when submission matches existing email instead of updating', async () => {
-    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
-    (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
-      id: 'new-guest-id-1',
-      ...data,
-    }));
+  test('matches active non-sample invited guest via resolveBatchGuestMatches and populates blank contact fields without adding address-collection tag or overwriting existing values', async () => {
+    (mockPrisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'invited-1',
+        code: 'SECRET2026',
+        guestName: 'Jane Prospect',
+        email: 'jane@example.com',
+        householdName: null,
+        addressLine1: null,
+        addressLine2: null,
+        city: null,
+        state: null,
+        zipCode: null,
+        country: null,
+        dietaryNotes: 'Gluten-free',
+        partyTags: ['Bride Family'],
+        extraFields: { attendanceStatus: 'pending' },
+      },
+    ]);
+    (mockPrisma.invitationCode.update as jest.Mock).mockResolvedValue({});
 
     const payload = {
       guestName: 'Jane Prospect',
+      householdName: 'The Prospect Household',
       email: '  JANE@EXAMPLE.COM  ',
+      phone: '+1 (555) 222-3333',
       addressLine1: '789 Oak Ave',
       addressLine2: 'Apt 4B',
       city: 'Austin',
       state: 'TX',
       zipCode: '78701',
       country: 'United States',
-      notes: 'Gluten free',
+      notes: 'Moving next year, good through Dec',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -95,49 +123,70 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.id).toBe('new-guest-id-1');
-    expect(body.data.guestName).toBe('Jane Prospect');
-    expect(body.data.partyTags).toEqual(['address-collection']);
-    expect(body.data.code).toBeUndefined();
+    expect(body).toEqual({
+      success: true,
+      message: 'Address submitted successfully.',
+    });
+    expect(JSON.stringify(body)).not.toContain('SECRET2026');
+    expect(JSON.stringify(body)).not.toContain('789 Oak Ave');
 
-    expect(mockPrisma.invitationCode.findFirst).not.toHaveBeenCalled();
-    expect(mockPrisma.invitationCode.update).not.toHaveBeenCalled();
-    expect(mockPrisma.invitationCode.create).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.invitationCode.create).toHaveBeenCalledWith({
-      data: {
-        code: expect.any(String),
-        guestName: 'Jane Prospect',
-        email: 'JANE@EXAMPLE.COM',
-        addressLine1: '789 Oak Ave',
-        addressLine2: 'Apt 4B',
-        city: 'Austin',
-        state: 'TX',
-        zipCode: '78701',
-        country: 'United States',
-        householdName: null,
-        dietaryNotes: 'Gluten free',
-        partyTags: ['address-collection'],
-        used: false,
+    expect(mockPrisma.invitationCode.create).not.toHaveBeenCalled();
+    expect(mockPrisma.invitationCode.update).toHaveBeenCalledTimes(1);
+    const updateCall = (mockPrisma.invitationCode.update as jest.Mock).mock.calls[0][0];
+    expect(updateCall.where).toEqual({ id: 'invited-1' });
+    expect(updateCall.data).toEqual({
+      householdName: 'The Prospect Household',
+      addressLine1: '789 Oak Ave',
+      addressLine2: 'Apt 4B',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78701',
+      country: 'United States',
+      extraFields: {
+        attendanceStatus: 'pending',
+        phone: '+15552223333',
+        mobile: '+15552223333',
+        householdNotes: 'Moving next year, good through Dec',
       },
     });
+    // Must NOT add 'address-collection' tag or touch dietaryNotes
+    expect(updateCall.data.partyTags).toBeUndefined();
+    expect(updateCall.data.dietaryNotes).toBeUndefined();
   });
 
-  test('creates a new record when submission matches existing guest name instead of updating', async () => {
+  test('preserves non-empty addressLine1 on matched guest and inserts conflicting addressLine1 submission as an address-collection row for admin merge review', async () => {
     (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.invitationCode.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'invited-existing-addr',
+        code: 'JOHN2026',
+        guestName: 'John Doe',
+        email: 'john@example.com',
+        householdName: 'Doe Family',
+        addressLine1: '500 Original Blvd',
+        addressLine2: null,
+        city: 'Portland',
+        state: 'OR',
+        zipCode: '97201',
+        country: 'United States',
+        partyTags: ['VIP'],
+        extraFields: null,
+      },
+    ]);
     (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
-      id: 'new-guest-id-2',
+      id: 'conflict-staging-id',
       ...data,
     }));
 
     const payload = {
       guestName: '  john doe  ',
-      email: 'newemail@example.com',
+      email: 'john@example.com',
       addressLine1: '123 Pine St',
       city: 'Seattle',
       state: 'WA',
       zipCode: '98101',
       country: 'United States',
+      notes: 'New Seattle apartment',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -149,35 +198,38 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data.id).toBe('new-guest-id-2');
-    expect(body.data.guestName).toBe('john doe');
-    expect(body.data.partyTags).toEqual(['address-collection']);
-    expect(body.data.code).toBeUndefined();
+    expect(body).toEqual({
+      success: true,
+      message: 'Address submitted successfully.',
+    });
+    expect(JSON.stringify(body)).not.toContain('JOHN2026');
+    expect(JSON.stringify(body)).not.toContain('500 Original Blvd');
 
-    expect(mockPrisma.invitationCode.findFirst).not.toHaveBeenCalled();
+    // Existing guest row's addressLine1 was NOT overwritten
     expect(mockPrisma.invitationCode.update).not.toHaveBeenCalled();
+    // Conflicting address was staged as 'address-collection' for admin merge review
     expect(mockPrisma.invitationCode.create).toHaveBeenCalledTimes(1);
     expect(mockPrisma.invitationCode.create).toHaveBeenCalledWith({
-      data: {
+      data: expect.objectContaining({
         code: expect.any(String),
         guestName: 'john doe',
-        email: 'newemail@example.com',
+        email: 'john@example.com',
         addressLine1: '123 Pine St',
-        addressLine2: null,
         city: 'Seattle',
         state: 'WA',
         zipCode: '98101',
         country: 'United States',
-        householdName: null,
         dietaryNotes: null,
+        extraFields: {
+          householdNotes: 'New Seattle apartment',
+        },
         partyTags: ['address-collection'],
         used: false,
-      },
+      }),
     });
   });
 
-  test('persists dietary notes on new record without updating existing records', async () => {
+  test('persists notes in extraFields.householdNotes (never dietaryNotes) on unmatched submissions', async () => {
     (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.invitationCode.create as jest.Mock).mockImplementation(async ({ data }) => ({
       id: 'new-guest-diet-1',
@@ -188,7 +240,7 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       guestName: 'Alice Smith',
       email: 'alice@example.com',
       addressLine1: '2 Second Ave',
-      notes: 'No shellfish',
+      notes: 'Ring bell #2 for parcels',
     };
 
     const req = new NextRequest('http://localhost/api/guest/address/public', {
@@ -204,7 +256,10 @@ describe('Public Address Collection API (/api/guest/address/public)', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           guestName: 'Alice Smith',
-          dietaryNotes: 'No shellfish',
+          dietaryNotes: null,
+          extraFields: {
+            householdNotes: 'Ring bell #2 for parcels',
+          },
           partyTags: ['address-collection'],
         }),
       })

@@ -101,12 +101,12 @@ const escapeGlobPath = (filePath) => filePath.replace(/([[\]])/g, '\\$1');
 // Shrink-only legacy baseline (capped at <= 102 unique files across all legacy groups).
 // Do not add new files here; remove entries as legacy modules are refactored.
 const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
-  'src/app/admin/dashboard/history/page.tsx',
-  'src/app/admin/dashboard/invitation-codes/page.tsx',
-  'src/app/admin/dashboard/media/page.tsx',
+  'src/app/admin/dashboard/history/HistoryTimelineClient.tsx',
+  'src/app/admin/dashboard/invitation-codes/InvitationCodesClient.tsx',
+  'src/app/admin/dashboard/media/MediaDashboardClient.tsx',
   'src/app/admin/dashboard/site-manager/components/DragDropContainer.tsx',
-  'src/app/admin/dashboard/thank-you-notes/page.tsx',
-  'src/app/admin/login/page.tsx',
+  'src/app/admin/dashboard/thank-you-notes/ThankYouNotesClient.tsx',
+  'src/app/admin/login/AdminLoginClient.tsx',
   'src/app/api/admin/[entity]/[id]/route.ts',
   'src/app/api/admin/[entity]/batch/route.ts',
   'src/app/api/admin/[entity]/route.ts',
@@ -126,7 +126,7 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/api/media/export/route.ts',
   'src/app/api/og/route.tsx',
   'src/app/api/ready/route.ts',
-  'src/app/guest/collect/page.tsx',
+  'src/app/guest/collect/GuestAddressCollectClient.tsx',
   'src/app/heart/HeartClient.tsx',
   'src/app/heart/hooks/useHeartPhysics.ts',
   'src/app/metadata.ts',
@@ -214,6 +214,7 @@ const eslintConfig = [
       '.next/**',
       '.next-export/**',
       'out/**',
+      '.api-backup-export/**',
       'node_modules/**',
       'docker/prisma-cli/**',
       'coverage/**',
@@ -257,7 +258,14 @@ const eslintConfig = [
         {
           patterns: [
             {
-              group: ['@/features/*/*'],
+              group: [
+                '@/features/*/*',
+                '../features/*/*',
+                '../../features/*/*',
+                '../../../features/*/*',
+                '../../../../features/*/*',
+                '../../../../../features/*/*',
+              ],
               message: 'Features should only be imported via their public index.ts exported interfaces to prevent cross-domain leakage.',
             },
           ],

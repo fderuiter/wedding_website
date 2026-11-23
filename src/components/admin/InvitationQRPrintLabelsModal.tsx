@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { withBasePath } from '@/lib/basePath';
 
 export interface PrintableInvitationCode {
   id: string;
@@ -134,7 +135,7 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
         }}
       >
         {visibleCodes.map((item) => {
-          const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(item.code || '')}`;
+          const rsvpUrl = `${origin}${withBasePath('/guest')}?code=${encodeURIComponent(item.code || '')}`;
           const plusOne = [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ');
 
           return (

@@ -7,7 +7,7 @@
 
 ## Overview
 
-The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) with `/opt/prisma-cli` installed outside `/app` and `/app/scripts/generate-password-hash.mjs` copied for scrypt hash generation, orchestrated by `docker-compose.yml` across three services—`db` (`postgres:15-alpine` with `shm_size: "256mb"` and `no-new-privileges:true`), a dedicated one-shot `migration` job (`./node_modules/.bin/prisma migrate deploy` reusing `wedding-website:latest` via `pull_policy: never`), and `app` (the sole `build:` owner, running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, `init: true`, `stop_grace_period: 15s`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/live` container healthcheck)—with bounded `json-file` log rotation (`max-size: "10m"`, `max-file: "3"`), `pids_limit`, `mem_limit`, and explicit `stop_grace_period` across every service. Zero-downtime updates layer `docker-compose.rollout.yml` (`app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`) via `./scripts/rollout-vps.sh` behind a dual-upstream host reverse proxy. Standalone `docker run` deployments without Compose can opt into offline entrypoint migrations by setting `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` in `docker-entrypoint.sh` (and passing `--init --stop-timeout 15`). When running host CLI scripts or building from source outside Docker, install **Node.js v22.x LTS** (`engines.node: "22.x"`, `devEngines.runtime: "^22.12.0"`) and **`npm` `^10.9.0`** (enforced via `engines` and `devEngines` in `package.json`).
+The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) with `/opt/prisma-cli` installed outside `/app` and `/app/scripts/generate-password-hash.mjs` copied for scrypt hash generation, orchestrated by `docker-compose.yml` across three services—`db` (`postgres:15-alpine` with `shm_size: "256mb"` and `no-new-privileges:true`), a dedicated one-shot `migration` job (`./node_modules/.bin/prisma migrate deploy` reusing `wedding-website:latest` via `pull_policy: never`), and `app` (the sole `build:` owner, running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, `init: true`, `stop_grace_period: 15s`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/live` container healthcheck)—with bounded `json-file` log rotation (`max-size: "10m"`, `max-file: "3"`), `pids_limit`, `mem_limit`, and explicit `stop_grace_period` across every service. Zero-downtime updates layer `docker-compose.rollout.yml` (`app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`) via `./scripts/rollout-vps.sh` behind a dual-upstream host reverse proxy. Standalone `docker run` deployments without Compose can opt into offline entrypoint migrations by setting `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` in `docker-entrypoint.sh` (and passing `--init --stop-timeout 15`). When running host CLI scripts or building from source outside Docker, install **Node.js v22.x LTS** (`>=22.22.1 <23.0.0` across `engines.node` and `devEngines.runtime`) and **`npm` `^10.9.0`** (enforced via `engines` and `devEngines` in `package.json`).
 
 ---
 
@@ -31,78 +31,25 @@ POSTGRES_URL_NON_POOLING=postgresql://wedding_user:secure_password@db_host:5432/
 
 ---
 
-## 2. Required Environment Variables
+## 2. Docker & VPS Secrets and Compose Configuration
 
-The application validates the following runtime environment variables via `src/env.ts`:
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `NODE_ENV` | Yes | `production` | Application execution environment (`production`). |
-| `DATABASE_URL` | Yes | — | Connection string for PostgreSQL database (`datasource.url` in `prisma.config.ts`, used by runtime and `prisma migrate deploy`). |
-| `POSTGRES_URL_NON_POOLING` | No | — | Shadow database connection string (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
-| `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
-| `ALLOWED_HOSTS` | Yes | `localhost,127.0.0.1,*.localhost` | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost,127.0.0.1`). |
-| `MULTISITE_ENABLED` | No | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
-| `RUN_MIGRATIONS` | No | `false` | Set to `true` or `1` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
-| `TRUST_PROXY` | No | `false` | Set to `true` (or a positive hop count) when behind Caddy/Nginx so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
-| `GUEST_PASSCODE` | Yes | — | Unique passcode required for guest website access (default `wedding2026` is rejected in production). |
-| `GUEST_SESSION_SECRET` | Yes | — | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
-| `HISTORY_VERSION_LIMIT` | No | `50` | Maximum history versions to retain per content entry. |
-| `CRON_SECRET` | No | — | Secret authorization key for background cron triggers (e.g., `/api/cron/broadcasts`). |
-| `S3_BUCKET` | No | — | Bucket name for S3 / Cloudflare R2 asset storage. |
-| `S3_REGION` | No | — | Region for S3 bucket (`us-east-1` or `auto` for Cloudflare R2). |
-| `S3_ACCESS_KEY_ID` | No | — | S3/R2 API access key ID. |
-| `S3_SECRET_ACCESS_KEY` | No | — | S3/R2 API secret access key. |
-| `S3_ENDPOINT` | No | — | Custom S3 endpoint URL (required for Cloudflare R2). |
-| `S3_PUBLIC_URL` | No | — | CDN / public URL prefix for serving uploaded assets. |
-| `STRIPE_SECRET_KEY` | No | — | Server-side Stripe secret key (`sk_...` / `rk_...`). Must be paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` when enabling card checkout. |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | — | Client-side Stripe publishable key (`pk_...`). Must be paired with `STRIPE_SECRET_KEY` when enabling card checkout. |
-| `STRIPE_WEBHOOK_SECRET` | No | — | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
-| `PORT` | No | `3000` | Host/container HTTP port (`ENV PORT=3000` in `Dockerfile`; `127.0.0.1:${PORT:-3000}:3000` in `docker-compose.yml`). |
-| `HOSTNAME` | No | `0.0.0.0` | Network interface bound by standalone `server.js` (`ENV HOSTNAME="0.0.0.0"` in `Dockerfile` and `HOSTNAME: "0.0.0.0"` in `docker-compose.yml`). |
+For the complete environment variable matrix, defaults, and persisted entity rules, refer to the [Application Runtime Contract](../runtime-contract.md) and [`.env.example`](../../.env.example).
 
 ### `.env` Interpolation & Secret Requirements in `docker-compose.yml`
 `docker-compose.yml` substitutes environment variables directly from `.env` without hardcoding production fallback secrets:
-*   **Mandatory Operator Secrets (`:?` required)**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` have no default values in `docker-compose.yml`. Running `docker compose config` or `docker compose up -d` without setting them fails immediately. In addition, `src/env.ts` rejects non-64-byte scrypt hashes and repository placeholder/E2E fallback secrets in `NODE_ENV=production`.
-*   **Scoped Container Runtime, Full 21-Variable Forwarding & 32-Variable `SITE_*` Overrides**: `app` (in `docker-compose.yml`) and `app-standby` (in `docker-compose.rollout.yml`) pin `NODE_ENV: production` so host development overrides never leak into production containers, forward all 21 runtime keys from `src/env.ts` (`NODE_ENV`, `DATABASE_URL`, `POSTGRES_URL_NON_POOLING`, `ADMIN_PASSWORD`, `ALLOWED_HOSTS`, `MULTISITE_ENABLED`, `RUN_MIGRATIONS`, `TRUST_PROXY`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `HISTORY_VERSION_LIMIT`, `CRON_SECRET`, `S3_*`, `STRIPE_*`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) plus all 32 optional Layer 1 `SITE_*` overrides (`${SITE_*:-}`), and scope container `DATABASE_URL` across `migration`, `app`, and `app-standby` via `${CONTAINER_DATABASE_URL:-...}` without requiring a manual `docker-compose.override.yml` file (automated CI smoke tests layer `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml` separately).
-*   **Trimmed & Blank-Safe `SITE_*` Overrides**: `src/lib/config.ts` (`getEnvConfigOverrides`) trims leading/trailing whitespace on all 32 `SITE_*` keys and treats empty or whitespace-only values as unset before Zod validation and `isSiteInitialized` checks, while still rejecting non-empty malformed overrides (such as invalid coordinates, dates, or hex colors) at startup. All 32 optional `SITE_*` keys (plus optional `STANDBY_PORT=3001` for rollout port customization) can be set directly in `.env`:
+*   **Mandatory Operator Secrets (`:?` required)**: `DB_PASSWORD`, `ADMIN_PASSWORD` (`scrypt:[16-byte saltBase64]:[64-byte keyBase64]` generated via `node scripts/generate-password-hash.mjs "password"`), `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`) have no default values in `docker-compose.yml`. Running `docker compose config` or `docker compose up -d` without setting them fails immediately. In addition, `src/env.ts` rejects non-64-byte scrypt hashes and repository placeholder/E2E fallback secrets in `NODE_ENV=production`.
+*   **Compose Network, Proxy & Database Interpolation**: `DB_USER` (`wedding`), `DB_NAME` (`wedding`), and `DB_PORT` (`127.0.0.1:${DB_PORT:-5432}:5432`) configure the `db` container and fallback `DATABASE_URL`; `PORT` (`127.0.0.1:${PORT:-3000}:3000`), `STANDBY_PORT` (`127.0.0.1:${STANDBY_PORT:-3001}:3000` in `docker-compose.rollout.yml`), and `HOSTNAME` (`0.0.0.0`) configure loopback host port publishing and container network binding; `ALLOWED_HOSTS` and `TRUST_PROXY=1` (`${TRUST_PROXY:-1}` default in `docker-compose.yml` and `docker-compose.rollout.yml`, or `2` behind an upstream CDN/load balancer plus host proxy) configure reverse-proxy host validation and client IP forwarding behind Caddy or Nginx.
+*   **Scoped Container Runtime, Full 21-Variable Forwarding & 32-Variable `SITE_*` Overrides**: `app` (in `docker-compose.yml`) and `app-standby` (in `docker-compose.rollout.yml`) pin `NODE_ENV: production` so host development overrides never leak into production containers, forward all 21 runtime keys from `src/env.ts` (including optional `S3_*`, `STRIPE_*`, `CRON_SECRET`, `RUN_MIGRATIONS`, and `POSTGRES_URL_NON_POOLING` — see the [Application Runtime Contract](../runtime-contract.md)) plus all 32 optional Layer 1 `SITE_*` overrides (`${SITE_*:-}`), and scope container `DATABASE_URL` across `migration`, `app`, and `app-standby` via `${CONTAINER_DATABASE_URL:-...}` without requiring a manual `docker-compose.override.yml` file (automated CI smoke tests layer `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml` separately).
+*   **Trimmed & Blank-Safe `SITE_*` Overrides**: `src/lib/config.ts` (`getEnvConfigOverrides`) trims leading/trailing whitespace on all 32 `SITE_*` keys and treats empty or whitespace-only values as unset before Zod validation and `isSiteInitialized` checks, while still rejecting non-empty malformed overrides (such as invalid coordinates, dates, or hex colors) at startup. Optional `SITE_*` keys (plus `STANDBY_PORT=3001` for `./scripts/rollout-vps.sh`) can be set directly in `.env`:
     ```env
     # Optional standby loopback port for ./scripts/rollout-vps.sh (defaults to 3001)
     # STANDBY_PORT=3001
 
-    # Optional Layer 1 site overrides (blank or commented keys fall back to database AppConfig)
+    # Optional Layer 1 site overrides (blank or commented keys fall back to database AppConfig; see ../runtime-contract.md for all 32 SITE_* keys)
     SITE_PARTNER1_NAME="Alex"
     SITE_PARTNER2_NAME="Jordan"
-    SITE_BRIDE_NAME=""
-    SITE_GROOM_NAME=""
     SITE_WEDDING_DATE="2027-09-18T17:00:00.000Z"
     SITE_BASE_URL="https://wedding.mydomain.com"
-    SITE_VENUE_NAME="Grand Conservatory"
-    SITE_VENUE_ADDRESS="100 Garden Way"
-    SITE_VENUE_CITY="Minneapolis"
-    SITE_VENUE_STATE="MN"
-    SITE_VENUE_ZIP="55401"
-    SITE_LATITUDE="44.9778"
-    SITE_LONGITUDE="-93.2650"
-    SITE_TIMEZONE="America/Chicago"
-    SITE_COLOR_PRIMARY="#4A5D4E"
-    SITE_COLOR_SECONDARY="#D4AF37"
-    SITE_THEME_PRESET="classic"
-    SITE_THEME_TOKENS='{"--btn-radius":"12px"}'
-    SITE_SHOW_COUNTDOWN="true"
-    SITE_SHOW_ADD_TO_CALENDAR="true"
-    SITE_SEO_TITLE="Alex & Jordan Wedding"
-    SITE_SEO_DESCRIPTION="Join us to celebrate our wedding weekend."
-    SITE_BRAND_MONOGRAM="A&J"
-    SITE_BRAND_LOGO_URL="/assets/logo.svg"
-    SITE_BRAND_LOGO_ALT="Alex and Jordan monogram logo"
-    SITE_HERO_IMAGE_URL="/assets/hero.jpg"
-    SITE_HERO_IMAGE_ALT="Alex and Jordan in the garden"
-    SITE_BRAND_WATERMARK_URL="/assets/watermark.svg"
-    SITE_BRAND_WATERMARK_ALT="Floral crest watermark"
-    SITE_BADGE_GRAPHIC_URL="/assets/badge.svg"
-    SITE_BADGE_GRAPHIC_ALT="Wedding crest badge"
-    SITE_CONTACT_EMAIL="couple@wedding.example"
     ```
 *   **Single-Owner Provider-Neutral Local BuildKit Caching**: `app` is the sole `build:` owner in `docker-compose.yml` (`migration` and `app-standby` set `pull_policy: never` on `wedding-website:latest`), compiling the image once on both `amd64` and `arm64` hosts using local BuildKit layer and cache mounts (`Dockerfile`) with zero GitHub Actions (`type=gha`) cache backend references in `docker-compose.yml` or `docker-compose.rollout.yml` (per-architecture CI `cache_from` overrides live strictly inside `docker-compose.ci.yml`).
 *   If any secret in `.env` contains a literal `$`, escape it as `$$` for Docker Compose interpolation.
@@ -237,7 +184,7 @@ ADMIN_PASSWORD=${ADMIN_HASH}
 ALLOWED_HOSTS=wedding.mydomain.com,localhost,127.0.0.1
 GUEST_PASSCODE=choose-a-unique-celebration-passcode
 GUEST_SESSION_SECRET=${GUEST_SECRET}
-TRUST_PROXY=true
+TRUST_PROXY=1
 E2E_TEST=false
 EOF
 
@@ -288,7 +235,7 @@ Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD
   }
 }
 ```
-When PostgreSQL is unreachable (`HTTP 503 Service Unavailable`), `withApiMiddleware` (`src/utils/withApiMiddleware.ts`) strips `status`, `database`, and `timestamp` from `/api/health` and masks `5xx` details in `NODE_ENV=production` as `{ "success": false, "error": "An unexpected error occurred. Please try again later.", "referenceId": "<uuid>" }` (returning `{ "success": false, "error": "Database connection failed" }` outside production). Unwrapped readiness monitors can query `/api/ready`, which verifies core schema tables and applied `_prisma_migrations` without requiring seeded `AppConfig` rows and returns `HTTP 200` `{ "status": "ready", "database": "connected", "timestamp": "..." }` or `HTTP 503` with `status: "unhealthy"` (`database: "connected"` and `error: "Database schema is not ready"` when schema/migrations are incomplete, or `database: "disconnected"` and `error: "Database connection failed"` when PostgreSQL is unreachable).
+When PostgreSQL is unreachable (`HTTP 503 Service Unavailable`), `withApiMiddleware` (`isHealthProbe: true` in `src/utils/withApiMiddleware.ts`) preserves diagnostic probe fields `{ "success": false, "status": "degraded", "database": "disconnected", "timestamp": "2026-09-30T14:30:00.000Z", "error": "Database connection failed" }` on `/api/health` while sanitizing error text in `NODE_ENV=production` so internal driver details never leak. Unwrapped readiness monitors can query `/api/ready`, which verifies core schema tables and applied `_prisma_migrations` without requiring seeded `AppConfig` rows and returns `HTTP 200` `{ "status": "ready", "database": "connected", "timestamp": "..." }` or `HTTP 503` with `status: "unhealthy"` (`database: "connected"` and `error: "Database schema is not ready"` when schema/migrations are incomplete, or `database: "disconnected"` and `error: "Database connection failed"` when PostgreSQL is unreachable).
 
 ---
 

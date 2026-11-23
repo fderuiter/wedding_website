@@ -17,7 +17,11 @@ import {
 } from '@/core/auth/guestInviteSession';
 import { getSignedPhotoUploadSession } from '@/core/auth/photoUploadToken';
 
-import { PhotoGalleryClient, PublicPhotoItem } from '@/components/photos/PhotoGalleryClient';
+import {
+  PhotoCategory,
+  PhotoGalleryClient,
+  PublicPhotoItem,
+} from '@/components/photos/PhotoGalleryClient';
 
 export const metadata: Metadata = {
   title: 'Photos',
@@ -49,7 +53,6 @@ function redirectToGuestLogin(): never {
     throw err;
   }
 }
-
 /**
  * @page PhotosPage
  * @description A page that displays a gallery of wedding photos and guest uploads.
@@ -66,30 +69,26 @@ export default async function PhotosPage(props?: PhotosPageProps) {
     process.env.STATIC_EXPORT === 'true' ||
     process.env.STATIC_EXPORT === '1' ||
     process.env.npm_lifecycle_event === 'build:export';
-  const [config, isAdmin] = await Promise.all([
+  const [config, isAdmin, guestSession, resolvedSearchParams] = await Promise.all([
     getAppConfig(),
     isStaticExport ? Promise.resolve(false) : isAdminRequest(),
+    isStaticExport
+      ? Promise.resolve(null)
+      : getGuestInviteSession().catch(() => null),
+    isStaticExport || !props?.searchParams
+      ? Promise.resolve(undefined)
+      : props.searchParams,
   ]);
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();
   }
 
-  let requestedTab: 'curated' | 'guest' | null = null;
   let isPhotoScopedVisitor = false;
 
   if (!isStaticExport) {
-    const resolvedSearchParams = props?.searchParams ? await props.searchParams : undefined;
-    const rawTab = Array.isArray(resolvedSearchParams?.tab)
-      ? resolvedSearchParams.tab[0]
-      : resolvedSearchParams?.tab;
-    if (rawTab === 'guest' || rawTab === 'curated') {
-      requestedTab = rawTab;
-    }
-
     const signedPhoto = await getSignedPhotoUploadSession();
     if (signedPhoto) {
-      const hasFullAuth =
-        isAdmin || (await isGuestRequest()) || Boolean(await getGuestInviteSession());
+      const hasFullAuth = isAdmin || (await isGuestRequest()) || Boolean(guestSession);
       if (!hasFullAuth) {
         const activePhotoSession = await getActivePhotoUploadSession(
           undefined,
@@ -126,11 +125,17 @@ export default async function PhotosPage(props?: PhotosPageProps) {
       const isGuestUpload = Boolean(n.tags?.includes('guest-upload'));
       const caption = data.caption?.trim() || undefined;
       const uploaderName = data.uploaderName?.trim() || undefined;
+      const explicitTitle = data.title?.trim() || undefined;
+      const explicitAltText = data.altText?.trim() || undefined;
       return {
         id: n.id,
         ...(data.mediaId ? { mediaId: data.mediaId } : {}),
         url: data.url,
-        title: caption || data.title || data.altText || (uploaderName ? `Photo by ${uploaderName}` : undefined),
+        title:
+          explicitTitle ||
+          caption ||
+          explicitAltText ||
+          (uploaderName ? `Photo by ${uploaderName}` : undefined),
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         isGuestUpload,
@@ -139,14 +144,23 @@ export default async function PhotosPage(props?: PhotosPageProps) {
     })
     .filter((item): item is PublicPhotoItem => item !== null);
 
+  const rawRequestedTab = Array.isArray(resolvedSearchParams?.tab)
+    ? resolvedSearchParams?.tab[0]
+    : resolvedSearchParams?.tab;
+  const requestedTab: PhotoCategory | undefined =
+    rawRequestedTab === 'guest' || rawRequestedTab === 'curated'
+      ? rawRequestedTab
+      : undefined;
+
   const hasCuratedPhotos = initialPhotos.some((p) => p.category === 'curated');
-  const defaultTab: 'curated' | 'guest' =
+  const defaultTab: PhotoCategory =
     requestedTab ??
     (isPhotoScopedVisitor
       ? 'guest'
       : hasCuratedPhotos || initialPhotos.length === 0
         ? 'curated'
         : 'guest');
+  const defaultUploaderName = guestSession?.guestName?.trim() || undefined;
   const albumUrl = config.photoAlbumUrl?.trim() || '';
 
   return (
@@ -166,6 +180,7 @@ export default async function PhotosPage(props?: PhotosPageProps) {
             initialPhotos={initialPhotos}
             defaultTab={defaultTab}
             isAdmin={isAdmin}
+            {...(defaultUploaderName ? { defaultUploaderName } : {})}
           />
         </div>
       </ErrorBoundary>

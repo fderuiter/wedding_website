@@ -20,6 +20,7 @@ const EXPECTED_MODEL_DELEGATES = [
   'subEventRsvp',
   'broadcastMessage',
   'broadcastRecipient',
+  'authLockout',
 ] as const;
 
 describe('Global Jest Setup (jest.setup.js)', () => {
@@ -178,8 +179,8 @@ describe('Global Jest Setup (jest.setup.js)', () => {
   });
 
   describe('PrismaClient mock and integration test bypass', () => {
-    it('generates CRUD delegates for all 15 Prisma models, passes all 15 delegates into $transaction, and stubs raw queries', async () => {
-      expect(Object.keys(Prisma.ModelName)).toHaveLength(15);
+    it('generates CRUD delegates for all 16 Prisma models, passes all 16 delegates into $transaction, and stubs raw queries', async () => {
+      expect(Object.keys(Prisma.ModelName)).toHaveLength(EXPECTED_MODEL_DELEGATES.length);
 
       const client = new PrismaClient() as unknown as Record<string, Record<string, unknown>> & {
         $transaction: <T>(_fn: (_tx: Record<string, unknown>) => Promise<T>) => Promise<T>;
@@ -284,9 +285,9 @@ describe('Global Jest Setup (jest.setup.js)', () => {
   describe('scoped module.createRequire paths', () => {
     it('maps /pdfkit.js URLs to node_modules/pdfkit/js/pdfkit.js', () => {
       const pdfRequire = moduleModule.createRequire('http://localhost/pdfkit.js');
-      const resolvedFont = pdfRequire.resolve('./data/Helvetica.afm');
+      const resolvedFont = pdfRequire.resolve('./standard-fonts/Helvetica.cjs');
       expect(resolvedFont).toBe(
-        path.join(process.cwd(), 'node_modules', 'pdfkit', 'js', 'data', 'Helvetica.afm')
+        path.join(process.cwd(), 'node_modules', 'pdfkit', 'js', 'standard-fonts', 'Helvetica.cjs')
       );
     });
 

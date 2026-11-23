@@ -4,13 +4,12 @@ import { getOrLoadRequestAppConfig } from './requestContext';
 import {
   AppConfigSchema,
   PublicAppConfigSchema,
-  PublicAppConfigDTO,
   TypographyScaleSchema,
   SpacingScaleSchema,
   BorderTreatmentSchema,
   BrandDimensionsSchema,
-} from '../features/content/schemas';
-import type { AppConfigDTO } from '../features/content/schemas';
+} from '@/features/content';
+import type { AppConfigDTO, PublicAppConfigDTO } from '@/features/content';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
 import {
@@ -25,6 +24,7 @@ import {
   sanitizeAppConfigForBackup,
 } from './backupPersistence';
 import { stripPresetDefaultTokens } from './theme/presets';
+import { buildArchetypeSeedData } from './sampleData/builder';
 
 export function isMultisiteEnabled(): boolean {
   return (
@@ -90,10 +90,10 @@ export const APP_DEFAULTS: LocalAppConfig = {
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
   layoutBorderRadius: '1rem',
-  typographyScale: TypographyScaleSchema.parse({}),
-  spacingScale: SpacingScaleSchema.parse({}),
-  borderTreatment: BorderTreatmentSchema.parse({}),
-  brandDimensions: BrandDimensionsSchema.parse({}),
+  typographyScale: TypographyScaleSchema ? TypographyScaleSchema.parse({}) : { fontSizeXs: '0.75rem', fontSizeSm: '0.875rem', fontSizeBase: '1rem', fontSizeLg: '1.125rem', fontSizeXl: '1.25rem', fontSize2xl: '1.5rem', fontWeightNormal: '400', fontWeightMedium: '500', fontWeightBold: '700', lineHeightTight: '1.25', lineHeightNormal: '1.5', lineHeightRelaxed: '1.75' },
+  spacingScale: SpacingScaleSchema ? SpacingScaleSchema.parse({}) : { spacingXs: '0.25rem', spacingSm: '0.5rem', spacingMd: '1rem', spacingLg: '1.5rem', spacingXl: '2rem', spacing2xl: '3rem', containerMaxWidth: '64rem', gridGap: '1.5rem', cardPadding: '2rem' },
+  borderTreatment: BorderTreatmentSchema ? BorderTreatmentSchema.parse({}) : { borderRadiusSm: '0.25rem', borderRadiusMd: '0.5rem', borderRadiusLg: '1rem', borderRadiusFull: '9999px', borderWidthThin: '1px', borderWidthMedium: '2px', borderWidthThick: '4px', borderStyleDefault: 'solid' },
+  brandDimensions: BrandDimensionsSchema ? BrandDimensionsSchema.parse({}) : { logoWidth: '120px', logoHeight: '40px', heroHeight: '400px', watermarkWidth: '200px', watermarkOpacity: '0.1', badgeSize: '48px' },
   brandLogoWidth: '120px',
   brandLogoHeight: '40px',
   brandHeroHeight: '400px',
@@ -145,74 +145,14 @@ export const APP_DEFAULTS: LocalAppConfig = {
 
 /**
  * Static mock configuration for static HTML export (Layer 4 fallback).
- * Provides mock event logistics and initialized state for public static showcases.
+ * Driven from the shared pure archetype seed builder (`classic` preset).
  */
+const DEFAULT_CLASSIC_SEED_CONFIG = buildArchetypeSeedData('classic').config;
+
 export const STATIC_MOCK_CONFIG: LocalAppConfig = {
   ...APP_DEFAULTS,
+  ...DEFAULT_CLASSIC_SEED_CONFIG,
   id: 'global',
-  partner1Name: 'Alex Morgan',
-  partner2Name: 'Taylor Jordan',
-  brideName: 'Alex Morgan',
-  groomName: 'Taylor Jordan',
-  weddingDate: new Date('2026-09-19T16:00:00.000Z'),
-  baseUrl: 'https://example.com',
-  venueName: 'The Glasshouse Estate',
-  venueAddress: '123 Meadow Lane',
-  venueCity: 'Minneapolis',
-  venueState: 'MN',
-  venueZip: '55401',
-  latitude: 44.9778,
-  longitude: -93.265,
-  storyText:
-    "Welcome to our wedding website! We are so excited to celebrate our special day with you.\n\nFrom the moment we met, we knew we had found a partner for all of life's adventures.",
-  venueDescription:
-    'The Glasshouse Estate is nestled amidst scenic gardens and historic grounds.',
-  travelAdvice:
-    'The venue is located 25 minutes from Minneapolis-Saint Paul International Airport (MSP).',
-  heroTitle: 'Alex & Taylor',
-  heroSubtitle: 'Celebrating our wedding',
-  seoTitle: 'Alex & Taylor Wedding',
-  seoDescription:
-    'Join Alex and Taylor for their wedding celebration at The Glasshouse Estate.',
-  contactEmail: 'contact@example.com',
-  colorPrimary: '#B91C1C',
-  colorSecondary: '#B45309',
-  themePreset: 'classic',
-  timezone: 'America/Chicago',
-  showCountdown: true,
-  showAddToCalendar: true,
-  rsvpOpen: true,
-  rsvpDeadlineDate: '',
-  rsvpGracePeriodHours: 0,
-  rsvpClosedMessage: '',
-  features: [
-    { id: 'story', type: 'story', title: 'Our Story', visible: true },
-    {
-      id: 'details',
-      type: 'details',
-      title: 'Wedding Day Details',
-      visible: true,
-    },
-    {
-      id: 'accommodations',
-      type: 'accommodations',
-      title: 'Accommodations',
-      visible: true,
-    },
-    { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
-    {
-      id: 'travel',
-      type: 'travel',
-      title: 'Travel & Things to Do',
-      visible: true,
-    },
-    {
-      id: 'faq',
-      type: 'faq',
-      title: 'Questions You Probably Have',
-      visible: true,
-    },
-  ],
 };
 
 /**
@@ -411,7 +351,7 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
 }
 
 const PUBLIC_APP_CONFIG_KEYS = Object.keys(
-  PublicAppConfigSchema.shape,
+  PublicAppConfigSchema?.shape ?? {},
 ) as Array<keyof PublicAppConfigDTO>;
 
 export interface AdminAppConfig extends PublicAppConfig {

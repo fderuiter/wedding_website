@@ -76,6 +76,7 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
 
       // Close modal via Done button, then toggle Auto-Approve Guest Uploads ON
       await adminPage.getByTestId('close-photo-qr-modal-btn').click();
+      await expect(adminPage.getByTestId('close-photo-qr-modal-btn')).toBeHidden();
       const autoApproveToggle = adminPage.getByTestId('auto-approve-guest-photos-toggle');
       await expect(autoApproveToggle).toHaveAttribute('aria-checked', 'false');
       await autoApproveToggle.click();
@@ -133,6 +134,7 @@ test.describe('Scoped QR Photo Uploads, Auto-Approval, Print Modal & Token Rotat
         mimeType: 'image/jpeg',
         buffer: validJpegBuffer,
       });
+      await qrGuestPage.getByTestId('confirm-upload-btn').click();
 
       const uploadRes = await uploadResponsePromise;
       expect(uploadRes.status()).toBe(201);

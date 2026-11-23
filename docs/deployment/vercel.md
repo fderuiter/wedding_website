@@ -34,36 +34,15 @@ In `prisma.config.ts`, `datasource.url` is bound to `DATABASE_URL` and `datasour
 
 ---
 
-## 2. Required Environment Variables
+## 2. Vercel Environment Variables & Serverless Secrets
 
-Set environment variables in **Vercel Project Settings > Environment Variables** (applied to `Production`, `Preview`, and `Development` environments as appropriate):
+For the complete environment variable matrix, defaults, and persisted `prisma/schema.prisma` entity rules, refer to the [Application Runtime Contract](../runtime-contract.md). Configure the following Vercel-specific settings in **Vercel Project Settings > Environment Variables** (`Production` and `Preview`):
 
-| Variable | Required | Description |
-|---|---|---|
-| `NODE_ENV` | Yes | Automatically set by Vercel to `production`. |
-| `DATABASE_URL` | Yes | Connection string to pooled PostgreSQL database (`datasource.url` in `prisma.config.ts`). |
-| `POSTGRES_URL_NON_POOLING` | No* | Optional shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts`); recommended when `DATABASE_URL` uses PgBouncer so the build command can override `DATABASE_URL` for `prisma migrate deploy`. |
-| `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
-| `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.mydomain.com,*.vercel.app`). |
-| `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
-| `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
-| `TRUST_PROXY` | No | Trust `X-Forwarded-For` / `X-Real-IP` from Vercel edge ingress (`true` or hop count; default `false`). |
-| `GUEST_PASSCODE` | Yes | Unique passcode required for guest access (default `wedding2026` is rejected in production). |
-| `GUEST_SESSION_SECRET` | Yes | Dedicated secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
-| `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
-| `CRON_SECRET` | No | Secret token used by Vercel Cron (`vercel.json`) to send `Authorization: Bearer <CRON_SECRET>` to `/api/cron/broadcasts`. |
-| `S3_BUCKET` | Yes** | Bucket name for cloud asset storage. |
-| `S3_REGION` | Yes** | Bucket region (`us-east-1` or `auto` for Cloudflare R2). |
-| `S3_ACCESS_KEY_ID` | Yes** | S3 API access key ID. |
-| `S3_SECRET_ACCESS_KEY` | Yes** | S3 API secret access key. |
-| `S3_ENDPOINT` | No | Custom endpoint URL (for Cloudflare R2 / MinIO). |
-| `S3_PUBLIC_URL` | No | Public CDN URL for serving uploaded assets. |
-| `STRIPE_SECRET_KEY` | No | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
-| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
-
-*\* Note: Required in practice on Vercel whenever `DATABASE_URL` uses a transaction-mode pooler (`pgbouncer=true`) so the build step can pass an explicit direct `DATABASE_URL` override to `prisma migrate deploy`.*  
-*\*\* Note: Serverless functions cannot write to local disk. S3/R2 storage variables are strictly required for file upload features.*
+*   **Database Pooling & Build-Time Migration URLs**: Set `DATABASE_URL` to your pooled PostgreSQL connection string (`datasource.url` in `prisma.config.ts`) and set `POSTGRES_URL_NON_POOLING` to your direct PostgreSQL connection string (`datasource.shadowDatabaseUrl` in `prisma.config.ts`) so the Vercel build command can explicitly override `DATABASE_URL` during `npx prisma migrate deploy`.
+*   **Production Auth & Host Security**: Set `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `ALLOWED_HOSTS` (your custom domain plus `*.vercel.app`), `TRUST_PROXY=1` (for single-hop Vercel edge ingress, or `2` behind an external CDN/proxy), `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`; Vercel sets `NODE_ENV=production` automatically).
+*   **Serverless Object Storage & Scheduled Cron**:
+    *   Because Vercel Serverless Functions cannot persist files to local disk, configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (plus optional `S3_ENDPOINT` and `S3_PUBLIC_URL`) for file upload features.
+    *   Set `CRON_SECRET` so Vercel Cron (`vercel.json`) automatically attaches `Authorization: Bearer <CRON_SECRET>` when invoking `/api/cron/broadcasts`, and optionally set `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` for online card checkout.
 
 ---
 
@@ -195,5 +174,5 @@ The repository includes a root [`vercel.json`](../../vercel.json) configuring Ve
 
 1.  **Function Execution Timeout**: Serverless functions have execution timeout limits (10s on Free, 60s on Pro, 300s on Enterprise). Long-running scraper jobs or bulk exports must finish within these bounds.
 2.  **Connection Exhaustion**: Connecting directly to PostgreSQL without connection poolers (PgBouncer/Neon) will quickly exhaust database connections under concurrent traffic. Always set up connection pooling.
-3.  **No Local State**: File uploads, sessions, or in-memory caches are not shared across serverless function invocations.
+3.  **No Local State**: Local file uploads and general 100 req/min in-memory rate-limit caches are not shared across serverless function invocations (authentication lockouts synchronize via PostgreSQL).
 4.  **Vendor Isolation Policy**: To maintain vendor independence, do not import `@vercel/postgres` or `@vercel/blob` SDKs in core business code; consume the shared standard Prisma and AWS S3 SDK abstractions instead.

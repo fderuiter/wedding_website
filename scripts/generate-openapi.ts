@@ -26,6 +26,11 @@ const broadcastSchemas = await import('../src/features/broadcast/schemas.js');
 const backupValidationSchemas = await import('../src/utils/backupValidation.js');
 const sampleDataSchemas = await import('../src/lib/sampleData/schemas.js');
 const { isProtectedRoute } = await import('../src/lib/routes.js');
+const {
+  getMiddlewarePublicApiExclusions: parseMiddlewarePublicApiExclusions,
+  isMiddlewarePublicApiMethod,
+} = await import('./generate-docs.js');
+import type { MiddlewareApiExclusions } from './generate-docs.js';
 
 const ALL_SCHEMAS: Record<string, any> = {
   ...validationUtils,
@@ -288,44 +293,16 @@ function extractAdminEntitySchemaNames(): AdminEntitySchemaNames {
     updateSchemas: Array.from(new Set(updateSchemas)),
   };
 }
-
-interface MiddlewareApiExclusions {
-  exact: Set<string>;
-  prefixes: string[];
-}
-
 function getMiddlewarePublicApiExclusions(): MiddlewareApiExclusions {
-  const middlewarePath = path.join(rootPath, 'src/middleware.ts');
-  const source = fs.readFileSync(middlewarePath, 'utf8');
-  const exact = new Set<string>();
-  const prefixes: string[] = [];
-
-  const exactRegex = /normalizedPath\s*===\s*'(\/api\/[^']+)'/g;
-  let match: RegExpExecArray | null;
-  while ((match = exactRegex.exec(source)) !== null) {
-    if (match[1] !== '/api/cron') {
-      exact.add(match[1]);
-    }
-  }
-
-  const prefixRegex = /normalizedPath\.startsWith\(\s*'(\/api\/[^']+)'\s*\)/g;
-  while ((match = prefixRegex.exec(source)) !== null) {
-    if (match[1] !== '/api/' && match[1] !== '/api/cron/') {
-      prefixes.push(match[1]);
-    }
-  }
-
-  return { exact, prefixes };
+  return parseMiddlewarePublicApiExclusions(rootPath);
 }
 
 function isMiddlewarePublicApiRoute(
   routePath: string,
+  method: string,
   exclusions: MiddlewareApiExclusions
 ): boolean {
-  if (exclusions.exact.has(routePath)) {
-    return true;
-  }
-  return exclusions.prefixes.some((prefix) => routePath.startsWith(prefix));
+  return isMiddlewarePublicApiMethod(routePath, method, exclusions);
 }
 
 function isMethodGuardCondition(condText: string): boolean {
@@ -1380,6 +1357,26 @@ function detectMiddlewareWrapped(directNodes: Node[], allNodes: Node[]): boolean
   return false;
 }
 
+function detectHealthProbeWrapped(
+  directNodes: Node[],
+  allNodes: Node[],
+  routePath: string
+): boolean {
+  if (routePath === '/api/health') {
+    return true;
+  }
+  for (const n of [...directNodes, ...allNodes]) {
+    if (!Node.isCallExpression(n)) continue;
+    const exprText = n.getExpression().getText();
+    if (exprText !== 'withApiMiddleware' && exprText !== 'createValidatedRoute') continue;
+    const optionsArg = n.getArguments()[1];
+    if (optionsArg && /\bisHealthProbe\s*:\s*true\b/.test(optionsArg.getText())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function tryMergeCompatibleObjectEnumSchemas(
   schemas: Array<Record<string, any>>
 ): Record<string, any> | null {
@@ -1513,6 +1510,8 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
   } = opts;
 
   const usesMiddleware = detectMiddlewareWrapped(directNodes, allNodes);
+  const isHealthProbe =
+    usesMiddleware && detectHealthProbeWrapped(directNodes, allNodes, routePath);
   const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
   const exportMediaByStatus = new Map<number, string[]>();
   const jsonSchemasByStatus = new Map<number, Array<Record<string, any>>>();
@@ -1583,6 +1582,23 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
             if (!usesMiddleware) {
               const schema = rawProbeSchema ?? inferSchemaFromExpression(payloadArg).schema;
               recordJsonSchema(status, schema);
+            } else if (isHealthProbe) {
+              const baseSchema = rawProbeSchema ?? inferSchemaFromExpression(payloadArg).schema;
+              if (baseSchema && baseSchema.type === 'object' && baseSchema.properties) {
+                const baseRequired = Array.isArray(baseSchema.required) ? baseSchema.required : [];
+                const mergedRequired = [
+                  'success',
+                  ...baseRequired.filter((k: string) => k !== 'success'),
+                ];
+                recordJsonSchema(status, {
+                  type: 'object',
+                  required: mergedRequired,
+                  properties: {
+                    success: { type: 'boolean', enum: [false] },
+                    ...baseSchema.properties,
+                  },
+                });
+              }
             }
           }
         }
@@ -1731,11 +1747,15 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
   for (const errStatus of sortedErrorStatuses) {
     const description = ERROR_STATUS_DESCRIPTIONS[errStatus] || 'Error response';
     if (usesMiddleware) {
+      const healthErrSchemas = isHealthProbe ? (jsonSchemasByStatus.get(errStatus) ?? []) : [];
       responses[String(errStatus)] = {
         description,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/ApiErrorEnvelope' },
+            schema:
+              healthErrSchemas.length > 0
+                ? mergeDistinctSchemas(healthErrSchemas)
+                : { $ref: '#/components/schemas/ApiErrorEnvelope' },
           },
         },
       };
@@ -1927,7 +1947,7 @@ function resolveOperationSecurity(
     return [{ guestCookieAuth: [] }];
   }
 
-  if (!isMiddlewarePublicApiRoute(routePath, publicApiExclusions)) {
+  if (!isMiddlewarePublicApiRoute(routePath, method, publicApiExclusions)) {
     return [
       { guestCookieAuth: [] },
       { guestInviteCookieAuth: [] },
@@ -2182,6 +2202,24 @@ async function run() {
         });
 
         openapi.paths[openapiPath][method.toLowerCase()] = operation;
+      }
+    }
+  }
+
+  const declaredTagNames = new Set<string>(openapi.tags.map((t: { name: string }) => t.name));
+  for (const pathMethods of Object.values(openapi.paths) as Array<Record<string, any>>) {
+    for (const op of Object.values(pathMethods)) {
+      for (const tag of op.tags ?? []) {
+        if (!declaredTagNames.has(tag)) {
+          declaredTagNames.add(tag);
+          openapi.tags.push({
+            name: tag,
+            description:
+              tag === 'General'
+                ? 'General application API endpoints'
+                : `${tag} API endpoints`,
+          });
+        }
       }
     }
   }

@@ -86,7 +86,6 @@ describe('PhotosSlideshowPage', () => {
     const client = screen.getByTestId('reception-slideshow-client');
     expect(client).toBeInTheDocument();
     expect(client).toHaveAttribute('data-count', '0');
-
     const uploadUrl = client.getAttribute('data-upload-url') ?? '';
     const parsedUrl = new URL(uploadUrl);
     expect(parsedUrl.origin).toBe('https://wedding.example.com');
@@ -111,16 +110,20 @@ describe('PhotosSlideshowPage', () => {
     render(pageElement);
 
     const client = screen.getByTestId('reception-slideshow-client');
-    expect(client).toHaveAttribute('data-upload-url', 'https://wedding.example.com/photos');
+    expect(client).toHaveAttribute('data-upload-url', 'https://wedding.example.com/photos?tab=guest');
   });
 
-  it('renders slideshow client with database approved photos when available', async () => {
+  it('renders slideshow client with database approved photos when available and maps updatedAt and prioritized title', async () => {
     (contentService.getPublicPhotos as jest.Mock).mockResolvedValue([
       {
         id: 'node-1',
+        createdAt: new Date('2026-06-20T18:00:00.000Z'),
+        updatedAt: new Date('2026-06-20T19:15:00.000Z'),
         data: {
           url: 'https://example.com/custom-photo.jpg',
-          title: 'Ceremony Walk',
+          title: 'Admin Curated Title',
+          caption: 'Original Guest Caption',
+          uploaderName: 'Aunt Clara',
         },
       },
     ]);
@@ -131,6 +134,9 @@ describe('PhotosSlideshowPage', () => {
     const client = screen.getByTestId('reception-slideshow-client');
     expect(client).toBeInTheDocument();
     expect(client).toHaveAttribute('data-count', '1');
+    expect(client.getAttribute('data-upload-url')).toMatch(
+      /^https:\/\/wedding\.example\.com\/photos\?qr=/
+    );
   });
 
   it('calls notFound when gallery feature module is disabled', async () => {

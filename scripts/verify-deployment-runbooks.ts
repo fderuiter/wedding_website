@@ -4,6 +4,7 @@ import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { parsePostgresUrl, redactPostgresUrl } from '../src/lib/postgres-url.js';
+import { staticSteps } from './check-quality';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -1331,6 +1332,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command omits mandatory GUEST_SESSION_SECRET'
       );
     }
+
+    if (/\bgcloud\s+run\s+deploy\b/.test(line) && !/\bTRUST_PROXY=2\b/.test(line)) {
+      errors.push(
+        'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command must set TRUST_PROXY=2 for two-hop Cloud Run ingress'
+      );
+    }
   }
 
   // Verify unescaped commas in gcloud --set-env-vars across all runbooks
@@ -1525,6 +1532,20 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     errors.push(
       'docker-compose.yml: `app` service must restrict default `ALLOWED_HOSTS` to `localhost,127.0.0.1,*.localhost`'
     );
+  }
+  if (composeContract.appEnvMap.get('TRUST_PROXY') !== '${TRUST_PROXY:-1}') {
+    errors.push(
+      'docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+    );
+  }
+  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
+  if (fs.existsSync(rolloutComposePath)) {
+    const rolloutComposeRaw = fs.readFileSync(rolloutComposePath, 'utf8');
+    if (!/^\s*TRUST_PROXY:\s*\$\{TRUST_PROXY:-1\}\s*(?:#.*)?$/m.test(rolloutComposeRaw)) {
+      errors.push(
+        'docker-compose.rollout.yml: `app-standby` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
+      );
+    }
   }
   for (const schemaKey of envSchemaKeys) {
     if (!composeContract.appEnvMap.has(schemaKey)) {
@@ -1775,9 +1796,13 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     const match = range.trim().match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\b|$)/i);
     return match ? match[1] : null;
   };
-  if (extractSemverMajor(packageJson.engines?.node) !== expectedNodeMajor) {
+  if (
+    extractSemverMajor(packageJson.engines?.node) !== expectedNodeMajor ||
+    !packageJson.engines?.node?.includes('>=22.22.1') ||
+    !packageJson.engines?.node?.includes('<23.0.0')
+  ) {
     errors.push(
-      `package.json: \`engines.node\` ("${packageJson.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+      `package.json: \`engines.node\` ("${packageJson.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} with range ">=22.22.1 <23.0.0" matching .nvmrc and lockfile floor`
     );
   }
   if (
@@ -1857,8 +1882,8 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
-  // Verify npm packageManager lock (^10.9.0 & devEngines) and exact devEngines.runtime Node range (^22.12.0) across package.json and runbooks
-  const expectedNodeRange = packageJson.devEngines?.runtime?.version ?? '^22.12.0';
+  // Verify npm packageManager lock (^10.9.0 & devEngines) and exact devEngines.runtime Node range (>=22.22.1 <23.0.0) across package.json and runbooks
+  const expectedNodeRange = packageJson.devEngines?.runtime?.version ?? '>=22.22.1 <23.0.0';
   const expectedNpmRange = packageJson.engines?.npm ?? '^10.9.0';
   if (
     !packageJson.engines?.npm ||
@@ -1869,7 +1894,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     packageJson.devEngines?.packageManager?.onFail !== 'error'
   ) {
     errors.push(
-      'package.json: `engines.npm`, `devEngines.runtime`, and `devEngines.packageManager` (`onFail: "error"`) must lock Node (`^22.12.0`) and npm (`^10.9.0`)'
+      `package.json: \`engines.npm\`, \`devEngines.runtime\`, and \`devEngines.packageManager\` (\`onFail: "error"\`) must lock Node (\`${expectedNodeRange}\`) and npm (\`^10.9.0\`)`
     );
   }
   for (const [docLabel, docContent] of [
@@ -1954,7 +1979,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  // Verify /api/live liveness vs /api/health 503 field stripping & referenceId masking
+  // Verify /api/live liveness vs /api/health 503 preserved diagnostic payload (isHealthProbe)
   const apiMiddlewareRaw = fs.readFileSync(path.join(repoRoot, 'src/utils/withApiMiddleware.ts'), 'utf8');
   const healthProbeSection = extractSectionSlice(
     deploymentMd,
@@ -1969,18 +1994,21 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       'DEPLOYMENT.md: Health Checks & Liveness Probes section must direct container liveness checks to `/api/live` rather than `/api/health`'
     );
   }
-  if (apiMiddlewareRaw.includes('referenceId') && apiMiddlewareRaw.includes('response.status >= 400')) {
+  if (apiMiddlewareRaw.includes('isHealthProbe') && apiMiddlewareRaw.includes('response.status >= 400')) {
     for (const [docLabel, docContent] of [
       ['docs/runtime-contract.md', runtimeContractMd],
       ['DEPLOYMENT.md', deploymentMd],
       ['docs/deployment/docker-vps.md', dockerMd],
     ] as const) {
       if (
-        !docContent.includes('referenceId') ||
-        !/strip(?:s|ping)\s+`status`,\s*`database`,\s*and\s*`timestamp`/i.test(docContent)
+        !docContent.includes('isHealthProbe') ||
+        !docContent.includes('"status": "degraded"') ||
+        !docContent.includes('"database": "disconnected"') ||
+        !docContent.includes('"Database connection failed"') ||
+        /strip(?:s|ping)\s+`status`,\s*`database`,\s*and\s*`timestamp`/i.test(docContent)
       ) {
         errors.push(
-          `${docLabel}: Must document that \`withApiMiddleware\` strips \`status\`, \`database\`, and \`timestamp\` from \`GET /api/health\` 503 responses and includes \`referenceId\` in production`
+          `${docLabel}: Must document that \`GET /api/health\` (\`isHealthProbe\`) preserves \`status\`, \`database\`, and \`timestamp\` alongside sanitized \`"Database connection failed"\` on HTTP 503 responses`
         );
       }
     }
@@ -2157,6 +2185,59 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
+  const hasDependabotVersionIgnore = (
+    ecosystem: string,
+    dependencyName: string,
+    expectedVersionRange: string
+  ): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== ecosystem) {
+        continue;
+      }
+      const ignoreNode: unknown = updateEntry.get('ignore', true);
+      if (!isSeq(ignoreNode)) {
+        continue;
+      }
+      for (const ignoreRule of ignoreNode.items) {
+        if (!isMap(ignoreRule)) {
+          continue;
+        }
+        const depNode: unknown = ignoreRule.get('dependency-name', true);
+        const versionsNode: unknown = ignoreRule.get('versions', true);
+        if (!isScalar(depNode) || String(depNode.value).trim() !== dependencyName || !isSeq(versionsNode)) {
+          continue;
+        }
+        const hasExpectedRange = versionsNode.items.some(
+          (item) => isScalar(item) && String(item.value).trim() === expectedVersionRange
+        );
+        if (hasExpectedRange) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (!hasDependabotVersionIgnore('docker', 'node', '>= 23.0.0')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `node` under `docker` ecosystem'
+    );
+  }
+  if (!hasDependabotVersionIgnore('npm', '@types/node', '>= 23.0.0')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `@types/node` under `npm` ecosystem'
+    );
+  }
+
   // Verify PostgreSQL 15 parity across docker-compose.yml, .github/workflows/ci.yml, and runtime/deployment docs
   const expectedPostgresMajor = '15';
   const expectedPostgresImagePrefix = `postgres:${expectedPostgresMajor}-alpine@sha256:`;
@@ -2171,15 +2252,35 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
     );
   }
-  const ciDelegatesPostgresImageToCompose =
-    ciWorkflowRaw.includes('docker-compose.yml') &&
-    ciWorkflowRaw.includes('["services", "db", "image"]') &&
+  const ciDoc = parseDocument(ciWorkflowRaw, { version: '1.2' });
+  const ciResolvesComposeDbImage =
     ciWorkflowRaw.includes('steps.resolve-db-image.outputs.db_image') &&
-    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
-  if (
-    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
-    mismatchedPostgresImageRegex.test(ciWorkflowRaw)
-  ) {
+    ciWorkflowRaw.includes('docker-compose.yml') &&
+    ciWorkflowRaw.includes('["services", "db", "image"]');
+  const ciDbServiceImages: string[] = [];
+  const ciJobsMap: unknown = isMap(ciDoc.contents) ? ciDoc.contents.get('jobs', true) : null;
+  if (isMap(ciJobsMap)) {
+    for (const jobPair of ciJobsMap.items) {
+      const jobMap: unknown = jobPair.value;
+      const servicesMap: unknown = isMap(jobMap) ? jobMap.get('services', true) : null;
+      const dbServiceMap: unknown = isMap(servicesMap) ? servicesMap.get('db', true) : null;
+      const dbImageNode: unknown = isMap(dbServiceMap) ? dbServiceMap.get('image', true) : null;
+      if (isScalar(dbImageNode) && typeof dbImageNode.value === 'string') {
+        ciDbServiceImages.push(dbImageNode.value.trim());
+      }
+    }
+  }
+  const exactPinnedPostgresRegex = new RegExp(
+    `^postgres:${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}$`
+  );
+  const allCiDbImagesValid =
+    ciDbServiceImages.length > 0 &&
+    ciDbServiceImages.every(
+      (img) =>
+        exactPinnedPostgresRegex.test(img) ||
+        (img === '${{ needs.verify.outputs.db_image }}' && ciResolvesComposeDbImage)
+    );
+  if (!allCiDbImagesValid || mismatchedPostgresImageRegex.test(ciWorkflowRaw)) {
     errors.push(
       `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` (or \`\${{ needs.verify.outputs.db_image }}\`) matching docker-compose.yml`
     );
@@ -2207,6 +2308,54 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // Verify PostgreSQL 15+ floor, Docker Compose ./node_modules/.bin/prisma migrate deploy prose, and /api/live container liveness claims
+  for (const [relPath, content] of runbookContents.entries()) {
+    if (/\bPostgreSQL\s+1[0-4]\b/i.test(content)) {
+      errors.push(
+        `${relPath}: References unsupported PostgreSQL < 15 floor (minimum supported version is PostgreSQL 15+)`
+      );
+    }
+    if (
+      /Docker Compose[^.\n]*`migration`[^.\n]*`npx prisma migrate deploy`/i.test(content) ||
+      /managed via `npx prisma migrate deploy`\.\s*Migrations run prior to application startup via the Docker Compose `migration` service/i.test(
+        content
+      )
+    ) {
+      errors.push(
+        `${relPath}: Must document offline \`./node_modules/.bin/prisma migrate deploy\` (not \`npx prisma migrate deploy\`) for the Docker Compose \`migration\` service`
+      );
+    }
+    if (
+      content.includes('--liveness-probe-request-path=/api/health') ||
+      /query\s+`?\/api\/health`?[^.\n]*\bfor\s+liveness\b/i.test(content) ||
+      /\bliveness\s+(?:probes?|healthchecks?|checks?)\s+(?:query|hit|target|use)\s+`?\/api\/health`?/i.test(
+        content
+      )
+    ) {
+      errors.push(
+        `${relPath}: Must direct container and orchestrator liveness probes to \`/api/live\` instead of \`/api/health\``
+      );
+    }
+  }
+  if (!/PostgreSQL\s+15\b/i.test(deploymentMd)) {
+    errors.push('DEPLOYMENT.md: Must specify PostgreSQL 15+ as minimum supported database version');
+  }
+  if (!deploymentMd.includes('./node_modules/.bin/prisma migrate deploy')) {
+    errors.push(
+      'DEPLOYMENT.md: Must document `./node_modules/.bin/prisma migrate deploy` for Docker Compose / offline container migrations'
+    );
+  }
+  if (!deploymentOverviewMd.includes('./node_modules/.bin/prisma migrate deploy')) {
+    errors.push(
+      'docs/deployment/README.md: Must document `./node_modules/.bin/prisma migrate deploy` for Docker Compose / offline container migrations'
+    );
+  }
+  if (!healthProbeSection.includes('/api/live')) {
+    errors.push(
+      'DEPLOYMENT.md: `## Health Checks & Liveness Probes` section must direct container liveness probes to `/api/live`'
+    );
+  }
+
   // Verify standalone /uploads/* rewrite and nosniff upload route contract
   const nextConfigRaw = fs.readFileSync(path.join(repoRoot, 'next.config.ts'), 'utf8');
   const uploadRouteRaw = fs.readFileSync(path.join(repoRoot, 'src/app/api/uploads/[...path]/route.ts'), 'utf8');
@@ -2222,10 +2371,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (forbiddenHealthcheckHostOverride.test(dockerfileRaw)) {
     errors.push('Dockerfile: `HEALTHCHECK` on `/api/live` must not override `Host` header in `fetch()`');
   }
-  if (forbiddenHealthcheckHostOverride.test(composeRaw)) {
+  if (composeRaw && forbiddenHealthcheckHostOverride.test(composeRaw)) {
     errors.push('docker-compose.yml: `app` `healthcheck` on `/api/live` must not override `Host` header in `fetch()`');
   }
-  const rolloutComposePath = path.join(repoRoot, 'docker-compose.rollout.yml');
   if (
     fs.existsSync(rolloutComposePath) &&
     forbiddenHealthcheckHostOverride.test(fs.readFileSync(rolloutComposePath, 'utf8'))
@@ -2290,14 +2438,13 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
-  for (const requiredCiJob of ['storybook-build', 'deploy-docs']) {
+  for (const requiredCiJob of ['static-export-build', 'storybook-build', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
     }
   }
 
   // 4a. Verify ci.yml `verify` job npm scripts are documented in DEPLOYMENT.md (`verify` (`ci.yml`) overview)
-  const ciDoc = parseDocument(ciWorkflowRaw, { version: '1.2' });
   const storybookWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'storybook.yml'), 'utf8');
   const storybookDoc = parseDocument(storybookWorkflowRaw, { version: '1.2' });
 
@@ -2315,12 +2462,22 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     if (!isMap(stepItem)) continue;
     const runNode: unknown = stepItem.get('run', true);
     if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
+    const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
     const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
     let scriptMatch: RegExpExecArray | null;
     while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
       const scriptName = scriptMatch[1];
       if (scriptName !== 'prisma:generate' && !ciVerifyScripts.includes(scriptName)) {
         ciVerifyScripts.push(scriptName);
+      }
+      if (scriptName === 'check:static') {
+        for (const staticStep of staticSteps) {
+          if (!staticStep.script) continue;
+          if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (!ciVerifyScripts.includes(staticStep.script)) {
+            ciVerifyScripts.push(staticStep.script);
+          }
+        }
       }
     }
   }
@@ -2796,13 +2953,33 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');
-  const totalModels = (prismaSchemaRaw.match(/^model\s+[A-Za-z0-9_]+\s*\{/gm) ?? []).length;
-  const sharedTableCount = Math.max(0, totalModels - 1);
-  for (const relPath of runbookRelPaths) {
-    const content = runbookContents.get(relPath) ?? '';
-    if (!new RegExp(`\\b${sharedTableCount}\\s+tables\\b`).test(content) || !content.includes('AppConfig')) {
+  const prismaModels = Array.from(
+    prismaSchemaRaw.matchAll(/^model\s+([A-Za-z0-9_]+)\s*\{/gm),
+    (match) => match[1]
+  );
+  for (const modelName of prismaModels) {
+    if (!runtimeContractMd.includes(`\`${modelName}\``)) {
       errors.push(
-        `${relPath}: Must state that \`prisma/schema.prisma\` shares ${sharedTableCount} tables across subdomains (\`MULTISITE_ENABLED\` switches \`AppConfig\` rows only)`
+        `docs/runtime-contract.md: Missing persisted prisma/schema.prisma model \`${modelName}\` in canonical runtime entity summary`
+      );
+    }
+  }
+  if (
+    !runtimeContractMd.includes('MULTISITE_ENABLED') ||
+    !runtimeContractMd.includes('AppConfig') ||
+    !/all\s+other\s+persisted\s+models\s+in\s+`?prisma\/schema\.prisma`?\s+are\s+shared\s+across\s+subdomains/i.test(
+      runtimeContractMd
+    )
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document that `MULTISITE_ENABLED` switches `AppConfig` rows only while all other persisted models in `prisma/schema.prisma` are shared across subdomains'
+    );
+  }
+  for (const relPath of hostingGuides) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!content.includes('runtime-contract.md')) {
+      errors.push(
+        `${relPath}: Must cross-reference \`docs/runtime-contract.md\` for canonical environment variable and persisted entity contracts`
       );
     }
   }

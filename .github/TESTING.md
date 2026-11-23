@@ -106,13 +106,13 @@ A variety of verification scripts in [package.json](../package.json) support com
 
 - **Accessibility (A11y) Audits:**
   ```bash
-  # Fast component-only jest-axe checks (54 src/ suites, no Docker required):
+  # Fast component-only jest-axe checks (58 src/ suites, no Docker required):
   npm run test:a11y:unit
 
   # Full component + @a11y Playwright WCAG 2.2 AA audit:
   npm run test:a11y
   ```
-  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 54 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
+  `npm run test:a11y:unit` runs [scripts/a11y-report.mjs](../scripts/a11y-report.mjs) (`--unit`), executing only the 58 `src/` `jest-axe` suites with `--coverage=false` and recording component violations to `test-results/jest-a11y-violations.json`. `npm run test:a11y` runs `scripts/a11y-report.mjs` (`--run`), which cleans `test-results/`, runs the targeted `--unit` component pass, reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([scripts/seed.ts](../scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns (skipping `<SetupWizard />` in `src/app/layout.tsx`), runs `npx playwright test --grep @a11y`, and writes unfiltered WCAG 2.2 AA violations to `test-results/a11y-summary.md` (for production standalone mode, run `npm run build && CI=true npm run test:a11y`). In [.github/workflows/ci.yml](workflows/ci.yml), an isolated `a11y-report` job depends on `unit-test` and `e2e-test` (`if: '!cancelled()'`), downloads `jest-a11y-violations` and `playwright-a11y-violations`, marks missing suite artifacts as incomplete in `test-results/a11y-summary.md`, and updates the `<!-- a11y-report -->` pull request comment and `$GITHUB_STEP_SUMMARY` even when violations exit non-zero.
 
 - **Standalone Server Smoke Test:**
   ```bash
@@ -120,31 +120,21 @@ A variety of verification scripts in [package.json](../package.json) support com
   npm run check:standalone -- --require-standalone
   npm run test:standalone
   ```
-  Verifies post-build standalone asset staging (`.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` via [`scripts/check-docker-build.ts`](../scripts/check-docker-build.ts)) and runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) + [`scripts/smoke-runner.mjs`](../scripts/smoke-runner.mjs) to check PostgreSQL TCP readiness (`pg_isready -h localhost`), clean migrations (`POSTGRES_URL_NON_POOLING` unset), `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, and authenticated `/api/registry/items`.
-  > **Warning:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js`, `.next/standalone/.next/static`, or `.next/standalone/public` is missing) and executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **deleting local Docker Compose PostgreSQL volumes (`db_data`)**.
+  Verifies post-build standalone asset staging (`.next/standalone/server.js`, `.next/standalone/.next/static`, and `.next/standalone/public` via [`scripts/check-docker-build.ts`](../scripts/check-docker-build.ts)) and runs [`scripts/test-standalone.mjs`](../scripts/test-standalone.mjs) + [`scripts/smoke-runner.mjs`](../scripts/smoke-runner.mjs) to check PostgreSQL TCP readiness (`pg_isready -h localhost`), clean migrations (`POSTGRES_URL_NON_POOLING` unset), `/assets/favicon.png`, `/api/ready`, `/api/registry/validate-code`, authenticated `/api/registry/items`, and worker-based HEIC photo upload transcoding.
+  > **Note:** `npm run test:standalone` requires running `npm run build` beforehand (it exits immediately if `.next/standalone/server.js`, `.next/standalone/.next/static`, or `.next/standalone/public` is missing). When `DATABASE_URL` is unset, it selects free loopback `PORT` and `DB_PORT` values (honoring `TEST_PORT` and `DB_PORT` overrides) and runs `docker compose -p wedding-smoke-standalone --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v` at startup and cleanup so isolated smoke volumes are torn down while preserving default local `db_data` and `uploads_data` volumes; when `DATABASE_URL` is set explicitly, it skips starting or tearing down the isolated database container and targets that URL directly.
 
 - **OCI Container Smoke Test:**
   ```bash
   npm run test:container
   ```
-  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container, execute the containerized `migration` service (`docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration`) by default even when `node_modules/.bin/prisma` exists on the host, and verify schema readiness, static assets, authenticated data-backed routes, `pg.Pool` connection bounds, and `SIGTERM` draining.
-  > **Warning:** Like `npm run test:standalone`, `npm run test:container` executes `docker compose down -v` (with `--env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml`) at startup and cleanup, **wiping local Docker Compose PostgreSQL volumes (`db_data`)**.
+  Runs [`scripts/test-container.mjs`](../scripts/test-container.mjs) with [`.env.ci`](../.env.ci) and [`docker-compose.ci.yml`](../docker-compose.ci.yml) to build the production Docker container, execute the containerized `migration` service (`docker compose -p wedding-smoke-container --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml run --rm migration`) by default even when `node_modules/.bin/prisma` exists on the host, and verify schema readiness, static assets, authenticated data-backed routes, worker-based HEIC photo upload transcoding, `pg.Pool` connection bounds, and `SIGTERM` draining.
+  > **Note:** `npm run test:container` selects free loopback `PORT` and `DB_PORT` values (honoring `TEST_PORT` and `DB_PORT` overrides without killing existing processes on port `3000`) and executes `docker compose -p wedding-smoke-container --env-file .env.ci -f docker-compose.yml -f docker-compose.ci.yml down -v` at startup and cleanup, isolating smoke containers and volumes so default local `db_data` and `uploads_data` volumes remain untouched.
 
 - **Static Repository & Document Checks:**
   ```bash
   npm run check:static
   ```
-  Executes all ten static verification gates configured in `package.json`:
-  - `npm run check:env-docs`: Validates environment variable documentation alignment across `.env.example` and deployment guides.
-  - `npm run check:runbooks`: Validates deployment runbooks against workflows, Docker Compose, and Prisma 7 contracts.
-  - `npm run check:identifiers`: Scans for accidentally committed personal/template identifiers.
-  - `npm run check:action-pins`: Validates strict YAML 1.2 workflow syntax across `.github/workflows/` and ensures GitHub Actions workflow actions are pinned to full 40-character commit SHAs with inline `# v...` version comments (`npm run check:action-pins -- --verify-upstream` in CI verifies upstream commit existence).
-  - `npm run check:links`: Verifies that internal Markdown document links resolve cleanly without broken references.
-  - `npm run check:spec-contracts`: Verifies that `/api/*` routes, HTTP methods, dynamic admin `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural Markdown specs match live source files.
-  - `npm run check:prisma`: Validates Prisma schema formatting and relations.
-  - `npm run lint:migrations`: Verifies database migration compatibility.
-  - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
-  - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `.githooks/pre-push`, `scripts/check-quality.ts`, and `tsconfig.json`.
+  Executes the shared static verification list in [scripts/check-quality.ts](../scripts/check-quality.ts) (`--static`), matching the `verify` job in [.github/workflows/ci.yml](workflows/ci.yml). For local environment setup, Git hooks ([`.githooks/pre-commit`](../.githooks/pre-commit) and [`.githooks/pre-push`](../.githooks/pre-push)), and generated doc-sync rules, see the [Developer Setup Guide](../docs/developer-setup.md) and [Contribution Guidelines](CONTRIBUTING.md).
 
 - **PostgreSQL Migration Drift Verification (`Verify Prisma Migration Sync`):**
   ```bash
@@ -163,7 +153,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run build:export
   ```
-  Compiles the database-free static HTML showcase (`output: 'export'`) inside an isolated staged workspace without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
+  Compiles the database-free static HTML showcase (`output: 'export'`) inside `.next/export-stage` without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export/cache` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
 
 - **Complete Quality Gate:**
   ```bash

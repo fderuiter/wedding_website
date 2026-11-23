@@ -6,6 +6,7 @@ export {
   ContributorSchema,
   CreateOfflineThankYouNoteSchema,
   UpdateThankYouNoteSchema,
+  SendThankYouEmailSchema,
   BatchUpdateThankYouNotesSchema,
   InvitationCodeSchema,
   InvitationCodeInputSchema,
@@ -33,11 +34,13 @@ export {
   InvitationCatalogQuerySchema,
 } from './schemas';
 export { registryService } from './service';
+export { registryRepository } from './repository';
 export { thankYouService, ThankYouService } from './thank-you.service';
 export type {
   ProgressMetrics,
   PaginationMeta,
   ThankYouNotesFilterOptions,
+  SendThankYouEmailResult,
 } from './thank-you.service';
 export type {
   RegistryItem,
@@ -46,6 +49,7 @@ export type {
   ThankYouTemplateTokens,
   RegistryShippingAddress,
   OrderTrackingDetails,
+  ContributorAddressDetails,
   GuestClaimActions,
   ContributorRecord,
   ContributorLifecycleResult,
@@ -67,6 +71,8 @@ export type {
   MergeInvitationCodesDTO,
   MergeInvitationCodesResult,
   GuestAddressUpdateDTO,
+  UpdateThankYouNoteDTO,
+  SendThankYouEmailDTO,
   PaymentIntentRequestDTO,
   PublicAddressCollectDTO,
   ItemType,
@@ -85,7 +91,12 @@ export type {
   ContributorActionScope,
   ContributorActionTokenPayload,
 } from './lib/contributorToken';
-export { maskRegistryItem, sanitizeRegistryItem } from './lib/masking';
+export {
+  maskContributor,
+  sanitizeContributor,
+  maskRegistryItem,
+  sanitizeRegistryItem,
+} from './lib/masking';
 export {
   dispatchContributionNotifications,
   dispatchConfirmedContributionAlert,

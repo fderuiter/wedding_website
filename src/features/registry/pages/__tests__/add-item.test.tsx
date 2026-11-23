@@ -1,10 +1,15 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import AddRegistryItemPage from '../add-item';
 import { apiClient } from '@/lib/apiClient';
 
+expect.extend(toHaveNoViolations);
+
 jest.mock('@/lib/apiClient', () => ({
+  ...jest.requireActual('@/lib/apiClient'),
   apiClient: {
+    get: jest.fn(),
     post: jest.fn(),
   },
 }));
@@ -75,23 +80,64 @@ describe('AddRegistryItemPage Tabbed Navigation', () => {
     expect(screen.queryByTestId('form')).not.toBeInTheDocument();
   });
 
-  it('supports arrow key keyboard navigation across tabs', () => {
-    render(<AddRegistryItemPage />);
+  it('supports arrow, Home, and End keyboard navigation across tabs with DOM focus updates and passes jest-axe', async () => {
+    const { container } = render(<AddRegistryItemPage />);
 
     const singleTab = screen.getByRole('tab', { name: /Single Item/i });
-    fireEvent.keyDown(singleTab, { key: 'ArrowRight' });
-
     const batchTab = screen.getByRole('tab', { name: /Batch URLs/i });
+    const csvTab = screen.getByRole('tab', { name: /CSV Import/i });
+
+    expect(singleTab).toHaveAttribute('id', 'tab-single');
+    expect(singleTab).toHaveAttribute('aria-controls', 'panel-single');
+    expect(singleTab).toHaveAttribute('tabIndex', '0');
+    expect(batchTab).toHaveAttribute('id', 'tab-batch');
+    expect(batchTab).toHaveAttribute('aria-controls', 'panel-batch');
+    expect(batchTab).toHaveAttribute('tabIndex', '-1');
+    expect(csvTab).toHaveAttribute('id', 'tab-csv');
+    expect(csvTab).toHaveAttribute('aria-controls', 'panel-csv');
+    expect(csvTab).toHaveAttribute('tabIndex', '-1');
+
+    const singlePanel = screen.getByRole('tabpanel');
+    expect(singlePanel).toHaveAttribute('id', 'panel-single');
+    expect(singlePanel).toHaveAttribute('aria-labelledby', 'tab-single');
+
+    singleTab.focus();
+    expect(document.activeElement).toBe(singleTab);
+
+    // Pressing ArrowRight twice from #tab-single moves activeElement to #tab-csv and renders #panel-csv
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(batchTab);
     expect(batchTab).toHaveAttribute('aria-selected', 'true');
+    expect(batchTab).toHaveAttribute('tabIndex', '0');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'panel-batch');
     expect(screen.getByTestId('batch-url-scraper')).toBeInTheDocument();
 
-    fireEvent.keyDown(batchTab, { key: 'ArrowRight' });
-    const csvTab = screen.getByRole('tab', { name: /CSV Import/i });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(csvTab);
     expect(csvTab).toHaveAttribute('aria-selected', 'true');
+    expect(csvTab).toHaveAttribute('tabIndex', '0');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'panel-csv');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'tab-csv');
     expect(screen.getByTestId('csv-registry-import')).toBeInTheDocument();
 
-    fireEvent.keyDown(csvTab, { key: 'ArrowLeft' });
+    // Home moves focus and selection back to #tab-single
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(document.activeElement).toBe(singleTab);
+    expect(singleTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'panel-single');
+
+    // End moves focus and selection to #tab-csv
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(document.activeElement).toBe(csvTab);
+    expect(csvTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'panel-csv');
+
+    // ArrowLeft moves focus and selection to #tab-batch
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(batchTab);
     expect(batchTab).toHaveAttribute('aria-selected', 'true');
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   it('preserves batch URL and CSV preview drafts across mouse and keyboard tab switches and clears after import', async () => {
