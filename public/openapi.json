@@ -5981,7 +5981,8 @@
                 "required": [
                   "channel",
                   "body"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
