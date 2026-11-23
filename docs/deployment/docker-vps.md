@@ -188,6 +188,9 @@ git pull origin main
 docker compose up -d --build
 ```
 
+### Automated Rollouts via GitHub Actions (`docker-host` & `generic-webhook`)
+Instead of building on the VPS, operators can pull attested multi-arch `ghcr.io` images automatically from `.github/workflows/deploy.yml` or `.github/workflows/deploy-provider.yml` using `provider: docker-host` (or `provider: generic-webhook`). Configure `vars.SERVICE_URL` plus environment secrets `DEPLOY_WEBHOOK_URL` and `DEPLOY_WEBHOOK_SECRET` in your `staging`, `production`, and optional unguarded `production-rollback` GitHub Environments, and see **Section 9** below for the stateless signed webhook payload, timestamp window, and dual-HMAC verification contract.
+
 ---
 
 ## 7. Health Checks
@@ -249,7 +252,8 @@ Verify live container status with `docker compose ps`. Continuous container live
            -e E2E_TEST=false \
            wedding-website:previous
        ```
-3. **Database Schema Rollback**: Prisma migrations are forward-only by design. Keep database schema changes backward-compatible (e.g., expand-and-contract pattern) to ensure older container versions can operate alongside migrated schemas.
+3. **Automated GitHub Actions Rollback (`rollback.yml` & `deploy-provider.yml`)**: When deploying via `provider: docker-host` or `provider: generic-webhook`, `.github/workflows/deploy-provider.yml` filters completed `deploy.yml` and `deploy-provider.yml` runs to the last non-dry-run target-environment (`staging` or `production`) rollout, verifies candidate tags in GHCR via `docker buildx imagetools inspect` (skipping unpublished `HEAD^1` commits), and forwards both `previous_image_tag` and `previous_image_digest` to `.github/workflows/rollback.yml` if `/api/health` fails.
+4. **Database Schema Rollback**: Prisma migrations are forward-only by design. Keep database schema changes backward-compatible (e.g., expand-and-contract pattern) to ensure older container versions can operate alongside migrated schemas.
 
 ---
 
@@ -259,6 +263,24 @@ Verify live container status with `docker compose ps`. Continuous container live
 1. Set `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `STRIPE_WEBHOOK_SECRET` in `.env` (`docker-compose.yml` forwards all three variables directly into `app`).
 2. In the **Stripe Dashboard > Developers > Webhooks**, create an endpoint pointing to `https://wedding.mydomain.com/api/registry/webhook/stripe` (ensure `wedding.mydomain.com` is in `ALLOWED_HOSTS`) and subscribe to **`payment_intent.succeeded`**.
 3. Ensure Caddy or Nginx forwards the raw request body and `Stripe-Signature` header untouched (default behavior in both reverse proxy configs above). `src/middleware.ts` exempts `/api/registry/webhook/stripe` from session cookies while verifying `ALLOWED_HOSTS`, and the webhook handler validates `stripe-signature` using `STRIPE_WEBHOOK_SECRET`.
+
+### Signed Deployment Webhook Receiver (`docker-host` & `generic-webhook`)
+When `.github/workflows/deploy-provider.yml` runs with `provider: docker-host` or `provider: generic-webhook` (without `dry_run`), GitHub Actions sends an authenticated `POST` request (`--fail-with-body`, 10s connect timeout, 30s max runtime) to `DEPLOY_WEBHOOK_URL` signed with `DEPLOY_WEBHOOK_SECRET` — requiring no repository-managed daemon on your VPS:
+1. **GitHub Environment Secrets**: Set `DEPLOY_WEBHOOK_URL` (HTTPS listener URL on your VPS reverse proxy) and `DEPLOY_WEBHOOK_SECRET` (32+ byte random HMAC secret) in `staging`, `production`, and optional `production-rollback`, alongside `vars.SERVICE_URL`.
+2. **`POST` JSON Payload Schema (`{image, digest, environment}`) & Multi-Line Raw-Byte Formatting**: `deploy-provider.yml` formats `PAYLOAD` using `jq -n` (without `-c`), sending pretty-printed multi-line UTF-8 JSON with 2-space indentation and internal `\n` newlines (trailing newline stripped by bash `$(...)`; `digest` is omitted only if empty):
+   ```json
+   {
+     "image": "ghcr.io/fderuiter/wedding_website@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+     "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+     "environment": "production"
+   }
+   ```
+   **Raw-Byte Rule**: Read the unparsed HTTP request buffer (`PAYLOAD`) directly and compute HMAC digests over those exact raw bytes. Never parse JSON and re-serialize with `JSON.stringify()`, which strips `jq -n` newlines/indentation and breaks signature verification.
+3. **Timestamp Window & Dual-HMAC Headers**:
+   *   `Content-Type: application/json`
+   *   `X-Deploy-Timestamp: <unix-seconds>` — UTC epoch seconds (`date -u +%s`). Reject requests when `Math.abs(nowSeconds - Number(timestamp)) > 300` (5-minute replay window).
+   *   `X-Hub-Signature-256: sha256=<64-lowercase-hex>` — `HMAC-SHA256(DEPLOY_WEBHOOK_SECRET, PAYLOAD)` over raw `PAYLOAD` bytes.
+   *   `X-Deploy-Signature-256: sha256=<64-lowercase-hex>` — `HMAC-SHA256(DEPLOY_WEBHOOK_SECRET, "${X-Deploy-Timestamp}.${PAYLOAD}")` over the timestamp-prefixed raw payload (`${X-Deploy-Timestamp}.${PAYLOAD}`). Verify both headers using constant-time digest comparison (`crypto.timingSafeEqual`) before pulling the `@sha256:` image and restarting `app`.
 
 ### Scheduled Broadcast Cron (`CRON_SECRET`)
 1. Set `CRON_SECRET` in `.env` (`docker-compose.yml` forwards `CRON_SECRET` directly into `app`).
