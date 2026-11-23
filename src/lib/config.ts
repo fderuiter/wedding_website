@@ -1,23 +1,35 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
-import { AppConfigSchema, PublicAppConfigSchema, PublicAppConfigDTO, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../features/content/schemas';
+import {
+  AppConfigSchema,
+  PublicAppConfigSchema,
+  PublicAppConfigDTO,
+  TypographyScaleSchema,
+  SpacingScaleSchema,
+  BorderTreatmentSchema,
+  BrandDimensionsSchema,
+} from '../features/content/schemas';
 import type { AppConfigDTO } from '../features/content/schemas';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
-import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDeadline';
+import {
+  evaluateRsvpCutoff,
+  sanitizeRsvpClosedMessage,
+} from '../utils/rsvpDeadline';
 import { headers } from 'next/headers';
 
 import { DEFAULT_MODULE_CONFIG, resolveModuleConfig } from './modules';
 import {
-  APP_CONFIG_SECRET_KEYS,
   hasNonEmptySecret as hasConfiguredSecret,
   sanitizeAppConfigForBackup,
-  type AppConfigSecretKey,
 } from './backupPersistence';
 import { stripPresetDefaultTokens } from './theme/presets';
 
 export function isMultisiteEnabled(): boolean {
-  return process.env.MULTISITE_ENABLED === 'true' || process.env.MULTISITE_ENABLED === '1';
+  return (
+    process.env.MULTISITE_ENABLED === 'true' ||
+    process.env.MULTISITE_ENABLED === '1'
+  );
 }
 
 export type PublicAppConfig = PublicAppConfigDTO;
@@ -146,14 +158,18 @@ export const STATIC_MOCK_CONFIG: LocalAppConfig = {
   venueState: 'MN',
   venueZip: '55401',
   latitude: 44.9778,
-  longitude: -93.2650,
-  storyText: 'Welcome to our wedding website! We are so excited to celebrate our special day with you.\n\nFrom the moment we met, we knew we had found a partner for all of life\'s adventures.',
-  venueDescription: 'The Glasshouse Estate is nestled amidst scenic gardens and historic grounds.',
-  travelAdvice: 'The venue is located 25 minutes from Minneapolis-Saint Paul International Airport (MSP).',
+  longitude: -93.265,
+  storyText:
+    "Welcome to our wedding website! We are so excited to celebrate our special day with you.\n\nFrom the moment we met, we knew we had found a partner for all of life's adventures.",
+  venueDescription:
+    'The Glasshouse Estate is nestled amidst scenic gardens and historic grounds.',
+  travelAdvice:
+    'The venue is located 25 minutes from Minneapolis-Saint Paul International Airport (MSP).',
   heroTitle: 'Alex & Taylor',
   heroSubtitle: 'Celebrating our wedding',
   seoTitle: 'Alex & Taylor Wedding',
-  seoDescription: 'Join Alex and Taylor for their wedding celebration at The Glasshouse Estate.',
+  seoDescription:
+    'Join Alex and Taylor for their wedding celebration at The Glasshouse Estate.',
   contactEmail: 'contact@example.com',
   colorPrimary: '#B91C1C',
   colorSecondary: '#B45309',
@@ -167,24 +183,50 @@ export const STATIC_MOCK_CONFIG: LocalAppConfig = {
   rsvpClosedMessage: '',
   features: [
     { id: 'story', type: 'story', title: 'Our Story', visible: true },
-    { id: 'details', type: 'details', title: 'Wedding Day Details', visible: true },
-    { id: 'accommodations', type: 'accommodations', title: 'Accommodations', visible: true },
+    {
+      id: 'details',
+      type: 'details',
+      title: 'Wedding Day Details',
+      visible: true,
+    },
+    {
+      id: 'accommodations',
+      type: 'accommodations',
+      title: 'Accommodations',
+      visible: true,
+    },
     { id: 'venue', type: 'venue', title: 'About Our Venue', visible: true },
-    { id: 'travel', type: 'travel', title: 'Travel & Things to Do', visible: true },
-    { id: 'faq', type: 'faq', title: 'Questions You Probably Have', visible: true },
+    {
+      id: 'travel',
+      type: 'travel',
+      title: 'Travel & Things to Do',
+      visible: true,
+    },
+    {
+      id: 'faq',
+      type: 'faq',
+      title: 'Questions You Probably Have',
+      visible: true,
+    },
   ],
 };
 
 /**
  * Determine if the application configuration has been initialized with custom details.
  */
-export function isSiteInitialized(config: AppConfigDTO | null | undefined): boolean {
+export function isSiteInitialized(
+  config: AppConfigDTO | null | undefined,
+): boolean {
   if (process.env.E2E_TEST === 'true') return true;
   if (!config) return false;
   const p1 = config.partner1Name || config.brideName;
   const p2 = config.partner2Name || config.groomName;
   if (!p1 || !p2 || !config.baseUrl) return false;
-  if ((p1 === 'Partner 1' && p2 === 'Partner 2') || (p1 === 'Abbigayle' && p2 === 'Frederick')) return false;
+  if (
+    (p1 === 'Partner 1' && p2 === 'Partner 2') ||
+    (p1 === 'Abbigayle' && p2 === 'Frederick')
+  )
+    return false;
   if (config.baseUrl.includes('wedding.example')) return false;
   return true;
 }
@@ -214,54 +256,85 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_WEDDING_DATE !== undefined) {
     overrides.weddingDate = new Date(process.env.SITE_WEDDING_DATE);
   }
-  if (process.env.SITE_BASE_URL !== undefined) overrides.baseUrl = process.env.SITE_BASE_URL;
-  if (process.env.SITE_VENUE_NAME) overrides.venueName = process.env.SITE_VENUE_NAME;
-  if (process.env.SITE_VENUE_ADDRESS !== undefined) overrides.venueAddress = process.env.SITE_VENUE_ADDRESS;
-  if (process.env.SITE_VENUE_CITY !== undefined) overrides.venueCity = process.env.SITE_VENUE_CITY;
-  if (process.env.SITE_VENUE_STATE !== undefined) overrides.venueState = process.env.SITE_VENUE_STATE;
-  if (process.env.SITE_VENUE_ZIP !== undefined) overrides.venueZip = process.env.SITE_VENUE_ZIP;
+  if (process.env.SITE_BASE_URL !== undefined)
+    overrides.baseUrl = process.env.SITE_BASE_URL;
+  if (process.env.SITE_VENUE_NAME)
+    overrides.venueName = process.env.SITE_VENUE_NAME;
+  if (process.env.SITE_VENUE_ADDRESS !== undefined)
+    overrides.venueAddress = process.env.SITE_VENUE_ADDRESS;
+  if (process.env.SITE_VENUE_CITY !== undefined)
+    overrides.venueCity = process.env.SITE_VENUE_CITY;
+  if (process.env.SITE_VENUE_STATE !== undefined)
+    overrides.venueState = process.env.SITE_VENUE_STATE;
+  if (process.env.SITE_VENUE_ZIP !== undefined)
+    overrides.venueZip = process.env.SITE_VENUE_ZIP;
   if (process.env.SITE_LATITUDE !== undefined) {
     const parsed = parseFloat(process.env.SITE_LATITUDE);
-    overrides.latitude = isNaN(parsed) ? (process.env.SITE_LATITUDE as any) : parsed;
+    overrides.latitude = isNaN(parsed)
+      ? (process.env.SITE_LATITUDE as any)
+      : parsed;
   }
   if (process.env.SITE_LONGITUDE !== undefined) {
     const parsed = parseFloat(process.env.SITE_LONGITUDE);
-    overrides.longitude = isNaN(parsed) ? (process.env.SITE_LONGITUDE as any) : parsed;
+    overrides.longitude = isNaN(parsed)
+      ? (process.env.SITE_LONGITUDE as any)
+      : parsed;
   }
   if (process.env.SITE_TIMEZONE) overrides.timezone = process.env.SITE_TIMEZONE;
-  if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
-  if (process.env.SITE_COLOR_SECONDARY) overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
-  if (process.env.SITE_THEME_PRESET) overrides.themePreset = process.env.SITE_THEME_PRESET as any;
+  if (process.env.SITE_COLOR_PRIMARY)
+    overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
+  if (process.env.SITE_COLOR_SECONDARY)
+    overrides.colorSecondary = process.env.SITE_COLOR_SECONDARY;
+  if (process.env.SITE_THEME_PRESET)
+    overrides.themePreset = process.env.SITE_THEME_PRESET as any;
   if (process.env.SITE_THEME_TOKENS) {
     try {
-      (overrides as any).themeTokens = JSON.parse(process.env.SITE_THEME_TOKENS);
+      (overrides as any).themeTokens = JSON.parse(
+        process.env.SITE_THEME_TOKENS,
+      );
     } catch {
       // Ignore malformed JSON in environment variable
     }
   }
   if (process.env.SITE_SHOW_COUNTDOWN !== undefined) {
-    overrides.showCountdown = process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
+    overrides.showCountdown =
+      process.env.SITE_SHOW_COUNTDOWN.toLowerCase() === 'true';
   }
   if (process.env.SITE_SHOW_ADD_TO_CALENDAR !== undefined) {
-    overrides.showAddToCalendar = process.env.SITE_SHOW_ADD_TO_CALENDAR.toLowerCase() === 'true';
+    overrides.showAddToCalendar =
+      process.env.SITE_SHOW_ADD_TO_CALENDAR.toLowerCase() === 'true';
   }
-  if (process.env.SITE_SEO_TITLE !== undefined) overrides.seoTitle = process.env.SITE_SEO_TITLE;
-  if (process.env.SITE_SEO_DESCRIPTION !== undefined) overrides.seoDescription = process.env.SITE_SEO_DESCRIPTION;
-  if (process.env.SITE_BRAND_MONOGRAM !== undefined) overrides.brandMonogram = process.env.SITE_BRAND_MONOGRAM;
-  if (process.env.SITE_BRAND_LOGO_URL !== undefined) overrides.brandLogoUrl = process.env.SITE_BRAND_LOGO_URL;
-  if (process.env.SITE_BRAND_LOGO_ALT !== undefined) overrides.brandLogoAlt = process.env.SITE_BRAND_LOGO_ALT;
-  if (process.env.SITE_HERO_IMAGE_URL !== undefined) overrides.heroImageUrl = process.env.SITE_HERO_IMAGE_URL;
-  if (process.env.SITE_HERO_IMAGE_ALT !== undefined) overrides.heroImageAlt = process.env.SITE_HERO_IMAGE_ALT;
-  if (process.env.SITE_BRAND_WATERMARK_URL !== undefined) overrides.brandWatermarkUrl = process.env.SITE_BRAND_WATERMARK_URL;
-  if (process.env.SITE_BRAND_WATERMARK_ALT !== undefined) overrides.brandWatermarkAlt = process.env.SITE_BRAND_WATERMARK_ALT;
-  if (process.env.SITE_BADGE_GRAPHIC_URL !== undefined) overrides.badgeGraphicUrl = process.env.SITE_BADGE_GRAPHIC_URL;
-  if (process.env.SITE_BADGE_GRAPHIC_ALT !== undefined) overrides.badgeGraphicAlt = process.env.SITE_BADGE_GRAPHIC_ALT;
-  if (process.env.SITE_CONTACT_EMAIL !== undefined) overrides.contactEmail = process.env.SITE_CONTACT_EMAIL;
+  if (process.env.SITE_SEO_TITLE !== undefined)
+    overrides.seoTitle = process.env.SITE_SEO_TITLE;
+  if (process.env.SITE_SEO_DESCRIPTION !== undefined)
+    overrides.seoDescription = process.env.SITE_SEO_DESCRIPTION;
+  if (process.env.SITE_BRAND_MONOGRAM !== undefined)
+    overrides.brandMonogram = process.env.SITE_BRAND_MONOGRAM;
+  if (process.env.SITE_BRAND_LOGO_URL !== undefined)
+    overrides.brandLogoUrl = process.env.SITE_BRAND_LOGO_URL;
+  if (process.env.SITE_BRAND_LOGO_ALT !== undefined)
+    overrides.brandLogoAlt = process.env.SITE_BRAND_LOGO_ALT;
+  if (process.env.SITE_HERO_IMAGE_URL !== undefined)
+    overrides.heroImageUrl = process.env.SITE_HERO_IMAGE_URL;
+  if (process.env.SITE_HERO_IMAGE_ALT !== undefined)
+    overrides.heroImageAlt = process.env.SITE_HERO_IMAGE_ALT;
+  if (process.env.SITE_BRAND_WATERMARK_URL !== undefined)
+    overrides.brandWatermarkUrl = process.env.SITE_BRAND_WATERMARK_URL;
+  if (process.env.SITE_BRAND_WATERMARK_ALT !== undefined)
+    overrides.brandWatermarkAlt = process.env.SITE_BRAND_WATERMARK_ALT;
+  if (process.env.SITE_BADGE_GRAPHIC_URL !== undefined)
+    overrides.badgeGraphicUrl = process.env.SITE_BADGE_GRAPHIC_URL;
+  if (process.env.SITE_BADGE_GRAPHIC_ALT !== undefined)
+    overrides.badgeGraphicAlt = process.env.SITE_BADGE_GRAPHIC_ALT;
+  if (process.env.SITE_CONTACT_EMAIL !== undefined)
+    overrides.contactEmail = process.env.SITE_CONTACT_EMAIL;
 
   return overrides;
 }
 
-const PUBLIC_APP_CONFIG_KEYS = Object.keys(PublicAppConfigSchema.shape) as Array<keyof PublicAppConfigDTO>;
+const PUBLIC_APP_CONFIG_KEYS = Object.keys(
+  PublicAppConfigSchema.shape,
+) as Array<keyof PublicAppConfigDTO>;
 
 export interface AdminAppConfig extends PublicAppConfig {
   rsvpGracePeriodHours: number;
@@ -302,7 +375,9 @@ export interface AdminAppConfig extends PublicAppConfig {
  * @param config - The full `AppConfig` object or raw config payload
  * @returns The allowlisted public configuration payload
  */
-export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(config: T): PublicAppConfig {
+export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
+  config: T,
+): PublicAppConfig {
   if (!config || typeof config !== 'object') {
     return config as PublicAppConfig;
   }
@@ -317,7 +392,9 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   picked.multisiteEnabled = isMultisiteEnabled();
   picked.isRsvpOpen = rsvpEvaluation.isOpen;
   if (typeof picked.rsvpClosedMessage === 'string') {
-    picked.rsvpClosedMessage = sanitizeRsvpClosedMessage(picked.rsvpClosedMessage);
+    picked.rsvpClosedMessage = sanitizeRsvpClosedMessage(
+      picked.rsvpClosedMessage,
+    );
   }
 
   const parsed = PublicAppConfigSchema.safeParse(picked);
@@ -330,7 +407,8 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
     isRsvpOpen: rsvpEvaluation.isOpen,
   };
   for (const key of PUBLIC_APP_CONFIG_KEYS) {
-    if (key === 'multisiteEnabled' || key === 'isRsvpOpen' || !(key in picked)) continue;
+    if (key === 'multisiteEnabled' || key === 'isRsvpOpen' || !(key in picked))
+      continue;
     const fieldSchema = PublicAppConfigSchema.shape[key];
     const fieldResult = fieldSchema.safeParse(picked[key]);
     if (fieldResult.success) {
@@ -343,14 +421,16 @@ export function toPublicAppConfig<T extends AppConfigDTO | Record<string, any>>(
   return partialSanitized as PublicAppConfig;
 }
 
-export { APP_CONFIG_SECRET_KEYS, sanitizeAppConfigForBackup, type AppConfigSecretKey };
+export { sanitizeAppConfigForBackup };
 
 /**
  * Produce a masked admin view of the application configuration that omits raw
  * messaging secrets while preserving non-secret delivery settings and boolean
  * secret presence flags.
  */
-export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(config: T): AdminAppConfig {
+export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(
+  config: T,
+): AdminAppConfig {
   if (!config || typeof config !== 'object') {
     return config as AdminAppConfig;
   }
@@ -361,8 +441,14 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(c
   return {
     ...publicConfig,
     rsvpOpen: typeof raw.rsvpOpen === 'boolean' ? raw.rsvpOpen : true,
-    rsvpGracePeriodHours: typeof raw.rsvpGracePeriodHours === 'number' ? raw.rsvpGracePeriodHours : 0,
-    emailProvider: typeof raw.emailProvider === 'string' && raw.emailProvider ? raw.emailProvider : 'smtp',
+    rsvpGracePeriodHours:
+      typeof raw.rsvpGracePeriodHours === 'number'
+        ? raw.rsvpGracePeriodHours
+        : 0,
+    emailProvider:
+      typeof raw.emailProvider === 'string' && raw.emailProvider
+        ? raw.emailProvider
+        : 'smtp',
     smtpHost: raw.smtpHost ?? '',
     smtpPort: typeof raw.smtpPort === 'number' ? raw.smtpPort : 587,
     smtpUser: raw.smtpUser ?? '',
@@ -370,11 +456,18 @@ export function toAdminAppConfig<T extends AppConfigDTO | Record<string, any>>(c
     smtpSecure: Boolean(raw.smtpSecure),
     resendFrom: raw.resendFrom ?? '',
     sendgridFrom: raw.sendgridFrom ?? '',
-    smsProvider: typeof raw.smsProvider === 'string' && raw.smsProvider ? raw.smsProvider : 'none',
+    smsProvider:
+      typeof raw.smsProvider === 'string' && raw.smsProvider
+        ? raw.smsProvider
+        : 'none',
     twilioAccountSid: raw.twilioAccountSid ?? '',
     twilioFromNumber: raw.twilioFromNumber ?? '',
-    broadcastBatchSize: typeof raw.broadcastBatchSize === 'number' ? raw.broadcastBatchSize : 50,
-    broadcastBatchDelayMs: typeof raw.broadcastBatchDelayMs === 'number' ? raw.broadcastBatchDelayMs : 500,
+    broadcastBatchSize:
+      typeof raw.broadcastBatchSize === 'number' ? raw.broadcastBatchSize : 50,
+    broadcastBatchDelayMs:
+      typeof raw.broadcastBatchDelayMs === 'number'
+        ? raw.broadcastBatchDelayMs
+        : 500,
     shippingRecipientName: raw.shippingRecipientName ?? '',
     shippingAddressLine1: raw.shippingAddressLine1 ?? '',
     shippingAddressLine2: raw.shippingAddressLine2 ?? '',
@@ -399,26 +492,29 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
   }
   try {
     const headersList = await headers();
-    const forwardedHost = headersList.get('x-forwarded-host')?.split(',')[0]?.trim();
+    const forwardedHost = headersList
+      .get('x-forwarded-host')
+      ?.split(',')[0]
+      ?.trim();
     const host = forwardedHost || headersList.get('host');
     if (!host || !isHostAllowed(host)) return null;
-    
+
     const cleanHost = host.split(':')[0];
     if (cleanHost === 'localhost' || cleanHost === '127.0.0.1') {
       return null;
     }
-    
+
     const parts = cleanHost.split('.');
     if (cleanHost.endsWith('.localhost')) {
       return parts[0];
     }
-    
+
     if (parts.length >= 3) {
       const sub = parts[0];
       if (sub.toLowerCase() === 'www') return null;
       return sub;
     }
-    
+
     return null;
   } catch {
     return null;
@@ -434,10 +530,13 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
  * @param idOrSubdomain - Profile ID or Subdomain identifier
  * @returns The resolved and validated AppConfigDTO
  */
-export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: string): Promise<AppConfigDTO> {
-  const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
-                         process.env.STATIC_EXPORT === '1' ||
-                         process.env.npm_lifecycle_event === 'build:export';
+export const getAppConfig = cache(async function getAppConfig(
+  idOrSubdomain?: string,
+): Promise<AppConfigDTO> {
+  const isStaticExport =
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export';
 
   let dbConfig: AppConfigDTO | null = null;
   const multisite = isMultisiteEnabled();
@@ -476,64 +575,76 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
       }
 
       if (!rawDbConfig) {
-        dbConfig = AppConfigSchema.parse(await prisma.appConfig.upsert({
-          where: { id: 'global' },
-          update: {},
-          create: { 
-            id: 'global',
-            partner1Name: '',
-            partner2Name: '',
-            brideName: '',
-            groomName: '',
-            baseUrl: '',
-            venueName: '',
-            venueAddress: '',
-            venueCity: '',
-            venueState: '',
-            venueZip: '',
-            latitude: 0,
-            longitude: 0,
-            venueDescription: '',
-            seoDescription: '',
-            contactEmail: '',
-            photoAlbumUrl: '',
-            faviconUrl: '/assets/favicon.png',
-            ogImageUrl: '/images/placeholder.png',
-            seoKeywords: '',
-            colorPrimary: '#B91C1C',
-            colorSecondary: '#B45309',
-            themePreset: 'classic',
-            themeTokens: {},
-            modules: DEFAULT_MODULE_CONFIG,
-            timezone: 'UTC',
-            showCountdown: true,
-            showAddToCalendar: true,
-            rsvpOpen: true,
-            rsvpDeadlineDate: '',
-            rsvpGracePeriodHours: 0,
-            rsvpClosedMessage: '',
-          },
-        }));
+        dbConfig = AppConfigSchema.parse(
+          await prisma.appConfig.upsert({
+            where: { id: 'global' },
+            update: {},
+            create: {
+              id: 'global',
+              partner1Name: '',
+              partner2Name: '',
+              brideName: '',
+              groomName: '',
+              baseUrl: '',
+              venueName: '',
+              venueAddress: '',
+              venueCity: '',
+              venueState: '',
+              venueZip: '',
+              latitude: 0,
+              longitude: 0,
+              venueDescription: '',
+              seoDescription: '',
+              contactEmail: '',
+              photoAlbumUrl: '',
+              faviconUrl: '/assets/favicon.png',
+              ogImageUrl: '/images/placeholder.png',
+              seoKeywords: '',
+              colorPrimary: '#B91C1C',
+              colorSecondary: '#B45309',
+              themePreset: 'classic',
+              themeTokens: {},
+              modules: DEFAULT_MODULE_CONFIG,
+              timezone: 'UTC',
+              showCountdown: true,
+              showAddToCalendar: true,
+              rsvpOpen: true,
+              rsvpDeadlineDate: '',
+              rsvpGracePeriodHours: 0,
+              rsvpClosedMessage: '',
+            },
+          }),
+        );
       } else {
         const rawModules =
-          typeof (rawDbConfig as Record<string, unknown>).modules === 'object' &&
+          typeof (rawDbConfig as Record<string, unknown>).modules ===
+            'object' &&
           (rawDbConfig as Record<string, unknown>).modules !== null &&
           !Array.isArray((rawDbConfig as Record<string, unknown>).modules)
-            ? ((rawDbConfig as Record<string, unknown>).modules as Record<string, unknown>)
+            ? ((rawDbConfig as Record<string, unknown>).modules as Record<
+              string,
+              unknown
+            >)
             : {};
         dbConfig = AppConfigSchema.parse({
           ...rawDbConfig,
           modules: {
-            ...(typeof rawDbConfig.showCountdown === 'boolean' ? { countdown: rawDbConfig.showCountdown } : {}),
-            ...(typeof rawDbConfig.showAddToCalendar === 'boolean' ? { addToCalendar: rawDbConfig.showAddToCalendar } : {}),
+            ...(typeof rawDbConfig.showCountdown === 'boolean'
+              ? { countdown: rawDbConfig.showCountdown }
+              : {}),
+            ...(typeof rawDbConfig.showAddToCalendar === 'boolean'
+              ? { addToCalendar: rawDbConfig.showAddToCalendar }
+              : {}),
             ...rawModules,
           },
         });
       }
-
     } catch (error) {
       if (process.env.NODE_ENV === 'production') {
-        console.error('Database connection failed during configuration load:', error);
+        console.error(
+          'Database connection failed during configuration load:',
+          error,
+        );
       } else {
         console.warn('Database unreachable, using fallback config.');
       }
@@ -541,7 +652,10 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   }
 
   const envOverrides = getEnvConfigOverrides();
-  const activePreset = envOverrides.themePreset || dbConfig?.themePreset || APP_DEFAULTS.themePreset;
+  const activePreset =
+    envOverrides.themePreset ||
+    dbConfig?.themePreset ||
+    APP_DEFAULTS.themePreset;
   const previousDbPreset = dbConfig?.themePreset;
 
   // Deterministic Precedence: Sparse DB Custom Overrides < Sparse Env Overrides
@@ -549,10 +663,13 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
   const sparseDbTokens = stripPresetDefaultTokens(
     (dbConfig as any)?.themeTokens,
     activePreset,
-    previousDbPreset && previousDbPreset !== activePreset ? previousDbPreset : undefined
+    previousDbPreset && previousDbPreset !== activePreset
+      ? previousDbPreset
+      : undefined,
   );
   const rawEnvTokens =
-    (envOverrides as any)?.themeTokens && typeof (envOverrides as any).themeTokens === 'object'
+    (envOverrides as any)?.themeTokens &&
+    typeof (envOverrides as any).themeTokens === 'object'
       ? (envOverrides as any).themeTokens
       : {};
   const mergedThemeTokens = stripPresetDefaultTokens(
@@ -560,15 +677,21 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
       ...sparseDbTokens,
       ...rawEnvTokens,
     },
-    activePreset
+    activePreset,
   );
 
   // Deterministic Precedence: Generic Defaults < DB Config < Env Overrides
-  const baseModules = resolveModuleConfig((dbConfig as any)?.modules ?? APP_DEFAULTS.modules);
+  const baseModules = resolveModuleConfig(
+    (dbConfig as any)?.modules ?? APP_DEFAULTS.modules,
+  );
   const syncedEnvModules = {
     ...baseModules,
-    ...(envOverrides.showCountdown !== undefined ? { countdown: envOverrides.showCountdown } : {}),
-    ...(envOverrides.showAddToCalendar !== undefined ? { addToCalendar: envOverrides.showAddToCalendar } : {}),
+    ...(envOverrides.showCountdown !== undefined
+      ? { countdown: envOverrides.showCountdown }
+      : {}),
+    ...(envOverrides.showAddToCalendar !== undefined
+      ? { addToCalendar: envOverrides.showAddToCalendar }
+      : {}),
   };
   const mergedConfig = {
     ...APP_DEFAULTS,
@@ -578,8 +701,10 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
     themeTokens: mergedThemeTokens,
   };
 
-  const partner1Name = mergedConfig.partner1Name || mergedConfig.brideName || '';
-  const partner2Name = mergedConfig.partner2Name || mergedConfig.groomName || '';
+  const partner1Name =
+    mergedConfig.partner1Name || mergedConfig.brideName || '';
+  const partner2Name =
+    mergedConfig.partner2Name || mergedConfig.groomName || '';
 
   try {
     return AppConfigSchema.parse({
@@ -593,8 +718,13 @@ export const getAppConfig = cache(async function getAppConfig(idOrSubdomain?: st
     });
   } catch (err: any) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('❌ Production Configuration Schema Validation Failed:', err);
-      throw new Error(`Production Configuration Validation Failure: ${err.message || String(err)}`);
+      console.error(
+        '❌ Production Configuration Schema Validation Failed:',
+        err,
+      );
+      throw new Error(
+        `Production Configuration Validation Failure: ${err.message || String(err)}`,
+      );
     }
     throw err;
   }
