@@ -1,5 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { GuestPhotoDropzone } from '../GuestPhotoDropzone';
+
+expect.extend(toHaveNoViolations);
 
 // Global fetch mock
 const originalFetch = global.fetch;
@@ -362,7 +366,7 @@ describe('GuestPhotoDropzone', () => {
     expect(capturedSignal?.aborted).toBe(false);
 
     // Click remove button
-    const removeButton = screen.getByLabelText('Remove item');
+    const removeButton = screen.getByLabelText('Remove cancel-me.jpg');
     fireEvent.click(removeButton);
 
     expect(abortSpy).toHaveBeenCalled();
@@ -563,5 +567,84 @@ describe('GuestPhotoDropzone', () => {
     // uploaderName stays populated for subsequent uploads while caption is cleared
     expect(uploaderInput.value).toBe('Elena Rivera');
     expect(captionInput.value).toBe('');
+  });
+
+  it('maintains sequential h2 heading hierarchy, accessible progressbar/alert/status semantics, per-file action labels, and zero axe violations', async () => {
+    let resolveActiveUpload: ((_val: unknown) => void) | undefined;
+    (global.fetch as jest.Mock)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveActiveUpload = resolve;
+          })
+      )
+      .mockRejectedValueOnce(new Error('Upload timeout'));
+
+    const { container } = render(
+      <main>
+        <h1>Photo Gallery</h1>
+        <GuestPhotoDropzone />
+      </main>
+    );
+
+    const fileInput = screen.getByTestId('guest-photo-file-input');
+    const activeFile = new File(['active-bytes'], 'ceremony-vows.jpg', { type: 'image/jpeg' });
+    const failingFile = new File(['fail-bytes'], 'reception-dance.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(fileInput, { target: { files: [activeFile, failingFile] } });
+
+    // Verify staged confirmation bar and staged badges have zero axe violations prior to upload
+    expect(screen.getByTestId('staged-uploads-bar')).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-error-badge')).toHaveTextContent('Failed');
+    });
+
+    // Heading order: Upload Status is an h2 sibling, and Clear status button is outside the heading
+    const statusHeading = screen.getByRole('heading', { level: 2, name: 'Upload Status' });
+    const clearButton = screen.getByTestId('clear-status-button');
+    expect(statusHeading.contains(clearButton)).toBe(false);
+
+    // Active upload exposes role="progressbar" with aria-valuemin/max/now and filename aria-label
+    const progressbar = screen.getByRole('progressbar', { name: 'Uploading ceremony-vows.jpg' });
+    expect(progressbar).toHaveAttribute('aria-valuemin', '0');
+    expect(progressbar).toHaveAttribute('aria-valuemax', '100');
+    expect(progressbar).toHaveAttribute('aria-valuenow');
+
+    // Failed upload exposes role="alert" and per-file Retry + Remove buttons with size="sm" (h-8 >= 24px)
+    expect(screen.getByTestId('upload-error-message')).toHaveAttribute('role', 'alert');
+    const retryBtn = screen.getByRole('button', { name: 'Retry upload for reception-dance.jpg' });
+    const removeFailedBtn = screen.getByRole('button', { name: 'Remove reception-dance.jpg' });
+    const removeActiveBtn = screen.getByRole('button', { name: 'Remove ceremony-vows.jpg' });
+    expect(retryBtn).toHaveClass('h-8');
+    expect(removeFailedBtn).toHaveClass('h-8');
+    expect(removeActiveBtn).toHaveClass('h-8');
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Complete active upload as pending review and verify polite role="status" notice
+    resolveActiveUpload?.({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [
+          {
+            id: 'media-pending-1',
+            nodeId: 'node-pending-1',
+            url: '/uploads/photos/ceremony-vows.jpg',
+            status: 'PENDING',
+            isVisible: false,
+          },
+        ],
+      }),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-pending-notice')).toHaveAttribute('role', 'status');
+    });
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

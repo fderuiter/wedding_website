@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import {
   getAppConfig,
   toPublicAppConfig,
@@ -25,6 +27,10 @@ import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
+
+type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
+  modules?: unknown;
+};
 
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
 
@@ -83,9 +89,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const initialized = isSiteInitialized(config);
   const isAdmin = await isAdminRequest(req);
 
-  let body: any = {};
+  let rawBody: unknown = {};
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     // Body can be empty if only headers/cookies sent
   }
@@ -97,27 +103,40 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   // First-run setup authorization check
   if (!initialized && !isAdmin) {
-    const password = body.password;
-    if (!password) {
-      throw new ApiError(401, 'Admin password is required for setup.');
+    const rawPassword =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>).password
+        : undefined;
+    if (!rawPassword || typeof rawPassword !== 'string') {
+      throw new ApiError(
+        401,
+        !rawPassword
+          ? 'Admin password is required for setup.'
+          : 'Invalid admin password.',
+      );
     }
     const adminPassword = env.ADMIN_PASSWORD;
     if (!adminPassword) {
       throw new ApiError(500, 'Admin password not configured in environment.');
     }
-    const isMatch = await verifyPassword(password, adminPassword);
+    const isMatch = await verifyPassword(rawPassword, adminPassword);
     if (!isMatch) {
       throw new ApiError(401, 'Invalid admin password.');
     }
   }
 
-  const setupBodyResult = AdminSetupSchema.safeParse(body);
+  const setupBodyResult = AdminSetupSchema.safeParse(rawBody);
   if (!setupBodyResult.success) {
     throw new ApiError(
       400,
       `Validation Error: ${formatZodError(setupBodyResult.error)}`,
     );
   }
+
+  const body: SetupRequestPayload = {
+    ...(rawBody as Record<string, unknown>),
+    ...setupBodyResult.data,
+  };
 
   // Determine if this request is submitting site setup configuration
   const hasConfigPayload =
@@ -265,7 +284,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: sanitizeAppConfigForBackup(parsedUpdatedConfig) as any,
+      data: sanitizeAppConfigForBackup(
+        parsedUpdatedConfig,
+      ) as Prisma.InputJsonValue,
       author: 'Admin (Setup)',
     },
   });
