@@ -150,27 +150,32 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects nonexistent Project Structure directories, missing SetupWizard steps, and missing db:seed bypass notes in README.md and developer-setup.md', () => {
+  it('rejects stale maintenance banner, nonexistent Project Structure directories, missing README capabilities, and missing developer-setup.md contracts', () => {
     const readmePath = path.join(tempDir, 'README.md');
     fs.writeFileSync(
       readmePath,
-      fs
+      `# NOTE CURRENTLY UNDER MAINTAINANCE AND REFACTORING\n${fs
         .readFileSync(readmePath, 'utf8')
         .replace('*   `src/core`:', '*   `src/data`: Static fallback data.\n*   `src/core`:')
-        .replace(/Step 4/g, 'Phase Four')
+        .replace(/seating charts/gi, 'table plans')}`
     );
 
     const devSetupPath = path.join(tempDir, 'docs/developer-setup.md');
     fs.writeFileSync(
       devSetupPath,
-      fs.readFileSync(devSetupPath, 'utf8').replace(/isSiteInitialized/g, 'checkInitialized')
+      fs
+        .readFileSync(devSetupPath, 'utf8')
+        .replace(/Step 4/g, 'Phase Four')
+        .replace(/isSiteInitialized/g, 'checkInitialized')
     );
 
     const errors = verifySetupGuides(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
+        'README.md: Must not contain outdated maintenance banner',
         'README.md: Project Structure lists nonexistent path "src/data"',
-        'README.md: Must document Step 4 of SetupWizard',
+        expect.stringContaining('README.md: Must list shipped capability "seating charts"'),
+        'docs/developer-setup.md: Must document Step 4 of SetupWizard',
         expect.stringContaining('docs/developer-setup.md: Must document that seeding AppConfig satisfies isSiteInitialized'),
       ])
     );
@@ -198,7 +203,7 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects .env.test GUEST_PASSCODE drift, missing smoke project isolation docs, stale db_data wipe warnings, missing tsconfig exclusions, and misordered check-quality.ts steps', () => {
+  it('rejects .env.test GUEST_PASSCODE drift, missing smoke project isolation docs, stale db_data wipe warnings, missing tsconfig exclusions, and missing unified quality commands in AGENTS.md', () => {
     const testingPath = path.join(tempDir, '.github/TESTING.md');
     fs.writeFileSync(
       testingPath,
@@ -217,10 +222,7 @@ describe('verify-setup-guides contract check', () => {
         .replace(/`jest\.setup\.js`, /g, '')
         .replace(/`\.next\/export-stage`, /g, '')
         .replace('`**/*.stories.tsx`, ', '')
-        .replace(
-          '8. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n9. ESLint Code Linting (`npm run lint`)\n10. Knip Unused Export Analysis (`npm run lint:unused`)\n11. Verify Migration Compatibility (`npm run lint:migrations`)',
-          '8. Verify Migration Compatibility (`npm run lint:migrations`)\n9. TypeScript Typecheck across all four project configs (`npm run typecheck`)\n10. ESLint Code Linting (`npm run lint`)\n11. Knip Unused Export Analysis (`npm run lint:unused`)'
-        )
+        .replace(/npm run quality/g, 'npm run legacy-gate')
     );
 
     const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
@@ -246,7 +248,7 @@ describe('verify-setup-guides contract check', () => {
         'AGENTS.md: Missing tsconfig.json exclude entry "jest.setup.js" in TypeScript Configuration Split section',
         'AGENTS.md: Missing tsconfig.json exclude entry ".next/export-stage" in TypeScript Configuration Split section',
         'AGENTS.md: Missing tsconfig.build.json exclude entry "**/*.stories.tsx" in TypeScript Configuration Split section',
-        'AGENTS.md: Full Local Quality Gate section misorders check-quality.ts step "npm run lint:migrations"',
+        expect.stringContaining('AGENTS.md: Verification & Quality Gates section must prescribe "npm run check:static" and "npm run quality"'),
         expect.stringContaining('docs/runtime-contract.md: Must document staged static exports inside ".next/export-stage"'),
         'scripts/test-container.mjs: Must isolate Docker Compose project via "-p wedding-smoke-container"',
         'scripts/test-container.mjs: Must select a free loopback port instead of killing port 3000 processes',
@@ -254,7 +256,7 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects missing pretest* hooks, DEFAULT_DOC_FILES drift, and check:static / pre-push parity gaps', () => {
+  it('rejects missing pretest* hooks, DEFAULT_DOC_FILES drift, and staticSteps / pre-push parity gaps', () => {
     const pkgPath = path.join(tempDir, 'package.json');
     fs.writeFileSync(
       pkgPath,
@@ -269,7 +271,10 @@ describe('verify-setup-guides contract check', () => {
       prePushPath,
       fs
         .readFileSync(prePushPath, 'utf8')
-        .replace("  { name: 'Deployment runbooks verification check', script: 'check:runbooks' },\n", '')
+        .replace(
+          "  { name: 'Deployment runbooks verification check', script: 'check:runbooks' },\n",
+          "  { name: 'Standalone check', script: 'check:standalone' },\n"
+        )
     );
 
     const verifyDocSyncPath = path.join(tempDir, 'scripts/verify-doc-sync.ts');
@@ -286,11 +291,9 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
         expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
         expect.stringContaining('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"'),
-        '.githooks/pre-push: Must enforce check:static sub-script "check:runbooks"',
-        expect.stringContaining('Push to Your Fork claims "twelve" sequential workspace checks, expected "eleven"'),
+        '.githooks/pre-push: Must enforce lightweight static check "check:runbooks"',
+        '.githooks/pre-push: Must exclude heavy build step "check:standalone" so local pushes stay fast',
         '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
-        '.github/TESTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
-        'AGENTS.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
       ])
     );
   });
@@ -364,21 +367,13 @@ describe('verify-setup-guides contract check', () => {
       fs.readFileSync(a11yPath, 'utf8').replace('scripts/seed.ts', 'scripts/noop.ts')
     );
 
-    const agentsPath = path.join(tempDir, 'AGENTS.md');
-    fs.writeFileSync(
-      agentsPath,
-      fs
-        .readFileSync(agentsPath, 'utf8')
-        .replace(
-          'npm run build\nCI=true npm run test:a11y',
-          'npm run build\nDATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public" npm run db:seed\nCI=true npm run test:a11y'
-        )
-    );
-
     const testingPath = path.join(tempDir, '.github/TESTING.md');
     fs.writeFileSync(
       testingPath,
-      fs.readFileSync(testingPath, 'utf8').replace(/PLAYWRIGHT_REUSE_SERVER/g, 'LEGACY_REUSE_FLAG')
+      fs
+        .readFileSync(testingPath, 'utf8')
+        .replace(/PLAYWRIGHT_REUSE_SERVER/g, 'LEGACY_REUSE_FLAG')
+        .replace('npm run test:a11y\n  ```', 'npm run db:seed && npm run test:a11y\n  ```')
     );
 
     const errors = verifySetupGuides(tempDir);
@@ -387,7 +382,7 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('playwright.config.ts: Must disable automatic server reuse by default'),
         expect.stringContaining('scripts/seed.ts: appConfig.upsert must populate update fields'),
         expect.stringContaining('scripts/a11y-report.mjs: runA11ySuite must reseed wedding_test via "scripts/seed.ts"'),
-        expect.stringContaining('AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y"'),
+        expect.stringContaining('.github/TESTING.md: Accessibility section must not prescribe running "db:seed" before "test:a11y"'),
         expect.stringContaining('.github/TESTING.md: Must document PLAYWRIGHT_REUSE_SERVER opt-in'),
       ])
     );
@@ -431,7 +426,7 @@ describe('verify-setup-guides contract check', () => {
       readmePath,
       fs
         .readFileSync(readmePath, 'utf8')
-        .replace('    docker compose up -d db', '    DB_PASSWORD=wedding123 docker compose up -d db')
+        .replace('\ndocker compose up -d db\n', '\nDB_PASSWORD=wedding123 docker compose up -d db\n')
     );
 
     const errors = verifySetupGuides(tempDir);
@@ -469,7 +464,7 @@ describe('verify-setup-guides contract check', () => {
     const readmePath = path.join(tempDir, 'README.md');
     fs.writeFileSync(
       readmePath,
-      fs.readFileSync(readmePath, 'utf8').replace('    npm ci', '    npm install')
+      fs.readFileSync(readmePath, 'utf8').replace('\nnpm ci\n', '\nnpm install\n')
     );
 
     const versioningPath = path.join(tempDir, 'docs/versioning.md');
@@ -540,14 +535,14 @@ describe('verify-setup-guides contract check', () => {
       readmePath,
       `# NOTE CURRENTLY UNDER MAINTAINANCE\n\n${fs
         .readFileSync(readmePath, 'utf8')
-        .replace('    *   [Linting & Testing](#linting--testing)\n', '    *   [Stale Section](#stale-section)\n')}`
+        .replace('5.  [Upgrading & Upstream Maintenance](#upgrading--upstream-maintenance)\n', '5.  [Stale Section](#stale-section)\n')}`
     );
 
     const errors = verifySetupGuides(tempDir);
     expect(errors).toEqual(
       expect.arrayContaining([
         'README.md: Must contain exactly one top-level "#" (h1) heading, found 2',
-        'README.md: Table of Contents is missing entry for "Linting & Testing" (#linting--testing)',
+        'README.md: Table of Contents is missing entry for "Upgrading & Upstream Maintenance" (#upgrading--upstream-maintenance)',
         'README.md: Table of Contents links to nonexistent heading "#stale-section"',
         'README.md: Project Structure is missing root directory "packages"',
       ])

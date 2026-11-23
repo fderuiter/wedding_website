@@ -6,12 +6,15 @@ import { fileURLToPath } from 'url';
 export interface Step {
   name: string;
   command: string;
+  script?: string;
   remediation?: string;
 }
 
 export interface QualityRunOptions {
   cwd?: string;
   stepsToRun?: Step[];
+  staticOnly?: boolean;
+  skipDocSync?: boolean;
   execCommand?: (command: string, cwd: string) => void;
 }
 
@@ -48,45 +51,88 @@ export function cleanupStaticExportOutDir(cwd: string = process.cwd()): void {
   }
 }
 
-export const steps: Step[] = [
-  { name: 'Verify Environment Documentation', command: 'npx tsx scripts/verify-env-docs.ts' },
+export const staticSteps: Step[] = [
+  {
+    name: 'Verify Environment Documentation',
+    script: 'check:env-docs',
+    command: 'npx tsx scripts/verify-env-docs.ts',
+  },
   {
     name: 'Verify Deployment Runbooks',
+    script: 'check:runbooks',
     command: 'npx tsx scripts/verify-deployment-runbooks.ts',
-    remediation: 'Deployment runbook, upgrade guide, or release changelog contract drift detected.\nRun "npm run check:runbooks" locally and reconcile "DEPLOYMENT.md", "docs/deployment/*.md", "docs/runtime-contract.md", "docs/upgrading.md", and "CHANGELOG.md" with live migrations, "src/env.ts", "src/lib/modules.ts", "Dockerfile", and "docker-compose.yml".',
-  },
-  { name: 'Check Personal/Template Identifier Isolation', command: 'npx tsx scripts/check-personal-identifiers.ts' },
-  { name: 'Check Third-Party Action Pin Commit SHAs', command: 'npm run check:action-pins' },
-  { name: 'Check Documentation Relative Links', command: 'npx tsx scripts/check-doc-links.ts' },
-  {
-    name: 'Verify Specification Route & Symbol Contracts',
-    command: 'npm run check:spec-contracts',
-    remediation: 'Specification route, method, ENTITY_KEY, or symbol contract drift detected.\nRun "npm run check:spec-contracts" locally and reconcile cited "/api/*" endpoints, HTTP methods, dynamic admin entity keys, and TypeScript symbols in architectural Markdown files with live source files.',
-  },
-  { name: 'Validate Prisma Schema', command: 'npx tsx scripts/check-prisma-schema.ts' },
-  { name: 'TypeScript Typecheck', command: 'npm run typecheck' },
-  { name: 'ESLint Code Linting', command: 'npm run lint' },
-  { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },
-  { name: 'Verify Migration Compatibility', command: 'npm run lint:migrations' },
-  {
-    name: 'Verify Documentation Synchronization',
-    command: 'npm run check:doc-sync',
-    remediation: 'Documentation drift detected or generation failed.\nRun "npx tsx scripts/generate-openapi.ts" and "npx tsx scripts/generate-docs.ts" to regenerate documentation, then commit changes to "public/openapi.json", "ARCHITECTURE.md", and "FEATURE_MODULES.md".',
+    remediation:
+      'Deployment runbook, upgrade guide, or release changelog contract drift detected.\nRun "npm run check:runbooks" locally and reconcile "DEPLOYMENT.md", "docs/deployment/*.md", "docs/runtime-contract.md", "docs/upgrading.md", and "CHANGELOG.md" with live migrations, "src/env.ts", "src/lib/modules.ts", "Dockerfile", and "docker-compose.yml".',
   },
   {
     name: 'Verify Setup & Contributor Guides Contract',
+    script: 'check:setup-guides',
     command: 'npm run check:setup-guides',
-    remediation: 'Setup, contributor, or testing guide contract drift detected.\nRun "npm run check:setup-guides" locally and reconcile ".env.example", "README.md", "docs/developer-setup.md", ".github/CONTRIBUTING.md", ".github/TESTING.md", and "AGENTS.md" with live repository configurations.',
+    remediation:
+      'Setup, contributor, or testing guide contract drift detected.\nRun "npm run check:setup-guides" locally and reconcile ".env.example", "README.md", "docs/developer-setup.md", ".github/CONTRIBUTING.md", ".github/TESTING.md", and "AGENTS.md" with live repository configurations.',
   },
+  {
+    name: 'Check Personal/Template Identifier Isolation',
+    script: 'check:identifiers',
+    command: 'npx tsx scripts/check-personal-identifiers.ts',
+  },
+  {
+    name: 'Check Third-Party Action Pin Commit SHAs',
+    script: 'check:action-pins',
+    command: 'npm run check:action-pins',
+  },
+  {
+    name: 'Check Container Digest Pins & Standalone Portability',
+    script: 'check:standalone',
+    command: 'npm run check:standalone',
+  },
+  {
+    name: 'Check Documentation Relative Links',
+    script: 'check:links',
+    command: 'npx tsx scripts/check-doc-links.ts',
+  },
+  {
+    name: 'Verify Specification Route & Symbol Contracts',
+    script: 'check:spec-contracts',
+    command: 'npm run check:spec-contracts',
+    remediation:
+      'Specification route, method, ENTITY_KEY, or symbol contract drift detected.\nRun "npm run check:spec-contracts" locally and reconcile cited "/api/*" endpoints, HTTP methods, dynamic admin entity keys, and TypeScript symbols in architectural Markdown files with live source files.',
+  },
+  {
+    name: 'Validate Prisma Schema',
+    script: 'check:prisma',
+    command: 'npx tsx scripts/check-prisma-schema.ts',
+  },
+  {
+    name: 'Verify Migration Compatibility',
+    script: 'lint:migrations',
+    command: 'npm run lint:migrations',
+  },
+  {
+    name: 'Verify Documentation Synchronization',
+    script: 'check:doc-sync',
+    command: 'npm run check:doc-sync',
+    remediation:
+      'Documentation drift detected or generation failed.\nRun "npx tsx scripts/generate-openapi.ts" and "npx tsx scripts/generate-docs.ts" to regenerate documentation, then commit changes to "public/openapi.json", "ARCHITECTURE.md", and "FEATURE_MODULES.md".',
+  },
+];
+
+export const steps: Step[] = [
+  ...staticSteps,
+  { name: 'TypeScript Typecheck', command: 'npm run typecheck' },
+  { name: 'ESLint Code Linting', command: 'npm run lint' },
+  { name: 'Knip Unused Export Analysis', command: 'npm run lint:unused' },
   {
     name: 'Build Static Documentation Portal',
     command: 'npm run docs:build',
-    remediation: 'VitePress documentation portal compilation failed.\nRun "npm run docs:build" (or "npm run docs:dev") locally to inspect VitePress build errors, check for markdown/vue syntax issues, or broken documentation links.',
+    remediation:
+      'VitePress documentation portal compilation failed.\nRun "npm run docs:build" (or "npm run docs:dev") locally to inspect VitePress build errors, check for markdown/vue syntax issues, or broken documentation links.',
   },
   {
     name: 'Build Static Storybook Showcase',
     command: 'npm run build-storybook',
-    remediation: 'Storybook static showcase compilation failed.\nRun "npm run build-storybook" (or "npm run storybook") locally to inspect Webpack build errors, broken story imports in "src/**/*.stories.tsx", or mock handler mismatches in ".storybook/preview.tsx" and "src/mocks/handlers.ts".',
+    remediation:
+      'Storybook static showcase compilation failed.\nRun "npm run build-storybook" (or "npm run storybook") locally to inspect Webpack build errors, broken story imports in "src/**/*.stories.tsx", or mock handler mismatches in ".storybook/preview.tsx" and "src/mocks/handlers.ts".',
   },
   {
     name: 'Build Static HTML Showcase',
@@ -96,16 +142,27 @@ export const steps: Step[] = [
   { name: 'Unit & Integration Tests', command: 'npm run test:cov' },
 ];
 
+export function resolveQualitySteps(options: QualityRunOptions = {}): Step[] {
+  const baseSteps = options.stepsToRun || (options.staticOnly ? staticSteps : steps);
+  if (!options.skipDocSync) {
+    return baseSteps;
+  }
+  return baseSteps.filter(
+    (step) => step.script !== 'check:doc-sync' && step.command !== 'npm run check:doc-sync'
+  );
+}
+
 export function main(options: QualityRunOptions = {}): void {
   const cwd = options.cwd || process.cwd();
-  const activeSteps = options.stepsToRun || steps;
+  const activeSteps = resolveQualitySteps(options);
   const runCmd =
     options.execCommand ||
     ((command: string, workDir: string) => {
       execSync(command, { cwd: workDir, stdio: 'inherit' });
     });
 
-  console.log('🚀 Running all local quality checks...\n');
+  const suiteLabel = options.staticOnly ? 'static verification' : 'local quality';
+  console.log(`🚀 Running all ${suiteLabel} checks...\n`);
 
   let passed = 0;
   const total = activeSteps.length;
@@ -154,5 +211,9 @@ const isDirectCall =
     process.argv[1].endsWith('check-quality.js'));
 
 if (isDirectCall) {
-  main();
+  const cliArgs = process.argv.slice(2);
+  main({
+    staticOnly: cliArgs.includes('--static'),
+    skipDocSync: cliArgs.includes('--skip-doc-sync'),
+  });
 }

@@ -5,9 +5,19 @@ jest.mock('@/core/auth/auth.server', () => ({
 }));
 
 jest.mock('@/features/registry', () => {
-  const actual = jest.requireActual('@/features/registry');
+  const {
+    AdminUnclaimRegistryItemSchema,
+    AdminUpdateContributorSchema,
+    AdminDeleteContributorSchema,
+    sanitizeRegistryItem,
+    substituteThankYouTemplateTokens,
+  } = jest.requireActual('@/features/registry');
   return {
-    ...actual,
+    AdminUnclaimRegistryItemSchema,
+    AdminUpdateContributorSchema,
+    AdminDeleteContributorSchema,
+    sanitizeRegistryItem,
+    substituteThankYouTemplateTokens,
     registryService: {
       unclaimItem: jest.fn(),
       updateContributor: jest.fn(),
