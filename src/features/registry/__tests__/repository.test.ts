@@ -1138,4 +1138,251 @@ describe('RegistryRepository', () => {
       );
     });
   });
+
+  describe('admin claim reconciliation: unclaimItem, updateContributor, deleteContributor', () => {
+    it('unclaims a purchased item under SELECT ... FOR UPDATE, cancels active contributors, and records audit snapshots while enforcing Stripe confirmation', async () => {
+      const stripeClaimedItem = {
+        ...mockRegistryItem,
+        id: 'item-claimed-1',
+        price: 100,
+        amountContributed: 100,
+        purchased: true,
+        purchaserName: 'Pat Buyer',
+        contributors: [
+          {
+            id: 'c-stripe-1',
+            registryItemId: 'item-claimed-1',
+            name: 'Pat Buyer',
+            amount: 100,
+            status: 'CONFIRMED',
+            thankYouStatus: 'Unsent',
+            stripePaymentIntentId: 'pi_verified_1',
+            date: new Date('2026-06-01T00:00:00Z'),
+          },
+        ],
+      };
+
+      const txReject = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'item-claimed-1' }]),
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(stripeClaimedItem),
+          update: jest.fn(),
+        },
+        contributor: {
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txReject));
+
+      await expect(registryRepository.unclaimItem!('item-claimed-1', {})).rejects.toThrow(
+        'Explicit admin confirmation is required before releasing a claim with a verified Stripe payment.'
+      );
+      expect(txReject.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(txReject.registryItem.update).not.toHaveBeenCalled();
+
+      const txConfirm = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'item-claimed-1' }]),
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue(stripeClaimedItem),
+          update: jest.fn().mockResolvedValue({
+            ...stripeClaimedItem,
+            purchased: false,
+            amountContributed: 0,
+            purchaserName: null,
+            contributors: [
+              {
+                ...stripeClaimedItem.contributors[0],
+                status: 'CANCELLED',
+                thankYouStatus: 'Not Needed',
+              },
+            ],
+          }),
+        },
+        contributor: {
+          update: jest.fn().mockResolvedValue({
+            ...stripeClaimedItem.contributors[0],
+            status: 'CANCELLED',
+            thankYouStatus: 'Not Needed',
+          }),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txConfirm));
+
+      const unclaimed = await registryRepository.unclaimItem!('item-claimed-1', {
+        confirmVerifiedPayment: true,
+      });
+
+      expect(txConfirm.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(unclaimed.purchased).toBe(false);
+      expect(unclaimed.amountContributed).toBe(0);
+      expect(unclaimed.purchaserName).toBeNull();
+      expect(txConfirm.contributor.update).toHaveBeenCalledWith({
+        where: { id: 'c-stripe-1' },
+        data: { status: 'CANCELLED', thankYouStatus: 'Not Needed' },
+      });
+      expect(txConfirm.snapshotVersion.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('updates a contributor under row lock, recomputes item ledger, and requires confirmation for verified Stripe payments', async () => {
+      const existingStripeContrib = {
+        id: 'c-edit-1',
+        registryItemId: '1',
+        name: 'Original Guest',
+        email: 'orig@example.com',
+        amount: 100,
+        refundedAmount: 0,
+        status: 'CONFIRMED',
+        stripeChargeId: 'ch_verified_99',
+        thankYouStatus: 'Unsent',
+        date: new Date('2026-06-02T00:00:00Z'),
+      };
+
+      const txUnconfirmed = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue(existingStripeContrib),
+          update: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txUnconfirmed));
+
+      await expect(
+        registryRepository.updateContributor!('c-edit-1', { amount: 40 })
+      ).rejects.toThrow(
+        'Explicit admin confirmation is required before editing a verified Stripe contribution.'
+      );
+      expect(txUnconfirmed.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(txUnconfirmed.contributor.update).not.toHaveBeenCalled();
+
+      const updatedContrib = {
+        ...existingStripeContrib,
+        name: 'Corrected Guest',
+        amount: 40,
+      };
+      const txConfirmed = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue(existingStripeContrib),
+          update: jest.fn().mockResolvedValue(updatedContrib),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockRegistryItem,
+            id: '1',
+            price: 100,
+            isGroupGift: true,
+            amountContributed: 100,
+            purchased: true,
+            contributors: [updatedContrib],
+          }),
+          update: jest.fn().mockImplementation(({ data }) =>
+            Promise.resolve({
+              ...mockRegistryItem,
+              id: '1',
+              price: 100,
+              isGroupGift: true,
+              ...data,
+              contributors: [updatedContrib],
+            })
+          ),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txConfirmed));
+
+      const result = await registryRepository.updateContributor!('c-edit-1', {
+        name: '  Corrected Guest  ',
+        amount: 40,
+        confirmVerifiedPayment: true,
+      });
+
+      expect(txConfirmed.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(result.contributor.name).toBe('Corrected Guest');
+      expect(result.contributor.amount).toBe(40);
+      expect(result.item?.amountContributed).toBe(40);
+      expect(result.item?.purchased).toBe(false);
+      expect(txConfirmed.snapshotVersion.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('deletes a contributor under row lock, recomputes item ledger, and requires confirmation for verified Stripe payments', async () => {
+      const existingContrib = {
+        id: 'c-del-1',
+        registryItemId: '1',
+        name: 'Accidental Claim',
+        amount: 100,
+        refundedAmount: 0,
+        status: 'CONFIRMED',
+        stripePaymentIntentId: 'pi_del_1',
+        date: new Date('2026-06-03T00:00:00Z'),
+      };
+
+      const txUnconfirmed = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue(existingContrib),
+          delete: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txUnconfirmed));
+
+      await expect(registryRepository.deleteContributor!('c-del-1', {})).rejects.toThrow(
+        'Explicit admin confirmation is required before deleting a verified Stripe contribution.'
+      );
+      expect(txUnconfirmed.contributor.delete).not.toHaveBeenCalled();
+
+      const txConfirmed = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: '1' }]),
+        contributor: {
+          findUnique: jest.fn().mockResolvedValue(existingContrib),
+          delete: jest.fn().mockResolvedValue(existingContrib),
+        },
+        registryItem: {
+          findUnique: jest.fn().mockResolvedValue({
+            ...mockRegistryItem,
+            id: '1',
+            price: 100,
+            purchased: true,
+            amountContributed: 100,
+            purchaserName: 'Accidental Claim',
+            contributors: [],
+          }),
+          update: jest.fn().mockImplementation(({ data }) =>
+            Promise.resolve({
+              ...mockRegistryItem,
+              id: '1',
+              price: 100,
+              ...data,
+              contributors: [],
+            })
+          ),
+        },
+        snapshotVersion: {
+          create: jest.fn(),
+          findMany: jest.fn().mockResolvedValue([]),
+          deleteMany: jest.fn(),
+        },
+      };
+      (prisma.$transaction as jest.Mock).mockImplementationOnce((cb) => cb(txConfirmed));
+
+      const deleted = await registryRepository.deleteContributor!('c-del-1', {
+        confirmVerifiedPayment: true,
+      });
+
+      expect(txConfirmed.$queryRaw).toHaveBeenCalledTimes(2);
+      expect(deleted.deletedId).toBe('c-del-1');
+      expect(deleted.item?.purchased).toBe(false);
+      expect(deleted.item?.amountContributed).toBe(0);
+      expect(deleted.item?.purchaserName).toBeNull();
+      expect(txConfirmed.snapshotVersion.create).toHaveBeenCalledTimes(2);
+    });
+  });
 });

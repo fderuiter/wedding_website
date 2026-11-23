@@ -880,4 +880,153 @@ describe('AdminRegistryPage', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('supports unclaiming purchased gifts and editing/deleting contributors with verified Stripe payment confirmation warnings', async () => {
+    const claimedItem = createMockRegistryItem({
+      id: 'item-claimed-stripe',
+      name: 'Crystal Decanter',
+      price: 120,
+      purchased: true,
+      amountContributed: 120,
+      purchaserName: 'Morgan Stripe',
+      contributors: [
+        {
+          ...createMockContributor({
+            id: 'c-stripe-edit',
+            name: 'Morgan Stripe',
+            email: 'morgan@example.com',
+            amount: 120,
+            status: 'CONFIRMED',
+          }),
+          stripePaymentIntentId: 'pi_live_987',
+        },
+      ],
+    });
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      if (url === '/api/registry/items?limit=500') {
+        return Promise.resolve({ ok: true, json: async () => [claimedItem] });
+      }
+      if (url === '/api/admin/contributors/c-stripe-edit' && options?.method === 'PATCH') {
+        const body = JSON.parse(String(options.body));
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            contributor: {
+              ...claimedItem.contributors[0],
+              name: body.name,
+              amount: body.amount,
+            },
+            item: {
+              ...claimedItem,
+              amountContributed: body.amount,
+              purchased: body.amount >= 120,
+            },
+          }),
+        });
+      }
+      if (url === '/api/admin/registry/items/item-claimed-stripe/unclaim' && options?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            item: {
+              ...claimedItem,
+              purchased: false,
+              amountContributed: 0,
+              purchaserName: null,
+            },
+          }),
+        });
+      }
+      if (url === '/api/admin/contributors/c-stripe-edit' && options?.method === 'DELETE') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            deletedId: 'c-stripe-edit',
+            item: {
+              ...claimedItem,
+              purchased: false,
+              amountContributed: 0,
+              contributors: [],
+            },
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unhandled request: ${url}`));
+    });
+
+    const { container } = renderWithProviders(
+      <main>
+        <AdminRegistryPage />
+      </main>
+    );
+
+    const editBtns = await screen.findAllByRole('button', {
+      name: 'Edit contribution from Morgan Stripe',
+    });
+    fireEvent.click(editBtns[0]);
+
+    const editDialog = await screen.findByRole('dialog', { name: 'Edit Contribution' });
+    expect(within(editDialog).getByRole('alert')).toHaveTextContent('pi_live_987');
+
+    fireEvent.change(within(editDialog).getByLabelText('Contribution Amount ($)'), {
+      target: { value: '120' },
+    });
+    fireEvent.change(within(editDialog).getByLabelText('Contributor Name'), {
+      target: { value: 'Morgan Updated' },
+    });
+    fireEvent.click(within(editDialog).getByRole('button', { name: 'Save Changes' }));
+
+    const confirmEditBtn = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmEditBtn);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-stripe-edit',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.stringContaining('"confirmVerifiedPayment":true'),
+        })
+      );
+    });
+
+    // Unclaim button prompts verified Stripe payment warning and sends confirmVerifiedPayment: true
+    const unclaimBtns = await screen.findAllByRole('button', {
+      name: 'Unclaim registry item: Crystal Decanter',
+    });
+    fireEvent.click(unclaimBtns[0]);
+    const confirmUnclaimBtn = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmUnclaimBtn);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/admin/registry/items/item-claimed-stripe/unclaim',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ confirmVerifiedPayment: true }),
+        })
+      );
+    });
+
+    // Delete contributor button prompts verified Stripe payment warning and sends confirmVerifiedPayment: true
+    const deleteContribBtns = screen.getAllByRole('button', {
+      name: /Delete contribution from Morgan/i,
+    });
+    fireEvent.click(deleteContribBtns[0]);
+    const confirmDeleteBtn = await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirmDeleteBtn);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/admin/contributors/c-stripe-edit',
+        expect.objectContaining({
+          method: 'DELETE',
+          body: JSON.stringify({ confirmVerifiedPayment: true }),
+        })
+      );
+    });
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

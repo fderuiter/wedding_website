@@ -378,6 +378,7 @@ const rawUpdateAppConfigBaseSchema = z.object({
     .nullable()
     .transform((val) => val ?? '')
     .optional(),
+  setupCompleted: z.boolean().optional(),
   modules: ModuleConfigSchema.partial().optional(),
   timezone: z
     .string()
@@ -502,6 +503,7 @@ export const CreateAppConfigProfileSchema = rawUpdateAppConfigBaseSchema
       shippingDeliveryNotes: data.shippingDeliveryNotes ?? '',
       defaultPaymentHandleType: data.defaultPaymentHandleType ?? '',
       defaultPaymentHandle: data.defaultPaymentHandle ?? '',
+      setupCompleted: data.setupCompleted ?? true,
       subdomain: data.subdomain || null,
     };
   });
@@ -655,6 +657,7 @@ export function toAppConfigDbPayload(
     shippingDeliveryNotes: data.shippingDeliveryNotes,
     defaultPaymentHandleType: data.defaultPaymentHandleType,
     defaultPaymentHandle: data.defaultPaymentHandle,
+    ...(typeof data.setupCompleted === 'boolean' ? { setupCompleted: data.setupCompleted } : {}),
   };
 }
 
@@ -1289,6 +1292,7 @@ export const AppConfigSchema = z.object({
   shippingDeliveryNotes: z.string().default('').describe('Optional carrier or concierge instructions for registry gift deliveries; omitted from public DTOs.'),
   defaultPaymentHandleType: z.string().default('').describe('Site-wide fallback peer-to-peer payment service (Venmo, PayPal, Cash App, Zelle, or Custom) for group gifts without an item-level handle; omitted from public DTOs.'),
   defaultPaymentHandle: z.string().default('').describe('Site-wide fallback peer-to-peer payment handle or username for group gifts without an item-level handle; omitted from public DTOs.'),
+  setupCompleted: z.boolean().default(true).describe('Admin-only flag tracking whether the five-step onboarding setup wizard has been completed; omitted from public DTOs.'),
   modules: z.any().optional().transform((val): z.input<typeof ModuleConfigSchema> => resolveModuleConfig(val)).pipe(ModuleConfigSchema).default(DEFAULT_MODULE_CONFIG).describe('Persisted feature module enablement map validated against ModuleConfigSchema with dependency resolution.'),
   features: z.union([
     z.string().transform((str) => {
@@ -1873,6 +1877,17 @@ export function translateAppConfigSnapshot(
     } else {
       create[key] = '';
     }
+  }
+
+  if (
+    snapshotData.setupCompleted !== undefined &&
+    snapshotData.setupCompleted !== null
+  ) {
+    const resolvedSetupCompleted = Boolean(snapshotData.setupCompleted);
+    update.setupCompleted = resolvedSetupCompleted;
+    create.setupCompleted = resolvedSetupCompleted;
+  } else {
+    create.setupCompleted = true;
   }
 
   for (const secretKey of APP_CONFIG_SECRET_KEYS) {

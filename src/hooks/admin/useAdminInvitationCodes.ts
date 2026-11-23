@@ -7,6 +7,10 @@ import type {
 } from '@/features/sub-events';
 import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
 import { normalizePartyTags } from '@/utils/invitationValidation';
+import {
+  ADMIN_ONBOARDING_MILESTONES_QUERY_KEY,
+  invalidateOnboardingMilestones,
+} from '@/lib/adminCacheSync';
 import { useAdminEntityOrchestration, type AdminHookOptions } from './useAdminEntityOrchestration';
 
 type TagUpdateAction = 'add' | 'remove' | 'replace';
@@ -49,7 +53,6 @@ interface AdminBatchAttendanceResponse {
 }
 
 const ADMIN_RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
-const ADMIN_ONBOARDING_MILESTONES_QUERY_KEY = ['admin-onboarding-milestones'] as const;
 const INVITATION_CODES_QUERY_KEY = ['admin-invitation-codes'] as const;
 const INVITATION_CODES_ENDPOINT = '/api/admin/invitation-codes';
 const INVITATION_CODES_CATALOG_ENDPOINT = `${INVITATION_CODES_ENDPOINT}/catalog?limit=${INVITATION_MAX_CATALOG_LIMIT}`;
@@ -118,7 +121,7 @@ export function useAdminInvitationCodes(options?: AdminHookOptions) {
 
   const invalidateDependentAdminQueries = () => {
     queryClient.invalidateQueries({ queryKey: ADMIN_RSVP_SUMMARY_QUERY_KEY });
-    queryClient.invalidateQueries({ queryKey: ADMIN_ONBOARDING_MILESTONES_QUERY_KEY });
+    invalidateOnboardingMilestones(queryClient);
   };
 
   const { mutateAsync: mutateBatchUpdateTags } = useMutation({

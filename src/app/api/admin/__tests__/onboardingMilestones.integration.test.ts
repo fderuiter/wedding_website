@@ -82,6 +82,8 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
         brideName: 'Riley',
         groomName: 'Morgan',
         baseUrl: 'https://rileymorgan.example.org',
+        weddingDate: new Date('2027-09-18T16:00:00.000Z'),
+        venueName: 'Conservatory Hall',
       },
       create: {
         id: 'global',
@@ -90,6 +92,8 @@ describe('GET /api/admin/onboarding-milestones (PostgreSQL integration)', () => 
         brideName: 'Riley',
         groomName: 'Morgan',
         baseUrl: 'https://rileymorgan.example.org',
+        weddingDate: new Date('2027-09-18T16:00:00.000Z'),
+        venueName: 'Conservatory Hall',
       },
     });
 
