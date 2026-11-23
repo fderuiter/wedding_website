@@ -1189,6 +1189,109 @@ export function validateRuntimeContract(
     }
   }
 
+  const rawLines = docContent.split(/\r?\n/);
+  const findTableRowLine = (key: string): string => {
+    const escaped = escapeRegex(key);
+    const rowPattern = new RegExp(`^\\s*\\|\\s*\`${escaped}\`\\s*\\|`);
+    return rawLines.find((line) => rowPattern.test(line)) ?? '';
+  };
+
+  const hasExecutionSection = /^##\s+1\./m.test(docContent);
+  const hasLifecycleSection = /^##\s+2\./m.test(docContent);
+  const hasProbesSection = /^##\s+5\./m.test(docContent);
+  const hasDatabaseSection = /^##\s+7\./m.test(docContent);
+
+  if (/\bv20(?:\.x)?\b/i.test(docContent) || (hasExecutionSection && !docContent.includes('>=22.22.1 <23.0.0'))) {
+    errors.push(
+      `${docName}: Must specify Node.js v22.x LTS range ">=22.22.1 <23.0.0" without any false v20.x floor`
+    );
+  }
+
+  if (
+    /\/opt\/prisma-cli[^\n]*packaged under\s+`\/app`/i.test(docContent) ||
+    (hasExecutionSection &&
+      (!/outside\s+`\/app`\s+at\s+`\/opt\/prisma-cli`|`\/opt\/prisma-cli`[^\n]*outside\s+`\/app`/i.test(
+        docContent
+      ) ||
+        !docContent.includes('scripts/generate-password-hash.mjs')))
+  ) {
+    errors.push(
+      `${docName}: Must document /opt/prisma-cli outside /app and scripts/generate-password-hash.mjs (rather than packaging /opt/prisma-cli or the full scripts/ tree under /app)`
+    );
+  }
+
+  const runMigrationsRowLine = findTableRowLine('RUN_MIGRATIONS');
+  if (
+    (runMigrationsRowLine && (!runMigrationsRowLine.includes("'true'") || !runMigrationsRowLine.includes("'1'"))) ||
+    (hasLifecycleSection && (!docContent.includes('RUN_MIGRATIONS=true') || !docContent.includes('RUN_MIGRATIONS=1')))
+  ) {
+    errors.push(
+      `${docName}: Must document both RUN_MIGRATIONS=true and RUN_MIGRATIONS=1 across the RUN_MIGRATIONS table entry and Migration Phase`
+    );
+  }
+
+  const adminPasswordRowLine = findTableRowLine('ADMIN_PASSWORD');
+  const guestPasscodeRowLine = findTableRowLine('GUEST_PASSCODE');
+  const guestSessionSecretRowLine = findTableRowLine('GUEST_SESSION_SECRET');
+  const e2eTestRowLine = findTableRowLine('E2E_TEST');
+  if (
+    (adminPasswordRowLine && !adminPasswordRowLine.includes('E2E_TEST=true')) ||
+    (guestPasscodeRowLine && !guestPasscodeRowLine.includes('E2E_TEST=true')) ||
+    (guestSessionSecretRowLine && !guestSessionSecretRowLine.includes('E2E_TEST=true')) ||
+    (e2eTestRowLine &&
+      (!e2eTestRowLine.includes('E2E_FALLBACK_') || !e2eTestRowLine.includes('NODE_ENV=production')))
+  ) {
+    errors.push(
+      `${docName}: Must disclose the E2E_TEST=true production credential blocklist bypass across ADMIN_PASSWORD, GUEST_PASSCODE, GUEST_SESSION_SECRET, and E2E_TEST`
+    );
+  }
+
+  const sitePartner1RowLine = findTableRowLine('SITE_PARTNER1_NAME');
+  const sitePartner2RowLine = findTableRowLine('SITE_PARTNER2_NAME');
+  const sitePartner1TargetCell = sitePartner1RowLine
+    ? splitMarkdownTableRow(sitePartner1RowLine.trim())[2] ?? ''
+    : '';
+  const sitePartner2TargetCell = sitePartner2RowLine
+    ? splitMarkdownTableRow(sitePartner2RowLine.trim())[2] ?? ''
+    : '';
+  if (
+    (sitePartner1RowLine &&
+      (!sitePartner1TargetCell.includes('partner1Name') || !sitePartner1TargetCell.includes('brideName'))) ||
+    (sitePartner2RowLine &&
+      (!sitePartner2TargetCell.includes('partner2Name') || !sitePartner2TargetCell.includes('groomName')))
+  ) {
+    errors.push(
+      `${docName}: Must document that SITE_PARTNER1_NAME updates brideName and SITE_PARTNER2_NAME updates groomName`
+    );
+  }
+
+  for (const blankSafeSiteKey of ['SITE_WEDDING_DATE', 'SITE_LATITUDE', 'SITE_LONGITUDE']) {
+    const siteRowLine = findTableRowLine(blankSafeSiteKey);
+    if (siteRowLine && !/\bblank\b|\bempty\b/i.test(siteRowLine)) {
+      errors.push(
+        `${docName}: ${blankSafeSiteKey} table entry must document that blank/empty strings are ignored`
+      );
+    }
+  }
+
+  if (
+    hasProbesSection &&
+    (!/HTTP 503[^\n]*"status":\s*"degraded"[^\n]*"database":\s*"disconnected"[^\n]*"timestamp"/i.test(
+      docContent
+    ) ||
+      !docContent.includes('"error": "Database connection failed"'))
+  ) {
+    errors.push(
+      `${docName}: Must document preserved status, database, timestamp, and sanitized "Database connection failed" fields on GET /api/health HTTP 503 responses`
+    );
+  }
+
+  if (hasDatabaseSection && (!docContent.includes('globalForPrisma') || !docContent.includes('5000ms'))) {
+    errors.push(
+      `${docName}: Must document src/lib/prisma.ts globalForPrisma caching and 5000ms shutdown drain safety timer`
+    );
+  }
+
   return errors;
 }
 

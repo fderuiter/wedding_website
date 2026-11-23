@@ -17,6 +17,7 @@ export interface ApiMiddlewareOptions {
   windowMs?: number;
   keyPrefix?: string;
   bucket?: RateLimitBucket;
+  isHealthProbe?: boolean;
 }
 
 function isAuthLockoutRoute(pathname: string, method: string): boolean {
@@ -78,7 +79,10 @@ export function withApiMiddleware(
         method = req.method || 'GET';
       }
       const normalizedPathname = pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
-      const isHealthPath = normalizedPathname === '/api/health' || normalizedPathname === '/api/live';
+      const isHealthPath =
+        Boolean(options?.isHealthProbe) ||
+        normalizedPathname === '/api/health' ||
+        normalizedPathname === '/api/live';
       const isLoginPath = isAuthLockoutRoute(normalizedPathname, method);
       
       const isAdminPath = isProtectedRoute(pathname, method);
@@ -150,7 +154,29 @@ export function withApiMiddleware(
 
       let finalResponse: NextResponse;
       if (response.status >= 400) {
-        if (response.status >= 500 && process.env.NODE_ENV === 'production') {
+        if (
+          isHealthPath &&
+          data &&
+          typeof data === 'object' &&
+          ('status' in data || 'database' in data)
+        ) {
+          const sanitizedError =
+            process.env.NODE_ENV === 'production'
+              ? 'Database connection failed'
+              : typeof data.error === 'string' && data.error
+                ? data.error
+                : 'Database connection failed';
+          finalResponse = NextResponse.json(
+            {
+              success: false,
+              ...(typeof data.status === 'string' ? { status: data.status } : {}),
+              ...(typeof data.database === 'string' ? { database: data.database } : {}),
+              ...(typeof data.timestamp === 'string' ? { timestamp: data.timestamp } : {}),
+              error: sanitizedError,
+            },
+            { status: response.status, headers: response.headers }
+          );
+        } else if (response.status >= 500 && process.env.NODE_ENV === 'production') {
           const referenceId = generateSecureUUID();
           logger.error('Unhandled API Error:', data.error || data.message || 'API Error', { apiVersion: 'v2', route: pathname, referenceId });
           finalResponse = NextResponse.json(

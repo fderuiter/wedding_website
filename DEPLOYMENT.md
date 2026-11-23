@@ -348,10 +348,10 @@ To ensure zero downtime and prevent application outages:
 
 The application defines a strict **PostgreSQL Database Contract**. It depends solely on standard PostgreSQL capabilities and is completely portable across database providers and self-hosted environments.
 
-Database migrations are run automatically using `npx prisma migrate deploy` in the `db-migrate.yml` workflow *before* the new application code goes live. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh`), allowing application instances to start immediately without database lock contention during horizontal scaling. In local Docker Compose environments, a dedicated `migration` task service executes `npx prisma migrate deploy` before the application service starts. Before migrations are executed, a pre-migration backwards compatibility check (`npm run lint:migrations`) runs to verify zero-downtime safety.
+Database migrations are run automatically using `npx prisma migrate deploy` in the `db-migrate.yml` workflow *before* the new application code goes live. Schema migrations are completely decoupled from application container boot (`docker-entrypoint.sh` unless `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` is explicitly set), allowing application instances to start immediately without database lock contention during horizontal scaling. In local and VPS Docker Compose environments, a dedicated `migration` task service executes `./node_modules/.bin/prisma migrate deploy` offline before the application service starts. Before migrations are executed, a pre-migration backwards compatibility check (`npm run lint:migrations`) runs to verify zero-downtime safety.
 
 ### Minimum Supported Database Specification
-- **Supported Database**: PostgreSQL 14 or higher (the CI test suite and standard container setup use `postgres:15-alpine`).
+- **Supported Database**: PostgreSQL 15 or higher (the CI test suite and standard container setup use `postgres:15-alpine`).
 - **ORM / Client**: Prisma ORM with `@prisma/adapter-pg` driver adapter and `pg` pool.
 
 ### Connection String Expectations
@@ -385,7 +385,7 @@ Database migrations are run automatically using `npx prisma migrate deploy` in t
 1. **Local Development**:
    - Run `npm run migrate:dev` (`prisma migrate dev`) to generate new SQL migration files in `prisma/migrations/` and synchronize your development schema.
 2. **Production Pipeline**:
-   - Migrations are automatically run in CI/CD (`deploy.yml` or container entrypoint) via `npx prisma migrate deploy` *before* new application code goes live.
+   - Migrations are automatically run in CI/CD (`db-migrate.yml` invoked by `deploy.yml`) via `npx prisma migrate deploy`—or offline in containers via `./node_modules/.bin/prisma migrate deploy` (`docker-compose.yml` `migration` service or `docker-entrypoint.sh` when `RUN_MIGRATIONS=true` / `RUN_MIGRATIONS=1`)—*before* new application code goes live.
    - `prisma migrate deploy` checks applied migrations in the `_prisma_migrations` table and applies any pending migrations in sequential order.
 
 ### Migration Backwards Compatibility Linter
@@ -498,7 +498,7 @@ If a deployment or database migration fails during release execution, follow thi
 
 ## Health Checks & Liveness Probes
 
-Containers and orchestrators query `/api/health` (returning HTTP 200 OK and database connectivity status) for liveness and readiness monitoring.
+Container `HEALTHCHECK` instructions (`Dockerfile` and `docker-compose.yml`) and orchestrator liveness probes (`--liveness-probe-request-path=/api/live` on Cloud Run) query `/api/live` (returning HTTP 200 OK `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL) so transient database blips never trigger container restart loops. Startup probes (`--startup-probe-request-path=/api/health`) and post-deployment rollout checks (`deploy.yml` / `rollback.yml`) query `/api/health` (returning HTTP 200 OK `{ "success": true, "data": { "status": "ok", "database": "connected", "timestamp": "..." } }` or HTTP 503 `{ "success": false, "status": "degraded", "database": "disconnected", "timestamp": "...", "error": "Database connection failed" }`), while unwrapped readiness checks query `/api/ready`.
 
 ---
 

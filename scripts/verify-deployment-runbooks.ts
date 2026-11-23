@@ -1356,9 +1356,13 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     const match = range.trim().match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\b|$)/i);
     return match ? match[1] : null;
   };
-  if (extractSemverMajor(packageJson.engines?.node) !== expectedNodeMajor) {
+  if (
+    extractSemverMajor(packageJson.engines?.node) !== expectedNodeMajor ||
+    !packageJson.engines?.node?.includes('>=22.22.1') ||
+    !packageJson.engines?.node?.includes('<23.0.0')
+  ) {
     errors.push(
-      `package.json: \`engines.node\` ("${packageJson.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} matching .nvmrc`
+      `package.json: \`engines.node\` ("${packageJson.engines?.node ?? ''}") must target Node.js ${expectedNodeMajor} with range ">=22.22.1 <23.0.0" matching .nvmrc and lockfile floor`
     );
   }
   if (
@@ -1519,6 +1523,112 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (!hasDependabotMajorIgnore('npm', '@types/node')) {
     errors.push(
       '.github/dependabot.yml: Missing `version-update:semver-major` ignore rule for `@types/node` under `npm` ecosystem'
+    );
+  }
+
+  const hasDependabotVersionIgnore = (
+    ecosystem: string,
+    dependencyName: string,
+    expectedVersionRange: string
+  ): boolean => {
+    const updatesNode: unknown = isMap(dependabotDoc.contents)
+      ? dependabotDoc.contents.get('updates', true)
+      : null;
+    if (!isSeq(updatesNode)) {
+      return false;
+    }
+    for (const updateEntry of updatesNode.items) {
+      if (!isMap(updateEntry)) {
+        continue;
+      }
+      const ecoNode: unknown = updateEntry.get('package-ecosystem', true);
+      if (!isScalar(ecoNode) || String(ecoNode.value).trim() !== ecosystem) {
+        continue;
+      }
+      const ignoreNode: unknown = updateEntry.get('ignore', true);
+      if (!isSeq(ignoreNode)) {
+        continue;
+      }
+      for (const ignoreRule of ignoreNode.items) {
+        if (!isMap(ignoreRule)) {
+          continue;
+        }
+        const depNode: unknown = ignoreRule.get('dependency-name', true);
+        const versionsNode: unknown = ignoreRule.get('versions', true);
+        if (!isScalar(depNode) || String(depNode.value).trim() !== dependencyName || !isSeq(versionsNode)) {
+          continue;
+        }
+        const hasExpectedRange = versionsNode.items.some(
+          (item) => isScalar(item) && String(item.value).trim() === expectedVersionRange
+        );
+        if (hasExpectedRange) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  if (!hasDependabotVersionIgnore('docker', 'node', '>= 23.0.0')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `node` under `docker` ecosystem'
+    );
+  }
+  if (!hasDependabotVersionIgnore('npm', '@types/node', '>= 23.0.0')) {
+    errors.push(
+      '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `@types/node` under `npm` ecosystem'
+    );
+  }
+
+  // Verify PostgreSQL 15+ floor, Docker Compose ./node_modules/.bin/prisma migrate deploy prose, and /api/live container liveness claims
+  for (const [relPath, content] of runbookContents.entries()) {
+    if (/\bPostgreSQL\s+1[0-4]\b/i.test(content)) {
+      errors.push(
+        `${relPath}: References unsupported PostgreSQL < 15 floor (minimum supported version is PostgreSQL 15+)`
+      );
+    }
+    if (
+      /Docker Compose[^.\n]*`migration`[^.\n]*`npx prisma migrate deploy`/i.test(content) ||
+      /managed via `npx prisma migrate deploy`\.\s*Migrations run prior to application startup via the Docker Compose `migration` service/i.test(
+        content
+      )
+    ) {
+      errors.push(
+        `${relPath}: Must document offline \`./node_modules/.bin/prisma migrate deploy\` (not \`npx prisma migrate deploy\`) for the Docker Compose \`migration\` service`
+      );
+    }
+    if (
+      content.includes('--liveness-probe-request-path=/api/health') ||
+      /query\s+`?\/api\/health`?[^.\n]*\bfor\s+liveness\b/i.test(content) ||
+      /\bliveness\s+(?:probes?|healthchecks?|checks?)\s+(?:query|hit|target|use)\s+`?\/api\/health`?/i.test(
+        content
+      )
+    ) {
+      errors.push(
+        `${relPath}: Must direct container and orchestrator liveness probes to \`/api/live\` instead of \`/api/health\``
+      );
+    }
+  }
+  if (!/PostgreSQL\s+15\b/i.test(deploymentMd)) {
+    errors.push('DEPLOYMENT.md: Must specify PostgreSQL 15+ as minimum supported database version');
+  }
+  if (!deploymentMd.includes('./node_modules/.bin/prisma migrate deploy')) {
+    errors.push(
+      'DEPLOYMENT.md: Must document `./node_modules/.bin/prisma migrate deploy` for Docker Compose / offline container migrations'
+    );
+  }
+  if (!deploymentOverviewMd.includes('./node_modules/.bin/prisma migrate deploy')) {
+    errors.push(
+      'docs/deployment/README.md: Must document `./node_modules/.bin/prisma migrate deploy` for Docker Compose / offline container migrations'
+    );
+  }
+  const healthProbeSection = extractSectionSlice(
+    deploymentMd,
+    /^##\s+Health Checks & Liveness Probes\b/,
+    '## '
+  );
+  if (!healthProbeSection.includes('/api/live')) {
+    errors.push(
+      'DEPLOYMENT.md: `## Health Checks & Liveness Probes` section must direct container liveness probes to `/api/live`'
     );
   }
 

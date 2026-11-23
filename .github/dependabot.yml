@@ -11,6 +11,7 @@ updates:
       interval: "weekly"
     ignore:
       - dependency-name: "node"
+        versions: [">= 23.0.0"]
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker-compose"
@@ -25,6 +26,7 @@ updates:
     open-pull-requests-limit: 10
     ignore:
       - dependency-name: "@types/node"
+        versions: [">= 23.0.0"]
         update-types: ["version-update:semver-major"]
     groups:
       production-dependencies:

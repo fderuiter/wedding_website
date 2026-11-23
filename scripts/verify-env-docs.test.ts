@@ -2,9 +2,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
+  collectOperatorEnvKeys,
+  extractEnvSchemaSpecs,
   getKeysFromSource,
   validateContainerHostnameBinding,
   validateEnvDocContent,
+  validateRuntimeContract,
   verifyEnvDocs,
 } from './verify-env-docs';
 
@@ -225,5 +228,42 @@ describe('verify-env-docs section-aware validation', () => {
       expect.stringContaining('Dockerfile must set ENV HOSTNAME="0.0.0.0"'),
       expect.stringContaining('docker-compose.yml service "app" must set HOSTNAME to "0.0.0.0"'),
     ]);
+  });
+
+  it('rejects runtime-contract.md drift across Node floor, OCI layout, RUN_MIGRATIONS=1, E2E_TEST bypasses, SITE_* fields, and /api/health 503', () => {
+    const repoRoot = process.cwd();
+    const envSource = fs.readFileSync(path.join(repoRoot, 'src/env.ts'), 'utf8');
+    const envSpecs = extractEnvSchemaSpecs(envSource);
+    const { keys: operatorKeys, sources } = collectOperatorEnvKeys(repoRoot);
+    const validContract = fs.readFileSync(path.join(repoRoot, 'docs/runtime-contract.md'), 'utf8');
+
+    expect(validateRuntimeContract(validContract, operatorKeys, envSpecs, sources)).toEqual([]);
+
+    const driftedContract = validContract
+      .replace('>=22.22.1 <23.0.0', 'v20.x minimum')
+      .replace(
+        'The isolated Prisma CLI is installed outside `/app` at `/opt/prisma-cli`',
+        'Application assets and `/opt/prisma-cli` are packaged under `/app`'
+      )
+      .replace(/RUN_MIGRATIONS=1/g, 'RUN_MIGRATIONS=true')
+      .replace(/E2E_TEST=true/g, 'LEGACY_FLAG')
+      .replace('`partner1Name`, `brideName`', '`partner1Name`')
+      .replace('(blank/whitespace-only strings are ignored)', '')
+      .replace('"status": "degraded"', '"status": "removed"')
+      .replace('5000ms', 'removed-timer');
+
+    const errors = validateRuntimeContract(driftedContract, operatorKeys, envSpecs, sources);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Must specify Node.js v22.x LTS range ">=22.22.1 <23.0.0" without any false v20.x floor'),
+        expect.stringContaining('Must document /opt/prisma-cli outside /app'),
+        expect.stringContaining('Must document both RUN_MIGRATIONS=true and RUN_MIGRATIONS=1'),
+        expect.stringContaining('Must disclose the E2E_TEST=true production credential blocklist bypass'),
+        expect.stringContaining('Must document that SITE_PARTNER1_NAME updates brideName'),
+        expect.stringContaining('SITE_WEDDING_DATE table entry must document that blank/empty strings are ignored'),
+        expect.stringContaining('Must document preserved status, database, timestamp'),
+        expect.stringContaining('Must document src/lib/prisma.ts globalForPrisma caching and 5000ms shutdown drain safety timer'),
+      ])
+    );
   });
 });

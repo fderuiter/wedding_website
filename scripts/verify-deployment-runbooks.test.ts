@@ -452,4 +452,47 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('rejects PostgreSQL < 15 claims, /api/health liveness prose, Docker Compose npx migrate claims, and missing Dependabot >= 23.0.0 rules', () => {
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    fs.writeFileSync(
+      deploymentPath,
+      fs
+        .readFileSync(deploymentPath, 'utf8')
+        .replace('PostgreSQL 15 or higher', 'PostgreSQL 14 or higher')
+        .replace(
+          'dedicated `migration` task service executes `./node_modules/.bin/prisma migrate deploy` offline',
+          'dedicated `migration` task service executes `npx prisma migrate deploy`'
+        )
+        .replace(
+          /## Health Checks & Liveness Probes[\s\S]*?---/,
+          '## Health Checks & Liveness Probes\n\nContainers and orchestrators query `/api/health` for liveness and readiness monitoring.\n\n---'
+        )
+    );
+
+    const dependabotPath = path.join(tempDir, '.github/dependabot.yml');
+    fs.writeFileSync(
+      dependabotPath,
+      fs.readFileSync(dependabotPath, 'utf8').replace(/versions:\s*\[">= 23\.0\.0"\]\n/g, '')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('DEPLOYMENT.md: References unsupported PostgreSQL < 15 floor'),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Must document offline `./node_modules/.bin/prisma migrate deploy` (not `npx prisma migrate deploy`) for the Docker Compose `migration` service'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Must direct container and orchestrator liveness probes to `/api/live` instead of `/api/health`'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: `## Health Checks & Liveness Probes` section must direct container liveness probes to `/api/live`'
+        ),
+        expect.stringContaining(
+          '.github/dependabot.yml: Missing `versions: [">= 23.0.0"]` ignore rule for `node` under `docker` ecosystem'
+        ),
+      ])
+    );
+  });
 });

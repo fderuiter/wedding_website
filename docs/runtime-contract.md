@@ -9,10 +9,10 @@ This document defines the authoritative, provider-neutral runtime contract for t
 - **Target Architecture**: Dual-mode Next.js App Router configuration in `next.config.ts`:
   - **Standalone Server Mode (Default)**: Configured with `output: 'standalone'` when `STATIC_EXPORT` is unset or false, producing a self-contained Node.js server bundle at `.next/standalone/server.js` (packaged at `/app/server.js` in OCI containers).
   - **Static Showcase Export Mode (`STATIC_EXPORT`)**: Setting `STATIC_EXPORT=true` or `STATIC_EXPORT=1`—or running `npm run build:export` (`scripts/build-export.mjs`)—switches `next.config.ts` to `output: 'export'` with `images.unoptimized: true` and optional subpath routing via `NEXT_PUBLIC_BASE_PATH` (`basePath` and `assetPrefix`). `scripts/build-export.mjs` temporarily moves `src/app/api` to `.api-backup-export` during compilation (restoring it automatically on exit or `SIGINT`/`SIGTERM`/`SIGHUP`) while `src/lib/config.ts` renders pages against `STATIC_MOCK_CONFIG` without requiring PostgreSQL connectivity.
-- **Node.js Version Requirement**: Node.js **v22.x LTS** runtime (`^22.12.0` with `npm@10.9.x` `^10.9.0`, pinned via `.nvmrc`, `.npmrc`, and `package.json`).
+- **Node.js Version Requirement**: Node.js **v22.x LTS** runtime (`>=22.22.1 <23.0.0` with `npm@10.9.x` `^10.9.0`, pinned via `.nvmrc`, `.npmrc`, and `package.json`).
 - **OCI Container Support**:
-  - The official `Dockerfile` produces a multi-platform OCI image based on `node:22-bookworm-slim` with `tini` installed as PID 1 (`ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]`), setuid/setgid bits stripped across the root filesystem, npm update checks disabled, and a built-in `/api/live` `HEALTHCHECK`.
-  - Application assets, `node_modules`, `/opt/prisma-cli`, `prisma`, `prisma.config.ts`, and `scripts` are packaged under `/app` owned by `root:root` so the non-root runtime user (`nextjs:nodejs`, UID/GID 1001) holds write access to zero static code paths (only runtime cache/upload mountpoints `/app/.next/cache` and `/app/public/uploads` are owned by `nextjs:nodejs`).
+  - The official `Dockerfile` produces a multi-platform OCI image based on `node:22-bookworm-slim` (pinned by `@sha256` digest) with `tini` installed as PID 1 (`ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]`), setuid/setgid bits stripped across the root filesystem, npm update checks disabled, and a built-in `/api/live` `HEALTHCHECK`.
+  - The isolated Prisma CLI is installed outside `/app` at `/opt/prisma-cli` (owned by `root:root` with `/usr/local/bin/prisma` symlinked at `/app/node_modules/.bin/prisma`) alongside `/usr/local/bin/docker-entrypoint.sh` (`root:root`). Under `/app`, only the Next.js standalone server output (`server.js` and traced `node_modules`), `.next/static`, `public`, `prisma`, `prisma.config.ts`, `src/lib/postgres-url.js`, and `scripts/generate-password-hash.mjs` (not the entire repository `scripts/` directory) are packaged and owned by `root:root` so the non-root runtime user (`nextjs:nodejs`, UID/GID 1001) holds write access to zero static code paths (only runtime cache/upload mountpoints `/app/.next/cache` and `/app/public/uploads` are owned by `nextjs:nodejs`).
 
 ---
 
@@ -44,14 +44,14 @@ All operator-facing configuration across application runtime (`src/env.ts`, `src
 | Variable | Default Value | Description & Validation Requirements |
 |---|---|---|
 | `DATABASE_URL` | *None* | Primary PostgreSQL connection URL (`datasource.url` in `prisma.config.ts`). Must be a valid `postgresql://` or `postgres://` connection string. |
-| `ADMIN_PASSWORD` | *None* | Scrypt hash for admin authentication. Must match format `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` (generated via `scripts/generate-password-hash.mjs`); plaintext passwords, non-64-byte hashes, and placeholder hashes are rejected, and `src/core/auth/auth.server.ts` derives a domain-separated HMAC signing key from the decoded hash bytes. |
+| `ADMIN_PASSWORD` | *None* | Scrypt hash for admin authentication. Must match format `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` (generated via `scripts/generate-password-hash.mjs`); plaintext passwords, non-64-byte hashes, and `ALWAYS_BLOCKED_PROD_ADMIN_HASHES` placeholders are rejected, `E2E_FALLBACK_ADMIN_HASHES` are blocked in `production` unless `E2E_TEST=true`, and `src/core/auth/auth.server.ts` derives a domain-separated HMAC signing key from the decoded hash bytes. |
 
 ### Production-Required Variables
-These variables provide convenience defaults for local `development` and `test` modes in `src/env.ts`, but startup validation strictly requires unique, non-default values when `NODE_ENV=production`:
+These variables provide convenience defaults for local `development` and `test` modes in `src/env.ts`, but startup validation strictly requires unique, non-default values when `NODE_ENV=production` (**Security Note**: setting `E2E_TEST=true` under `NODE_ENV=production` disables the `E2E_FALLBACK_ADMIN_HASHES`, `E2E_FALLBACK_GUEST_PASSCODES`, and `E2E_FALLBACK_SESSION_SECRETS` blocklists in `src/env.ts` for disposable container smoke tests while keeping `ALWAYS_BLOCKED_PROD_ADMIN_HASHES`, `ALWAYS_BLOCKED_PROD_GUEST_PASSCODES`, and `ALWAYS_BLOCKED_PROD_SESSION_SECRETS` enforced—never set `E2E_TEST=true` in real production deployments):
 | Variable | Dev / Test Default | Production Requirements & Description |
 |---|---|---|
-| `GUEST_PASSCODE` | `wedding2026` | Global passcode required for guest website access. Required in `production` (must not be empty or use `wedding2026`, template placeholders, or E2E fallback passcodes). |
-| `GUEST_SESSION_SECRET` | `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not use `default-guest-session-secret`, template placeholders, or E2E fallback secrets. |
+| `GUEST_PASSCODE` | `wedding2026` | Global passcode required for guest website access. Required in `production` (must not be empty or match `ALWAYS_BLOCKED_PROD_GUEST_PASSCODES` such as `wedding2026` or template placeholders; `E2E_FALLBACK_GUEST_PASSCODES` are also rejected unless `E2E_TEST=true`). |
+| `GUEST_SESSION_SECRET` | `default-guest-session-secret` | Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). Required in `production`; must be at least 32 characters long, distinct from `GUEST_PASSCODE`, and must not match `ALWAYS_BLOCKED_PROD_SESSION_SECRETS` (`default-guest-session-secret` or template placeholders; `E2E_FALLBACK_SESSION_SECRETS` are also rejected unless `E2E_TEST=true`). |
 
 ### Optional Infrastructure & Feature Variables
 | Variable | Default Value | Description |
@@ -60,7 +60,7 @@ These variables provide convenience defaults for local `development` and `test` 
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
 | `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; the other 14 tables in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
-| `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`prisma migrate deploy`) during container startup in `docker-entrypoint.sh`. |
+| `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`./node_modules/.bin/prisma migrate deploy`) during container startup in `docker-entrypoint.sh` when set to `'true'` or `'1'` (coerced to boolean in `src/env.ts`). |
 | `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
 | `CRON_SECRET` | *None* | Bearer authorization secret for triggering scheduled background endpoints (`/api/cron/*`). |
@@ -97,7 +97,7 @@ These variables configure container port binding, static HTML export builds, Vit
 | `STATIC_EXPORT` | *None* | Build (`next.config.ts`, `scripts/build-export.mjs`, `src/`) | Switches Next.js to static HTML export (`output: 'export'`) and `STATIC_MOCK_CONFIG` data when set to `'true'` or `'1'`. |
 | `NEXT_PUBLIC_BASE_PATH` | *None* | Static Export Build (`next.config.ts`) | Optional URL subpath prefix (`basePath` and `assetPrefix`) applied when `STATIC_EXPORT` is enabled and value is not `'/'`. |
 | `VITEPRESS_BASE` | `/` | Docs Portal (`docs-portal/.vitepress/config.mts`) | Base URL path for building and serving the VitePress documentation portal. |
-| `E2E_TEST` | `false` (`docker-compose.yml`) | Runtime / Compose (`src/lib/config.ts`, `docker-compose.yml`) | Defaults to `false` in `docker-compose.yml` so `<SetupWizard />` onboarding runs on fresh deployments; set to `'true'` only in `docker-compose.ci.yml` and automated E2E harnesses to bypass initial setup. |
+| `E2E_TEST` | `false` (`docker-compose.yml`) | Runtime / Compose (`src/env.ts`, `src/lib/config.ts`, `docker-compose.yml`) | Defaults to `false` in `docker-compose.yml` so `<SetupWizard />` onboarding and full production credential blocklists stay active; setting `E2E_TEST=true` bypasses initial setup in `src/lib/config.ts` and disables `E2E_FALLBACK_ADMIN_HASHES`, `E2E_FALLBACK_GUEST_PASSCODES`, and `E2E_FALLBACK_SESSION_SECRETS` checks in `src/env.ts` when `NODE_ENV=production`—use strictly in `docker-compose.ci.yml` and disposable E2E harnesses, never in live production. |
 | `DB_USER` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL username interpolated into the `db` container (`POSTGRES_USER`) and fallback `migration`/`app` `DATABASE_URL`. |
 | `DB_PASSWORD` | *None* | Docker Compose (`docker-compose.yml`) | Mandatory PostgreSQL password (`${DB_PASSWORD:?...}`) interpolated into the `db` container (`POSTGRES_PASSWORD`) and fallback `migration`/`app` `DATABASE_URL` (CI smoke tests supply `wedding123` via `docker-compose.ci.yml`). |
 | `DB_NAME` | `wedding` | Docker Compose (`docker-compose.yml`) | PostgreSQL database name interpolated into the `db` container (`POSTGRES_DB`) and fallback `migration`/`app` `DATABASE_URL`. |
@@ -107,19 +107,19 @@ These variables configure container port binding, static HTML export builds, Vit
 `src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:
 | Variable | Default Value | Target `AppConfig` Field | Description |
 |---|---|---|---|
-| `SITE_PARTNER1_NAME` | *None* | `partner1Name` | Override Partner 1 display name (when non-empty). |
-| `SITE_PARTNER2_NAME` | *None* | `partner2Name` | Override Partner 2 display name (when non-empty). |
+| `SITE_PARTNER1_NAME` | *None* | `partner1Name`, `brideName` | Override Partner 1 display name and synchronize `brideName` (when non-empty). |
+| `SITE_PARTNER2_NAME` | *None* | `partner2Name`, `groomName` | Override Partner 2 display name and synchronize `groomName` (when non-empty). |
 | `SITE_BRIDE_NAME` | *None* | `brideName`, `partner1Name` | Legacy alias overriding both `brideName` and `partner1Name` (when non-empty). |
 | `SITE_GROOM_NAME` | *None* | `groomName`, `partner2Name` | Legacy alias overriding both `groomName` and `partner2Name` (when non-empty). |
-| `SITE_WEDDING_DATE` | *None* | `weddingDate` | ISO 8601 date/timestamp string parsed via `new Date(...)` for the wedding celebration date. |
+| `SITE_WEDDING_DATE` | *None* | `weddingDate` | ISO 8601 date/timestamp string parsed via `new Date(...)` for the wedding celebration date (blank/whitespace-only strings are ignored). |
 | `SITE_BASE_URL` | *None* | `baseUrl` | Canonical public base URL of the wedding website. |
 | `SITE_VENUE_NAME` | *None* | `venueName` | Primary wedding venue name (when non-empty). |
 | `SITE_VENUE_ADDRESS` | *None* | `venueAddress` | Street address of the primary venue. |
 | `SITE_VENUE_CITY` | *None* | `venueCity` | City of the primary venue. |
 | `SITE_VENUE_STATE` | *None* | `venueState` | State/province of the primary venue. |
 | `SITE_VENUE_ZIP` | *None* | `venueZip` | Postal/ZIP code of the primary venue. |
-| `SITE_LATITUDE` | *None* | `latitude` | Venue latitude coordinate parsed as a floating-point number (`parseFloat`). |
-| `SITE_LONGITUDE` | *None* | `longitude` | Venue longitude coordinate parsed as a floating-point number (`parseFloat`). |
+| `SITE_LATITUDE` | *None* | `latitude` | Venue latitude coordinate parsed as a floating-point number (`parseFloat`; blank/whitespace-only strings are ignored). |
+| `SITE_LONGITUDE` | *None* | `longitude` | Venue longitude coordinate parsed as a floating-point number (`parseFloat`; blank/whitespace-only strings are ignored). |
 | `SITE_TIMEZONE` | *None* | `timezone` | IANA timezone identifier for event schedules (e.g., `America/Chicago`). |
 | `SITE_COLOR_PRIMARY` | *None* | `colorPrimary` | Primary brand hex color token (when non-empty). |
 | `SITE_COLOR_SECONDARY` | *None* | `colorSecondary` | Secondary accent hex color token (when non-empty). |
@@ -196,7 +196,7 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
    - Executes ESLint, migration and unused-export lints, Prisma Client generation (`prisma generate`), and Next.js standalone compilation (`output: 'standalone'`), or static HTML export (`output: 'export'`) via `npm run build:export` (`STATIC_EXPORT=true`).
    - Does **not** require an active database connection. Safe for CI/CD build environments.
 2. **Migration Phase (`./node_modules/.bin/prisma migrate deploy` / `npx prisma migrate deploy`)**:
-   - Runs before application startup via the `migration` service in `docker-compose.yml` (`./node_modules/.bin/prisma migrate deploy`), offline in `docker-entrypoint.sh` when `RUN_MIGRATIONS=true` (using the local `/app/node_modules/.bin/prisma` symlink with `NPM_CONFIG_UPDATE_NOTIFIER=false` and `CHECKPOINT_DISABLE=1` so zero npm registry calls occur), or via CI/CD release pipelines (`.github/workflows/db-migrate.yml`).
+   - Runs before application startup via the `migration` service in `docker-compose.yml` (`./node_modules/.bin/prisma migrate deploy`), offline in `docker-entrypoint.sh` when `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` (using the local `/app/node_modules/.bin/prisma` symlink to `/usr/local/bin/prisma` / `/opt/prisma-cli` with `NPM_CONFIG_UPDATE_NOTIFIER=false` and `CHECKPOINT_DISABLE=1` so zero npm registry calls occur), or via CI/CD release pipelines (`.github/workflows/db-migrate.yml`).
    - Applies pending database migrations safely without data loss.
 3. **Start Phase (`tini` -> `docker-entrypoint.sh` -> `node server.js`)**:
    - `/usr/bin/tini -s` runs as PID 1 (or subreaper under `init: true`) and invokes `docker-entrypoint.sh`, which validates `DATABASE_URL` and hands off via `exec "$@"` (`exec node server.js`), launching the Next.js standalone HTTP server on `PORT` (`0.0.0.0`) and validating `src/env.ts`.
@@ -206,13 +206,13 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
      - Exempted from guest/admin session checks (`src/middleware.ts`), invite revocation checks (`src/utils/withApiMiddleware.ts`), and API rate limits (`src/utils/withApiMiddleware.ts`, `src/utils/rateLimit.ts`).
      - Targeted by the `Dockerfile` `HEALTHCHECK`, `docker-compose.yml` `app` `healthcheck`, and Google Cloud Run `--liveness-probe-request-path=/api/live` so transient database blips never trigger container restart loops.
    - **Startup & Rollout Health Endpoint (`GET /api/health`, `src/app/api/health/route.ts`)**:
-     - Wrapped in `withApiMiddleware`, executes `SELECT 1` via Prisma, and returns `HTTP 200 OK` with wrapped JSON `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` (or `HTTP 503 Service Unavailable` with `{ "success": false, "error": "...", ... }` when PostgreSQL is unreachable).
+     - Wrapped in `withApiMiddleware` (`isHealthProbe: true`), executes `SELECT 1` via Prisma, and returns `HTTP 200 OK` with wrapped JSON `{ "success": true, "data": { "status": "ok", "timestamp": "...", "database": "connected" } }` (or `HTTP 503 Service Unavailable` preserving diagnostic fields `{ "success": false, "status": "degraded", "database": "disconnected", "timestamp": "...", "error": "Database connection failed" }` with sanitized error text when PostgreSQL is unreachable).
      - Used by Cloud Run startup probes (`--startup-probe-request-path=/api/health`) and CI/CD post-deployment/rollback verification (`.github/workflows/deploy.yml` and `.github/workflows/rollback.yml`).
      - Exempted from guest/admin session checks in `src/middleware.ts` (`normalizedPath === '/api/health'`) and exempted from API rate limiting in `src/utils/withApiMiddleware.ts` (`isHealthPath`).
    - **Readiness Endpoint (`GET /api/ready`, `src/app/api/ready/route.ts`)**:
      - Direct Next.js Route Handler (not wrapped by `withApiMiddleware`), executes `SELECT 1` via Prisma, and returns `HTTP 200 OK` with unwrapped JSON `{ "status": "ready", "database": "connected", "timestamp": "..." }`, or `HTTP 503 Service Unavailable` with `{ "status": "unhealthy", "database": "disconnected", "error": "Database connection failed", "timestamp": "..." }` on database failure (internal driver error messages are masked when `NODE_ENV=production`).
      - Exempted from guest/admin session checks in `src/middleware.ts` (`normalizedPath === '/api/ready'`) and not subject to `withApiMiddleware` rate-limit buckets.
    - **Perimeter Host Validation**: `/api/live`, `/api/health`, and `/api/ready` all pass through perimeter `ALLOWED_HOSTS` validation (`X-Forwarded-Host` / `Host`) in `src/middleware.ts`, so container/orchestrator probes must send an allowed `Host` header (e.g., `localhost` or a configured domain).
-5. **Process Shutdown & Signal Delivery**:
+5. **Process Shutdown, Pool Caching & Signal Delivery**:
    - `Dockerfile` runs `/usr/bin/tini -s` as PID 1 (and `docker-compose.yml` sets `init: true`) while `docker-entrypoint.sh` hands off via `exec "$@"` so `SIGTERM` and `SIGINT` propagate cleanly to `node server.js` and orphaned child processes are reaped.
-   - `src/lib/prisma.ts` registers idempotent `SIGTERM` and `SIGINT` shutdown hooks (`shutdownPrisma()`) that coordinate with Next.js standalone HTTP server teardown to invoke `prisma.$disconnect()` and `pool.end()`, transmitting PostgreSQL `Terminate` (`0x58`) frames over active `pg.Pool` sockets before the container exits.
+   - `src/lib/prisma.ts` caches `prisma` and `pgPool` on `globalForPrisma` across all module graphs in every environment (including `production`) so a single Node.js process shares one connection pool and one `SIGTERM`/`SIGINT` listener registration (`registerPrismaShutdownHooks()`). On `SIGTERM` or `SIGINT`, `handleTerminationSignal()` and `interceptProcessExitUntilDrained()` coordinate with Next.js standalone teardown under a `5000ms` unref'd safety timer to run `shutdownPrisma()` (`prisma.$disconnect()` and `pool.end()`), transmitting PostgreSQL `Terminate` (`0x58`) frames over active `pg.Pool` sockets before invoking `process.exit`.

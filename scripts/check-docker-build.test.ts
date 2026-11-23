@@ -27,7 +27,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
         name: 'wedding-website-fixture',
         private: true,
         engines: {
-          node: '^22.12.0',
+          node: '>=22.22.1 <23.0.0',
           npm: '^10.9.0',
         },
       },
@@ -129,6 +129,9 @@ function writeValidFixtureWorkspace(targetDir: string): void {
       '      db:',
       `        image: postgres:15-alpine@${POSTGRES_DIGEST}`,
       '    steps:',
+      '      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020',
+      '        with:',
+      "          node-version-file: '.nvmrc'",
       '      - run: npm test',
       '  deploy:',
       '    runs-on: ubuntu-latest',
@@ -145,7 +148,7 @@ function writeValidFixtureWorkspace(targetDir: string): void {
     [
       '#!/bin/sh',
       'export NPM_CONFIG_UPDATE_NOTIFIER=false',
-      'if [ "$RUN_MIGRATIONS" = "true" ]; then',
+      'if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then',
       '  ./node_modules/.bin/prisma migrate deploy',
       'fi',
       'exec "$@"',
@@ -631,6 +634,94 @@ describe('check-docker-build', () => {
         expect.objectContaining({
           filePath: 'docker-compose.ci.yml',
           imageRef: 'app.build.cache_to',
+        }),
+      ])
+    );
+  });
+
+  it('fails when Dockerfile, package.json, .nvmrc, or workflow node-version entries diverge', () => {
+    // 1. Divergent Dockerfile Node base image major
+    const dockerfilePath = path.join(tempDir, 'Dockerfile');
+    const validDockerfile = fs.readFileSync(dockerfilePath, 'utf8');
+    fs.writeFileSync(
+      dockerfilePath,
+      validDockerfile.replace('node:22-bookworm-slim@', 'node:26-bookworm-slim@')
+    );
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'node:26-bookworm-slim',
+          reason: expect.stringContaining('does not match expected "node:22-bookworm-slim" from .nvmrc'),
+        }),
+      ])
+    );
+    fs.writeFileSync(dockerfilePath, validDockerfile);
+
+    // 2. Divergent package.json engines.node and @types/node
+    const pkgPath = path.join(tempDir, 'package.json');
+    const validPkg = fs.readFileSync(pkgPath, 'utf8');
+    fs.writeFileSync(
+      pkgPath,
+      JSON.stringify(
+        {
+          name: 'wedding-website-fixture',
+          private: true,
+          engines: { node: '>=20.0.0 <21.0.0', npm: '^10.9.0' },
+          devDependencies: { '@types/node': '^26.6.5' },
+        },
+        null,
+        2
+      )
+    );
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.node',
+          reason: expect.stringContaining('does not match .nvmrc ("22")'),
+        }),
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: '@types/node',
+          reason: expect.stringContaining('does not match .nvmrc ("22")'),
+        }),
+      ])
+    );
+    fs.writeFileSync(pkgPath, validPkg);
+
+    // 3. Divergent .nvmrc against Dockerfile and package.json
+    const nvmrcPath = path.join(tempDir, '.nvmrc');
+    fs.writeFileSync(nvmrcPath, '20\n');
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'package.json',
+          imageRef: 'engines.node',
+          reason: expect.stringContaining('does not match .nvmrc ("20")'),
+        }),
+        expect.objectContaining({
+          filePath: 'Dockerfile',
+          imageRef: 'node:22-bookworm-slim',
+          reason: expect.stringContaining('does not match expected "node:20-bookworm-slim" from .nvmrc'),
+        }),
+      ])
+    );
+    fs.writeFileSync(nvmrcPath, '22\n');
+
+    // 4. Divergent workflow actions/setup-node node-version / node-version-file
+    const ciPath = path.join(tempDir, '.github', 'workflows', 'ci.yml');
+    const validCi = fs.readFileSync(ciPath, 'utf8');
+    fs.writeFileSync(
+      ciPath,
+      validCi.replace("node-version-file: '.nvmrc'", "node-version: '20'")
+    );
+    expect(checkDockerBuild(tempDir).violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: '.github/workflows/ci.yml',
+          imageRef: 'node-version',
+          reason: expect.stringContaining('does not match expected Node.js major "22" from .nvmrc'),
         }),
       ])
     );

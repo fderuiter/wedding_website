@@ -211,8 +211,9 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
     overrides.partner2Name = process.env.SITE_PARTNER2_NAME;
     overrides.groomName = process.env.SITE_PARTNER2_NAME;
   }
-  if (process.env.SITE_WEDDING_DATE !== undefined) {
-    overrides.weddingDate = new Date(process.env.SITE_WEDDING_DATE);
+  const rawWeddingDate = process.env.SITE_WEDDING_DATE?.trim();
+  if (rawWeddingDate) {
+    overrides.weddingDate = new Date(rawWeddingDate);
   }
   if (process.env.SITE_BASE_URL !== undefined) overrides.baseUrl = process.env.SITE_BASE_URL;
   if (process.env.SITE_VENUE_NAME) overrides.venueName = process.env.SITE_VENUE_NAME;
@@ -220,13 +221,15 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   if (process.env.SITE_VENUE_CITY !== undefined) overrides.venueCity = process.env.SITE_VENUE_CITY;
   if (process.env.SITE_VENUE_STATE !== undefined) overrides.venueState = process.env.SITE_VENUE_STATE;
   if (process.env.SITE_VENUE_ZIP !== undefined) overrides.venueZip = process.env.SITE_VENUE_ZIP;
-  if (process.env.SITE_LATITUDE !== undefined) {
-    const parsed = parseFloat(process.env.SITE_LATITUDE);
-    overrides.latitude = isNaN(parsed) ? (process.env.SITE_LATITUDE as any) : parsed;
+  const rawLatitude = process.env.SITE_LATITUDE?.trim();
+  if (rawLatitude) {
+    const parsed = parseFloat(rawLatitude);
+    overrides.latitude = isNaN(parsed) ? (rawLatitude as any) : parsed;
   }
-  if (process.env.SITE_LONGITUDE !== undefined) {
-    const parsed = parseFloat(process.env.SITE_LONGITUDE);
-    overrides.longitude = isNaN(parsed) ? (process.env.SITE_LONGITUDE as any) : parsed;
+  const rawLongitude = process.env.SITE_LONGITUDE?.trim();
+  if (rawLongitude) {
+    const parsed = parseFloat(rawLongitude);
+    overrides.longitude = isNaN(parsed) ? (rawLongitude as any) : parsed;
   }
   if (process.env.SITE_TIMEZONE) overrides.timezone = process.env.SITE_TIMEZONE;
   if (process.env.SITE_COLOR_PRIMARY) overrides.colorPrimary = process.env.SITE_COLOR_PRIMARY;
