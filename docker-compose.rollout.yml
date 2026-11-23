@@ -88,7 +88,7 @@ services:
         condition: service_healthy
     restart: "no"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\\*\\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3

@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect, useContext } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   QueryClient,
   QueryClientContext,
@@ -54,6 +55,27 @@ function isDefaultUrl(url: string): boolean {
 
 type Step2ErrorField = 'partner1' | 'partner2' | 'siteUrl' | 'contactEmail';
 
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
+function getSetupErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const candidate = (err as { message?: unknown }).message;
+    if (typeof candidate === 'string' && candidate) {
+      return candidate;
+    }
+  }
+  return fallback;
+}
+
 function syncAdminLoginState() {
   if (typeof window === 'undefined') return;
   try {
@@ -95,7 +117,11 @@ interface SetupWizardProps {
   initialSavedConfig?: SetupWizardSavedConfig;
 }
 
-function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
+function SetupWizardContent({
+  initialSavedConfig,
+  hasAppShell = false,
+}: SetupWizardProps & { hasAppShell?: boolean }) {
+  const router = useSafeRouter();
   const queryClient = useQueryClient();
   const normalizedInitialSavedConfig = initialSavedConfig
     ? {
@@ -228,8 +254,14 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
     }
   }, [step, themePreset, colorPrimary, colorSecondary, setPreviewConfig]);
 
-  const handleThemeChange = (fields: Record<string, any>) => {
-    if (fields.themePreset !== undefined) setThemePreset(fields.themePreset);
+  const handleThemeChange = (
+    fields: Partial<{
+      themePreset: ThemePreset | string;
+      colorPrimary: string;
+      colorSecondary: string;
+    }>
+  ) => {
+    if (fields.themePreset !== undefined) setThemePreset(fields.themePreset as ThemePreset);
     if (fields.colorPrimary !== undefined) setColorPrimary(fields.colorPrimary);
     if (fields.colorSecondary !== undefined) setColorSecondary(fields.colorSecondary);
   };
@@ -252,8 +284,8 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
         passwordInputRef.current?.focus();
         passwordInputRef.current?.select();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to log in.');
+    } catch (err: unknown) {
+      setError(getSetupErrorMessage(err, 'Failed to log in.'));
       passwordInputRef.current?.focus();
       passwordInputRef.current?.select();
     }
@@ -363,9 +395,9 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
         setError(errMsg);
         focusStep2Field(targetField);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStep2ErrorField('siteUrl');
-      setError(err.message || 'Failed to save config.');
+      setError(getSetupErrorMessage(err, 'Failed to save config.'));
       siteUrlInputRef.current?.focus();
     }
   };
@@ -392,8 +424,8 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
       }
       await invalidateSampleDataCaches(queryClient);
       setStep(4);
-    } catch (err: any) {
-      setError(err.message || 'Error configuring sample data.');
+    } catch (err: unknown) {
+      setError(getSetupErrorMessage(err, 'Error configuring sample data.'));
     }
   };
 
@@ -417,7 +449,14 @@ function SetupWizardContent({ initialSavedConfig }: SetupWizardProps) {
       // Allow navigation to proceed even if network completion call fails
     }
     clearPersistedState();
-    window.location.href = '/admin/dashboard';
+    if (hasAppShell && router?.push) {
+      router.push('/admin/dashboard');
+      router.refresh?.();
+    } else if (typeof window !== 'undefined') {
+      window.location.assign(
+        new URL('/admin/dashboard', window.location.origin).href
+      );
+    }
   };
 
   return (
@@ -888,7 +927,13 @@ export default function SetupWizard({ initialSavedConfig }: SetupWizardProps = {
   const activeQueryClient = outerQueryClient ?? fallbackQueryClient;
   const outerTheme = useTheme();
 
-  const content = <SetupWizardContent initialSavedConfig={initialSavedConfig} />;
+  const hasAppShell = Boolean(outerQueryClient && outerToast);
+  const content = (
+    <SetupWizardContent
+      initialSavedConfig={initialSavedConfig}
+      hasAppShell={hasAppShell}
+    />
+  );
   const withToast = outerToast ? content : <ToastProvider>{content}</ToastProvider>;
   const wizardTree = outerQueryClient ? (
     withToast
