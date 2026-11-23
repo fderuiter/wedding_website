@@ -388,6 +388,41 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     ).toBeInTheDocument();
   });
 
+  test('prefixes all seating export toolbar links with NEXT_PUBLIC_BASE_PATH on subpath deployments', () => {
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    try {
+      render(<SeatingChartAdminPage />);
+
+      expect(screen.getByRole('link', { name: 'Export Visual PDF' })).toHaveAttribute(
+        'href',
+        '/wedding_website/demo/api/admin/seating/export?format=pdf'
+      );
+      expect(screen.getByRole('link', { name: 'Export CSV' })).toHaveAttribute(
+        'href',
+        '/wedding_website/demo/api/admin/seating/export'
+      );
+      expect(screen.getByRole('link', { name: 'Meal Counts CSV' })).toHaveAttribute(
+        'href',
+        '/wedding_website/demo/api/admin/seating/export?format=meals'
+      );
+      expect(screen.getByRole('link', { name: 'Place Cards PDF' })).toHaveAttribute(
+        'href',
+        '/wedding_website/demo/api/admin/seating/export?format=place-cards'
+      );
+      expect(screen.getByRole('link', { name: 'Escort Cards PDF' })).toHaveAttribute(
+        'href',
+        '/wedding_website/demo/api/admin/seating/export?format=escort-cards'
+      );
+    } finally {
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
+
   test('renders companion names, entrée selections, KIDS badges, and custom answers in table inspector', () => {
     const tableWithEnrichedGuest = {
       ...mockTable,

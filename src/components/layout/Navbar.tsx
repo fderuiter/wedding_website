@@ -29,6 +29,7 @@ import {
   notifyGuestSessionChanged,
   subscribeGuestSessionChanged,
 } from '@/utils/guestSessionEvents';
+import { withBasePath } from '@/lib/basePath';
 import { MediaImage } from '@/components/MediaImage';
 
 /**
@@ -106,6 +107,8 @@ export default function Navbar({
   hasVisibleFaqs,
 }: NavbarProps) {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
@@ -153,7 +156,10 @@ export default function Navbar({
         return;
       }
       try {
-        const res = await fetch('/api/guest/session', signal ? { signal } : undefined);
+        const res = await fetch(
+          withBasePath('/api/guest/session'),
+          signal ? { signal } : undefined
+        );
         if (signal?.aborted || !res || !res.ok || typeof res.json !== 'function') return;
         const json = await res.json().catch(() => null);
         if (signal?.aborted) return;
@@ -169,7 +175,7 @@ export default function Navbar({
   );
 
   useEffect(() => {
-    if (isAdmin || pathname?.startsWith('/admin')) return;
+    if (isAdmin || normalizedPathname?.startsWith('/admin')) return;
     const controller = new AbortController();
     void refreshGuestSession(controller.signal);
     const unsubscribe = subscribeGuestSessionChanged(() => {
@@ -179,14 +185,14 @@ export default function Navbar({
       controller.abort();
       unsubscribe();
     };
-  }, [isAdmin, pathname, refreshGuestSession]);
+  }, [isAdmin, normalizedPathname, refreshGuestSession]);
 
   const handleSwitchHousehold = useCallback(async () => {
     if (isSwitchingHousehold) return;
     setIsSwitchingHousehold(true);
     try {
       if (typeof fetch === 'function') {
-        await fetch('/api/guest/session', { method: 'DELETE' });
+        await fetch(withBasePath('/api/guest/session'), { method: 'DELETE' });
       }
     } catch {
       // Proceed to clear client session state even on network failure
@@ -240,7 +246,7 @@ export default function Navbar({
   }, [config.features]);
 
   useEffect(() => {
-    if (pathname !== '/' || typeof window === 'undefined') return;
+    if (normalizedPathname !== '/' || typeof window === 'undefined') return;
 
     const sectionIds = features
       .filter((f): f is HomeFeatureSection & { id: string } => Boolean(f.visible && f.id && f.id !== 'hero'))
@@ -274,21 +280,21 @@ export default function Navbar({
     return () => {
       observer.disconnect();
     };
-  }, [pathname, features, setActiveHash]);
+  }, [normalizedPathname, features, setActiveHash]);
 
   const isLinkActive = (href: string) => {
     if (href.includes('#')) {
-      if (pathname !== '/') return false;
+      if (normalizedPathname !== '/') return false;
       const hashPart = href.substring(href.indexOf('#'));
       return activeHash === hashPart;
     }
-    if (pathname === '/') {
+    if (normalizedPathname === '/') {
       if (href === '/') {
         return !activeHash || activeHash === '#top' || activeHash === '#hero';
       }
       return false;
     }
-    return pathname === href;
+    return normalizedPathname === href;
   };
 
   const getLinkAriaCurrent = (href: string): 'location' | 'page' | undefined => {
@@ -342,8 +348,8 @@ export default function Navbar({
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
   const monogram = deriveBrandMonogram(config);
-  const disablePrefetch = pathname === '/guest/login';
-  const defaultHelpCategory = resolveHelpCategoryForPath(pathname);
+  const disablePrefetch = normalizedPathname === '/guest/login';
+  const defaultHelpCategory = resolveHelpCategoryForPath(normalizedPathname);
 
   const handleGuideTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

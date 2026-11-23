@@ -19,6 +19,7 @@ import type {
   SubEventRsvpSummaryItem,
   AccessMatrixGuestEventRsvp,
 } from '@/features/sub-events';
+import { withBasePath } from '@/lib/basePath';
 
 type SubEvent = EditableSubEvent;
 
@@ -98,7 +99,7 @@ async function requestAccessMatrix(query: AccessMatrixQuery): Promise<AccessMatr
   if (query.selectedGroupFilter !== 'all') params.set('partyGroup', query.selectedGroupFilter);
   if (query.selectedHouseholdFilter !== 'all') params.set('householdName', query.selectedHouseholdFilter);
 
-  const res = await fetch(`/api/admin/sub-events/access?${params.toString()}`);
+  const res = await fetch(withBasePath(`/api/admin/sub-events/access?${params.toString()}`));
   if (!res.ok) throw new Error('Failed to load access matrix');
   const json = await res.json();
   const data = json.data || json;
@@ -175,7 +176,7 @@ function sortSubEventsBySchedule(events: SubEvent[]): SubEvent[] {
 
 async function requestSubEventsRsvpSummary(): Promise<Record<string, SubEventRsvpSummaryItem> | null> {
   try {
-    const res = await fetch('/api/admin/sub-events/rsvp-summary');
+    const res = await fetch(withBasePath('/api/admin/sub-events/rsvp-summary'));
     if (!res || !res.ok) return null;
     const json = await res.json();
     const payload: RsvpSummaryResponse | undefined = json?.data ?? json;
@@ -415,7 +416,7 @@ function SubEventsMatrixPageContent() {
     setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: updated }));
 
     try {
-      const res = await fetch('/api/admin/sub-events/access', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invitationCodeId, allowedSubEventIds: updated }),
@@ -446,7 +447,7 @@ function SubEventsMatrixPageContent() {
     if (selectedHouseholdFilter !== 'all') body.householdName = [selectedHouseholdFilter];
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -490,7 +491,7 @@ function SubEventsMatrixPageContent() {
     setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: updated }));
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -531,7 +532,7 @@ function SubEventsMatrixPageContent() {
     setAccessMatrix(nextMatrix);
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

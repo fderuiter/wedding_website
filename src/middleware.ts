@@ -91,7 +91,10 @@ export async function middleware(request: NextRequest) {
     normalizedPath.startsWith('/uploads/') ||
     normalizedPath === '/admin/login' ||
     normalizedPath === '/api/admin/login' ||
+    (normalizedPath === '/api/admin/logout' && method === 'POST') ||
+    (normalizedPath === '/api/admin/me' && method === 'GET') ||
     normalizedPath === '/api/admin/setup' ||
+    (normalizedPath === '/api/og' && method === 'GET') ||
     normalizedPath === '/api/health' ||
     normalizedPath === '/api/live' ||
     normalizedPath === '/api/ready' ||

@@ -33,6 +33,7 @@ import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -324,7 +325,7 @@ function SetupWizardContent({
     }
     startSubmit();
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -422,7 +423,7 @@ function SetupWizardContent({
 
     startSubmit();
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -455,11 +456,14 @@ function SetupWizardContent({
       if (res.ok) {
         syncAdminLoginState();
         setStep(3);
-        if (typeof window !== 'undefined' && window.location.pathname !== '/admin/setup') {
-          try {
-            window.history.replaceState(window.history.state, '', '/admin/setup');
-          } catch {
-            // Ignore history replacement errors in restricted environments
+        if (typeof window !== 'undefined') {
+          const setupPath = withBasePath('/admin/setup');
+          if (window.location.pathname.replace(/\/+$/, '') !== setupPath) {
+            try {
+              window.history.replaceState(window.history.state, '', setupPath);
+            } catch {
+              // Ignore history replacement errors in restricted environments
+            }
           }
         }
       } else {
@@ -491,7 +495,7 @@ function SetupWizardContent({
     startSubmit();
     try {
       if (selectedModules.length > 0) {
-        const res = await fetch('/api/admin/sample-data', {
+        const res = await fetch(withBasePath('/api/admin/sample-data'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -504,7 +508,7 @@ function SetupWizardContent({
           throw new Error(data.error || 'Failed to generate sample data.');
         }
       } else {
-        await fetch('/api/admin/sample-data', { method: 'DELETE' });
+        await fetch(withBasePath('/api/admin/sample-data'), { method: 'DELETE' });
       }
       await invalidateSampleDataCaches(queryClient);
       setStep(4);
@@ -536,7 +540,7 @@ function SetupWizardContent({
     syncAdminLoginState();
     startSubmit();
     try {
-      await fetch('/api/admin/setup', {
+      await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ setupCompleted: true }),
@@ -550,7 +554,7 @@ function SetupWizardContent({
       router.refresh?.();
     } else if (typeof window !== 'undefined') {
       window.location.assign(
-        new URL('/admin/dashboard', window.location.origin).href
+        new URL(withBasePath('/admin/dashboard'), window.location.origin).href
       );
     }
   };

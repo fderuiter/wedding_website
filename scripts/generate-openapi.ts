@@ -26,6 +26,11 @@ const broadcastSchemas = await import('../src/features/broadcast/schemas.js');
 const backupValidationSchemas = await import('../src/utils/backupValidation.js');
 const sampleDataSchemas = await import('../src/lib/sampleData/schemas.js');
 const { isProtectedRoute } = await import('../src/lib/routes.js');
+const {
+  getMiddlewarePublicApiExclusions: parseMiddlewarePublicApiExclusions,
+  isMiddlewarePublicApiMethod,
+} = await import('./generate-docs.js');
+import type { MiddlewareApiExclusions } from './generate-docs.js';
 
 const ALL_SCHEMAS: Record<string, any> = {
   ...validationUtils,
@@ -288,44 +293,16 @@ function extractAdminEntitySchemaNames(): AdminEntitySchemaNames {
     updateSchemas: Array.from(new Set(updateSchemas)),
   };
 }
-
-interface MiddlewareApiExclusions {
-  exact: Set<string>;
-  prefixes: string[];
-}
-
 function getMiddlewarePublicApiExclusions(): MiddlewareApiExclusions {
-  const middlewarePath = path.join(rootPath, 'src/middleware.ts');
-  const source = fs.readFileSync(middlewarePath, 'utf8');
-  const exact = new Set<string>();
-  const prefixes: string[] = [];
-
-  const exactRegex = /normalizedPath\s*===\s*'(\/api\/[^']+)'/g;
-  let match: RegExpExecArray | null;
-  while ((match = exactRegex.exec(source)) !== null) {
-    if (match[1] !== '/api/cron') {
-      exact.add(match[1]);
-    }
-  }
-
-  const prefixRegex = /normalizedPath\.startsWith\(\s*'(\/api\/[^']+)'\s*\)/g;
-  while ((match = prefixRegex.exec(source)) !== null) {
-    if (match[1] !== '/api/' && match[1] !== '/api/cron/') {
-      prefixes.push(match[1]);
-    }
-  }
-
-  return { exact, prefixes };
+  return parseMiddlewarePublicApiExclusions(rootPath);
 }
 
 function isMiddlewarePublicApiRoute(
   routePath: string,
+  method: string,
   exclusions: MiddlewareApiExclusions
 ): boolean {
-  if (exclusions.exact.has(routePath)) {
-    return true;
-  }
-  return exclusions.prefixes.some((prefix) => routePath.startsWith(prefix));
+  return isMiddlewarePublicApiMethod(routePath, method, exclusions);
 }
 
 function isMethodGuardCondition(condText: string): boolean {
@@ -1970,7 +1947,7 @@ function resolveOperationSecurity(
     return [{ guestCookieAuth: [] }];
   }
 
-  if (!isMiddlewarePublicApiRoute(routePath, publicApiExclusions)) {
+  if (!isMiddlewarePublicApiRoute(routePath, method, publicApiExclusions)) {
     return [
       { guestCookieAuth: [] },
       { guestInviteCookieAuth: [] },

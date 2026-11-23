@@ -1,4 +1,18 @@
 import { ThankYouService } from '../thank-you.service';
+import { getAppConfig } from '@/lib/config';
+import { MultiChannelMessagingProvider } from '@/features/broadcast';
+
+jest.mock('@/lib/config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({
+    partner1Name: 'Alex',
+    partner2Name: 'Jordan',
+    contactEmail: 'couple@wedding.test',
+    emailProvider: 'smtp',
+    themePreset: 'classic',
+    themeTokens: {},
+    colorPrimary: '#B91C1C',
+  }),
+}));
 
 async function streamToText(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
@@ -106,6 +120,10 @@ describe('ThankYouService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+      },
+      invitationCode: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
       },
       snapshotVersion: {
         create: jest.fn().mockResolvedValue({ id: 'snapshot-1' }),
@@ -326,6 +344,77 @@ describe('ThankYouService', () => {
         })
       );
     });
+
+    it('links or unlinks guest household, updates contributor postal fields, and syncs address to linked InvitationCode when requested', async () => {
+      const existing = {
+        id: 'c1',
+        name: 'Alice Johnson',
+        amount: 100,
+        date: '2026-06-01T00:00:00.000Z',
+        thankYouStatus: 'Unsent',
+        thankYouSentAt: null,
+        thankYouNote: null,
+        invitationCodeId: null,
+      };
+
+      mockPrisma.contributor.findUnique.mockResolvedValue(existing);
+      mockPrisma.invitationCode.findUnique.mockResolvedValue({ id: 'inv-household-1' });
+      mockPrisma.invitationCode.update.mockResolvedValue({
+        id: 'inv-household-1',
+        addressLine1: '500 Oak St',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        country: 'USA',
+      });
+      mockPrisma.contributor.update.mockImplementation(({ data }: any) =>
+        Promise.resolve({
+          ...existing,
+          ...data,
+          invitationCode: data.invitationCodeId
+            ? {
+              id: 'inv-household-1',
+              code: 'HOUSE1',
+              guestName: 'Alice & Family',
+              addressLine1: '500 Oak St',
+              city: 'Austin',
+              state: 'TX',
+              zipCode: '78701',
+              country: 'USA',
+            }
+            : null,
+        })
+      );
+
+      const linked = await service.updateThankYouNote('c1', {
+        invitationCodeId: 'inv-household-1',
+        addressLine1: ' 500 Oak St ',
+        city: ' Austin ',
+        state: ' TX ',
+        zipCode: ' 78701 ',
+        country: ' USA ',
+        syncAddressToGuest: true,
+      });
+
+      expect(linked.invitationCodeId).toBe('inv-household-1');
+      expect(linked.addressLine1).toBe('500 Oak St');
+      expect(mockPrisma.invitationCode.update).toHaveBeenCalledWith({
+        where: { id: 'inv-household-1' },
+        data: {
+          addressLine1: '500 Oak St',
+          city: 'Austin',
+          state: 'TX',
+          zipCode: '78701',
+          country: 'USA',
+        },
+      });
+
+      // Unlink household by passing invitationCodeId: null
+      const unlinked = await service.updateThankYouNote('c1', {
+        invitationCodeId: null,
+      });
+      expect(unlinked.invitationCodeId).toBeNull();
+    });
   });
 
   describe('batchUpdateThankYouNotes', () => {
@@ -447,7 +536,7 @@ describe('ThankYouService', () => {
       const csv = await streamToText(stream);
 
       expect(csv).toBe(
-        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number,Address Line 1,Address Line 2,City,State,ZIP Code,Country\n'
+        'Contributor Name,Email,Guest Message,Gift Item,Category,Contribution Amount,Contribution Date,Thank-You Status,Sent Date,Note Draft,Retailer Order Number,Carrier,Tracking Number,Linked Guest,Address Line 1,Address Line 2,City,State,ZIP Code,Country\n'
       );
     });
 
@@ -601,6 +690,58 @@ describe('ThankYouService', () => {
       expect(csv).toContain('"\'\rItemName"');
       expect(csv).toContain('\'=Category');
     });
+
+    it('exports Linked Guest and prefers contributor postal address over linked invitationCode address', async () => {
+      mockPrisma.contributor.findMany.mockResolvedValue([
+        {
+          id: 'c-contrib-addr',
+          name: 'Alex Donor',
+          email: 'alex@example.com',
+          amount: 100,
+          date: '2026-06-01T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          addressLine1: '888 Contributor Ln',
+          addressLine2: 'Apt 3',
+          city: 'Seattle',
+          state: 'WA',
+          zipCode: '98101',
+          country: 'USA',
+          invitationCode: {
+            guestName: 'Alex Household',
+            addressLine1: '111 Old Household Rd',
+            city: 'Tacoma',
+            state: 'WA',
+            zipCode: '98402',
+            country: 'USA',
+          },
+          registryItem: { id: 'item1', name: 'Mixer', category: 'Kitchen' },
+        },
+        {
+          id: 'c-invite-fallback',
+          name: 'Sam Guest',
+          email: 'sam@example.com',
+          amount: 75,
+          date: '2026-06-02T00:00:00.000Z',
+          thankYouStatus: 'Unsent',
+          addressLine1: null,
+          invitationCode: {
+            guestName: 'Sam & Pat',
+            addressLine1: '222 Invite Way',
+            addressLine2: null,
+            city: 'Austin',
+            state: 'TX',
+            zipCode: '78701',
+            country: 'USA',
+          },
+          registryItem: { id: 'item2', name: 'Blender', category: 'Kitchen' },
+        },
+      ]);
+
+      const csv = await streamToText(service.exportThankYouNotesCsv());
+      expect(csv).toContain('Alex Household,888 Contributor Ln,Apt 3,Seattle,WA,98101,USA');
+      expect(csv).not.toContain('111 Old Household Rd');
+      expect(csv).toContain('Sam & Pat,222 Invite Way,,Austin,TX,78701,USA');
+    });
   });
 
   describe('exportThankYouNotesPdf', () => {
@@ -708,6 +849,122 @@ describe('ThankYouService', () => {
 
       expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
       expect(pdfBuffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+    });
+  });
+
+  describe('sendThankYouEmail', () => {
+    it('supports preview, test (to AppConfig.contactEmail), and send modes with sanitized subject and HTML', async () => {
+      const sendEmailSpy = jest
+        .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+        .mockResolvedValue({ success: true });
+
+      const existing = {
+        id: 'c-email-1',
+        name: 'Riley <Guest>',
+        email: 'riley@example.com',
+        amount: 150,
+        date: '2026-06-01T00:00:00.000Z',
+        thankYouStatus: 'Unsent',
+        thankYouSentAt: null,
+        thankYouEmailSentAt: null,
+        thankYouNote: null,
+        registryItem: { id: 'r1', name: 'Espresso Machine', category: 'Kitchen' },
+        invitationCode: null,
+      };
+      mockPrisma.contributor.findUnique.mockResolvedValue(existing);
+      mockPrisma.contributor.update.mockImplementation(({ data }: any) =>
+        Promise.resolve({
+          ...existing,
+          ...data,
+        })
+      );
+
+      try {
+        // 1. Preview mode sanitizes subject CRLF/angle brackets and escapes HTML in htmlBody without sending
+        const preview = await service.sendThankYouEmail('c-email-1', {
+          mode: 'preview',
+          subject: 'Thank you!\r\n<script>alert(1)</script>',
+          body: 'Dear {{guestName}},\n\nThank you for {{giftName}} ({{amount}})! <b>Love</b>',
+        });
+
+        expect(sendEmailSpy).not.toHaveBeenCalled();
+        expect(preview.subject).toBe('Thank you!scriptalert(1)/script');
+        expect(preview.textBody).toContain('Riley <Guest>');
+        expect(preview.textBody).toContain('$150.00');
+        expect(preview.htmlBody).toContain('&lt;Guest&gt;');
+        expect(preview.htmlBody).toContain('&lt;b&gt;Love&lt;/b&gt;');
+        expect(preview.htmlBody).not.toContain('<b>Love</b>');
+
+        // 2. Test mode sends [TEST] email to AppConfig.contactEmail without mutating Contributor status
+        const testRes = await service.sendThankYouEmail('c-email-1', {
+          mode: 'test',
+          subject: 'Thank you for your gift!',
+          body: 'Dear {{guestName}}, thank you for the {{giftName}}!',
+        });
+
+        expect(testRes.to).toBe('couple@wedding.test');
+        expect(testRes.subject).toBe('[TEST] Thank you for your gift!');
+        expect(sendEmailSpy).toHaveBeenCalledWith({
+          to: 'couple@wedding.test',
+          subject: '[TEST] Thank you for your gift!',
+          body: 'Dear Riley <Guest>, thank you for the Espresso Machine!',
+        });
+        expect(mockPrisma.contributor.update).not.toHaveBeenCalled();
+
+        // 3. Send mode dispatches email to contributor, marks Sent, records thankYouEmailSentAt, and snapshots
+        const sendRes = await service.sendThankYouEmail('c-email-1', {
+          mode: 'send',
+          subject: 'Thank you from us!',
+          body: 'Dear {{guestName}}, thank you so much for the {{giftName}}!',
+        });
+
+        expect(sendRes.to).toBe('riley@example.com');
+        expect(sendRes.contributor?.thankYouStatus).toBe('Sent');
+        expect(sendRes.contributor?.thankYouSentAt).toBeTruthy();
+        expect(sendRes.contributor?.thankYouEmailSentAt).toBeTruthy();
+        expect(mockPrisma.snapshotVersion.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              entityType: 'Contributor',
+              entityId: 'c-email-1',
+            }),
+          })
+        );
+      } finally {
+        sendEmailSpy.mockRestore();
+      }
+    });
+
+    it('rejects test mode when AppConfig.contactEmail is missing and send mode when contributor has no email', async () => {
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        partner1Name: 'Alex',
+        partner2Name: 'Jordan',
+        contactEmail: '',
+      });
+      mockPrisma.contributor.findUnique.mockResolvedValue({
+        id: 'c-no-email',
+        name: 'No Email Guest',
+        email: null,
+        amount: 50,
+        date: '2026-06-01T00:00:00.000Z',
+        thankYouStatus: 'Unsent',
+        invitationCode: null,
+        registryItem: null,
+      });
+
+      await expect(
+        service.sendThankYouEmail('c-no-email', {
+          mode: 'test',
+          body: 'Thank you!',
+        })
+      ).rejects.toThrow(/Configure a couple contact email/i);
+
+      await expect(
+        service.sendThankYouEmail('c-no-email', {
+          mode: 'send',
+          body: 'Thank you!',
+        })
+      ).rejects.toThrow(/no email address on file/i);
     });
   });
 

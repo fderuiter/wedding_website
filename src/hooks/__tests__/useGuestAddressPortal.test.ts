@@ -818,6 +818,79 @@ describe('useGuestAddressPortal hook', () => {
     expect(result.current.state.guestName).toBe('');
     expect(result.current.state.form.addressLine1).toBe('');
   });
+
+  it('prefixes /api/guest/session GET and DELETE requests with NEXT_PUBLIC_BASE_PATH when configured', async () => {
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+
+    try {
+      globalFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'invitation',
+              isVerified: true,
+              invitationCode: 'SUBPATH26',
+              code: 'SUBPATH26',
+              guestName: 'Subpath Household',
+              hasPasscodeSession: true,
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              guestName: 'Subpath Household',
+              code: 'SUBPATH26',
+              addressLine1: '1 Demo Way',
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            success: true,
+            data: {
+              status: 'passcode',
+              isVerified: false,
+              hasPasscodeSession: true,
+            },
+          }),
+        });
+
+      const { result } = renderHook(() => useGuestAddressPortal());
+
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+
+      const getUrl = String(globalFetch.mock.calls[0]?.[0] ?? '');
+      const addrUrl = String(globalFetch.mock.calls[1]?.[0] ?? '');
+      expect(getUrl).toBe('/wedding_website/demo/api/guest/session');
+      expect(addrUrl).toBe('/wedding_website/demo/api/guest/address');
+
+      await act(async () => {
+        await result.current.handleSwitchHousehold();
+      });
+
+      const deleteUrl = String(globalFetch.mock.calls[2]?.[0] ?? '');
+      expect(deleteUrl).toBe('/wedding_website/demo/api/guest/session');
+      expect(globalFetch.mock.calls[2]?.[1]).toEqual({ method: 'DELETE' });
+    } finally {
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
 });
 
 describe('Helper error utilities', () => {

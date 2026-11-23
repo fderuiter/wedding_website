@@ -35,6 +35,7 @@ import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
 import { MediaImage } from '@/components/MediaImage';
+import { withBasePath } from '@/lib/basePath';
 
 function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   if (!rawUrl || typeof rawUrl !== 'string') return undefined;
@@ -44,7 +45,7 @@ function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
     url = url.slice(4, -1).trim().replace(/^['"]|['"]$/g, '');
   }
   const safe = sanitizeUrl(url);
-  return safe ? `url("${safe}")` : undefined;
+  return safe ? `url("${withBasePath(safe)}")` : undefined;
 }
 
 function cleanDisplayVenueField(value?: string | null): string {
@@ -601,7 +602,7 @@ export default function HomePageClient({
             </p>
             <p>We look forward to celebrating with you!</p>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-              <a href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</a>
+              <Link href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</Link>
               <span aria-hidden="true" className="text-gray-400 dark:text-gray-600">•</span>
               <Link
                 href="/admin/login"

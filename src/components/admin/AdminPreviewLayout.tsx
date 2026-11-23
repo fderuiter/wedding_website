@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useToast } from '@/components/ui/ToastProvider';
 import { formatDate } from '@/utils/intl';
 import { apiClient } from '@/features/admin';
+import { withBasePath } from '@/lib/basePath';
 
 interface AdminPreviewLayoutProps {
   children: React.ReactNode;
@@ -18,7 +19,7 @@ function buildPreviewIframeSrc(previewUrl: string): string {
   const hashIndex = previewUrl.indexOf('#');
   const basePath = hashIndex >= 0 ? previewUrl.slice(0, hashIndex) : previewUrl;
   const hashFragment = hashIndex >= 0 ? previewUrl.slice(hashIndex) : '';
-  const normalizedBase = basePath || '/';
+  const normalizedBase = withBasePath(basePath || '/');
   const separator = normalizedBase.includes('?') ? '&' : '?';
   return `${normalizedBase}${separator}preview=true${hashFragment}`;
 }

@@ -23,6 +23,7 @@ import {
 import { formatFriendlyTimezone } from '@/utils/dateTime';
 import { cn } from '@/utils/cn';
 import { tokenizeSafeLinks } from '@/utils/linkifyText';
+import { withBasePath } from '@/lib/basePath';
 
 export type GuestHelpCategory = 'passcode' | 'dietary' | 'registry' | 'faq';
 
@@ -485,7 +486,7 @@ export function GuestHelpModal({
                         token.type === 'link' ? (
                           <a
                             key={`${faq.id}-link-${tokenIdx}`}
-                            href={token.href}
+                            href={token.isExternal ? token.href : withBasePath(token.href)}
                             target={token.isExternal ? '_blank' : undefined}
                             rel={token.isExternal ? 'noopener noreferrer' : undefined}
                             className={cn(

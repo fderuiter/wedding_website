@@ -7,6 +7,7 @@ import { FormGroup, Label, Input } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { withBasePath } from '@/lib/basePath';
 
 export interface InvitationQRPreviewGuest {
   id?: string;
@@ -36,7 +37,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
   if (!guest) return null;
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const rsvpUrl = `${origin}/guest?code=${encodeURIComponent(guest.code || '')}`;
+  const rsvpUrl = `${origin}${withBasePath('/guest')}?code=${encodeURIComponent(guest.code || '')}`;
   const plusOneName = [guest.plusOneFirstName, guest.plusOneLastName].filter(Boolean).join(' ');
 
   const handleCopyLink = async () => {
