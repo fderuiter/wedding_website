@@ -42,9 +42,9 @@ The application validates the following runtime environment variables via `src/e
 | `POSTGRES_URL_NON_POOLING` | No | — | Shadow database connection string (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); `prisma migrate deploy` requires an explicit `DATABASE_URL` override to bypass PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
 | `ALLOWED_HOSTS` | Yes | `localhost,127.0.0.1,*.localhost` | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost,127.0.0.1`). |
-| `MULTISITE_ENABLED` | No | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
+| `MULTISITE_ENABLED` | No | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 15 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
-| `TRUST_PROXY` | No | `false` | Set to `true` (or a positive hop count) when behind Caddy/Nginx so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
+| `TRUST_PROXY` | No | `false` | Set to `1` behind a single-hop Caddy/Nginx reverse proxy (`docker-compose.yml` defaults to `${TRUST_PROXY:-1}`), or `2` behind an upstream CDN/load balancer plus host proxy, so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
 | `GUEST_PASSCODE` | Yes | — | Unique passcode required for guest website access (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | — | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | `50` | Maximum history versions to retain per content entry. |
@@ -173,7 +173,7 @@ ADMIN_PASSWORD=${ADMIN_HASH}
 ALLOWED_HOSTS=wedding.mydomain.com,localhost,127.0.0.1
 GUEST_PASSCODE=choose-a-unique-celebration-passcode
 GUEST_SESSION_SECRET=${GUEST_SECRET}
-TRUST_PROXY=true
+TRUST_PROXY=1
 E2E_TEST=false
 EOF
 

@@ -45,6 +45,15 @@ globalForPrisma.prisma = prisma;
 globalForPrisma.pgPool = pool;
 
 /**
+ * Returns the singleton PostgreSQL connection pool backing PrismaClient so
+ * low-volume runtime helpers (such as cross-instance auth lockouts) can execute
+ * parameterized queries without allocating extra pools or vendor caches.
+ */
+export function getPgPool(): Pool | undefined {
+  return globalForPrisma.pgPool ?? pool;
+}
+
+/**
  * Gracefully disconnects Prisma and drains the underlying pg.Pool so active
  * sockets transmit PostgreSQL Terminate (0x58) frames before closing.
  */

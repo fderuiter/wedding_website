@@ -59,7 +59,7 @@ These variables provide convenience defaults for local `development` and `test` 
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in `Dockerfile` runner environments. |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
-| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; the other 14 tables in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
+| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; the other 15 tables in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`prisma migrate deploy`) during container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
@@ -164,7 +164,7 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 - **Protocol Header Forwarding**:
   - Proxies should forward `X-Forwarded-Proto` (`https` or `http`) to enable accurate canonical URL generation.
 - **Client IP Header Forwarding (`TRUST_PROXY`)**:
-  - By default (`TRUST_PROXY=false`), the rate limiter ignores `X-Forwarded-For` and `X-Real-IP` headers so direct callers cannot spoof IP headers to bypass lockouts. Enable `TRUST_PROXY=true` (or set `TRUST_PROXY` to the trusted proxy hop count) when the ingress controller strips or overwrites untrusted forwarded IP headers.
+  - By default (`TRUST_PROXY=false`), the rate limiter ignores `X-Forwarded-For` and `X-Real-IP` headers so direct callers cannot spoof IP headers to bypass lockouts. Set `TRUST_PROXY=1` behind single-hop reverse proxies (Caddy, Nginx, Vercel, Railway, Render) or `TRUST_PROXY=2` behind two-hop load balancers such as Google Cloud Run (`<client-ip>, <lb-ip>`).
 
 ---
 

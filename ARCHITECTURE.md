@@ -16,7 +16,7 @@ The default supported architecture is **one deployment = one wedding site**:
 - **Single Canonical Config**: Every deployment loads a single canonical configuration (`id: "global"`).
 - **Simplified Setup**: No wildcard DNS, tenant concepts, or subdomain routing are required for standard setups.
 - **Provider-Neutral Host Filtering**: Strict host and `X-Forwarded-Host` validation prevents host header injection and HTTP host spoofing without binding site data to incoming Host headers.
-- **Optional Multi-Profile Subdomain Routing**: Subdomain-based `AppConfig` profile routing (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`) can be enabled via `MULTISITE_ENABLED=true`. `MULTISITE_ENABLED` switches `AppConfig` branding/profile rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation.
+- **Optional Multi-Profile Subdomain Routing**: Subdomain-based `AppConfig` profile routing (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`) can be enabled via `MULTISITE_ENABLED=true`. `MULTISITE_ENABLED` switches `AppConfig` branding/profile rows only; `prisma/schema.prisma` shares the other 15 tables across subdomains without tenant row isolation.
 
 ## Environment Specifications
 

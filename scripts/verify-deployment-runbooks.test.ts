@@ -452,4 +452,26 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('rejects gcloud run deploy commands missing TRUST_PROXY=2 and docker-compose.yml missing TRUST_PROXY: ${TRUST_PROXY:-1}', () => {
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs.readFileSync(gcpPath, 'utf8').replace(/,TRUST_PROXY=2/g, '')
+    );
+
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs.readFileSync(composePath, 'utf8').replace('TRUST_PROXY: ${TRUST_PROXY:-1}', 'TRUST_PROXY: ${TRUST_PROXY:-false}')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command must set TRUST_PROXY=2'),
+        expect.stringContaining('docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'),
+      ])
+    );
+  });
 });

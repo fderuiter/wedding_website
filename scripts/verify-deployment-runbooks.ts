@@ -1091,6 +1091,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
         'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command omits mandatory GUEST_SESSION_SECRET'
       );
     }
+
+    if (/\bgcloud\s+run\s+deploy\b/.test(line) && !/\bTRUST_PROXY=2\b/.test(line)) {
+      errors.push(
+        'docs/deployment/gcp-cloud-run.md: Manual `gcloud run deploy` command must set TRUST_PROXY=2 for two-hop Cloud Run ingress'
+      );
+    }
   }
 
   if (
@@ -1218,6 +1224,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (composeContract.appEnvMap.get('ALLOWED_HOSTS') !== '${ALLOWED_HOSTS:-localhost,127.0.0.1,*.localhost}') {
     errors.push(
       'docker-compose.yml: `app` service must restrict default `ALLOWED_HOSTS` to `localhost,127.0.0.1,*.localhost`'
+    );
+  }
+  if (composeContract.appEnvMap.get('TRUST_PROXY') !== '${TRUST_PROXY:-1}') {
+    errors.push(
+      'docker-compose.yml: `app` service must set `TRUST_PROXY: ${TRUST_PROXY:-1}` by default'
     );
   }
   for (const schemaKey of envSchemaKeys) {

@@ -3,7 +3,13 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
-import { rateLimit, type RateLimitBucket } from './rateLimit';
+import {
+  rateLimit,
+  checkAuthLockout,
+  recordAuthFailure,
+  type AuthLockoutInstance,
+  type RateLimitBucket,
+} from './rateLimit';
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
@@ -17,6 +23,7 @@ export interface ApiMiddlewareOptions {
   windowMs?: number;
   keyPrefix?: string;
   bucket?: RateLimitBucket;
+  authInstance?: AuthLockoutInstance;
 }
 
 function isAuthLockoutRoute(pathname: string, method: string): boolean {
@@ -28,6 +35,10 @@ function isAuthLockoutRoute(pathname: string, method: string): boolean {
     (pathname === '/api/admin/setup' && upperMethod === 'POST') ||
     pathname === '/api/registry/validate-code'
   );
+}
+
+function isAuthFailureStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 404;
 }
 
 function isInviteRevocationExcludedApiPath(normalizedPathname: string): boolean {
@@ -64,6 +75,8 @@ export function withApiMiddleware(
   options?: ApiMiddlewareOptions
 ) {
   return async (req?: NextRequest, context?: any): Promise<NextResponse> => {
+    let shouldTrackAuthFailures = false;
+    let authWindowMs = 15 * 60 * 1000;
     try {
       let pathname = '/';
       let method = 'GET';
@@ -89,8 +102,14 @@ export function withApiMiddleware(
         const limit = options?.limit ?? (isLoginPath ? 5 : 100);
         const windowMs = options?.windowMs ?? (isLoginPath ? 15 * 60 * 1000 : 60 * 1000);
         const bucket: RateLimitBucket = options?.bucket ?? (isLoginPath ? 'auth' : 'general');
-        const rateLimitResponse = (req && req.headers && typeof req.headers.get === 'function')
-          ? await rateLimit(req, limit, windowMs, options?.keyPrefix, bucket)
+        const hasRateLimitHeaders = Boolean(req && req.headers && typeof req.headers.get === 'function');
+        authWindowMs = windowMs;
+        shouldTrackAuthFailures = bucket === 'auth' && hasRateLimitHeaders;
+
+        const rateLimitResponse = hasRateLimitHeaders
+          ? bucket === 'auth'
+            ? await checkAuthLockout(req as NextRequest, limit, windowMs, options?.keyPrefix, options?.authInstance)
+            : await rateLimit(req as NextRequest, limit, windowMs, options?.keyPrefix, bucket)
           : null;
         
         if (rateLimitResponse) {
@@ -136,6 +155,10 @@ export function withApiMiddleware(
 
       // 3. Execute Handler
       const response = await handler(req as NextRequest, context);
+
+      if (shouldTrackAuthFailures && req && isAuthFailureStatus(response.status)) {
+        await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+      }
       
       // Pass-through attachments (e.g. backup files)
       const contentType = response.headers?.get?.('content-type') || 'application/json';
@@ -230,6 +253,9 @@ export function withApiMiddleware(
       
     } catch (error: any) {
       if (error instanceof ApiError && error.statusCode < 500) {
+        if (shouldTrackAuthFailures && req && isAuthFailureStatus(error.statusCode)) {
+          await recordAuthFailure(req, authWindowMs, options?.keyPrefix, options?.authInstance);
+        }
         return NextResponse.json(
           { 
             success: false, 
