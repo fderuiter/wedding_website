@@ -241,6 +241,72 @@ describe('PrintableFloorplan component', () => {
     expect(screen.getByText('Seat 2: Unnumbered Guest')).toBeInTheDocument();
   });
 
+  it('strips secret guest.code values from browser print view while showing plus-one seats, per-table meal counts, and landmarks summary', () => {
+    const tablesWithMealsAndLandmark: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        capacity: 6,
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-print-party',
+            code: 'SECRET-PRINT-CODE-1',
+            guestName: 'Meredith Grey',
+            seatNumber: 1,
+            plusOneSeatNumbers: [2],
+            used: true,
+            dietaryNotes: 'Gluten-Free',
+            extraFields: {
+              attending: true,
+              plusOneNames: ['Derek Shepherd'],
+              mealSelections: [
+                { attendeeName: 'Meredith Grey', mealOptionLabel: 'Herb Salmon' },
+                { attendeeName: 'Derek Shepherd', mealOptionLabel: 'Filet Mignon' },
+              ],
+            },
+          }),
+        ],
+      },
+      {
+        id: 'lm-buffet',
+        name: 'Grand Buffet Station',
+        shape: 'buffet',
+        capacity: 0,
+        x: 400,
+        y: 100,
+        width: 190,
+        height: 80,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      },
+    ];
+
+    const unassignedSecret: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'g-unassigned-print',
+        code: 'SECRET-PRINT-CODE-2',
+        guestName: 'Cristina Yang',
+      }),
+    ];
+
+    const { container } = render(
+      <PrintableFloorplan tables={tablesWithMealsAndLandmark} unassignedGuests={unassignedSecret} />
+    );
+
+    expect(screen.getByText('Seat 1: Meredith Grey')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Derek Shepherd (Meredith Grey +1)')).toBeInTheDocument();
+    expect(screen.getByTestId('printable-table-meal-summary')).toHaveTextContent(
+      'Filet Mignon: 1, Herb Salmon: 1'
+    );
+    expect(screen.getByTestId('printable-landmarks-summary')).toHaveTextContent(
+      'Grand Buffet Station'
+    );
+
+    // Zero secret invitation codes exposed anywhere in printable DOM
+    expect(container.textContent).not.toContain('SECRET-PRINT-CODE-1');
+    expect(container.textContent).not.toContain('SECRET-PRINT-CODE-2');
+  });
+
   it('renders companion names, entrée selections, Kids Meal badges, and custom answers for seated and unassigned guests', () => {
     const tablesWithDetails: SeatingTableDTO[] = [
       {
@@ -280,7 +346,7 @@ describe('PrintableFloorplan component', () => {
       }),
     ];
 
-    render(
+    const { container } = render(
       <PrintableFloorplan tables={tablesWithDetails} unassignedGuests={unassignedWithDetails} />
     );
 
@@ -299,6 +365,9 @@ describe('PrintableFloorplan component', () => {
 
     const badges = screen.getAllByTestId('printable-dietary-badge');
     expect(badges.map((b) => b.textContent).join(' ')).toContain('Kids Meal');
+
+    expect(container.textContent).not.toContain('RICH1');
+    expect(container.textContent).not.toContain('URICH1');
   });
 
   it('expands multi-person InvitationCode parties into companion seat rows and reports total attendee headcounts', () => {
