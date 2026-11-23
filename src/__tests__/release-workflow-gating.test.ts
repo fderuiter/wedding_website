@@ -75,9 +75,9 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const ciWorkflow = readWorkflow('ci.yml');
   const publishWorkflow = readWorkflow('publish-artifact.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
-  const migrateWorkflow = readWorkflow('db-migrate.yml');
   const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
   const rollbackWorkflow = readWorkflow('rollback.yml');
+  const migrateWorkflow = readWorkflow('db-migrate.yml');
 
   it('preserves CI workflow triggers, job names, upstream action-pin verification, and zero-secret execution', () => {
     expect(ciWorkflow).toContain('name: CI');
@@ -129,8 +129,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(staticExportJob).toContain('path: .next-export/cache');
     expect(staticExportJob).toContain('npm run build:export');
 
-    // e2e-test and container-e2e-smoke depend only on build so static export checks never delay Playwright runs
-    expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: build\n/);
+    // e2e-test and container-e2e-smoke do not depend on static-export-build so static export checks never delay Playwright runs
+    expect(ciWorkflow).toMatch(/  e2e-test:\n\s+needs: \[verify, build\]\n/);
     expect(ciWorkflow).toMatch(/  container-e2e-smoke:\n\s+needs: build\n/);
   });
 
@@ -149,9 +149,9 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
       ['deploy.yml', deployWorkflow],
-      ['db-migrate.yml', migrateWorkflow],
       ['deploy-provider.yml', deployProviderWorkflow],
       ['rollback.yml', rollbackWorkflow],
+      ['db-migrate.yml', migrateWorkflow],
     ] as const) {
       const topPermissions = extractTopLevelSection(content, 'permissions');
       expect({ name, topPermissions }).toEqual({
@@ -191,15 +191,18 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       /publish-artifact:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
     );
 
-    // actions: read in deploy.yml lives strictly inside ci-gate and reusable-workflow caller jobs (never top-level)
+    // actions: read and deployments: write in deploy.yml live strictly inside individual jobs (never top-level)
     const actionsReadMatches = deployWorkflow.match(/actions:\s*read/g) ?? [];
     expect(actionsReadMatches).toHaveLength(6);
-    expect(deployWorkflow).toMatch(/ci-gate:[\s\S]*?permissions:\n\s+actions: read/);
-
-    // deployments: read lives strictly at job scope in caller jobs and deploy-provider.yml
-    expect(deployWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(4);
-    expect(deployProviderWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
-    expect(rollbackWorkflow.match(/deployments:\s*read/g) ?? []).toHaveLength(1);
+    expect(deployWorkflow).toMatch(
+      /ci-gate:[\s\S]*?permissions:\n\s+actions: read\n\s+contents: read\n\s+packages: read\n\s+attestations: read/
+    );
+    expect(deployWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(4);
+    expect(deployProviderWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(1);
+    expect(rollbackWorkflow.match(/deployments:\s*write/g) ?? []).toHaveLength(1);
+    expect(deployProviderWorkflow).toMatch(
+      /deploy:[\s\S]*?permissions:\n\s+actions: read\n\s+contents: read\n\s+packages: read\n\s+attestations: read\n\s+deployments: write\n\s+id-token: write/
+    );
 
     // Shared release concurrency group prevents v* tag and main runs from racing on :latest or BuildKit caches
     const publishConcurrency = extractTopLevelSection(publishWorkflow, 'concurrency');
@@ -248,10 +251,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployWorkflow).toContain('WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}');
     expect(deployWorkflow).toContain('CURRENT_SHA: ${{ github.sha }}');
 
-    // Resolved SHA aligned in schema-compatibility only on workflow_run after ancestry check (preventing default-branch cache poisoning on workflow_dispatch) and passed to workflow calls
+    // Resolved SHA aligned in schema-compatibility on workflow_run or non-HEAD target_sha after ancestry check and passed to workflow calls
     expect(deployWorkflow).not.toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toMatch(
-      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| inputs\.image_tag != ''[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
+      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| inputs\.image_tag != '' \|\| inputs\.release_ref != '' \|\| inputs\.image_digest != '' \|\| needs\.ci-gate\.outputs\.target_sha != github\.sha[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
     );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(
@@ -274,7 +277,9 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
+    expect(publishWorkflow).toContain('org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(migrateWorkflow).toContain('fetch-depth: 0');
     expect(deployProviderWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(deployProviderWorkflow).toContain('fetch-depth: 2');
     expect(deployProviderWorkflow).toContain('CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}');
@@ -492,6 +497,10 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(buildJobSection.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
     expect(buildJobSection).toContain('provenance: false');
     expect(buildJobSection).toContain('sbom: false');
+    expect(buildJobSection).toContain('org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}');
+    expect(buildJobSection).toContain(
+      'manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}'
+    );
     expect(buildJobSection).toContain('outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar');
     expect(buildJobSection).not.toContain('push-by-digest=true');
     expect(buildJobSection).not.toContain('docker/login-action');
@@ -825,6 +834,31 @@ process.exit(1);
       expect(dockerHubFailRes.status).not.toBe(0);
       expect(dockerHubFailRes.stdout + dockerHubFailRes.stderr).toContain(
         "Published multi-platform index 'fderuiter/wedding-website:v0.1.0' is missing linux/arm64 manifest"
+      );
+
+      // Verify index:org.opencontainers.image.revision annotation is stamped on GHCR and Docker Hub indexes when REVISION is set
+      fs.writeFileSync(callsFile, '');
+      const revisionSha = 'abcdef0123456789abcdef0123456789abcdef01';
+      const revRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
+          PRIMARY_URI: `ghcr.io/fderuiter/wedding_website:${revisionSha}`,
+          REVISION: revisionSha,
+          TAGS: `ghcr.io/fderuiter/wedding_website:${revisionSha},fderuiter/wedding-website:${revisionSha}`,
+        },
+      });
+      expect(revRes.status).toBe(0);
+      const revCalls = fs.readFileSync(callsFile, 'utf8');
+      expect(revCalls).toContain(
+        `buildx imagetools create --tag ghcr.io/fderuiter/wedding_website:${revisionSha} --annotation index:org.opencontainers.image.revision=${revisionSha} ghcr.io/fderuiter/wedding_website@${amd64Digest} ghcr.io/fderuiter/wedding_website@${arm64Digest}`
+      );
+      expect(revCalls).toContain(
+        `buildx imagetools create --tag fderuiter/wedding-website:${revisionSha} --annotation index:org.opencontainers.image.revision=${revisionSha} fderuiter/wedding-website@${amd64Digest} fderuiter/wedding-website@${arm64Digest}`
       );
 
       // Verify missing linux/arm64 manifest in merged index fails closed
@@ -1193,5 +1227,50 @@ process.exit(1);
     expect(prismaStage).toContain('/opt/prisma-cli/package-lock.json');
     expect(prismaStage).toContain('npm ci --omit=dev --no-audit --no-fund');
     expect(prismaStage).not.toContain('npm install');
+  });
+
+  it('decouples npm lifecycle hooks, shares verified PostgreSQL digest, validates build:export after standalone archival, and scopes container E2E to smoke tests', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(pkg.scripts?.prebuild).toBeUndefined();
+    expect(pkg.scripts?.postinstall).toBe('prisma generate');
+    expect(pkg.scripts?.build).toBe('prisma generate && next build');
+
+    const verifySection = ciWorkflow.split(/\n  unit-test:\n/)[0] ?? '';
+    expect(verifySection).not.toContain('run: npm run prisma:generate');
+    expect(verifySection).toContain('db_image: ${{ steps.resolve-db-image.outputs.db_image }}');
+    expect(verifySection).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
+    expect(verifySection).toContain("SKIP_DOC_SYNC: 'true'");
+
+    const unitTestSection = (ciWorkflow.split(/\n  unit-test:\n/)[1] ?? '').split(/\n  build:\n/)[0] ?? '';
+    expect(unitTestSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+
+    const buildSection = (ciWorkflow.split(/\n  build:\n/)[1] ?? '').split(/\n  container-arm64:\n/)[0] ?? '';
+    const checkStandaloneIdx = buildSection.indexOf('run: npm run check:standalone -- --require-standalone');
+    const testStandaloneIdx = buildSection.indexOf('run: npm run test:standalone');
+    const uploadNextArtifactIdx = buildSection.indexOf('name: next-build-artifact');
+    const buildExportIdx = buildSection.indexOf('npm run build:export');
+    expect(checkStandaloneIdx).toBeGreaterThan(-1);
+    expect(testStandaloneIdx).toBeGreaterThan(checkStandaloneIdx);
+    expect(uploadNextArtifactIdx).toBeGreaterThan(testStandaloneIdx);
+    expect(buildExportIdx).toBeGreaterThan(uploadNextArtifactIdx);
+    expect(buildSection.slice(buildExportIdx)).toContain('rm -rf out');
+
+    const storybookCiSection = (ciWorkflow.split(/\n  storybook-build:\n/)[1] ?? '').split(/\n  e2e-test:\n/)[0] ?? '';
+    expect(storybookCiSection).toContain('run: npm ci --ignore-scripts');
+
+    const storybookWorkflow = readWorkflow('storybook.yml');
+    expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
+
+    const e2eSection = (ciWorkflow.split(/\n  e2e-test:\n/)[1] ?? '').split(/\n  container-e2e-smoke:\n/)[0] ?? '';
+    expect(e2eSection).toContain('needs: [verify, build]');
+    expect(e2eSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+    expect(e2eSection).toContain('run: npx playwright test');
+
+    const containerSmokeSection = (ciWorkflow.split(/\n  container-e2e-smoke:\n/)[1] ?? '').split(/\n  a11y-report:\n/)[0] ?? '';
+    expect(containerSmokeSection).toContain('needs: build');
+    expect(containerSmokeSection).toContain('TEST_CONTAINER: "true"');
+    expect(containerSmokeSection).toContain('run: npm run test:e2e:smoke');
   });
 });

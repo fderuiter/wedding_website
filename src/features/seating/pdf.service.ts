@@ -1,6 +1,10 @@
 import PDFDocument from 'pdfkit';
 import { SeatingTableDTO } from './schemas';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestMealSelections,
+  formatGuestCustomAnswers,
+} from '@/features/registry';
 import {
   computeSeatPosition,
   resolveDetailedSeatAssignments,
@@ -201,7 +205,9 @@ export async function generateSeatingChartPdf(
 
               const guest = seatMap.get(i);
               const isSeated = !!guest;
-              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes, guest.extraFields) : [];
+              const guestBadges = guest
+                ? getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags)
+                : [];
 
               if (isSeated) {
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke(
@@ -251,7 +257,9 @@ export async function generateSeatingChartPdf(
 
               const guest = seatMap.get(i);
               const isSeated = !!guest;
-              const guestBadges = guest ? getDietaryBadges(guest.dietaryNotes, guest.extraFields) : [];
+              const guestBadges = guest
+                ? getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags)
+                : [];
 
               if (isSeated) {
                 doc.circle(sx, sy, seatDotRadius).fillAndStroke(
@@ -353,28 +361,59 @@ export async function generateSeatingChartPdf(
             for (let idx = 0; idx < detailedSeatEntries.length; idx++) {
               const entry = detailedSeatEntries[idx];
               const { guest, seatNumber, isCompanion, displayName } = entry;
-              checkPageBreak(20);
-
-              const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-              doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
-
-              doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-              const seatDisplay = `Seat ${seatNumber}`;
-              doc.text(seatDisplay, margin + 6, currentY + 5, { width: colSeatW });
-              doc.text(displayName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
-              doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
 
               let dietaryText = '—';
               if (!isCompanion) {
-                const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
-                const dietaryPrefix = dietaryBadges.length > 0 ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}]` : '';
-                dietaryText = guest.dietaryNotes
+                const mealSelections = formatGuestMealSelections(guest);
+                const customAnswers = formatGuestCustomAnswers(guest);
+                const dietaryBadges = getDietaryBadges(
+                  guest.dietaryNotes,
+                  guest.extraFields,
+                  guest.partyTags
+                );
+                const dietaryPrefix =
+                  dietaryBadges.length > 0
+                    ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}]`
+                    : '';
+                const baseDietLine = guest.dietaryNotes
                   ? `${dietaryPrefix ? `${dietaryPrefix} ` : ''}${guest.dietaryNotes}`
-                  : dietaryPrefix || '—';
+                  : dietaryPrefix;
+                const detailLines = [
+                  baseDietLine,
+                  mealSelections ? `Meals: ${mealSelections}` : '',
+                  customAnswers ? `Responses: ${customAnswers}` : '',
+                ].filter(Boolean);
+                dietaryText = detailLines.length > 0 ? detailLines.join('\n') : '—';
               }
-              doc.font('Helvetica').text(dietaryText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
 
-              currentY += 18;
+              doc.fontSize(8).font('Helvetica');
+              const nameTextH = doc.heightOfString(displayName, { width: colNameW - 6 });
+              const dietTextH = doc.heightOfString(dietaryText, { width: colDietW - 6 });
+              const rowHeight = Math.max(18, Math.ceil(Math.max(nameTextH, dietTextH)) + 8);
+
+              checkPageBreak(rowHeight + 2);
+
+              const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+              doc.rect(margin, currentY, contentWidth, rowHeight).fillAndStroke(bg, '#e2e8f0');
+
+              doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
+              const seatDisplay = `Seat ${seatNumber}`;
+              doc.text(seatDisplay, margin + 6, currentY + 5, { width: colSeatW - 6 });
+              doc.text(displayName, margin + colSeatW + 6, currentY + 5, {
+                width: colNameW - 6,
+              });
+              doc
+                .font('Courier')
+                .text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, {
+                  width: colCodeW - 6,
+                });
+              doc
+                .font('Helvetica')
+                .text(dietaryText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, {
+                  width: colDietW - 6,
+                });
+
+              currentY += rowHeight;
             }
           }
 
@@ -403,22 +442,63 @@ export async function generateSeatingChartPdf(
               companions.length > 0
                 ? `${guest.guestName} (+${companions.length}: ${companions.join(', ')})`
                 : guest.guestName;
-            checkPageBreak(20);
+            const mealSelections = formatGuestMealSelections(guest);
+            const customAnswers = formatGuestCustomAnswers(guest);
+            const unassignedBadges = getDietaryBadges(
+              guest.dietaryNotes,
+              guest.extraFields,
+              guest.partyTags
+            );
+            const unassignedPrefix =
+              unassignedBadges.length > 0
+                ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]`
+                : '';
+            const baseUnassignedDiet = guest.dietaryNotes
+              ? `${unassignedPrefix ? `${unassignedPrefix} ` : ''}${guest.dietaryNotes}`
+              : unassignedPrefix;
+            const unassignedDetailLines = [
+              baseUnassignedDiet,
+              mealSelections ? `Meals: ${mealSelections}` : '',
+              customAnswers ? `Responses: ${customAnswers}` : '',
+            ].filter(Boolean);
+            const unassignedDietText =
+              unassignedDetailLines.length > 0 ? unassignedDetailLines.join('\n') : '—';
+
+            doc.fontSize(8).font('Helvetica');
+            const unassignedNameH = doc.heightOfString(guestDisplay, {
+              width: colNameW + colSeatW - 6,
+            });
+            const unassignedDietH = doc.heightOfString(unassignedDietText, {
+              width: colDietW - 6,
+            });
+            const unassignedRowHeight = Math.max(
+              18,
+              Math.ceil(Math.max(unassignedNameH, unassignedDietH)) + 8
+            );
+
+            checkPageBreak(unassignedRowHeight + 2);
 
             const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-            doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
+            doc
+              .rect(margin, currentY, contentWidth, unassignedRowHeight)
+              .fillAndStroke(bg, '#e2e8f0');
 
             doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-            doc.text(guestDisplay, margin + 6, currentY + 5, { width: colNameW + colSeatW });
-            doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
-            const unassignedBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
-            const unassignedPrefix = unassignedBadges.length > 0 ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]` : '';
-            const unassignedDietText = guest.dietaryNotes
-              ? `${unassignedPrefix ? `${unassignedPrefix} ` : ''}${guest.dietaryNotes}`
-              : unassignedPrefix || '—';
-            doc.font('Helvetica').text(unassignedDietText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
+            doc.text(guestDisplay, margin + 6, currentY + 5, {
+              width: colNameW + colSeatW - 6,
+            });
+            doc
+              .font('Courier')
+              .text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, {
+                width: colCodeW - 6,
+              });
+            doc
+              .font('Helvetica')
+              .text(unassignedDietText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, {
+                width: colDietW - 6,
+              });
 
-            currentY += 18;
+            currentY += unassignedRowHeight;
           }
         }
       }

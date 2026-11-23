@@ -9,7 +9,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
   ```bash
   CI=true npm ci
   ```
-  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation and documentation sync via `postinstall`.)*
+  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation via `postinstall`.)*
 - **Regenerate Prisma Client (after schema edits):**
   ```bash
   npm run prisma:generate
@@ -121,13 +121,13 @@ npm run build:export
 npm run build-storybook
 ```
 
-- **CI Parity:** Pull requests and pushes to `main` execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build`, backed by Webpack 5 filesystem caching (`node_modules/.cache/webpack` and `node_modules/.cache/storybook`).
+- **CI Parity:** Pull requests and pushes to `main` execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build` (using `npm ci --ignore-scripts` and Webpack 5 filesystem caching across `node_modules/.cache/webpack` and `node_modules/.cache/storybook`), while manual dispatches of [`.github/workflows/storybook.yml`](.github/workflows/storybook.yml) share the same cache and `--ignore-scripts` install.
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Git Hook Scope:** `npm run build-storybook` is intentionally kept out of both [`.githooks/pre-commit`](.githooks/pre-commit) and [`.githooks/pre-push`](.githooks/pre-push) so local commits and pushes stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
 ### Accessibility Quality Gate (`npm run test:a11y` & `npm run test:a11y:unit`)
 
-For fast component-only `jest-axe` checks across the 49 `src/` accessibility suites without starting Docker (`--coverage=false`):
+For fast component-only `jest-axe` checks across the 53 `src/` accessibility suites without starting Docker (`--coverage=false`):
 
 ```bash
 npm run test:a11y:unit
@@ -149,7 +149,7 @@ CI=true npm run test:a11y
 This invokes `node scripts/a11y-report.mjs --run` ([`scripts/a11y-report.mjs`](scripts/a11y-report.mjs)), which:
 
 1. Clears stale `test-results/` data.
-2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 49 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
+2. Runs the targeted `--unit` component pass (`npx jest --runInBand --coverage=false --runTestsByPath ...` across the 53 `src/` `jest-axe` suites), initializing `test-results/jest-a11y-violations.json` and recording any component-level `jest-axe` violations via [`jest.setup.js`](jest.setup.js).
 3. Reseeds `wedding_test` via `npx tsx scripts/seed.ts` ([`scripts/seed.ts`](scripts/seed.ts)) to restore valid `AppConfig` data wiped by Jest integration teardowns so [`src/app/layout.tsx`](src/app/layout.tsx) skips `<SetupWizard />`.
 4. Runs `npx playwright test --grep @a11y` in bundled Chromium against `http://localhost:3000` (which uses `test-results/playwright` as Playwright's `outputDir` in [`playwright.config.ts`](playwright.config.ts) so startup cleanup preserves JSON artifacts, and persists unfiltered route-keyed `@axe-core/playwright` violations into `test-results/playwright-a11y-violations.json` via [`e2e/verification.spec.ts`](e2e/verification.spec.ts)).
 5. Always writes `test-results/a11y-summary.md` first, then exits non-zero if the component pass failed, seeding failed, Playwright failed, or `totalViolations > 0`.
@@ -174,7 +174,7 @@ node scripts/a11y-report.mjs
   - `npm run check:setup-guides` — Verify setup, contributor, and testing guides match `.env.example`, `.env.test`, scripts, [`.githooks/pre-commit`](.githooks/pre-commit), [`.githooks/pre-push`](.githooks/pre-push), and `tsconfig.json` ([`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts)).
 - **Prisma Migration Parity Diff (PostgreSQL):** `POSTGRES_URL_NON_POOLING="postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public" npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code` — Replays `prisma/migrations/` against an isolated `wedding_shadow` PostgreSQL database (configured via `shadowDatabaseUrl` in [`prisma.config.ts`](prisma.config.ts), matching the `Verify Prisma Migration Sync` step in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)); if drift is detected (exit code `2`), generate and commit a forward-only migration with `npm run migrate:dev`.
 - **Typecheck & Linting:** `npm run typecheck && npm run lint && npm run lint:unused`
-  - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
+  - ESLint enforces error-level rules for single quotes, 2-space indentation, semicolons, import boundaries (`no-restricted-imports`, `local-rules/no-restricted-utility-imports`), CommonJS bans (`@typescript-eslint/no-require-imports`), `prefer-const`, TypeScript-backed unused imports and variables (`unused-imports/no-unused-imports`, `unused-imports/no-unused-vars`), React Hook dependencies (`react-hooks/exhaustive-deps`), JSX entities and ARIA roles (`react/no-unescaped-entities`, `jsx-a11y/role-supports-aria-props`), Next.js image/navigation rules (`@next/next/no-img-element`, `@next/next/no-location-assign-relative-destination`), and `@typescript-eslint/no-explicit-any` outside the shrink-only `LEGACY_EXPLICIT_ANY_BASELINE_FILES` list, with `--max-warnings 0` enforced in `npm run lint` and `--max-warnings=0` in `lint-staged`. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.
 - **Documentation Portal:** `npm run docs:build` — Stages architectural and testing docs via [`scripts/generate-portal.ts`](scripts/generate-portal.ts) and compiles the VitePress documentation portal.
 - **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
