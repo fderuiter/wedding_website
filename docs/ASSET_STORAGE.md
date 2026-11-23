@@ -143,17 +143,17 @@ Persisted configuration, media, and local path URLs are validated by the URL gua
 
 ### 3. Image Sanitization & Processing Pipeline
 
-All uploaded image files undergo server-side sanitization prior to persistence via `sanitizeImage` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L144-L186) and `processImageWorkerBuffer` in [src/utils/imageProcessorWorker.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessorWorker.ts#L108-L156):
+All uploaded image files undergo server-side sanitization prior to persistence via `sanitizeImage` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L522-L572) and `processImageWorkerBuffer` in [src/utils/imageProcessorWorker.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessorWorker.ts#L136-L185):
 - **EXIF Metadata Stripping**: Strips all embedded EXIF metadata, GPS geotags, camera model identifiers, and timestamps to protect guest and administrator privacy.
 - **Auto-Rotation**: Automatically rotates images based on embedded EXIF orientation tags (`.rotate()`) prior to metadata stripping so photos render with correct orientation.
-- **Format & HEIC Handling**: Sharp sanitization preserves JPEG, PNG, and WebP formats and transcodes HEIC/HEIF frames (`heic-decode` + Sharp) into sanitized `image/jpeg` files. Non-Sharp formats (such as ICO) skip sanitization safely without error.
+- **Format & HEIC Handling**: Sharp sanitization preserves JPEG, PNG, and WebP formats and transcodes HEIC/HEIF frames (lazily loaded `heic-decode` + Sharp) into sanitized `image/jpeg` files. Non-Sharp formats (such as ICO) skip sanitization safely without error.
 
 ### 4. Worker Thread Offloading & Timeout Handling
 
-To protect the main Node.js event loop from CPU-heavy image processing tasks, sanitization is offloaded to background worker threads using `offloadSanitizeToWorker` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L34-L108):
-- **Worker Thread Execution**: Image buffer processing runs inside a separate Node.js worker thread (`imageProcessorWorker.ts`).
+To protect the main Node.js event loop from CPU-heavy image processing tasks, sanitization is offloaded to a bounded pool of warm background worker threads using `offloadSanitizeToWorker` in [src/utils/imageProcessor.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/utils/imageProcessor.ts#L464-L486):
+- **Worker Thread Execution**: Image buffer processing runs inside reusable Node.js worker threads (`imageProcessorWorker.ts`) that `unref()` while idle and transfer `ArrayBuffer` payloads once ready.
 - **Default 10-Second Worker Timeout**: A strict 10-second timeout (`timeoutMs = 10000`) is enforced per sanitization job.
-- **Timeout & Error Behavior**: If worker execution exceeds 10 seconds or encounters unrecoverable corruption, worker execution is terminated (`worker.terminate()`) and an HTTP 400 error response is returned (`ApiError(400, 'Image sanitization failed. Worker thread timed out.')`).
+- **Timeout & Error Behavior**: If worker execution exceeds 10 seconds or encounters unrecoverable corruption, any stalled worker is terminated (`worker.terminate()`) and an HTTP 400 error response is returned (`ApiError(400, 'Image sanitization failed. Worker thread timed out.')`).
 
 ### 5. Credential Safety
 - Cloud credentials (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) are exclusively accessible on the server side (Node.js runtime).
@@ -165,7 +165,7 @@ To protect the main Node.js event loop from CPU-heavy image processing tasks, sa
 
 ### 1. Upload Persistence: Admin vs. Guest Routes
 - **Stateless Admin Upload (`POST /api/admin/upload`)**: [src/app/api/admin/upload/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/upload/route.ts#L8-L24) sanitizes a single image, writes it to the default `uploads` prefix via `getStorageProvider().upload(sanitizedFile)` ([src/app/api/admin/upload/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/admin/upload/route.ts#L21-L23)), and returns `{ url }` without inserting `Media` or `ContentNode` database rows (callers persist the returned URL on `AppConfig` or entity payloads).
-- **Stateful Guest Photo Upload (`POST /api/guest/photos/upload`)**: [src/app/api/guest/photos/upload/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/guest/photos/upload/route.ts#L49-L93) writes each sanitized image under `{ folder: 'uploads/photos' }` and persists **both** a `Media` row (`mediaRepository.createMedia`) and a `Photo` `ContentNode` (`contentRepository.createNode` with tags `['gallery', 'guest-upload']`, `status: 'PENDING'`, `isVisible: false`, and `data.mediaId`) for moderation before gallery publication.
+- **Stateful Guest Photo Upload (`POST /api/guest/photos/upload`)**: [src/app/api/guest/photos/upload/route.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/app/api/guest/photos/upload/route.ts#L84-L139) sanitizes batch images concurrently before writing each sanitized image under `{ folder: 'uploads/photos' }` and persisting **both** a `Media` row (`mediaRepository.createMedia`) and a `Photo` `ContentNode` (`contentRepository.createNode` with tags `['gallery', 'guest-upload']`, `status: 'PENDING'`, `isVisible: false`, and `data.mediaId`) for moderation before gallery publication.
 
 ### 2. Moderation Rejection vs. Direct Media Deletion
 - **Full Cleanup on Moderation Rejection**: Calling `ContentService.moderatePhoto(nodeId, 'reject')` ([src/features/content/service.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/content/service.ts#L125-L185), rejection branch at [src/features/content/service.ts](https://github.com/fderuiter/wedding_website/blob/HEAD/src/features/content/service.ts#L150-L181)) deletes the underlying storage blob (`getStorageProvider().delete(data.url)`), deletes the linked `Media` database record (`mediaRepository.deleteMedia(data.mediaId)`), and deletes the `Photo` `ContentNode` (`this.repo.deleteNode(nodeId, author)`).

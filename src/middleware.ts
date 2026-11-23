@@ -5,6 +5,7 @@ import { isGuestRequest } from '@/core/auth/guest.server';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { isProtectedRoute } from '@/lib/routes';
 import { isHostAllowed } from '@/utils/hostValidation';
+import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 import { timingSafeEqualJS } from '@/utils/crypto';
 
 function isValidCronAuthorization(request: NextRequest): boolean {
@@ -114,10 +115,8 @@ export async function middleware(request: NextRequest) {
         incomingParams.delete('code');
       }
       const cleanSearch = incomingParams.toString();
-      loginUrl.searchParams.set(
-        'callbackUrl',
-        cleanSearch ? `${pathname}?${cleanSearch}` : pathname
-      );
+      const candidateCallbackUrl = cleanSearch ? `${pathname}?${cleanSearch}` : pathname;
+      loginUrl.searchParams.set('callbackUrl', getSafeCallbackUrl(candidateCallbackUrl));
       if (incomingCode) {
         loginUrl.searchParams.set('code', incomingCode);
       }

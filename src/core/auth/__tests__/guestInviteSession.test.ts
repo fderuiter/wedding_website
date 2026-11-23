@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 import {
   GUEST_INVITE_COOKIE,
+  buildGuestLoginRedirectTarget,
   getGuestInviteSession,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
@@ -310,6 +311,31 @@ describe('guestInviteSession', () => {
       const session = await getGuestInviteSession(req);
       expect(session).toBeNull();
       expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('buildGuestLoginRedirectTarget', () => {
+    it('preserves valid same-origin relative paths including query strings and hashes', () => {
+      expect(buildGuestLoginRedirectTarget('/photos')).toBe('/guest/login?callbackUrl=%2Fphotos');
+      expect(buildGuestLoginRedirectTarget('/rsvp?tab=dinner#details')).toBe(
+        '/guest/login?callbackUrl=%2Frsvp%3Ftab%3Ddinner%23details'
+      );
+    });
+
+    it('falls back to /guest/login for control characters, backslashes, protocol-relative URLs, or /guest/login loops', () => {
+      expect(buildGuestLoginRedirectTarget(null)).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('//evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('///evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\\evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\t/evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\n/evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/\r/evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('https://evil.test')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/guest/login')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/guest/login?callbackUrl=%2Frsvp')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/guest/login#help')).toBe('/guest/login');
+      expect(buildGuestLoginRedirectTarget('/rsvp/../guest/login')).toBe('/guest/login');
     });
   });
 });

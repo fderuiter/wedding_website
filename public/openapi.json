@@ -9604,42 +9604,52 @@
                             "maxLength": 100
                           },
                           "smtpHost": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 255
                           },
                           "smtpPort": {
+                            "nullable": true,
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 65535
                           },
                           "smtpUser": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 255
                           },
                           "smtpFrom": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 255
                           },
                           "smtpSecure": {
+                            "nullable": true,
                             "type": "boolean"
                           },
                           "resendFrom": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 255
                           },
                           "sendgridFrom": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 255
                           },
                           "smsProvider": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 100
                           },
                           "twilioAccountSid": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 255
                           },
                           "twilioFromNumber": {
+                            "nullable": true,
                             "type": "string",
                             "maxLength": 100
                           },
@@ -11236,42 +11246,52 @@
                           "maxLength": 100
                         },
                         "smtpHost": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smtpPort": {
+                          "nullable": true,
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 65535
                         },
                         "smtpUser": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smtpFrom": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smtpSecure": {
+                          "nullable": true,
                           "type": "boolean"
                         },
                         "resendFrom": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "sendgridFrom": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "smsProvider": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 100
                         },
                         "twilioAccountSid": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 255
                         },
                         "twilioFromNumber": {
+                          "nullable": true,
                           "type": "string",
                           "maxLength": 100
                         },
@@ -21589,250 +21609,43 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "success",
-                        "data"
-                      ],
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "type": "string"
-                            },
-                            "price": {
-                              "type": "number"
-                            },
-                            "quantity": {
-                              "type": "number"
-                            },
-                            "category": {
-                              "type": "string"
-                            },
-                            "isGroupGift": {
-                              "type": "boolean"
-                            },
-                            "id": {
-                              "type": "string"
-                            },
-                            "itemType": {
-                              "type": "string",
-                              "enum": [
-                                "PHYSICAL",
-                                "CASH_FUND",
-                                "EXPERIENCE_FUND"
-                              ]
-                            },
-                            "isMostWanted": {
-                              "type": "boolean"
-                            },
-                            "displayOrder": {
-                              "type": "number"
-                            },
-                            "purchased": {
-                              "type": "boolean"
-                            },
-                            "amountContributed": {
-                              "type": "number"
-                            },
-                            "isSample": {
-                              "type": "boolean"
-                            },
-                            "contributors": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                              }
-                            },
-                            "description": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "vendorUrl": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "imageId": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "imageUrl": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "imageAlt": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "imageDecorative": {
-                              "type": "boolean",
-                              "nullable": true
-                            },
-                            "image": {
-                              "type": "object",
-                              "properties": {
-                                "id": {
-                                  "type": "string"
-                                },
-                                "url": {
-                                  "type": "string"
-                                },
-                                "altText": {
-                                  "type": "string",
-                                  "nullable": true
-                                },
-                                "isDecorative": {
-                                  "type": "boolean"
-                                },
-                                "isSample": {
-                                  "type": "boolean"
-                                },
-                                "publishToGallery": {
-                                  "type": "boolean",
-                                  "nullable": true
-                                },
-                                "createdAt": {
-                                  "nullable": true,
-                                  "anyOf": [
-                                    {
-                                      "type": "object",
-                                      "additionalProperties": true
-                                    },
-                                    {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "additionalProperties": true
-                                      }
-                                    },
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "boolean"
-                                    }
-                                  ]
-                                },
-                                "updatedAt": {
-                                  "nullable": true,
-                                  "anyOf": [
-                                    {
-                                      "type": "object",
-                                      "additionalProperties": true
-                                    },
-                                    {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "object",
-                                        "additionalProperties": true
-                                      }
-                                    },
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "boolean"
-                                    }
-                                  ]
-                                }
-                              },
-                              "required": [
-                                "id",
-                                "url",
-                                "altText",
-                                "isDecorative",
-                                "isSample"
-                              ],
-                              "nullable": true
-                            },
-                            "paymentHandleType": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "paymentHandle": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "purchaserName": {
-                              "type": "string",
-                              "nullable": true
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "price",
-                            "quantity",
-                            "category",
-                            "isGroupGift",
-                            "id",
-                            "itemType",
-                            "isMostWanted",
-                            "displayOrder",
-                            "purchased",
-                            "amountContributed",
-                            "isSample",
-                            "contributors"
-                          ]
-                        }
-                      }
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
                     },
-                    {
-                      "type": "object",
-                      "required": [
-                        "success",
-                        "data"
-                      ],
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
+                    "data": {
+                      "nullable": true,
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": true
                         },
-                        "data": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "additionalProperties": true
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                              }
-                            },
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
                         }
-                      }
+                      ]
                     }
-                  ]
+                  }
                 }
               }
             }
@@ -22883,49 +22696,165 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "required": [
-                    "success",
-                    "data"
-                  ],
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "data": {
+                  "anyOf": [
+                    {
                       "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
                       "properties": {
-                        "items": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "nullable": true,
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  },
+                                  {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "additionalProperties": true
+                                    }
+                                  },
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "total": {
+                              "type": "number"
+                            },
+                            "page": {
+                              "type": "number"
+                            },
+                            "limit": {
+                              "type": "number"
+                            },
+                            "totalPages": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "limit",
+                            "totalPages"
+                          ],
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
                           "type": "array",
                           "items": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "nullable": true,
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                }
+                              },
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              }
+                            ]
                           }
-                        },
-                        "total": {
-                          "type": "number"
-                        },
-                        "page": {
-                          "type": "number"
-                        },
-                        "limit": {
-                          "type": "number"
-                        },
-                        "totalPages": {
-                          "type": "number"
                         }
-                      },
+                      }
+                    },
+                    {
+                      "type": "object",
                       "required": [
-                        "items",
-                        "total",
-                        "page",
-                        "limit",
-                        "totalPages"
-                      ]
+                        "success",
+                        "data"
+                      ],
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "total": {
+                              "type": "number"
+                            },
+                            "page": {
+                              "type": "number"
+                            },
+                            "limit": {
+                              "type": "number"
+                            },
+                            "totalPages": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "limit",
+                            "totalPages"
+                          ]
+                        }
+                      }
                     }
-                  }
+                  ]
                 }
               }
             }
