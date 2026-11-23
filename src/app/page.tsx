@@ -36,6 +36,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = partner1 && partner2
     ? `${partner1} & ${partner2}'s Wedding`
     : 'Wedding Website';
+  const siteTitle = config.seoTitle || title;
   const description = config.seoDescription || (
     partner1 && partner2
       ? `Join ${partner1} and ${partner2} for their wedding celebration${cleanVenueName ? ` at ${cleanVenueName}` : ''}.`
@@ -81,7 +82,7 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 
   return {
-    title: 'Home',
+    title: `Home | ${siteTitle}`,
     description,
     alternates: {
       canonical: baseUrl,
