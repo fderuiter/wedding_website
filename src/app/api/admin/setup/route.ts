@@ -28,6 +28,8 @@ import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
 import { generateSampleData } from '@/lib/sampleData/generator';
+import { geocodeBestMatch } from '@/lib/geocoding';
+import { hasValidCoordinates } from '@/utils/maps';
 
 type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
   modules?: unknown;
@@ -307,8 +309,26 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
+  let resolvedSetupData = validData;
+  if (!hasValidCoordinates(validData.latitude, validData.longitude)) {
+    const match = await geocodeBestMatch([
+      validData.venueName,
+      validData.venueAddress,
+      validData.venueCity,
+      validData.venueState,
+      validData.venueZip,
+    ]);
+    if (match) {
+      resolvedSetupData = {
+        ...validData,
+        latitude: match.latitude,
+        longitude: match.longitude,
+      };
+    }
+  }
+
   const targetId = 'global';
-  const dbPayload = toAppConfigDbPayload(validData);
+  const dbPayload = toAppConfigDbPayload(resolvedSetupData);
 
   const updatedConfig = await prisma.appConfig.upsert({
     where: { id: targetId },

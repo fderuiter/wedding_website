@@ -3,15 +3,15 @@ layout: home
 
 hero:
   name: "Wedding Platform"
-  text: "Interactive Showcase & Docs Portal"
-  tagline: "Explore the live zero-backend wedding platform demo, UI component Storybook, architectural blueprints, and OpenAPI reference."
+  text: "Architecture & Developer Portal"
+  tagline: "Interactive architectural specifications, multi-cloud deployment topologies, security threat models, and OpenAPI previews."
   actions:
     - theme: brand
-      text: Live Interactive Demo
+      text: Live Demo
       link: /demo/
       target: _self
     - theme: alt
-      text: Component Storybook
+      text: Storybook
       link: /storybook/
       target: _self
     - theme: alt
@@ -22,12 +22,12 @@ hero:
       link: /api/
 
 features:
-  - title: Live Interactive Demo
-    details: Try the full guest experience, gift registry checkout, 3D physics heart, first-run Setup Wizard, and all 14 Admin Control Panel modules directly in your browser.
+  - title: Live Demo
+    details: Database-free interactive static showcase covering guest RSVP flows, 3D physics scenes, gift registry, and admin modules.
     link: /demo/
     target: _self
-  - title: Component Storybook
-    details: Browse isolated design-system primitives, interactive registry cards, seating floorplans, and accessibility-tested React components.
+  - title: Storybook Showcase
+    details: Isolated interactive UI component catalog with MSW-backed previews, theme variants, and accessibility states.
     link: /storybook/
     target: _self
   - title: System Architecture

@@ -51,17 +51,20 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
       if (!url) return null;
       const caption = data?.caption?.trim() || undefined;
       const uploaderName = data?.uploaderName?.trim() || undefined;
+      const explicitTitle = data?.title?.trim() || undefined;
+      const explicitAltText = data?.altText?.trim() || undefined;
       const fallbackLabel = caption || (uploaderName ? `Photo by ${uploaderName}` : undefined);
       const isGuestUpload = Boolean(node.tags?.includes('guest-upload'));
       return {
         id: node.id,
         url,
-        title: caption || data?.title || data?.altText || fallbackLabel || 'Reception Photo',
-        altText: data?.altText || caption || data?.title || fallbackLabel || 'Reception Photo',
+        title: explicitTitle || caption || explicitAltText || fallbackLabel || 'Reception Photo',
+        altText: explicitAltText || caption || explicitTitle || fallbackLabel || 'Reception Photo',
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),
         ...(isGuestUpload ? { isGuestUpload: true } : {}),
         createdAt: node.createdAt ? new Date(node.createdAt).toISOString() : undefined,
+        ...(node.updatedAt ? { updatedAt: new Date(node.updatedAt).toISOString() } : {}),
       };
     })
     .filter(Boolean);

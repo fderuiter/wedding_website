@@ -33,11 +33,7 @@ export {
   compareFaqNodesByOrder,
 } from './schemas';
 export { ContentService, contentService } from './service';
-export {
-  ContentRepository,
-  contentRepository,
-  STATIC_MOCK_PUBLIC_PHOTOS,
-} from './repository';
+export { ContentRepository, contentRepository } from './repository';
 export { ContentNodeAdminService } from './admin.service';
 export type {
   ContentNodeDTO,

@@ -51,7 +51,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   if (matchesSharedPasscode) {
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
-    const token = await signGuestToken({ guest: true, iat, exp });
+    const token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
     response.cookies.set(GUEST_COOKIE, token, {
@@ -64,7 +64,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     return response;
   }
 
-  let invite: { code: string; guestName: string; isSample?: boolean } | null = null;
+  let invite: { id?: string; code: string; guestName: string; isSample?: boolean } | null = null;
   if (trimmedCode.length > 0) {
     if (typeof prisma.invitationCode?.findFirst === 'function') {
       invite = await prisma.invitationCode.findFirst({
@@ -81,6 +81,18 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   }
 
   if (invite && !invite.isSample) {
+    if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
+      await prisma.broadcastRecipient.updateMany({
+        where: {
+          invitationCodeId: invite.id,
+          status: 'SENT',
+        },
+        data: {
+          status: 'VIEWED',
+        },
+      });
+    }
+
     const iat = Date.now();
     const exp = iat + 7 * 24 * 60 * 60 * 1000; // 7 days
     const inviteToken = await signGuestInviteSessionToken({

@@ -27,10 +27,13 @@ import { WeddingPartyManagerModal } from './WeddingPartyManagerModal';
 import { AttractionsManagerModal } from './AttractionsManagerModal';
 import { CsvImportWizardModal } from '@/components/admin/CsvImportWizardModal';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
+import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
+import { isNonPlaceholderVenueText } from '@/utils/maps';
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
-import { withBasePath } from '@/utils/basePath';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -116,14 +119,18 @@ export interface SetupWizardSavedConfig extends Partial<SetupWizardPersistedStat
 
 interface SetupWizardProps {
   initialSavedConfig?: SetupWizardSavedConfig;
+  onDemoComplete?: () => void;
 }
 
 function SetupWizardContent({
   initialSavedConfig,
+  onDemoComplete,
   hasAppShell = false,
 }: SetupWizardProps & { hasAppShell?: boolean }) {
   const router = useSafeRouter();
   const queryClient = useQueryClient();
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
   const normalizedInitialSavedConfig = initialSavedConfig
     ? {
       ...initialSavedConfig,
@@ -161,8 +168,12 @@ function SetupWizardContent({
     baseUrl,
     contactEmail = '',
     venueName,
+    venueAddress = '',
     venueCity,
     venueState,
+    venueZip = '',
+    latitude = 0,
+    longitude = 0,
     timezone,
     sampleArchetype,
     selectedModules,
@@ -175,15 +186,45 @@ function SetupWizardContent({
   const setBaseUrl = (val: string) => updateDraft({ baseUrl: val });
   const setContactEmail = (val: string) => updateDraft({ contactEmail: val });
   const setVenueName = (val: string) => updateDraft({ venueName: val });
+  const setVenueAddress = (val: string) => updateDraft({ venueAddress: val });
   const setVenueCity = (val: string) => updateDraft({ venueCity: val });
   const setVenueState = (val: string) => updateDraft({ venueState: val });
+  const setVenueZip = (val: string) => updateDraft({ venueZip: val });
   const setTimezone = (val: string) => updateDraft({ timezone: val });
   const setSampleArchetype = (archetype: ArchetypeId) => updateDraft({ sampleArchetype: archetype });
   const setSelectedModules = (modules: string[]) => updateDraft({ selectedModules: modules });
 
   // Login
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(() => (isDemoMode ? 'demo-admin-2026' : ''));
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const seededDemoDefaultsRef = useRef(false);
+
+  useEffect(() => {
+    if (!isDemoMode || seededDemoDefaultsRef.current) return;
+    seededDemoDefaultsRef.current = true;
+    const patch: Record<string, unknown> = {};
+    if (!partner1Name) patch.partner1Name = demo?.configOverrides.partner1Name || 'Alex';
+    if (!partner2Name) patch.partner2Name = demo?.configOverrides.partner2Name || 'Taylor';
+    if (!weddingDate) patch.weddingDate = demo?.configOverrides.weddingDate || '2026-09-19';
+    if (!baseUrl) patch.baseUrl = 'https://ourwedding-showcase.org';
+    if (!venueName) patch.venueName = demo?.configOverrides.venueName || 'The Glasshouse Estate';
+    if (!venueCity) patch.venueCity = demo?.configOverrides.venueCity || 'Chicago';
+    if (!venueState) patch.venueState = demo?.configOverrides.venueState || 'IL';
+    if (Object.keys(patch).length > 0) {
+      updateDraft(patch);
+    }
+  }, [
+    isDemoMode,
+    partner1Name,
+    partner2Name,
+    weddingDate,
+    baseUrl,
+    venueName,
+    venueCity,
+    venueState,
+    demo?.configOverrides,
+    updateDraft,
+  ]);
 
   // Content Counts
   const { data: partyMembers = [] } = useAdminWeddingParty({ enabled: isAuthenticated });
@@ -240,10 +281,10 @@ function SetupWizardContent({
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !isDemoMode) {
       syncAdminLoginState();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isDemoMode]);
 
   useEffect(() => {
     if (step >= 2 && typeof setPreviewConfig === 'function') {
@@ -269,9 +310,22 @@ function SetupWizardContent({
 
   const handleLogin = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isDemoMode && demo) {
+      demo.setSetupAuthenticated(true);
+      updateDraft({
+        partner1Name: partner1Name.trim() || demo.configOverrides.partner1Name || 'Alex',
+        partner2Name: partner2Name.trim() || demo.configOverrides.partner2Name || 'Taylor',
+        baseUrl:
+          !baseUrl.trim() || isDefaultUrl(baseUrl)
+            ? 'https://alexandtaylor2026.wedding'
+            : baseUrl,
+      });
+      loginSuccess();
+      return;
+    }
     startSubmit();
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -343,9 +397,33 @@ function SetupWizardContent({
       contactEmail: trimmedContactEmail,
     });
 
+    if (isDemoMode && demo) {
+      demo.updateConfigOverrides({
+        partner1Name: trimmedPartner1,
+        partner2Name: trimmedPartner2,
+        weddingDate: weddingDate ? new Date(`${weddingDate}T16:00:00Z`) : new Date('2026-10-18T16:00:00Z'),
+        contactEmail: trimmedContactEmail,
+        venueName: venueName?.trim() || '',
+        venueAddress: venueAddress?.trim() || '',
+        venueCity: venueCity?.trim() || '',
+        venueState: venueState?.trim() || '',
+        venueZip: venueZip?.trim() || '',
+        latitude: typeof latitude === 'number' && Number.isFinite(latitude) ? latitude : 0,
+        longitude: typeof longitude === 'number' && Number.isFinite(longitude) ? longitude : 0,
+        heroTitle: `${trimmedPartner1} & ${trimmedPartner2}`,
+        timezone: timezone || 'America/Chicago',
+        themePreset,
+        colorPrimary,
+        colorSecondary,
+      });
+      demo.setSetupAuthenticated(true);
+      setStep(3);
+      return;
+    }
+
     startSubmit();
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -355,13 +433,13 @@ function SetupWizardContent({
           baseUrl: trimmedBaseUrl,
           contactEmail: trimmedContactEmail,
           venueName: venueName?.trim() || '',
-          venueAddress: '',
+          venueAddress: venueAddress?.trim() || '',
           venueCity: venueCity?.trim() || '',
           venueState: venueState?.trim() || '',
-          venueZip: '',
+          venueZip: venueZip?.trim() || '',
           timezone: timezone || 'America/Chicago',
-          latitude: 0,
-          longitude: 0,
+          latitude: typeof latitude === 'number' && Number.isFinite(latitude) ? latitude : 0,
+          longitude: typeof longitude === 'number' && Number.isFinite(longitude) ? longitude : 0,
           storyText: '',
           venueDescription: '',
           travelAdvice: '',
@@ -378,16 +456,14 @@ function SetupWizardContent({
       if (res.ok) {
         syncAdminLoginState();
         setStep(3);
-        const targetSetupPath = withBasePath('/admin/setup');
-        if (
-          typeof window !== 'undefined' &&
-          !document.querySelector('[data-testid="demo-setup-wizard-preview"]') &&
-          window.location.pathname !== targetSetupPath
-        ) {
-          try {
-            window.history.replaceState(window.history.state, '', targetSetupPath);
-          } catch {
-            // Ignore history replacement errors in restricted environments
+        if (typeof window !== 'undefined') {
+          const setupPath = withBasePath('/admin/setup');
+          if (window.location.pathname.replace(/\/+$/, '') !== setupPath) {
+            try {
+              window.history.replaceState(window.history.state, '', setupPath);
+            } catch {
+              // Ignore history replacement errors in restricted environments
+            }
           }
         }
       } else {
@@ -410,10 +486,16 @@ function SetupWizardContent({
 
   const handleSampleDataSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isDemoMode && demo) {
+      demo.applySampleSelection(sampleArchetype, selectedModules);
+      await invalidateSampleDataCaches(queryClient);
+      setStep(4);
+      return;
+    }
     startSubmit();
     try {
       if (selectedModules.length > 0) {
-        const res = await fetch('/api/admin/sample-data', {
+        const res = await fetch(withBasePath('/api/admin/sample-data'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -426,7 +508,7 @@ function SetupWizardContent({
           throw new Error(data.error || 'Failed to generate sample data.');
         }
       } else {
-        await fetch('/api/admin/sample-data', { method: 'DELETE' });
+        await fetch(withBasePath('/api/admin/sample-data'), { method: 'DELETE' });
       }
       await invalidateSampleDataCaches(queryClient);
       setStep(4);
@@ -436,7 +518,6 @@ function SetupWizardContent({
   };
 
   const handleCompleteAndExit = async () => {
-    syncAdminLoginState();
     if (typeof window !== 'undefined') {
       try {
         window.sessionStorage.removeItem(SETUP_WIZARD_STORAGE_KEY);
@@ -444,9 +525,22 @@ function SetupWizardContent({
         // Ignore storage errors in restricted browser environments
       }
     }
+    if (isDemoMode && demo) {
+      clearPersistedState();
+      demo.setSetupAuthenticated(false);
+      demo.setPersona('admin');
+      if (onDemoComplete) {
+        onDemoComplete();
+      } else if (hasAppShell && router?.push) {
+        router.push('/admin/dashboard');
+        router.refresh?.();
+      }
+      return;
+    }
+    syncAdminLoginState();
     startSubmit();
     try {
-      await fetch('/api/admin/setup', {
+      await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ setupCompleted: true }),
@@ -455,13 +549,6 @@ function SetupWizardContent({
       // Allow navigation to proceed even if network completion call fails
     }
     clearPersistedState();
-    if (typeof window !== 'undefined') {
-      const evt = new CustomEvent('wedding-demo-setup-complete', { cancelable: true });
-      const notCancelled = window.dispatchEvent(evt);
-      if (!notCancelled) {
-        return;
-      }
-    }
     if (hasAppShell && router?.push) {
       router.push('/admin/dashboard');
       router.refresh?.();
@@ -479,7 +566,13 @@ function SetupWizardContent({
         <Container>
           <Card className="max-w-md">
             <Heading as="h2" className="mb-4">Welcome to Your Wedding Site!</Heading>
-            <p className="mb-4 text-gray-700 dark:text-gray-200">Please enter the admin password configured in your environment to begin setup.</p>
+            {isDemoMode ? (
+              <p className="mb-4 text-gray-700 dark:text-gray-200">
+                <strong>Interactive Showcase Mode:</strong> Step through all 5 onboarding stages locally without server calls. A sample password is pre-filled—click Continue to begin.
+              </p>
+            ) : (
+              <p className="mb-4 text-gray-700 dark:text-gray-200">Please enter the admin password configured in your environment to begin setup.</p>
+            )}
             <form onSubmit={handleLogin} className="space-y-4">
               <FormGroup state={error && step === 1 ? 'error' : 'default'}>
                 <Label htmlFor="adminPassword" className="sr-only">Admin Password</Label>
@@ -578,19 +671,52 @@ function SetupWizardContent({
                   <FormMessage>{error}</FormMessage>
                 ) : null}
               </FormGroup>
-              <div className="grid grid-cols-3 gap-4">
-                <FormGroup className="col-span-3 md:col-span-1">
-                  <Label htmlFor="venueName">Venue Name</Label>
-                  <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Optional" />
-                </FormGroup>
-                <FormGroup className="col-span-3 md:col-span-1">
-                  <Label htmlFor="venueCity">City</Label>
-                  <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="Optional" />
-                </FormGroup>
-                <FormGroup className="col-span-3 md:col-span-1">
-                  <Label htmlFor="venueState">State</Label>
-                  <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="Optional" />
-                </FormGroup>
+              <div className="space-y-4 pt-2 border-t border-gray-200 dark:border-zinc-700">
+                <AddressLookupInput
+                  id="setupVenueLookup"
+                  label="Lookup Address"
+                  placeholder="Search venue name or street address..."
+                  helperText="Select a result to fill your venue address and coordinates automatically."
+                  verifiedCoordinates={{ latitude, longitude }}
+                  onSelect={(match) => {
+                    updateDraft({
+                      venueName:
+                        !isNonPlaceholderVenueText(venueName) && match.name
+                          ? match.name
+                          : venueName || match.name,
+                      venueAddress: match.streetAddress || match.displayName || venueAddress,
+                      venueCity: match.city || venueCity,
+                      venueState: match.state || venueState,
+                      venueZip: match.zip || venueZip,
+                      latitude: match.latitude,
+                      longitude: match.longitude,
+                    });
+                  }}
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormGroup>
+                    <Label htmlFor="venueName">Venue Name</Label>
+                    <Input id="venueName" type="text" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                  <FormGroup>
+                    <Label htmlFor="venueAddress">Street Address</Label>
+                    <Input id="venueAddress" type="text" value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <FormGroup className="col-span-3 md:col-span-1">
+                    <Label htmlFor="venueCity">City</Label>
+                    <Input id="venueCity" type="text" value={venueCity} onChange={(e) => setVenueCity(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                  <FormGroup className="col-span-3 md:col-span-1">
+                    <Label htmlFor="venueState">State</Label>
+                    <Input id="venueState" type="text" value={venueState} onChange={(e) => setVenueState(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                  <FormGroup className="col-span-3 md:col-span-1">
+                    <Label htmlFor="venueZip">Postal / Zip Code</Label>
+                    <Input id="venueZip" type="text" value={venueZip} onChange={(e) => setVenueZip(e.target.value)} placeholder="Optional" />
+                  </FormGroup>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-gray-200 dark:border-zinc-700">
@@ -605,9 +731,25 @@ function SetupWizardContent({
                 />
               </div>
 
-              <Button type="submit" disabled={loading} variant="primary" className="w-full py-3">
-                {loading ? 'Saving...' : 'Next Step'}
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-3">
+                {isDemoMode && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={loading}
+                    onClick={() => {
+                      demo?.setSetupAuthenticated(false);
+                      setStep(1);
+                    }}
+                    className="py-3 px-6"
+                  >
+                    Back
+                  </Button>
+                )}
+                <Button type="submit" disabled={loading} variant="primary" className="flex-1 py-3">
+                  {loading ? 'Saving...' : 'Next Step'}
+                </Button>
+              </div>
             </form>
           </Card>
         </Container>
@@ -933,7 +1075,10 @@ function SetupWizardContent({
   );
 }
 
-export default function SetupWizard({ initialSavedConfig }: SetupWizardProps = {}) {
+export default function SetupWizard({
+  initialSavedConfig,
+  onDemoComplete,
+}: SetupWizardProps = {}) {
   const outerQueryClient = useContext(QueryClientContext);
   const outerToast = useContext(ToastContext);
   const [fallbackQueryClient] = useState(() => new QueryClient());
@@ -944,6 +1089,7 @@ export default function SetupWizard({ initialSavedConfig }: SetupWizardProps = {
   const content = (
     <SetupWizardContent
       initialSavedConfig={initialSavedConfig}
+      onDemoComplete={onDemoComplete}
       hasAppShell={hasAppShell}
     />
   );

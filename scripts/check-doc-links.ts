@@ -1890,70 +1890,35 @@ function resolveProseFileToken(
   return path.resolve(rootDir, decoded);
 }
 
-const vitepressIgnoredDeadLinksCache = new Map<string, RegExp[]>();
+const ALLOWLISTED_PORTAL_SHOWCASE_ROUTES = new Set(['demo', 'storybook']);
 
-function getVitePressIgnoredDeadLinkPatterns(rootDir: string): RegExp[] {
-  const cached = vitepressIgnoredDeadLinksCache.get(rootDir);
-  if (cached) {
-    return cached;
+function normalizePortalRouteRel(
+  cleanRoute: string,
+  sourceAbsPath: string,
+  portalDir: string
+): string {
+  if (cleanRoute.startsWith('/')) {
+    return cleanRoute
+      .replace(/^\/+/, '')
+      .replace(/\.(?:html|md)$/, '')
+      .replace(/\/+$/, '');
   }
-
-  const patterns: RegExp[] = [];
-  const configAbs = path.join(rootDir, 'docs-portal', '.vitepress', 'config.mts');
-  if (fs.existsSync(configAbs) && fs.statSync(configAbs).isFile()) {
-    try {
-      const content = fs.readFileSync(configAbs, 'utf8');
-      const sf = ts.createSourceFile(configAbs, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-
-      const visit = (node: ts.Node) => {
-        if (
-          ts.isPropertyAssignment(node) &&
-          (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
-          node.name.text === 'ignoreDeadLinks' &&
-          ts.isArrayLiteralExpression(node.initializer)
-        ) {
-          for (const elem of node.initializer.elements) {
-            if (ts.isRegularExpressionLiteral(elem)) {
-              const rawRegex = elem.text;
-              const lastSlash = rawRegex.lastIndexOf('/');
-              if (rawRegex.startsWith('/') && lastSlash > 0) {
-                try {
-                  patterns.push(new RegExp(rawRegex.slice(1, lastSlash), rawRegex.slice(lastSlash + 1)));
-                } catch {
-                  // Ignore malformed regex literal
-                }
-              }
-            }
-          }
-        }
-        ts.forEachChild(node, visit);
-      };
-      visit(sf);
-    } catch {
-      // Ignore parse errors
-    }
-  }
-
-  vitepressIgnoredDeadLinksCache.set(rootDir, patterns);
-  return patterns;
+  const resolvedFromSource = path.resolve(path.dirname(sourceAbsPath), cleanRoute);
+  return path
+    .relative(portalDir, resolvedFromSource)
+    .replace(/\\/g, '/')
+    .replace(/\.(?:html|md)$/, '')
+    .replace(/\/+$/, '');
 }
 
-function isIgnoredPortalDeadLink(
+function isAllowlistedPortalShowcaseRoute(
   cleanRoute: string,
   sourceAbsPath: string,
   rootDir: string
 ): boolean {
-  const normalized = cleanRoute.startsWith('/') ? cleanRoute : `/${cleanRoute}`;
-  const portalRoot = path.join(rootDir, 'docs-portal') + path.sep;
-  if (
-    sourceAbsPath.startsWith(portalRoot) &&
-    /^\/(?:demo|storybook)\/?$/.test(normalized) &&
-    fs.existsSync(path.join(rootDir, 'scripts', 'build-pages-bundle.mjs'))
-  ) {
-    return true;
-  }
-  const patterns = getVitePressIgnoredDeadLinkPatterns(rootDir);
-  return patterns.some((re) => re.test(normalized));
+  const portalDir = path.join(rootDir, 'docs-portal');
+  const routeRel = normalizePortalRouteRel(cleanRoute, sourceAbsPath, portalDir);
+  return ALLOWLISTED_PORTAL_SHOWCASE_ROUTES.has(routeRel);
 }
 
 function resolvePortalRouteToSourceFile(
@@ -1962,21 +1927,7 @@ function resolvePortalRouteToSourceFile(
   rootDir: string
 ): string | null {
   const portalDir = path.join(rootDir, 'docs-portal');
-  let routeRel: string;
-
-  if (cleanRoute.startsWith('/')) {
-    routeRel = cleanRoute
-      .replace(/^\/+/, '')
-      .replace(/\.(?:html|md)$/, '')
-      .replace(/\/+$/, '');
-  } else {
-    const resolvedFromSource = path.resolve(path.dirname(sourceAbsPath), cleanRoute);
-    routeRel = path
-      .relative(portalDir, resolvedFromSource)
-      .replace(/\\/g, '/')
-      .replace(/\.(?:html|md)$/, '')
-      .replace(/\/+$/, '');
-  }
+  const routeRel = normalizePortalRouteRel(cleanRoute, sourceAbsPath, portalDir);
 
   if (routeRel.startsWith('..')) {
     return null;
@@ -2216,11 +2167,21 @@ export function validateLinkTarget(
     }
   }
 
+  if (isAllowlistedPortalShowcaseRoute(cleanTarget, sourceAbsPath, rootDir)) {
+    if (fragment) {
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: `docs-portal/${cleanTarget.replace(/^\/+/, '')}#${fragment}`,
+      });
+    }
+    return;
+  }
+
   const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);
   if (!resolvedPortalFile) {
-    if (!fragment && isIgnoredPortalDeadLink(cleanTarget, sourceAbsPath, rootDir)) {
-      return;
-    }
     errors.push({
       sourceFile: relSource,
       line: lineNum,

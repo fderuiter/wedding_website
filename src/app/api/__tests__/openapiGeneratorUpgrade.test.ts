@@ -264,21 +264,23 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers all 80 route files (.ts and .tsx) and 112 HTTP operations including GET /api/live, GET /api/og, GET & HEAD /api/uploads/{path}, GET /api/admin/broadcast/{id}, and POST /api/admin/invitation-codes/merge', () => {
+  it('discovers all 82 route files (.ts and .tsx) and 114 HTTP operations including GET /api/live, GET /api/og, GET & HEAD /api/uploads/{path}, GET /api/admin/broadcast/{id}, GET /api/admin/geocode, POST /api/admin/thank-you-notes/{id}/send-email, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
     expect(Array.isArray(openapi.servers)).toBe(true);
     expect((openapi.servers ?? []).length).toBeGreaterThanOrEqual(1);
 
     const routePaths = Object.keys(openapi.paths);
-    expect(routePaths).toHaveLength(80);
+    expect(routePaths).toHaveLength(82);
 
     const operations = getAllOperations();
-    expect(operations).toHaveLength(112);
+    expect(operations).toHaveLength(114);
 
     expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
     expect(openapi.paths['/api/uploads/{path}']?.head).toBeDefined();
     expect(openapi.paths['/api/admin/broadcast/{id}']?.get).toBeDefined();
+    expect(openapi.paths['/api/admin/geocode']?.get).toBeDefined();
     expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
+    expect(openapi.paths['/api/admin/thank-you-notes/{id}/send-email']?.post).toBeDefined();
 
     const ogRoute = openapi.paths['/api/og'];
     expect(ogRoute).toBeDefined();
@@ -335,10 +337,10 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(nullableCount).toBeGreaterThan(0);
   });
 
-  it('emits requestBody contracts for all 61 body operations including all 9 previously missing operations', () => {
+  it('emits requestBody contracts for all 62 body operations including all 9 previously missing operations', () => {
     const operations = getAllOperations();
     const bodyOperations = operations.filter(({ operation }) => Boolean(operation.requestBody));
-    expect(bodyOperations).toHaveLength(61);
+    expect(bodyOperations).toHaveLength(62);
 
     const previouslyMissingOps = [
       { routePath: '/api/admin/{entity}/batch', method: 'post', expectedProps: ['ids'] },
@@ -420,7 +422,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.description).toMatch(/ADMIN_PASSWORD_HASH/);
   });
 
-  it('defines components.securitySchemes across all 99 protected operations and query parameters across all 22 query operations', () => {
+  it('defines components.securitySchemes across all 101 protected operations and query parameters across all 23 query operations', () => {
     const schemes = openapi.components?.securitySchemes;
     expect(schemes).toBeDefined();
     expect(schemes?.adminCookieAuth).toEqual(
@@ -443,7 +445,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const protectedOps = operations.filter(
       ({ operation }) => Array.isArray(operation.security) && operation.security.length > 0
     );
-    expect(protectedOps).toHaveLength(99);
+    expect(protectedOps).toHaveLength(101);
 
     const unprotectedOpKeys = operations
       .filter(({ operation }) => !operation.security || operation.security.length === 0)
@@ -482,11 +484,11 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       { adminCookieAuth: [] },
     ]);
 
-    // Verify 22 query operations
+    // Verify 23 query operations
     const queryOps = operations.filter(({ operation }) =>
       (operation.parameters ?? []).some((param) => param.in === 'query')
     );
-    expect(queryOps).toHaveLength(22);
+    expect(queryOps).toHaveLength(23);
 
     // Shared handler GET /api/media/export has query params whereas POST /api/media/export does not
     const mediaExportGetParams = (openapi.paths['/api/media/export']?.get as OpenApiOperation)
@@ -735,13 +737,13 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     }
   });
 
-  it('defines top-level domain tags and assigns declared tags across all 112 operations', () => {
+  it('defines top-level domain tags and assigns declared tags across all 114 operations', () => {
     expect(Array.isArray(openapi.tags)).toBe(true);
     expect((openapi.tags ?? []).length).toBeGreaterThanOrEqual(12);
 
     const declaredTags = new Set((openapi.tags ?? []).map((t) => t.name));
     const operations = getAllOperations();
-    expect(operations).toHaveLength(112);
+    expect(operations).toHaveLength(114);
 
     for (const { operation } of operations) {
       expect(Array.isArray(operation.tags)).toBe(true);
@@ -750,6 +752,90 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         expect(declaredTags.has(tag)).toBe(true);
       }
     }
+  });
+
+  it('emits verified HTTP 200 and 503 application/json probe schemas for /api/live, /api/health, and /api/ready', () => {
+    const rootDoc = openapi as unknown as Record<string, unknown>;
+
+    const liveGet = openapi.paths['/api/live']?.get as OpenApiOperation;
+    expect(Object.keys(liveGet.responses).sort()).toEqual(['200', '500']);
+    expect(liveGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['alive'] },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+
+    const healthGet = openapi.paths['/api/health']?.get as OpenApiOperation;
+    expect(Object.keys(healthGet.responses).sort()).toEqual(['200', '500', '503']);
+    expect(healthGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['success', 'data'],
+      properties: {
+        success: { type: 'boolean', enum: [true] },
+        data: {
+          type: 'object',
+          required: ['status', 'timestamp', 'database'],
+          properties: {
+            status: { type: 'string', enum: ['ok'] },
+            database: { type: 'string', enum: ['connected'] },
+            timestamp: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
+    });
+
+    const rawHealth500Schema = healthGet.responses['500']?.content?.['application/json']?.schema as {
+      $ref?: string;
+    };
+    expect(rawHealth500Schema).toEqual({ $ref: '#/components/schemas/ApiErrorEnvelope' });
+
+    const resolvedHealth500Schema = resolveJsonPointer(rootDoc, rawHealth500Schema.$ref!) as {
+      type?: string;
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+    expect(resolvedHealth500Schema.type).toBe('object');
+    expect(resolvedHealth500Schema.required).toEqual(['success', 'error']);
+    expect(resolvedHealth500Schema.properties?.success).toEqual({ type: 'boolean', enum: [false] });
+    expect(resolvedHealth500Schema.properties?.error).toEqual({ type: 'string' });
+    expect(resolvedHealth500Schema.properties?.referenceId).toEqual({ type: 'string' });
+
+    expect(healthGet.responses['503']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['success', 'status', 'timestamp', 'database', 'error'],
+      properties: {
+        success: { type: 'boolean', enum: [false] },
+        status: { type: 'string', enum: ['degraded'] },
+        database: { type: 'string', enum: ['disconnected'] },
+        timestamp: { type: 'string', format: 'date-time' },
+        error: { type: 'string', enum: ['Database connection failed'] },
+      },
+    });
+
+    const readyGet = openapi.paths['/api/ready']?.get as OpenApiOperation;
+    expect(Object.keys(readyGet.responses).sort()).toEqual(['200', '503']);
+    expect(readyGet.responses['200']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'database', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['ready'] },
+        database: { type: 'string', enum: ['connected'] },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
+    expect(readyGet.responses['503']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['status', 'database', 'error', 'timestamp'],
+      properties: {
+        status: { type: 'string', enum: ['unhealthy'] },
+        database: { type: 'string', enum: ['disconnected', 'connected'] },
+        error: { type: 'string' },
+        timestamp: { type: 'string', format: 'date-time' },
+      },
+    });
   });
 
   it('validates all 7 entity creates/updates, photo moderation forms, and invitation batch payloads without union collisions while rejecting empty {} on all 7 structurally guarded operations', () => {
@@ -864,9 +950,9 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(mergeSchema.description).toMatch(/secondaryIds/);
   });
 
-  it('infers 2xx response schemas and 4xx/5xx error envelopes across all 112 operations, including binary uploads and backup export', () => {
+  it('infers 2xx response schemas and 4xx/5xx error envelopes across all 114 operations, including binary uploads and backup export', () => {
     const operations = getAllOperations();
-    expect(operations).toHaveLength(112);
+    expect(operations).toHaveLength(114);
 
     for (const { routePath, method, operation } of operations) {
       const statusCodes = Object.keys(operation.responses);

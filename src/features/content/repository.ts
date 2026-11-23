@@ -6,6 +6,7 @@ import { ContentNodeSchema, PhotoNodeSchema, PhotoDataSchema, AppConfigSchema, C
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
 import { isMultisiteEnabled } from '@/lib/config';
+import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 
 const StoredLegacyPhotoNodeSchema = PhotoNodeSchema.extend({
   data: PhotoDataSchema.extend({
@@ -32,120 +33,6 @@ function parseStoredContentNode(node: unknown): ContentNodeDTO {
   throw parsed.error;
 }
 
-function isStaticExportBuild(): boolean {
-  return (
-    process.env.STATIC_EXPORT === 'true' ||
-    process.env.STATIC_EXPORT === '1' ||
-    process.env.npm_lifecycle_event === 'build:export'
-  );
-}
-
-export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
-  {
-    id: '11111111-1111-4111-8111-111111111111',
-    type: 'Photo',
-    tags: ['curated', 'engagement'],
-    data: {
-      url: '/images/sunset-embrace.jpg',
-      title: 'Sunset at the Overlook',
-      altText: 'Alex and Taylor embracing at sunset overlooking the valley',
-      caption: 'Engagement session golden hour overlooking the estate hills.',
-      uploaderName: 'Alex & Taylor',
-      status: 'APPROVED',
-      isVisible: true,
-      publishToGallery: true,
-    },
-    createdAt: new Date('2026-02-14T18:30:00.000Z'),
-    updatedAt: new Date('2026-02-14T18:30:00.000Z'),
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222222',
-    type: 'Photo',
-    tags: ['curated', 'ceremony'],
-    data: {
-      url: '/images/sample-photo-ceremony.jpg',
-      title: 'Golden Hour Vows',
-      altText: 'Ceremony terrace decorated with florals at golden hour',
-      caption: 'Our favorite view from the glasshouse ceremony terrace.',
-      uploaderName: 'Alex & Taylor',
-      status: 'APPROVED',
-      isVisible: true,
-      publishToGallery: true,
-    },
-    createdAt: new Date('2026-02-15T16:00:00.000Z'),
-    updatedAt: new Date('2026-02-15T16:00:00.000Z'),
-  },
-  {
-    id: '33333333-3333-4333-8333-333333333333',
-    type: 'Photo',
-    tags: ['guest-upload', 'reception'],
-    data: {
-      url: '/images/sample-photo-toast.jpg',
-      title: 'Champagne Reception Toast',
-      altText: 'Raised champagne glasses during the welcome dinner toast',
-      caption: 'Raising a glass to kick off the wedding weekend!',
-      uploaderName: 'Jordan Rivera',
-      status: 'APPROVED',
-      isVisible: true,
-      publishToGallery: true,
-    },
-    createdAt: new Date('2026-02-16T20:15:00.000Z'),
-    updatedAt: new Date('2026-02-16T20:15:00.000Z'),
-  },
-  {
-    id: '44444444-4444-4444-8444-444444444444',
-    type: 'Photo',
-    tags: ['guest-upload', 'candid'],
-    data: {
-      url: '/images/sample-photo-garden.jpg',
-      title: 'Botanical Courtyard Walk',
-      altText: 'Strolling along the botanical garden pathway',
-      caption: 'Morning stroll through the conservatory courtyard.',
-      uploaderName: 'Cameron Brooks',
-      status: 'APPROVED',
-      isVisible: true,
-      publishToGallery: true,
-    },
-    createdAt: new Date('2026-02-17T11:20:00.000Z'),
-    updatedAt: new Date('2026-02-17T11:20:00.000Z'),
-  },
-  {
-    id: '55555555-5555-4555-8555-555555555555',
-    type: 'Photo',
-    tags: ['guest-upload', 'reception'],
-    data: {
-      url: '/images/sample-photo-dance.jpg',
-      title: 'Under the String Lights',
-      altText: 'Evening dance floor illuminated by warm string lights',
-      caption: 'Dancing under the conservatory lights.',
-      uploaderName: 'Clara Chen',
-      status: 'APPROVED',
-      isVisible: true,
-      publishToGallery: true,
-    },
-    createdAt: new Date('2026-02-18T22:05:00.000Z'),
-    updatedAt: new Date('2026-02-18T22:05:00.000Z'),
-  },
-];
-
-function getStaticMockPhotoNodes(options?: GetNodesByTypeOptions): ContentNodeDTO[] {
-  let mockNodes = STATIC_MOCK_PUBLIC_PHOTOS.map((n) => parseStoredPhotoNode(n));
-  if (options?.since) {
-    const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
-    if (!isNaN(sinceDate.getTime())) {
-      mockNodes = mockNodes.filter((n) => n.createdAt > sinceDate);
-    }
-  }
-  mockNodes.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  if (options?.limit !== undefined) {
-    const limit = Math.floor(Number(options.limit));
-    if (!isNaN(limit) && limit > 0) {
-      mockNodes = mockNodes.slice(0, limit > 100 ? 100 : limit);
-    }
-  }
-  return mockNodes;
-}
-
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
@@ -167,12 +54,18 @@ export class ContentRepository implements IContentRepository {
     const take = limit;
 
     if (isStaticExportBuild()) {
+      const seedPending = buildArchetypeSeedData('classic').pendingPhotos.map((n) =>
+        parseStoredPhotoNode(n)
+      );
+      const total = seedPending.length;
+      const photos = seedPending.slice(skip, skip + take);
+      const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
       return {
-        photos: [],
-        total: 0,
+        photos,
+        total,
         page,
         limit,
-        totalPages: 0,
+        totalPages,
       };
     }
 
@@ -225,8 +118,10 @@ export class ContentRepository implements IContentRepository {
 
   async getFeatures(configIdOrSubdomain: string = 'global') {
     if (isStaticExportBuild()) {
-      return [];
+      const parsed = AppConfigSchema.parse(buildArchetypeSeedData('classic').config);
+      return parsed.features || [];
     }
+
     const target = isMultisiteEnabled() ? configIdOrSubdomain : 'global';
     let config = await this.client.appConfig.findUnique({ where: { id: target } });
     if (!config && isMultisiteEnabled()) {
@@ -258,17 +153,34 @@ export class ContentRepository implements IContentRepository {
 
   async getNodesByType(type: string, options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
     if (isStaticExportBuild()) {
-      if (type !== 'Photo') {
-        return [];
+      let filtered = buildArchetypeSeedData('classic')
+        .allContentNodes.filter((node) => node.type === type)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      if (options?.since) {
+        const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+        if (!isNaN(sinceDate.getTime())) {
+          filtered = filtered.filter(
+            (node) => (node.updatedAt ?? node.createdAt).getTime() > sinceDate.getTime()
+          );
+        }
       }
-      return getStaticMockPhotoNodes(options);
+
+      if (options?.limit !== undefined) {
+        const limit = Math.floor(Number(options.limit));
+        if (!isNaN(limit) && limit > 0) {
+          filtered = filtered.slice(0, limit > 100 ? 100 : limit);
+        }
+      }
+
+      return filtered.map((node) => parseStoredContentNode(node));
     }
 
     const where: any = { type };
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
       if (!isNaN(sinceDate.getTime())) {
-        where.createdAt = { gt: sinceDate };
+        where.updatedAt = { gt: sinceDate };
       }
     }
 
@@ -289,16 +201,30 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getPublicPhotos(options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
-    if (isStaticExportBuild()) {
-      return getStaticMockPhotoNodes(options);
-    }
-
     let take: number | undefined;
     if (options?.limit !== undefined) {
       const limit = Math.floor(Number(options.limit));
       if (!isNaN(limit) && limit > 0) {
         take = limit > 100 ? 100 : limit;
       }
+    }
+
+    if (isStaticExportBuild()) {
+      let photos = buildArchetypeSeedData('classic').publicPhotos.map((node) =>
+        parseStoredPhotoNode(node)
+      );
+      if (options?.since) {
+        const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+        if (!isNaN(sinceDate.getTime())) {
+          photos = photos.filter(
+            (node) => (node.updatedAt ?? node.createdAt).getTime() > sinceDate.getTime()
+          );
+        }
+      }
+      if (take !== undefined) {
+        photos = photos.slice(0, take);
+      }
+      return photos;
     }
 
     const andFilters: any[] = [
@@ -346,7 +272,7 @@ export class ContentRepository implements IContentRepository {
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
       if (!isNaN(sinceDate.getTime())) {
-        where.createdAt = { gt: sinceDate };
+        where.updatedAt = { gt: sinceDate };
       }
     }
 
@@ -400,7 +326,16 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getEntityBoundMediaIds(mediaIds: string[]): Promise<Set<string>> {
-    if (isStaticExportBuild() || !mediaIds.length || !this.client.media?.findMany) {
+    if (!mediaIds.length) {
+      return new Set();
+    }
+
+    if (isStaticExportBuild()) {
+      const boundSet = new Set(buildArchetypeSeedData('classic').boundMediaIds);
+      return new Set(mediaIds.filter((id) => boundSet.has(id)));
+    }
+
+    if (!this.client.media?.findMany) {
       return new Set();
     }
 
@@ -435,9 +370,12 @@ export class ContentRepository implements IContentRepository {
 
   async getNodeById(id: string): Promise<ContentNodeDTO | null> {
     if (isStaticExportBuild()) {
-      const match = STATIC_MOCK_PUBLIC_PHOTOS.find((n) => n.id === id);
-      return match ? parseStoredContentNode(match) : null;
+      const found = buildArchetypeSeedData('classic').allContentNodes.find(
+        (candidate) => candidate.id === id
+      );
+      return found ? parseStoredContentNode(found) : null;
     }
+
     const node = await this.client.contentNode.findUnique({
       where: { id }
     });

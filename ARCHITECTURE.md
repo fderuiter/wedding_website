@@ -16,7 +16,7 @@ The default supported architecture is **one deployment = one wedding site**:
 - **Single Canonical Config**: Every deployment loads a single canonical configuration (`id: "global"`).
 - **Simplified Setup**: No wildcard DNS, tenant concepts, or subdomain routing are required for standard setups.
 - **Provider-Neutral Host Filtering**: Strict host and `X-Forwarded-Host` validation prevents host header injection and HTTP host spoofing without binding site data to incoming Host headers.
-- **Optional Multi-Profile Subdomain Routing**: Subdomain-based `AppConfig` profile routing (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`) can be enabled via `MULTISITE_ENABLED=true`. `MULTISITE_ENABLED` switches `AppConfig` branding/profile rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation.
+- **Optional Multi-Profile Subdomain Routing**: Subdomain-based `AppConfig` profile routing (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`) can be enabled via `MULTISITE_ENABLED=true`. `MULTISITE_ENABLED` switches `AppConfig` branding/profile rows only; `prisma/schema.prisma` shares the other 15 tables across subdomains without tenant row isolation.
 
 ## Environment Specifications
 
@@ -109,6 +109,7 @@ flowchart LR
     node_api__admin__contributors___lb_id_rb_["[id]"]
     node_api__admin__contributors___lb_id_rb___action["action"]
     node_api__admin__features["features"]
+    node_api__admin__geocode["geocode"]
     node_api__admin__invitation_d_codes["invitation-codes"]
     node_api__admin__invitation_d_codes__batch["batch"]
     node_api__admin__invitation_d_codes__batch__validate["validate"]
@@ -145,6 +146,7 @@ flowchart LR
     node_api__admin__sub_d_events__rsvp_d_summary["rsvp-summary"]
     node_api__admin__thank_d_you_d_notes["thank-you-notes"]
     node_api__admin__thank_d_you_d_notes___lb_id_rb_["[id]"]
+    node_api__admin__thank_d_you_d_notes___lb_id_rb___send_d_email["send-email"]
     node_api__admin__thank_d_you_d_notes__batch["batch"]
     node_api__admin__thank_d_you_d_notes__export["export"]
     node_api__admin__thank_d_you_d_notes__export_d_labels["export-labels"]
@@ -243,6 +245,7 @@ flowchart LR
     node_api__admin__contributors --> node_api__admin__contributors___lb_id_rb_
     node_api__admin__contributors___lb_id_rb_ --> node_api__admin__contributors___lb_id_rb___action
     node_api__admin --> node_api__admin__features
+    node_api__admin --> node_api__admin__geocode
     node_api__admin --> node_api__admin__invitation_d_codes
     node_api__admin__invitation_d_codes --> node_api__admin__invitation_d_codes__batch
     node_api__admin__invitation_d_codes__batch --> node_api__admin__invitation_d_codes__batch__validate
@@ -279,6 +282,7 @@ flowchart LR
     node_api__admin__sub_d_events --> node_api__admin__sub_d_events__rsvp_d_summary
     node_api__admin --> node_api__admin__thank_d_you_d_notes
     node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes___lb_id_rb_
+    node_api__admin__thank_d_you_d_notes___lb_id_rb_ --> node_api__admin__thank_d_you_d_notes___lb_id_rb___send_d_email
     node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes__batch
     node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes__export
     node_api__admin__thank_d_you_d_notes --> node_api__admin__thank_d_you_d_notes__export_d_labels
@@ -372,6 +376,7 @@ flowchart LR
     class node_api__admin__contributors___lb_id_rb_ api;
     class node_api__admin__contributors___lb_id_rb___action api;
     class node_api__admin__features api;
+    class node_api__admin__geocode api;
     class node_api__admin__invitation_d_codes__batch api;
     class node_api__admin__invitation_d_codes__batch__validate api;
     class node_api__admin__invitation_d_codes__catalog api;
@@ -400,6 +405,7 @@ flowchart LR
     class node_api__admin__sub_d_events__rsvp_d_summary api;
     class node_api__admin__thank_d_you_d_notes api;
     class node_api__admin__thank_d_you_d_notes___lb_id_rb_ api;
+    class node_api__admin__thank_d_you_d_notes___lb_id_rb___send_d_email api;
     class node_api__admin__thank_d_you_d_notes__batch api;
     class node_api__admin__thank_d_you_d_notes__export api;
     class node_api__admin__thank_d_you_d_notes__export_d_labels api;
@@ -468,12 +474,12 @@ The backend is a set of serverless functions implemented as Next.js Route Handle
 - **Route Groups & Access Tiers:** Of the 71 API route handlers under `src/app/api/**/route.{ts,tsx}`, 67 are wrapped with `withApiMiddleware` ([src/utils/withApiMiddleware.ts](src/utils/withApiMiddleware.ts)) while 4 specialized handlers (`/api/og`, `/api/ready`, `/api/registry/webhook/stripe`, and `/api/uploads/[...path]`) stream binary or webhook responses directly. Edge perimeter and role rules are enforced by [src/middleware.ts](src/middleware.ts) and [src/lib/routes.ts](src/lib/routes.ts): `/api/media` (`GET`, `POST`), `/api/media/[id]` (`PUT` and `DELETE` metadata mutations only, with no `GET` asset resolver), and `/api/media/export` (`GET`, `POST`) are strictly `Admin-only` routes gated by `isAdminRequest`; `/api/guest/address` and `/api/rsvp` require a personalized `guest_invite_session` cookie (`Invite-only`, verified via `getGuestInviteSession`); `/api/cron/*` routes require `Authorization: Bearer <CRON_SECRET>`; and `/api/registry/webhook/stripe` bypasses the Edge cookie gate on `POST` only while enforcing cryptographic `stripe-signature` verification (`STRIPE_WEBHOOK_SECRET`).
 
 <!-- BEGIN AUTOGENERATED API_ROUTES -->
-Total API route handlers: **80** across **14** route groups.
+Total API route handlers: **82** across **14** route groups.
 
-- **Middleware Wrapper (`withApiMiddleware`):** **75** wrapped handlers; **5** unwrapped (`/api/live`, `/api/og`, `/api/ready`, `/api/registry/webhook/stripe`, `/api/uploads/[...path]`).
+- **Middleware Wrapper (`withApiMiddleware`):** **77** wrapped handlers; **5** unwrapped (`/api/live`, `/api/og`, `/api/ready`, `/api/registry/webhook/stripe`, `/api/uploads/[...path]`).
 - **Handler Session & Webhook Gates:** `Invite-only` handlers (`/api/guest/address`, `/api/rsvp`) require a verified `guest_invite_session` cookie via `getGuestInviteSession`; `/api/registry/webhook/stripe` bypasses the Edge cookie gate on `POST` in `src/middleware.ts` (retaining Edge cookie enforcement on other methods) and verifies `stripe-signature` (`STRIPE_WEBHOOK_SECRET`) in the handler.
 
-#### Admin Routes (`/api/admin` — 48 handlers)
+#### Admin Routes (`/api/admin` — 50 handlers)
 
 | Route | Handler | Methods | Access Tier |
 |---|---|---|---|
@@ -491,6 +497,7 @@ Total API route handlers: **80** across **14** route groups.
 | `/api/admin/contributors/[id]` | `src/app/api/admin/contributors/[id]/route.ts` | `PATCH`, `DELETE` | `Admin-only` |
 | `/api/admin/contributors/[id]/action` | `src/app/api/admin/contributors/[id]/action/route.ts` | `POST` | `Admin-only` |
 | `/api/admin/features` | `src/app/api/admin/features/route.ts` | `GET`, `PUT` | `Admin-only` |
+| `/api/admin/geocode` | `src/app/api/admin/geocode/route.ts` | `GET` | `Admin-only` |
 | `/api/admin/invitation-codes/batch` | `src/app/api/admin/invitation-codes/batch/route.ts` | `POST`, `PUT`, `PATCH`, `DELETE` | `Admin-only` |
 | `/api/admin/invitation-codes/batch/validate` | `src/app/api/admin/invitation-codes/batch/validate/route.ts` | `POST` | `Admin-only` |
 | `/api/admin/invitation-codes/catalog` | `src/app/api/admin/invitation-codes/catalog/route.ts` | `GET` | `Admin-only` |
@@ -519,6 +526,7 @@ Total API route handlers: **80** across **14** route groups.
 | `/api/admin/sub-events/rsvp-summary` | `src/app/api/admin/sub-events/rsvp-summary/route.ts` | `GET` | `Admin-only` |
 | `/api/admin/thank-you-notes` | `src/app/api/admin/thank-you-notes/route.ts` | `GET`, `POST` | `Admin-only` |
 | `/api/admin/thank-you-notes/[id]` | `src/app/api/admin/thank-you-notes/[id]/route.ts` | `PATCH` | `Admin-only` |
+| `/api/admin/thank-you-notes/[id]/send-email` | `src/app/api/admin/thank-you-notes/[id]/send-email/route.ts` | `POST` | `Admin-only` |
 | `/api/admin/thank-you-notes/batch` | `src/app/api/admin/thank-you-notes/batch/route.ts` | `POST` | `Admin-only` |
 | `/api/admin/thank-you-notes/export` | `src/app/api/admin/thank-you-notes/export/route.ts` | `GET` | `Admin-only` |
 | `/api/admin/thank-you-notes/export-labels` | `src/app/api/admin/thank-you-notes/export-labels/route.ts` | `GET` | `Admin-only` |
@@ -773,9 +781,9 @@ Application Defaults (Generic Technical Fallbacks)
 Every configurable value has one authoritative home. Ordinary site customization requires zero source code edits. At runtime boundaries (especially in production), configuration payloads are validated against Zod schemas (`AppConfigSchema` in [src/features/content/schemas.ts](src/features/content/schemas.ts), covering 72 persisted PostgreSQL columns in [prisma/schema.prisma](prisma/schema.prisma)—including `modules` piped through `ModuleConfigSchema`—and 15 virtual DTO fields for 87 total schema fields), ensuring immediate, clear failure if misconfigured.
 
 DTO sanitization in [src/lib/config.ts](src/lib/config.ts) enforces three explicit visibility boundaries:
-- **Public DTO (`PublicAppConfigSchema` / `toPublicAppConfig`, [src/lib/config.ts](src/lib/config.ts#L495-L542)):** Applies a strict 69-field allowlist for public SSR/client consumption, stripping all 18 email/SMS delivery, secret, and RSVP grace-period fields while injecting runtime `multisiteEnabled` and `isRsvpOpen`.
-- **Backup Export Sanitizer (`sanitizeAppConfigForBackup`, [src/lib/config.ts](src/lib/config.ts#L581)):** Retains the 68 persisted non-secret PostgreSQL `AppConfig` columns (`APP_CONFIG_BACKUP_KEYS`, including `modules`, `rsvpOpen`, `rsvpGracePeriodHours`, and non-secret broadcast provider settings) while stripping the 4 raw provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`).
-- **Admin DTO (`AdminAppConfig` / `toAdminAppConfig`, [src/lib/config.ts](src/lib/config.ts#L405-L646)):** Extends `toPublicAppConfig` for authenticated admin settings endpoints (`/api/admin/settings`) with `rsvpOpen`, `rsvpGracePeriodHours`, and the 13 non-secret email/SMS provider and batching fields (`emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `smtpSecure`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, `twilioFromNumber`, `broadcastBatchSize`, `broadcastBatchDelayMs`), while omitting the 4 raw provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) in favor of boolean presence flags (`hasSmtpPass`, `hasResendApiKey`, `hasSendgridApiKey`, `hasTwilioAuthToken`).
+- **Public DTO (`PublicAppConfigSchema` / `toPublicAppConfig`, [src/lib/config.ts](src/lib/config.ts#L436-L483)):** Applies a strict 69-field allowlist for public SSR/client consumption, stripping all 18 email/SMS delivery, secret, and RSVP grace-period fields while injecting runtime `multisiteEnabled` and `isRsvpOpen`.
+- **Backup Export Sanitizer (`sanitizeAppConfigForBackup`, [src/lib/config.ts](src/lib/config.ts#L522)):** Retains the 68 persisted non-secret PostgreSQL `AppConfig` columns (`APP_CONFIG_BACKUP_KEYS`, including `modules`, `rsvpOpen`, `rsvpGracePeriodHours`, and non-secret broadcast provider settings) while stripping the 4 raw provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`).
+- **Admin DTO (`AdminAppConfig` / `toAdminAppConfig`, [src/lib/config.ts](src/lib/config.ts#L356-L587)):** Extends `toPublicAppConfig` for authenticated admin settings endpoints (`/api/admin/settings`) with `rsvpOpen`, `rsvpGracePeriodHours`, and the 13 non-secret email/SMS provider and batching fields (`emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `smtpSecure`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, `twilioFromNumber`, `broadcastBatchSize`, `broadcastBatchDelayMs`), while omitting the 4 raw provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) in favor of boolean presence flags (`hasSmtpPass`, `hasResendApiKey`, `hasSendgridApiKey`, `hasTwilioAuthToken`).
 
 Import and export formats include versioning metadata (`schemaVersion: "1.0"`) to guarantee upgrade safety.
 

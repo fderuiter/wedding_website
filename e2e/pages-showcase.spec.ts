@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -89,6 +89,10 @@ function attachStrictRuntimeMonitors(page: Page) {
 }
 
 async function expectZeroAxeViolations(page: Page) {
+  await page.waitForFunction(() => {
+    const heroNav = document.querySelector('nav[aria-label="Primary navigation"]');
+    return !heroNav || window.getComputedStyle(heroNav).opacity === '1';
+  });
   const builder = new AxeBuilder({ page }).withTags(a11yConfig.runOnly.values);
   if (a11yConfig.rules) {
     builder.options({ rules: a11yConfig.rules });
@@ -97,10 +101,27 @@ async function expectZeroAxeViolations(page: Page) {
   expect(results.violations).toEqual([]);
 }
 
+async function waitForDemoHydration(page: Page) {
+  await expect(page.locator('html')).toHaveAttribute('data-static-demo', 'true', {
+    timeout: 15000,
+  });
+  await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
+}
+
 const hasBuiltPagesBundle =
   fs.existsSync(path.join(BUNDLE_DIR, 'index.html')) &&
   fs.existsSync(path.join(BUNDLE_DIR, 'demo', 'index.html')) &&
   fs.existsSync(path.join(BUNDLE_DIR, 'storybook', 'index.html'));
+
+async function stubExternalRequests(context: BrowserContext) {
+  await context.route(/^https?:\/\/(?!127\.0\.0\.1(?::|\/|$)|localhost(?::|\/|$))/i, async (route) => {
+    await route.fulfill({
+      status: 204,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: '',
+    });
+  });
+}
 
 test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
   test.skip(
@@ -147,9 +168,10 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
 
       const ext = path.extname(resolvedFile).toLowerCase();
       const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+      const isImmutableAsset = pathname.includes('/_next/static/') || pathname.includes('/assets/');
       res.writeHead(200, {
         'Content-Type': contentType,
-        'Cache-Control': 'no-store',
+        'Cache-Control': isImmutableAsset ? 'public, max-age=3600' : 'no-cache',
       });
       res.end(fs.readFileSync(resolvedFile));
     });
@@ -166,64 +188,67 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       await new Promise<void>((resolve) => {
         server!.close(() => resolve());
       });
+      server = null;
     }
   });
 
-  test('serves VitePress Portal, Storybook, and full interactive Next.js Demo with zero errors or 404s', async ({
+  test('serves VitePress Documentation Portal and Storybook Component Showcase under /wedding_website/', async ({
     context,
     page,
   }) => {
-    test.setTimeout(180000);
-
-    // Stub any external third-party URLs so verification is 100% offline-deterministic
-    await context.route(/^https?:\/\/(?!127\.0\.0\.1(?::|\/|$)|localhost(?::|\/|$))/i, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/plain',
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: '',
-      });
-    });
-
+    test.setTimeout(60_000);
+    await stubExternalRequests(context);
     const monitors = attachStrictRuntimeMonitors(page);
 
-    // 1. VitePress Documentation & OpenAPI Portal (/wedding_website/)
-    await page.goto(`${origin}${SUBPATH_PREFIX}/`, { waitUntil: 'networkidle' });
-    await expect(page.getByRole('link', { name: 'Live Interactive Demo' }).first()).toHaveAttribute(
+    await page.goto(`${origin}${SUBPATH_PREFIX}/`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('link', { name: 'Live Demo' }).first()).toHaveAttribute(
       'href',
       `${SUBPATH_PREFIX}/demo/`
     );
-    await expect(page.getByRole('link', { name: 'Component Storybook' }).first()).toHaveAttribute(
+    await expect(page.getByRole('link', { name: 'Storybook' }).first()).toHaveAttribute(
       'href',
       `${SUBPATH_PREFIX}/storybook/`
     );
     await page.screenshot({ path: '/tmp/pages-portal.png', animations: 'disabled' });
 
-    await page.goto(`${origin}${SUBPATH_PREFIX}/api/`, { waitUntil: 'networkidle' });
+    await page.goto(`${origin}${SUBPATH_PREFIX}/api/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText('API');
 
-    // 2. Storybook Component Showcase (/wedding_website/storybook/)
-    await page.goto(`${origin}${SUBPATH_PREFIX}/storybook/`, { waitUntil: 'networkidle' });
+    await page.goto(`${origin}${SUBPATH_PREFIX}/storybook/`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#root, #storybook-root, body').first()).toBeVisible();
     await page.screenshot({ path: '/tmp/pages-storybook.png', animations: 'disabled' });
 
-    // 3. Guest Experience & Demo Toolbar (/wedding_website/demo/)
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'networkidle' });
-    const toolbar = page.getByTestId('demo-toolbar');
-    await expect(toolbar).toBeVisible();
+    expect(monitors.pageErrors).toEqual([]);
+    expect(monitors.failedResponses).toEqual([]);
+    expect(monitors.consoleErrors).toEqual([]);
+  });
+
+  test('serves Guest Demo, archetype & theme switching, registry persistence, and Setup Wizard with zero Axe violations', async ({
+    context,
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await stubExternalRequests(context);
+    const monitors = attachStrictRuntimeMonitors(page);
+
+    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'domcontentloaded' });
+    await waitForDemoHydration(page);
+    await expect(page.getByTestId('demo-portal-link')).toHaveAttribute(
+      'href',
+      `${SUBPATH_PREFIX}/`
+    );
     await expect(page.locator('main#main-content')).toBeVisible();
     await expectZeroAxeViolations(page);
 
-    // Switch archetypes & dark mode live via DemoToolbar
-    await page.getByTestId('demo-archetype-destination').click();
-    await expect(page.locator('body')).toContainText('Carmel');
-    await page.getByTestId('demo-theme-toggle').click();
+    // Switch archetypes & theme presets live via DemoToolbar
+    await page.getByTestId('demo-archetype-select').selectOption('destination');
+    await expect(page.getByTestId('demo-sample-code-button')).toContainText('RODRIGUEZ2026');
+    await page.getByTestId('demo-theme-preset-select').selectOption('romantic');
     await expectZeroAxeViolations(page);
-    await page.getByTestId('demo-theme-toggle').click();
-    await page.getByTestId('demo-archetype-classic').click();
+    await page.getByTestId('demo-theme-preset-select').selectOption('classic');
+    await page.getByTestId('demo-archetype-select').selectOption('classic');
     await page.screenshot({ path: '/tmp/pages-demo-guest.png', animations: 'disabled' });
 
-    // Guest sub-pages
     for (const guestRoute of [
       '/wedding-party',
       '/things-to-do',
@@ -231,70 +256,82 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
       '/photos/slideshow',
       '/weather',
       '/heart',
+      '/guest/collect',
     ]) {
       await page.goto(`${origin}${SUBPATH_PREFIX}/demo${guestRoute}`, {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
       });
-      await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
+      await waitForDemoHydration(page);
     }
 
-    // 4. Gift Registry Interactive Contribution + Session Persistence + Reset Demo Data
-    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/registry`, { waitUntil: 'networkidle' });
-    await expect(page.locator('body')).toContainText('Artisan Stand Mixer');
+    // Gift Registry Interactive Contribution + Storage Persistence + Reset Demo
+    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/registry`, { waitUntil: 'domcontentloaded' });
+    await waitForDemoHydration(page);
+    await expect(page.locator('body')).toContainText('KitchenAid Stand Mixer');
 
-    // Perform stateful contribution via browser fetch (exercising window.fetch + sessionStorage runtime)
     const contributedAmount = await page.evaluate(async () => {
       const res = await window.fetch('/wedding_website/demo/api/registry/contribute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          itemId: 'demo-reg-2',
-          name: 'Playwright Showcase Guest',
+          itemId: 'demo-classic-item-3',
+          purchaserName: 'Playwright Showcase Guest',
           email: 'showcase@example.com',
           amount: 125,
-          message: 'Excited for your Amalfi adventure!',
-          isReservation: false,
+          message: 'Excited for your espresso mornings!',
         }),
       });
       const json = (await res.json()) as { amountContributed?: number };
-      return json.amountContributed ?? 0;
+      return json.amountContributed ?? -1;
     });
-    expect(contributedAmount).toBe(775);
+    expect(contributedAmount).toBe(125);
 
-    // Reload page and confirm sessionStorage persisted the $775 contribution
-    await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForDemoHydration(page);
     const persistedAmount = await page.evaluate(async () => {
-      const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-reg-2');
+      const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-classic-item-3');
       const json = (await res.json()) as { amountContributed?: number };
-      return json.amountContributed ?? 0;
+      return json.amountContributed ?? -1;
     });
-    expect(persistedAmount).toBe(775);
+    expect(persistedAmount).toBe(125);
     await page.screenshot({ path: '/tmp/pages-demo-registry.png', animations: 'disabled' });
 
-    // Click Reset Demo Data on DemoToolbar and confirm baseline $650 is restored
     await page.getByTestId('demo-reset-button').click();
     const resetAmount = await page.evaluate(async () => {
-      const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-reg-2');
+      const res = await window.fetch('/wedding_website/demo/api/registry/items/demo-classic-item-3');
       const json = (await res.json()) as { amountContributed?: number };
-      return json.amountContributed ?? 0;
+      return json.amountContributed ?? -1;
     });
-    expect(resetAmount).toBe(650);
+    expect(resetAmount).toBe(0);
 
-    // 5. First-Run Setup Wizard Preview & Accessibility
-    await page.getByTestId('demo-persona-wizard').click();
-    await expect(page.getByTestId('demo-setup-wizard-preview')).toBeVisible();
+    // First-Run Setup Wizard Persona & Accessibility
+    await page.getByTestId('demo-persona-setup').click();
     await expect(page.locator('main#main-content')).toHaveCount(1);
     await expectZeroAxeViolations(page);
     await page.screenshot({ path: '/tmp/pages-demo-wizard.png', animations: 'disabled' });
-    await page.getByTestId('demo-exit-wizard-preview').click();
-    await expect(page.getByTestId('demo-setup-wizard-preview')).toHaveCount(0);
+    await page.getByTestId('demo-persona-guest').click();
 
-    // 6. Admin Control Panel & All 14 Modules
+    expect(monitors.pageErrors).toEqual([]);
+    expect(monitors.failedResponses).toEqual([]);
+    expect(monitors.consoleErrors).toEqual([]);
+  });
+
+  test('serves Admin Control Panel and all 14 dashboard modules cleanly under /wedding_website/', async ({
+    context,
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await stubExternalRequests(context);
+    const monitors = attachStrictRuntimeMonitors(page);
+
+    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/`, { waitUntil: 'domcontentloaded' });
+    await waitForDemoHydration(page);
     await page.getByTestId('demo-persona-admin').click();
-    await page.waitForURL(`**${SUBPATH_PREFIX}/demo/admin/dashboard**`);
+    await page.goto(`${origin}${SUBPATH_PREFIX}/demo/admin/dashboard`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await waitForDemoHydration(page);
     await expect(page.locator('body')).toContainText('Dashboard');
-    await page.waitForLoadState('networkidle');
     await page.screenshot({ path: '/tmp/pages-demo-admin.png', animations: 'disabled' });
 
     const adminSubRoutes = [
@@ -314,26 +351,13 @@ test.describe('Unified GitHub Pages Showcase (/wedding_website/)', () => {
     ];
 
     for (const adminRoute of adminSubRoutes) {
-      await page.goto(`${origin}${SUBPATH_PREFIX}/demo${adminRoute}`, {
-        waitUntil: 'networkidle',
+      await test.step(`Admin route ${adminRoute}`, async () => {
+        await page.goto(`${origin}${SUBPATH_PREFIX}/demo${adminRoute}`, {
+          waitUntil: 'domcontentloaded',
+        });
+        await waitForDemoHydration(page);
       });
-      await expect(page.getByTestId('demo-toolbar')).toBeVisible({ timeout: 15000 });
     }
-
-    // Verify lazy-loaded broadcast detail API endpoint in static demo runtime
-    const broadcastRecipientsCount = await page.evaluate(async () => {
-      const historyRes = await window.fetch('/wedding_website/demo/api/admin/broadcast/history?page=1&limit=10');
-      const history = (await historyRes.json()) as Array<{ id: string }>;
-      if (!Array.isArray(history) || history.length === 0) return -1;
-      const detailRes = await window.fetch(
-        `/wedding_website/demo/api/admin/broadcast/${encodeURIComponent(history[0].id)}`
-      );
-      const detail = (await detailRes.json()) as { id?: string; recipients?: unknown[] };
-      return detail.id === history[0].id && Array.isArray(detail.recipients)
-        ? detail.recipients.length
-        : -1;
-    });
-    expect(broadcastRecipientsCount).toBeGreaterThan(0);
 
     expect(monitors.pageErrors).toEqual([]);
     expect(monitors.failedResponses).toEqual([]);

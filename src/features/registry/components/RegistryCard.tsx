@@ -7,13 +7,13 @@ import {
 } from '../lib/registryStatusUtils';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
-import { withBasePath } from '@/utils/basePath';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatCurrency } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useShareItem } from '../hooks/useShareItem';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * Props for the RegistryCard component.
@@ -110,7 +110,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
       <div className="relative w-full aspect-square overflow-hidden bg-card border-b border-card-border rounded-t-[var(--radius-card)]">
         {item.isMostWanted && (
           <span
-            className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-[var(--shadow-sm)] backdrop-blur-sm"
+            className="absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1 rounded-full shadow-[var(--shadow-sm)] backdrop-blur-sm"
             data-testid="most-wanted-badge"
           >
             <Icon name="Star" className="w-3.5 h-3.5 fill-current" />

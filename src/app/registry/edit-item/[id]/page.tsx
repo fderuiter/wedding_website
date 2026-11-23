@@ -1,10 +1,19 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { EditItemPage, STATIC_EXPORT_REGISTRY_ITEM_IDS } from '@/features/registry';
+import { createPageMetadata } from '@/app/metadata';
+import { EditItemPage } from '@/features/registry';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { getRegistryEditStaticParams } from '@/lib/sampleData/builder';
+
+export const metadata: Metadata = createPageMetadata({
+  title: 'Edit Registry Item',
+  description: 'Update gift details, pricing, and settings for a wedding registry item.',
+  noIndex: true,
+});
 
 export function generateStaticParams() {
-  return STATIC_EXPORT_REGISTRY_ITEM_IDS.map((id) => ({ id }));
+  return getRegistryEditStaticParams();
 }
 
 export default async function Page() {

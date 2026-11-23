@@ -2,7 +2,7 @@
 
 This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
 
-**[Interactive Demo (GitHub Pages)](https://fderuiter.github.io/wedding_website/demo/)** | **[Docs & API Portal](https://fderuiter.github.io/wedding_website/)** | **[Component Storybook](https://fderuiter.github.io/wedding_website/storybook/)** | **[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
+**[Documentation Portal](https://fderuiter.github.io/wedding_website/)** | **[Live Demo](https://fderuiter.github.io/wedding_website/demo/)** | **[Storybook](https://fderuiter.github.io/wedding_website/storybook/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
 
 ## Table of Contents
 
@@ -42,12 +42,12 @@ The primary goal of this project is to provide a personal, customizable, and cos
     *   "Add to Calendar" (`.ics` and Google Calendar) generation and live wedding countdown widgets.
 *   **Custom Gift Registry, Cash Funds & Checkout:**
     *   **Physical Gifts & Dedicated Funds:** Configure `PHYSICAL` gifts alongside `CASH_FUND` and `EXPERIENCE_FUND` items in [`src/features/registry/components/RegistryItemForm.tsx`](./src/features/registry/components/RegistryItemForm.tsx), complete with optional peer-to-peer payment handles (`Venmo`, `PayPal`, `Cash App`, `Zelle`, or `Custom`).
-    *   **Stripe Card Checkout & Group Gifting:** Accept direct card contributions via **Stripe** `PaymentIntent` flows with optional processing-fee coverage (`calculateContributionAmounts` in [`src/features/registry/api/payment-intent.ts`](./src/features/registry/api/payment-intent.ts#L73-L75)), or let multiple guests fund shared group gifts with real-time progress bars.
+    *   **Stripe Card Checkout & Group Gifting:** Accept direct card contributions via **Stripe** `PaymentIntent` flows with optional processing-fee coverage (`calculateContributionAmounts` in [`src/features/registry/api/payment-intent.ts`](./src/features/registry/api/payment-intent.ts#L96-L98)), or let multiple guests fund shared group gifts with real-time progress bars.
     *   **Single, Batch URL & CSV Imports:** Pre-fill product metadata via single-URL Open Graph/retailer scraping, ingest up to **20** store URLs in parallel (`BatchUrlScraper`), or import external registry spreadsheets via CSV (`CsvRegistryImport`) in [`src/features/registry/pages/add-item.tsx`](./src/features/registry/pages/add-item.tsx).
     *   **Filtering & Sorting:** Guests can browse registry items by category, price range, availability, and "Most Wanted" highlights.
 *   **Guest Households, RSVPs, Seating & Broadcasts:**
     *   **Household Invitation Sessions & Cutoffs:** Authenticate invited households with signed `GUEST_INVITE_COOKIE` sessions (`enforceActiveGuestPageSession` in [`src/core/auth/guestInviteSession.ts`](./src/core/auth/guestInviteSession.ts)), per-sub-event access matrices, and venue-timezone midnight RSVP cutoffs (`getVenueMidnightCutoffUtcMs`) with configurable grace periods (`0`–`168` hours in [`src/utils/rsvpDeadline.ts`](./src/utils/rsvpDeadline.ts)).
-    *   **Interactive Seating Chart:** Arrange reception tables, auto-assign or drag-and-drop eligible guests with undo support (`useSeatingState`), and print floorplans (`FloorplanCanvas` and `PrintableFloorplan` in [`src/app/admin/dashboard/seating-chart/page.tsx`](./src/app/admin/dashboard/seating-chart/page.tsx#L4-L20)).
+    *   **Interactive Seating Chart:** Arrange reception tables, auto-assign or drag-and-drop eligible guests with undo support (`useSeatingState`), and print floorplans (`FloorplanCanvas` and `PrintableFloorplan` in [`src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx`](./src/app/admin/dashboard/seating-chart/SeatingChartClient.tsx#L4-L24)).
     *   **Multi-Provider Guest Broadcasts:** Compose targeted email and SMS announcements (`BroadcastModalForm` in [`src/components/admin/BroadcastModal.tsx`](./src/components/admin/BroadcastModal.tsx)) with audience filters, live previews, test sends, scheduled delivery, and retry logs across **Resend**, **SendGrid**, and **Twilio** adapters (see [`docs/BROADCASTS.md`](./docs/BROADCASTS.md)).
 *   **Moderated Photo Gallery & Media Pipeline:**
     *   **Curated & Guest Albums:** Display curated couple galleries alongside moderated guest photo uploads (`PhotosPage` in [`src/app/photos/page.tsx`](./src/app/photos/page.tsx)) with responsive lightbox viewing, live reception slideshows, and admin ZIP archive exports.
@@ -79,7 +79,7 @@ For detailed onboarding, local setup workflows, and testing runbooks, see the [D
 
 ### Prerequisites
 
-*   **Node.js & npm**: Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
+*   **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
 *   **Git**: For version control.
 *   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`docker compose up -d db` after `cp .env.example .env`, binding `127.0.0.1:5432:5432` with user `wedding`, password `wedding123`, database `wedding` via [`docker-compose.yml`](./docker-compose.yml) and [`docker-compose.ci.yml`](./docker-compose.ci.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
 
@@ -172,16 +172,20 @@ This project features an automated, zero-configuration local testing setup. Runn
 2. Waits for the database to be fully ready and accepting connections.
 3. Automatically provisions and synchronizes the Prisma schema to an isolated, dedicated test database (`wedding_test`). This ensures that executing the test suite will never delete, modify, or insert records into your default development database.
 
-To execute the unit and integration test suite:
+To execute the unit and integration test suite locally (without coverage overhead):
 
 ```bash
 npm test
+
+# Or run a targeted test file:
+npm test -- src/utils/__tests__/ApiError.test.ts
 ```
 
-To run tests in watch mode:
+To run tests in watch mode or enforce full repository coverage thresholds (`80%` lines, `68%` branches):
 
 ```bash
 npm run test:watch
+npm run test:cov
 ```
 
 ### First-Run Setup & Bootstrap

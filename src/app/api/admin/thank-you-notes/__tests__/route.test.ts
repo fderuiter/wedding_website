@@ -4,6 +4,7 @@ import { GET, POST } from '../route';
 import { GET as EXPORT_GET } from '../export/route';
 import { GET as EXPORT_LABELS_GET } from '../export-labels/route';
 import { PATCH } from '../[id]/route';
+import { POST as SEND_EMAIL_POST } from '../[id]/send-email/route';
 import { POST as BATCH_POST } from '../batch/route';
 import { NextRequest } from 'next/server';
 import { thankYouService } from '@/features/registry';
@@ -114,11 +115,13 @@ jest.mock('@/features/registry', () => {
     CreateOfflineThankYouNoteSchema,
     UpdateThankYouNoteSchema,
     BatchUpdateThankYouNotesSchema,
+    SendThankYouEmailSchema,
   } = jest.requireActual('@/features/registry');
   return {
     CreateOfflineThankYouNoteSchema,
     UpdateThankYouNoteSchema,
     BatchUpdateThankYouNotesSchema,
+    SendThankYouEmailSchema,
     thankYouService: {
       getThankYouNotes: jest.fn(),
       createOfflineGift: jest.fn(),
@@ -126,6 +129,7 @@ jest.mock('@/features/registry', () => {
       batchUpdateThankYouNotes: jest.fn(),
       exportThankYouNotesCsv: jest.fn(),
       exportThankYouNotesPdf: jest.fn(),
+      sendThankYouEmail: jest.fn(),
     },
   };
 });
@@ -138,6 +142,7 @@ jest.mock('@/features/registry/thank-you.service', () => ({
     batchUpdateThankYouNotes: jest.fn(),
     exportThankYouNotesCsv: jest.fn(),
     exportThankYouNotesPdf: jest.fn(),
+    sendThankYouEmail: jest.fn(),
   },
 }));
 
@@ -278,6 +283,64 @@ describe('Thank-You Notes API Routes', () => {
         {
           invitationCodeId: 'inv-household-1',
         },
+        'Admin'
+      );
+
+      const unlinkReq = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          invitationCodeId: '',
+        }),
+      });
+      const unlinkRes = await PATCH(unlinkReq, { params: Promise.resolve({ id: 'c1' }) });
+      expect(unlinkRes.status).toBe(200);
+      expect(thankYouService.updateThankYouNote).toHaveBeenCalledWith(
+        'c1',
+        {
+          invitationCodeId: null,
+        },
+        'Admin'
+      );
+    });
+
+    it('forwards invitationCodeId, postal fields, and syncAddressToGuest on PATCH', async () => {
+      (thankYouService.updateThankYouNote as jest.Mock).mockResolvedValue({
+        id: 'c1',
+        name: 'Jane Doe',
+        amount: 100,
+        date: new Date().toISOString(),
+        thankYouStatus: 'Unsent',
+        invitationCodeId: 'inv-1',
+        addressLine1: '123 Maple St',
+        city: 'Chicago',
+        state: 'IL',
+        zipCode: '60601',
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/admin/thank-you-notes/c1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          invitationCodeId: 'inv-1',
+          addressLine1: '123 Maple St',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60601',
+          syncAddressToGuest: true,
+        }),
+      });
+
+      const res = await PATCH(req, { params: Promise.resolve({ id: 'c1' }) });
+      expect(res.status).toBe(200);
+      expect(thankYouService.updateThankYouNote).toHaveBeenCalledWith(
+        'c1',
+        expect.objectContaining({
+          invitationCodeId: 'inv-1',
+          addressLine1: '123 Maple St',
+          city: 'Chicago',
+          state: 'IL',
+          zipCode: '60601',
+          syncAddressToGuest: true,
+        }),
         'Admin'
       );
     });
@@ -422,6 +485,83 @@ describe('Thank-You Notes API Routes', () => {
         search: undefined,
         template: 'avery_5163',
       });
+    });
+
+    it('forwards skipUnaddressed=true when requested in query string', async () => {
+      const mockPdfBuffer = Buffer.from('%PDF-1.5 test pdf content');
+      (thankYouService.exportThankYouNotesPdf as jest.Mock).mockImplementation(() =>
+        createMockStream(mockPdfBuffer)
+      );
+
+      const req = new NextRequest(
+        'http://localhost:3000/api/admin/thank-you-notes/export-labels?template=avery_5160&skipUnaddressed=true'
+      );
+      const res = await EXPORT_LABELS_GET(req);
+
+      expect(res.status).toBe(200);
+      expect(thankYouService.exportThankYouNotesPdf).toHaveBeenCalledWith({
+        status: undefined,
+        search: undefined,
+        template: 'avery_5160',
+        skipUnaddressed: true,
+      });
+    });
+  });
+
+  describe('POST /api/admin/thank-you-notes/[id]/send-email', () => {
+    it('processes preview, test, and send modes via thankYouService.sendThankYouEmail', async () => {
+      (thankYouService.sendThankYouEmail as jest.Mock).mockResolvedValue({
+        mode: 'send',
+        to: 'jane@example.com',
+        subject: 'Thank you!',
+        textBody: 'Dear Jane, thank you!',
+        htmlBody: '<p>Dear Jane, thank you!</p>',
+      });
+
+      const req = new NextRequest(
+        'http://localhost:3000/api/admin/thank-you-notes/c1/send-email',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            mode: 'send',
+            subject: 'Thank you!',
+            body: 'Dear {{guestName}}, thank you!',
+            recipientEmail: 'jane@example.com',
+          }),
+        }
+      );
+
+      const res = await SEND_EMAIL_POST(req, { params: Promise.resolve({ id: 'c1' }) });
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.success).toBe(true);
+      expect(json.mode).toBe('send');
+      expect(thankYouService.sendThankYouEmail).toHaveBeenCalledWith(
+        'c1',
+        {
+          mode: 'send',
+          subject: 'Thank you!',
+          body: 'Dear {{guestName}}, thank you!',
+          recipientEmail: 'jane@example.com',
+        },
+        'Admin'
+      );
+    });
+
+    it('returns 400 when body is empty or mode is invalid', async () => {
+      const req = new NextRequest(
+        'http://localhost:3000/api/admin/thank-you-notes/c1/send-email',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            mode: 'send',
+            body: '   ',
+          }),
+        }
+      );
+
+      const res = await SEND_EMAIL_POST(req, { params: Promise.resolve({ id: 'c1' }) });
+      expect(res.status).toBe(400);
     });
   });
 });

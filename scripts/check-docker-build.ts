@@ -191,13 +191,47 @@ function checkDockerfileContent(
       reason: 'Dockerfile runner stage must not overwrite standalone ./node_modules with builder /app/node_modules.',
     });
   }
-  if (!/COPY\s+--from=prisma-cli\b[^\n]*\/opt\/prisma-cli/.test(dockerfileContent)) {
+  if (!/COPY\s+--from=prisma-cli\s+\/opt\/prisma-cli\s+\/opt\/prisma-cli(?:\s|$)/m.test(dockerfileContent)) {
     violations.push({
       filePath: relPath,
       lineNumber: 1,
       lineContent: '',
       imageRef: '/opt/prisma-cli',
-      reason: 'Dockerfile runner stage must copy the isolated Prisma CLI directory (/opt/prisma-cli).',
+      reason:
+        'Dockerfile runner stage must install the isolated Prisma CLI outside /app at /opt/prisma-cli (COPY --from=prisma-cli /opt/prisma-cli /opt/prisma-cli).',
+    });
+  }
+  if (/COPY\s+--from=prisma-cli\b[^\n]*\/opt\/prisma-cli\s+(?:\.\/|\/app\b)/.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '/app/prisma-cli',
+      reason: 'Dockerfile runner stage must keep /opt/prisma-cli outside /app rather than copying it under /app.',
+    });
+  }
+  if (
+    !/COPY\s+--from=builder\s+\/app\/scripts\/generate-password-hash\.mjs\s+\.\/scripts\/generate-password-hash\.mjs(?:\s|$)/m.test(
+      dockerfileContent
+    )
+  ) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'scripts/generate-password-hash.mjs',
+      reason:
+        'Dockerfile runner stage must copy only /app/scripts/generate-password-hash.mjs into ./scripts/generate-password-hash.mjs.',
+    });
+  }
+  if (/COPY\s+--from=builder\s+\/app\/scripts\/?\s+(?:\.\/scripts|\/app\/scripts)(?:\s|$)/m.test(dockerfileContent)) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '/app/scripts',
+      reason:
+        'Dockerfile runner stage must not copy the entire /app/scripts directory into the runtime image; copy only scripts/generate-password-hash.mjs.',
     });
   }
   if (/COPY\s+--from=(?:builder|prisma-cli)\s+--chown=nextjs:nodejs\b/.test(dockerfileContent)) {
@@ -629,7 +663,6 @@ function checkDockerfileContent(
         'postcss.config.mjs',
         'tsconfig.json',
         'tsconfig.build.json',
-        'next-env.d.ts',
         'assets',
         'public',
         'src',
@@ -821,6 +854,42 @@ function checkDockerComposeFile(
     return;
   }
 
+  if (relPath === 'docker-compose.yml') {
+    const appSvc = servicesNode.get('app', true);
+    if (isMap(appSvc)) {
+      const initNode = appSvc.get('init', true);
+      if (!isScalar(initNode) || initNode.value !== true) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'app.init',
+          reason: 'docker-compose.yml service "app" must set "init: true" for signal forwarding and zombie reaping.',
+        });
+      }
+
+      const stopGraceNode = appSvc.get('stop_grace_period', true);
+      const rawGrace = isScalar(stopGraceNode) ? String(stopGraceNode.value ?? '').trim() : '';
+      const graceMatch = rawGrace.match(/^(\d+)(ms|s|m)?$/i);
+      let graceMs = 0;
+      if (graceMatch) {
+        const amount = Number(graceMatch[1]);
+        const unit = (graceMatch[2] ?? 's').toLowerCase();
+        graceMs = unit === 'ms' ? amount : unit === 'm' ? amount * 60_000 : amount * 1000;
+      }
+      if (!graceMatch || graceMs < 15_000) {
+        violations.push({
+          filePath: relPath,
+          lineNumber: 1,
+          lineContent: rawGrace ? `stop_grace_period: ${rawGrace}` : '',
+          imageRef: 'app.stop_grace_period',
+          reason:
+            'docker-compose.yml service "app" must configure "stop_grace_period: 15s" (at least 15s to cover HTTP request completion and the 5000ms Prisma pool drain).',
+        });
+      }
+    }
+  }
+
   if (relPath === 'docker-compose.ci.yml') {
     for (const requiredService of ['migration', 'app']) {
       const svcNode = servicesNode.get(requiredService, true);
@@ -963,7 +1032,8 @@ function checkWorkflowImages(
   workflowPath: string,
   baseDir: string,
   violations: Violation[],
-  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>,
+  expectedNodeMajor: string | null
 ): void {
   const relPath = path.relative(baseDir, workflowPath).replace(/\\/g, '/');
   const content = fs.readFileSync(workflowPath, 'utf8');
@@ -1028,6 +1098,74 @@ function checkWorkflowImages(
             pinnedOccurrences,
             'docker://'
           );
+        }
+
+        if (
+          isScalar(usesNode) &&
+          typeof usesNode.value === 'string' &&
+          usesNode.value.trim().startsWith('actions/setup-node@')
+        ) {
+          const usesOffset = usesNode.range?.[0] ?? 0;
+          const usesLine = lineCounter.linePos(usesOffset).line;
+          const usesLineContent = (lines[usesLine - 1] ?? '').trim();
+          const setupWithNode: unknown = stepNode.get('with', true);
+          const versionFileNode: unknown = isMap(setupWithNode)
+            ? setupWithNode.get('node-version-file', true)
+            : undefined;
+          const nodeVersionNode: unknown = isMap(setupWithNode)
+            ? setupWithNode.get('node-version', true)
+            : undefined;
+
+          if (versionFileNode === undefined && nodeVersionNode === undefined) {
+            violations.push({
+              filePath: relPath,
+              lineNumber: usesLine,
+              lineContent: usesLineContent,
+              imageRef: 'actions/setup-node',
+              reason:
+                'actions/setup-node step must declare node-version-file: ".nvmrc" or a node-version matching .nvmrc.',
+            });
+          } else {
+            if (versionFileNode !== undefined) {
+              const versionFileVal =
+                isScalar(versionFileNode) && versionFileNode.value !== null
+                  ? String(versionFileNode.value).trim()
+                  : '';
+              const vfOffset =
+                isScalar(versionFileNode) && versionFileNode.range ? versionFileNode.range[0] : usesOffset;
+              const vfLine = lineCounter.linePos(vfOffset).line;
+              if (versionFileVal !== '.nvmrc') {
+                violations.push({
+                  filePath: relPath,
+                  lineNumber: vfLine,
+                  lineContent: (lines[vfLine - 1] ?? '').trim(),
+                  imageRef: 'node-version-file',
+                  reason: `actions/setup-node node-version-file ("${versionFileVal}") must reference ".nvmrc".`,
+                });
+              }
+            }
+            if (nodeVersionNode !== undefined) {
+              const rawNodeVersion =
+                isScalar(nodeVersionNode) && nodeVersionNode.value !== null
+                  ? String(nodeVersionNode.value).trim()
+                  : '';
+              const nvOffset =
+                isScalar(nodeVersionNode) && nodeVersionNode.range ? nodeVersionNode.range[0] : usesOffset;
+              const nvLine = lineCounter.linePos(nvOffset).line;
+              if (!rawNodeVersion.includes('${{')) {
+                const wfNodeMajor = parseLeadingMajorVersion(rawNodeVersion);
+                if (!wfNodeMajor || (expectedNodeMajor && wfNodeMajor !== expectedNodeMajor)) {
+                  violations.push({
+                    filePath: relPath,
+                    lineNumber: nvLine,
+                    lineContent: (lines[nvLine - 1] ?? '').trim(),
+                    imageRef: 'node-version',
+                    reason: `actions/setup-node node-version ("${rawNodeVersion}") does not match expected Node.js major "${expectedNodeMajor ?? 'unknown'}" from .nvmrc.`,
+                  });
+                }
+              }
+            }
+          }
         }
 
         const withNode: unknown = stepNode.get('with', true);
@@ -1097,9 +1235,15 @@ export function checkDockerBuild(
   } else {
     try {
       const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
-        engines?: { node?: string };
+        engines?: { node?: string; npm?: string };
+        devEngines?: {
+          runtime?: { name?: string; version?: string; onFail?: string };
+          packageManager?: { name?: string; version?: string; onFail?: string };
+        };
+        devDependencies?: Record<string, string>;
       };
       const enginesNode = pkg.engines?.node ?? '';
+      const enginesNpm = pkg.engines?.npm ?? '';
       const pkgNodeMajor = parseLeadingMajorVersion(enginesNode);
       if (!pkgNodeMajor) {
         violations.push({
@@ -1117,6 +1261,61 @@ export function checkDockerBuild(
           imageRef: 'engines.node',
           reason: `package.json engines.node ("${enginesNode}") major version "${pkgNodeMajor}" does not match .nvmrc ("${expectedNodeMajor}").`,
         });
+      }
+      if (!enginesNpm || parseLeadingMajorVersion(enginesNpm) !== '10') {
+        violations.push({
+          filePath: 'package.json',
+          lineNumber: 1,
+          lineContent: enginesNpm ? `"npm": "${enginesNpm}"` : '',
+          imageRef: 'engines.npm',
+          reason: 'package.json must declare engines.npm targeting npm 10 ("^10.9.0").',
+        });
+      }
+      const runtimeNodeVersion = pkg.devEngines?.runtime?.version?.trim();
+      const runtimeNodeMajor = runtimeNodeVersion
+        ? parseLeadingMajorVersion(runtimeNodeVersion)
+        : null;
+      if (
+        pkg.devEngines?.runtime?.name !== 'node' ||
+        !runtimeNodeVersion ||
+        runtimeNodeMajor !== (expectedNodeMajor ?? pkgNodeMajor) ||
+        pkg.devEngines?.runtime?.onFail !== 'error'
+      ) {
+        violations.push({
+          filePath: 'package.json',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'devEngines.runtime',
+          reason:
+            'package.json devEngines.runtime must enforce name "node", Node major matching engines.node/.nvmrc, and onFail "error".',
+        });
+      }
+      if (
+        pkg.devEngines?.packageManager?.name !== 'npm' ||
+        pkg.devEngines?.packageManager?.version !== enginesNpm ||
+        pkg.devEngines?.packageManager?.onFail !== 'error'
+      ) {
+        violations.push({
+          filePath: 'package.json',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'devEngines.packageManager',
+          reason:
+            'package.json devEngines.packageManager must enforce name "npm", version matching engines.npm, and onFail "error".',
+        });
+      }
+      const typesNodeVersion = pkg.devDependencies?.['@types/node'];
+      if (typesNodeVersion !== undefined) {
+        const typesNodeMajor = parseLeadingMajorVersion(typesNodeVersion);
+        if (!typesNodeMajor || (expectedNodeMajor && typesNodeMajor !== expectedNodeMajor)) {
+          violations.push({
+            filePath: 'package.json',
+            lineNumber: 1,
+            lineContent: `"@types/node": "${typesNodeVersion}"`,
+            imageRef: '@types/node',
+            reason: `package.json devDependencies["@types/node"] ("${typesNodeVersion}") does not match .nvmrc ("${expectedNodeMajor ?? 'unknown'}").`,
+          });
+        }
       }
     } catch {
       violations.push({
@@ -1258,7 +1457,13 @@ export function checkDockerBuild(
       .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
       .sort();
     for (const file of workflowFiles) {
-      checkWorkflowImages(path.join(workflowsDir, file), rootDir, violations, pinnedOccurrences);
+      checkWorkflowImages(
+        path.join(workflowsDir, file),
+        rootDir,
+        violations,
+        pinnedOccurrences,
+        expectedNodeMajor
+      );
     }
   }
 
@@ -1319,7 +1524,19 @@ export function checkDockerBuild(
         lineNumber: 1,
         lineContent: '',
         imageRef: './node_modules/.bin/prisma migrate deploy',
-        reason: 'docker-entrypoint.sh must execute ./node_modules/.bin/prisma migrate deploy when RUN_MIGRATIONS=true.',
+        reason: 'docker-entrypoint.sh must execute ./node_modules/.bin/prisma migrate deploy when RUN_MIGRATIONS=true or RUN_MIGRATIONS=1.',
+      });
+    }
+    if (
+      !/\[\s*"\$RUN_MIGRATIONS"\s*=\s*"true"\s*\]/.test(entrypointContent) ||
+      !/\[\s*"\$RUN_MIGRATIONS"\s*=\s*"1"\s*\]/.test(entrypointContent)
+    ) {
+      violations.push({
+        filePath: 'docker-entrypoint.sh',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'RUN_MIGRATIONS=1',
+        reason: 'docker-entrypoint.sh must accept both RUN_MIGRATIONS="true" and RUN_MIGRATIONS="1".',
       });
     }
     if (!entrypointContent.includes('NPM_CONFIG_UPDATE_NOTIFIER=false')) {
@@ -1356,10 +1573,16 @@ export function checkDockerBuild(
     });
   }
 
-  // 7. Check standalone build artifacts (.next/standalone) when present or required (--require-standalone)
+  // 7. Check standalone build artifacts (.next/standalone) when present from a production build or required (--require-standalone)
   const nextDir = path.join(rootDir, '.next');
   const standaloneDir = path.join(nextDir, 'standalone');
   const hasNextDir = fs.existsSync(nextDir) && fs.statSync(nextDir).isDirectory();
+  const hasStandaloneDir =
+    fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+  const hasProductionBuildMarker =
+    fs.existsSync(path.join(nextDir, 'BUILD_ID')) ||
+    fs.existsSync(path.join(nextDir, 'routes-manifest.json')) ||
+    hasStandaloneDir;
 
   if (requireStandalone && !hasNextDir) {
     violations.push({
@@ -1370,9 +1593,7 @@ export function checkDockerBuild(
       reason:
         ".next build output directory is missing while --require-standalone is enabled. Run 'npm run build' first.",
     });
-  } else if (requireStandalone || hasNextDir) {
-    const hasStandaloneDir =
-      fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+  } else if (requireStandalone || hasProductionBuildMarker) {
     if (!hasStandaloneDir) {
       violations.push({
         filePath: '.next/standalone',

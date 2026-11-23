@@ -23,6 +23,8 @@ export interface RuntimeContractRow {
   classification: EnvClassification;
   hasDefaultColumn: boolean;
   defaultValue: string | null;
+  targetFieldCell?: string;
+  descriptionCell?: string;
 }
 
 function unwrapExpression(node: ts.Expression): ts.Expression {
@@ -988,6 +990,8 @@ export function parseRuntimeContractTables(docContent: string): RuntimeContractR
       /^(?:requirement|required|status)$/i.test(h.trim())
     );
     const defaultColIdx = tableHeaders.findIndex((h) => /\bdefault\b/i.test(h.trim()));
+    const targetColIdx = tableHeaders.findIndex((h) => /\btarget\b/i.test(h.trim()));
+    const descColIdx = tableHeaders.findIndex((h) => /\bdescription\b/i.test(h.trim()));
 
     const classification =
       reqColIdx !== -1 && cells[reqColIdx] !== undefined
@@ -999,6 +1003,12 @@ export function parseRuntimeContractTables(docContent: string): RuntimeContractR
       hasDefaultColumn && cells[defaultColIdx] !== undefined
         ? parseDefaultCell(cells[defaultColIdx])
         : null;
+    const targetFieldCell =
+      targetColIdx !== -1 && cells[targetColIdx] !== undefined ? cells[targetColIdx] : undefined;
+    const descriptionCell =
+      descColIdx !== -1 && cells[descColIdx] !== undefined
+        ? cells[descColIdx]
+        : cells[cells.length - 1];
 
     rows.push({
       key,
@@ -1006,6 +1016,8 @@ export function parseRuntimeContractTables(docContent: string): RuntimeContractR
       classification,
       hasDefaultColumn,
       defaultValue,
+      targetFieldCell,
+      descriptionCell,
     });
   }
 
@@ -1191,6 +1203,188 @@ export function validateRuntimeContract(
     }
   }
 
+  const hasExecutionSection = /^##\s+\d+\.\s+Node\.js/m.test(docContent);
+  const hasDatabaseSection = /^##\s+\d+\.\s+Database Specification/m.test(docContent);
+  const hasLifecycleProbesSection = /^##\s+\d+\.\s+Application Lifecycle & Probes/m.test(docContent);
+
+  if (/\bv20(?:\.x)?\b/i.test(docContent) || (hasExecutionSection && !docContent.includes('>=22.22.1 <23.0.0'))) {
+    errors.push(
+      `${docName}: Must specify Node.js v22.x LTS range ">=22.22.1 <23.0.0" without any false v20.x floor`
+    );
+  }
+
+  if (
+    /\/opt\/prisma-cli[^\n]*packaged under\s+`\/app`/i.test(docContent) ||
+    (hasExecutionSection &&
+      (!/outside\s+`\/app`\s+at\s+`\/opt\/prisma-cli`|`\/opt\/prisma-cli`[^\n]*outside\s+`\/app`/i.test(
+        docContent
+      ) ||
+        !docContent.includes('scripts/generate-password-hash.mjs')))
+  ) {
+    errors.push(
+      `${docName}: Must document /opt/prisma-cli outside /app and scripts/generate-password-hash.mjs (rather than packaging /opt/prisma-cli or the full scripts/ tree under /app)`
+    );
+  }
+
+  if (operatorSet.has('RUN_MIGRATIONS') || hasLifecycleProbesSection) {
+    const runMigrationsRow = rowsByKey.get('RUN_MIGRATIONS');
+    const desc = runMigrationsRow?.descriptionCell ?? '';
+    const tableMissing =
+      Boolean(runMigrationsRow) &&
+      (!/\btrue\b/.test(desc) || !/(?:`1`|RUN_MIGRATIONS=1|\bor\s+1\b)/.test(desc));
+    const lifecycleMissing =
+      hasLifecycleProbesSection &&
+      (!docContent.includes('RUN_MIGRATIONS=true') || !docContent.includes('RUN_MIGRATIONS=1'));
+    if (tableMissing || lifecycleMissing) {
+      errors.push(
+        `Incomplete RUN_MIGRATIONS contract in ${docName}: Must document both RUN_MIGRATIONS=true and RUN_MIGRATIONS=1 across the RUN_MIGRATIONS table entry and Migration Phase`
+      );
+    }
+  }
+
+  if (operatorSet.has('E2E_TEST')) {
+    const e2eRow = rowsByKey.get('E2E_TEST');
+    const e2eDesc = e2eRow?.descriptionCell ?? '';
+    const adminPasswordDesc = rowsByKey.get('ADMIN_PASSWORD')?.descriptionCell ?? '';
+    const guestPasscodeDesc = rowsByKey.get('GUEST_PASSCODE')?.descriptionCell ?? '';
+    const guestSessionSecretDesc = rowsByKey.get('GUEST_SESSION_SECRET')?.descriptionCell ?? '';
+    const mentionsFallbackBypass =
+      /E2E_FALLBACK_/i.test(docContent) &&
+      /E2E_FALLBACK_|fallback[- ]secret|blocklist/i.test(e2eDesc) &&
+      /\bE2E_TEST=true\b/.test(e2eDesc) &&
+      /\bsrc\/env\.ts\b/.test(e2eDesc);
+    const credentialRowsMentionBypass =
+      (!rowsByKey.has('ADMIN_PASSWORD') || adminPasswordDesc.includes('E2E_TEST=true')) &&
+      (!rowsByKey.has('GUEST_PASSCODE') || guestPasscodeDesc.includes('E2E_TEST=true')) &&
+      (!rowsByKey.has('GUEST_SESSION_SECRET') || guestSessionSecretDesc.includes('E2E_TEST=true'));
+    if ((e2eRow && !mentionsFallbackBypass) || !credentialRowsMentionBypass) {
+      errors.push(
+        `Incomplete E2E_TEST security warning in ${docName}: Must disclose the E2E_TEST=true production credential blocklist bypass (E2E_FALLBACK_* in src/env.ts)`
+      );
+    }
+  }
+
+  const syncedPartnerTargets: Array<{ key: string; expectedTargets: string[] }> = [
+    { key: 'SITE_PARTNER1_NAME', expectedTargets: ['partner1Name', 'brideName'] },
+    { key: 'SITE_PARTNER2_NAME', expectedTargets: ['partner2Name', 'groomName'] },
+  ];
+  for (const { key, expectedTargets } of syncedPartnerTargets) {
+    if (!operatorSet.has(key)) continue;
+    const row = rowsByKey.get(key);
+    if (!row) continue;
+    const targetText = row.targetFieldCell ?? '';
+    const missingTargets = expectedTargets.filter(
+      (field) => !new RegExp(`\\b${escapeRegex(field)}\\b`).test(targetText)
+    );
+    if (missingTargets.length > 0) {
+      errors.push(
+        `Target AppConfig field mismatch for ${key} in ${docName}: expected [${expectedTargets.join(', ')}], missing [${missingTargets.join(', ')}]`
+      );
+    }
+  }
+
+  const parsedSiteKeys = ['SITE_WEDDING_DATE', 'SITE_LATITUDE', 'SITE_LONGITUDE'] as const;
+  for (const siteKey of parsedSiteKeys) {
+    if (!operatorSet.has(siteKey)) continue;
+    const row = rowsByKey.get(siteKey);
+    if (!row) continue;
+    const desc = row.descriptionCell ?? '';
+    const documentsBlankIgnore =
+      /\b(?:blank|whitespace|readNonEmptySiteEnv|trim(?:med)?)\b/i.test(desc) &&
+      !/empty strings?\s*(?:\(`""`\))?\s*(?:or\s+[\w-]+\s+values\s+)?fail/i.test(desc);
+    const documentsMalformedFailure = /\bfail\b/i.test(desc);
+    if (!documentsBlankIgnore || !documentsMalformedFailure) {
+      errors.push(
+        `Outdated validation contract for ${siteKey} in ${docName}: must document that blank/whitespace values are ignored via readNonEmptySiteEnv while non-empty malformed values fail schema validation`
+      );
+    }
+  }
+
+  if (
+    hasLifecycleProbesSection &&
+    (!/HTTP 503[\s\S]{0,400}?"status":\s*"degraded"[\s\S]{0,200}?"database":\s*"disconnected"[\s\S]{0,200}?"timestamp"/i.test(
+      docContent
+    ) ||
+      !docContent.includes('"error": "Database connection failed"'))
+  ) {
+    errors.push(
+      `${docName}: Must document preserved status, database, timestamp, and sanitized "Database connection failed" fields on GET /api/health HTTP 503 responses`
+    );
+  }
+
+  if (
+    (hasDatabaseSection || hasLifecycleProbesSection) &&
+    (!docContent.includes('globalForPrisma') || !docContent.includes('5000ms'))
+  ) {
+    errors.push(
+      `${docName}: Must document src/lib/prisma.ts globalForPrisma caching and 5000ms shutdown drain safety timer`
+    );
+  }
+
+  return errors;
+}
+
+export function validateConfigSiteOverrideParity(
+  configTsContent: string,
+  runtimeContractContent: string
+): string[] {
+  const errors: string[] = [];
+  const rows = parseRuntimeContractTables(runtimeContractContent);
+  const rowsByKey = new Map<string, RuntimeContractRow>();
+  for (const row of rows) {
+    if (!rowsByKey.has(row.key)) {
+      rowsByKey.set(row.key, row);
+    }
+  }
+
+  if (
+    /SITE_PARTNER1_NAME[\s\S]{0,240}overrides\.brideName\s*=/.test(configTsContent) &&
+    !/\bbrideName\b/.test(rowsByKey.get('SITE_PARTNER1_NAME')?.targetFieldCell ?? '')
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: SITE_PARTNER1_NAME must list synced `brideName` target field from src/lib/config.ts'
+    );
+  }
+  if (
+    /SITE_PARTNER2_NAME[\s\S]{0,240}overrides\.groomName\s*=/.test(configTsContent) &&
+    !/\bgroomName\b/.test(rowsByKey.get('SITE_PARTNER2_NAME')?.targetFieldCell ?? '')
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: SITE_PARTNER2_NAME must list synced `groomName` target field from src/lib/config.ts'
+    );
+  }
+
+  const blankSafeOverrideRegex =
+    /readNonEmptySiteEnv\(\s*process\.env\.(SITE_(?:WEDDING_DATE|LATITUDE|LONGITUDE))\s*\)/g;
+  let blankMatch: RegExpExecArray | null;
+  while ((blankMatch = blankSafeOverrideRegex.exec(configTsContent)) !== null) {
+    const siteKey = blankMatch[1];
+    const row = rowsByKey.get(siteKey);
+    const desc = row?.descriptionCell ?? '';
+    const documentsBlankIgnore =
+      /\b(?:blank|whitespace|readNonEmptySiteEnv|trim(?:med)?)\b/i.test(desc) &&
+      !/empty strings?\s*(?:\(`""`\))?\s*(?:or\s+[\w-]+\s+values\s+)?fail/i.test(desc);
+    if (!row || !documentsBlankIgnore) {
+      errors.push(
+        `docs/runtime-contract.md: ${siteKey} uses readNonEmptySiteEnv in src/lib/config.ts and must document blank/whitespace ignoring without claiming empty strings fail validation`
+      );
+    }
+  }
+
+  const strictParseOverrideRegex =
+    /if\s*\(\s*process\.env\.(SITE_[A-Z0-9_]+)\s*!==\s*undefined\s*\)\s*\{[\s\S]{0,160}?(?:new\s+Date|parseFloat)\(\s*process\.env\.\1\s*\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = strictParseOverrideRegex.exec(configTsContent)) !== null) {
+    const siteKey = match[1];
+    const row = rowsByKey.get(siteKey);
+    const desc = row?.descriptionCell ?? '';
+    if (!row || !/(?:empty string|""|!==\s*undefined)/i.test(desc)) {
+      errors.push(
+        `docs/runtime-contract.md: ${siteKey} checks \`!== undefined\` in src/lib/config.ts and must warn against empty-string ("") values`
+      );
+    }
+  }
+
   return errors;
 }
 
@@ -1267,6 +1461,19 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
     for (const err of docErrors) {
       console.error(`❌ ${err}`);
       failed = true;
+    }
+
+    if (doc.name === 'docs/runtime-contract.md') {
+      const configPath = path.join(cwd, 'src/lib/config.ts');
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        for (const configErr of validateConfigSiteOverrideParity(configContent, docContent)) {
+          if (!docErrors.includes(configErr)) {
+            console.error(`❌ ${configErr}`);
+            failed = true;
+          }
+        }
+      }
     }
   }
 

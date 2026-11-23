@@ -3,8 +3,12 @@ import {
   BROADCAST_STARTER_TEMPLATES,
   buildGuestRsvpUrl,
   escapeHtmlEntities,
+  isStationeryCardBody,
+  parseStationeryCardDirective,
   renderBroadcastTemplate,
+  renderStationeryCardHtml,
   sanitizeEmailSubject,
+  stripStationeryCardDirective,
 } from '../template';
 
 describe('renderBroadcastTemplate', () => {
@@ -129,9 +133,11 @@ describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
     );
   });
 
-  it('provides starter templates for RSVP reminders, final RSVP calls, sub-event updates, and mailing address requests with {{guestName}} and {{rsvpUrl}}', () => {
+  it('provides starter templates including Save the Date and Formal Invitation alongside RSVP and address templates with {{guestName}} and {{rsvpUrl}}', () => {
     const templateIds = BROADCAST_STARTER_TEMPLATES.map((t) => t.id);
     expect(templateIds).toEqual([
+      'save-the-date',
+      'formal-invitation',
       'rsvp-reminder',
       'final-rsvp-call',
       'sub-event-update',
@@ -145,5 +151,57 @@ describe('{{rsvpUrl}} placeholder and BROADCAST_STARTER_TEMPLATES', () => {
       expect(tpl.smsBody).toContain('{{guestName}}');
       expect(tpl.smsBody).toContain('{{rsvpUrl}}');
     }
+  });
+
+  it('parses [CARD:...] directives and renders accessible themed HTML stationery cards with calendar links and RSVP button', () => {
+    const saveDateTpl = BROADCAST_STARTER_TEMPLATES.find((t) => t.id === 'save-the-date')!;
+    const formalTpl = BROADCAST_STARTER_TEMPLATES.find((t) => t.id === 'formal-invitation')!;
+
+    expect(isStationeryCardBody(saveDateTpl.emailBody)).toBe(true);
+    expect(isStationeryCardBody(formalTpl.emailBody)).toBe(true);
+    expect(isStationeryCardBody('Plain paragraph body')).toBe(false);
+
+    const stripped = stripStationeryCardDirective('[CARD:save-the-date]\nHello Alice!');
+    expect(stripped).toBe('Hello Alice!');
+
+    const renderedBody = renderBroadcastTemplate(
+      formalTpl.emailBody,
+      {
+        guestName: 'Alice & <script>bad()</script>',
+        householdName: 'Smith Family',
+        invitationCode: 'ALICE2026',
+        coupleNames: 'Sarah & Dan',
+        weddingDate: 'October 25, 2026',
+        venueName: 'Sunset Pavilion',
+        venueLocation: '123 Ocean View Dr, Monterey, CA',
+        baseUrl: 'https://wedding.example.com',
+      },
+      { escapeHtml: true }
+    );
+
+    const parsed = parseStationeryCardDirective(renderedBody);
+    expect(parsed?.variant).toBe('formal-invitation');
+
+    const cardHtml = renderStationeryCardHtml(parsed!.variant, parsed!.content, {
+      partner1Name: 'Sarah',
+      partner2Name: 'Dan',
+      weddingDate: new Date('2026-10-25T17:00:00Z'),
+      venueName: 'Sunset Pavilion',
+      venueAddress: '123 Ocean View Dr',
+      venueCity: 'Monterey',
+      venueState: 'CA',
+      colorPrimary: '#1F3A52',
+      colorSecondary: '#C49A45',
+    });
+
+    expect(cardHtml).toContain('Sarah &amp; Dan');
+    expect(cardHtml).toContain('Sunset Pavilion');
+    expect(cardHtml).toContain('123 Ocean View Dr, Monterey, CA');
+    expect(cardHtml).toContain('https://calendar.google.com/calendar/render');
+    expect(cardHtml).toContain('https://outlook.live.com/calendar/');
+    expect(cardHtml).toContain('https://calendar.yahoo.com/');
+    expect(cardHtml).toContain('href="https://wedding.example.com/guest?code=ALICE2026"');
+    expect(cardHtml).toContain('RSVP &amp; View Invitation');
+    expect(cardHtml).not.toContain('<script>');
   });
 });

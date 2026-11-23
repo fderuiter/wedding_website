@@ -15,7 +15,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
-import { withBasePath } from '@/utils/basePath';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { ThemeSelector } from '../ui/ThemeSelector';
@@ -103,12 +102,14 @@ export default function Navbar({
   hasVisibleFaqs,
 }: NavbarProps) {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
   const [trackedPathname, setTrackedPathname] = useState(pathname);
   const guideTriggerRef = useRef<HTMLButtonElement>(null);
-  const wasGuideOpenOnMouseDownRef = useRef(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const pendingInitialFocusRef = useRef<'first' | 'last' | null>(null);
   const guideTriggerId = useId();
 
@@ -138,7 +139,9 @@ export default function Navbar({
     setIsGuideMenuOpen(false);
   }, []);
 
-  const { overlayRef: guideOverlayRef } = useOverlay(isGuideMenuOpen, handleCloseGuideMenu);
+  const { overlayRef: guideOverlayRef } = useOverlay(isGuideMenuOpen, handleCloseGuideMenu, {
+    triggerRef: guideTriggerRef,
+  });
   const { handleMenuKeyDown } = useMenuNavigation(guideOverlayRef);
 
   useEffect(() => {
@@ -174,7 +177,7 @@ export default function Navbar({
   }, [config.features]);
 
   useEffect(() => {
-    if (pathname !== '/' || typeof window === 'undefined') return;
+    if (normalizedPathname !== '/' || typeof window === 'undefined') return;
 
     const sectionIds = features
       .filter((f): f is HomeFeatureSection & { id: string } => Boolean(f.visible && f.id && f.id !== 'hero'))
@@ -208,23 +211,27 @@ export default function Navbar({
     return () => {
       observer.disconnect();
     };
-  }, [pathname, features, setActiveHash]);
+  }, [normalizedPathname, features, setActiveHash]);
 
   const isLinkActive = (href: string) => {
     if (href.includes('#')) {
-      if (pathname !== '/') return false;
+      if (normalizedPathname !== '/') return false;
       const hashPart = href.substring(href.indexOf('#'));
       return activeHash === hashPart;
     }
-    if (pathname === '/') {
+    if (normalizedPathname === '/') {
       if (href === '/') {
         return !activeHash || activeHash === '#top' || activeHash === '#hero';
       }
       return false;
     }
-    return pathname === href;
+    return normalizedPathname === href;
   };
 
+  const getLinkAriaCurrent = (href: string): 'location' | 'page' | undefined => {
+    if (!isLinkActive(href)) return undefined;
+    return href.includes('#') ? 'location' : 'page';
+  };
   const role = isAdmin ? 'admin' : 'public';
   const baseLinks = getNavLinks(role, config.modules);
 
@@ -266,14 +273,14 @@ export default function Navbar({
   const mobileLinks = [...primaryLinks, ...secondaryLinks, ...adminLinks];
   const isSecondaryActive = secondaryLinks.some((link) => isLinkActive(link.href));
 
-  const brandLogoUrl = config.brandLogoUrl ? withBasePath(config.brandLogoUrl) : config.brandLogoUrl;
+  const brandLogoUrl = config.brandLogoUrl;
   const partner1 = config.partner1Name || config.brideName || '';
   const partner2 = config.partner2Name || config.groomName || '';
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
   const monogram = deriveBrandMonogram(config);
-  const disablePrefetch = pathname === '/guest/login';
-  const defaultHelpCategory = resolveHelpCategoryForPath(pathname);
+  const disablePrefetch = normalizedPathname === '/guest/login';
+  const defaultHelpCategory = resolveHelpCategoryForPath(normalizedPathname);
 
   const handleGuideTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -294,7 +301,7 @@ export default function Navbar({
         key={link.href}
         href={link.href}
         prefetch={disablePrefetch ? false : undefined}
-        aria-current={active ? 'page' : undefined}
+        aria-current={getLinkAriaCurrent(link.href)}
         onClick={() => {
           if (link.href.includes('#')) {
             setActiveHash(link.href.substring(link.href.indexOf('#')));
@@ -320,7 +327,7 @@ export default function Navbar({
         href={link.href}
         role="menuitem"
         prefetch={disablePrefetch ? false : undefined}
-        aria-current={active ? 'page' : undefined}
+        aria-current={getLinkAriaCurrent(link.href)}
         onKeyDown={handleMenuKeyDown}
         onClick={() => {
           if (link.href.includes('#')) {
@@ -377,17 +384,7 @@ export default function Navbar({
                       aria-haspopup="menu"
                       aria-expanded={isGuideMenuOpen}
                       aria-controls="desktop-guide-menu"
-                      onMouseDown={() => {
-                        wasGuideOpenOnMouseDownRef.current = isGuideMenuOpen;
-                      }}
-                      onClick={() => {
-                        if (wasGuideOpenOnMouseDownRef.current) {
-                          wasGuideOpenOnMouseDownRef.current = false;
-                          setIsGuideMenuOpen(false);
-                        } else {
-                          setIsGuideMenuOpen((prev) => !prev);
-                        }
-                      }}
+                      onClick={() => setIsGuideMenuOpen((prev) => !prev)}
                       onKeyDown={handleGuideTriggerKeyDown}
                       className={`inline-flex items-center gap-1 px-2.5 lg:px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
                         isSecondaryActive || isGuideMenuOpen
@@ -454,7 +451,8 @@ export default function Navbar({
             </div>
             <div className="-mr-2 flex md:hidden">
               <button
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                ref={mobileMenuTriggerRef}
+                onClick={() => setIsMenuOpen((prev) => !prev)}
                 type="button"
                 aria-expanded={isMenuOpen}
                 aria-controls="mobile-menu"
@@ -475,12 +473,26 @@ export default function Navbar({
       <Overlay
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
+        triggerRef={mobileMenuTriggerRef}
         id="mobile-menu"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mobile navigation menu"
         animationType="slide-down"
         layoutClassName="fixed top-16 bottom-0 left-0 right-0 z-40 flex flex-col justify-start"
         className="w-full max-h-full overflow-y-auto overscroll-contain bg-[var(--card-bg,#ffffff)] shadow-xl border-b border-[var(--color-surface-border,#e5e7eb)] text-[var(--color-primary-text)]"
       >
-        <nav aria-label="Mobile Navigation" className="px-2 pt-2 pb-4 space-y-1 sm:px-3">
+        <div className="flex items-center justify-end px-2 pt-2 sm:px-3">
+          <button
+            type="button"
+            aria-label="Close navigation menu"
+            onClick={() => setIsMenuOpen(false)}
+            className="inline-flex items-center justify-center p-2 min-h-[24px] min-w-[24px] rounded-md text-[var(--color-primary-text)] hover:bg-[var(--btn-ghost-hover-bg,rgba(0,0,0,0.05))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))]"
+          >
+            <Icon name="X" className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        <nav aria-label="Mobile Navigation" className="px-2 pt-1 pb-4 space-y-1 sm:px-3">
           {mobileLinks.map((link) => {
             const active = isLinkActive(link.href);
             return (
@@ -494,7 +506,7 @@ export default function Navbar({
                   }
                   setIsMenuOpen(false);
                 }}
-                aria-current={active ? 'page' : undefined}
+                aria-current={getLinkAriaCurrent(link.href)}
                 className={`block px-3 py-2 rounded-md text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring,var(--color-primary))] focus-visible:ring-offset-2 ${
                   active
                     ? 'text-[var(--btn-primary-text,var(--color-primary-text,#ffffff))] bg-[var(--btn-primary-bg,var(--color-primary))]'

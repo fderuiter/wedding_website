@@ -8,7 +8,7 @@ This guide provides step-by-step instructions for configuring a local developmen
 
 Before installing the application, verify that your machine meets the minimum system requirements:
 
-- **Node.js & npm**: Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](../.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](../.npmrc) and `devEngines` in [`package.json`](../package.json)). Verify your installed versions with `node -v` and `npm -v` (or run `nvm use`).
+- **Node.js & npm**: Node.js **v22.x LTS** (`>=22.22.1 <23.0.0`, pinned in [`.nvmrc`](../.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](../.npmrc) and `devEngines` in [`package.json`](../package.json)). Verify your installed versions with `node -v` and `npm -v` (or run `nvm use`).
 - **Git**: Modern Git for version control and branch management (`git --version`).
 - **PostgreSQL Database**: A running PostgreSQL instance (v15+ recommended). You can run PostgreSQL locally, via Docker, or use cloud-hosted instances (e.g. Neon, Supabase, Railway, AWS RDS, GCP Cloud SQL). Refer to the [PostgreSQL Database Contract in DEPLOYMENT.md](../DEPLOYMENT.md) and [Application Runtime Contract](./runtime-contract.md) for operational expectations.
 - **Docker & Docker Compose** *(Optional)*: Recommended for automated test database containerization and container smoke tests.
@@ -31,7 +31,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client.
+   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
 
 ---
 
@@ -165,10 +165,14 @@ Before committing code or submitting pull requests, run local quality checks to 
 - **Unit & Integration Test Suite:**
   ```bash
   npm test
-  # or in watch mode
+  # targeted single-file run
+  npm test -- src/utils/__tests__/ApiError.test.ts
+  # interactive watch mode
   npm run test:watch
+  # full suite with coverage threshold enforcement
+  npm run test:cov
   ```
-  The test runner automatically isolates database state by orchestrating an isolated PostgreSQL container (`wedding_test`) via pretest hooks, ensuring your local development data is never modified.
+  The test runner automatically isolates database state against an isolated PostgreSQL database (`wedding_test`, or an explicit `TEST_DATABASE_URL` override) via cached pretest hooks without modifying local development data.
 
 - **Full Quality Gate:**
   ```bash

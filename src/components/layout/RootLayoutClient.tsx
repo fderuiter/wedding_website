@@ -23,60 +23,10 @@ if (typeof window !== 'undefined' && window.navigator.userAgent.includes('Headle
 }
 
 import type { PublicAppConfig } from '@/lib/config';
-import { stripBasePath } from '@/utils/basePath';
-import type { DemoRuntimeProviderProps } from '@/components/demo/DemoRuntimeProvider';
-
-let staticDemoGateInstalled = false;
-
-function ensureStaticDemoFetchGate(): void {
-  if (staticDemoGateInstalled || typeof window === 'undefined') return;
-  staticDemoGateInstalled = true;
-  document.documentElement.dataset.staticDemo = 'true';
-  try {
-    if (window.localStorage.getItem('isAdminLoggedIn') === null) {
-      window.localStorage.setItem('isAdminLoggedIn', 'true');
-    }
-  } catch {
-    // Ignore storage errors
-  }
-
-  const win = window as Window & { __WEDDING_NATIVE_FETCH__?: typeof window.fetch };
-  const nativeFetch = win.__WEDDING_NATIVE_FETCH__ ?? window.fetch.bind(window);
-  win.__WEDDING_NATIVE_FETCH__ = nativeFetch;
-  const runtimePromise = import('@/lib/demo/runtime').then((mod) => {
-    mod.installDemoBrowserRuntime();
-    return mod;
-  });
-
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const rawUrl =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-    try {
-      const parsed = new URL(rawUrl, window.location.origin);
-      if (
-        parsed.origin === window.location.origin &&
-        stripBasePath(parsed.pathname).startsWith('/api/')
-      ) {
-        const runtime = await runtimePromise;
-        return runtime.handleDemoFetch(input, init, nativeFetch);
-      }
-    } catch {
-      // Fall through to native fetch
-    }
-    return nativeFetch(input, init);
-  };
-}
-
-if (
-  typeof document !== 'undefined' &&
-  document.documentElement?.dataset?.staticDemo === 'true'
-) {
-  ensureStaticDemoFetchGate();
-}
+import { withBasePath } from '@/lib/basePath';
+import SetupWizard from '@/components/setup/SetupWizard';
+import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
+import { DemoToolbar } from '@/components/demo/DemoToolbar';
 
 /**
  * @interface RootLayoutClientProps
@@ -89,6 +39,163 @@ interface RootLayoutClientProps {
   config: PublicAppConfig;
   faqs?: ContentNodeDTO[];
   isStaticExport?: boolean;
+}
+
+function RootLayoutInner({
+  children,
+  config: baseConfig,
+  faqs: baseFaqs,
+}: Omit<RootLayoutClientProps, 'isStaticExport'>) {
+  const demo = useOptionalDemo();
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const [storageIsAdmin, setStorageIsAdmin] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const headerRef = useRef<HTMLElement>(null);
+  const [mainPaddingTop, setMainPaddingTop] = useState(0);
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    const checkLoginStatus = () => {
+      const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
+      setStorageIsAdmin(loggedIn);
+    };
+
+    checkLoginStatus();
+    window.addEventListener('storage', checkLoginStatus);
+
+    return () => {
+      window.removeEventListener('storage', checkLoginStatus);
+    };
+  }, [isDemoMode]);
+
+  const isSetupPersona = isDemoMode && demo?.persona === 'setup';
+  const isAdmin = isDemoMode ? demo?.persona === 'admin' : storageIsAdmin;
+
+  const effectiveConfig = useMemo<PublicAppConfig>(() => {
+    if (!isDemoMode || !demo) return baseConfig;
+    return {
+      ...baseConfig,
+      ...demo.configOverrides,
+    };
+  }, [baseConfig, demo, isDemoMode]);
+
+  const effectiveFaqs = useMemo<ContentNodeDTO[] | undefined>(() => {
+    if (!isDemoMode || !demo) return baseFaqs;
+    return demo.activeDataset.faqs;
+  }, [baseFaqs, demo, isDemoMode]);
+
+  useLayoutEffect(() => {
+    if (isSetupPersona || !headerRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (headerRef.current) {
+        setMainPaddingTop(headerRef.current.offsetHeight);
+      }
+    });
+
+    resizeObserver.observe(headerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [pathname, isSetupPersona]);
+
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const isHeartPage = normalizedPathname === '/heart';
+  const isSlideshowPage = normalizedPathname === '/photos/slideshow';
+  const isSetupPage =
+    normalizedPathname === '/admin/setup' ||
+    Boolean(normalizedPathname?.startsWith('/admin/setup/'));
+  const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
+  const isAdminDashboardPage =
+    normalizedPathname === '/admin/dashboard' ||
+    Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
+    isSetupPage;
+
+  const handleLogout = async () => {
+    if (isDemoMode && demo) {
+      demo.setPersona('guest');
+      return;
+    }
+    try {
+      await fetch(withBasePath('/api/admin/logout'), { method: 'POST' });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      localStorage.removeItem('isAdminLoggedIn');
+      setStorageIsAdmin(false);
+      router.push('/admin/login');
+    }
+  };
+
+  const helpConfig = useMemo<GuestHelpConfig>(() => {
+    if (!effectiveFaqs) return effectiveConfig;
+    const mappedFaqs: GuestHelpFaqItem[] = effectiveFaqs
+      .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
+      .map((n, index) => ({
+        id: n.id,
+        question: n.data.question || '',
+        answer: n.data.answer || '',
+        category: n.data.category,
+        isVisible: n.data.isVisible,
+        displayOrder:
+          typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
+      }));
+    return {
+      ...effectiveConfig,
+      faqs: mappedFaqs,
+    };
+  }, [effectiveConfig, effectiveFaqs]);
+
+  const bottomToolbarClearance = isDemoMode
+    ? demo?.isToolbarCollapsed
+      ? 'pb-16'
+      : 'pb-28'
+    : '';
+
+  return (
+    <GuestHelpProvider config={helpConfig} pathname={pathname}>
+      <GlobalRadialGlow />
+      {isSetupPersona ? (
+        <div className={bottomToolbarClearance}>
+          <SetupWizard
+            key={`demo-setup-${demo?.resetCounter ?? 0}`}
+            onDemoComplete={() => router.push('/admin/dashboard')}
+          />
+        </div>
+      ) : (
+        <>
+          {!isStandalonePage && (
+            <Navbar
+              headerRef={headerRef}
+              isAdmin={isAdmin}
+              handleLogout={handleLogout}
+              config={effectiveConfig}
+              hasVisibleFaqs={effectiveFaqs ? effectiveFaqs.length > 0 : undefined}
+            />
+          )}
+          {isAdminDashboardPage ? (
+            <div
+              className={bottomToolbarClearance}
+              style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+            >
+              {children}
+            </div>
+          ) : (
+            <main
+              aria-label="Application Content"
+              id="main-content"
+              className={bottomToolbarClearance}
+              style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}
+            >
+              {children}
+            </main>
+          )}
+        </>
+      )}
+      {isDemoMode && <DemoToolbar />}
+    </GuestHelpProvider>
+  );
 }
 
 /**
@@ -105,20 +212,6 @@ export default function RootLayoutClient({
   faqs,
   isStaticExport = false,
 }: RootLayoutClientProps) {
-  if (isStaticExport && typeof window !== 'undefined') {
-    ensureStaticDemoFetchGate();
-  }
-
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isSetupWizardPreview, setIsSetupWizardPreview] = useState(false);
-  const [demoConfigOverride, setDemoConfigOverride] = useState<PublicAppConfig | null>(null);
-  const [DemoRuntimeComponent, setDemoRuntimeComponent] =
-    useState<React.ComponentType<DemoRuntimeProviderProps> | null>(null);
-  const effectiveConfig = demoConfigOverride ?? config;
-  const router = useRouter();
-  const pathname = usePathname();
-  const headerRef = useRef<HTMLElement>(null);
-  const [mainPaddingTop, setMainPaddingTop] = useState(0);
   const { addToast } = useToast();
   const [queryClient] = useState(() => {
     const client: QueryClient = new QueryClient({
@@ -156,119 +249,13 @@ export default function RootLayoutClient({
     return client;
   });
 
-  useEffect(() => {
-    const checkLoginStatus = () => {
-      const loggedIn = localStorage.getItem('isAdminLoggedIn') === 'true';
-      setIsAdmin(loggedIn);
-    };
-
-    checkLoginStatus();
-    window.addEventListener('storage', checkLoginStatus);
-
-    return () => {
-      window.removeEventListener('storage', checkLoginStatus);
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!headerRef.current) return;
-
-    const resizeObserver = new ResizeObserver(() => {
-      if (headerRef.current) {
-        setMainPaddingTop(headerRef.current.offsetHeight);
-      }
-    });
-
-    resizeObserver.observe(headerRef.current);
-
-    return () => resizeObserver.disconnect();
-  }, [pathname]);
-
-  const isHeartPage = pathname === '/heart';
-  const isSlideshowPage = pathname === '/photos/slideshow';
-  const isSetupPage = pathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
-  const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
-  const isAdminDashboardPage =
-    pathname === '/admin/dashboard' ||
-    pathname?.startsWith('/admin/dashboard/') ||
-    isSetupPage;
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/admin/logout', { method: 'POST' });
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      localStorage.removeItem('isAdminLoggedIn');
-      setIsAdmin(false);
-      router.push('/admin/login');
-    }
-  };
-
-  useEffect(() => {
-    if (!isStaticExport) return;
-    let cancelled = false;
-    void import('@/components/demo/DemoRuntimeProvider').then((mod) => {
-      if (!cancelled) {
-        setDemoRuntimeComponent(() => mod.default);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isStaticExport]);
-
-  const helpConfig = useMemo<GuestHelpConfig>(() => {
-    if (!faqs) return effectiveConfig;
-    const mappedFaqs: GuestHelpFaqItem[] = faqs
-      .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
-      .map((n, index) => ({
-        id: n.id,
-        question: n.data.question || '',
-        answer: n.data.answer || '',
-        category: n.data.category,
-        isVisible: n.data.isVisible,
-        displayOrder:
-          typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
-      }));
-    return {
-      ...effectiveConfig,
-      faqs: mappedFaqs,
-    };
-  }, [effectiveConfig, faqs]);
-
   return (
     <QueryClientProvider client={queryClient}>
-      <GuestHelpProvider config={helpConfig} pathname={pathname}>
-        <GlobalRadialGlow />
-        {!isSetupWizardPreview && !isStandalonePage && (
-          <Navbar
-            headerRef={headerRef}
-            isAdmin={isAdmin}
-            handleLogout={handleLogout}
-            config={effectiveConfig}
-            hasVisibleFaqs={faqs ? faqs.length > 0 : undefined}
-          />
-        )}
-        {!isSetupWizardPreview && (
-          isAdminDashboardPage ? (
-            <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-              {children}
-            </div>
-          ) : (
-            <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-              {children}
-            </main>
-          )
-        )}
-        {isStaticExport && DemoRuntimeComponent && (
-          <DemoRuntimeComponent
-            onConfigSync={setDemoConfigOverride}
-            onAdminSync={setIsAdmin}
-            onSetupWizardPreviewSync={setIsSetupWizardPreview}
-          />
-        )}
-      </GuestHelpProvider>
+      <DemoProvider enabled={isStaticExport}>
+        <RootLayoutInner config={config} faqs={faqs}>
+          {children}
+        </RootLayoutInner>
+      </DemoProvider>
     </QueryClientProvider>
   );
 }

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { FormGroup, Label, Input, Textarea, Checkbox, Select } from '@/components/ui/forms';
 import { cn } from '@/utils/cn';
-import { withBasePath } from '@/utils/basePath';
+import { withBasePath } from '@/lib/basePath';
 
 interface WeddingPartyEditorFormProps {
   values: Partial<WeddingPartyMemberDTO>;

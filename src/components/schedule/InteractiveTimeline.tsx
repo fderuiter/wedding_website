@@ -16,11 +16,15 @@ import type {
 } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
+import { Icon } from '@/components/ui/Icon';
 import { useGuestHelp } from '@/components/guest/GuestHelpModal';
+import { joinEventLocations, resolveDirectionsUrl } from '@/utils/maps';
 import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
   sanitizeRsvpClosedMessage,
 } from '@/utils/rsvpDeadline';
+import { withBasePath } from '@/lib/basePath';
 
 interface CategoryColorStyle {
   bg?: string;
@@ -38,6 +42,7 @@ interface ScheduleEventItem {
   categoryTags: string[];
   categoryColors?: Record<string, CategoryColorStyle>;
   locationName?: string;
+  location?: string;
   attireRules?: string;
   description?: string;
   isPrivate?: boolean;
@@ -68,6 +73,8 @@ interface InteractiveTimelineProps {
   timezone?: string;
   title?: string;
   className?: string;
+  sectionId?: string;
+  isPreview?: boolean;
   maxPlusOnes?: number | null;
   emptyStateMessage?: string;
   rsvpOpen?: boolean;
@@ -188,7 +195,8 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         endTime: data?.endTime || '',
         categoryTags: categoryTags.length > 0 ? categoryTags : ['General'],
         categoryColors: Object.keys(eventCategoryColors).length > 0 ? eventCategoryColors : undefined,
-        locationName: data?.locationName || data?.location || '',
+        locationName: data?.locationName || '',
+        location: data?.location || '',
         attireRules: data?.attireRules || data?.attire || data?.receptionAttire || '',
         description: data?.description || data?.receptionDetails || '',
         isPrivate: Boolean(data?.isPrivate),
@@ -211,6 +219,8 @@ export default function InteractiveTimeline({
   timezone = 'UTC',
   title = 'Schedule of Events',
   className = '',
+  sectionId = 'schedule-timeline',
+  isPreview = false,
   maxPlusOnes,
   emptyStateMessage,
   rsvpOpen: rsvpOpenProp,
@@ -336,7 +346,7 @@ export default function InteractiveTimeline({
 
   const fetchAndApplySchedule = useCallback(async () => {
     try {
-      const res = await fetch('/api/schedule');
+      const res = await fetch(withBasePath('/api/schedule'));
       if (!isMountedRef.current) return;
       if (!res) {
         setIsLoadingSchedule(false);
@@ -394,7 +404,8 @@ export default function InteractiveTimeline({
             startTime: item.startTime || '',
             endTime: item.endTime || '',
             categoryTags: item.category ? [item.category] : ['Events'],
-            locationName: item.locationName || item.location || '',
+            locationName: item.locationName || '',
+            location: item.location || '',
             attireRules: item.attireRules || '',
             description: item.description || '',
             isPrivate: Boolean(item.isPrivate),
@@ -453,11 +464,14 @@ export default function InteractiveTimeline({
   }, [fetchAndApplySchedule]);
 
   const normalizedEvents = useMemo(() => {
+    if (isPreview) {
+      return normalizeEvents(initialNodes);
+    }
     if (subEventsFromApi && (subEventsFromApi.length > 0 || initialNodes.length === 0)) {
       return subEventsFromApi;
     }
     return normalizeEvents(initialNodes);
-  }, [initialNodes, subEventsFromApi]);
+  }, [initialNodes, isPreview, subEventsFromApi]);
 
   // Consolidate category color schemas across all events
   const globalCategoryColors = useMemo(() => {
@@ -525,7 +539,7 @@ export default function InteractiveTimeline({
       return null;
     }
     return (
-      <section className={`mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
+      <section className={`mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 ${className}`} id={sectionId}>
         <h2 className="text-center type-h2 text-[var(--color-primary-text)] mb-6">{title}</h2>
         {isLoadingSchedule ? (
           <p className="text-center text-sm text-gray-600 dark:text-zinc-300" role="status">
@@ -555,7 +569,7 @@ export default function InteractiveTimeline({
   const categoryLabelText = activeCategory.toLowerCase() === 'all' ? 'All categories' : activeCategory;
 
   return (
-    <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
+    <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id={sectionId}>
       <h2 className="text-center type-h2 text-[var(--color-primary-text)] mb-8">{title}</h2>
 
       {/* ARIA Live Status Region for Filter Updates */}
@@ -729,12 +743,18 @@ export default function InteractiveTimeline({
                   startTime: event.startTime,
                   endTime: event.endTime,
                   locationName: event.locationName,
+                  location: event.location,
                   attireRules: event.attireRules,
                   description: event.description,
                 },
                 undefined,
                 timezone
               );
+
+              const fullEventLocation = joinEventLocations(event.locationName, event.location);
+              const eventDirectionsUrl = fullEventLocation
+                ? resolveDirectionsUrl({ directions: fullEventLocation })
+                : undefined;
 
               const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, effectiveTimezone);
               const dateHeaderStr = formatDateHeader(event.startTime, effectiveTimezone);
@@ -819,10 +839,22 @@ export default function InteractiveTimeline({
 
                     {/* Event Details */}
                     <div className="space-y-2 text-sm opacity-90 mb-6">
-                      {event.locationName && (
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">Location:</span>
-                          <span>{event.locationName}</span>
+                      {fullEventLocation && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">Location:</span>
+                            <span>{fullEventLocation}</span>
+                          </div>
+                          {eventDirectionsUrl && (
+                            <AccessibleExternalLink
+                              href={eventDirectionsUrl}
+                              srContext={`to ${fullEventLocation}`}
+                              className="inline-flex items-center gap-1.5 min-h-11 min-w-11 px-2.5 py-1 rounded-md font-semibold text-[var(--color-primary-text)] dark:text-red-300 underline underline-offset-2 hover:opacity-80 transition-opacity"
+                            >
+                              <Icon name="MapPin" size={16} />
+                              <span>Get Directions</span>
+                            </AccessibleExternalLink>
+                          )}
                         </div>
                       )}
 

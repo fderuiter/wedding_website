@@ -1,5 +1,7 @@
 import {
   generatePdfLabelSheet,
+  formatAddressLines,
+  resolveContributorPostalAddress,
   resolvePdfFont,
   resolvePdfColor,
   AddressContributorInput,
@@ -260,5 +262,53 @@ describe('pdfLabelGenerator', () => {
     expect(Buffer.isBuffer(buffer)).toBe(true);
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.toString('utf-8', 0, 5)).toBe('%PDF-');
+  });
+
+  it('prefers contributor postal address over linked invitationCode address without mixing partial fields', () => {
+    const record: AddressContributorInput = {
+      name: 'Casey Giver',
+      addressLine1: '777 Donor Way',
+      city: 'Boulder',
+      state: 'CO',
+      zipCode: '80302',
+      country: 'USA',
+      invitationCode: {
+        guestName: 'Casey Household',
+        addressLine1: '111 Old Invite Rd',
+        addressLine2: 'Apt 9',
+        city: 'Miami',
+        state: 'FL',
+        zipCode: '33101',
+        country: 'USA',
+      },
+    };
+
+    const resolved = resolveContributorPostalAddress(record);
+    expect(resolved.source).toBe('contributor');
+    expect(resolved.addressLine2).toBe('');
+    expect(formatAddressLines(record)).toEqual([
+      'Casey Giver',
+      '777 Donor Way',
+      'Boulder, CO 80302',
+    ]);
+  });
+
+  it('skips unaddressed contributor rows when skipUnaddressed is enabled', async () => {
+    const contributors: AddressContributorInput[] = [
+      { name: 'Unaddressed Guest', invitationCode: null },
+      {
+        name: 'Addressed Contributor',
+        addressLine1: '42 Harbor St',
+        city: 'Portland',
+        state: 'ME',
+        zipCode: '04101',
+      },
+    ];
+
+    const bufferWithSkipped = await generatePdfLabelSheet(contributors, 'avery_5160', {
+      skipUnaddressed: true,
+    });
+    expect(Buffer.isBuffer(bufferWithSkipped)).toBe(true);
+    expect(bufferWithSkipped.toString('utf-8', 0, 5)).toBe('%PDF-');
   });
 });

@@ -21,13 +21,21 @@ import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
 import FaqAccordion, { type FAQItemInput } from '@/components/faq/FaqAccordion';
 import ThingsToDoCard from '@/app/things-to-do/components/ThingsToDoCard';
 import { useGuestHelp } from '@/components/guest/GuestHelpModal';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
+import {
+  resolveDirectionsUrl,
+  formatVenueStreetAddress,
+  formatFullVenueLocation,
+  isNonPlaceholderVenueText,
+} from '@/utils/maps';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
-import { withBasePath } from '@/utils/basePath';
 import { MediaImage } from '@/components/MediaImage';
+import { withBasePath } from '@/lib/basePath';
 
 function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   if (!rawUrl || typeof rawUrl !== 'string') return undefined;
@@ -37,7 +45,7 @@ function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
     url = url.slice(4, -1).trim().replace(/^['"]|['"]$/g, '');
   }
   const safe = sanitizeUrl(url);
-  return safe ? `url("${safe}")` : undefined;
+  return safe ? `url("${withBasePath(safe)}")` : undefined;
 }
 
 function cleanDisplayVenueField(value?: string | null): string {
@@ -103,9 +111,29 @@ export default function HomePageClient({
   contentNodes?: ContentNodeDTO[];
   attractions?: AttractionDTO[];
 }) {
-  const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
-  const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
-  const [attractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+  const demo = useOptionalDemo();
+  const [draftConfig, setConfig] = useState<PublicAppConfig>(initialConfig);
+  const [draftContentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
+  const [draftAttractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+  const [hasDraftContent, setHasDraftContent] = useState(false);
+
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoConfigOverrides = demo?.configOverrides;
+  const demoLogisticsNodes = demo?.activeDataset.logisticsNodes;
+  const demoFaqs = demo?.activeDataset.faqs;
+
+  const config = useMemo<PublicAppConfig>(
+    () => (isDemoMode && demoConfigOverrides ? { ...draftConfig, ...demoConfigOverrides } : draftConfig),
+    [demoConfigOverrides, draftConfig, isDemoMode]
+  );
+  const contentNodes = useMemo<ContentNodeDTO[]>(
+    () =>
+      isDemoMode && !hasDraftContent && demoLogisticsNodes && demoFaqs
+        ? [...demoLogisticsNodes, ...demoFaqs]
+        : draftContentNodes,
+    [demoFaqs, demoLogisticsNodes, draftContentNodes, hasDraftContent, isDemoMode]
+  );
+  const attractions = isDemoMode && demo ? demo.activeDataset.attractions : draftAttractions;
   const isAdminPreview = useSyncExternalStore(
     subscribePreviewNoop,
     getAdminPreviewClientSnapshot,
@@ -132,50 +160,35 @@ export default function HomePageClient({
   };
 
   useEffect(() => {
-    // Only listen for messages if inside an iframe
-    if (typeof window !== 'undefined' && window !== window.parent) {
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'DRAFT_UPDATE') {
-          if (event.data.draftType === 'config' && event.data.draftData) {
-            setConfig((prev) => ({ ...prev, ...event.data.draftData }));
-          } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
-            setContentNodes(event.data.draftData);
-          } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
-            setAttractions(event.data.draftData);
-          }
+    if (typeof window === 'undefined') return;
+    const isIframe = window !== window.parent;
+    const isPreviewQuery = new URLSearchParams(window.location.search).get('preview') === 'true';
+    if (!isIframe && !isPreviewQuery) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'DRAFT_UPDATE') {
+        if (event.data.draftType === 'config' && event.data.draftData) {
+          setConfig((prev) => ({ ...prev, ...event.data.draftData }));
+        } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
+          setHasDraftContent(true);
+          setContentNodes(event.data.draftData);
+        } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
+          setAttractions(event.data.draftData);
         }
-      };
-      window.addEventListener('message', handleMessage);
-      return () => window.removeEventListener('message', handleMessage);
-    }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleDemoSync = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{
-          config?: Partial<PublicAppConfig>;
-          faqNodes?: ContentNodeDTO[];
-          attractions?: AttractionDTO[];
-        }>
-      ).detail;
-      if (!detail) return;
-      if (detail.config) {
-        setConfig((prev) => ({ ...prev, ...detail.config }));
-      }
-      if (Array.isArray(detail.faqNodes)) {
-        const nextFaqs = detail.faqNodes;
-        setContentNodes((prev) => [...prev.filter((n) => n.type !== 'FAQ'), ...nextFaqs]);
-      }
-      if (Array.isArray(detail.attractions)) {
-        setAttractions(detail.attractions);
-      }
-    };
-    window.addEventListener('wedding:demo-state-sync', handleDemoSync);
-    window.dispatchEvent(new Event('wedding:demo-request-sync'));
-    return () => window.removeEventListener('wedding:demo-state-sync', handleDemoSync);
-  }, []);
+    if (typeof window === 'undefined' || window.location.hash !== '#schedule') return;
+    const scheduleEl = document.getElementById('schedule');
+    if (scheduleEl && typeof scheduleEl.scrollIntoView === 'function') {
+      scheduleEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }
+  }, [contentNodes.length, isAdminPreview]);
 
   let formattedDate: string;
   try {
@@ -279,44 +292,56 @@ export default function HomePageClient({
         const hasStructuredSchedule = contentNodes.some(
           n => n.type === 'Schedule' || (n.type === 'Logistics' && (n.data as any)?.startTime) || (n.data as any)?.startTime
         );
+        const innerSectionId = feature.id === 'schedule' ? undefined : feature.id;
 
         if (hasStructuredSchedule) {
           return (
-            <motion.div key={feature.id} id={feature.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-              <InteractiveTimeline events={contentNodes} timezone={config.timezone} title={feature.title || 'Wedding Day Details'} />
-            </motion.div>
+            <div key={feature.id} id="schedule" className="scroll-mt-24">
+              <motion.div id={innerSectionId} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+                <InteractiveTimeline
+                  events={contentNodes}
+                  timezone={config.timezone}
+                  title={feature.title || 'Wedding Day Details'}
+                  isPreview={hasDraftContent}
+                />
+              </motion.div>
+            </div>
           );
         }
 
         const detailsNode = logisticsNodes.find(n => n.ceremonyTitle);
         if (!detailsNode) return (
-          <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
-            <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
-          </motion.section>
+          <div key={feature.id} id="schedule" className="scroll-mt-24">
+            <motion.section id={innerSectionId} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+              <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+              <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
+            </motion.section>
+          </div>
         );
         return (
-          <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
-            <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
-              <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
-                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>{detailsNode.ceremonyTime}</li>
-                  {ceremonyVenueLine && <li>{ceremonyVenueLine}</li>}
-                  {locationSummary && <li>{locationSummary}</li>}
-                </ul>
+          <div key={feature.id} id="schedule" className="scroll-mt-24">
+            <motion.section id={innerSectionId} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+              <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+              <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
+                <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
+                  <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
+                  <ul className="space-y-2 text-gray-800 dark:text-gray-100">
+                    <li>{detailsNode.ceremonyTime}</li>
+                    {ceremonyVenueLine && <li>{ceremonyVenueLine}</li>}
+                    {locationSummary && <li>{locationSummary}</li>}
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
+                  <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
+                  <ul className="space-y-2 text-gray-800 dark:text-gray-100">
+                    <li>{detailsNode.receptionTime}</li>
+                    <li>{detailsNode.receptionDetails}</li>
+                    <li>{detailsNode.receptionAttire}</li>
+                  </ul>
+                </div>
               </div>
-              <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
-                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>{detailsNode.receptionTime}</li>
-                  <li>{detailsNode.receptionDetails}</li>
-                  <li>{detailsNode.receptionAttire}</li>
-                </ul>
-              </div>
-            </div>
-          </motion.section>
+            </motion.section>
+          </div>
         );
       }
       case 'accommodations': {
@@ -340,7 +365,14 @@ export default function HomePageClient({
                 }
               >
                 {hotelAttractions.map((hotel) => (
-                  <ThingsToDoCard key={hotel.id || hotel.name} attraction={hotel} />
+                  <ThingsToDoCard
+                    key={hotel.id || hotel.name}
+                    attraction={hotel}
+                    venueCoords={{
+                      latitude: config.latitude,
+                      longitude: config.longitude,
+                    }}
+                  />
                 ))}
               </div>
             ) : !accNode?.description ? (
@@ -349,15 +381,54 @@ export default function HomePageClient({
           </motion.section>
         );
       }
-      case 'venue':
+      case 'venue': {
+        const venueDisplayName = isNonPlaceholderVenueText(config.venueName)
+          ? config.venueName.trim()
+          : '';
+        const venueStreetLine = formatVenueStreetAddress(config);
+        const fullVenueLocation = formatFullVenueLocation(config);
+        const venueDirectionsUrl = resolveDirectionsUrl({
+          latitude: config.latitude,
+          longitude: config.longitude,
+          directions: fullVenueLocation,
+        });
+        const venueParagraphs = splitParagraphs(config.venueDescription);
+
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 text-center sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="type-h2 text-primary">{feature.title || 'About Our Venue'}</h2>
-            {config.venueDescription.split('\n\n').map((paragraph, i) => (
+            {(venueDisplayName || venueStreetLine || venueDirectionsUrl) && (
+              <div
+                data-testid="venue-location-summary"
+                className="mx-auto max-w-xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-6 shadow-[var(--shadow-md)] space-y-3"
+                style={{ boxShadow: 'var(--shadow-md)' }}
+              >
+                {venueDisplayName && (
+                  <h3 className="type-h3 text-gray-900 dark:text-gray-100">{venueDisplayName}</h3>
+                )}
+                {venueStreetLine && (
+                  <p className="type-body text-gray-700 dark:text-gray-300">{venueStreetLine}</p>
+                )}
+                {venueDirectionsUrl && (
+                  <div className="pt-1">
+                    <AccessibleExternalLink
+                      href={venueDirectionsUrl}
+                      srContext={`to ${venueDisplayName || venueStreetLine || 'wedding venue'}`}
+                      className="btn-secondary inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 min-h-11 min-w-11 font-semibold"
+                    >
+                      <Icon name="MapPin" className="h-5 w-5" />
+                      Get Directions
+                    </AccessibleExternalLink>
+                  </div>
+                )}
+              </div>
+            )}
+            {venueParagraphs.map((paragraph, i) => (
               <p key={i} className="mx-auto max-w-xl type-body">{paragraph}</p>
             ))}
           </motion.section>
         );
+      }
       case 'travel': {
         const travelParagraphs = splitParagraphs(config.travelAdvice);
         const travelNodes = logisticsNodes.filter(n => !n.ceremonyTitle && !n.title?.includes('Accommodations'));
@@ -442,9 +513,6 @@ export default function HomePageClient({
 
   const weddingDateObj = new Date(config.weddingDate);
   const hasValidWeddingDate = !isNaN(weddingDateObj.getTime());
-  const calendarLocation = [cleanVenueName, cleanVenueCity, cleanVenueState]
-    .filter(Boolean)
-    .join(', ');
   const calendarEvent = formatScheduleEventToCalendarEvent(
     {
       title: config.heroTitle || defaultHeroTitle,
@@ -452,7 +520,7 @@ export default function HomePageClient({
       endTime: hasValidWeddingDate
         ? new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString()
         : undefined,
-      location: calendarLocation,
+      location: formatFullVenueLocation(config),
       description: config.heroSubtitle || defaultHeroSubtitle,
     },
     undefined,
@@ -460,7 +528,7 @@ export default function HomePageClient({
   );
 
   const rawHeroBgUrl = config.heroImageUrl || (presetTokens['--brand-hero-image'] && presetTokens['--brand-hero-image'] !== 'none' ? presetTokens['--brand-hero-image'] : undefined);
-  const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl ? withBasePath(rawHeroBgUrl) : rawHeroBgUrl);
+  const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl);
   const safeWatermarkUrl = sanitizeUrl(config.brandWatermarkUrl);
   const safeBadgeUrl = sanitizeUrl(config.badgeGraphicUrl);
 
@@ -534,7 +602,7 @@ export default function HomePageClient({
             </p>
             <p>We look forward to celebrating with you!</p>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-              <a href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</a>
+              <Link href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</Link>
               <span aria-hidden="true" className="text-gray-400 dark:text-gray-600">•</span>
               <Link
                 href="/admin/login"

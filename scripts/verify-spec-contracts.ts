@@ -197,6 +197,15 @@ function extractEnvVarNames(rootDir: string): Set<string> {
       if (/^[A-Z][A-Z0-9_]+$/.test(node.name.text)) {
         envVars.add(node.name.text);
       }
+    } else if (
+      ts.isPropertyAccessExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'process' &&
+      node.expression.name.text === 'env' &&
+      /^[A-Z][A-Z0-9_]+$/.test(node.name.text)
+    ) {
+      envVars.add(node.name.text);
     }
     ts.forEachChild(node, visit);
   }
@@ -1804,6 +1813,7 @@ function extractSymbolCitationsFromLine(
       if (shouldSkipSymbol(entry.symbol, target.srcRelPath)) {
         continue;
       }
+      const isEnvVarInEnvTs = target.srcRelPath === 'src/env.ts' && envVarNames.has(entry.symbol);
       pushCitation({
         symbol: entry.symbol,
         srcRelPath: target.srcRelPath,
@@ -1811,8 +1821,8 @@ function extractSymbolCitationsFromLine(
         roleWord,
         lineRange: target.lineRange,
         additionalLineRanges: additionalLineRanges.length > 0 ? additionalLineRanges : undefined,
-        expectedValue: entry.expectedValue,
-        rawExpectedValue: entry.rawExpectedValue,
+        expectedValue: isEnvVarInEnvTs ? undefined : entry.expectedValue,
+        rawExpectedValue: isEnvVarInEnvTs ? undefined : entry.rawExpectedValue,
       });
     }
   }
@@ -2015,6 +2025,178 @@ function verifySymbolInModule(
   return `Symbol "${citation.symbol}" is not declared or exported in ${citation.srcRelPath}`;
 }
 
+function verifyOpenApiProbeContracts(rootDir: string): string[] {
+  const openapiPath = path.join(rootDir, 'public/openapi.json');
+  if (!fs.existsSync(openapiPath)) {
+    return [];
+  }
+
+  const errors: string[] = [];
+  let parsed: {
+    components?: {
+      schemas?: Record<string, Record<string, unknown>>;
+    };
+    paths?: Record<
+      string,
+      {
+        get?: {
+          responses?: Record<
+            string,
+            {
+              content?: Record<string, { schema?: Record<string, unknown> }>;
+            }
+          >;
+        };
+      }
+    >;
+  };
+
+  try {
+    parsed = JSON.parse(fs.readFileSync(openapiPath, 'utf8'));
+  } catch {
+    return ['public/openapi.json: Invalid JSON syntax'];
+  }
+
+  const getJsonSchema = (routePath: string, status: string): Record<string, unknown> | null => {
+    const schema =
+      parsed.paths?.[routePath]?.get?.responses?.[status]?.content?.['application/json']?.schema;
+    if (!schema || typeof schema !== 'object') {
+      return null;
+    }
+    if (typeof schema.$ref === 'string' && schema.$ref.startsWith('#/components/schemas/')) {
+      const schemaName = schema.$ref.slice('#/components/schemas/'.length);
+      const target = parsed.components?.schemas?.[schemaName];
+      return target && typeof target === 'object' ? target : null;
+    }
+    return schema;
+  };
+
+  // 1. /api/live GET 200
+  const live200 = getJsonSchema('/api/live', '200');
+  const live200Props = (live200?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  if (
+    !live200 ||
+    !Array.isArray(live200Props.status?.enum) ||
+    !live200Props.status.enum.includes('alive') ||
+    live200Props.timestamp?.type !== 'string'
+  ) {
+    errors.push(
+      'public/openapi.json: GET /api/live must document HTTP "200" application/json schema with status="alive" and timestamp'
+    );
+  }
+
+  // 2. /api/health GET 200 & 503 (wrapped by withApiMiddleware)
+  const health200 = getJsonSchema('/api/health', '200');
+  const health200Props = (health200?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const health200DataProps = ((health200Props.data?.properties ?? {}) as Record<
+    string,
+    Record<string, unknown>
+  >);
+  if (
+    !health200 ||
+    !Array.isArray(health200Props.success?.enum) ||
+    !health200Props.success.enum.includes(true) ||
+    !Array.isArray(health200DataProps.status?.enum) ||
+    !health200DataProps.status.enum.includes('ok') ||
+    !Array.isArray(health200DataProps.database?.enum) ||
+    !health200DataProps.database.enum.includes('connected')
+  ) {
+    errors.push(
+      'public/openapi.json: GET /api/health must document HTTP "200" wrapped schema (.success == true, .data.status == "ok", .data.database == "connected")'
+    );
+  }
+
+  const health503 = getJsonSchema('/api/health', '503');
+  const health503Props = (health503?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const healthRouteAbsPath = path.join(rootDir, 'src/app/api/health/route.ts');
+  const healthPreservesProbeFields =
+    fs.existsSync(healthRouteAbsPath) &&
+    fs.readFileSync(healthRouteAbsPath, 'utf8').includes('isHealthProbe');
+
+  if (healthPreservesProbeFields) {
+    if (
+      !health503 ||
+      !Array.isArray(health503Props.success?.enum) ||
+      !health503Props.success.enum.includes(false) ||
+      !Array.isArray(health503Props.status?.enum) ||
+      !health503Props.status.enum.includes('degraded') ||
+      !Array.isArray(health503Props.database?.enum) ||
+      !health503Props.database.enum.includes('disconnected') ||
+      health503Props.timestamp?.type !== 'string' ||
+      health503Props.error?.type !== 'string'
+    ) {
+      errors.push(
+        'public/openapi.json: GET /api/health must document HTTP "503" isHealthProbe schema with success=false, status="degraded", database="disconnected", timestamp, and error'
+      );
+    } else if (Object.prototype.hasOwnProperty.call(health503Props, 'referenceId')) {
+      errors.push(
+        'public/openapi.json: GET /api/health HTTP "503" isHealthProbe schema must omit "referenceId"'
+      );
+    }
+  } else if (
+    !health503 ||
+    !Array.isArray(health503Props.success?.enum) ||
+    !health503Props.success.enum.includes(false) ||
+    health503Props.error?.type !== 'string' ||
+    health503Props.referenceId?.type !== 'string'
+  ) {
+    errors.push(
+      'public/openapi.json: GET /api/health must document HTTP "503" middleware error schema with success=false, error, and optional referenceId'
+    );
+  } else {
+    for (const strippedKey of ['status', 'database', 'timestamp']) {
+      if (Object.prototype.hasOwnProperty.call(health503Props, strippedKey)) {
+        errors.push(
+          `public/openapi.json: GET /api/health HTTP "503" schema must omit "${strippedKey}" (stripped by src/utils/withApiMiddleware.ts)`
+        );
+      }
+    }
+  }
+
+  // 3. /api/ready GET 200 & 503 (unwrapped)
+  const ready200 = getJsonSchema('/api/ready', '200');
+  const ready200Props = (ready200?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  if (
+    !ready200 ||
+    !Array.isArray(ready200Props.status?.enum) ||
+    !ready200Props.status.enum.includes('ready') ||
+    !Array.isArray(ready200Props.database?.enum) ||
+    !ready200Props.database.enum.includes('connected') ||
+    ready200Props.timestamp?.type !== 'string'
+  ) {
+    errors.push(
+      'public/openapi.json: GET /api/ready must document HTTP "200" unwrapped schema with status="ready", database="connected", and timestamp'
+    );
+  }
+
+  const ready503 = getJsonSchema('/api/ready', '503');
+  const ready503Props = (ready503?.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const readyRouteAbsPath = path.join(rootDir, 'src/app/api/ready/route.ts');
+  const readyChecksSchemaTables =
+    fs.existsSync(readyRouteAbsPath) &&
+    fs.readFileSync(readyRouteAbsPath, 'utf8').includes('buildSchemaUnavailableResponse');
+  const ready503DbEnum = Array.isArray(ready503Props.database?.enum)
+    ? ready503Props.database.enum
+    : [];
+  if (
+    !ready503 ||
+    !Array.isArray(ready503Props.status?.enum) ||
+    !ready503Props.status.enum.includes('unhealthy') ||
+    !ready503DbEnum.includes('disconnected') ||
+    (readyChecksSchemaTables && !ready503DbEnum.includes('connected')) ||
+    ready503Props.error?.type !== 'string' ||
+    ready503Props.timestamp?.type !== 'string'
+  ) {
+    errors.push(
+      readyChecksSchemaTables
+        ? 'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database enum ["connected", "disconnected"], error, and timestamp'
+        : 'public/openapi.json: GET /api/ready must document HTTP "503" unwrapped schema with status="unhealthy", database="disconnected", error, and timestamp'
+    );
+  }
+
+  return errors;
+}
+
 export function verifySpecContracts(
   rootDir: string = ROOT_DIR,
   options: SpecContractVerificationOptions = {},
@@ -2028,6 +2210,10 @@ export function verifySpecContracts(
   const errors: string[] = [];
   let checkedRoutes = 0;
   let checkedSymbols = 0;
+
+  if (!options.specFiles || options.specFiles.includes('public/openapi.json')) {
+    errors.push(...verifyOpenApiProbeContracts(rootDir));
+  }
 
   const apiEntries = collectFastApiRouteEntries(rootDir);
   const adminEntityKeys = extractFastAdminEntityKeys(rootDir);

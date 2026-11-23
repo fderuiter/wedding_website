@@ -1,9 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RegistryItem, OrderTrackingDetails, GuestClaimActions } from '../types';
+import {
+  RegistryItem,
+  OrderTrackingDetails,
+  ContributorAddressDetails,
+  GuestClaimActions,
+} from '../types';
 import { ContributionSchema } from '../schemas';
 import { apiClient } from '@/lib/apiClient';
+import { findDemoGuestByCode, isDemoRuntimeActive } from '@/lib/demo/demoStore';
 import { useGuestSession } from '../context/GuestSessionContext';
 import { formatCurrency } from '@/utils/intl';
 import { getItemRemainingAmount, getItemUnitCounts } from '../lib/registryStatusUtils';
@@ -25,6 +31,12 @@ export interface ContributionFieldErrors {
   retailerOrderNumber?: string;
   carrier?: string;
   trackingNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
 }
 
 export interface UseRegistryContributionMachineOptions {
@@ -38,7 +50,8 @@ export interface UseRegistryContributionMachineOptions {
     coverFee?: boolean,
     email?: string,
     paymentIntentId?: string,
-    orderDetails?: OrderTrackingDetails
+    orderDetails?: OrderTrackingDetails,
+    addressDetails?: ContributorAddressDetails
   ) => Promise<unknown>;
   initialContributorName?: string;
   initialEmail?: string;
@@ -50,6 +63,12 @@ export interface UseRegistryContributionMachineOptions {
   initialRetailerOrderNumber?: string;
   initialCarrier?: string;
   initialTrackingNumber?: string;
+  initialAddressLine1?: string;
+  initialAddressLine2?: string;
+  initialCity?: string;
+  initialState?: string;
+  initialZipCode?: string;
+  initialCountry?: string;
 }
 
 export interface UseRegistryContributionMachineReturn {
@@ -71,6 +90,12 @@ export interface UseRegistryContributionMachineReturn {
   retailerOrderNumber: string;
   carrier: string;
   trackingNumber: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
 
   // Payment transaction reference & signed guest claim actions
   paymentTransactionId: string | null;
@@ -91,6 +116,12 @@ export interface UseRegistryContributionMachineReturn {
   setRetailerOrderNumber: (value: string) => void;
   setCarrier: (value: string) => void;
   setTrackingNumber: (value: string) => void;
+  setAddressLine1: (value: string) => void;
+  setAddressLine2: (value: string) => void;
+  setCity: (value: string) => void;
+  setState: (value: string) => void;
+  setZipCode: (value: string) => void;
+  setCountry: (value: string) => void;
   setPaymentTransactionId: (id: string | null) => void;
   setPhase: (phase: ContributionPhase) => void;
   setSubmissionError: (error: string | null) => void;
@@ -121,6 +152,12 @@ export function useRegistryContributionMachine({
   initialRetailerOrderNumber = '',
   initialCarrier = '',
   initialTrackingNumber = '',
+  initialAddressLine1 = '',
+  initialAddressLine2 = '',
+  initialCity = '',
+  initialState = '',
+  initialZipCode = '',
+  initialCountry = '',
 }: UseRegistryContributionMachineOptions): UseRegistryContributionMachineReturn {
   const {
     invitationCode: sessionCode,
@@ -144,6 +181,12 @@ export function useRegistryContributionMachine({
   const [retailerOrderNumber, setRetailerOrderNumberState] = useState(initialRetailerOrderNumber);
   const [carrier, setCarrierState] = useState(initialCarrier);
   const [trackingNumber, setTrackingNumberState] = useState(initialTrackingNumber);
+  const [addressLine1, setAddressLine1State] = useState(initialAddressLine1);
+  const [addressLine2, setAddressLine2State] = useState(initialAddressLine2);
+  const [city, setCityState] = useState(initialCity);
+  const [state, setStateValue] = useState(initialState);
+  const [zipCode, setZipCodeState] = useState(initialZipCode);
+  const [country, setCountryState] = useState(initialCountry);
   const [dismissedSessionKey, setDismissedSessionKey] = useState<string | null>(null);
 
   // Partitioned error states
@@ -262,6 +305,72 @@ export function useRegistryContributionMachine({
     setSubmissionError(null);
   }, []);
 
+  const setAddressLine1 = useCallback((val: string) => {
+    setAddressLine1State(val);
+    setFieldErrors((prev) => {
+      if (!prev.addressLine1) return prev;
+      const next = { ...prev };
+      delete next.addressLine1;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setAddressLine2 = useCallback((val: string) => {
+    setAddressLine2State(val);
+    setFieldErrors((prev) => {
+      if (!prev.addressLine2) return prev;
+      const next = { ...prev };
+      delete next.addressLine2;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setCity = useCallback((val: string) => {
+    setCityState(val);
+    setFieldErrors((prev) => {
+      if (!prev.city) return prev;
+      const next = { ...prev };
+      delete next.city;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setState = useCallback((val: string) => {
+    setStateValue(val);
+    setFieldErrors((prev) => {
+      if (!prev.state) return prev;
+      const next = { ...prev };
+      delete next.state;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setZipCode = useCallback((val: string) => {
+    setZipCodeState(val);
+    setFieldErrors((prev) => {
+      if (!prev.zipCode) return prev;
+      const next = { ...prev };
+      delete next.zipCode;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
+  const setCountry = useCallback((val: string) => {
+    setCountryState(val);
+    setFieldErrors((prev) => {
+      if (!prev.country) return prev;
+      const next = { ...prev };
+      delete next.country;
+      return next;
+    });
+    setSubmissionError(null);
+  }, []);
+
   const setMessage = useCallback((val: string) => {
     setMessageState(val);
     setFieldErrors((prev) => {
@@ -294,6 +403,29 @@ export function useRegistryContributionMachine({
       const code = codeToVerify.trim().toUpperCase();
       if (!code) {
         setCodeError('Please enter an invitation code.');
+        return false;
+      }
+
+      if (isDemoRuntimeActive()) {
+        const matched = findDemoGuestByCode(code);
+        if (matched) {
+          setInvitationCodeState(matched.code);
+          if (matched.guestName) {
+            setContributorNameState(matched.guestName);
+          }
+          setDismissedSessionKey(null);
+          setPhase('code_locked');
+          setCodeError(null);
+          setSubmissionError(null);
+          setSession({
+            invitationCode: matched.code,
+            guestName: matched.guestName,
+            isVerified: true,
+          });
+          return true;
+        }
+        setPhase('idle');
+        setCodeError('Invalid invitation code.');
         return false;
       }
 
@@ -381,7 +513,9 @@ export function useRegistryContributionMachine({
       }
 
       if (val.length === 8) {
-        void verifyCode(val);
+        if (!isDemoRuntimeActive() || Boolean(findDemoGuestByCode(val))) {
+          void verifyCode(val);
+        }
       } else if (phase === 'validating_code') {
         setPhase('idle');
       }
@@ -454,6 +588,12 @@ export function useRegistryContributionMachine({
       retailerOrderNumber: retailerOrderNumber || undefined,
       carrier: carrier || undefined,
       trackingNumber: trackingNumber || undefined,
+      addressLine1: addressLine1 || undefined,
+      addressLine2: addressLine2 || undefined,
+      city: city || undefined,
+      state: state || undefined,
+      zipCode: zipCode || undefined,
+      country: country || undefined,
     });
 
     if (!result.success) {
@@ -494,6 +634,12 @@ export function useRegistryContributionMachine({
     retailerOrderNumber,
     carrier,
     trackingNumber,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
   ]);
 
   // Action: Submit contribution
@@ -552,6 +698,12 @@ export function useRegistryContributionMachine({
         retailerOrderNumber: retailerOrderNumber || undefined,
         carrier: carrier || undefined,
         trackingNumber: trackingNumber || undefined,
+        addressLine1: addressLine1 || undefined,
+        addressLine2: addressLine2 || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        zipCode: zipCode || undefined,
+        country: country || undefined,
       });
 
       if (!result.success) {
@@ -593,10 +745,42 @@ export function useRegistryContributionMachine({
         }
         : undefined;
 
+      const hasAddressDetails = Boolean(
+        validData.addressLine1 ||
+          validData.addressLine2 ||
+          validData.city ||
+          validData.state ||
+          validData.zipCode ||
+          validData.country
+      );
+      const addressDetailsPayload: ContributorAddressDetails | undefined = hasAddressDetails
+        ? {
+          ...(validData.addressLine1 ? { addressLine1: validData.addressLine1 } : {}),
+          ...(validData.addressLine2 ? { addressLine2: validData.addressLine2 } : {}),
+          ...(validData.city ? { city: validData.city } : {}),
+          ...(validData.state ? { state: validData.state } : {}),
+          ...(validData.zipCode ? { zipCode: validData.zipCode } : {}),
+          ...(validData.country ? { country: validData.country } : {}),
+        }
+        : undefined;
+
       setPhase('submitting');
       try {
         let contributeResult: unknown;
-        if (orderDetailsPayload) {
+        if (addressDetailsPayload) {
+          contributeResult = await onContribute(
+            item.id,
+            validData.name,
+            finalAmount,
+            validData.code || undefined,
+            validData.message || undefined,
+            validData.coverFee,
+            validData.email || undefined,
+            paymentIntentId,
+            orderDetailsPayload,
+            addressDetailsPayload
+          );
+        } else if (orderDetailsPayload) {
           contributeResult = await onContribute(
             item.id,
             validData.name,
@@ -679,6 +863,12 @@ export function useRegistryContributionMachine({
       retailerOrderNumber,
       carrier,
       trackingNumber,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
       onContribute,
     ]
   );
@@ -707,6 +897,12 @@ export function useRegistryContributionMachine({
     retailerOrderNumber,
     carrier,
     trackingNumber,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
 
     paymentTransactionId,
     claimActions,
@@ -724,6 +920,12 @@ export function useRegistryContributionMachine({
     setRetailerOrderNumber,
     setCarrier,
     setTrackingNumber,
+    setAddressLine1,
+    setAddressLine2,
+    setCity,
+    setState,
+    setZipCode,
+    setCountry,
     setPaymentTransactionId,
     setPhase,
     setSubmissionError,

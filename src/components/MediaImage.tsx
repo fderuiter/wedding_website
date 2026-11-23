@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { withBasePath } from '@/utils/basePath';
+import { stripBasePath, withBasePath } from '@/lib/basePath';
 
 interface MediaData {
   id: string;
@@ -22,7 +22,8 @@ export function extractFilenameAsAlt(url?: string): string | undefined {
   if (trimmed.startsWith('data:')) return undefined;
 
   try {
-    const cleanUrl = trimmed.split('?')[0].split('#')[0];
+    const unprefixed = stripBasePath(trimmed);
+    const cleanUrl = unprefixed.split('?')[0].split('#')[0];
     const lastSegment = cleanUrl.split('/').pop();
     if (!lastSegment || lastSegment.trim() === '') return undefined;
 
@@ -69,11 +70,11 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
 
   const systemFallback = fallbackUrl || '/images/placeholder.png';
   const rawUrl = hasError ? systemFallback : (safeOriginalUrl || systemFallback);
-  const url = rawUrl ? withBasePath(rawUrl) : rawUrl;
   
-  if (!url) {
+  if (!rawUrl) {
     return null; // Nothing to render
   }
+  const url = withBasePath(rawUrl);
   
   let finalAlt = '';
   if (media?.isDecorative) {

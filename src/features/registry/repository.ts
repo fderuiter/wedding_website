@@ -6,6 +6,12 @@ import {
   REGISTRY_DEFAULT_PAGE_LIMIT,
   REGISTRY_MAX_CATALOG_LIMIT,
 } from '@/utils/registryPagination';
+import {
+  buildArchetypeSeedData,
+  findSeededContributorWithItem,
+  findSeededRegistryItemById,
+  isStaticExportBuild,
+} from '@/lib/sampleData/builder';
 import type {
   IRegistryRepository,
   GetItemsOptions,
@@ -23,271 +29,13 @@ import {
   RegistryItemSchema,
   RegistryItemDTO,
 } from './schemas';
+import { isAddressComplete } from './utils/invitation';
 
 /**
  * @class RegistryRepository
  * @description Provides data access methods for the `RegistryItem` model using Prisma.
  * This class abstracts the database interactions from the service layer.
  */
-function isStaticExportBuild(): boolean {
-  return (
-    process.env.STATIC_EXPORT === 'true' ||
-    process.env.STATIC_EXPORT === '1' ||
-    process.env.npm_lifecycle_event === 'build:export'
-  );
-}
-
-export const STATIC_EXPORT_REGISTRY_ITEMS: RegistryItemDTO[] = [
-  {
-    id: 'demo-reg-1',
-    itemType: 'PHYSICAL',
-    name: 'Artisan Stand Mixer',
-    price: 449.99,
-    quantity: 1,
-    category: 'Kitchen',
-    description: '5-quart tilt-head stand mixer in matte porcelain white for weekend baking.',
-    vendorUrl: 'https://example.com/mixer',
-    isGroupGift: true,
-    isMostWanted: true,
-    displayOrder: 0,
-    paymentHandleType: 'Venmo',
-    paymentHandle: '@alex-taylor-wedding',
-    purchased: false,
-    purchaserName: null,
-    amountContributed: 150,
-    isSample: false,
-    imageId: 'demo-reg-img-1',
-    image: {
-      id: 'demo-reg-img-1',
-      url: '/images/sample-registry-mixer.jpg',
-      altText: 'Artisan Stand Mixer',
-      isDecorative: false,
-      isSample: false,
-    },
-    contributors: [
-      {
-        id: 'demo-contrib-1',
-        name: 'Elena Vance',
-        email: 'elena@wedding.example',
-        isPlusOne: false,
-        amount: 150,
-        refundedAmount: 0,
-        status: 'CONFIRMED',
-        coverFee: false,
-        feeAmount: 0,
-        message: 'Cannot wait for Sunday waffles!',
-        date: '2026-03-01T14:00:00.000Z',
-        transactionTimestamp: null,
-        thankYouStatus: 'Sent',
-        thankYouSentAt: '2026-03-05T10:00:00.000Z',
-        thankYouNote: 'Thank you so much, Elena!',
-        registryItemId: 'demo-reg-1',
-      },
-    ],
-  },
-  {
-    id: 'demo-reg-2',
-    itemType: 'EXPERIENCE_FUND',
-    name: 'Amalfi Coast Honeymoon Fund',
-    price: 2500,
-    quantity: 1,
-    category: 'Honeymoon',
-    description: 'Help us celebrate along the coastal cliffs, lemon groves, and seaside trattorias of Italy.',
-    vendorUrl: '',
-    isGroupGift: true,
-    isMostWanted: true,
-    displayOrder: 1,
-    paymentHandleType: 'Venmo',
-    paymentHandle: '@alex-taylor-wedding',
-    purchased: false,
-    purchaserName: null,
-    amountContributed: 650,
-    isSample: false,
-    imageId: 'demo-reg-img-2',
-    image: {
-      id: 'demo-reg-img-2',
-      url: '/images/sample-registry-honeymoon.jpg',
-      altText: 'Amalfi Coast Honeymoon Fund',
-      isDecorative: false,
-      isSample: false,
-    },
-    contributors: [
-      {
-        id: 'demo-contrib-2',
-        name: 'The Smith Family',
-        email: 'smiths@wedding.example',
-        isPlusOne: false,
-        amount: 400,
-        refundedAmount: 0,
-        status: 'CONFIRMED',
-        coverFee: false,
-        feeAmount: 0,
-        message: 'Have an unforgettable adventure in Positano!',
-        date: '2026-03-04T18:30:00.000Z',
-        transactionTimestamp: null,
-        thankYouStatus: 'Unsent',
-        thankYouSentAt: null,
-        thankYouNote: null,
-        registryItemId: 'demo-reg-2',
-      },
-      {
-        id: 'demo-contrib-3',
-        name: 'Marcus Thorne',
-        email: 'marcus@wedding.example',
-        isPlusOne: false,
-        amount: 250,
-        refundedAmount: 0,
-        status: 'CONFIRMED',
-        coverFee: false,
-        feeAmount: 0,
-        message: 'Gelato & sunset boat ride on me!',
-        date: '2026-03-08T09:15:00.000Z',
-        transactionTimestamp: null,
-        thankYouStatus: 'Unsent',
-        thankYouSentAt: null,
-        thankYouNote: null,
-        registryItemId: 'demo-reg-2',
-      },
-    ],
-  },
-  {
-    id: 'demo-reg-3',
-    itemType: 'PHYSICAL',
-    name: '16-Piece Porcelain Dinnerware Set',
-    price: 220,
-    quantity: 1,
-    category: 'Dining',
-    description: 'Timeless Bone China dinnerware service for four with subtle gold rim.',
-    vendorUrl: 'https://example.com/dinnerware',
-    isGroupGift: false,
-    isMostWanted: false,
-    displayOrder: 2,
-    paymentHandleType: null,
-    paymentHandle: null,
-    purchased: false,
-    purchaserName: null,
-    amountContributed: 0,
-    isSample: false,
-    imageId: 'demo-reg-img-3',
-    image: {
-      id: 'demo-reg-img-3',
-      url: '/images/sample-registry-dinnerware.jpg',
-      altText: '16-Piece Porcelain Dinnerware Set',
-      isDecorative: false,
-      isSample: false,
-    },
-    contributors: [],
-  },
-  {
-    id: 'demo-reg-4',
-    itemType: 'PHYSICAL',
-    name: 'Barista Espresso Machine',
-    price: 699,
-    quantity: 1,
-    category: 'Kitchen',
-    description: 'Dual-boiler stainless steel espresso maker with integrated conical burr grinder.',
-    vendorUrl: 'https://example.com/espresso',
-    isGroupGift: true,
-    isMostWanted: true,
-    displayOrder: 3,
-    paymentHandleType: 'Venmo',
-    paymentHandle: '@alex-taylor-wedding',
-    purchased: false,
-    purchaserName: null,
-    amountContributed: 200,
-    isSample: false,
-    imageId: 'demo-reg-img-4',
-    image: {
-      id: 'demo-reg-img-4',
-      url: '/images/sample-registry-espresso.jpg',
-      altText: 'Barista Espresso Machine',
-      isDecorative: false,
-      isSample: false,
-    },
-    contributors: [
-      {
-        id: 'demo-contrib-4',
-        name: 'Clara Chen',
-        email: 'clara@wedding.example',
-        isPlusOne: false,
-        amount: 200,
-        refundedAmount: 0,
-        status: 'CONFIRMED',
-        coverFee: false,
-        feeAmount: 0,
-        message: 'For cozy Saturday cappuccinos!',
-        date: '2026-03-10T16:45:00.000Z',
-        transactionTimestamp: null,
-        thankYouStatus: 'Unsent',
-        thankYouSentAt: null,
-        thankYouNote: null,
-        registryItemId: 'demo-reg-4',
-      },
-    ],
-  },
-  {
-    id: 'demo-reg-5',
-    itemType: 'CASH_FUND',
-    name: 'First Home Garden & Patio Fund',
-    price: 1200,
-    quantity: 1,
-    category: 'Home',
-    description: 'Contribute toward heirloom fruit trees, string lights, and outdoor dining seating.',
-    vendorUrl: '',
-    isGroupGift: true,
-    isMostWanted: false,
-    displayOrder: 4,
-    paymentHandleType: 'Venmo',
-    paymentHandle: '@alex-taylor-wedding',
-    purchased: false,
-    purchaserName: null,
-    amountContributed: 300,
-    isSample: false,
-    imageId: 'demo-reg-img-5',
-    image: {
-      id: 'demo-reg-img-5',
-      url: '/images/sample-registry-lounge.jpg',
-      altText: 'First Home Garden & Patio Fund',
-      isDecorative: false,
-      isSample: false,
-    },
-    contributors: [
-      {
-        id: 'demo-contrib-5',
-        name: 'Julian Brooks',
-        email: 'julian@wedding.example',
-        isPlusOne: false,
-        amount: 300,
-        refundedAmount: 0,
-        status: 'CONFIRMED',
-        coverFee: false,
-        feeAmount: 0,
-        message: 'Saving a seat at the first backyard barbecue!',
-        date: '2026-03-12T11:20:00.000Z',
-        transactionTimestamp: null,
-        thankYouStatus: 'Sent',
-        thankYouSentAt: '2026-03-14T09:00:00.000Z',
-        thankYouNote: 'Cannot wait to host you, Julian!',
-        registryItemId: 'demo-reg-5',
-      },
-    ],
-  },
-];
-
-export const STATIC_EXPORT_REGISTRY_ITEM_IDS = [
-  '1',
-  ...STATIC_EXPORT_REGISTRY_ITEMS.map((item) => item.id),
-  'demo-reg-destination-1',
-  'demo-reg-destination-2',
-  'demo-reg-destination-3',
-  'demo-reg-destination-4',
-  'demo-reg-destination-5',
-  'demo-reg-romantic-1',
-  'demo-reg-romantic-2',
-  'demo-reg-romantic-3',
-  'demo-reg-romantic-4',
-];
-
 class RegistryRepository implements IRegistryRepository {
   constructor(public client: any = prisma) {}
 
@@ -315,32 +63,46 @@ class RegistryRepository implements IRegistryRepository {
     const skip = (normalizedPage - 1) * normalizedLimit;
     const take = normalizedLimit;
 
-    if (this.client === prisma && isStaticExportBuild()) {
-      let filtered = STATIC_EXPORT_REGISTRY_ITEMS.map((item) =>
-        RegistryItemSchema.parse(includeContributors ? item : { ...item, contributors: [] })
+    if (isStaticExportBuild()) {
+      let seeded = buildArchetypeSeedData('classic').registryItems.map((item) =>
+        includeContributors ? item : { ...item, contributors: [] }
       );
+
       if (category && category.trim()) {
-        filtered = filtered.filter((item) => item.category === category.trim());
+        const targetCategory = category.trim();
+        seeded = seeded.filter((item) => item.category === targetCategory);
       }
       if (minPrice !== undefined) {
-        filtered = filtered.filter((item) => item.price >= minPrice);
+        seeded = seeded.filter((item) => item.price >= minPrice);
       }
       if (maxPrice !== undefined) {
-        filtered = filtered.filter((item) => item.price <= maxPrice);
+        seeded = seeded.filter((item) => item.price <= maxPrice);
       }
+
       if (sortBy === 'price-asc') {
-        filtered.sort((a, b) => a.price - b.price);
+        seeded.sort((a, b) => a.price - b.price);
       } else if (sortBy === 'price-desc') {
-        filtered.sort((a, b) => b.price - a.price);
+        seeded.sort((a, b) => b.price - a.price);
+      } else {
+        seeded.sort((a, b) => {
+          const priorityDiff = Number(Boolean(b.isMostWanted)) - Number(Boolean(a.isMostWanted));
+          if (priorityDiff !== 0) return priorityDiff;
+          return (a.displayOrder ?? 0) - (b.displayOrder ?? 0);
+        });
       }
-      const total = filtered.length;
-      const paged = filtered.slice(skip, skip + take);
+
+      const total = seeded.length;
+      const items = seeded
+        .slice(skip, skip + take)
+        .map((entry) => RegistryItemSchema.parse(entry));
+      const totalPages = Math.ceil(total / normalizedLimit);
+
       return {
-        items: paged,
+        items,
         total,
         page: normalizedPage,
         limit: normalizedLimit,
-        totalPages: Math.max(1, Math.ceil(total / normalizedLimit)),
+        totalPages,
       };
     }
 
@@ -412,24 +174,11 @@ class RegistryRepository implements IRegistryRepository {
    */
   async getItemById(id: string, options: { includeContributors?: boolean } = {}) {
     const { includeContributors = false } = options;
-    if (this.client === prisma && isStaticExportBuild()) {
-      const targetId = id === '1' ? 'demo-reg-1' : id;
-      const directFound = STATIC_EXPORT_REGISTRY_ITEMS.find((item) => item.id === targetId);
-      const archetypeMatch = !directFound
-        ? targetId.match(/^demo-reg-(destination|romantic)-(\d+)$/)
-        : null;
-      const fallbackIndex = archetypeMatch
-        ? Math.max(0, Number(archetypeMatch[2]) - 1) % STATIC_EXPORT_REGISTRY_ITEMS.length
-        : -1;
-      const found =
-        directFound ?? (fallbackIndex >= 0 ? STATIC_EXPORT_REGISTRY_ITEMS[fallbackIndex] : undefined);
-      if (!found) {
-        return null;
-      }
-      return RegistryItemSchema.parse(
-        includeContributors ? { ...found, id } : { ...found, id, contributors: [] }
-      );
+    if (isStaticExportBuild()) {
+      const seededItem = findSeededRegistryItemById(id, { includeContributors });
+      return seededItem ? RegistryItemSchema.parse(seededItem) : null;
     }
+
     const include: { image: boolean; contributors?: boolean } = { image: true };
     if (includeContributors) {
       include.contributors = true;
@@ -613,6 +362,12 @@ class RegistryRepository implements IRegistryRepository {
       retailerOrderNumber?: string | null;
       carrier?: string | null;
       trackingNumber?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
     }
   ) {
     const runTransaction = async (txClient: any) => {
@@ -659,8 +414,20 @@ class RegistryRepository implements IRegistryRepository {
         throw new Error('This item has already been purchased.');
       }
 
+      const emailToSave =
+        contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
+      const trimOrNull = (value?: string | null) =>
+        value && value.trim() ? value.trim() : null;
+      const addressLine1ToSave = trimOrNull(contribution.addressLine1);
+      const addressLine2ToSave = trimOrNull(contribution.addressLine2);
+      const cityToSave = trimOrNull(contribution.city);
+      const stateToSave = trimOrNull(contribution.state);
+      const zipCodeToSave = trimOrNull(contribution.zipCode);
+      const countryToSave = trimOrNull(contribution.country);
+
       let finalName = contribution.name;
       let invitationCodeId: string | null = null;
+      let linkedInviteRecord: any = null;
 
       if (contribution.code && contribution.code.trim()) {
         const inviteRecord = await txClient.invitationCode.findUnique({
@@ -673,14 +440,26 @@ class RegistryRepository implements IRegistryRepository {
 
         finalName = contribution.name || inviteRecord.guestName;
         invitationCodeId = inviteRecord.id;
-
-        await txClient.invitationCode.update({
-          where: { id: inviteRecord.id },
-          data: {
-            used: true,
-            usedAt: new Date()
-          }
+        linkedInviteRecord = inviteRecord;
+      } else if (emailToSave && typeof txClient.invitationCode?.findMany === 'function') {
+        const normalizedLookupEmail = emailToSave.toLowerCase();
+        const emailMatches = await txClient.invitationCode.findMany({
+          where: {
+            email: { equals: normalizedLookupEmail, mode: 'insensitive' },
+            isSample: false,
+          },
+          take: 2,
         });
+        if (
+          Array.isArray(emailMatches) &&
+          emailMatches.length === 1 &&
+          emailMatches[0] &&
+          !emailMatches[0].isSample
+        ) {
+          linkedInviteRecord = emailMatches[0];
+          invitationCodeId = linkedInviteRecord.id;
+          finalName = contribution.name || linkedInviteRecord.guestName;
+        }
       }
 
       const isFund = item.itemType === 'CASH_FUND' || item.itemType === 'EXPERIENCE_FUND';
@@ -702,6 +481,53 @@ class RegistryRepository implements IRegistryRepository {
         }
       }
 
+      if (
+        linkedInviteRecord &&
+        typeof txClient.invitationCode?.update === 'function' &&
+        isAddressComplete({
+          addressLine1: addressLine1ToSave,
+          city: cityToSave,
+          state: stateToSave,
+          zipCode: zipCodeToSave,
+        })
+      ) {
+        const existingComplete = isAddressComplete(linkedInviteRecord);
+        const sameStreetAndZip =
+          existingComplete &&
+          linkedInviteRecord.addressLine1?.trim().toLowerCase() ===
+            addressLine1ToSave?.toLowerCase() &&
+          linkedInviteRecord.zipCode?.trim().toLowerCase() === zipCodeToSave?.toLowerCase();
+
+        if (!existingComplete || sameStreetAndZip) {
+          const backfillData: Record<string, string> = {};
+          if (!linkedInviteRecord.addressLine1?.trim() && addressLine1ToSave) {
+            backfillData.addressLine1 = addressLine1ToSave;
+          }
+          if (!linkedInviteRecord.addressLine2?.trim() && addressLine2ToSave) {
+            backfillData.addressLine2 = addressLine2ToSave;
+          }
+          if (!linkedInviteRecord.city?.trim() && cityToSave) {
+            backfillData.city = cityToSave;
+          }
+          if (!linkedInviteRecord.state?.trim() && stateToSave) {
+            backfillData.state = stateToSave;
+          }
+          if (!linkedInviteRecord.zipCode?.trim() && zipCodeToSave) {
+            backfillData.zipCode = zipCodeToSave;
+          }
+          if (!linkedInviteRecord.country?.trim() && countryToSave) {
+            backfillData.country = countryToSave;
+          }
+
+          if (Object.keys(backfillData).length > 0) {
+            await txClient.invitationCode.update({
+              where: { id: linkedInviteRecord.id },
+              data: backfillData,
+            });
+          }
+        }
+      }
+
       const coverFee = Boolean(contribution.coverFee);
       const feeAmount = coverFee ? Math.round(contribution.amount * 0.025 * 100) / 100 : 0;
 
@@ -709,7 +535,6 @@ class RegistryRepository implements IRegistryRepository {
       const newTotal = newTotalCents / 100;
 
       const messageToSave = contribution.message && contribution.message.trim() ? contribution.message.trim() : null;
-      const emailToSave = contribution.email && contribution.email.trim() ? contribution.email.trim() : null;
       const retailerOrderNumberToSave =
         contribution.retailerOrderNumber && contribution.retailerOrderNumber.trim()
           ? contribution.retailerOrderNumber.trim()
@@ -751,6 +576,12 @@ class RegistryRepository implements IRegistryRepository {
               feeAmount,
               message: messageToSave,
               date: transactionDate,
+              ...(addressLine1ToSave ? { addressLine1: addressLine1ToSave } : {}),
+              ...(addressLine2ToSave ? { addressLine2: addressLine2ToSave } : {}),
+              ...(cityToSave ? { city: cityToSave } : {}),
+              ...(stateToSave ? { state: stateToSave } : {}),
+              ...(zipCodeToSave ? { zipCode: zipCodeToSave } : {}),
+              ...(countryToSave ? { country: countryToSave } : {}),
               ...(retailerOrderNumberToSave ? { retailerOrderNumber: retailerOrderNumberToSave } : {}),
               ...(carrierToSave ? { carrier: carrierToSave } : {}),
               ...(trackingNumberToSave ? { trackingNumber: trackingNumberToSave } : {}),
@@ -826,6 +657,29 @@ class RegistryRepository implements IRegistryRepository {
     });
 
     return Boolean(result && result.count === 1);
+  }
+
+  /**
+   * Clears a claimed outbound email timestamp when provider delivery fails so
+   * gift confirmation receipts and host alerts can be retried cleanly.
+   */
+  async releaseContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void> {
+    if (!contributorId || typeof this.client?.contributor?.updateMany !== 'function') {
+      return;
+    }
+
+    const field = kind === 'confirmation' ? 'confirmationEmailSentAt' : 'alertEmailSentAt';
+    await this.client.contributor.updateMany({
+      where: {
+        id: contributorId,
+      },
+      data: {
+        [field]: null,
+      },
+    });
   }
 
   private normalizeStatus(rawStatus: unknown): ContributorStatus {
@@ -921,6 +775,15 @@ class RegistryRepository implements IRegistryRepository {
     contributorId: string
   ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null } | null> {
     if (!contributorId) return null;
+    if (isStaticExportBuild()) {
+      const found = findSeededContributorWithItem(contributorId);
+      if (!found) return null;
+      return {
+        contributor: ContributorSchema.parse(found.contributor),
+        item: found.item ? RegistryItemSchema.parse(found.item) : null,
+      };
+    }
+
     const contributor = await this.client.contributor.findUnique({
       where: { id: contributorId },
     });

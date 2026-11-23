@@ -5,8 +5,15 @@ import type { SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/ToastProvider';
-import { RegistryItem, PaginatedRegistryItems, OrderTrackingDetails, GuestClaimActions } from '../types';
+import {
+  RegistryItem,
+  PaginatedRegistryItems,
+  OrderTrackingDetails,
+  ContributorAddressDetails,
+  GuestClaimActions,
+} from '../types';
 import { checkAdminClient } from '@/core/auth/auth.client';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
@@ -40,6 +47,12 @@ interface ContributeVariables {
   retailerOrderNumber?: string;
   carrier?: string;
   trackingNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
 }
 
 function applyOptimisticContribution(item: RegistryItem, variables: ContributeVariables): RegistryItem {
@@ -105,6 +118,7 @@ function mapRegistryQueryData(
 }
 
 export function useRegistry() {
+  const demo = useOptionalDemo();
   const queryClient = useQueryClient();
   const { confirm } = useToast();
   const {
@@ -144,7 +158,7 @@ export function useRegistry() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [demo?.persona]);
 
   const {
     data: queryResult,
@@ -166,14 +180,28 @@ export function useRegistry() {
     enabled: false,
   });
 
+  const isDemoMode = Boolean(demo?.isDemoMode);
+  const demoRegistryItems = demo?.activeDataset.registryItems;
+
   const items = useMemo<RegistryItem[]>(() => {
+    if (isDemoMode && demoRegistryItems) {
+      return demoRegistryItems;
+    }
     if (!queryResult) return EMPTY_ITEMS;
     if (Array.isArray(queryResult)) return queryResult;
     if (typeof queryResult === 'object' && Array.isArray(queryResult.items)) {
       return queryResult.items;
     }
     return EMPTY_ITEMS;
-  }, [queryResult]);
+  }, [demoRegistryItems, isDemoMode, queryResult]);
+
+  const effectiveSelectedItem = useMemo<RegistryItem | null>(() => {
+    if (!selectedItem) return null;
+    if (!isDemoMode || !demoRegistryItems) return selectedItem;
+    return demoRegistryItems.find((i) => i.id === selectedItem.id) ?? null;
+  }, [demoRegistryItems, isDemoMode, selectedItem]);
+
+  const effectiveIsModalOpen = isModalOpen && Boolean(effectiveSelectedItem);
 
   const {
     categories,
@@ -226,6 +254,12 @@ export function useRegistry() {
       retailerOrderNumber,
       carrier,
       trackingNumber,
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      zipCode,
+      country,
     }: ContributeVariables) => {
       return apiClient.post('/api/registry/contribute', {
         itemId,
@@ -239,6 +273,12 @@ export function useRegistry() {
         ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
         ...(carrier ? { carrier } : {}),
         ...(trackingNumber ? { trackingNumber } : {}),
+        ...(addressLine1 ? { addressLine1 } : {}),
+        ...(addressLine2 ? { addressLine2 } : {}),
+        ...(city ? { city } : {}),
+        ...(state ? { state } : {}),
+        ...(zipCode ? { zipCode } : {}),
+        ...(country ? { country } : {}),
       });
     },
     onMutate: async (variables) => {
@@ -440,7 +480,8 @@ export function useRegistry() {
     coverFee?: boolean,
     email?: string,
     paymentIntentId?: string,
-    orderDetails?: OrderTrackingDetails
+    orderDetails?: OrderTrackingDetails,
+    addressDetails?: ContributorAddressDetails
   ) => {
     return new Promise<unknown>((resolve, reject) => {
       contribute(
@@ -456,6 +497,12 @@ export function useRegistry() {
           retailerOrderNumber: orderDetails?.retailerOrderNumber || undefined,
           carrier: orderDetails?.carrier || undefined,
           trackingNumber: orderDetails?.trackingNumber || undefined,
+          addressLine1: addressDetails?.addressLine1 || undefined,
+          addressLine2: addressDetails?.addressLine2 || undefined,
+          city: addressDetails?.city || undefined,
+          state: addressDetails?.state || undefined,
+          zipCode: addressDetails?.zipCode || undefined,
+          country: addressDetails?.country || undefined,
         },
         {
           onSuccess: (data) => {
@@ -496,8 +543,8 @@ export function useRegistry() {
     isLoading,
     error,
     refetch,
-    selectedItem,
-    isModalOpen,
+    selectedItem: effectiveSelectedItem,
+    isModalOpen: effectiveIsModalOpen,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,

@@ -1,7 +1,17 @@
 /**
  * @type {import('next').NextConfig}
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { NextConfig } from 'next';
+
+const configDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
+const turbopackRoot = fs.existsSync(path.join(configDir, 'node_modules'))
+  ? configDir
+  : path.resolve(configDir, '..', '..');
 /**
  * @description Configuration object for Next.js.
  *
@@ -45,6 +55,10 @@ const nextConfig: NextConfig = {
   // Support dual-mode build: output: 'standalone' by default, 'export' for static showcases
   output: isStaticExport ? 'export' : 'standalone',
   distDir: isStaticExport ? '.next-export' : '.next',
+  trailingSlash: isStaticExport,
+  turbopack: {
+    root: turbopackRoot,
+  },
   typescript: {
     tsconfigPath: './tsconfig.build.json',
   },

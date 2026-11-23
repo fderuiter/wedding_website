@@ -45,9 +45,9 @@ Set environment variables in **Vercel Project Settings > Environment Variables**
 | `POSTGRES_URL_NON_POOLING` | No* | Optional shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts`); recommended when `DATABASE_URL` uses PgBouncer so the build command can override `DATABASE_URL` for `prisma migrate deploy`. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
 | `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.mydomain.com,*.vercel.app`). |
-| `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
+| `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 15 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
-| `TRUST_PROXY` | No | Trust `X-Forwarded-For` / `X-Real-IP` from Vercel edge ingress (`true` or hop count; default `false`). |
+| `TRUST_PROXY` | No | Set to `1` for single-hop Vercel edge ingress (or `2` behind an external proxy/CDN in front of Vercel; schema default `false`). |
 | `GUEST_PASSCODE` | Yes | Unique passcode required for guest access (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | Dedicated secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
 | `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
@@ -195,5 +195,5 @@ The repository includes a root [`vercel.json`](../../vercel.json) configuring Ve
 
 1.  **Function Execution Timeout**: Serverless functions have execution timeout limits (10s on Free, 60s on Pro, 300s on Enterprise). Long-running scraper jobs or bulk exports must finish within these bounds.
 2.  **Connection Exhaustion**: Connecting directly to PostgreSQL without connection poolers (PgBouncer/Neon) will quickly exhaust database connections under concurrent traffic. Always set up connection pooling.
-3.  **No Local State**: File uploads, sessions, or in-memory caches are not shared across serverless function invocations.
+3.  **No Local State**: Local file uploads and general 100 req/min in-memory rate-limit caches are not shared across serverless function invocations (authentication lockouts synchronize via PostgreSQL).
 4.  **Vendor Isolation Policy**: To maintain vendor independence, do not import `@vercel/postgres` or `@vercel/blob` SDKs in core business code; consume the shared standard Prisma and AWS S3 SDK abstractions instead.
