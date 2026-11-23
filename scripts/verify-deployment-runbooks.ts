@@ -1985,37 +1985,14 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
     );
   }
-  const ciSharesComposeDbImage =
-    ciWorkflowRaw.includes('db_image: ${{ steps.resolve-db-image.outputs.db_image }}') &&
+  const ciDelegatesPostgresImageToCompose =
     ciWorkflowRaw.includes('docker-compose.yml') &&
-    ciWorkflowRaw.includes('["services", "db", "image"]');
-  const ciDocForDbCheck = parseDocument(ciWorkflowRaw, { version: '1.2' });
-  const ciJobsForDbCheck: unknown = isMap(ciDocForDbCheck.contents)
-    ? ciDocForDbCheck.contents.get('jobs', true)
-    : null;
-  const ciDbServiceImages: string[] = [];
-  if (isMap(ciJobsForDbCheck)) {
-    for (const jobPair of ciJobsForDbCheck.items) {
-      const jobMap: unknown = jobPair.value;
-      const servicesMap: unknown = isMap(jobMap) ? jobMap.get('services', true) : null;
-      const dbServiceMap: unknown = isMap(servicesMap) ? servicesMap.get('db', true) : null;
-      const dbImageNode: unknown = isMap(dbServiceMap) ? dbServiceMap.get('image', true) : null;
-      if (isScalar(dbImageNode) && typeof dbImageNode.value === 'string') {
-        ciDbServiceImages.push(dbImageNode.value.trim());
-      }
-    }
-  }
-  const pinnedPostgresRegex = new RegExp(
-    `^postgres:${expectedPostgresMajor}-alpine@sha256:[a-f0-9]{64}$`
-  );
-  const allCiDbImagesAligned =
-    ciDbServiceImages.length > 0 &&
-    ciDbServiceImages.every(
-      (img) =>
-        pinnedPostgresRegex.test(img) ||
-        (ciSharesComposeDbImage && img === '${{ needs.verify.outputs.db_image }}')
-    );
-  if (!allCiDbImagesAligned || mismatchedPostgresImageRegex.test(ciWorkflowRaw)) {
+    ciWorkflowRaw.includes('["services", "db", "image"]') &&
+    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
+  if (
+    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
+    mismatchedPostgresImageRegex.test(ciWorkflowRaw)
+  ) {
     errors.push(
       `.github/workflows/ci.yml: PostgreSQL service containers must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` (or \`\${{ needs.verify.outputs.db_image }}\`) matching docker-compose.yml`
     );
