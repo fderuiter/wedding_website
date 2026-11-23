@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 export interface SlideshowPhoto {
   id?: string;
@@ -44,6 +45,7 @@ export function ReceptionSlideshowClient({
   initialPhotos,
   uploadUrl,
 }: ReceptionSlideshowClientProps) {
+  const demo = useOptionalDemo();
   const [photos, setPhotos] = useState<SlideshowPhoto[]>(() => normalizePhotos(initialPhotos));
   const [failedUrls, setFailedUrls] = useState<Set<string>>(() => new Set());
   const failedUrlsRef = useRef<Set<string>>(new Set());
@@ -510,7 +512,13 @@ export function ReceptionSlideshowClient({
       {showQrCode && (
         <section
           aria-label="Guest Photo Upload QR Code"
-          className="fixed bottom-24 right-6 z-40 max-w-xs md:max-w-sm rounded-2xl p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in"
+          className={`fixed ${
+            demo?.isDemoMode
+              ? demo.isToolbarCollapsed
+                ? 'bottom-36'
+                : 'bottom-52 lg:bottom-48'
+              : 'bottom-24'
+          } right-6 z-40 max-w-xs md:max-w-sm rounded-2xl p-5 bg-stone-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 animate-fade-in`}
           data-testid="slideshow-qr-overlay"
         >
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -573,7 +581,13 @@ export function ReceptionSlideshowClient({
         ref={controlsRef}
         role="toolbar"
         aria-label="Slideshow Controls"
-        className={`group fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
+        className={`group fixed ${
+          demo?.isDemoMode
+            ? demo.isToolbarCollapsed
+              ? 'bottom-16'
+              : 'bottom-32 lg:bottom-28'
+            : 'bottom-6'
+        } left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-full border text-white transition-all duration-500 focus-within:bg-stone-900/85 focus-within:backdrop-blur-md focus-within:border-white/15 focus-within:shadow-2xl ${
           shouldShowControls
             ? 'bg-stone-900/85 backdrop-blur-md border-white/15 shadow-2xl'
             : 'bg-transparent border-transparent shadow-none'

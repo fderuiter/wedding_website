@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import fs from 'fs';
 import path from 'path';
 import { a11yConfig } from '../src/a11y-config';
+import { getRegistryEditStaticParams } from '../src/lib/sampleData/builder';
 
 const PORTAL_BASE_PATH = '/wedding_website';
 const DEMO_BASE_PATH = '/wedding_website/demo';
@@ -141,6 +142,19 @@ async function setPageTheme(page: Page, theme: 'light' | 'dark') {
     reducedMotion: 'reduce',
   });
   await page.evaluate(async (mode) => {
+    const stylesheetLinks = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
+    );
+    await Promise.all(
+      stylesheetLinks.map((link) =>
+        link.sheet
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+            link.addEventListener('load', () => resolve(), { once: true });
+            link.addEventListener('error', () => resolve(), { once: true });
+          })
+      )
+    );
     document.documentElement.classList.toggle('dark', mode === 'dark');
     document.documentElement.classList.toggle('light', mode === 'light');
     try {
@@ -202,8 +216,14 @@ test.describe('Static GitHub Pages Showcase', () => {
       'dist',
       'demo'
     );
+    const expectedExportedRoutes = Array.from(
+      new Set([
+        ...STATIC_DEMO_ROUTES,
+        ...getRegistryEditStaticParams().map(({ id }) => `/registry/edit-item/${id}`),
+      ])
+    ).sort();
     const exportedRoutes = collectExportedDemoHtmlRoutes(demoDistDir);
-    expect(exportedRoutes).toEqual([...STATIC_DEMO_ROUTES].sort());
+    expect(exportedRoutes).toEqual(expectedExportedRoutes);
 
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => {
@@ -221,6 +241,8 @@ test.describe('Static GitHub Pages Showcase', () => {
     page,
   }) => {
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+
+    const routeFailures: string[] = [];
 
     for (const route of STATIC_DEMO_ROUTES) {
       const targetPath = route === '/' ? DEMO_BASE_PATH : `${DEMO_BASE_PATH}${route}`;
@@ -253,7 +275,9 @@ test.describe('Static GitHub Pages Showcase', () => {
 
       try {
         const response = await page.goto(targetPath, { waitUntil: 'load' });
-        expect(response?.status(), `Expected HTTP 200 for ${targetPath}`).toBe(200);
+        if (response?.status() !== 200) {
+          routeFailures.push(`Route ${route} returned HTTP ${response?.status()}`);
+        }
 
         // Allow client hydration, static 404 fetch fallbacks, and Suspense boundaries to settle
         await page.waitForTimeout(route === '/heart' ? 600 : 250);
@@ -269,30 +293,42 @@ test.describe('Static GitHub Pages Showcase', () => {
         const axeResults = await createAxeBuilder(page).analyze();
         recordRouteViolations(route, axeResults.violations);
 
-        expect(
-          escapedRootNextRequests,
-          `Route ${route} requested root /_next/* assets`
-        ).toEqual([]);
-        expect(
-          failedStaticAssetUrls,
-          `Route ${route} failed to load subpath static chunks`
-        ).toEqual([]);
-        expect(
-          pageErrors,
-          `Route ${route} threw uncaught pageerror exceptions`
-        ).toEqual([]);
-        expect(
-          axeResults.violations,
-          `Route ${route} reported Axe violations: ${axeResults.violations
-            .map((v) => `${v.id} (${v.nodes.length} nodes)`)
-            .join(', ')}`
-        ).toEqual([]);
+        if (escapedRootNextRequests.length > 0) {
+          routeFailures.push(
+            `Route ${route} requested root /_next/* assets: ${escapedRootNextRequests.join(', ')}`
+          );
+        }
+        if (failedStaticAssetUrls.length > 0) {
+          routeFailures.push(
+            `Route ${route} failed to load subpath static chunks: ${failedStaticAssetUrls.join(', ')}`
+          );
+        }
+        if (pageErrors.length > 0) {
+          routeFailures.push(
+            `Route ${route} threw uncaught pageerror exceptions: ${pageErrors.join(' | ')}`
+          );
+        }
+        if (axeResults.violations.length > 0) {
+          routeFailures.push(
+            `Route ${route} reported Axe violations: ${axeResults.violations
+              .map(
+                (v) =>
+                  `${v.id} (${v.nodes.length} nodes: ${v.nodes
+                    .slice(0, 4)
+                    .map((n) => n.html)
+                    .join(' ;; ')})`
+              )
+              .join(', ')}`
+          );
+        }
       } finally {
         page.off('pageerror', onPageError);
         page.off('request', onRequest);
         page.off('response', onResponse);
       }
     }
+
+    expect(routeFailures).toEqual([]);
   });
 
   test('verifies slideshow speed controls, registry add-item tabs, and fallback error alerts across light and dark themes', async ({
@@ -369,12 +405,18 @@ test.describe('Static GitHub Pages Showcase', () => {
       expect(results.violations).toEqual([]);
     }
 
-    // 4. /admin/dashboard/thank-you-notes fetch error alert in light & dark themes
+    // 4. /admin/dashboard/thank-you-notes view (populated via demoApiHandler) in light & dark themes
     await page.goto(`${DEMO_BASE_PATH}/admin/dashboard/thank-you-notes`, {
       waitUntil: 'load',
     });
     await expect(
-      page.getByText('Error: Failed to fetch thank-you notes.')
+      page.getByRole('heading', { level: 1, name: 'Thank-You Note Manager' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 2, name: 'Thank-You Progress Summary' })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('tablist', { name: 'Filter contributors by thank-you status' })
     ).toBeVisible();
 
     for (const theme of ['light', 'dark'] as const) {
@@ -387,8 +429,14 @@ test.describe('Static GitHub Pages Showcase', () => {
       expect(results.violations).toEqual([]);
     }
 
-    // 5. /wedding-party and /admin/setup in light & dark themes
-    for (const extraRoute of ['/wedding-party', '/admin/setup'] as const) {
+    // 5. /wedding-party, /admin/setup, /registry, /admin/dashboard/invitation-codes, and /registry/edit-item/fallback in light & dark themes
+    for (const extraRoute of [
+      '/wedding-party',
+      '/admin/setup',
+      '/registry',
+      '/admin/dashboard/invitation-codes',
+      '/registry/edit-item/fallback',
+    ] as const) {
       await page.goto(`${DEMO_BASE_PATH}${extraRoute}`, { waitUntil: 'load' });
       for (const theme of ['light', 'dark'] as const) {
         await setPageTheme(page, theme);

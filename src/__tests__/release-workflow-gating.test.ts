@@ -1509,7 +1509,7 @@ process.exit(1);
     };
     expect(pkg.scripts?.prebuild).toBeUndefined();
     expect(pkg.scripts?.postinstall).toBe(
-      'prisma generate && node scripts/pretest.mjs --record-install-state'
+      'next typegen && prisma generate && node scripts/pretest.mjs --record-install-state'
     );
     expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');

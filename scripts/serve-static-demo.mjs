@@ -67,10 +67,7 @@ function buildStaticBundle() {
   fs.cpSync(OUT_DIR, DEMO_DIR, { recursive: true });
   fs.writeFileSync(path.join(DIST_DIR, '.nojekyll'), '', 'utf8');
   fs.rmSync(OUT_DIR, { recursive: true, force: true });
-  const nextDir = path.join(REPO_ROOT, '.next');
-  if (fs.existsSync(nextDir) && !fs.existsSync(path.join(nextDir, 'standalone'))) {
-    fs.rmSync(nextDir, { recursive: true, force: true });
-  }
+  fs.rmSync(path.join(REPO_ROOT, '.next', 'export-stage'), { recursive: true, force: true });
   console.log('Assembled GitHub Pages artifact in docs-portal/.vitepress/dist (+ demo/).');
 }
 

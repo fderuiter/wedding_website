@@ -245,4 +245,107 @@ describe('EditRegistryItemPage', () => {
     expect(window.sessionStorage.getItem('registry_item_form_edit_gift-35')).toBeNull();
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
   });
+
+  it('falls back to pure archetype seed data across classic, destination, and romantic when backend API is unavailable', async () => {
+    mockParamId = 'sample-registry-destination-1';
+    (global.fetch as jest.Mock) = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ success: false, error: 'Static export 404' }),
+      })
+    ) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByLabelText(/item name/i)).toHaveValue(
+      'Hardside Spinner Luggage Set'
+    );
+    expect(screen.getByLabelText(/price/i)).toHaveValue(280);
+    expect(screen.getByLabelText(/category/i)).toHaveValue('Travel');
+  });
+
+  it('resolves newly created cached items via the static /registry/edit-item/fallback route', async () => {
+    mockParamId = 'fallback';
+    window.history.pushState(
+      {},
+      '',
+      '/registry/edit-item/fallback?id=client-created-gift-77'
+    );
+
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      ['admin-registry'],
+      [
+        {
+          ...mockItem,
+          id: 'client-created-gift-77',
+          name: 'Artisanal Ceramic Pour-Over Set',
+          price: 92,
+          category: 'Coffee',
+        },
+      ]
+    );
+
+    (global.fetch as jest.Mock) = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ success: false, error: 'Static export 404' }),
+      })
+    ) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByLabelText(/item name/i)).toHaveValue(
+      'Artisanal Ceramic Pour-Over Set'
+    );
+    expect(screen.getByLabelText(/price/i)).toHaveValue(92);
+
+    window.history.pushState({}, '', '/');
+  });
+
+  it('resolves seeded items from subpath and trailing-slash URLs when rendered via static fallback', async () => {
+    mockParamId = 'fallback';
+    window.history.pushState(
+      {},
+      '',
+      '/wedding_website/demo/registry/edit-item/sample-registry-romantic-1/'
+    );
+
+    (global.fetch as jest.Mock) = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ success: false, error: 'Static export 404' }),
+      })
+    ) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByLabelText(/item name/i)).toHaveValue(
+      'Handcrafted Oak Serving Board'
+    );
+    expect(screen.getByLabelText(/price/i)).toHaveValue(75);
+
+    window.history.pushState({}, '', '/');
+  });
 });

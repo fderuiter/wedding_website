@@ -1,8 +1,16 @@
+import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { createPageMetadata } from '@/app/metadata';
 import SetupWizard, { type SetupWizardSavedConfig } from '@/components/setup/SetupWizard';
 import { getAppConfig, isSiteInitialized, isSetupCompleted } from '@/lib/config';
 import { isNonPlaceholderVenueText } from '@/utils/maps';
+
+export const metadata: Metadata = createPageMetadata({
+  title: 'Initial Site Setup',
+  description: 'Configure initial couple details, wedding date, venue, and theme settings.',
+  noIndex: true,
+});
 
 /**
  * Admin-protected setup route (/admin/setup) that keeps SetupWizard reachable

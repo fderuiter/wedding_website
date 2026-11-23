@@ -314,28 +314,31 @@ function RegistryPageContent() {
             actionLabel="Refresh Registry"
           />
         ) : visibleItems.length > 0 ? (
-          <motion.div
-            className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
-            variants={gridVariants}
-            initial="hidden"
-            animate="visible"
-            aria-live="polite"
-          >
-            {visibleItems.map((item) => (
-              <motion.div key={item.id} variants={cardVariants}>
-                <RegistryCard
-                  item={item}
-                  onClick={handleCardClick}
-                  isAdmin={isAdmin}
-                  cardCheckoutEnabled={cardCheckoutEnabled}
-                  defaultPaymentHandleType={defaultPaymentHandleType}
-                  defaultPaymentHandle={defaultPaymentHandle}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                />
-              </motion.div>
-            ))}
-          </motion.div>
+          <>
+            <h2 className="sr-only">Registry Gifts</h2>
+            <motion.div
+              className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-10 max-w-7xl mx-auto"
+              variants={gridVariants}
+              initial="hidden"
+              animate="visible"
+              aria-live="polite"
+            >
+              {visibleItems.map((item) => (
+                <motion.div key={item.id} variants={cardVariants}>
+                  <RegistryCard
+                    item={item}
+                    onClick={handleCardClick}
+                    isAdmin={isAdmin}
+                    cardCheckoutEnabled={cardCheckoutEnabled}
+                    defaultPaymentHandleType={defaultPaymentHandleType}
+                    defaultPaymentHandle={defaultPaymentHandle}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
+          </>
         ) : (
           <EmptyState
             message="No gifts match the current filters. Try adjusting your search!"

@@ -8,6 +8,7 @@ import { ContentNodeSchema, isPrivateContentNode, type ContentNodeDTO } from '@/
 import { enforceActiveGuestPageSession, getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { isFeatureEnabled } from '@/lib/modules';
 import { withPageQuery } from '@/lib/query-wrapper';
+import { isStaticExportBuild } from '@/lib/sampleData/builder';
 
 function cleanVenueField(value: string | null | undefined): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -36,6 +37,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const title = partner1 && partner2
     ? `${partner1} & ${partner2}'s Wedding`
     : 'Wedding Website';
+  const siteTitle = config.seoTitle || title;
   const description = config.seoDescription || (
     partner1 && partner2
       ? `Join ${partner1} and ${partner2} for their wedding celebration${cleanVenueName ? ` at ${cleanVenueName}` : ''}.`
@@ -81,7 +83,7 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 
   return {
-    title: 'Home',
+    title: `Home | ${siteTitle}`,
     description,
     alternates: {
       canonical: baseUrl,
@@ -125,75 +127,75 @@ export default async function HomePage() {
     )
   ).filter((n) => !isPrivateContentNode(n));
 
-  const isStaticExport =
-    process.env.STATIC_EXPORT === 'true' ||
-    process.env.STATIC_EXPORT === '1' ||
-    process.env.npm_lifecycle_event === 'build:export';
+  const isStaticExport = isStaticExportBuild();
 
+  let guestScheduleCode: string | null = null;
   if (!isStaticExport) {
     await enforceActiveGuestPageSession();
     const guestSession = await getGuestInviteSession();
-    if (guestSession?.code) {
-      const guestSchedule = await withPageQuery(
-        () => subEventService.getScheduleForGuest(guestSession.code),
-        []
-      );
+    guestScheduleCode = guestSession?.code ?? null;
+  }
 
-      if (guestSchedule.length > 0) {
-        const nonScheduleNodes = contentNodes.filter((n) => {
-          if (isPrivateContentNode(n)) {
-            return false;
-          }
-          const data = n.data as any;
-          return !(
-            n.type === 'Schedule' ||
-            n.tags.includes('Schedule') ||
-            n.tags.includes('schedule') ||
-            Boolean(data?.startTime)
-          );
+  if (isStaticExport || guestScheduleCode) {
+    const guestSchedule = await withPageQuery(
+      () => subEventService.getScheduleForGuest(guestScheduleCode),
+      []
+    );
+
+    if (guestSchedule.length > 0) {
+      const nonScheduleNodes = contentNodes.filter((n) => {
+        if (isPrivateContentNode(n)) {
+          return false;
+        }
+        const data = n.data as any;
+        return !(
+          n.type === 'Schedule' ||
+          n.tags.includes('Schedule') ||
+          n.tags.includes('schedule') ||
+          Boolean(data?.startTime)
+        );
+      });
+
+      const authorizedScheduleNodes: ContentNodeDTO[] = guestSchedule.map((evt) => {
+        const startIso =
+          evt.startTime instanceof Date
+            ? evt.startTime.toISOString()
+            : evt.startTime || undefined;
+        const endIso =
+          evt.endTime instanceof Date
+            ? evt.endTime.toISOString()
+            : evt.endTime || undefined;
+        const category =
+          typeof evt.category === 'string' && evt.category.trim()
+            ? evt.category.trim()
+            : undefined;
+
+        return ContentNodeSchema.parse({
+          id: evt.id,
+          type: 'Schedule',
+          tags: ['Homepage', 'Schedule'],
+          data: {
+            title: evt.title,
+            description: evt.description || '',
+            startTime: startIso,
+            endTime: endIso,
+            locationName: evt.locationName || evt.location || '',
+            location: evt.location || '',
+            category,
+            categoryTags: category ? [category] : [],
+            attireRules: evt.attireRules || undefined,
+            isPrivate: Boolean(evt.isPrivate),
+            isReadOnly: Boolean(evt.isReadOnly),
+            mealOptions: evt.mealOptions ?? [],
+            customQuestions: evt.customQuestions ?? [],
+            userRsvp: evt.userRsvp ?? undefined,
+          },
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
         });
+      });
 
-        const authorizedScheduleNodes: ContentNodeDTO[] = guestSchedule.map((evt) => {
-          const startIso =
-            evt.startTime instanceof Date
-              ? evt.startTime.toISOString()
-              : evt.startTime || undefined;
-          const endIso =
-            evt.endTime instanceof Date
-              ? evt.endTime.toISOString()
-              : evt.endTime || undefined;
-          const category =
-            typeof evt.category === 'string' && evt.category.trim()
-              ? evt.category.trim()
-              : undefined;
-
-          return ContentNodeSchema.parse({
-            id: evt.id,
-            type: 'Schedule',
-            tags: ['Homepage', 'Schedule'],
-            data: {
-              title: evt.title,
-              description: evt.description || '',
-              startTime: startIso,
-              endTime: endIso,
-              locationName: evt.locationName || evt.location || '',
-              location: evt.location || '',
-              category,
-              categoryTags: category ? [category] : [],
-              attireRules: evt.attireRules || undefined,
-              isPrivate: Boolean(evt.isPrivate),
-              isReadOnly: Boolean(evt.isReadOnly),
-              mealOptions: evt.mealOptions ?? [],
-              customQuestions: evt.customQuestions ?? [],
-              userRsvp: evt.userRsvp ?? undefined,
-            },
-            createdAt: new Date(0),
-            updatedAt: new Date(0),
-          });
-        });
-
-        contentNodes = [...nonScheduleNodes, ...authorizedScheduleNodes];
-      }
+      contentNodes = [...nonScheduleNodes, ...authorizedScheduleNodes];
     }
   }
 
