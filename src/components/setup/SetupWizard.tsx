@@ -35,6 +35,11 @@ import { ThemePreset, getPresetTokens, getServerExportTokens } from '@/lib/theme
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
 import { Icon } from '@/components/ui/Icon';
 import Countdown from '@/components/Countdown';
+import {
+  ensureStaticDemoRuntime,
+  getStaticDemoSavedSetupConfig,
+  completeStaticDemoSetup,
+} from '@/lib/staticDemo/runtime';
 import { withBasePath } from '@/lib/basePath';
 import {
   cleanOptionalSetupText,
@@ -634,6 +639,7 @@ function SetupWizardContent({
     hasValidPreviewDate && isUpcomingWeddingDate(weddingDate);
 
   const handleCompleteAndExit = async () => {
+    completeStaticDemoSetup();
     if (typeof window !== 'undefined') {
       try {
         window.sessionStorage.removeItem(SETUP_WIZARD_STORAGE_KEY);
@@ -1375,6 +1381,9 @@ export default function SetupWizard({
   initialSavedConfig,
   onDemoComplete,
 }: SetupWizardProps = {}) {
+  ensureStaticDemoRuntime();
+  const resolvedSavedConfig =
+    initialSavedConfig ?? getStaticDemoSavedSetupConfig();
   const outerQueryClient = useContext(QueryClientContext);
   const outerToast = useContext(ToastContext);
   const [fallbackQueryClient] = useState(() => new QueryClient());
@@ -1384,7 +1393,7 @@ export default function SetupWizard({
   const hasAppShell = Boolean(outerQueryClient && outerToast);
   const content = (
     <SetupWizardContent
-      initialSavedConfig={initialSavedConfig}
+      initialSavedConfig={resolvedSavedConfig}
       onDemoComplete={onDemoComplete}
       hasAppShell={hasAppShell}
     />

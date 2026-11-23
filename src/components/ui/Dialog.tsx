@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useId, useRef } from 'react';
 import { Overlay } from './Overlay';
+import { Heading, type HeadingLevel } from './Layout';
 import { EnsureToastProvider, ToastContext, type ToastContextValue } from './ToastProvider';
 import { cn } from '@/utils/cn';
 
@@ -48,6 +49,7 @@ export interface DialogProps {
   isOpen: boolean;
   onClose: () => void;
   title?: React.ReactNode;
+  headingLevel?: HeadingLevel;
   description?: React.ReactNode;
   children: React.ReactNode;
   role?: 'dialog' | 'alertdialog';
@@ -65,6 +67,7 @@ function DialogInner({
   isOpen,
   onClose,
   title,
+  headingLevel = 'h2',
   description,
   children,
   role = 'dialog',
@@ -113,9 +116,15 @@ function DialogInner({
             style={{ color: 'var(--dialog-title-color, inherit)' }}
           >
             {typeof title === 'string' ? (
-              <h2 id={finalLabelId} className="text-lg font-medium">
+              <Heading
+                as={headingLevel}
+                variant="none"
+                unstyledColor
+                id={finalLabelId}
+                className="text-lg font-medium"
+              >
                 {title}
-              </h2>
+              </Heading>
             ) : (
               <div id={finalLabelId}>{title}</div>
             )}

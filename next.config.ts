@@ -51,6 +51,11 @@ const basePath = isStaticExport && rawBasePath && rawBasePath !== '/'
   ? (rawBasePath.startsWith('/') ? rawBasePath : `/${rawBasePath}`).replace(/\/+$/, '')
   : undefined;
 
+const shouldStripStaticDemoRuntime =
+  !isStaticExport &&
+  process.env.NODE_ENV !== 'test' &&
+  !process.env.JEST_WORKER_ID;
+
 const nextConfig: NextConfig = {
   // Support dual-mode build: output: 'standalone' by default, 'export' for static showcases
   output: isStaticExport ? 'export' : 'standalone',
@@ -58,6 +63,13 @@ const nextConfig: NextConfig = {
   trailingSlash: isStaticExport,
   turbopack: {
     root: turbopackRoot,
+    ...(shouldStripStaticDemoRuntime
+      ? {
+        resolveAlias: {
+          '@/lib/staticDemo/runtime': './src/lib/staticDemo/runtime.noop.ts',
+        },
+      }
+      : {}),
   },
   typescript: {
     tsconfigPath: './tsconfig.build.json',

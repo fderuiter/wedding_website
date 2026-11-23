@@ -5,6 +5,7 @@ import WeddingPartyCard from './WeddingPartyCard';
 import type { WeddingPartyMemberDTO } from '@/features/wedding-party';
 import { useOptionalDemo } from '@/components/demo/DemoContext';
 import { cn } from '@/utils/cn';
+import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
 interface WeddingPartyListProps {
   members: WeddingPartyMemberDTO[];
@@ -20,6 +21,8 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({
   partner2Name,
 }) => {
   const demo = useOptionalDemo();
+  const demoOverrides = useStaticDemoPageOverrides();
+  const baseMembers = demoOverrides?.weddingParty ?? initialMembers;
   const [draftOverride, setDraftOverride] = useState<{
     base: WeddingPartyMemberDTO[];
     members: WeddingPartyMemberDTO[];
@@ -30,7 +33,7 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({
     ? demo.activeDataset.weddingParty
     : draftOverride && draftOverride.base === initialMembers
       ? draftOverride.members
-      : initialMembers;
+      : baseMembers;
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window !== window.parent) {
@@ -53,10 +56,10 @@ const WeddingPartyList: React.FC<WeddingPartyListProps> = ({
 
   const effectivePartner1Name = demo?.isDemoMode
     ? demo.configOverrides.partner1Name || partner1Name
-    : partner1Name;
+    : demoOverrides?.config.partner1Name || partner1Name;
   const effectivePartner2Name = demo?.isDemoMode
     ? demo.configOverrides.partner2Name || partner2Name
-    : partner2Name;
+    : demoOverrides?.config.partner2Name || partner2Name;
   const p1 = effectivePartner1Name?.trim() || '';
   const p2 = effectivePartner2Name?.trim() || '';
   const partner1SideLabel = p1 ? `${p1}'s Side` : "Partner 1's Side";

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
+import { Heading, type HeadingLevel } from '@/components/ui/Layout';
 
 export interface Feature {
   id: string;
@@ -18,6 +19,7 @@ interface DragDropContainerProps {
   saveFeatures: (updated: Feature[]) => Promise<any>;
   toggleVisibility: (id: string) => void;
   onDeleteSection?: (id: string) => void;
+  headingLevel?: HeadingLevel;
 }
 
 export default function DragDropContainer({
@@ -25,6 +27,7 @@ export default function DragDropContainer({
   saveFeatures,
   toggleVisibility,
   onDeleteSection,
+  headingLevel = 'h2',
 }: DragDropContainerProps) {
   const [announcement, setAnnouncement] = useState<string>('');
 
@@ -89,9 +92,14 @@ export default function DragDropContainer({
                           <Icon name="DragHandle" className="h-6 w-6" />
                         </div>
                         <div>
-                          <h3 className="font-bold text-xl text-primary">
+                          <Heading
+                            as={headingLevel}
+                            variant="none"
+                            unstyledColor
+                            className="font-bold text-xl text-primary"
+                          >
                             {feature.title || feature.id}
-                          </h3>
+                          </Heading>
                           <span className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                             {feature.type}
                           </span>

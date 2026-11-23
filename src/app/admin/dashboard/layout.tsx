@@ -46,7 +46,7 @@ export default async function AdminDashboardLayout({
       <div role="region" aria-label="Admin Dashboard" className="bg-white dark:bg-gray-800 shadow p-4">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-primary">Admin Control Panel</h1>
+            <span className="text-xl font-bold text-primary">Admin Control Panel</span>
             <Link
               href="/"
               data-testid="admin-header-view-live-site"

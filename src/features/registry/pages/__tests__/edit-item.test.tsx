@@ -65,6 +65,9 @@ describe('EditRegistryItemPage', () => {
     );
 
     expect(await screen.findByLabelText(/item name/i)).toHaveValue(mockItem.name);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Edit Registry Item' })
+    ).toBeInTheDocument();
     expect(screen.getByLabelText(/price/i)).toHaveValue(mockItem.price);
     expect(screen.getByLabelText(/quantity/i)).toHaveValue(mockItem.quantity);
     expect(screen.getByLabelText(/category/i)).toHaveValue(mockItem.category);
@@ -128,6 +131,9 @@ describe('EditRegistryItemPage', () => {
     );
 
     expect(await screen.findByText(/Error: Item not found/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Unable to Load Registry Item' })
+    ).toBeInTheDocument();
   });
 
   it('supports retrying failed item loads via AdminViewState and preserves unsaved edits on submit error', async () => {
