@@ -61,8 +61,6 @@ export const THANK_YOU_TEMPLATES: ThankYouTemplate[] = [
   },
 ];
 
-export const DEFAULT_THANK_YOU_TEMPLATES = THANK_YOU_TEMPLATES;
-
 export function substituteThankYouTemplateTokens(
   template: string,
   tokens: ThankYouTemplateTokens

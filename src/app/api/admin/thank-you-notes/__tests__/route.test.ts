@@ -110,17 +110,26 @@ jest.mock('next/server', () => {
   };
 });
 
-jest.mock('@/features/registry', () => ({
-  ...jest.requireActual('@/features/registry'),
-  thankYouService: {
-    getThankYouNotes: jest.fn(),
-    updateThankYouNote: jest.fn(),
-    batchUpdateThankYouNotes: jest.fn(),
-    exportThankYouNotesCsv: jest.fn(),
-    exportThankYouNotesPdf: jest.fn(),
-    sendThankYouEmail: jest.fn(),
-  },
-}));
+jest.mock('@/features/registry', () => {
+  const {
+    UpdateThankYouNoteSchema,
+    BatchUpdateThankYouNotesSchema,
+    SendThankYouEmailSchema,
+  } = jest.requireActual('@/features/registry');
+  return {
+    UpdateThankYouNoteSchema,
+    BatchUpdateThankYouNotesSchema,
+    SendThankYouEmailSchema,
+    thankYouService: {
+      getThankYouNotes: jest.fn(),
+      updateThankYouNote: jest.fn(),
+      batchUpdateThankYouNotes: jest.fn(),
+      exportThankYouNotesCsv: jest.fn(),
+      exportThankYouNotesPdf: jest.fn(),
+      sendThankYouEmail: jest.fn(),
+    },
+  };
+});
 
 jest.mock('@/features/registry/thank-you.service', () => ({
   thankYouService: {

@@ -431,10 +431,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       const existingPaymentIntentId =
         latestSynced && !latestSynced.isMock ? latestSynced.paymentIntentId : undefined;
       const existingClientSecret =
-        latestSynced && !latestSynced.isMock
-          ? latestSynced.clientSecret ||
-            (paymentIntentData?.itemId === item.id ? paymentIntentData.clientSecret : undefined)
-          : undefined;
+        latestSynced && !latestSynced.isMock ? latestSynced.clientSecret : undefined;
 
       try {
         const res = await apiClient.post('/api/registry/payment-intent', {
@@ -740,9 +737,19 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
       if (intentId) {
         setPaymentTransactionId(intentId);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPhase('error');
-      setSubmissionError(err?.message || 'Payment processing failed. Please try again.');
+      const errorMessage =
+        err instanceof Error && err.message
+          ? err.message
+          : typeof err === 'object' &&
+              err !== null &&
+              'message' in err &&
+              typeof (err as { message?: unknown }).message === 'string' &&
+              (err as { message: string }).message
+            ? (err as { message: string }).message
+            : 'Payment processing failed. Please try again.';
+      setSubmissionError(errorMessage);
     } finally {
       setIsCardProcessing(false);
     }

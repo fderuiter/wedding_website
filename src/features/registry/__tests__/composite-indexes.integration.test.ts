@@ -151,17 +151,42 @@ describe('Composite & Foreign Key Indexes Verification', () => {
     });
 
     it('executes SnapshotVersion entity history lookup without Sort nodes', async () => {
-      const explainRes = await pool.query<{ 'QUERY PLAN': string }>(`
-        EXPLAIN SELECT * FROM "SnapshotVersion"
-        WHERE "entityType" = 'RegistryItem'
-          AND "entityId" = '00000000-0000-0000-0000-000000000000'
-        ORDER BY "createdAt" DESC
-        LIMIT 20;
-      `);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN;');
+        await client.query(`
+          INSERT INTO "SnapshotVersion" ("id", "entityType", "entityId", "data", "author", "createdAt")
+          SELECT
+            'explain-seed-' || g::text,
+            CASE
+              WHEN g % 3 = 0 THEN 'RegistryItem'
+              WHEN g % 3 = 1 THEN 'InvitationCode'
+              ELSE 'ContentNode'
+            END,
+            'entity-' || (g % 20)::text,
+            '{}'::jsonb,
+            'Test',
+            NOW() - (g || ' minutes')::interval
+          FROM generate_series(1, 200) AS g;
+        `);
+        await client.query('ANALYZE "SnapshotVersion";');
+        await client.query('SET LOCAL enable_seqscan = off;');
 
-      const planText = explainRes.rows.map((r) => r['QUERY PLAN']).join('\n');
-      expect(planText).toContain('SnapshotVersion_entityType_entityId_createdAt_idx');
-      expect(planText).not.toMatch(/\bSort\b/i);
+        const explainRes = await client.query<{ 'QUERY PLAN': string }>(`
+          EXPLAIN SELECT * FROM "SnapshotVersion"
+          WHERE "entityType" = 'RegistryItem'
+            AND "entityId" = '00000000-0000-0000-0000-000000000000'
+          ORDER BY "createdAt" DESC
+          LIMIT 20;
+        `);
+
+        const planText = explainRes.rows.map((r) => r['QUERY PLAN']).join('\n');
+        expect(planText).toContain('SnapshotVersion_entityType_entityId_createdAt_idx');
+        expect(planText).not.toMatch(/\bSort\b/i);
+      } finally {
+        await client.query('ROLLBACK;');
+        client.release();
+      }
     });
   });
 });
