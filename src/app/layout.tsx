@@ -34,42 +34,50 @@ import { withPageQuery } from '@/lib/query-wrapper';
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],
+  preload: false,
 });
 
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
+  preload: false,
 });
 
 const playfair = Playfair_Display({
   variable: '--font-playfair',
   subsets: ['latin'],
+  preload: false,
 });
 
 const cormorant = Cormorant_Garamond({
   variable: '--font-cormorant',
   subsets: ['latin'],
+  preload: false,
 });
 
 const inter = Inter({
   variable: '--font-inter',
   subsets: ['latin'],
+  preload: false,
 });
 
 const lora = Lora({
   variable: '--font-lora',
   subsets: ['latin'],
+  preload: false,
 });
 
 const cinzel = Cinzel({
   variable: '--font-cinzel',
   subsets: ['latin'],
+  preload: false,
 });
 
 const lato = Lato({
   variable: '--font-lato',
   subsets: ['latin'],
   weight: ['400', '700'],
+  preload: false,
 });
 
 const fontClasses = `${geistSans.variable} ${geistMono.variable} ${playfair.variable} ${cormorant.variable} ${inter.variable} ${lora.variable} ${cinzel.variable} ${lato.variable}`;
@@ -152,7 +160,7 @@ export default async function RootLayout({
         <style id="dynamic-theme-style" dangerouslySetInnerHTML={{ __html: serverThemeStyles }} />
       </head>
       <body
-        className={`${fontClasses} bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]`}
+        className="bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]"
       >
         <a href="#main-content" className="skip-link">Skip to main content</a>
         <ThemeProvider config={layoutConfig} initialThemeMode={initialThemeMode} hasServerStylesheet>

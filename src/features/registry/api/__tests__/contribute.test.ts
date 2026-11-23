@@ -81,7 +81,41 @@ describe('POST /api/registry/contribute', () => {
     (registryService.contributeToItem as jest.Mock).mockResolvedValue(mockUpdatedItem);
   });
 
-  it('successfully processes contribution without an invitation code', async () => {
+  it('successfully processes contribution without an invitation code and strips relational contributors for non-admin callers', async () => {
+    (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+      ...mockItem,
+      amountContributed: 75,
+      purchaserName: 'Prior Guest, John Wellwisher',
+      contributors: [
+        {
+          id: 'c-prior',
+          name: 'Prior Guest',
+          email: 'prior@example.com',
+          amount: 25,
+          message: 'Private prior note',
+          thankYouNote: 'Private thank-you draft',
+          feeAmount: 1.03,
+          transactionTimestamp: '2026-08-01T10:00:00.000Z',
+          invitationCodeId: 'inv-prior-secret',
+          stripePaymentIntentId: 'pi_prior_secret_123',
+          stripeChargeId: 'ch_prior_secret_123',
+        },
+        {
+          id: 'c-new',
+          name: 'John Wellwisher',
+          email: 'john@example.com',
+          amount: 50,
+          message: 'Best wishes!',
+          thankYouNote: null,
+          feeAmount: 0,
+          transactionTimestamp: '2026-08-02T11:00:00.000Z',
+          invitationCodeId: 'inv-john-secret',
+          stripePaymentIntentId: null,
+          stripeChargeId: null,
+        },
+      ],
+    });
+
     const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
       method: 'POST',
       body: JSON.stringify({
@@ -104,6 +138,83 @@ describe('POST /api/registry/contribute', () => {
       message: 'Best wishes!',
       coverFee: false,
     });
+
+    const body = await response.json();
+    expect(body.success).toBe(true);
+    expect(body.data.amountContributed).toBe(75);
+    expect(body.data.purchaserName).toBe('Anonymous');
+    expect(body.data.contributors).toEqual([]);
+    expect(body.data.claimActions).toEqual({
+      confirmToken: expect.any(String),
+      cancelToken: expect.any(String),
+    });
+
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain('Private prior note');
+    expect(serialized).not.toContain('Private thank-you draft');
+    expect(serialized).not.toContain('1.03');
+    expect(serialized).not.toContain('2026-08-01T10:00:00.000Z');
+    expect(serialized).not.toContain('inv-prior-secret');
+    expect(serialized).not.toContain('inv-john-secret');
+    expect(serialized).not.toContain('pi_prior_secret_123');
+    expect(serialized).not.toContain('ch_prior_secret_123');
+    expect(serialized).not.toContain('message');
+    expect(serialized).not.toContain('thankYouNote');
+    expect(serialized).not.toContain('feeAmount');
+    expect(serialized).not.toContain('transactionTimestamp');
+    expect(serialized).not.toContain('invitationCodeId');
+    expect(serialized).not.toContain('stripePaymentIntentId');
+    expect(serialized).not.toContain('stripeChargeId');
+  });
+
+  it('retains sanitized contributor details without email addresses for admin callers', async () => {
+    (isAdminRequest as jest.Mock).mockResolvedValueOnce(true);
+    (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+      ...mockItem,
+      amountContributed: 50,
+      contributors: [
+        {
+          id: 'c-admin-1',
+          name: 'John Wellwisher',
+          email: 'john@example.com',
+          amount: 50,
+          message: 'Congrats!',
+          thankYouNote: 'Draft thank-you',
+          feeAmount: 1.5,
+          transactionTimestamp: '2026-08-02T11:00:00.000Z',
+          invitationCodeId: 'inv-1',
+          stripePaymentIntentId: 'pi_admin_visible_1',
+        },
+      ],
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'item-123',
+        name: 'John Wellwisher',
+        email: 'john@example.com',
+        amount: 50,
+        message: 'Congrats!',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.contributors).toHaveLength(1);
+    expect(body.data.contributors[0]).toMatchObject({
+      id: 'c-admin-1',
+      name: 'John Wellwisher',
+      amount: 50,
+      message: 'Congrats!',
+      thankYouNote: 'Draft thank-you',
+      feeAmount: 1.5,
+      transactionTimestamp: '2026-08-02T11:00:00.000Z',
+      invitationCodeId: 'inv-1',
+      stripePaymentIntentId: 'pi_admin_visible_1',
+    });
+    expect(body.data.contributors[0]).not.toHaveProperty('email');
   });
 
   it('accepts contribution when email is omitted/blank', async () => {

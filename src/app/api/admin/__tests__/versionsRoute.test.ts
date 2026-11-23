@@ -68,17 +68,25 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-jest.mock('@/lib/config', () => ({
-  toPublicAppConfig: jest.fn((config) => ({ ...config, sanitized: true })),
-}));
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    ...actual,
+    toPublicAppConfig: jest.fn((config) => ({ ...config, sanitized: true })),
+  };
+});
 
 jest.mock('@/core/auth/auth.server', () => ({
   isAdminRequest: jest.fn(),
 }));
 
 const mockPrisma = prisma as jest.Mocked<typeof prisma>;
-const mockToPublicAppConfig = toPublicAppConfig as jest.MockedFunction<typeof toPublicAppConfig>;
-const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<typeof isAdminRequest>;
+const mockToPublicAppConfig = toPublicAppConfig as jest.MockedFunction<
+  typeof toPublicAppConfig
+>;
+const mockIsAdminRequest = isAdminRequest as jest.MockedFunction<
+  typeof isAdminRequest
+>;
 
 describe('GET /api/admin/versions', () => {
   beforeEach(() => {
@@ -87,7 +95,9 @@ describe('GET /api/admin/versions', () => {
 
   it('returns 401 when unauthenticated', async () => {
     mockIsAdminRequest.mockResolvedValue(false);
-    const req = new NextRequest('http://localhost/api/admin/versions', { method: 'GET' });
+    const req = new NextRequest('http://localhost/api/admin/versions', {
+      method: 'GET',
+    });
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(401);
@@ -100,7 +110,12 @@ describe('GET /api/admin/versions', () => {
         id: 'v1',
         entityType: 'AppConfig',
         entityId: 'global',
-        data: { partner1Name: 'Alice', partner2Name: 'Bob', brideName: 'Alice', groomName: 'Bob' },
+        data: {
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          brideName: 'Alice',
+          groomName: 'Bob',
+        },
         createdAt: new Date(),
       },
       {
@@ -112,9 +127,14 @@ describe('GET /api/admin/versions', () => {
       },
     ];
     (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(2);
-    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(mockVersions);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(
+      mockVersions,
+    );
 
-    const req = new NextRequest('http://localhost/api/admin/versions?entityType=AppConfig&entityId=global', { method: 'GET' });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?entityType=AppConfig&entityId=global',
+      { method: 'GET' },
+    );
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
@@ -134,7 +154,9 @@ describe('GET /api/admin/versions', () => {
   it('strips messaging secrets from AppConfig snapshots via real toPublicAppConfig', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const actualConfig = jest.requireActual('@/lib/config');
-    mockToPublicAppConfig.mockImplementationOnce((cfg: any) => actualConfig.toPublicAppConfig(cfg));
+    mockToPublicAppConfig.mockImplementationOnce((cfg: any) =>
+      actualConfig.toPublicAppConfig(cfg),
+    );
 
     (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(1);
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([
@@ -159,14 +181,19 @@ describe('GET /api/admin/versions', () => {
       },
     ]);
 
-    const req = new NextRequest('http://localhost/api/admin/versions?entityType=AppConfig&entityId=global', { method: 'GET' });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?entityType=AppConfig&entityId=global',
+      { method: 'GET' },
+    );
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
     const json = await res.json();
     const itemData = json.data.items[0].data;
     expect(itemData.partner1Name).toBe('Casey');
-    expect(new Date(itemData.weddingDate).toISOString()).toBe('2026-06-20T16:00:00.000Z');
+    expect(new Date(itemData.weddingDate).toISOString()).toBe(
+      '2026-06-20T16:00:00.000Z',
+    );
     expect(itemData.smtpHost).toBeUndefined();
     expect(itemData.smtpUser).toBeUndefined();
     expect(itemData.smtpPass).toBeUndefined();
@@ -263,16 +290,24 @@ describe('GET /api/admin/versions', () => {
         data: {
           name: 'Mixer',
           contributors: [
-            { name: 'Jane Smith', email: 'jane.smith@example.com', amount: 100 },
+            {
+              name: 'Jane Smith',
+              email: 'jane.smith@example.com',
+              amount: 100,
+            },
           ],
         },
         createdAt: new Date(),
       },
     ];
     (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(2);
-    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(mockVersions);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue(
+      mockVersions,
+    );
 
-    const req = new NextRequest('http://localhost/api/admin/versions', { method: 'GET' });
+    const req = new NextRequest('http://localhost/api/admin/versions', {
+      method: 'GET',
+    });
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
@@ -293,7 +328,9 @@ describe('GET /api/admin/versions', () => {
     (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(120);
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
 
-    const req = new NextRequest('http://localhost/api/admin/versions', { method: 'GET' });
+    const req = new NextRequest('http://localhost/api/admin/versions', {
+      method: 'GET',
+    });
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
@@ -323,7 +360,10 @@ describe('GET /api/admin/versions', () => {
     (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(150);
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
 
-    const req = new NextRequest('http://localhost/api/admin/versions?limit=200', { method: 'GET' });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?limit=200',
+      { method: 'GET' },
+    );
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
@@ -344,7 +384,10 @@ describe('GET /api/admin/versions', () => {
     (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(60);
     (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([]);
 
-    const req = new NextRequest('http://localhost/api/admin/versions?page=2&limit=20', { method: 'GET' });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions?page=2&limit=20',
+      { method: 'GET' },
+    );
     const res = await getVersions(req, {});
 
     expect(res.status).toBe(200);
@@ -377,18 +420,30 @@ describe('POST /api/admin/versions/[id]/restore', () => {
 
   it('returns 401 when unauthenticated', async () => {
     mockIsAdminRequest.mockResolvedValue(false);
-    const req = new NextRequest('http://localhost/api/admin/versions/v123/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v123' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v123/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v123' }),
+    });
 
     expect(res.status).toBe(401);
   });
 
   it('returns 404 when version is not found', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      null,
+    );
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v123/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v123' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v123/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v123' }),
+    });
 
     expect(res.status).toBe(404);
     const json = await res.json();
@@ -419,12 +474,19 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockAppConfigSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue({});
     (mockPrisma.snapshotVersion.create as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-app-config/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-app-config' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-app-config/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-app-config' }),
+    });
 
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -493,8 +555,13 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValueOnce({});
     (mockPrisma.snapshotVersion.create as jest.Mock).mockResolvedValueOnce({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-app-modules/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-app-modules' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-app-modules/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-app-modules' }),
+    });
     expect(res.status).toBe(200);
 
     const expectedModules = {
@@ -540,11 +607,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockContentSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.contentNode.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-content/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-content' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-content/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-content' }),
+    });
 
     expect(res.status).toBe(200);
     expect(mockPrisma.contentNode.upsert).toHaveBeenCalledWith({
@@ -572,11 +646,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockMemberSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.weddingPartyMember.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-member/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-member' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-member/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-member' }),
+    });
 
     expect(res.status).toBe(200);
     expect(mockPrisma.weddingPartyMember.upsert).toHaveBeenCalledWith({
@@ -607,11 +688,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockAttractionSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.attraction.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-attr/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-attr' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-attr/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-attr' }),
+    });
 
     expect(res.status).toBe(200);
     expect(mockPrisma.attraction.upsert).toHaveBeenCalledWith({
@@ -649,11 +737,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockRegistrySnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.registryItem.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-reg/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-reg' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-reg/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-reg' }),
+    });
 
     expect(res.status).toBe(200);
     expect(mockPrisma.registryItem.upsert).toHaveBeenCalledWith({
@@ -695,11 +790,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockLegacyRegistrySnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.registryItem.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-legacy-reg/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-legacy-reg' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-legacy-reg/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-legacy-reg' }),
+    });
 
     expect(res.status).toBe(200);
     const expectedTranslatedData = {
@@ -745,11 +847,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockOlderSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.registryItem.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-older-reg/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-older-reg' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-older-reg/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-older-reg' }),
+    });
 
     expect(res.status).toBe(200);
     const expectedTranslatedData = {
@@ -795,11 +904,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockContributorSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.contributor.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-contrib/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-contrib' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-contrib/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-contrib' }),
+    });
 
     expect(res.status).toBe(200);
     expect(mockPrisma.contributor.upsert).toHaveBeenCalledWith({
@@ -832,11 +948,18 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: mockMediaSnapshot,
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
     (mockPrisma.media.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-media/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-media' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-media/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-media' }),
+    });
 
     expect(res.status).toBe(200);
     expect(mockPrisma.media.upsert).toHaveBeenCalledWith({
@@ -868,10 +991,17 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       data: {},
     };
 
-    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(mockVersion);
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValue(
+      mockVersion,
+    );
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-unsupported/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-unsupported' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-unsupported/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-unsupported' }),
+    });
 
     expect(res.status).toBe(400);
     const json = await res.json();
@@ -915,11 +1045,17 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     });
     (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue({});
 
-    const req = new NextRequest('http://localhost/api/admin/versions/v-app-full/restore', { method: 'POST' });
-    const res = await restoreVersion(req, { params: Promise.resolve({ id: 'v-app-full' }) });
+    const req = new NextRequest(
+      'http://localhost/api/admin/versions/v-app-full/restore',
+      { method: 'POST' },
+    );
+    const res = await restoreVersion(req, {
+      params: Promise.resolve({ id: 'v-app-full' }),
+    });
 
     expect(res.status).toBe(200);
-    const upsertArg = (mockPrisma.appConfig.upsert as jest.Mock).mock.calls[0][0];
+    const upsertArg = (mockPrisma.appConfig.upsert as jest.Mock).mock
+      .calls[0][0];
     expect(upsertArg.update).toMatchObject({
       contactEmail: 'couple@example.com',
       brandMonogram: 'A&T',
@@ -943,11 +1079,96 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     expect(upsertArg.update.twilioAuthToken).toBeUndefined();
   });
 
+  it('restores all 15 previously omitted AppConfig columns, preserves omitted keys as undefined on update, and strips secrets from rollback audit snapshots', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const completeSnapshot = {
+      partner1Name: 'Riley',
+      partner2Name: 'Morgan',
+      rsvpOpen: false,
+      rsvpDeadlineDate: '2026-09-01',
+      rsvpGracePeriodHours: 72,
+      rsvpClosedMessage:
+        '<img src=x onerror=alert(1)><b>RSVPs are now closed</b>',
+      shippingRecipientName: 'Riley & Morgan',
+      shippingAddressLine1: '500 Lake Shore Dr',
+      shippingAddressLine2: 'Suite 1200',
+      shippingCity: 'Chicago',
+      shippingState: 'IL',
+      shippingZip: '60611',
+      shippingCountry: 'United States',
+      shippingPhone: '312-555-0142',
+      shippingDeliveryNotes: 'Deliver to front desk',
+      defaultPaymentHandleType: 'PayPal',
+      defaultPaymentHandle: 'riley-morgan',
+      smtpPass: '',
+      resendApiKey: '   ',
+      twilioAuthToken: 'legacy-leaked-secret',
+    };
+
+    (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'v-app-15cols',
+      entityType: 'AppConfig',
+      entityId: 'global',
+      data: completeSnapshot,
+    });
+    (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValueOnce({});
+    (mockPrisma.snapshotVersion.create as jest.Mock).mockResolvedValueOnce({});
+
+    const res = await restoreVersion(
+      new NextRequest(
+        'http://localhost/api/admin/versions/v-app-15cols/restore',
+        {
+          method: 'POST',
+        },
+      ),
+      { params: Promise.resolve({ id: 'v-app-15cols' }) },
+    );
+    expect(res.status).toBe(200);
+
+    const upsertArg = (mockPrisma.appConfig.upsert as jest.Mock).mock
+      .calls[0][0];
+    expect(upsertArg.update).toMatchObject({
+      rsvpOpen: false,
+      rsvpDeadlineDate: '2026-09-01',
+      rsvpGracePeriodHours: 72,
+      rsvpClosedMessage: 'RSVPs are now closed',
+      shippingRecipientName: 'Riley & Morgan',
+      shippingAddressLine1: '500 Lake Shore Dr',
+      shippingAddressLine2: 'Suite 1200',
+      shippingCity: 'Chicago',
+      shippingState: 'IL',
+      shippingZip: '60611',
+      shippingCountry: 'United States',
+      shippingPhone: '312-555-0142',
+      shippingDeliveryNotes: 'Deliver to front desk',
+      defaultPaymentHandleType: 'PayPal',
+      defaultPaymentHandle: 'riley-morgan',
+      twilioAuthToken: 'legacy-leaked-secret',
+    });
+    expect(upsertArg.update.smtpPass).toBeUndefined();
+    expect(upsertArg.update.resendApiKey).toBeUndefined();
+    expect(upsertArg.update.smtpHost).toBeUndefined();
+    expect(upsertArg.update.venueName).toBeUndefined();
+
+    const auditSnapCall = (mockPrisma.snapshotVersion.create as jest.Mock).mock
+      .calls[0][0];
+    expect(auditSnapCall.data.author).toBe('Admin (Rollback)');
+    expect(auditSnapCall.data.data.smtpPass).toBeUndefined();
+    expect(auditSnapCall.data.data.resendApiKey).toBeUndefined();
+    expect(auditSnapCall.data.data.twilioAuthToken).toBeUndefined();
+  });
+
   it('preserves hotel block details on Attraction and thank-you metadata on Contributor rollback', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    (mockPrisma.media.findUnique as jest.Mock).mockResolvedValue({ id: 'img-hotel' });
-    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({ id: 'inv-guest-1' });
-    (mockPrisma.registryItem.findUnique as jest.Mock).mockResolvedValue({ id: 'reg-1' });
+    (mockPrisma.media.findUnique as jest.Mock).mockResolvedValue({
+      id: 'img-hotel',
+    });
+    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+      id: 'inv-guest-1',
+    });
+    (mockPrisma.registryItem.findUnique as jest.Mock).mockResolvedValue({
+      id: 'reg-1',
+    });
     (mockPrisma.attraction.upsert as jest.Mock).mockResolvedValue({});
     (mockPrisma.contributor.upsert as jest.Mock).mockResolvedValue({});
 
@@ -977,7 +1198,9 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     });
 
     const attrRes = await restoreVersion(
-      new NextRequest('http://localhost/api/admin/versions/v-hotel/restore', { method: 'POST' }),
+      new NextRequest('http://localhost/api/admin/versions/v-hotel/restore', {
+        method: 'POST',
+      }),
       { params: Promise.resolve({ id: 'v-hotel' }) },
     );
     expect(attrRes.status).toBe(200);
@@ -1002,8 +1225,15 @@ describe('POST /api/admin/versions/[id]/restore', () => {
       stripePaymentIntentId: 'pi_test_123',
       stripeChargeId: 'ch_test_123',
       transactionTimestamp: '2026-06-15T12:00:05.000Z',
+      confirmationEmailSentAt: '2026-06-15T12:01:00.000Z',
+      alertEmailSentAt: '2026-06-15T12:01:30.000Z',
+      retailerOrderNumber: 'ORD-98765',
+      carrier: 'UPS',
+      trackingNumber: '1Z999AA10123456784',
       registryItemId: 'reg-1',
       invitationCodeId: 'inv-guest-1',
+      registryItem: { id: 'reg-1', name: 'Espresso Machine' },
+      invitationCode: { id: 'inv-guest-1', code: 'GUEST1' },
     };
 
     (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce({
@@ -1014,11 +1244,16 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     });
 
     const contribRes = await restoreVersion(
-      new NextRequest('http://localhost/api/admin/versions/v-contrib-full/restore', { method: 'POST' }),
+      new NextRequest(
+        'http://localhost/api/admin/versions/v-contrib-full/restore',
+        { method: 'POST' },
+      ),
       { params: Promise.resolve({ id: 'v-contrib-full' }) },
     );
     expect(contribRes.status).toBe(200);
-    expect(mockPrisma.contributor.upsert).toHaveBeenCalledWith({
+    const contribUpsertArg = (mockPrisma.contributor.upsert as jest.Mock).mock
+      .calls[0][0];
+    expect(contribUpsertArg).toEqual({
       where: { id: 'contrib-full' },
       update: expect.objectContaining({
         coverFee: true,
@@ -1030,19 +1265,37 @@ describe('POST /api/admin/versions/[id]/restore', () => {
         stripePaymentIntentId: 'pi_test_123',
         stripeChargeId: 'ch_test_123',
         transactionTimestamp: new Date('2026-06-15T12:00:05.000Z'),
+        confirmationEmailSentAt: new Date('2026-06-15T12:01:00.000Z'),
+        alertEmailSentAt: new Date('2026-06-15T12:01:30.000Z'),
+        retailerOrderNumber: 'ORD-98765',
+        carrier: 'UPS',
+        trackingNumber: '1Z999AA10123456784',
+        registryItemId: 'reg-1',
         invitationCodeId: 'inv-guest-1',
       }),
       create: expect.objectContaining({
         id: 'contrib-full',
+        confirmationEmailSentAt: new Date('2026-06-15T12:01:00.000Z'),
+        alertEmailSentAt: new Date('2026-06-15T12:01:30.000Z'),
+        retailerOrderNumber: 'ORD-98765',
+        carrier: 'UPS',
+        trackingNumber: '1Z999AA10123456784',
+        registryItemId: 'reg-1',
         invitationCodeId: 'inv-guest-1',
       }),
     });
+    expect(contribUpsertArg.update.registryItem).toBeUndefined();
+    expect(contribUpsertArg.update.invitationCode).toBeUndefined();
   });
 
   it('restores InvitationCode, SeatingTable, SubEvent, SubEventAccess, SubEventRsvp, BroadcastMessage, and BroadcastRecipient versions', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
-    (mockPrisma.seatingTable.findUnique as jest.Mock).mockResolvedValue({ id: 'table-1' });
-    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({ id: 'inv-1' });
+    (mockPrisma.seatingTable.findUnique as jest.Mock).mockResolvedValue({
+      id: 'table-1',
+    });
+    (mockPrisma.invitationCode.findUnique as jest.Mock).mockResolvedValue({
+      id: 'inv-1',
+    });
     (mockPrisma.invitationCode.upsert as jest.Mock).mockResolvedValue({});
     (mockPrisma.seatingTable.upsert as jest.Mock).mockResolvedValue({});
     (mockPrisma.subEvent.upsert as jest.Mock).mockResolvedValue({});
@@ -1056,7 +1309,13 @@ describe('POST /api/admin/versions/[id]/restore', () => {
         id: 'v-table',
         entityType: 'SeatingTable',
         entityId: 'table-1',
-        data: { name: 'Head Table', shape: 'rectangle', capacity: 10, x: 50, y: 60 },
+        data: {
+          name: 'Head Table',
+          shape: 'rectangle',
+          capacity: 10,
+          x: 50,
+          y: 60,
+        },
       },
       {
         id: 'v-invite',
@@ -1095,13 +1354,23 @@ describe('POST /api/admin/versions/[id]/restore', () => {
         id: 'v-rsvp',
         entityType: 'SubEventRsvp',
         entityId: 'rsvp-1',
-        data: { subEventId: 'se-1', invitationCodeId: 'inv-1', status: 'attending', plusOneCount: 1 },
+        data: {
+          subEventId: 'se-1',
+          invitationCodeId: 'inv-1',
+          status: 'attending',
+          plusOneCount: 1,
+        },
       },
       {
         id: 'v-bcast',
         entityType: 'BroadcastMessage',
         entityId: 'bm-1',
-        data: { channel: 'EMAIL', subject: 'Reminder', body: 'Doors open at 6 PM', status: 'SENT' },
+        data: {
+          channel: 'EMAIL',
+          subject: 'Reminder',
+          body: 'Doors open at 6 PM',
+          status: 'SENT',
+        },
       },
       {
         id: 'v-recip',
@@ -1118,9 +1387,14 @@ describe('POST /api/admin/versions/[id]/restore', () => {
     ];
 
     for (const versionCase of cases) {
-      (mockPrisma.snapshotVersion.findUnique as jest.Mock).mockResolvedValueOnce(versionCase);
+      (
+        mockPrisma.snapshotVersion.findUnique as jest.Mock
+      ).mockResolvedValueOnce(versionCase);
       const res = await restoreVersion(
-        new NextRequest(`http://localhost/api/admin/versions/${versionCase.id}/restore`, { method: 'POST' }),
+        new NextRequest(
+          `http://localhost/api/admin/versions/${versionCase.id}/restore`,
+          { method: 'POST' },
+        ),
         { params: Promise.resolve({ id: versionCase.id }) },
       );
       expect(res.status).toBe(200);
