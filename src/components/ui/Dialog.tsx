@@ -58,99 +58,92 @@ export interface DialogProps {
   style?: React.CSSProperties;
   isDirty?: boolean;
   confirmDiscardMessage?: string;
+  ref?: React.Ref<HTMLDivElement>;
 }
 
-const DialogInner = React.forwardRef<HTMLDivElement, DialogProps>(
-  (
-    {
-      isOpen,
-      onClose,
-      title,
-      description,
-      children,
-      role = 'dialog',
-      'aria-labelledby': ariaLabelledby,
-      'aria-describedby': ariaDescribedby,
-      className,
-      contentClassName,
-      style,
-      isDirty = false,
-      confirmDiscardMessage = DEFAULT_CONFIRM_DISCARD_MESSAGE,
-    },
-    ref
-  ) => {
-    const defaultId = useId();
-    const handleRequestClose = useDirtyConfirmClose(isDirty, onClose, confirmDiscardMessage);
+function DialogInner({
+  isOpen,
+  onClose,
+  title,
+  description,
+  children,
+  role = 'dialog',
+  'aria-labelledby': ariaLabelledby,
+  'aria-describedby': ariaDescribedby,
+  className,
+  contentClassName,
+  style,
+  isDirty = false,
+  confirmDiscardMessage = DEFAULT_CONFIRM_DISCARD_MESSAGE,
+  ref,
+}: DialogProps) {
+  const defaultId = useId();
+  const handleRequestClose = useDirtyConfirmClose(isDirty, onClose, confirmDiscardMessage);
 
-    const finalLabelId = ariaLabelledby || (title ? `dialog-title-${defaultId}` : undefined);
-    const finalDescId = ariaDescribedby || (description ? `dialog-desc-${defaultId}` : undefined);
+  const finalLabelId = ariaLabelledby || (title ? `dialog-title-${defaultId}` : undefined);
+  const finalDescId = ariaDescribedby || (description ? `dialog-desc-${defaultId}` : undefined);
 
-    return (
-      <Overlay
-        ref={ref}
-        isOpen={isOpen}
-        onClose={handleRequestClose}
-        className={cn(
-          'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
-          className
-        )}
-        style={{
-          backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
-          borderRadius: 'var(--dialog-border-radius, 0.5rem)',
-          boxShadow: 'var(--dialog-shadow, var(--shadow-overlay, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)))',
-          borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
-          ...style,
-        }}
+  return (
+    <Overlay
+      ref={ref}
+      isOpen={isOpen}
+      onClose={handleRequestClose}
+      className={cn(
+        'bg-white dark:bg-zinc-900 rounded-lg shadow-[var(--shadow-overlay)] w-full max-w-md overflow-hidden text-gray-900 dark:text-zinc-50 border',
+        className
+      )}
+      style={{
+        backgroundColor: 'var(--dialog-bg, var(--background, #ffffff))',
+        borderRadius: 'var(--dialog-border-radius, 0.5rem)',
+        boxShadow: 'var(--dialog-shadow, var(--shadow-overlay, 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)))',
+        borderColor: 'var(--dialog-border-color, var(--color-border, #e5e7eb))',
+        ...style,
+      }}
+    >
+      <div
+        role={role}
+        aria-modal="true"
+        aria-labelledby={finalLabelId}
+        aria-describedby={finalDescId}
+        className="w-full h-full"
       >
-        <div
-          role={role}
-          aria-modal="true"
-          aria-labelledby={finalLabelId}
-          aria-describedby={finalDescId}
-          className="w-full h-full"
-        >
-          {title && (
-            <div
-              className="px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800"
-              style={{ color: 'var(--dialog-title-color, inherit)' }}
-            >
-              {typeof title === 'string' ? (
-                <h2 id={finalLabelId} className="text-lg font-medium">
-                  {title}
-                </h2>
-              ) : (
-                <div id={finalLabelId}>{title}</div>
-              )}
-            </div>
-          )}
-          {description && (
-            <div
-              className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
-              id={finalDescId}
-              style={{ color: 'var(--dialog-desc-color, var(--color-muted-foreground, #6b7280))' }}
-            >
-              {description}
-            </div>
-          )}
-          <div className={contentClassName ?? 'px-6 py-4'}>{children}</div>
-        </div>
-      </Overlay>
-    );
-  }
-);
+        {title && (
+          <div
+            className="px-6 py-4 border-b border-[var(--dialog-border-color,var(--color-border,#e5e7eb))] dark:border-zinc-800"
+            style={{ color: 'var(--dialog-title-color, inherit)' }}
+          >
+            {typeof title === 'string' ? (
+              <h2 id={finalLabelId} className="text-lg font-medium">
+                {title}
+              </h2>
+            ) : (
+              <div id={finalLabelId}>{title}</div>
+            )}
+          </div>
+        )}
+        {description && (
+          <div
+            className="px-6 pt-4 pb-2 text-sm text-gray-500 dark:text-zinc-400"
+            id={finalDescId}
+            style={{ color: 'var(--dialog-desc-color, var(--color-muted-foreground, #6b7280))' }}
+          >
+            {description}
+          </div>
+        )}
+        <div className={contentClassName ?? 'px-6 py-4'}>{children}</div>
+      </div>
+    </Overlay>
+  );
+}
 
-DialogInner.displayName = 'DialogInner';
-
-export const Dialog = React.forwardRef<HTMLDivElement, DialogProps>((props, ref) => {
+export function Dialog(props: DialogProps) {
   if (props.role === 'alertdialog' || typeof EnsureToastProvider !== 'function') {
-    return <DialogInner {...props} ref={ref} />;
+    return <DialogInner {...props} />;
   }
 
   return (
     <EnsureToastProvider>
-      <DialogInner {...props} ref={ref} />
+      <DialogInner {...props} />
     </EnsureToastProvider>
   );
-});
-
-Dialog.displayName = 'Dialog';
+}

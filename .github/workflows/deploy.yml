@@ -270,7 +270,7 @@ jobs:
       - name: Generate Pre-Flight Schema Migration & SQL DDL Summary
         run: |
           echo "Generating pre-flight schema migration and SQL DDL summary for release review..."
-          npx tsx scripts/preflight-migration-summary.ts
+          npx tsx scripts/preflight-migration-summary.ts --offline
 
   publish-artifact:
     name: Publish Release Artifact

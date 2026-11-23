@@ -77,7 +77,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const deployWorkflow = readWorkflow('deploy.yml');
   const migrateWorkflow = readWorkflow('db-migrate.yml');
 
-  it('preserves CI workflow triggers, job names, and zero-secret execution', () => {
+  it('preserves CI workflow triggers, job names, upstream action-pin verification, and zero-secret execution', () => {
     expect(ciWorkflow).toContain('name: CI');
     const onSection = extractTopLevelSection(ciWorkflow, 'on');
     expect(onSection).toContain('push:');
@@ -87,6 +87,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     for (const jobId of ['verify:', 'unit-test:', 'build:', 'container-arm64:', 'e2e-test:', 'deploy-docs:']) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
+    expect(ciWorkflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
+    expect(ciWorkflow).toContain('run: npm run check:action-pins -- --verify-upstream');
     expect(ciWorkflow).not.toContain('secrets.');
 
     const trivyMatches =
@@ -127,13 +129,35 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       });
     }
 
-    // Write permissions in publish-artifact.yml live strictly inside build/publish jobs, and actions: read strictly inside preflight
-    expect(publishWorkflow).toMatch(
+    const [beforePublishSection = '', publishJobSection = ''] = publishWorkflow.split(/\n  publish:\n/);
+    const [preflightJobSection = '', buildJobSection = ''] = beforePublishSection.split(/\n  build:\n/);
+
+    // Job preflight scopes contents: read and actions: read strictly inside preflight
+    expect(preflightJobSection).toMatch(
       /preflight:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read/
     );
     expect(publishWorkflow.match(/actions:\s*read/g) ?? []).toHaveLength(1);
-    expect(publishWorkflow).toMatch(
-      /publish:\n[\s\S]*?permissions:\n\s+contents: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
+
+    // Job build retains only contents: read and security-events: write, with zero registry credentials
+    expect(buildJobSection).toMatch(
+      /permissions:\n\s+contents: read\n\s+security-events: write\n\s+strategy:/
+    );
+    expect(buildJobSection).not.toContain('packages: write');
+    expect(buildJobSection).not.toContain('id-token: write');
+    expect(buildJobSection).not.toContain('attestations: write');
+    expect(buildJobSection).not.toContain('docker/login-action');
+    expect(buildJobSection).not.toContain('DOCKERHUB_USERNAME');
+    expect(buildJobSection).not.toContain('DOCKERHUB_TOKEN');
+
+    // Job publish scopes registry write + OIDC provenance signing and drops unused security-events: write
+    expect(publishJobSection).toMatch(
+      /permissions:\n\s+contents: read\n\s+packages: write\n\s+id-token: write\n\s+attestations: write\n\s+outputs:/
+    );
+    expect(publishJobSection).not.toContain('security-events: write');
+
+    // Caller deploy.yml retains union of callee-required permissions for publish-artifact workflow_call
+    expect(deployWorkflow).toMatch(
+      /publish-artifact:\n[\s\S]*?permissions:\n\s+contents: read\n\s+actions: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
     );
 
     // actions: read in deploy.yml lives strictly inside ci-gate and reusable-workflow caller jobs (never top-level)
@@ -387,7 +411,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     }
   });
 
-  it('builds, Trivy-scans, and smoke-tests native amd64 and arm64 images without QEMU before pushing digests and merging provenance-attested OCI index', () => {
+  it('builds, Trivy-scans, and smoke-tests native amd64 and arm64 OCI archives once without registry credentials before verifying and publishing provenance-attested multi-platform indexes', () => {
     expect(publishWorkflow).not.toContain('setup-qemu-action');
     expect(publishWorkflow).toContain('runner: ubuntu-latest');
     expect(publishWorkflow).toContain('runner: ubuntu-24.04-arm');
@@ -402,44 +426,70 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       expect(publishWorkflow).toContain(`target=${mountTarget}`);
     }
 
-    // Verify single Buildx build exports local OCI archive, loads it, scans with Trivy, runs smoke test, and pushes scanned OCI archive by digest without rebuilding
-    expect(publishWorkflow.match(/docker\/build-push-action@/g) ?? []).toHaveLength(1);
+    // Verify build job depends on preflight, compiles once as an OCI archive with provenance: false & sbom: false, loads wedding-website:latest, scans, smoke-tests, and uploads zstd archive without registry login
+    expect(publishWorkflow.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
     const buildJobSection = publishWorkflow.split(/\n  publish:\n/)[0]?.split(/\n  build:\n/)[1] ?? '';
     expect(buildJobSection).toContain('needs: [preflight]');
-    expect(buildJobSection).toContain('outputs: type=oci,dest=/tmp/wedding-website-${{ matrix.arch }}.oci.tar');
-    expect(buildJobSection).toContain('input: /tmp/wedding-website-${{ matrix.arch }}.oci.tar');
+    expect(buildJobSection.match(/uses:\s*docker\/build-push-action@/g)).toHaveLength(1);
+    expect(buildJobSection).toContain('provenance: false');
+    expect(buildJobSection).toContain('sbom: false');
+    expect(buildJobSection).toContain('outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar');
     expect(buildJobSection).not.toContain('push-by-digest=true');
+    expect(buildJobSection).not.toContain('docker/login-action');
 
-    const buildArchiveIdx = buildJobSection.indexOf('docker/build-push-action');
-    const loadArchiveIdx = buildJobSection.indexOf('docker load -i "$OCI_ARCHIVE"');
+    const buildArchiveIdx = buildJobSection.indexOf('outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar');
+    const loadDaemonIdx = buildJobSection.indexOf('skopeo copy "oci-archive:${OCI_TAR}" "docker-daemon:wedding-website:latest"');
     const trivyIdx = buildJobSection.indexOf('aquasecurity/trivy-action');
     const sarifIdx = buildJobSection.indexOf('github/codeql-action/upload-sarif');
     const smokeIdx = buildJobSection.indexOf('node scripts/test-container.mjs');
-    const loginIdx = buildJobSection.indexOf('docker/login-action');
-    const pushDigestIdx = buildJobSection.indexOf('--preserve-digests');
+    const compressIdx = buildJobSection.indexOf('zstd -T0 -f "$OCI_TAR"');
+    const uploadArtifactIdx = buildJobSection.indexOf('actions/upload-artifact@');
 
     expect(buildArchiveIdx).toBeGreaterThan(-1);
-    expect(loadArchiveIdx).toBeGreaterThan(buildArchiveIdx);
-    expect(trivyIdx).toBeGreaterThan(loadArchiveIdx);
+    expect(loadDaemonIdx).toBeGreaterThan(buildArchiveIdx);
+    expect(trivyIdx).toBeGreaterThan(loadDaemonIdx);
     expect(sarifIdx).toBeGreaterThan(trivyIdx);
     expect(smokeIdx).toBeGreaterThan(sarifIdx);
-    expect(loginIdx).toBeGreaterThan(smokeIdx);
-    expect(pushDigestIdx).toBeGreaterThan(loginIdx);
+    expect(compressIdx).toBeGreaterThan(smokeIdx);
+    expect(uploadArtifactIdx).toBeGreaterThan(compressIdx);
 
+    expect(buildJobSection).toContain('image-ref: wedding-website:latest');
     expect(buildJobSection).toContain("severity: 'CRITICAL,HIGH'");
     expect(buildJobSection).toContain("exit-code: '1'");
     expect(buildJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");
-    expect(buildJobSection).toContain('docker://${IMAGE_REPO}@${EXPECTED_DIGEST}');
-    expect(buildJobSection).toContain('docker://docker.io/${DOCKERHUB_REPO}@${EXPECTED_DIGEST}');
+    expect(buildJobSection).toContain('compression-level: 0');
 
-    // Verify publish job merges per-architecture digests, verifies linux/amd64 & linux/arm64 manifests on GHCR and Docker Hub, attests provenance on both registries, and preserves outputs
+    // Verify publish job step ordering: download -> login -> skopeo inspect & copy --preserve-digests -> merge -> v4.2.2 primary & secondary attestations
     const publishJobSection = publishWorkflow.split(/\n  publish:\n/)[1] ?? '';
     expect(publishJobSection).toContain('needs: [build]');
-    expect(publishJobSection).toContain('docker buildx imagetools create');
-    expect(publishJobSection.match(/actions\/attest-build-provenance@/g) ?? []).toHaveLength(2);
+
+    const downloadIdx = publishJobSection.indexOf('actions/download-artifact@');
+    const ghcrLoginIdx = publishJobSection.indexOf('registry: ghcr.io');
+    const skopeoInspectIdx = publishJobSection.indexOf("skopeo inspect --format '{{.Digest}}'");
+    const skopeoCopyIdx = publishJobSection.indexOf('skopeo copy --preserve-digests');
+    const mergeIdx = publishJobSection.indexOf('docker buildx imagetools create');
+    const primaryAttestIdx = publishJobSection.indexOf('- name: Attest Build Provenance');
+    const secondaryAttestIdx = publishJobSection.indexOf(
+      '- name: Attest Docker Hub Build Provenance (optional)'
+    );
+
+    expect(downloadIdx).toBeGreaterThan(-1);
+    expect(ghcrLoginIdx).toBeGreaterThan(downloadIdx);
+    expect(skopeoInspectIdx).toBeGreaterThan(ghcrLoginIdx);
+    expect(skopeoCopyIdx).toBeGreaterThan(skopeoInspectIdx);
+    expect(mergeIdx).toBeGreaterThan(skopeoCopyIdx);
+    expect(primaryAttestIdx).toBeGreaterThan(mergeIdx);
+    expect(secondaryAttestIdx).toBeGreaterThan(primaryAttestIdx);
+
+    expect(publishJobSection).not.toContain('c0744595e72338575084a4bf85ed76e1eb521ddf');
+    expect(
+      publishJobSection.match(
+        /uses:\s*actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4\.2\.2/g
+      )
+    ).toHaveLength(2);
     expect(publishJobSection).toContain('subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}');
     expect(publishJobSection).toContain('subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}');
-    expect(publishJobSection).toContain("if: steps.meta.outputs.dockerhub_repository != ''");
+    expect(publishJobSection).toContain('create-storage-record: false');
     expect(publishJobSection).toContain('image_uri: ${{ steps.meta.outputs.primary_uri }}');
     expect(publishJobSection).toContain('image_tag: ${{ steps.meta.outputs.tag_name }}');
     expect(publishJobSection).toContain('image_digest: ${{ steps.merge.outputs.digest }}');
@@ -496,7 +546,124 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(testContainerScript).not.toMatch(/['"]run['"][^\n]*['"]--no-build['"]/);
   });
 
-  it('merges verified amd64 and arm64 digests into a multi-platform OCI index and fails closed if either architecture manifest is missing', () => {
+  it('re-verifies compressed OCI archive digests with skopeo inspect before pushing with skopeo copy --preserve-digests and halts before any upload on digest mismatch', () => {
+    const runBlocks = extractRunBlocks(publishWorkflow);
+    const verifyAndPushScript = runBlocks.find((block) =>
+      block.includes('skopeo copy --preserve-digests')
+    );
+    expect(verifyAndPushScript).toBeDefined();
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-oci-handoff-test-'));
+    const binDir = path.join(tempDir, 'bin');
+    const handoffDir = path.join('/tmp', 'oci-handoff');
+    const digestsDir = path.join('/tmp', 'digests');
+    const callsFile = path.join(tempDir, 'skopeo_calls.log');
+
+    const amd64Digest = 'sha256:1111111111111111111111111111111111111111111111111111111111111111';
+    const arm64Digest = 'sha256:2222222222222222222222222222222222222222222222222222222222222222';
+    const tamperedDigest = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+
+    try {
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.rmSync(handoffDir, { recursive: true, force: true });
+      fs.rmSync(digestsDir, { recursive: true, force: true });
+      fs.mkdirSync(handoffDir, { recursive: true });
+      fs.writeFileSync(path.join(handoffDir, 'amd64.digest'), `${amd64Digest}\n`);
+      fs.writeFileSync(path.join(handoffDir, 'arm64.digest'), `${arm64Digest}\n`);
+      fs.writeFileSync(path.join(handoffDir, 'oci-amd64.tar.zst'), 'compressed-amd64');
+      fs.writeFileSync(path.join(handoffDir, 'oci-arm64.tar.zst'), 'compressed-arm64');
+      fs.writeFileSync(callsFile, '');
+
+      const zstdShim = path.join(binDir, 'zstd');
+      fs.writeFileSync(
+        zstdShim,
+        `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+const outIdx = args.indexOf('-o');
+if (args.includes('-d') && outIdx !== -1 && args[outIdx + 1]) {
+  fs.writeFileSync(args[outIdx + 1], 'decompressed-oci-tar');
+  process.exit(0);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      const skopeoShim = path.join(binDir, 'skopeo');
+      fs.writeFileSync(
+        skopeoShim,
+        `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(callsFile)}, args.join(' ') + '\\n');
+if (args[0] === 'inspect') {
+  const target = args[args.length - 1] || '';
+  if (target.includes('oci-amd64.tar')) {
+    process.stdout.write('${amd64Digest}\\n');
+    process.exit(0);
+  }
+  if (target.includes('oci-arm64.tar')) {
+    process.stdout.write((process.env.TAMPER_ARM64 === 'true' ? '${tamperedDigest}' : '${arm64Digest}') + '\\n');
+    process.exit(0);
+  }
+}
+if (args[0] === 'copy') {
+  process.exit(0);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      // 1. Tampered arm64 archive fails closed BEFORE any skopeo copy upload occurs (even for amd64)
+      const tamperRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifyAndPushScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
+          TAMPER_ARM64: 'true',
+        },
+      });
+      expect(tamperRes.status).not.toBe(0);
+      expect(tamperRes.stdout + tamperRes.stderr).toContain('OCI archive digest mismatch');
+      expect(fs.readFileSync(callsFile, 'utf8')).not.toContain('copy --preserve-digests');
+
+      // 2. Valid amd64 + arm64 archives push via skopeo copy --preserve-digests to GHCR and docker.io/
+      fs.writeFileSync(callsFile, '');
+      const okRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifyAndPushScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: 'fderuiter/wedding-website',
+        },
+      });
+      expect(okRes.status).toBe(0);
+      const calls = fs.readFileSync(callsFile, 'utf8');
+      expect(calls).toContain(
+        `copy --preserve-digests oci-archive:/tmp/oci-handoff/oci-amd64.tar docker://ghcr.io/fderuiter/wedding_website@${amd64Digest}`
+      );
+      expect(calls).toContain(
+        `copy --preserve-digests oci-archive:/tmp/oci-handoff/oci-amd64.tar docker://docker.io/fderuiter/wedding-website@${amd64Digest}`
+      );
+      expect(calls).toContain(
+        `copy --preserve-digests oci-archive:/tmp/oci-handoff/oci-arm64.tar docker://ghcr.io/fderuiter/wedding_website@${arm64Digest}`
+      );
+      expect(calls).toContain(
+        `copy --preserve-digests oci-archive:/tmp/oci-handoff/oci-arm64.tar docker://docker.io/fderuiter/wedding-website@${arm64Digest}`
+      );
+    } finally {
+      fs.rmSync(handoffDir, { recursive: true, force: true });
+      fs.rmSync(digestsDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('merges verified amd64 and arm64 digests into multi-platform OCI indexes on GHCR and Docker Hub and fails closed if either architecture manifest is missing', () => {
     const runBlocks = extractRunBlocks(publishWorkflow);
     const mergeScript = runBlocks.find((block) => block.includes('docker buildx imagetools create'));
     expect(mergeScript).toBeDefined();
@@ -531,7 +698,7 @@ if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'create') {
 }
 if (args[0] === 'buildx' && args[1] === 'imagetools' && args[2] === 'inspect') {
   const targetRef = args[args.length - 1] || '';
-  const isDockerHub = targetRef.startsWith('docker.io/');
+  const isDockerHub = !targetRef.startsWith('ghcr.io/');
   if (args.includes('--raw')) {
     const omitArm =
       process.env.OMIT_ARM64 === 'true' ||
@@ -578,9 +745,9 @@ process.exit(1);
         `buildx imagetools create --tag fderuiter/wedding-website:v0.1.0 --tag fderuiter/wedding-website:latest fderuiter/wedding-website@${amd64Digest} fderuiter/wedding-website@${arm64Digest}`
       );
       expect(calls).toContain(
-        'buildx imagetools inspect --format {{.Manifest.Digest}} docker.io/fderuiter/wedding-website:v0.1.0'
+        'buildx imagetools inspect --format {{.Manifest.Digest}} fderuiter/wedding-website:v0.1.0'
       );
-      expect(calls).toContain('buildx imagetools inspect --raw docker.io/fderuiter/wedding-website:v0.1.0');
+      expect(calls).toContain('buildx imagetools inspect --raw fderuiter/wedding-website:v0.1.0');
 
       // Verify missing linux/arm64 manifest on Docker Hub also fails closed
       const dockerHubFailRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
@@ -599,7 +766,7 @@ process.exit(1);
       });
       expect(dockerHubFailRes.status).not.toBe(0);
       expect(dockerHubFailRes.stdout + dockerHubFailRes.stderr).toContain(
-        "Published Docker Hub multi-platform index 'docker.io/fderuiter/wedding-website:v0.1.0' is missing linux/arm64 manifest"
+        "Published multi-platform index 'fderuiter/wedding-website:v0.1.0' is missing linux/arm64 manifest"
       );
 
       // Verify missing linux/arm64 manifest in merged index fails closed
