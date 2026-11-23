@@ -39,13 +39,21 @@ describe('Health and Readiness Endpoints', () => {
   });
 
   describe('GET /api/health (Startup & Rollout Readiness)', () => {
-    it('returns 200 OK with status ok', async () => {
+    it('returns 200 OK with status ok and Cache-Control: no-store', async () => {
       mockQueryRaw.mockResolvedValue([{ '?column?': 1 }]);
       const res = await healthRoute();
       expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
       const json = await res.json();
       const status = json.data?.status || json.status;
       expect(status).toBe('ok');
+    });
+
+    it('returns 503 with Cache-Control: no-store when database query fails', async () => {
+      mockQueryRaw.mockRejectedValue(new Error('Connection refused'));
+      const res = await healthRoute();
+      expect(res.status).toBe(503);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
     });
   });
 
@@ -85,6 +93,7 @@ describe('Health and Readiness Endpoints', () => {
 
       const res = await readyRoute();
       expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
       const json = await res.json();
       expect(json.status).toBe('ready');
       expect(json.database).toBe('connected');
@@ -109,6 +118,7 @@ describe('Health and Readiness Endpoints', () => {
 
       const res = await readyRoute();
       expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
       const json = await res.json();
       expect(json.status).toBe('ready');
     });
@@ -118,6 +128,7 @@ describe('Health and Readiness Endpoints', () => {
 
       const res = await readyRoute();
       expect(res.status).toBe(503);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
       const json = await res.json();
       expect(json.status).toBe('unhealthy');
       expect(json.database).toBe('connected');
@@ -191,10 +202,11 @@ describe('Health and Readiness Endpoints', () => {
       expect(json.error).toContain('No applied database migrations');
     });
 
-    it('returns 503 Service Unavailable when database query fails', async () => {
+    it('returns 503 Service Unavailable with Cache-Control: no-store when database query fails', async () => {
       mockQueryRaw.mockRejectedValue(new Error('Connection refused'));
       const res = await readyRoute();
       expect(res.status).toBe(503);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
       const json = await res.json();
       expect(json.status).toBe('unhealthy');
       expect(json.database).toBe('disconnected');
@@ -208,6 +220,7 @@ describe('Health and Readiness Endpoints', () => {
       );
       const res = await readyRoute();
       expect(res.status).toBe(503);
+      expect(res.headers.get('Cache-Control')).toBe('no-store');
       const json = await res.json();
       expect(json.status).toBe('unhealthy');
       expect(json.database).toBe('disconnected');

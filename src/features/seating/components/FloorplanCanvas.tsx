@@ -2,7 +2,12 @@
 
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { SeatingTableDTO } from '../schemas';
-import { InvitationCodeDTO } from '@/features/registry';
+import {
+  InvitationCodeDTO,
+  formatGuestCustomAnswers,
+  formatGuestMealSelections,
+  formatGuestPlusOneNames,
+} from '@/features/registry';
 import { computeSeatPosition, resolveDetailedSeatAssignments } from '../seatLayout';
 import {
   getDietaryBadges,
@@ -193,11 +198,36 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         const householdMatch = guest.householdName
           ? guest.householdName.toLowerCase().includes(normalizedQuery)
           : false;
+        const groupMatch = guest.partyGroup
+          ? guest.partyGroup.toLowerCase().includes(normalizedQuery)
+          : false;
+        const dietaryMatch = guest.dietaryNotes
+          ? guest.dietaryNotes.toLowerCase().includes(normalizedQuery)
+          : false;
         const tagMatch = guest.partyTags
           ? guest.partyTags.some((t) => t.toLowerCase().includes(normalizedQuery))
           : false;
+        const companionMatch = formatGuestPlusOneNames(guest)
+          .toLowerCase()
+          .includes(normalizedQuery);
+        const mealMatch = formatGuestMealSelections(guest)
+          .toLowerCase()
+          .includes(normalizedQuery);
+        const answerMatch = formatGuestCustomAnswers(guest)
+          .toLowerCase()
+          .includes(normalizedQuery);
 
-        if (nameMatch || codeMatch || householdMatch || tagMatch) {
+        if (
+          nameMatch ||
+          codeMatch ||
+          householdMatch ||
+          groupMatch ||
+          dietaryMatch ||
+          tagMatch ||
+          companionMatch ||
+          mealMatch ||
+          answerMatch
+        ) {
           count++;
           guestIds.add(guest.id);
           tableIds.add(table.id);
@@ -820,7 +850,11 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       const seatDisplayLabel = occupant ? occupant.displayName : '';
       const dietaryBadges =
         assignedGuest && !isCompanionSeat
-          ? getDietaryBadges(assignedGuest.dietaryNotes, assignedGuest.extraFields)
+          ? getDietaryBadges(
+            assignedGuest.dietaryNotes,
+            assignedGuest.extraFields,
+            assignedGuest.partyTags
+          )
           : [];
       const dietarySummary = dietaryBadges.map((b) => b.label).join(', ');
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;

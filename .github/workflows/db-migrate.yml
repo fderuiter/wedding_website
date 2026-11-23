@@ -85,6 +85,16 @@ jobs:
           ref: ${{ inputs.commit_sha }}
           fetch-depth: 0
 
+      - name: Align Migration Workspace to Target Commit SHA
+        if: inputs.commit_sha != ''
+        env:
+          TARGET_SHA: ${{ inputs.commit_sha }}
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          if [ "${HEAD_SHA,,}" != "${TARGET_SHA,,}" ]; then
+            git checkout --detach "$TARGET_SHA"
+          fi
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'

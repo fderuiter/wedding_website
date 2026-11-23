@@ -278,7 +278,12 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+
       - name: Validate Commit SHA Input
+        id: meta
         env:
           INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
@@ -286,6 +291,8 @@ jobs:
             echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
             exit 1
           fi
+          RESOLVED_SHA="${INPUT_COMMIT_SHA:-${GITHUB_SHA}}"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -356,6 +363,10 @@ jobs:
           platforms: ${{ matrix.platform }}
           provenance: false
           sbom: false
+          labels: |
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+          annotations: |
+            manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
           outputs: type=oci,dest=/tmp/oci-${{ matrix.arch }}.tar
           cache-from: type=gha,scope=app-${{ matrix.arch }}
           cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max
@@ -439,7 +450,7 @@ jobs:
         env:
           SKIP_IMAGE_BUILD: 'true'
           GHA_CACHE_SCOPE: app-${{ matrix.arch }}
-        run: node scripts/test-container.mjs
+        run: node scripts/test-container.mjs --container-migration
 
       - name: Compress Verified OCI Archive & Export Digest
         env:
@@ -605,6 +616,7 @@ jobs:
 
           echo "image_repository=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
           echo "dockerhub_repository=${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "resolved_sha=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
@@ -688,10 +700,12 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
           PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
+          REVISION: ${{ steps.meta.outputs.revision }}
           TAGS: ${{ steps.meta.outputs.tags }}
           RESOLVED_SHA: ${{ steps.meta.outputs.resolved_sha }}
         run: |
-          SOURCE_REVISION=$(printf '%s' "${RESOLVED_SHA:-${GITHUB_SHA:-}}" | tr '[:upper:]' '[:lower:]')
+          RAW_REVISION="${REVISION:-${RESOLVED_SHA:-${GITHUB_SHA:-}}}"
+          SOURCE_REVISION=$(printf '%s' "$RAW_REVISION" | tr '[:upper:]' '[:lower:]')
           if [[ ! "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
             echo "::error::Missing or invalid 40-character source revision '${SOURCE_REVISION}' for multi-platform OCI index metadata."
             exit 1
@@ -718,6 +732,7 @@ jobs:
           GHCR_TAG_ARGS=()
           DOCKERHUB_TAG_ARGS=()
           DOCKERHUB_PRIMARY_URI=""
+          ANNOTATION_ARGS=("--annotation" "index:org.opencontainers.image.revision=${SOURCE_REVISION}")
 
           for tag_ref in "${ALL_TAGS[@]}"; do
             [ -z "$tag_ref" ] && continue
@@ -732,8 +747,8 @@ jobs:
           done
 
           docker buildx imagetools create \
-            --annotation "index:org.opencontainers.image.revision=${SOURCE_REVISION}" \
             "${GHCR_TAG_ARGS[@]}" \
+            "${ANNOTATION_ARGS[@]}" \
             "${IMAGE_REPOSITORY}@${AMD64_DIGEST}" \
             "${IMAGE_REPOSITORY}@${ARM64_DIGEST}"
 
@@ -760,8 +775,8 @@ jobs:
           DOCKERHUB_INDEX_DIGEST=""
           if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
             docker buildx imagetools create \
-              --annotation "index:org.opencontainers.image.revision=${SOURCE_REVISION}" \
               "${DOCKERHUB_TAG_ARGS[@]}" \
+              "${ANNOTATION_ARGS[@]}" \
               "${DOCKERHUB_REPOSITORY}@${AMD64_DIGEST}" \
               "${DOCKERHUB_REPOSITORY}@${ARM64_DIGEST}"
 

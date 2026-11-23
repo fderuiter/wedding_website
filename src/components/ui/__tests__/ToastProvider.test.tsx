@@ -1,5 +1,9 @@
 import { render, screen, act, fireEvent, renderHook } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { ToastProvider, useToast, useOptionalToast } from '../ToastProvider';
+
+expect.extend(toHaveNoViolations);
 
 const TestComponent = () => {
   const { addToast } = useToast();
@@ -334,5 +338,46 @@ describe('ToastProvider', () => {
       fireEvent.click(screen.getByText('Dispatch Optional Toast'));
       expect(screen.getByRole('status')).toHaveTextContent('Optional toast works');
     });
+  });
+
+  test('renders toast action button with opaque inverse variant (without translucent bg-white/20), invokes callback, and passes jest-axe', async () => {
+    jest.useRealTimers();
+    const onUndo = jest.fn();
+
+    const ActionToastTrigger = () => {
+      const { addToast } = useToast();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            addToast('Photo removed', 'info', undefined, undefined, {
+              label: 'Undo',
+              onClick: onUndo,
+            })
+          }
+        >
+          Trigger Action Toast
+        </button>
+      );
+    };
+
+    const { container } = render(
+      <ToastProvider>
+        <ActionToastTrigger />
+      </ToastProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trigger Action Toast' }));
+    const undoButton = screen.getByRole('button', { name: 'Undo' });
+
+    expect(undoButton).toHaveClass('bg-[var(--toast-action-bg,#ffffff)]');
+    expect(undoButton).toHaveClass('text-[var(--toast-action-text,#111827)]');
+    expect(undoButton).not.toHaveClass('bg-white/20');
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.click(undoButton);
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync } from 'child_process';
+import { execFileSync, execSync, spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import http from 'http';
 import os from 'os';
@@ -316,13 +316,13 @@ process.exit(1);
     expect(dbMigrateYml).toMatch(/^permissions:\n  contents: read\n/m);
 
     expect(deployProviderYml).toContain(
-      '    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
+      '    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
     );
     expect(deployYml).toContain(
-      '  staging-deploy-provider:\n    name: Staging Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
+      '  staging-deploy-provider:\n    name: Staging Provider Deployment\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
     );
     expect(deployYml).toContain(
-      '  production-deploy-provider:\n    name: Production Provider Deployment\n    permissions:\n      contents: read\n      packages: read\n      attestations: read\n      id-token: write'
+      '  production-deploy-provider:\n    name: Production Provider Deployment\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
     );
   });
 
@@ -346,6 +346,7 @@ process.exit(1);
       'Verify Selected Provider Credentials',
       'Capture Active Image Tag Before Rollout',
       'Deploy via Generic Webhook Adapter',
+      'Record Environment Deployment State',
       'Dry-run Provider Adapter Validation',
       'Resolve Service URL Output',
       'Deployment Summary',
@@ -775,11 +776,11 @@ process.exit(1);
     expect(deploymentDoc).toContain('vars.SERVICE_URL');
     expect(deploymentDoc).toContain('secrets.SERVICE_URL');
     expect(deploymentDoc).toContain('commit_sha');
-    expect(deploymentDoc).toContain('deployments: read');
+    expect(deploymentDoc).toContain('deployments: write');
     expect(cloudRunDoc).toContain('vars.SERVICE_URL');
     expect(cloudRunDoc).toContain('secrets.SERVICE_URL');
     expect(cloudRunDoc).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
-    expect(cloudRunDoc).toContain('deployments: read');
+    expect(cloudRunDoc).toContain('deployments: write');
   });
 
   it('resolves vars.SERVICE_URL, cloudrun url, and secrets.SERVICE_URL in order without exporting secret-only fallback to $GITHUB_OUTPUT', () => {
@@ -1078,7 +1079,172 @@ process.exit(1);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  }, 25000);
+
+    // Hung /api/health socket (accepts connection & headers but never finishes response) aborts within 10s via curl --connect-timeout 5 --max-time 10
+    expect(stagingProbeScript).toContain('--connect-timeout 5 --max-time 10');
+    expect(prodProbeScript).toContain('--connect-timeout 5 --max-time 10');
+
+    const deployDoc = parseDocument(deployYml, { version: '1.2', strict: true }).toJS() as {
+      jobs?: Record<string, { 'timeout-minutes'?: number; if?: string }>;
+    };
+    expect(deployDoc.jobs?.['staging-verify-deployment']?.['timeout-minutes']).toBe(5);
+    expect(deployDoc.jobs?.['production-verify-deployment']?.['timeout-minutes']).toBe(5);
+    for (const rollbackJobId of ['staging-rollback', 'production-rollback'] as const) {
+      const cond = deployDoc.jobs?.[rollbackJobId]?.if ?? '';
+      expect(cond).toContain('(failure() || cancelled())');
+      expect(cond).toContain(".result == 'failure'");
+      expect(cond).toContain(".result == 'cancelled'");
+    }
+
+    const openSockets = new Set<import('net').Socket>();
+    const hungServer = http.createServer((req, res) => {
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        // Intentionally leave socket open without ending response to simulate hung DB/health endpoint
+      }
+    });
+    hungServer.on('connection', (sock) => {
+      openSockets.add(sock);
+      sock.on('close', () => openSockets.delete(sock));
+    });
+
+    await new Promise<void>((resolve) => hungServer.listen(0, '127.0.0.1', () => resolve()));
+    const hungAddr = hungServer.address();
+    const hungPort = typeof hungAddr === 'object' && hungAddr ? hungAddr.port : 0;
+    const hungUrl = `http://127.0.0.1:${hungPort}`;
+
+    // Keep curl's real --max-time 10 intact and set loop MAX_TIMEOUT=8 + DELAY=0 so a single hung probe aborts at <=10s and exits immediately
+    const hungBoundScript = prodProbeScript
+      .replace('MAX_TIMEOUT=120', 'MAX_TIMEOUT=8')
+      .replace('sleep $DELAY', 'sleep 0');
+
+    try {
+      const startMs = Date.now();
+      const hungRes = await runAsync(hungBoundScript, {
+        VAR_SERVICE_URL: hungUrl,
+        SERVICE_URL: '',
+        SECRET_SERVICE_URL: '',
+        IS_DRY_RUN: 'false',
+      });
+      const elapsedMs = Date.now() - startMs;
+      expect(hungRes.status).toBe(1);
+      expect(hungRes.outputs).toContain('health_status=unhealthy');
+      // Curl --max-time 10 must abort the hung socket at ~10s (well below an unbounded hang)
+      expect(elapsedMs).toBeGreaterThanOrEqual(9000);
+      expect(elapsedMs).toBeLessThan(12500);
+    } finally {
+      for (const sock of openSockets) {
+        sock.destroy();
+      }
+      await new Promise<void>((resolve) => hungServer.close(() => resolve()));
+    }
+  }, 35000);
+
+  it('resolves attested commit SHA for manual deploy.yml image_digest runs and skips newer HEAD migrations', () => {
+    const resolveTargetShaScript = extractStepRunScript(deployYml, 'Resolve Target Commit SHA');
+    const alignSchemaScript = extractStepRunScript(deployYml, 'Align Workspace to Verified Commit SHA');
+    const alignMigrateScript = extractStepRunScript(dbMigrateYml, 'Align Migration Workspace to Target Commit SHA');
+
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'manual-digest-repo-'));
+    try {
+      execSync('git init -b main', { cwd: repoDir, stdio: 'ignore' });
+      execSync('git config user.name "Test"', { cwd: repoDir, stdio: 'ignore' });
+      execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
+
+      const mig1Dir = path.join(repoDir, 'prisma', 'migrations', '20260101000000_base');
+      fs.mkdirSync(mig1Dir, { recursive: true });
+      fs.writeFileSync(path.join(mig1Dir, 'migration.sql'), 'CREATE TABLE "Guest" ("id" TEXT PRIMARY KEY);\n');
+      execSync('git add . && git commit -m "release v1"', { cwd: repoDir, stdio: 'ignore' });
+      const attestedSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+
+      const mig2Dir = path.join(repoDir, 'prisma', 'migrations', '20260201000000_head_unreleased');
+      fs.mkdirSync(mig2Dir, { recursive: true });
+      fs.writeFileSync(path.join(mig2Dir, 'migration.sql'), 'ALTER TABLE "Guest" ADD COLUMN "future_col" TEXT;\n');
+      execSync('git add . && git commit -m "unreleased HEAD migration"', { cwd: repoDir, stdio: 'ignore' });
+      const headSha = execSync('git rev-parse HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
+
+      // Shim gh attestation verify --format json to return SLSA provenance with attestedSha
+      const ghAttestShim = path.join(binDir, 'gh');
+      fs.writeFileSync(
+        ghAttestShim,
+        `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'attestation' && args[1] === 'verify' && args.includes('--format') && args.includes('json')) {
+  process.stdout.write(JSON.stringify([{
+    verificationResult: {
+      statement: {
+        predicate: {
+          buildDefinition: {
+            resolvedDependencies: [{ digest: { gitCommit: '${attestedSha}' } }]
+          }
+        }
+      }
+    }
+  }]));
+  process.exit(0);
+}
+process.exit(1);
+`,
+        { mode: 0o755 }
+      );
+
+      fs.writeFileSync(outputFile, '');
+      const resolveRes = runBashStep(resolveTargetShaScript, {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        WORKFLOW_RUN_HEAD_SHA: '',
+        INPUT_COMMIT_SHA: '',
+        INPUT_IMAGE_DIGEST: VALID_DIGEST,
+        CURRENT_SHA: headSha,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_OMIT_INDEX_REVISION: 'true',
+      });
+      expect(resolveRes.status).toBe(0);
+      expect(fs.readFileSync(outputFile, 'utf8')).toContain(`target_sha=${attestedSha}`);
+
+      // Rejects mismatched explicit commit_sha when image_digest provenance attests a different commit
+      const mismatchRes = runBashStep(resolveTargetShaScript, {
+        GH_TOKEN: 'ghs_test_token',
+        GITHUB_ACTOR_LOGIN: 'octocat',
+        EVENT_NAME: 'workflow_dispatch',
+        WORKFLOW_RUN_HEAD_SHA: '',
+        INPUT_COMMIT_SHA: headSha,
+        INPUT_IMAGE_DIGEST: VALID_DIGEST,
+        CURRENT_SHA: headSha,
+        REPO_OWNER: 'OwnerOrg',
+        SIGNER_WORKFLOW: 'OwnerOrg/Wedding_Website/.github/workflows/publish-artifact.yml',
+        MOCK_OMIT_INDEX_REVISION: 'true',
+      });
+      expect(mismatchRes.status).toBe(1);
+      expect(mismatchRes.stdout + mismatchRes.stderr).toContain('does not match attested provenance commit SHA');
+
+      // Aligning schema-compatibility and db-migrate workspaces to target_sha detaches at attestedSha and omits newer HEAD migrations
+      const alignSchemaRes = spawnSync('bash', ['-eo', 'pipefail', '-c', alignSchemaScript], {
+        cwd: repoDir,
+        encoding: 'utf8',
+        env: { ...process.env, TARGET_SHA: attestedSha, GITHUB_REF: 'refs/heads/main' },
+      });
+      expect(alignSchemaRes.status).toBe(0);
+      expect(fs.existsSync(path.join(repoDir, 'prisma', 'migrations', '20260101000000_base'))).toBe(true);
+      expect(fs.existsSync(path.join(repoDir, 'prisma', 'migrations', '20260201000000_head_unreleased'))).toBe(false);
+
+      // Reset to main HEAD and verify db-migrate.yml workspace alignment step also detaches to attestedSha
+      execSync('git checkout main', { cwd: repoDir, stdio: 'ignore' });
+      expect(fs.existsSync(path.join(repoDir, 'prisma', 'migrations', '20260201000000_head_unreleased'))).toBe(true);
+
+      const alignMigrateRes = spawnSync('bash', ['-eo', 'pipefail', '-c', alignMigrateScript], {
+        cwd: repoDir,
+        encoding: 'utf8',
+        env: { ...process.env, TARGET_SHA: attestedSha },
+      });
+      expect(alignMigrateRes.status).toBe(0);
+      expect(fs.existsSync(path.join(repoDir, 'prisma', 'migrations', '20260201000000_head_unreleased'))).toBe(false);
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+    }
+  });
 
   it('fails fast in deploy.yml without polling 127.0.0.1:3000 when is_dry_run is false and SERVICE_URL is omitted, and passes dry-run when omitted', () => {
     const stagingProbeScript = extractStepRunScript(deployYml, 'Execute Staging Health Probe Verification');

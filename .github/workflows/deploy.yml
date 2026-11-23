@@ -56,6 +56,16 @@ on:
         required: false
         default: false
         type: boolean
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       environment:
@@ -97,6 +107,21 @@ on:
         required: false
         default: false
         type: boolean
+      commit_sha:
+        description: 'Optional 40-character commit SHA to deploy (resolved from image_digest provenance if omitted)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
     outputs:
       schema_compatibility_status:
         description: 'Schema compatibility check status'
@@ -139,15 +164,17 @@ jobs:
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          CURRENT_SHA: ${{ github.sha }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           INPUT_IMAGE_DIGEST: ${{ inputs.image_digest }}
           IMAGE_DIGEST: ${{ inputs.image_digest }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
           RELEASE_REF: ${{ inputs.release_ref }}
+          CURRENT_SHA: ${{ github.sha }}
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
           TARGET_SHA=""
+          COMMIT_INPUT_SHA=""
           IMAGE_TAG_SHA=""
           REF_RESOLVED_SHA=""
           ATTESTED_SHA=""
@@ -156,6 +183,14 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             TARGET_SHA="$WORKFLOW_RUN_HEAD_SHA"
           else
+            if [ -n "${INPUT_COMMIT_SHA:-}" ]; then
+              if [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+                echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+                exit 1
+              fi
+              COMMIT_INPUT_SHA=$(printf '%s' "$INPUT_COMMIT_SHA" | tr '[:upper:]' '[:lower:]')
+            fi
+
             if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
               if [[ "${INPUT_IMAGE_TAG,,}" == "latest" ]]; then
                 echo "::error::Unpinned 'latest' image_tag is forbidden. Provide an immutable v* release tag or 40-character commit SHA."
@@ -221,11 +256,12 @@ jobs:
               REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
               IMAGE_URI="ghcr.io/${REPO_LOWER}@${EFFECTIVE_IMAGE_DIGEST}"
 
-              if [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
-                printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin
+              if command -v docker >/dev/null 2>&1 && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
+                printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin >/dev/null 2>&1 || true
               fi
 
-              echo "Verifying OIDC build provenance attestation for pinned digest oci://${IMAGE_URI}..."
+              echo "Verifying OIDC provenance attestation to resolve source commit SHA for oci://${IMAGE_URI}..."
+
               if ! ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
                 --owner "$REPO_OWNER" \
                 --signer-workflow "$SIGNER_WORKFLOW" \
@@ -235,15 +271,18 @@ jobs:
               fi
 
               INDEX_REVISION=""
-              if [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
+              if command -v docker >/dev/null 2>&1 && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
                 RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
-                INDEX_REVISION=$(printf '%s' "$RAW_INDEX_JSON" | jq -r '
-                  (
-                    .annotations["org.opencontainers.image.revision"]
-                    // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
-                    // empty
-                  )
-                ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                if [[ "${RAW_INDEX_JSON#"${RAW_INDEX_JSON%%[![:space:]]*}"}" == \{* ]]; then
+                  INDEX_REVISION=$(printf '%s' "$RAW_INDEX_JSON" | jq -r '
+                    (
+                      .annotations["org.opencontainers.image.revision"]
+                      // .config.Labels["org.opencontainers.image.revision"]
+                      // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                      // empty
+                    )
+                  ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+                fi
                 if [[ ! "$INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
                   INDEX_REVISION=""
                 fi
@@ -277,7 +316,9 @@ jobs:
                         .invocation.configSource.digest.sha1,
                         (.materials[]? | (.digest.gitCommit, .digest.sha1))
                       )),
-                      .verificationResult.signature.certificate.sourceRepositoryDigest
+                      .verificationResult.signature.certificate.sourceRepositoryDigest,
+                      .verificationResult.statement.subject[]?.annotations["org.opencontainers.image.revision"],
+                      .statement.subject[]?.annotations["org.opencontainers.image.revision"]
                     )
                   | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
                 ][0] // empty
@@ -287,12 +328,24 @@ jobs:
               fi
 
               ATTESTED_SHA="${INDEX_REVISION:-${SLSA_REVISION}}"
-              if [[ ! "$ATTESTED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-                echo "::error::Unable to resolve signed 40-character source revision from OCI metadata or SLSA provenance for '${IMAGE_URI}'. Release aborted."
+              if [[ ! "$ATTESTED_SHA" =~ ^[a-f0-9]{40}$ ]] && [ -z "$COMMIT_INPUT_SHA" ]; then
+                echo "::error::Failed to extract 40-character source commit SHA from OIDC provenance attestation or OCI revision metadata for oci://${IMAGE_URI}."
                 exit 1
               fi
             fi
 
+            if [ -n "$COMMIT_INPUT_SHA" ] && [ -n "$ATTESTED_SHA" ] && [ "$COMMIT_INPUT_SHA" != "$ATTESTED_SHA" ]; then
+              echo "::error::Commit mismatch: provided commit_sha '${INPUT_COMMIT_SHA}' does not match attested provenance commit SHA '${ATTESTED_SHA}' for ${EFFECTIVE_IMAGE_DIGEST}."
+              exit 1
+            fi
+            if [ -n "$COMMIT_INPUT_SHA" ] && [ -n "$IMAGE_TAG_SHA" ] && [ "$COMMIT_INPUT_SHA" != "$IMAGE_TAG_SHA" ]; then
+              echo "::error::Commit mismatch: provided commit_sha '${INPUT_COMMIT_SHA}' does not match image_tag '${INPUT_IMAGE_TAG}' (${IMAGE_TAG_SHA})."
+              exit 1
+            fi
+            if [ -n "$COMMIT_INPUT_SHA" ] && [ -n "$REF_RESOLVED_SHA" ] && [ "$COMMIT_INPUT_SHA" != "$REF_RESOLVED_SHA" ]; then
+              echo "::error::Commit mismatch: provided commit_sha '${INPUT_COMMIT_SHA}' does not match release_ref '${RELEASE_REF}' (${REF_RESOLVED_SHA})."
+              exit 1
+            fi
             if [ -n "$IMAGE_TAG_SHA" ] && [ -n "$REF_RESOLVED_SHA" ] && [ "$IMAGE_TAG_SHA" != "$REF_RESOLVED_SHA" ]; then
               echo "::error::Commit mismatch: image_tag '${INPUT_IMAGE_TAG}' resolved to ${IMAGE_TAG_SHA}, whereas release_ref '${RELEASE_REF}' resolved to ${REF_RESOLVED_SHA}."
               exit 1
@@ -312,6 +365,8 @@ jobs:
               TARGET_SHA="$IMAGE_TAG_SHA"
             elif [ -n "$REF_RESOLVED_SHA" ]; then
               TARGET_SHA="$REF_RESOLVED_SHA"
+            elif [ -n "$COMMIT_INPUT_SHA" ]; then
+              TARGET_SHA="$COMMIT_INPUT_SHA"
             else
               TARGET_SHA="$CURRENT_SHA"
             fi
@@ -397,7 +452,7 @@ jobs:
           fetch-depth: 0
 
       - name: Align Workspace to Verified Commit SHA
-        if: github.event_name == 'workflow_run' || inputs.image_tag != '' || inputs.release_ref != '' || inputs.image_digest != ''
+        if: github.event_name == 'workflow_run' || inputs.image_tag != '' || inputs.release_ref != '' || inputs.image_digest != '' || needs.ci-gate.outputs.target_sha != github.sha
         env:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
@@ -532,12 +587,12 @@ jobs:
   staging-deploy-provider:
     name: Staging Provider Deployment
     permissions:
+      actions: read
       contents: read
       packages: read
       attestations: read
+      deployments: write
       id-token: write
-      deployments: read
-      actions: read
     needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
       !cancelled() &&
@@ -563,6 +618,8 @@ jobs:
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
@@ -586,6 +643,7 @@ jobs:
       (needs.ci-gate.result == 'success') &&
       (needs.staging-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: staging
     outputs:
       health_status: ${{ steps.health-probe.outputs.health_status }}
@@ -652,7 +710,7 @@ jobs:
 
             echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
 
-            HTTP_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
             HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
             RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
 
@@ -720,14 +778,17 @@ jobs:
   staging-rollback:
     name: Staging Automated Rollback
     permissions:
+      actions: read
       contents: read
       packages: read
       attestations: read
+      deployments: write
       id-token: write
-      deployments: read
-      actions: read
     needs: [ci-gate, publish-artifact, staging-deploy-provider, staging-verify-deployment]
-    if: failure() && needs.staging-verify-deployment.result == 'failure'
+    if: |
+      (failure() || cancelled()) &&
+      needs.staging-deploy-provider.result == 'success' &&
+      (needs.staging-verify-deployment.result == 'failure' || needs.staging-verify-deployment.result == 'cancelled')
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'staging'
@@ -736,6 +797,8 @@ jobs:
       previous_digest: ${{ inputs.previous_tag == '' && needs.staging-deploy-provider.outputs.previous_image_digest || '' }}
       previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.staging-deploy-provider.outputs.previous_image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || needs.staging-deploy-provider.outputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || needs.staging-deploy-provider.outputs.cloud_run_region || '' }}
       reason: 'Automated staging post-deployment health check failure on /api/health'
     secrets: inherit
 
@@ -773,12 +836,12 @@ jobs:
   production-deploy-provider:
     name: Production Provider Deployment
     permissions:
+      actions: read
       contents: read
       packages: read
       attestations: read
+      deployments: write
       id-token: write
-      deployments: read
-      actions: read
     needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
       !cancelled() &&
@@ -805,6 +868,8 @@ jobs:
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
@@ -828,6 +893,7 @@ jobs:
       (needs.ci-gate.result == 'success') &&
       (needs.production-deploy-provider.result == 'success')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: production
     outputs:
       health_status: ${{ steps.health-probe.outputs.health_status }}
@@ -895,7 +961,7 @@ jobs:
 
             echo "Polling ${HEALTH_ENDPOINT} (elapsed: ${ELAPSED}s)..."
 
-            HTTP_RESPONSE=$(curl -s -S -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
+            HTTP_RESPONSE=$(curl -s -S --connect-timeout 5 --max-time 10 -w "\nHTTP_STATUS_CODE:%{http_code}" "${HEALTH_ENDPOINT}" || true)
             HTTP_STATUS=$(printf '%s\n' "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:" | tail -n 1 | cut -d':' -f2 || true)
             RESPONSE_BODY=$(printf '%s\n' "$HTTP_RESPONSE" | sed '/HTTP_STATUS_CODE:/d')
 
@@ -964,14 +1030,17 @@ jobs:
   production-rollback:
     name: Production Automated Rollback
     permissions:
+      actions: read
       contents: read
       packages: read
       attestations: read
+      deployments: write
       id-token: write
-      deployments: read
-      actions: read
     needs: [ci-gate, publish-artifact, production-deploy-provider, production-verify-deployment]
-    if: failure() && needs.production-verify-deployment.result == 'failure'
+    if: |
+      (failure() || cancelled()) &&
+      needs.production-deploy-provider.result == 'success' &&
+      (needs.production-verify-deployment.result == 'failure' || needs.production-verify-deployment.result == 'cancelled')
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'production'
@@ -980,5 +1049,7 @@ jobs:
       previous_digest: ${{ inputs.previous_tag == '' && needs.production-deploy-provider.outputs.previous_image_digest || '' }}
       previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.production-deploy-provider.outputs.previous_image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || needs.production-deploy-provider.outputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || needs.production-deploy-provider.outputs.cloud_run_region || '' }}
       reason: 'Automated post-deployment health check failure on /api/health in production'
     secrets: inherit
