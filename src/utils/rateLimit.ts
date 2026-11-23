@@ -4,7 +4,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { Pool, QueryResultRow } from 'pg';
 import { verifyAdminToken, ADMIN_COOKIE } from '@/core/auth/auth.server';
 import { verifyGuestSessionToken, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { verifyGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteToken';
+import {
+  getSignedGuestInviteSession,
+  verifyGuestInviteSessionToken,
+  GUEST_INVITE_COOKIE,
+} from '@/core/auth/guestInviteToken';
 import { env } from '@/env';
 import { logger } from '@/lib/logger';
 import * as prismaModule from '@/lib/prisma';
@@ -153,6 +157,9 @@ export function normalizeApiPathname(pathname: string): string {
   }
   if (/^\/api\/admin\/versions\/[^/]+\/restore$/.test(cleaned)) {
     return '/api/admin/versions/:id/restore';
+  }
+  if (/^\/api\/admin\/registry\/items\/[^/]+\/unclaim$/.test(cleaned)) {
+    return '/api/admin/registry/items/:id/unclaim';
   }
   if (/^\/api\/media\/(?!export$)[^/]+$/.test(cleaned)) {
     return '/api/media/:id';
@@ -383,11 +390,14 @@ async function getSessionOrIp(req: NextRequest): Promise<string> {
   const inviteCookie = extractRequestCookie(req, inviteCookieName);
   if (inviteCookie) {
     try {
-      if (typeof verifyGuestInviteSessionToken === 'function') {
-        const payload = await verifyGuestInviteSessionToken(inviteCookie);
-        if (payload && payload.code) {
-          return `session:invite:${inviteCookie}`;
-        }
+      const payload =
+        typeof getSignedGuestInviteSession === 'function'
+          ? await getSignedGuestInviteSession(req)
+          : typeof verifyGuestInviteSessionToken === 'function'
+            ? await verifyGuestInviteSessionToken(inviteCookie)
+            : null;
+      if (payload && payload.code) {
+        return `session:invite:${inviteCookie}`;
       }
     } catch {
       // Invalid or malformed invite session cookie falls through
@@ -432,7 +442,7 @@ function buildRateLimitKey(rawPathname: string, identifier: string, keyPrefix?: 
 export function hashAuthLockoutKey(rawKey: string): string {
   const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
   const secret = isProduction
-    ? (process.env.GUEST_SESSION_SECRET || env.GUEST_SESSION_SECRET || '')
+    ? (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || '')
     : (env.GUEST_SESSION_SECRET || process.env.GUEST_SESSION_SECRET || 'default-guest-session-secret');
   return crypto.createHmac('sha256', secret).update(rawKey).digest('hex');
 }

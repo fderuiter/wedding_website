@@ -168,30 +168,97 @@ describe('RegistryItemCard Component', () => {
     expect(progressBar).toHaveAttribute('aria-valuemax', '100');
   });
 
-  it('renders correctly for a purchased single item', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockPurchasedItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+  it('renders read-only details without checkout inputs, payment prompts, or purchaser PII for guests on a purchased single item', () => {
+    const purchasedWithLinkAndHandle = {
+      ...mockPurchasedItem,
+      vendorUrl: 'https://vendor.example.com/gift',
+      paymentHandleType: 'Venmo',
+      paymentHandle: '@couple-venmo',
+      shippingAddress: {
+        recipientName: 'Alex & Sam',
+        addressLine1: '100 Wedding Way',
+        city: 'Austin',
+        state: 'TX',
+        zipCode: '78701',
+        country: 'USA',
+      },
+    };
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={purchasedWithLinkAndHandle}
+          onClose={mockOnClose}
+          onContribute={mockOnContribute}
+          cardCheckoutEnabled={true}
+        />
+      </Overlay>
+    );
 
     expect(screen.getByText('Purchased Item')).toBeInTheDocument();
+    expect(screen.getByText('A nice single item.')).toBeInTheDocument();
+    expect(screen.getByText('Price: $100.00')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /View on Vendor Site/i })).toHaveAttribute(
+      'href',
+      'https://vendor.example.com/gift'
+    );
     expect(screen.getByText('This gift has been claimed!')).toBeInTheDocument();
-    expect(screen.getByText('Claimed by: Generous Guest')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Claim This Gift' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claimed by/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Send directly via/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stripe-payment-notice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('registry-shipping-address-card')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Claim/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Your Name/i)).not.toBeInTheDocument();
   });
 
-  it('renders correctly for a fully funded group item', () => {
-    render(<Overlay isOpen={true} onClose={mockOnClose}><RegistryItemCard item={mockFundedGroupItem} onClose={mockOnClose} onContribute={mockOnContribute} /></Overlay>);
+  it('renders purchaser name for admins on a purchased single item', () => {
+    render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={mockPurchasedItem}
+          onClose={mockOnClose}
+          onContribute={mockOnContribute}
+          isAdmin={true}
+        />
+      </Overlay>
+    );
+
+    expect(screen.getByText('This gift has been claimed!')).toBeInTheDocument();
+    expect(screen.getByText('Claimed by: Generous Guest')).toBeInTheDocument();
+  });
+
+  it('renders read-only details without contributor PII for guests on a fully funded group item, while showing contributors to admins', () => {
+    const { rerender } = render(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={mockFundedGroupItem}
+          onClose={mockOnClose}
+          onContribute={mockOnContribute}
+        />
+      </Overlay>
+    );
 
     expect(screen.getByText('Funded Group Item')).toBeInTheDocument();
     expect(screen.getByText('This gift is fully funded!')).toBeInTheDocument();
     expect(screen.getByText('Thank you for your generosity!')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Submit Contribution' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Your Name/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Contributors:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contributor 1')).not.toBeInTheDocument();
 
-    // Verify contributors list
+    rerender(
+      <Overlay isOpen={true} onClose={mockOnClose}>
+        <RegistryItemCard
+          item={mockFundedGroupItem}
+          onClose={mockOnClose}
+          onContribute={mockOnContribute}
+          isAdmin={true}
+        />
+      </Overlay>
+    );
+
     expect(screen.getByText('Contributors:')).toBeInTheDocument();
     expect(screen.getByText('Contributor 1')).toBeInTheDocument();
     expect(screen.getByText('Contributor 2')).toBeInTheDocument();
-    // Multiple instances of ($50.00)
     expect(screen.getAllByText('($50.00)')).toHaveLength(2);
   });
 

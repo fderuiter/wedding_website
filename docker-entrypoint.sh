@@ -1,6 +1,39 @@
 #!/bin/bash
 set -e
 
+export NPM_CONFIG_UPDATE_NOTIFIER=false
+export NO_UPDATE_NOTIFIER=1
+export CHECKPOINT_DISABLE=1
+
+# Allow standalone password-hash utility invocations inside Docker without DATABASE_URL
+if { [ "${1:-}" = "node" ] && [[ "${2:-}" == *generate-password-hash.mjs ]]; } || [[ "${1:-}" == *generate-password-hash.mjs ]]; then
+  exec "$@"
+fi
+
+# Strip matching outer quotes injected by `docker run --env-file`
+strip_outer_quotes() {
+  local val="$1"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  if [ "${#val}" -ge 2 ]; then
+    if [[ "$val" == \"*\" && "$val" == *\" ]]; then
+      val="${val:1:${#val}-2}"
+    elif [[ "$val" == \'*\' && "$val" == *\' ]]; then
+      val="${val:1:${#val}-2}"
+    fi
+  fi
+  printf '%s' "$val"
+}
+
+if [ -n "${DATABASE_URL+x}" ]; then
+  DATABASE_URL="$(strip_outer_quotes "$DATABASE_URL")"
+  export DATABASE_URL
+fi
+if [ -n "${POSTGRES_URL_NON_POOLING+x}" ]; then
+  POSTGRES_URL_NON_POOLING="$(strip_outer_quotes "$POSTGRES_URL_NON_POOLING")"
+  export POSTGRES_URL_NON_POOLING
+fi
+
 # The GitHub action checks for secrets during deployment,
 # but we also fail gracefully here in case the image is run manually.
 if [ -z "$DATABASE_URL" ]; then
@@ -66,10 +99,6 @@ if ! NORMALIZED_DATABASE_URL="$(
   exit 1
 fi
 export DATABASE_URL="$NORMALIZED_DATABASE_URL"
-
-export NPM_CONFIG_UPDATE_NOTIFIER=false
-export NO_UPDATE_NOTIFIER=1
-export CHECKPOINT_DISABLE=1
 
 if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   echo "Running database migrations (RUN_MIGRATIONS=true)..."

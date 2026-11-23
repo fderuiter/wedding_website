@@ -13,6 +13,7 @@ import {
 import { ApiError } from './ApiError';
 import { isProtectedRoute } from '@/lib/routes';
 import { logger } from '@/lib/logger';
+import { runWithRequestContext } from '@/lib/requestContext';
 import { generateSecureUUID } from './uuid';
 
 type RouteHandler = (req: NextRequest, context: any) => Promise<NextResponse | Response> | NextResponse | Response;
@@ -74,7 +75,7 @@ export function withApiMiddleware(
   handler: RouteHandler | OptionalReqRouteHandler,
   options?: ApiMiddlewareOptions
 ) {
-  return async (req?: NextRequest, context?: any): Promise<NextResponse> => {
+  const executeWithMiddleware = async (req?: NextRequest, context?: any): Promise<NextResponse> => {
     let shouldTrackAuthFailures = false;
     let authWindowMs = 15 * 60 * 1000;
     try {
@@ -314,4 +315,7 @@ export function withApiMiddleware(
       );
     }
   };
+
+  return async (req?: NextRequest, context?: any): Promise<NextResponse> =>
+    runWithRequestContext(req, () => executeWithMiddleware(req, context));
 }
