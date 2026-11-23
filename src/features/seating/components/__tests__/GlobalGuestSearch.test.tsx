@@ -198,10 +198,10 @@ describe('Global Seating Guest Search', () => {
             json: () => Promise.resolve(mockTables),
           } as Response);
         }
-        if (urlStr.endsWith('/api/admin/invitation-codes')) {
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve(mockAllGuests),
+            json: () => Promise.resolve({ items: mockAllGuests, total: mockAllGuests.length, page: 1, limit: 1000, totalPages: 1 }),
           } as Response);
         }
         return Promise.reject(new Error(`Unknown URL: ${urlStr}`));

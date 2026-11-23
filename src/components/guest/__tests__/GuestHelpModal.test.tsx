@@ -301,4 +301,108 @@ describe('GuestHelpModal component & WAI-ARIA compliance', () => {
     expect(screen.getByTestId('help-modal-rsvp-closed')).toBeInTheDocument();
     expect(screen.getByText('Online RSVPs closed at midnight.')).toBeInTheDocument();
   });
+
+  it('hides Wedding Q&A tab when no visible FAQs exist and renders it with sanitized links, roving tab order, and zero axe violations when couple FAQs exist', async () => {
+    const { container, rerender } = render(
+      <GuestHelpModal
+        isOpen={true}
+        onClose={jest.fn()}
+        config={{ ...sampleConfig, faqs: [] }}
+      />
+    );
+
+    expect(screen.queryByRole('tab', { name: /Wedding Q&A/i })).not.toBeInTheDocument();
+
+    const coupleFaqs = [
+      {
+        id: 'couple-faq-1',
+        question: 'Where should we book hotel rooms?',
+        answer:
+          'Reserve via https://hotels.example.com/block, browse [Local Guide](/things-to-do), email concierge@example.com, or call +1 (555) 333-4444. <script>alert(1)</script> [Bad](javascript:alert(2))',
+        category: 'Travel',
+        isVisible: true,
+      },
+      {
+        id: 'couple-faq-hidden',
+        question: 'Draft hidden question?',
+        answer: 'Should not render when hidden.',
+        category: 'General',
+        isVisible: false,
+      },
+    ];
+
+    rerender(
+      <GuestHelpModal
+        isOpen={true}
+        onClose={jest.fn()}
+        initialCategory="registry"
+        config={{ ...sampleConfig, faqs: coupleFaqs }}
+      />
+    );
+
+    const registryTab = screen.getByRole('tab', { name: /Registry & Gifts/i });
+    const faqTab = screen.getByRole('tab', { name: /Wedding Q&A/i });
+    expect(faqTab).toBeInTheDocument();
+
+    // ArrowRight from Registry & Gifts moves focus and selection to Wedding Q&A
+    fireEvent.keyDown(registryTab, { key: 'ArrowRight' });
+    expect(faqTab).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(faqTab);
+
+    expect(screen.getByText('Where should we book hotel rooms?')).toBeInTheDocument();
+    expect(screen.queryByText('Draft hidden question?')).not.toBeInTheDocument();
+
+    const hotelLink = screen.getByRole('link', { name: 'https://hotels.example.com/block' });
+    expect(hotelLink).toHaveAttribute('href', 'https://hotels.example.com/block');
+    expect(hotelLink).toHaveAttribute('target', '_blank');
+    expect(hotelLink).toHaveAttribute('rel', 'noopener noreferrer');
+
+    const guideLink = screen.getByRole('link', { name: 'Local Guide' });
+    expect(guideLink).toHaveAttribute('href', '/things-to-do');
+
+    const mailLink = screen.getByRole('link', { name: 'concierge@example.com' });
+    expect(mailLink).toHaveAttribute('href', 'mailto:concierge@example.com');
+
+    const phoneLink = screen.getByRole('link', { name: '+1 (555) 333-4444' });
+    expect(phoneLink).toHaveAttribute('href', 'tel:+15553334444');
+
+    expect(container.innerHTML).not.toContain('<script>');
+    expect(container.innerHTML).not.toContain('javascript:');
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('preserves global couple FAQs in GuestHelpProvider when GuestHelpTrigger supplies page config without faqs', () => {
+    render(
+      <GuestHelpProvider
+        pathname="/guest"
+        config={{
+          ...sampleConfig,
+          faqs: [
+            {
+              id: 'global-faq-1',
+              question: 'Are children invited?',
+              answer: 'Please refer to the named guests on your household invitation.',
+              category: 'Guests',
+              isVisible: true,
+            },
+          ],
+        }}
+      >
+        <GuestHelpTrigger
+          defaultCategory="passcode"
+          label="Need Passcode Help?"
+          config={{
+            rsvpOpen: true,
+            isRsvpOpen: true,
+          }}
+        />
+      </GuestHelpProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Need Passcode Help\?/i }));
+    const faqTab = screen.getByRole('tab', { name: /Wedding Q&A/i });
+    fireEvent.click(faqTab);
+    expect(screen.getByText('Are children invited?')).toBeInTheDocument();
+  });
 });

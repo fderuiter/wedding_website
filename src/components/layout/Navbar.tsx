@@ -39,6 +39,7 @@ interface NavbarProps {
   handleLogout: () => void;
   headerRef: React.RefObject<HTMLElement | null>;
   config: PublicAppConfig;
+  hasVisibleFaqs?: boolean;
 }
 
 interface NavLinkItem {
@@ -92,7 +93,13 @@ const DEFAULT_HOME_FEATURES: HomeFeatureSection[] = [
  * @param {NavbarProps} props - The props for the component.
  * @returns {JSX.Element} The rendered Navbar component.
  */
-export default function Navbar({ isAdmin, handleLogout, headerRef, config }: NavbarProps) {
+export default function Navbar({
+  isAdmin,
+  handleLogout,
+  headerRef,
+  config,
+  hasVisibleFaqs,
+}: NavbarProps) {
   const pathname = usePathname();
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -234,6 +241,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
     for (const f of features) {
       if (!f.visible || !f.id || f.id === 'hero' || f.id === 'story') continue;
       if (hasThingsToDoPage && (f.id === 'travel' || f.type === 'travel')) continue;
+      if (hasVisibleFaqs === false && !isAdmin && (f.id === 'faq' || f.type === 'faq')) continue;
       const href = `/#${f.id}`;
       if (seenHrefs.has(href)) continue;
       seenHrefs.add(href);
@@ -251,7 +259,7 @@ export default function Navbar({ isAdmin, handleLogout, headerRef, config }: Nav
       guidePageLinks: dedupedGuides,
       secondaryLinks: [...dedupedSections, ...dedupedGuides],
     };
-  }, [features, hasThingsToDoPage, primaryLinks, rawGuidePageLinks]);
+  }, [features, hasThingsToDoPage, hasVisibleFaqs, isAdmin, primaryLinks, rawGuidePageLinks]);
 
   const mobileLinks = [...primaryLinks, ...secondaryLinks, ...adminLinks];
   const isSecondaryActive = secondaryLinks.some((link) => isLinkActive(link.href));

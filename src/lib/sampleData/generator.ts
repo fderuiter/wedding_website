@@ -14,19 +14,28 @@ export interface SampleDataStatus {
     seating: number;
     weddingParty: number;
     attractions: number;
+    faqs: number;
   };
 }
 
 export async function getSampleDataStatus(): Promise<SampleDataStatus> {
-  const [registry, guests, seating, weddingParty, attractions] = await Promise.all([
+  const [registry, guests, seating, weddingParty, attractions, faqs] = await Promise.all([
     prisma.registryItem.count({ where: { isSample: true } }),
     prisma.invitationCode.count({ where: { isSample: true } }),
     prisma.seatingTable.count({ where: { isSample: true } }),
     prisma.weddingPartyMember.count({ where: { isSample: true } }),
     prisma.attraction.count({ where: { isSample: true } }),
+    prisma.contentNode?.count
+      ? prisma.contentNode.count({
+        where: {
+          type: 'FAQ',
+          data: { path: ['isSample'], equals: true },
+        },
+      })
+      : Promise.resolve(0),
   ]);
 
-  const counts = { registry, guests, seating, weddingParty, attractions };
+  const counts = { registry, guests, seating, weddingParty, attractions, faqs };
   const hasSampleData = Object.values(counts).some((count) => count > 0);
 
   return {
@@ -66,7 +75,17 @@ export async function purgeSampleData() {
     await tx.weddingPartyMember.deleteMany({ where: { isSample: true } });
     await tx.attraction.deleteMany({ where: { isSample: true } });
 
-    // 5. Delete sample media
+    // 5. Delete sample FAQ content nodes
+    if (tx.contentNode?.deleteMany) {
+      await tx.contentNode.deleteMany({
+        where: {
+          type: 'FAQ',
+          data: { path: ['isSample'], equals: true },
+        },
+      });
+    }
+
+    // 6. Delete sample media
     await tx.media.deleteMany({ where: { isSample: true } });
   });
 
@@ -82,7 +101,9 @@ export async function generateSampleData(options: GenerateSampleDataOptions = {}
     : 'classic';
   const preset = ARCHETYPE_PRESETS[archetypeId];
 
-  const enabledModules = new Set(options.modules || ['registry', 'guests', 'seating', 'weddingParty', 'attractions']);
+  const enabledModules = new Set(
+    options.modules || ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs']
+  );
 
   // First purge any existing sample data to prevent duplicate unique key collisions (e.g. guest codes)
   await purgeSampleData();
@@ -93,6 +114,7 @@ export async function generateSampleData(options: GenerateSampleDataOptions = {}
     seating: 0,
     weddingParty: 0,
     attractions: 0,
+    faqs: 0,
   };
 
   await prisma.$transaction(async (tx) => {
@@ -200,6 +222,29 @@ export async function generateSampleData(options: GenerateSampleDataOptions = {}
           },
         });
         createdCounts.attractions++;
+      }
+    }
+
+    // F. Starter Wedding Q&A (FAQs)
+    if (enabledModules.has('faqs') && tx.contentNode?.create) {
+      for (const [index, faq] of preset.faqs.entries()) {
+        await tx.contentNode.create({
+          data: {
+            type: 'FAQ',
+            tags: ['Homepage', 'FAQ'],
+            data: {
+              question: faq.question,
+              answer: faq.answer,
+              category: faq.category,
+              categoryTags: faq.categoryTags,
+              keywords: faq.keywords,
+              displayOrder: index,
+              isVisible: true,
+              isSample: true,
+            },
+          },
+        });
+        createdCounts.faqs++;
       }
     }
   });

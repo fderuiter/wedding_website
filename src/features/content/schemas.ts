@@ -808,6 +808,9 @@ export const FAQNodeSchema = BaseContentNode.extend({
           }
           return val;
         }),
+      displayOrder: z.number().int().min(0).optional(),
+      isVisible: z.boolean().optional(),
+      isSample: z.boolean().optional(),
     })
     .loose(),
 });
@@ -1003,6 +1006,74 @@ export function isPrivateContentNode(
     return rawIsPrivate.trim().toLowerCase() === 'true';
   }
   return false;
+}
+
+/**
+ * Evaluates whether an FAQ ContentNode (or FAQ data wrapper) is publicly visible.
+ * Defaults to `true` when `data.isVisible` is omitted for backward compatibility,
+ * and returns `false` when private (`isPrivateContentNode`) or when `data.isVisible`
+ * is `false` or `'false'`.
+ */
+export function isFaqNodeVisible(
+  node: { data?: unknown } | null | undefined
+): boolean {
+  if (!node || typeof node !== 'object') {
+    return false;
+  }
+  if (isPrivateContentNode(node)) {
+    return false;
+  }
+  const data = node.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return true;
+  }
+  const rawIsVisible = (data as Record<string, unknown>).isVisible;
+  if (typeof rawIsVisible === 'boolean') {
+    return rawIsVisible;
+  }
+  if (typeof rawIsVisible === 'string') {
+    return rawIsVisible.trim().toLowerCase() !== 'false';
+  }
+  return true;
+}
+
+/**
+ * Compares two FAQ ContentNodes by `data.displayOrder` ascending, falling back
+ * to `createdAt` ascending when `displayOrder` is omitted or equal.
+ */
+export function compareFaqNodesByOrder(
+  a: { data?: unknown; createdAt?: Date | string | null },
+  b: { data?: unknown; createdAt?: Date | string | null }
+): number {
+  const getOrder = (item: { data?: unknown }): number => {
+    const d = item.data;
+    if (!d || typeof d !== 'object' || Array.isArray(d)) {
+      return Infinity;
+    }
+    const rawOrder = (d as Record<string, unknown>).displayOrder;
+    if (typeof rawOrder === 'number' && Number.isFinite(rawOrder)) {
+      return rawOrder;
+    }
+    if (typeof rawOrder === 'string' && rawOrder.trim() !== '') {
+      const parsed = Number(rawOrder);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return Infinity;
+  };
+
+  const orderA = getOrder(a);
+  const orderB = getOrder(b);
+  if (orderA !== orderB) {
+    return orderA - orderB;
+  }
+
+  const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+  const safeA = Number.isFinite(createdA) ? createdA : 0;
+  const safeB = Number.isFinite(createdB) ? createdB : 0;
+  return safeA - safeB;
 }
 
 export const AppConfigSchema = z.object({

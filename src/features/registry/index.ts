@@ -22,6 +22,7 @@ export {
   translateSnapshotToActive,
   translateContributorSnapshot,
   PublicAddressCollectSchema,
+  InvitationCatalogQuerySchema,
 } from './schemas';
 export { registryService } from './service';
 export { thankYouService, ThankYouService } from './thank-you.service';
@@ -60,6 +61,8 @@ export type {
   ItemType,
   BatchScrapeUrlsDTO,
   BatchCreateRegistryItemsDTO,
+  InvitationCatalogQueryDTO,
+  InvitationSubEventRsvpSummaryDTO,
 } from './schemas';
 export { InvitationCodeAdminService } from './invitation-code.admin.service';
 export { RegistryItemAdminService } from './admin.service';

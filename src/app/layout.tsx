@@ -18,6 +18,8 @@ import { ToastProvider } from '@/components/ui/ToastProvider';
 import { cookies } from 'next/headers';
 import { generateThemeStylesheet } from '@/lib/theme/stylesheet';
 import { enforceActiveGuestPageSession } from '@/core/auth/guestInviteSession';
+import { logisticsService } from '@/features/logistics';
+import { withPageQuery } from '@/lib/query-wrapper';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -84,6 +86,9 @@ export default async function RootLayout({
   const config = await getAppConfig();
   const publicConfig = toPublicAppConfig(config);
   const isUninitialized = !isSiteInitialized(config);
+  const visibleFaqs = isUninitialized
+    ? []
+    : await withPageQuery(() => logisticsService.getVisibleFaqs(), []);
 
   const isStaticExport = process.env.STATIC_EXPORT === 'true' ||
                          process.env.STATIC_EXPORT === '1' ||
@@ -132,7 +137,7 @@ export default async function RootLayout({
             <SetupWizard />
           ) : (
             <ToastProvider>
-              <RootLayoutClient config={publicConfig}>{children}</RootLayoutClient>
+              <RootLayoutClient config={publicConfig} faqs={visibleFaqs}>{children}</RootLayoutClient>
             </ToastProvider>
           )}
         </ThemeProvider>

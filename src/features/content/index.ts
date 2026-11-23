@@ -28,6 +28,8 @@ export {
   ContentNodeInputSchema,
   ContentNodeUpdateInputSchema,
   isPrivateContentNode,
+  isFaqNodeVisible,
+  compareFaqNodesByOrder,
 } from './schemas';
 export { ContentService, contentService } from './service';
 export { ContentRepository, contentRepository } from './repository';

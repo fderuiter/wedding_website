@@ -280,13 +280,13 @@ describe('useAdminEntityOrchestration', () => {
       expect(mockApiClient.get).toHaveBeenCalledWith('/api/admin/sub-events');
     });
 
-    it('useAdminInvitationCodes queries /api/admin/invitation-codes', async () => {
+    it('useAdminInvitationCodes queries /api/admin/invitation-codes/catalog?limit=1000', async () => {
       mockApiClient.get.mockResolvedValueOnce([]);
       const { result } = renderHook(() => useAdminInvitationCodes(), {
         wrapper: createWrapper(queryClient),
       });
       await waitFor(() => expect(result.current.isLoading).toBe(false));
-      expect(mockApiClient.get).toHaveBeenCalledWith('/api/admin/invitation-codes');
+      expect(mockApiClient.get).toHaveBeenCalledWith('/api/admin/invitation-codes/catalog?limit=1000');
     });
 
     it('useAdminInvitationCodes.batchUpdateTags applies one optimistic update, rolls back on error, and suppresses global MutationCache toasts', async () => {

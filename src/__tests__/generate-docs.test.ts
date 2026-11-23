@@ -195,17 +195,20 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 72 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+    it('lists all 75 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **72**');
+      expect(apiSection).toContain('Total API route handlers: **75**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(72);
+      expect(handlerRows).toHaveLength(75);
 
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
 
+      expect(apiSection).toContain('| `/api/admin/invitation-codes/catalog` | `src/app/api/admin/invitation-codes/catalog/route.ts` | `GET` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/invitation-codes/rsvps` | `src/app/api/admin/invitation-codes/rsvps/route.ts` | `GET`, `PUT` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/sub-events/rsvp-summary` | `src/app/api/admin/sub-events/rsvp-summary/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/invitation-codes/merge` | `src/app/api/admin/invitation-codes/merge/route.ts` | `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media` | `src/app/api/media/route.ts` | `GET`, `POST` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/media/[id]` | `src/app/api/media/[id]/route.ts` | `PUT`, `DELETE` | `Admin-only` |');

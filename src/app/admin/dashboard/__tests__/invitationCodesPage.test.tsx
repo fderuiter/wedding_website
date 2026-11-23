@@ -1220,6 +1220,9 @@ describe('InvitationCodesDashboardPage', () => {
 
       renderComponent();
 
+      // Navigate to last page (page 3 of 3) to inspect the 105th alphabetical guest (Zoe Zimmerman)
+      fireEvent.click(screen.getByRole('button', { name: 'Last page' }));
+
       // Wait for sub-event permissions on the 105th alphabetical guest (Zoe Zimmerman)
       const zoeRehearsalCheckbox = (await screen.findByRole('checkbox', {
         name: 'Toggle access for Rehearsal Dinner on Zoe Zimmerman',
@@ -1954,6 +1957,256 @@ describe('InvitationCodesDashboardPage', () => {
         expect(mockMergeDuplicates).toHaveBeenCalledWith('code-2', ['code-1']);
       });
     });
+
+    it('paginates 250 imported invitations across 5 pages, searches across all 250 guests, and applies batch attendance overrides', async () => {
+      const mockBatchAttendance = jest.fn().mockResolvedValue({
+        success: true,
+        data: { updatedCount: 250, status: 'attending' },
+      });
+
+      const imported250 = Array.from({ length: 250 }, (_, idx) => {
+        const num = String(idx + 1).padStart(3, '0');
+        return {
+          id: `inv-${num}`,
+          guestName: idx === 249 ? 'Zahara Zenith' : `Imported Guest ${num}`,
+          code: `IMP${num}`,
+          email: `guest${num}@example.com`,
+          used: false,
+        };
+      });
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: imported250,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        batchUpdateAttendance: mockBatchAttendance,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      const { container } = renderComponent();
+
+      // Page 1 shows first 50 of 250
+      expect(screen.getByTestId('invitation-pagination-range')).toHaveTextContent(
+        'Showing 1–50 of 250'
+      );
+      expect(screen.getByTestId('invitation-pagination-page-indicator')).toHaveTextContent(
+        'Page 1 of 5'
+      );
+      expect(screen.getByText('Imported Guest 001')).toBeInTheDocument();
+      expect(screen.queryByText('Zahara Zenith')).not.toBeInTheDocument();
+
+      // Navigate to last page -> Zahara Zenith (#250) visible
+      fireEvent.click(screen.getByRole('button', { name: 'Last page' }));
+      expect(screen.getByTestId('invitation-pagination-range')).toHaveTextContent(
+        'Showing 201–250 of 250'
+      );
+      expect(screen.getByText('Zahara Zenith')).toBeInTheDocument();
+
+      // Search finds guest #250 from any page and resets to Page 1 of 1
+      fireEvent.change(screen.getByLabelText('Search invitation codes'), {
+        target: { value: 'Zahara' },
+      });
+      expect(screen.getByTestId('invitation-pagination-range')).toHaveTextContent(
+        'Showing 1–1 of 1'
+      );
+      expect(screen.getByText('Zahara Zenith')).toBeInTheDocument();
+
+      // Clear search and select all 250 filtered guests across pages for batch attendance
+      fireEvent.change(screen.getByLabelText('Search invitation codes'), {
+        target: { value: '' },
+      });
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: 'Select all filtered invitation codes' })
+      );
+      expect(screen.getByText('250 Selected')).toBeInTheDocument();
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mark Attending' }));
+
+      await waitFor(() => {
+        expect(mockBatchAttendance).toHaveBeenCalledWith(
+          imported250.map((g) => g.id),
+          'attending'
+        );
+        expect(screen.getByText('Marked 250 guest(s) as attending.')).toBeInTheDocument();
+      });
+    }, 20000);
+
+    it('displays headcounts alongside household counts, skips declined rows in catering, counts kids tags & meal totals, and enriches guest cards', async () => {
+      const enrichedCodes = [
+        {
+          id: 'g-attending-1',
+          guestName: 'Elena Gilbert',
+          code: 'ELENA01',
+          used: true,
+          dietaryNotes: 'Gluten-Free',
+          extraFields: {
+            attendanceStatus: 'attending',
+            attendingPlusOneCount: 2,
+            plusOneNames: ['Damon Salvatore', 'Bonnie Bennett'],
+            dietaryTags: ['gluten-free', 'kids'],
+            mealSummary: 'Reception - Elena Gilbert: Herb Salmon (gluten-free); Damon Salvatore: Filet Mignon; Bonnie Bennett: Kids Pasta (kids)',
+            customAnswersSummary: 'Reception - Need shuttle?: Yes',
+            eventRsvps: [
+              {
+                subEventId: 'se-rec',
+                subEventTitle: 'Reception',
+                status: 'attending',
+                plusOneCount: 2,
+              },
+            ],
+          },
+        },
+        {
+          id: 'g-declined-1',
+          guestName: 'Stefan Declined',
+          code: 'STEFAN02',
+          used: true,
+          dietaryNotes: 'Vegan, Peanut Allergy',
+          extraFields: {
+            attendanceStatus: 'declined',
+            dietaryTags: ['vegan', 'nut-free'],
+          },
+        },
+      ];
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: enrichedCodes,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      global.fetch = jest.fn().mockImplementation((url: string) => {
+        if (url === '/api/admin/sub-events/rsvp-summary') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                success: true,
+                data: {
+                  global: {
+                    totalInvitations: 2,
+                    attendingHouseholds: 1,
+                    declinedHouseholds: 1,
+                    pendingHouseholds: 0,
+                    attendingHeadcount: 3,
+                    attendingPlusOnes: 2,
+                    declinedHeadcount: 1,
+                    pendingHeadcount: 0,
+                    dietary: {
+                      totalWithRestrictions: 1,
+                      glutenFree: 1,
+                      vegetarian: 0,
+                      vegan: 0,
+                      dairyFree: 0,
+                      nutFree: 0,
+                      halal: 0,
+                      kosher: 0,
+                      kids: 1,
+                      other: 0,
+                    },
+                    mealTotals: [
+                      {
+                        optionId: 'meal-salmon',
+                        label: 'Herb Salmon',
+                        count: 1,
+                        subEventId: 'se-rec',
+                        subEventTitle: 'Reception',
+                        dietaryTags: ['gluten-free'],
+                      },
+                      {
+                        optionId: 'meal-steak',
+                        label: 'Filet Mignon',
+                        count: 1,
+                        subEventId: 'se-rec',
+                        subEventTitle: 'Reception',
+                        dietaryTags: [],
+                      },
+                      {
+                        optionId: 'meal-kids',
+                        label: 'Kids Pasta',
+                        count: 1,
+                        subEventId: 'se-rec',
+                        subEventTitle: 'Reception',
+                        dietaryTags: ['kids'],
+                      },
+                    ],
+                    questionBreakdowns: [
+                      {
+                        subEventId: 'se-rec',
+                        subEventTitle: 'Reception',
+                        questionId: 'q-shuttle',
+                        prompt: 'Need shuttle?',
+                        type: 'choice',
+                        totalResponses: 1,
+                        optionCounts: [
+                          { option: 'Yes', count: 1 },
+                          { option: 'No', count: 0 },
+                        ],
+                        textResponses: [],
+                      },
+                    ],
+                  },
+                  subEvents: [],
+                },
+              }),
+          });
+        }
+        return Promise.resolve({ ok: false });
+      }) as any;
+
+      const { container } = renderComponent();
+
+      // Headcount alongside household count
+      await waitFor(() => {
+        expect(screen.getByTestId('rsvp-headcount-summary')).toHaveTextContent(
+          'Attending: 3 Guests (1 Household, +2 Plus-Ones)'
+        );
+      });
+
+      // Declined Stefan's Vegan & Nut allergy notes skipped -> only 1 Guest with Dietary Notes, Kids = 1
+      const cateringWidget = screen.getByTestId('catering-summary-widget');
+      const mealTotalsEl = await within(cateringWidget).findByTestId('catering-meal-totals');
+      expect(mealTotalsEl).toHaveTextContent('Herb Salmon:');
+      expect(within(cateringWidget).getByText('1 Guest with Dietary Notes')).toBeInTheDocument();
+      expect(within(cateringWidget).getByTestId('catering-kids-tile')).toHaveTextContent('1');
+      expect(within(cateringWidget).getByTestId('catering-question-totals')).toHaveTextContent(
+        'Reception: Need shuttle?'
+      );
+
+      // Enriched guest card details
+      expect(screen.getByTestId('attending-plus-one-badge')).toHaveTextContent(
+        '+2 Plus-Ones Attending'
+      );
+      expect(screen.getByTestId('plus-one-names')).toHaveTextContent(
+        'Plus-One: Damon Salvatore, Bonnie Bennett'
+      );
+      expect(screen.getByTestId('guest-event-rsvp-pills')).toHaveTextContent(
+        'Reception: Attending (+2)'
+      );
+      expect(screen.getByTestId('guest-meal-selections')).toHaveTextContent('Herb Salmon');
+      expect(screen.getByTestId('guest-custom-answers')).toHaveTextContent('Need shuttle?: Yes');
+
+      const axeResults = await axe(container);
+      expect(axeResults).toHaveNoViolations();
+    }, 20000);
   });
 });
 

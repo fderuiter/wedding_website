@@ -270,6 +270,118 @@ export const handlers = [
     }
   }),
 
+  // Admin invitation catalog endpoint (bounded up to 1,000 invitations)
+  http.get('*/api/admin/invitation-codes/catalog', () => {
+    return HttpResponse.json({
+      success: true,
+      data: {
+        items: [],
+        total: 0,
+        page: 1,
+        limit: 1000,
+        totalPages: 1,
+      },
+    });
+  }),
+
+  // Admin sub-event access matrix default handler
+  http.get('*/api/admin/sub-events/access', () => {
+    return HttpResponse.json({
+      success: true,
+      data: {
+        subEvents: [],
+        invitationCodes: [],
+      },
+    });
+  }),
+
+  // Admin server-side RSVP summary endpoint
+  http.get('*/api/admin/sub-events/rsvp-summary', () => {
+    return HttpResponse.json({
+      success: true,
+      data: {
+        global: {
+          totalInvitations: 0,
+          attendingHouseholds: 0,
+          declinedHouseholds: 0,
+          pendingHouseholds: 0,
+          attendingHeadcount: 0,
+          attendingPlusOnes: 0,
+          declinedHeadcount: 0,
+          pendingHeadcount: 0,
+          dietary: {
+            totalWithRestrictions: 0,
+            glutenFree: 0,
+            vegetarian: 0,
+            vegan: 0,
+            dairyFree: 0,
+            nutFree: 0,
+            halal: 0,
+            kosher: 0,
+            other: 0,
+            kids: 0,
+          },
+          mealTotals: [],
+          questionBreakdowns: [],
+        },
+        subEvents: [],
+      },
+    });
+  }),
+
+  // Admin RSVP detail & override endpoint
+  http.get('*/api/admin/invitation-codes/rsvps', ({ request }) => {
+    const url = new URL(request.url);
+    const invitationCodeId = url.searchParams.get('invitationCodeId') || 'inv-mock';
+    return HttpResponse.json({
+      success: true,
+      data: {
+        invitationCode: {
+          id: invitationCodeId,
+          code: 'MOCKCODE',
+          guestName: 'Mock Guest',
+          plusOneAllocations: 1,
+          dietaryNotes: '',
+          used: false,
+          partyTags: [],
+        },
+        subEvents: [],
+        rsvps: [],
+      },
+    });
+  }),
+
+  http.put('*/api/admin/invitation-codes/rsvps', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    if (Array.isArray(body.invitationCodeIds)) {
+      return HttpResponse.json({
+        success: true,
+        data: {
+          updatedCount: body.invitationCodeIds.length,
+          records: [],
+        },
+      });
+    }
+    const invitationCodeId =
+      typeof body.invitationCodeId === 'string' ? body.invitationCodeId : 'inv-mock';
+    return HttpResponse.json({
+      success: true,
+      data: {
+        invitationCode: {
+          id: invitationCodeId,
+          code: 'MOCKCODE',
+          guestName: 'Mock Guest',
+          plusOneAllocations: 1,
+          dietaryNotes: '',
+          used: true,
+          partyTags: [],
+        },
+        subEvents: [],
+        rsvps: [],
+      },
+    });
+  }),
+
   // Mock Leaflet tiles for ThingsToDoMap (CartoDB / OpenStreetMap)
   http.get('https://*.basemaps.cartocdn.com/*', () => {
     return new HttpResponse(TRANSPARENT_PNG, {
