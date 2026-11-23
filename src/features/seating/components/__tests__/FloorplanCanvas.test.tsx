@@ -1293,5 +1293,132 @@ describe('FloorplanCanvas component', () => {
       expect(results).toHaveNoViolations();
     });
   });
+
+  describe('Inline plus-one chairs and zero-capacity landmarks', () => {
+    it('renders distinct inline chairs for plus-ones with +1 badges and blocks multi-chair overflow drops', () => {
+      const onDropGuestOnTable = jest.fn();
+      const tableWithPlusOnes: SeatingTableDTO = {
+        id: 'tbl-plus',
+        name: 'Garden Table',
+        shape: 'round',
+        capacity: 4,
+        x: 80,
+        y: 80,
+        width: 130,
+        height: 130,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-host',
+            code: 'HOST1',
+            guestName: 'Alex Rivera',
+            tableId: 'tbl-plus',
+            seatNumber: 1,
+            plusOneSeatNumbers: [2],
+            plusOneAllocations: 1,
+            partyTags: [],
+            isSample: false,
+            used: true,
+            extraFields: { attending: true, plusOneNames: ['Jordan Rivera'] },
+          },
+        ],
+      };
+
+      const incomingPartyOfThree: InvitationCodeDTO = {
+        id: 'g-incoming-3',
+        code: 'INC3',
+        guestName: 'Sam Patel',
+        tableId: null,
+        seatNumber: null,
+        plusOneSeatNumbers: [],
+        plusOneAllocations: 2,
+        partyTags: [],
+        isSample: false,
+        used: true,
+        extraFields: { attending: true, plusOneNames: ['Plus One 1', 'Plus One 2'] },
+      };
+
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[tableWithPlusOnes]}
+          allGuests={[...(tableWithPlusOnes.invitationCodes ?? []), incomingPartyOfThree]}
+          onDropGuestOnTable={onDropGuestOnTable}
+        />
+      );
+
+      // Seat 1 is primary guest Alex Rivera; Seat 2 is plus-one Jordan Rivera
+      expect(screen.getByRole('button', { name: 'Seat 1: Alex Rivera' })).not.toHaveAttribute('data-is-plus-one');
+      const plusOneChair = screen.getByRole('button', { name: /Seat 2: Jordan Rivera \(Alex Rivera \+1\)/i });
+      expect(plusOneChair).toHaveAttribute('data-is-plus-one', 'true');
+      expect(screen.getByTestId('seat-plus-one-badge')).toHaveTextContent('+1');
+
+      // Dropping incomingPartyOfThree (3 chairs needed) onto Garden Table (only 2 open chairs: seats 3 & 4) is blocked
+      const tableNode = screen.getByRole('button', { name: /^Garden Table, shape/i });
+      fireEvent.drop(tableNode, {
+        dataTransfer: {
+          getData: (format: string) => (format === 'text/plain' ? 'g-incoming-3' : ''),
+        },
+      });
+      expect(onDropGuestOnTable).not.toHaveBeenCalled();
+      expect(
+        screen.getByText('Table "Garden Table" only has 2 open seats for Sam Patel (3 chairs needed).')
+      ).toBeInTheDocument();
+    });
+
+    it('renders draggable, rotatable zero-capacity landmarks without chairs and rejects guest drops', () => {
+      const onDropGuestOnTable = jest.fn();
+      const onUpdateTablePosition = jest.fn();
+      const onUpdateTableRotation = jest.fn();
+      const danceFloor: SeatingTableDTO = {
+        id: 'lm-1',
+        name: 'Main Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        x: 200,
+        y: 160,
+        width: 220,
+        height: 180,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[danceFloor]}
+          selectedTableId="lm-1"
+          onDropGuestOnTable={onDropGuestOnTable}
+          onUpdateTablePosition={onUpdateTablePosition}
+          onUpdateTableRotation={onUpdateTableRotation}
+        />
+      );
+
+      const landmarkNode = screen.getByRole('button', {
+        name: /Main Dance Floor, landmark Dance Floor, 0 seats/i,
+      });
+      expect(landmarkNode).toHaveAttribute('data-table-landmark', 'true');
+      expect(landmarkNode.querySelectorAll('[data-seat-number]')).toHaveLength(0);
+
+      // Supports keyboard drag & rotation
+      fireEvent.keyDown(landmarkNode, { key: 'ArrowRight' });
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('lm-1', 210, 160);
+      fireEvent.keyDown(landmarkNode, { key: 'r' });
+      expect(onUpdateTableRotation).toHaveBeenCalledWith('lm-1', 45);
+
+      // Rejects guest drops
+      fireEvent.drop(landmarkNode, {
+        dataTransfer: {
+          getData: (format: string) => (format === 'text/plain' ? 'guest-1' : ''),
+        },
+      });
+      expect(onDropGuestOnTable).not.toHaveBeenCalled();
+      expect(
+        screen.getByText('Cannot assign guests to landmark "Main Dance Floor".')
+      ).toBeInTheDocument();
+    });
+  });
 });
 
