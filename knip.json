@@ -31,6 +31,8 @@
   "github-actions": false,
   "ignore": ["next-env.d.ts", ".next/**"],
   "ignoreDependencies": [
+    "@electric-sql/pglite",
+    "@electric-sql/pglite-socket",
     "tailwindcss",
     "lint-staged",
     "vitepress",

@@ -52,8 +52,9 @@ The platform relies on environment variables for database connections, administr
    Open `.env` in your editor and review or customize the core runtime variables. By default, `DATABASE_URL` matches the local PostgreSQL container (`POSTGRES_USER=wedding`, `POSTGRES_PASSWORD=wedding123`, `POSTGRES_DB=wedding` bound on `127.0.0.1:5432` in [`docker-compose.yml`](../docker-compose.yml) / [`docker-compose.ci.yml`](../docker-compose.ci.yml)):
 
    ```env
-   # PostgreSQL connection (matches `DB_PASSWORD=wedding123 docker compose up -d db` local setup)
+   # PostgreSQL connection (matches `docker compose up -d db` local setup)
    DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding?schema=public"
+   DB_PASSWORD="wedding123"
 
    # Required for Admin Login (16-byte salt + 64-byte scrypt hash verified by src/utils/password.ts, NOT plaintext)
    ADMIN_PASSWORD="scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
@@ -84,6 +85,7 @@ The platform relies on environment variables for database connections, administr
    - `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, `S3_PUBLIC_URL`: S3/R2 object storage settings. Keep all six commented out locally so [`src/utils/storage.ts`](../src/utils/storage.ts) uses `LocalStorageProvider`.
    - `CRON_SECRET`: Optional bearer secret for scheduled broadcast cron endpoints.
    - `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`: Optional Stripe card checkout credentials (leave commented out for direct transfer registry funds).
+   - `DB_USER`, `DB_NAME`, `DB_PORT`, `CONTAINER_DATABASE_URL`: Optional Docker Compose PostgreSQL and external container database overrides (`NODE_ENV` is also commented out so host processes default to `development` while Next.js builds use `production`).
    - `HISTORY_VERSION_LIMIT`: Maximum number of historical versions retained for content audits (defaults to `50`).
 
 ---
@@ -95,7 +97,7 @@ The platform relies on environment variables for database connections, administr
    Start the PostgreSQL container and apply the Prisma schema to create application tables:
 
    ```bash
-   DB_PASSWORD=wedding123 docker compose up -d db
+   docker compose up -d db
    npm run migrate:dev
    ```
 

@@ -1,5 +1,5 @@
 import { validateAndResolveHost } from './ssrf';
-import { Agent, Dispatcher, Dispatcher1Wrapper } from 'undici';
+import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
 type Dispatcher1WrapperStatic = typeof Dispatcher1Wrapper & {
   wrapHandler(_handler: Dispatcher.DispatchHandler): Dispatcher.DispatchHandler;

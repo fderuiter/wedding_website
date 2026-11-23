@@ -1,4 +1,3 @@
-import { AdminEntityUpdateSchema } from '@/utils/adminEntitySchemas';
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -21,8 +20,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, context: { par
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
-  AdminEntityUpdateSchema.safeParse(body);
-  
+
   try {
     const updatedRecord = await serviceData.service.update(id, body);
     return NextResponse.json(updatedRecord);
