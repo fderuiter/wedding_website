@@ -6,6 +6,8 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     try {
+      const { installHttpSocketIpBoundary } = await import('@/lib/socket-ip-boundary.js');
+      installHttpSocketIpBoundary();
       await import('@/env');
     } catch (error) {
       process.exitCode = 1;

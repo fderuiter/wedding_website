@@ -172,16 +172,20 @@ This project features an automated, zero-configuration local testing setup. Runn
 2. Waits for the database to be fully ready and accepting connections.
 3. Automatically provisions and synchronizes the Prisma schema to an isolated, dedicated test database (`wedding_test`). This ensures that executing the test suite will never delete, modify, or insert records into your default development database.
 
-To execute the unit and integration test suite:
+To execute the unit and integration test suite locally (without coverage overhead):
 
 ```bash
 npm test
+
+# Or run a targeted test file:
+npm test -- src/utils/__tests__/ApiError.test.ts
 ```
 
-To run tests in watch mode:
+To run tests in watch mode or enforce full repository coverage thresholds (`80%` lines, `68%` branches):
 
 ```bash
 npm run test:watch
+npm run test:cov
 ```
 
 ### First-Run Setup & Bootstrap
