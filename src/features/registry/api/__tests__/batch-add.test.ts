@@ -44,6 +44,7 @@ describe('POST /api/registry/items/batch', () => {
 
     const req = new Request('http://localhost/api/registry/items/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: validItems }),
     });
 
@@ -56,6 +57,7 @@ describe('POST /api/registry/items/batch', () => {
 
     const req = new Request('http://localhost/api/registry/items/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: [] }),
     });
 
@@ -68,6 +70,7 @@ describe('POST /api/registry/items/batch', () => {
 
     const req = new Request('http://localhost/api/registry/items/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         items: [
           { name: 'Valid Item', price: 10, category: 'Home' },
@@ -89,6 +92,7 @@ describe('POST /api/registry/items/batch', () => {
 
     const req = new Request('http://localhost/api/registry/items/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: validItems }),
     });
 

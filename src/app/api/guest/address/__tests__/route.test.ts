@@ -109,6 +109,7 @@ describe('Guest Postal Address API (/api/guest/address)', () => {
       mockGetGuestInviteSession.mockResolvedValue(null);
       const req = new NextRequest('http://localhost/api/guest/address', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ addressLine1: '123 Main St' }),
       });
 
@@ -120,6 +121,7 @@ describe('Guest Postal Address API (/api/guest/address)', () => {
       mockGetGuestInviteSession.mockResolvedValue({ code: 'VALID100', guestName: 'Alice' });
       const req = new NextRequest('http://localhost/api/guest/address', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           addressLine1: 'A'.repeat(200), // Exceeds 150 limit
         }),
@@ -160,6 +162,7 @@ describe('Guest Postal Address API (/api/guest/address)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -182,6 +185,7 @@ describe('Guest Postal Address API (/api/guest/address)', () => {
 
       const req = new NextRequest('http://localhost/api/guest/address', {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           addressLine1: '789 Sample Ave',
           city: 'Austin',

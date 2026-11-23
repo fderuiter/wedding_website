@@ -1,7 +1,7 @@
 /** @jest-environment node */
 
 import { NextRequest } from 'next/server';
-import { GET } from '../route';
+import { GET, POST } from '../route';
 import { prisma } from '@/lib/prisma';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
 import { GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
@@ -17,7 +17,7 @@ jest.mock('@/lib/prisma', () => ({
   },
 }));
 
-describe('GET /api/registry/validate-code', () => {
+describe('/api/registry/validate-code', () => {
   const mockFindUnique = prisma.invitationCode.findUnique as jest.Mock;
   const mockRecipientUpdateMany = prisma.broadcastRecipient.updateMany as jest.Mock;
 
@@ -26,13 +26,13 @@ describe('GET /api/registry/validate-code', () => {
     resetRateLimitsForTesting();
   });
 
-  test('returns 400 when code query parameter is missing', async () => {
+  test('GET returns 400 when code query parameter is missing', async () => {
     const req = new NextRequest('http://localhost/api/registry/validate-code');
     const res = await GET(req);
     expect(res.status).toBe(400);
   });
 
-  test('returns 404 when invitation code does not exist or is sample data', async () => {
+  test('GET returns 404 when invitation code does not exist or is sample data', async () => {
     mockFindUnique.mockResolvedValueOnce(null);
     const missingRes = await GET(new NextRequest('http://localhost/api/registry/validate-code?code=NOPE1234'));
     expect(missingRes.status).toBe(404);
@@ -43,7 +43,7 @@ describe('GET /api/registry/validate-code', () => {
     expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
   });
 
-  test('issues guest_invite_session cookie and transitions SENT BroadcastRecipient rows to VIEWED on valid non-sample invitation code', async () => {
+  test('GET is strictly read-only: validates active code without issuing cookies or mutating BroadcastRecipient', async () => {
     mockFindUnique.mockResolvedValueOnce({
       id: 'inv-valid-1',
       code: 'VALID123',
@@ -52,6 +52,33 @@ describe('GET /api/registry/validate-code', () => {
     });
 
     const res = await GET(new NextRequest('http://localhost/api/registry/validate-code?code=valid123'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data).toEqual({
+      valid: true,
+      guestName: 'Alex & Sam',
+      code: 'VALID123',
+    });
+    expect(res.cookies.get(GUEST_INVITE_COOKIE)).toBeUndefined();
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
+  });
+
+  test('POST issues guest_invite_session cookie and transitions SENT BroadcastRecipient rows to VIEWED on valid non-sample invitation code', async () => {
+    mockFindUnique.mockResolvedValueOnce({
+      id: 'inv-valid-1',
+      code: 'VALID123',
+      guestName: 'Alex & Sam',
+      isSample: false,
+    });
+
+    const res = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'valid123' }),
+      })
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toEqual({
@@ -71,12 +98,43 @@ describe('GET /api/registry/validate-code', () => {
     });
   });
 
-  test('enforces 5-attempt lockout per 15 minutes and returns 429 on 6th attempt', async () => {
+  test('POST rejects cross-site Fetch Metadata with 403 and non-JSON Content-Type with 415', async () => {
+    const crossSiteRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Sec-Fetch-Site': 'cross-site',
+        },
+        body: JSON.stringify({ code: 'VALID123' }),
+      })
+    );
+    expect(crossSiteRes.status).toBe(403);
+    expect(mockFindUnique).not.toHaveBeenCalled();
+
+    const textPlainRes = await POST(
+      new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        body: '{"code":"VALID123"}',
+      })
+    );
+    expect(textPlainRes.status).toBe(415);
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+
+  test('enforces 5-attempt lockout per 15 minutes and returns 429 on 6th attempt across GET and POST', async () => {
     mockFindUnique.mockResolvedValue(null);
 
     for (let i = 1; i <= 5; i++) {
-      const req = new NextRequest(`http://localhost/api/registry/validate-code?code=MARK000${i}`);
-      const res = await GET(req);
+      const req = new NextRequest('http://localhost/api/registry/validate-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: `MARK000${i}` }),
+      });
+      const res = await POST(req);
       expect(res.status).toBe(404);
     }
 

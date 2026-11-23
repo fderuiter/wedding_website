@@ -4,7 +4,11 @@ import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
 import { isProtectedRoute } from '@/lib/routes';
-import { isHostAllowed, isHostSyntaxValid } from '@/utils/hostValidation';
+import {
+  isHostAllowed,
+  isHostSyntaxValid,
+  validateMutatingRequestOrigin,
+} from '@/utils/hostValidation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
 import { timingSafeEqualJS } from '@/utils/crypto';
 
@@ -69,6 +73,14 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const originViolation = validateMutatingRequestOrigin(request);
+  if (originViolation) {
+    return NextResponse.json(
+      { success: false, error: originViolation },
+      { status: 403 }
+    );
   }
 
   const isApiRoute = normalizedPath === '/api' || normalizedPath.startsWith('/api/');

@@ -1,24 +1,58 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
+import { ValidateInvitationCodeSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  setGuestInviteSessionCookie,
+  signGuestInviteSessionToken,
+} from '@/core/auth/guestInviteSession';
 
-export const GET = withApiMiddleware(async (request: NextRequest) => {
-  const { searchParams } = new URL(request.url);
-  const code = searchParams.get('code')?.trim().toUpperCase();
-
+async function findActiveInvitationCode(rawCode: string | undefined | null) {
+  const code = rawCode?.trim().toUpperCase();
   if (!code) {
     throw new ApiError(400, 'Code is required.');
   }
 
   const invite = await prisma.invitationCode.findUnique({
-    where: { code }
+    where: { code },
   });
 
   if (!invite || invite.isSample) {
     throw new ApiError(404, 'Invalid invitation code.');
   }
+
+  return invite;
+}
+
+export const GET = withApiMiddleware(async (request: NextRequest) => {
+  const { searchParams } = new URL(request.url);
+  const invite = await findActiveInvitationCode(searchParams.get('code'));
+
+  return NextResponse.json({
+    valid: true,
+    guestName: invite.guestName,
+    code: invite.code,
+  });
+});
+
+export const POST = withApiMiddleware(async (request: NextRequest) => {
+  assertJsonContentType(request);
+
+  let rawBody: unknown;
+  try {
+    rawBody = await request.json();
+  } catch {
+    throw new ApiError(400, 'Invalid JSON body.');
+  }
+
+  const parsed = ValidateInvitationCodeSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new ApiError(400, parsed.error.issues[0]?.message || 'Code is required.');
+  }
+
+  const invite = await findActiveInvitationCode(parsed.data.code);
 
   if (invite.id && typeof prisma.broadcastRecipient?.updateMany === 'function') {
     await prisma.broadcastRecipient.updateMany({
@@ -43,13 +77,6 @@ export const GET = withApiMiddleware(async (request: NextRequest) => {
     code: invite.code,
   });
 
-  response.cookies.set(GUEST_INVITE_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60,
-  });
-
+  setGuestInviteSessionCookie(response, token, request);
   return response;
 });

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
 import { isGuestRequest } from '@/core/auth/guest.server';
-import { getGuestInviteSession, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import {
+  clearGuestInviteSessionCookie,
+  getGuestInviteSession,
+} from '@/core/auth/guestInviteSession';
 import { getSignedGuestInviteSession } from '@/core/auth/guestInviteToken';
+import { validateMutatingRequestOrigin } from './hostValidation';
 import {
   rateLimit,
   checkAuthLockout,
@@ -109,6 +113,17 @@ export function withApiMiddleware(
       
       const isAdminPath = isProtectedRoute(pathname, method);
 
+      // 0. Fetch Metadata & Canonical Origin Validation for Mutating Requests
+      if (req) {
+        const originViolation = validateMutatingRequestOrigin(req);
+        if (originViolation) {
+          return NextResponse.json(
+            { success: false, error: originViolation },
+            { status: 403 }
+          );
+        }
+      }
+
       // 1. Rate Limiting
       // Check active AuthLockout state before handlers run, cap bursts at 100 req/min in generalStore,
       // and record failed auth attempts (401/403/404); probe endpoints (/api/health, /api/live) are exempt.
@@ -178,13 +193,7 @@ export function withApiMiddleware(
                 { status: 401 }
               );
               unauthorizedResponse.headers.set('x-api-version', 'v2');
-              unauthorizedResponse.cookies.set(GUEST_INVITE_COOKIE, '', {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                path: '/',
-                maxAge: 0,
-              });
+              clearGuestInviteSessionCookie(unauthorizedResponse, req);
               return unauthorizedResponse;
             }
           }
@@ -273,49 +282,59 @@ export function withApiMiddleware(
       }
 
       response.headers.forEach((value, key) => {
-        finalResponse.headers.set(key, value);
+        if (key.toLowerCase() !== 'set-cookie') {
+          finalResponse.headers.set(key, value);
+        }
       });
 
       finalResponse.headers.set('x-api-version', 'v2');
 
-      // Copy cookies from original response if it was a NextResponse
-      if ('cookies' in response) {
-        const nextRes = response as any;
-        if (typeof nextRes.cookies.getAll === 'function') {
-          nextRes.cookies.getAll().forEach((cookie: any) => {
-            finalResponse.cookies.set(cookie);
+      const copiedCookieNames = new Set<string>();
+      const hasStructuredCookies =
+        'cookies' in response &&
+        typeof (response as NextResponse).cookies?.getAll === 'function' &&
+        (response as NextResponse).cookies.getAll().length > 0;
+
+      if (hasStructuredCookies) {
+        finalResponse.headers.delete('set-cookie');
+        (response as NextResponse).cookies.getAll().forEach((cookie) => {
+          const { name, value, ...cookieOptions } = cookie;
+          copiedCookieNames.add(name);
+          finalResponse.cookies.set(name, value, cookieOptions);
+        });
+      }
+
+      const rawSetCookies =
+        typeof response.headers.getSetCookie === 'function'
+          ? response.headers.getSetCookie()
+          : Array.from(response.headers.entries())
+            .filter(([k]) => k.toLowerCase() === 'set-cookie')
+            .map(([, v]) => v);
+
+      if (rawSetCookies.length > 0) {
+        if (!hasStructuredCookies) {
+          rawSetCookies.forEach((c) => {
+            const parts = c.split(';');
+            const [nameValue] = parts;
+            if (nameValue) {
+              const eqIndex = nameValue.indexOf('=');
+              if (eqIndex !== -1) {
+                const name = nameValue.substring(0, eqIndex).trim();
+                const value = nameValue.substring(eqIndex + 1);
+                if (!copiedCookieNames.has(name)) {
+                  copiedCookieNames.add(name);
+                  finalResponse.cookies.set(name, value);
+                }
+              }
+            }
           });
         }
-      }
-      
-      const allHeaders = Array.from(response.headers.entries());
-      const setCookieHeaders = allHeaders.filter(([k]) => k.toLowerCase() === 'set-cookie').map(([,v]) => v);
-      
-      setCookieHeaders.forEach(c => {
-        // Some test environments don't sync headers to .cookies automatically
-        // We do a basic parse of the Set-Cookie string to ensure .cookies is populated
-        const parts = c.split(';');
-        const [nameValue] = parts;
-        if (nameValue) {
-          const eqIndex = nameValue.indexOf('=');
-          if (eqIndex !== -1) {
-            const name = nameValue.substring(0, eqIndex).trim();
-            const value = nameValue.substring(eqIndex + 1);
-            finalResponse.cookies.set(name, value);
-          }
-        }
-        // Also ensure it is in the headers exactly as requested
-        finalResponse.headers.append('set-cookie', c);
-      });
-      
-      // Also copy set-cookie headers manually if they exist and cookies.getAll wasn't sufficient
-      if (typeof response.headers.getSetCookie === 'function') {
-        const setCookies = response.headers.getSetCookie();
-        setCookies.forEach(c => {
+        finalResponse.headers.delete('set-cookie');
+        rawSetCookies.forEach((c) => {
           finalResponse.headers.append('set-cookie', c);
         });
       }
-      
+
       return finalResponse;
       
     } catch (error: any) {

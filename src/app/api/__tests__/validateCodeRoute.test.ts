@@ -5,14 +5,21 @@ jest.mock('@/lib/prisma', () => ({
     invitationCode: {
       findUnique: jest.fn(),
     },
+    broadcastRecipient: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   },
 }));
 
-import { GET as validateCodeRoute } from '@/app/api/registry/validate-code/route';
+import {
+  GET as validateCodeRoute,
+  POST as validateCodePostRoute,
+} from '@/app/api/registry/validate-code/route';
 import { prisma } from '@/lib/prisma';
 import { verifyGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
 
 const mockFindUnique = prisma.invitationCode.findUnique as jest.Mock;
+const mockRecipientUpdateMany = prisma.broadcastRecipient.updateMany as jest.Mock;
 
 describe('validate-code Route', () => {
   beforeEach(() => {
@@ -84,7 +91,7 @@ describe('validate-code Route', () => {
     });
   });
 
-  it('returns 200 with guestName and valid: true for an active, unused code and sets guest_invite_session cookie', async () => {
+  it('GET returns 200 with guestName and valid: true without setting cookies or mutating BroadcastRecipient', async () => {
     mockFindUnique.mockResolvedValue({
       id: 'invite-123',
       code: 'GOODCODE',
@@ -106,8 +113,40 @@ describe('validate-code Route', () => {
       }
     });
 
+    expect(res.headers.get('set-cookie') || '').toBe('');
+    expect(mockRecipientUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('POST returns 200 with guestName and valid: true for an active code, sets guest_invite_session cookie, and updates BroadcastRecipient', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 'invite-123',
+      code: 'GOODCODE',
+      guestName: 'Jane Smith',
+      used: false,
+    });
+    const req = new Request('http://localhost/api/registry/validate-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'GOODCODE' }),
+    });
+    const res = await validateCodePostRoute(req as any);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      success: true,
+      data: {
+        valid: true,
+        guestName: 'Jane Smith',
+        code: 'GOODCODE',
+      }
+    });
+
     const setCookieHeader = res.headers.get('set-cookie') || '';
     expect(setCookieHeader).toContain('guest_invite_session=');
+    expect(mockRecipientUpdateMany).toHaveBeenCalledWith({
+      where: { invitationCodeId: 'invite-123', status: 'SENT' },
+      data: { status: 'VIEWED' },
+    });
 
     const cookieMatch = setCookieHeader.match(/guest_invite_session=([^;]+)/);
     expect(cookieMatch).not.toBeNull();

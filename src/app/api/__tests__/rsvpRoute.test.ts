@@ -19,6 +19,7 @@ describe('POST /api/rsvp Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ subEventId: 'se-1', status: 'attending' }),
     });
 
@@ -38,6 +39,7 @@ describe('POST /api/rsvp Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ invalidField: 123 }),
     });
 
@@ -69,6 +71,7 @@ describe('POST /api/rsvp Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subEventId: 'se-1',
         status: 'attending',
@@ -105,6 +108,7 @@ describe('POST /api/rsvp Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subEventId: 'se-1',
         status: 'attending',
@@ -128,6 +132,7 @@ describe('POST /api/rsvp Route', () => {
 
     const singleReq = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subEventId: 'sub-ceremony-1',
         status: 'attending',
@@ -145,6 +150,7 @@ describe('POST /api/rsvp Route', () => {
 
     const batchReq = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         rsvps: [
           { subEventId: 'sub-ceremony-1', status: 'attending', plusOneCount: 0 },
@@ -183,6 +189,7 @@ describe('POST /api/rsvp Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/rsvp', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subEventId: 'se-1',
         status: 'attending',

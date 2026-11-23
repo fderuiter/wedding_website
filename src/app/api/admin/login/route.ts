@@ -5,10 +5,11 @@ import { setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
 import { env } from '@/env';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { getAppConfig, isSetupCompleted } from '@/lib/config';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
   const parseResult = AdminLoginSchema.safeParse(body);
   
   if (!parseResult.success) {
@@ -42,6 +43,6 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const token = await signAdminToken({ isAdmin: true, iat, exp });
 
   const response = NextResponse.json({ success: true, requiresSetup });
-  setAdminAuthCookie(response, token);
+  setAdminAuthCookie(response, token, undefined, req);
   return response;
 });

@@ -447,8 +447,9 @@ export function useRegistryContributionMachine({
       setSubmissionError(null);
 
       try {
-        const data = await apiClient.get(
-          `/api/registry/validate-code?code=${encodeURIComponent(code)}`,
+        const data = await apiClient.post(
+          '/api/registry/validate-code',
+          { code },
           { signal: controller.signal }
         );
 

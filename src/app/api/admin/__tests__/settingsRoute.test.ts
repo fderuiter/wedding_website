@@ -167,7 +167,10 @@ const updatedConfig = AppConfigSchema.parse({
 function makeAuthReq(body?: object) {
   return new NextRequest('http://localhost/api/admin/settings', {
     method: body ? 'PUT' : 'GET',
-    headers: { cookie: 'admin_auth=valid-token' },
+    headers: {
+      cookie: 'admin_auth=valid-token',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -701,7 +704,9 @@ describe('Single-Site Default Architecture (MULTISITE_ENABLED=false)', () => {
   it('POST /api/admin/settings rejects profile creation when multisite is disabled', async () => {
     const req = new NextRequest('http://localhost/api/admin/settings', {
       method: 'POST',
-      headers: { cookie: 'admin_auth=valid-token' },
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: 'admin_auth=valid-token' },
       body: JSON.stringify({
         brideName: 'StagingBride',
         groomName: 'StagingGroom',
@@ -801,7 +806,9 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
 
     const req = new NextRequest('http://localhost/api/admin/settings', {
       method: 'POST',
-      headers: { cookie: 'admin_auth=valid-token' },
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: 'admin_auth=valid-token' },
       body: JSON.stringify({
         partner1Name: 'StagingBride',
         partner2Name: 'StagingGroom',
@@ -831,7 +838,9 @@ describe('Multi-Profile Routing and Settings API (MULTISITE_ENABLED=true)', () =
 
     const req = new NextRequest('http://localhost/api/admin/settings', {
       method: 'POST',
-      headers: { cookie: 'admin_auth=valid-token' },
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: 'admin_auth=valid-token' },
       body: JSON.stringify({
         brideName: 'NewBride',
         groomName: 'NewGroom',

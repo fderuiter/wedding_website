@@ -1,33 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { SeatingTableAdminService, AutoAssignSchema, type AutoAssignOptions } from '@/features/seating';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   let author = 'Admin';
   const options: AutoAssignOptions = {};
 
-  try {
-    const body = await request.json();
-    const parsed = AutoAssignSchema.safeParse(body);
-    if (parsed.success) {
-      if (parsed.data?.author) {
-        author = parsed.data.author.trim() || 'Admin';
-      }
-      if (parsed.data?.includePending !== undefined) {
-        options.includePending = parsed.data.includePending;
-      }
-      if (parsed.data?.keepHouseholdsIntact !== undefined) {
-        options.keepHouseholdsIntact = parsed.data.keepHouseholdsIntact;
-      }
-      if (parsed.data?.partyGroup !== undefined) {
-        options.partyGroup = parsed.data.partyGroup;
-      }
-      if (parsed.data?.partyTags !== undefined) {
-        options.partyTags = parsed.data.partyTags;
-      }
+  const body = await parseJsonRequestBody(request, { allowEmpty: true });
+  const parsed = AutoAssignSchema.safeParse(body);
+  if (parsed.success) {
+    if (parsed.data?.author) {
+      author = parsed.data.author.trim() || 'Admin';
     }
-  } catch {
-    // Optional request body
+    if (parsed.data?.includePending !== undefined) {
+      options.includePending = parsed.data.includePending;
+    }
+    if (parsed.data?.keepHouseholdsIntact !== undefined) {
+      options.keepHouseholdsIntact = parsed.data.keepHouseholdsIntact;
+    }
+    if (parsed.data?.partyGroup !== undefined) {
+      options.partyGroup = parsed.data.partyGroup;
+    }
+    if (parsed.data?.partyTags !== undefined) {
+      options.partyTags = parsed.data.partyTags;
+    }
   }
 
   const seatingService = new SeatingTableAdminService();

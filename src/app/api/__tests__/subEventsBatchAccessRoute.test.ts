@@ -29,6 +29,7 @@ describe('Admin Sub-Event Batch Access Route', () => {
 
     const req = new NextRequest('http://localhost:3000/api/admin/sub-events/access/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         partyTags: ['Bridal Party'],
         subEventIds: ['se-rehearsal'],
@@ -52,6 +53,7 @@ describe('Admin Sub-Event Batch Access Route', () => {
   it('POST returns 400 for invalid payload (missing subEventIds or action)', async () => {
     const req = new NextRequest('http://localhost:3000/api/admin/sub-events/access/batch', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         partyTags: ['Bridal Party'],
       }),

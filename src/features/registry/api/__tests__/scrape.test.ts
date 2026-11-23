@@ -64,6 +64,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -101,6 +102,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: targetUrl }),
     });
 
@@ -136,6 +138,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: costcoUrl }),
     });
 
@@ -158,6 +161,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: costcoUrl }),
     });
 
@@ -179,6 +183,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -200,6 +205,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -240,6 +246,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: amazonUrl }),
     });
 
@@ -279,6 +286,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: amazonUrl }),
     });
 
@@ -323,6 +331,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -379,6 +388,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -427,6 +437,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -466,6 +477,7 @@ describe('POST /api/registry/scrape', () => {
 
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 
@@ -510,6 +522,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -551,6 +564,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -594,6 +608,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -624,6 +639,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -653,6 +669,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -683,6 +700,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -713,6 +731,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -757,6 +776,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -786,6 +806,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -805,6 +826,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: testUrl }),
       });
 
@@ -825,6 +847,7 @@ describe('POST /api/registry/scrape', () => {
 
       const request = new Request('http://localhost/api/registry/scrape', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: 'https://rebind-attack.example.com/product' }),
       });
 
@@ -841,6 +864,7 @@ describe('POST /api/registry/scrape', () => {
     const testUrl = 'https://www.example.com';
     const request = new Request('http://localhost/api/registry/scrape', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: testUrl }),
     });
 

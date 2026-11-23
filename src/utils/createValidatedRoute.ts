@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withApiMiddleware } from './withApiMiddleware';
+import { assertJsonContentType } from './contentType';
 
 interface ValidatedRouteConfig<T extends z.ZodType = any> {
   schema?: T | ((params: any) => T);
@@ -21,6 +22,7 @@ export function createValidatedRoute<T extends z.ZodType>(config: ValidatedRoute
     }
 
     if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      assertJsonContentType(req);
       try {
         body = await req.clone().json();
       } catch {

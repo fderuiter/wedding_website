@@ -1,12 +1,25 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { env } from '@/env';
 import {
-  readRequestCookie,
+  findVerifiedRequestCookie,
+  getSessionCookieOptions,
+  resolveSessionCookieName,
   signCompactToken,
   verifyCompactToken,
 } from './tokenCookieHelpers';
 
 export const GUEST_COOKIE = 'guest_auth';
+
+export function setGuestAuthCookie(
+  response: NextResponse,
+  token: string,
+  req?: NextRequest | Request,
+  maxAge: number = 7 * 24 * 60 * 60
+): NextResponse {
+  const cookieName = resolveSessionCookieName(GUEST_COOKIE, req);
+  response.cookies.set(cookieName, token, getSessionCookieOptions(maxAge, req));
+  return response;
+}
 
 async function getSecret(): Promise<string> {
   const isProduction = (process.env.NODE_ENV || env.NODE_ENV) === 'production';
@@ -82,9 +95,10 @@ export async function verifyGuestToken(token: string): Promise<GuestTokenPayload
 }
 
 export async function isGuestRequest(req?: NextRequest): Promise<boolean> {
-  const cookieValue = await readRequestCookie(GUEST_COOKIE, req);
-  if (!cookieValue) return false;
+  const verified = await findVerifiedRequestCookie(GUEST_COOKIE, req, async (token) => {
+    const payload = await verifyGuestToken(token);
+    return payload && payload.guest === true ? payload : null;
+  });
 
-  const payload = await verifyGuestToken(cookieValue);
-  return Boolean(payload && payload.guest === true);
+  return Boolean(verified);
 }

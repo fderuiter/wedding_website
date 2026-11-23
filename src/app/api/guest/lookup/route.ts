@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { GuestLookupSchema } from '@/utils/validation';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
+  assertJsonContentType(req);
+
   let body: unknown;
   try {
     body = await req.json();

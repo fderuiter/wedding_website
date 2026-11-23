@@ -294,13 +294,19 @@ describe('useGuestAddressPortal hook', () => {
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       const signal = (init?.signal || input?.signal) as AbortSignal;
+      const rawBody =
+        typeof init?.body === 'string'
+          ? init.body
+          : typeof input?.clone === 'function'
+            ? await input.clone().text()
+            : '';
 
-      if (url.includes('validate-code?code=SLOWMOUNT')) {
+      if (url.includes('/api/registry/validate-code') && rawBody.includes('SLOWMOUNT')) {
         signals.mount = signal;
         // Never resolve slowly to test cancellation
         return new Promise(() => {});
       }
-      if (url.includes('validate-code?code=FASTMANUAL')) {
+      if (url.includes('/api/registry/validate-code') && rawBody.includes('FASTMANUAL')) {
         signals.manual = signal;
         return {
           ok: true,
@@ -604,9 +610,21 @@ describe('useGuestAddressPortal hook', () => {
     });
 
     const firstFetchArg = globalFetch.mock.calls[0]?.[0] as string | Request | undefined;
+    const firstFetchInit = globalFetch.mock.calls[0]?.[1] as RequestInit | undefined;
     const firstFetchUrl =
       typeof firstFetchArg === 'string' ? firstFetchArg : firstFetchArg?.url ?? '';
-    expect(firstFetchUrl).toContain('/api/registry/validate-code?code=INVITE77');
+    const firstFetchMethod =
+      firstFetchInit?.method ??
+      (typeof firstFetchArg === 'object' && firstFetchArg ? firstFetchArg.method : undefined);
+    const firstFetchBody =
+      typeof firstFetchInit?.body === 'string'
+        ? firstFetchInit.body
+        : typeof (firstFetchArg as Request | undefined)?.clone === 'function'
+          ? await (firstFetchArg as Request).clone().text()
+          : '{}';
+    expect(firstFetchUrl).toContain('/api/registry/validate-code');
+    expect(firstFetchMethod).toBe('POST');
+    expect(JSON.parse(firstFetchBody)).toEqual({ code: 'INVITE77' });
     expect(replaceStateSpy).toHaveBeenCalledWith(
       expect.anything(),
       '',

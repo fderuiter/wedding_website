@@ -160,6 +160,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: 'wrongpassword' }),
       });
 
@@ -176,6 +177,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           brideName: 'Alice',
@@ -197,6 +199,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: 'secret' }),
       });
 
@@ -271,6 +274,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           brideName: 'Alice',
@@ -354,6 +358,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: 'Alice',
@@ -407,6 +412,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: '  Alex  ',
@@ -466,6 +472,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: 'Jordan',
@@ -508,6 +515,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: '   ',
@@ -596,6 +604,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
         const req = new NextRequest('http://localhost/api/admin/setup', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             password: 'secret',
             ...payload,
@@ -657,6 +666,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           brideName: 'Alice',
@@ -696,6 +706,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           brideName: 'Attacker',
@@ -757,6 +768,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `admin_auth=${token}`,
         },
         body: JSON.stringify({
@@ -801,6 +813,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           brideName: 'Alice',
@@ -859,6 +872,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: 'Alice',
@@ -889,6 +903,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const unauthenticatedReplay = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           brideName: 'Mallory',
@@ -910,6 +925,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
       const completeReq = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           cookie: `admin_auth=${token}`,
         },
         body: JSON.stringify({
@@ -951,6 +967,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: 'Alice',
@@ -984,6 +1001,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
       for (let i = 1; i <= 5; i++) {
         const req = new NextRequest('http://localhost/api/admin/setup', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: `wrong-setup-${i}` }),
         });
         const res = await POST(req);
@@ -992,6 +1010,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req6 = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: 'wrong-setup-6' }),
       });
       const res6 = await POST(req6);
@@ -1025,6 +1044,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
 
       const req = new NextRequest('http://localhost/api/admin/setup', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password: 'secret',
           partner1Name: 'Alice',

@@ -256,9 +256,9 @@ export const GuestSessionProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
 
       try {
-        const data = await apiClient.get(
-          `/api/registry/validate-code?code=${encodeURIComponent(targetCode)}`
-        );
+        const data = await apiClient.post('/api/registry/validate-code', {
+          code: targetCode,
+        });
         if (data && data.valid) {
           const verifiedCode = data.code || targetCode;
 

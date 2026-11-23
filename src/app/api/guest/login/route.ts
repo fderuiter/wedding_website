@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signGuestToken, GUEST_COOKIE } from '@/core/auth/guest.server';
-import { signGuestInviteSessionToken, GUEST_INVITE_COOKIE } from '@/core/auth/guestInviteSession';
+import { setGuestAuthCookie, signGuestToken } from '@/core/auth/guest.server';
+import {
+  setGuestInviteSessionCookie,
+  signGuestInviteSessionToken,
+} from '@/core/auth/guestInviteSession';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/env';
+import { assertJsonContentType } from '@/utils/contentType';
 import { GuestLoginSchema } from '@/utils/validation';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import crypto from 'node:crypto';
@@ -15,6 +19,8 @@ function safeComparePasscode(a: string, b: string): boolean {
 }
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
+  assertJsonContentType(req);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -54,13 +60,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     const token = await signGuestToken({ guest: true, jti: crypto.randomUUID(), iat, exp });
 
     const response = NextResponse.json({ success: true, sessionType: 'guest' });
-    response.cookies.set(GUEST_COOKIE, token, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
-    });
+    setGuestAuthCookie(response, token, req);
     return response;
   }
 
@@ -107,13 +107,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
       sessionType: 'invitation',
       guestName: invite.guestName,
     });
-    response.cookies.set(GUEST_INVITE_COOKIE, inviteToken, {
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
-    });
+    setGuestInviteSessionCookie(response, inviteToken, req);
     return response;
   }
 

@@ -9,6 +9,7 @@ import {
   verifyGuestInviteSessionToken,
   GUEST_INVITE_COOKIE,
 } from '@/core/auth/guestInviteToken';
+import { readRequestCookieCandidates } from '@/core/auth/tokenCookieHelpers';
 import { env } from '@/env';
 import { logger } from '@/lib/logger';
 import * as prismaModule from '@/lib/prisma';
@@ -377,76 +378,67 @@ export function getClientIp(req: NextRequest): string {
   return (hasHeaderReader ? readVerifiedSocketIp(req.headers) : null) ?? '127.0.0.1';
 }
 
-function extractRequestCookie(req: NextRequest, cookieName: string): string | undefined {
-  const fromCookies = req.cookies?.get?.(cookieName)?.value;
-  if (fromCookies) {
-    return fromCookies;
-  }
-  if (typeof req.headers?.get === 'function') {
-    const rawCookieHeader = req.headers.get('cookie');
-    if (rawCookieHeader) {
-      for (const part of rawCookieHeader.split(';')) {
-        const trimmed = part.trim();
-        if (trimmed.startsWith(`${cookieName}=`)) {
-          const rawVal = trimmed.slice(cookieName.length + 1);
-          try {
-            return decodeURIComponent(rawVal);
-          } catch {
-            return rawVal;
-          }
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
 async function getSessionOrIp(req: NextRequest): Promise<string> {
   const adminCookieName = ADMIN_COOKIE || 'admin_auth';
-  const adminCookie = extractRequestCookie(req, adminCookieName);
-  if (adminCookie) {
-    try {
-      if (typeof verifyAdminToken === 'function') {
+  const adminCandidates = await readRequestCookieCandidates(adminCookieName, req, {
+    suppressErrors: true,
+  });
+  if (adminCandidates.length > 0 && typeof verifyAdminToken === 'function') {
+    for (const adminCookie of adminCandidates) {
+      try {
         const payload = await verifyAdminToken(adminCookie);
         if (payload && payload.isAdmin === true) {
           return `session:admin:${adminCookie}`;
         }
+      } catch {
+        // Malformed or invalid admin cookie candidate falls through to next entry
       }
-    } catch {
-      // Malformed or invalid admin cookie falls through
     }
   }
 
   const inviteCookieName = GUEST_INVITE_COOKIE || 'guest_invite_session';
-  const inviteCookie = extractRequestCookie(req, inviteCookieName);
-  if (inviteCookie) {
-    try {
-      const payload =
-        typeof getSignedGuestInviteSession === 'function'
-          ? await getSignedGuestInviteSession(req)
-          : typeof verifyGuestInviteSessionToken === 'function'
-            ? await verifyGuestInviteSessionToken(inviteCookie)
-            : null;
-      if (payload && payload.code && payload.guestName) {
-        return `session:invite:${inviteCookie}`;
+  const inviteCandidates = await readRequestCookieCandidates(inviteCookieName, req, {
+    suppressErrors: true,
+  });
+  if (inviteCandidates.length > 0) {
+    if (typeof verifyGuestInviteSessionToken === 'function') {
+      for (const inviteCookie of inviteCandidates) {
+        try {
+          const payload = await verifyGuestInviteSessionToken(inviteCookie);
+          if (payload && payload.code && payload.guestName) {
+            return `session:invite:${inviteCookie}`;
+          }
+        } catch {
+          // Malformed or invalid invite cookie candidate falls through to next entry
+        }
       }
-    } catch {
-      // Malformed or invalid guest invite cookie falls through
+    }
+    if (typeof getSignedGuestInviteSession === 'function') {
+      try {
+        const payload = await getSignedGuestInviteSession(req);
+        if (payload && payload.code && payload.guestName) {
+          return `session:invite:${inviteCandidates[0]}`;
+        }
+      } catch {
+        // Malformed or invalid guest invite cookie falls through
+      }
     }
   }
 
   const guestCookieName = GUEST_COOKIE || 'guest_auth';
-  const guestCookie = extractRequestCookie(req, guestCookieName);
-  if (guestCookie) {
-    try {
-      if (typeof verifyGuestToken === 'function') {
+  const guestCandidates = await readRequestCookieCandidates(guestCookieName, req, {
+    suppressErrors: true,
+  });
+  if (guestCandidates.length > 0 && typeof verifyGuestToken === 'function') {
+    for (const guestCookie of guestCandidates) {
+      try {
         const payload = await verifyGuestToken(guestCookie);
         if (payload && payload.guest === true) {
           return `session:guest:${guestCookie}`;
         }
+      } catch {
+        // Malformed or invalid guest cookie candidate falls through to next entry
       }
-    } catch {
-      // Malformed or invalid guest cookie falls through
     }
   }
 

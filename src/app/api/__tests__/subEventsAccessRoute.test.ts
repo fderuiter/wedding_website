@@ -79,6 +79,7 @@ describe('Admin Sub-Event Access Matrix Routes', () => {
 
     const req = new NextRequest('http://localhost:3000/api/admin/sub-events/access', {
       method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invitationCodeId: 'inv-1',
         allowedSubEventIds: ['se-1', 'se-2'],
@@ -96,6 +97,7 @@ describe('Admin Sub-Event Access Matrix Routes', () => {
   it('PUT returns status 400 when request body is invalid', async () => {
     const req = new NextRequest('http://localhost:3000/api/admin/sub-events/access', {
       method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         invalidField: 'test',
       }),

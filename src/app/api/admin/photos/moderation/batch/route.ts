@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { BatchPhotoModerationSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { assertJsonContentType } from '@/utils/contentType';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { handleBatchPhotoModeration } from '../batchHandler';
@@ -11,6 +12,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   if (!isFeatureEnabled('gallery', config.modules)) {
     throw new ApiError(404, "Feature 'gallery' is disabled");
   }
+
+  assertJsonContentType(request);
 
   let body: unknown;
   try {

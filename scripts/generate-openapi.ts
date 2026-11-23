@@ -557,6 +557,7 @@ function detectBodyCapabilities(allNodes: Node[]): {
     if (exprText === 'createValidatedRoute') {
       acceptsBody = true;
     } else if (
+      exprText === 'parseJsonRequestBody' ||
       /^(?:request|req)(?:\.clone\(\))?\.json$/.test(exprText) ||
       /^\(request as any\)\.json$/.test(exprText) ||
       /^(?:request|req)\.text$/.test(exprText)

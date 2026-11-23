@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 
 export const GET = withApiMiddleware(async (request: NextRequest, context: { params: Promise<{ entity: string }> }) => {
   const { entity } = await context.params;
@@ -105,7 +106,7 @@ export const POST = withApiMiddleware(async (request: NextRequest, context: { pa
   const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
-  const body = await request.json();
+  const body = await parseJsonRequestBody(request);
 
   try {
     const newRecord = await serviceData.service.create(body);
@@ -123,7 +124,7 @@ export const PUT = withApiMiddleware(async (request: NextRequest, context: { par
   const serviceData = await getEntityService(entity);
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
-  const body = await request.json();
+  const body = await parseJsonRequestBody<Record<string, any>>(request);
   
   if (body.action === 'reorder') {
     const parseResult = AdminEntityReorderSchema.safeParse(body);

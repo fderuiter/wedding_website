@@ -520,8 +520,21 @@ async function handleDemoApi(
     return jsonResponse(result);
   }
 
-  if (path === '/api/registry/validate-code' && method === 'GET') {
-    const rawCode = url.searchParams.get('code') || '';
+  if (path === '/api/registry/validate-code' && (method === 'GET' || method === 'POST')) {
+    const rawCode =
+      method === 'GET'
+        ? url.searchParams.get('code') || ''
+        : String((await parseJsonBody(init)).code || '');
+    if (!rawCode.trim()) {
+      return jsonResponse(
+        {
+          valid: false,
+          success: false,
+          error: 'Code is required.',
+        },
+        400
+      );
+    }
     const matched = findDemoGuestByCode(rawCode);
     if (!matched) {
       return jsonResponse(
@@ -533,10 +546,12 @@ async function handleDemoApi(
         404
       );
     }
-    setDemoGuestSession({
-      invitationCode: matched.code,
-      guestName: matched.guestName,
-    });
+    if (method === 'POST') {
+      setDemoGuestSession({
+        invitationCode: matched.code,
+        guestName: matched.guestName,
+      });
+    }
     return jsonResponse({
       valid: true,
       success: true,

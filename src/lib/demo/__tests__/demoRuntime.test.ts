@@ -408,8 +408,18 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect((await window.fetch('/api/guest/address')).status).toBe(401);
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
 
-      const validCodeRes = await (
+      const readOnlyCodeRes = await (
         await window.fetch('/api/registry/validate-code?code=SMITH2026')
+      ).json();
+      expect(readOnlyCodeRes.valid).toBe(true);
+      expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(false);
+
+      const validCodeRes = await (
+        await window.fetch('/api/registry/validate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'SMITH2026' }),
+        })
       ).json();
       expect(validCodeRes.valid).toBe(true);
       expect((await (await window.fetch('/api/registry/session')).json()).isVerified).toBe(true);

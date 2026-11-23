@@ -190,7 +190,7 @@ describe('useRegistryContributionMachine Hook', () => {
 
   describe('Automatic & Manual Verification (Requirements 2, 4, 6)', () => {
     it('triggers automatic verification when input reaches 8 characters and locks code on success', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({
+      (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Jane Smith',
         code: 'VALDCODE',
@@ -216,14 +216,15 @@ describe('useRegistryContributionMachine Hook', () => {
 
       expect(result.current.contributorName).toBe('Jane Smith');
       expect(result.current.codeError).toBeNull();
-      expect(apiClient.get).toHaveBeenCalledWith(
-        '/api/registry/validate-code?code=VALDCODE',
+      expect(apiClient.post).toHaveBeenCalledWith(
+        '/api/registry/validate-code',
+        { code: 'VALDCODE' },
         expect.objectContaining({ signal: expect.any(Object) })
       );
     });
 
     it('sets code error when code verification returns valid=false', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({ valid: false });
+      (apiClient.post as jest.Mock).mockResolvedValue({ valid: false });
 
       const { result } = renderHook(() =>
         useRegistryContributionMachine({
@@ -246,7 +247,7 @@ describe('useRegistryContributionMachine Hook', () => {
     });
 
     it('handles manual verification via handleVerifyCode', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValue({
+      (apiClient.post as jest.Mock).mockResolvedValue({
         valid: true,
         guestName: 'Manual Guest',
         code: 'MANUAL1',
@@ -295,7 +296,7 @@ describe('useRegistryContributionMachine Hook', () => {
     it('aborts obsolete in-flight validation requests immediately when guest types new characters', async () => {
       const capturedSignals: AbortSignal[] = [];
 
-      (apiClient.get as jest.Mock).mockImplementation((_url, options) => {
+      (apiClient.post as jest.Mock).mockImplementation((_url, _body, options) => {
         if (options?.signal) {
           capturedSignals.push(options.signal);
         }
@@ -339,7 +340,7 @@ describe('useRegistryContributionMachine Hook', () => {
         lateResolver = resolve;
       });
 
-      (apiClient.get as jest.Mock).mockReturnValueOnce(latePromise);
+      (apiClient.post as jest.Mock).mockReturnValueOnce(latePromise);
 
       const { result } = renderHook(() =>
         useRegistryContributionMachine({
@@ -503,7 +504,7 @@ describe('useRegistryContributionMachine Hook', () => {
   describe('Submission Lifecycle & Race Prevention (Requirement 2 & Criterion 3)', () => {
     it('prevents submission while code validation is actively in flight', async () => {
       let pendingValidationResolve: (val: any) => void;
-      (apiClient.get as jest.Mock).mockReturnValue(
+      (apiClient.post as jest.Mock).mockReturnValue(
         new Promise((resolve) => {
           pendingValidationResolve = resolve;
         })
@@ -597,7 +598,7 @@ describe('useRegistryContributionMachine Hook', () => {
     });
 
     it('keeps focus on invitationCodeInputRef when 8-character auto-verification fails', async () => {
-      (apiClient.get as jest.Mock).mockResolvedValueOnce({ valid: false });
+      (apiClient.post as jest.Mock).mockResolvedValueOnce({ valid: false });
 
       const codeEl = document.createElement('input');
       document.body.appendChild(codeEl);

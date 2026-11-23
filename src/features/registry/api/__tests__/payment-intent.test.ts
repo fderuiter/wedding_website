@@ -79,6 +79,7 @@ describe('POST /api/registry/payment-intent', () => {
   it('Requirement 1: creates a PaymentIntent with 2.5% standard fee when coverFee=false', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 100,
@@ -120,6 +121,7 @@ describe('POST /api/registry/payment-intent', () => {
   it('omits receipt_email when creating a PaymentIntent without a guest email', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 100,
@@ -139,6 +141,7 @@ describe('POST /api/registry/payment-intent', () => {
     // 1. Update with guest email present
     const requestWithEmail = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 100,
@@ -168,6 +171,7 @@ describe('POST /api/registry/payment-intent', () => {
     // 2. Guest clears email input before paying -> receipt_email removed (set to null)
     const requestClearedEmail = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 100,
@@ -196,6 +200,7 @@ describe('POST /api/registry/payment-intent', () => {
   it('Requirement 3: dynamically calculates fee and updates PaymentIntent when user toggles coverFee=true', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 100,
@@ -232,6 +237,7 @@ describe('POST /api/registry/payment-intent', () => {
   it('rejects contribution when amount exceeds remaining balance', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 900, // Price is 1000, 200 already contributed, remaining is 800
@@ -252,6 +258,7 @@ describe('POST /api/registry/payment-intent', () => {
 
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 50,
@@ -271,6 +278,7 @@ describe('POST /api/registry/payment-intent', () => {
 
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 50,
@@ -288,6 +296,7 @@ describe('POST /api/registry/payment-intent', () => {
     const missingSecretRes = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-101',
           amount: 50,
@@ -301,6 +310,7 @@ describe('POST /api/registry/payment-intent', () => {
     const wrongSecretRes = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-101',
           amount: 50,
@@ -323,6 +333,7 @@ describe('POST /api/registry/payment-intent', () => {
     const wrongItemRes = await POST(
       new NextRequest('http://localhost:3000/api/registry/payment-intent', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: 'fund-101',
           amount: 50,
@@ -339,6 +350,7 @@ describe('POST /api/registry/payment-intent', () => {
   it('stores contributor return address fields in PaymentIntent metadata within Stripe 50-key and 500-char limits', async () => {
     const request = new NextRequest('http://localhost:3000/api/registry/payment-intent', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         itemId: 'fund-101',
         amount: 100,

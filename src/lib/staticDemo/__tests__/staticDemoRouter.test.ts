@@ -144,6 +144,8 @@ function buildOpenApiRequestInit(
 
   if (resolvedPath === '/api/guest/login') {
     body = { code: firstInvite?.code ?? 'SMITH2026' };
+  } else if (resolvedPath === '/api/registry/validate-code') {
+    body = { code: firstInvite?.code ?? 'DEMO2026' };
   } else if (resolvedPath === '/api/guest/lookup') {
     body = { query: firstInvite?.guestName ?? 'Alex' };
   } else if (resolvedPath === '/api/guest/address/public') {

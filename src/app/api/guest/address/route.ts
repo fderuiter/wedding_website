@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { prisma } from '@/lib/prisma';
 import {
@@ -54,7 +55,7 @@ export const PUT = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
   const parseResult = GuestAddressUpdateSchema.safeParse(body);
 
   if (!parseResult.success) {

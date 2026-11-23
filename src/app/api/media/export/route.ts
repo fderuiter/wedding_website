@@ -27,6 +27,12 @@ import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import {
+  getRequestMediaType,
+  isJsonMediaType,
+  UNSUPPORTED_JSON_MEDIA_TYPE_MESSAGE,
+} from '@/utils/contentType';
+import { validateMutatingRequestOrigin } from '@/utils/hostValidation';
 import { safeFetch } from '@/utils/safeFetch';
 import { PathContainmentError, resolveContainedExistingPath } from '@/utils/pathContainment';
 import { isAdminRequest } from '@/core/auth/auth.server';
@@ -210,37 +216,8 @@ function sanitizeExportFilename(rawFilename?: string): string {
 }
 
 function validatePostExportOrigin(req: NextRequest): void {
-  const secFetchSite = req.headers.get('sec-fetch-site')?.trim().toLowerCase();
-  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
-    throw new ApiError(403, 'Cross-origin export request blocked');
-  }
-
-  const originHeader = req.headers.get('origin')?.trim();
-  const refererHeader = !originHeader ? req.headers.get('referer')?.trim() : undefined;
-  const sourceUrlString = originHeader || refererHeader;
-  if (!sourceUrlString) {
-    return;
-  }
-
-  let parsedSource: URL;
-  try {
-    parsedSource = new URL(sourceUrlString);
-  } catch {
-    throw new ApiError(403, 'Invalid request origin');
-  }
-
-  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-  const hostHeader = forwardedHost || req.headers.get('host');
-  let expectedOrigin = req.nextUrl?.origin?.toLowerCase() ?? '';
-  if (hostHeader) {
-    const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
-    const fallbackProto = (req.nextUrl?.protocol || 'http:').replace(/:$/, '').toLowerCase();
-    const proto =
-      forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : fallbackProto;
-    expectedOrigin = `${proto}://${hostHeader.trim().toLowerCase()}`;
-  }
-
-  if (!expectedOrigin || parsedSource.origin.toLowerCase() !== expectedOrigin) {
+  const violation = validateMutatingRequestOrigin(req);
+  if (violation) {
     throw new ApiError(403, 'Cross-origin export request blocked');
   }
 }
@@ -266,10 +243,16 @@ async function handleExport(req: NextRequest) {
 
   if (req.method === 'POST') {
     validatePostExportOrigin(req);
+    const mediaType = getRequestMediaType(req);
+    const isFormUrlEncoded = mediaType === 'application/x-www-form-urlencoded';
+    if (mediaType !== null && !isFormUrlEncoded && !isJsonMediaType(mediaType)) {
+      throw new ApiError(415, UNSUPPORTED_JSON_MEDIA_TYPE_MESSAGE);
+    }
+
+    let rawEmptyOrNonJson = false;
     try {
-      const contentType = req.headers.get('content-type')?.toLowerCase() ?? '';
       let body: unknown;
-      if (contentType.includes('application/x-www-form-urlencoded')) {
+      if (isFormUrlEncoded) {
         const fallbackBody = (req as unknown as { body?: unknown }).body;
         const rawText =
           typeof req.text === 'function'
@@ -286,31 +269,43 @@ async function handleExport(req: NextRequest) {
           ...(formParams.get('filename') ? { filename: formParams.get('filename') ?? undefined } : {}),
           ...(formParams.get('preflight') ? { preflight: formParams.get('preflight') ?? undefined } : {}),
         };
+      } else if (mediaType === null) {
+        const reader = typeof req.clone === 'function' ? req.clone() : req;
+        const rawText = typeof reader.text === 'function' ? await reader.text() : '';
+        if (rawText && rawText.trim()) {
+          rawEmptyOrNonJson = true;
+        }
+        body = {};
       } else {
         body = await req.json();
       }
 
-      const parsed = MediaExportSchema.safeParse(body);
-      if (parsed.success) {
-        const data = parsed.data;
-        if (Array.isArray(data.ids)) {
-          ids = data.ids.map((s) => String(s).trim()).filter(Boolean);
-        } else if (typeof data.ids === 'string') {
-          const trimmedIds = data.ids.trim();
-          ids = trimmedIds.startsWith('data:')
-            ? [trimmedIds]
-            : trimmedIds
-              .split(',')
-              .map((s: string) => s.trim())
-              .filter(Boolean);
+      if (!rawEmptyOrNonJson) {
+        const parsed = MediaExportSchema.safeParse(body);
+        if (parsed.success) {
+          const data = parsed.data;
+          if (Array.isArray(data.ids)) {
+            ids = data.ids.map((s) => String(s).trim()).filter(Boolean);
+          } else if (typeof data.ids === 'string') {
+            const trimmedIds = data.ids.trim();
+            ids = trimmedIds.startsWith('data:')
+              ? [trimmedIds]
+              : trimmedIds
+                .split(',')
+                .map((s: string) => s.trim())
+                .filter(Boolean);
+          }
+          if (typeof data.tag === 'string' && data.tag.trim()) tag = data.tag.trim();
+          if (typeof data.category === 'string' && data.category.trim()) category = data.category.trim();
+          if (typeof data.filename === 'string') rawFilename = data.filename;
+          preflight = isTruthyPreflight(data.preflight);
         }
-        if (typeof data.tag === 'string' && data.tag.trim()) tag = data.tag.trim();
-        if (typeof data.category === 'string' && data.category.trim()) category = data.category.trim();
-        if (typeof data.filename === 'string') rawFilename = data.filename;
-        preflight = isTruthyPreflight(data.preflight);
       }
     } catch {
       // Body parsing failed or empty
+    }
+    if (rawEmptyOrNonJson) {
+      throw new ApiError(415, UNSUPPORTED_JSON_MEDIA_TYPE_MESSAGE);
     }
   } else {
     const { searchParams } = req.nextUrl;

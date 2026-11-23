@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
+import { parseJsonRequestBody } from '@/utils/contentType';
 import { BatchUpdateThankYouNotesSchema, thankYouService } from '@/features/registry';
 import { formatZodError } from '@/utils/validation';
 
 export const POST = withApiMiddleware(async (req: NextRequest) => {
-  const body = await req.json();
+  const body = await parseJsonRequestBody(req);
 
   const parseResult = BatchUpdateThankYouNotesSchema.safeParse(body);
   if (!parseResult.success) {

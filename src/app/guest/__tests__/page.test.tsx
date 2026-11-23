@@ -75,11 +75,17 @@ describe('GuestAddressPage (/guest)', () => {
     render(<GuestAddressPage />);
 
     await waitFor(() => {
-      const calledUrls = globalFetch.mock.calls.map((call) => {
+      const hasPostValidateCall = globalFetch.mock.calls.some((call) => {
         const arg = call[0];
-        return typeof arg === 'string' ? arg : arg?.url || '';
+        const init = call[1] as RequestInit | undefined;
+        const url = typeof arg === 'string' ? arg : arg?.url || '';
+        return (
+          url.includes('/api/registry/validate-code') &&
+          init?.method === 'POST' &&
+          String(init?.body || '').includes('AUTOPREAUTH26')
+        );
       });
-      expect(calledUrls.some((url) => url.includes('/api/registry/validate-code?code=AUTOPREAUTH26'))).toBe(true);
+      expect(hasPostValidateCall).toBe(true);
       expect(mockAddToast).toHaveBeenCalledWith('Welcome Marianne Dashwood!', 'success');
     });
 
@@ -148,6 +154,7 @@ describe('GuestAddressPage (/guest)', () => {
     globalFetch.mockImplementation(async (input: any, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       const signal = (init?.signal || input?.signal) as AbortSignal;
+      const rawBody = typeof init?.body === 'string' ? init.body : '';
 
       if (url.includes('/api/guest/address') && !signals.fast) {
         // Initial session check: unauthenticated
@@ -157,11 +164,11 @@ describe('GuestAddressPage (/guest)', () => {
           json: async () => ({ success: false, error: 'Unauthorized' }),
         };
       }
-      if (url.includes('validate-code?code=SLOWCODE')) {
+      if (url.includes('/api/registry/validate-code') && rawBody.includes('SLOWCODE')) {
         signals.slow = signal;
         return new Promise(() => {});
       }
-      if (url.includes('validate-code?code=FASTCODE')) {
+      if (url.includes('/api/registry/validate-code') && rawBody.includes('FASTCODE')) {
         signals.fast = signal;
         return {
           ok: true,

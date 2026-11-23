@@ -14,7 +14,9 @@ import { isGuestRequest } from './guest.server';
 import {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
+  clearGuestInviteSessionCookie,
   getSignedGuestInviteSession,
+  setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from './guestInviteToken';
@@ -22,6 +24,8 @@ import {
 export {
   GUEST_INVITE_COOKIE,
   type GuestInviteSessionPayload,
+  clearGuestInviteSessionCookie,
+  setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 };
