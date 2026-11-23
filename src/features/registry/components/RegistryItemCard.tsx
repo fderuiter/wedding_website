@@ -31,7 +31,7 @@ import {
   calculateContributionAmounts,
   getStripePromise,
   isValidStripePublishableKey,
-} from '@/lib/stripe';
+} from '@/lib/stripe.client';
 import { apiClient } from '@/lib/apiClient';
 
 const FIXED_PRESETS = [50, 100, 250];
