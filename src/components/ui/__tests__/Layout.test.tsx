@@ -1,6 +1,13 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { Container, Card, Heading, type HeadingProps } from '../Layout';
+import {
+  Container,
+  Card,
+  Heading,
+  type HeadingLevel,
+  type HeadingProps,
+  type HeadingVariant,
+} from '../Layout';
 
 describe('Layout Components', () => {
   test('Layout components render without crashing', () => {
@@ -133,4 +140,32 @@ describe('Layout Components', () => {
     expect(ref.current).toBeInstanceOf(HTMLHeadingElement);
     expect(ref.current?.tagName).toBe(level.toUpperCase());
   });
+
+  const variantCases: Array<{ as: HeadingLevel; variant: HeadingVariant; expectedClass?: string }> = [
+    { as: 'h1', variant: 'display', expectedClass: 'type-display' },
+    { as: 'h2', variant: 'h1', expectedClass: 'type-h1' },
+    { as: 'h3', variant: 'h2', expectedClass: 'type-h2' },
+    { as: 'h2', variant: 'h3', expectedClass: 'type-h3' },
+    { as: 'h4', variant: 'none' },
+  ];
+
+  test.each(variantCases)(
+    'Heading decouples semantic tag <$as> from typography variant "$variant"',
+    ({ as, variant, expectedClass }) => {
+      render(
+        <Heading as={as} variant={variant} unstyledColor data-testid="variant-heading" className="extra-cls">
+          Polymorphic Heading
+        </Heading>
+      );
+
+      const heading = screen.getByTestId('variant-heading');
+      expect(heading.tagName).toBe(as.toUpperCase());
+      expect(heading).toHaveClass('extra-cls');
+      expect(heading).not.toHaveClass('text-2xl');
+      if (expectedClass) {
+        expect(heading).toHaveClass(expectedClass);
+      }
+      expect(heading.style.color).toBe('');
+    }
+  );
 });

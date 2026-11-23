@@ -21,11 +21,11 @@ exports[`WeddingPartyCard matches the component snapshot when member has no phot
     <div
       class="p-6"
     >
-      <h3
+      <h2
         class="type-h3 text-primary dark:text-primary mb-2"
       >
         Jane Smith
-      </h3>
+      </h2>
       <p
         class="type-body font-medium text-gray-600 dark:text-gray-300 mb-4"
       >
@@ -62,11 +62,11 @@ exports[`WeddingPartyCard matches the component snapshot when member has photo a
     <div
       class="p-6"
     >
-      <h3
+      <h2
         class="type-h3 text-primary dark:text-primary mb-2"
       >
         John Doe
-      </h3>
+      </h2>
       <p
         class="type-body font-medium text-gray-600 dark:text-gray-300 mb-4"
       >

@@ -26,14 +26,17 @@ const mockItem: RegistryItem = createMockRegistryItem({
 
 describe('RegistryCard', () => {
   it('renders item details correctly', () => {
-    render(<RegistryCard item={mockItem} onClick={() => {}} />);
+    const { rerender } = render(<RegistryCard item={mockItem} onClick={() => {}} />);
 
-    // Check if the item name, category, and price are displayed
-    expect(screen.getByText('Test Item')).toBeInTheDocument();
+    // Check if the item name heading (h2 by default), category, and price are displayed
+    expect(screen.getByRole('heading', { level: 2, name: 'Test Item' })).toBeInTheDocument();
     expect(screen.getByText('Test Category')).toBeInTheDocument();
     expect(screen.getByText('$99.99')).toBeInTheDocument(); // Note the space added by the component
     const img = screen.getByRole('img');
     expect(img.getAttribute('src')).toContain('placeholder.png');
+
+    rerender(<RegistryCard item={mockItem} onClick={() => {}} headingLevel="h3" />);
+    expect(screen.getByRole('heading', { level: 3, name: 'Test Item' })).toBeInTheDocument();
   });
 
   it('renders Most Wanted badge when isMostWanted is true', () => {

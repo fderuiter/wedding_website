@@ -54,11 +54,11 @@ describe('RegistryPage', () => {
     mockUseRegistry.mockReturnValue(defaultMockState as any);
   });
 
-  it('renders the main heading and filter controls', () => {
+  it('renders the main heading and filter controls without placing static h1 in Tab order', () => {
     render(<RegistryPage />);
-    expect(
-      screen.getByRole('heading', { level: 1, name: /wedding registry/i })
-    ).toBeInTheDocument();
+    const mainHeading = screen.getByRole('heading', { level: 1, name: /wedding registry/i });
+    expect(mainHeading).toBeInTheDocument();
+    expect(mainHeading).not.toHaveAttribute('tabIndex');
     expect(
       screen.getByRole('group', { name: 'Filter gifts by category' })
     ).toBeInTheDocument();
