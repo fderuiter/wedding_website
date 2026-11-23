@@ -110,8 +110,8 @@ Whenever you add or modify App Router pages, layouts, dynamic route segments, or
 npm run build:export
 ```
 
-- **Staged Workspace & Cache Isolation:** [`scripts/build-export.mjs`](scripts/build-export.mjs) copies build-relevant sources into an isolated temporary folder without `src/app/api`, isolates Next.js static export build caching under `.next-export` via [`next.config.ts`](next.config.ts), and writes the generated static bundle to `out/` while leaving `src/app/api` and `.next/standalone` untouched in the repository root.
-- **CI Parity:** Pull requests and pushes to `main` execute a parallel `static-export-build` job after `verify` in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) without PostgreSQL services or secrets, caching `.next-export/cache` and verifying `out/index.html` and route HTML files with zero `[PageQueryError]` logs.
+- **Staged Workspace & Cache Isolation:** [`scripts/build-export.mjs`](scripts/build-export.mjs) copies build-relevant sources into an isolated temporary folder without `src/app/api`, isolates Next.js static export build caching under `.next-export` with `trailingSlash: true` and optional `NEXT_PUBLIC_BASE_PATH` via [`next.config.ts`](next.config.ts), and writes the generated static bundle to `out/` while leaving `src/app/api` and `.next/standalone` untouched in the repository root.
+- **CI Parity:** Pull requests, pushes to `main`, `v*` version tag pushes, and published releases execute a parallel `static-export-build` job after `verify` in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) without PostgreSQL services or secrets, resolving the GitHub Pages `/demo` base path (`NEXT_PUBLIC_BASE_PATH`), caching `.next-export/cache`, verifying `out/index.html` and route HTML files with zero `[PageQueryError]` logs, and retaining `demo-static` (`retention-days: 7`) for unified GitHub Pages assembly in `deploy-docs` (you can also verify subpath export locally with `NEXT_PUBLIC_BASE_PATH=/wedding_website/demo npm run build:export`, cleaning up `out/` afterward).
 
 ### Storybook Static Showcase Verification
 
@@ -121,7 +121,7 @@ npm run build:export
 npm run build-storybook
 ```
 
-- **CI Parity:** Pull requests, pushes to `main`, and `v*` version tag pushes execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build` (using `npm ci --ignore-scripts` and Webpack 5 filesystem caching across `node_modules/.cache/webpack` and `node_modules/.cache/storybook`), while manual dispatches of [`.github/workflows/storybook.yml`](.github/workflows/storybook.yml) share the same cache and `--ignore-scripts` install.
+- **CI Parity:** Pull requests, pushes to `main`, `v*` version tag pushes, and published releases execute isolated `storybook-build` (using `npm ci --ignore-scripts`, Webpack 5 filesystem caching across `node_modules/.cache/webpack` and `node_modules/.cache/storybook`, and `npm run build-storybook`, retaining `storybook-static`) and `static-export-build` (`npm run build:export`, retaining `demo-static`) jobs in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build`, feeding unified GitHub Pages assembly in `deploy-docs`, while manual dispatches of [`.github/workflows/storybook.yml`](.github/workflows/storybook.yml) share the same cache and `--ignore-scripts` install.
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Git Hook Scope:** `npm run build-storybook` is intentionally kept out of both [`.githooks/pre-commit`](.githooks/pre-commit) and [`.githooks/pre-push`](.githooks/pre-push) so local commits and pushes stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
