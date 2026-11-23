@@ -15,35 +15,39 @@ This document outlines the testing strategy, test architecture, and quality assu
 
 ### Running Unit & Integration Tests
 
-You can run the entire unit and integration test suite using:
+Run the unit and integration test suite without coverage instrumentation for fast local iteration:
 
 ```bash
 npm test
+
+# Run a single targeted test file:
+npm test -- src/utils/__tests__/ApiError.test.ts
 ```
 
-You can also run Jest in watch mode during development:
+Run Jest in interactive watch mode during active development (without coverage overhead or global threshold failures):
 
 ```bash
 npm run test:watch
 ```
 
-To run Jest with coverage reporting:
+Run the full suite with global coverage threshold enforcement (`80%` lines, `68%` branches) and lightweight terminal + `coverage/lcov.info` output:
 
 ```bash
 npm run test:cov
+
+# Explicitly build full interactive HTML coverage reports alongside lcov/json/clover:
+npm run test:cov:html
 ```
 
 ### Pretest Lifecycle & Database Automation
 
-Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). This orchestrates dependency synchronization, database containerization, and schema isolation:
+Before Jest executes, npm automatically triggers the `pretest`, `pretest:watch`, and `pretest:cov` lifecycle hooks in [package.json](../package.json), invoking [scripts/pretest.mjs](../scripts/pretest.mjs). Preflight steps cache dependency, database readiness, and Prisma schema state so warm targeted runs stay fast:
 
-1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash`. If packages are missing or lockfile changes are detected, it triggers a clean installation (`npm ci`).
-2. **Lifecycle-Aware Execution:** Inspects `npm_lifecycle_event` — when the lifecycle event includes `test` (`npm test`, `npm run test:watch`, `npm run test:cov`, `npm run pretest`), it runs the unit/integration preparation steps below; if invoked directly outside a `*test*` lifecycle event, it falls back to running a full `npm run build`.
-3. **Accessibility Violation Reset:** Initializes `test-results/jest-a11y-violations.json` to `[]` before Jest runs component-level `jest-axe` assertions.
-4. **PostgreSQL Container Orchestration & Graceful Fallback:** Checks if Docker is active (`docker info`). If running, it starts the local PostgreSQL container via `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` and polls `pg_isready -U wedding` until ready; if Docker is unavailable, it logs a notice and falls back gracefully to existing PostgreSQL connections.
-5. **Strict Test Environment Isolation:** Clears parent shell database and admin variables (`DATABASE_URL`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loads dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`), targeting the isolated `wedding_test` database (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
-6. **Schema Synchronization & Prisma Generation:** Pushes the current schema to `wedding_test` via `npx prisma db push --accept-data-loss` and runs `npm run prisma:generate` so Prisma Client stays aligned with active models.
-7. **Documentation Portal Staging:** Runs `npx tsx scripts/generate-portal.ts` ([`scripts/generate-portal.ts`](../scripts/generate-portal.ts)) to validate relative Markdown links, synchronize OpenAPI/architecture docs, and stage `docs-portal/development/` before Jest executes portal verification suites.
+1. **Dependency Alignment:** Verifies `package-lock.json` SHA-256 hash consistency against `node_modules/.package-lock-hash` (initialized during `npm ci` via `postinstall` running `node scripts/pretest.mjs --record-install-state`). If `node_modules` is missing or lockfile changes are detected, it triggers a clean installation (`npm ci`) and updates `.package-lock-hash`.
+2. **Accessibility Violation Reset:** Resets `test-results/jest-a11y-violations.json` to `[]` before every Jest run so component-level `jest-axe` assertions report only current violations.
+3. **Strict Test Environment Isolation & `TEST_DATABASE_URL` Override:** Preserves any explicit `TEST_DATABASE_URL` override before clearing parent shell database and admin variables (`DATABASE_URL`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGPORT`, `PGDATASOURCE`, `ADMIN_PASSWORD`) and loading dedicated test settings from [`.env.test`](../.env.test) (`GUEST_PASSCODE="build-fallback-guest-passcode"`, `GUEST_SESSION_SECRET="playwright-e2e-session-secret-32-chars-min"`). Explicit `TEST_DATABASE_URL` overrides take precedence before falling back to `.env.test` / local Docker defaults (`postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public`) so test runs never modify local development data.
+4. **Cached PostgreSQL Readiness & Container Orchestration:** Probes the resolved test database directly first. Only when PostgreSQL is unreachable and no explicit `TEST_DATABASE_URL` override is set does it inspect Docker (`docker info`), start `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db`, and poll `pg_isready -U wedding` until ready.
+5. **Cached Schema Synchronization & Prisma Client Generation:** Tracks the `prisma/schema.prisma` SHA-256 hash and target database URL in `node_modules/.cache/pretest-state.json`, skipping repeated `npx prisma db push --accept-data-loss` and `npm run prisma:generate` executions when the schema, database tables, and generated Prisma Client are already up to date. Documentation portal staging is intentionally omitted from preflight and handled directly by dedicated portal suites ([`src/__tests__/generate-portal.test.ts`](../src/__tests__/generate-portal.test.ts)) and `npm run docs:build`.
 
 ## Test Structure & Architecture
 
@@ -69,20 +73,23 @@ The codebase enforces strict quality gates in [jest.config.mjs](../jest.config.m
 
 ### Jest Coverage Thresholds
 
-Global coverage thresholds are actively enforced in [jest.config.mjs](../jest.config.mjs). Pull requests that drop global test coverage below these thresholds fail CI:
+Global coverage thresholds are enforced in [jest.config.mjs](../jest.config.mjs) during dedicated coverage runs (`npm run test:cov`), `npm run quality`, and the `unit-test` CI job across all matched `src/**/*.{ts,tsx}` files (while skipped during standard `npm test` and `npm run test:watch` runs for fast local iteration). Pull requests that drop global test coverage below these thresholds fail CI:
 
 - **Lines:** 80%
 - **Branches:** 68%
+
+By default, `npm run test:cov` emits lightweight `text-summary` terminal output and `coverage/lcov.info` (`lcovonly`). Run `npm run test:cov:html` (or set `COVERAGE_HTML=true`) when you need full interactive HTML reports under `coverage/`.
 
 ### Verification & Quality Scripts
 
 A variety of verification scripts in [package.json](../package.json) support comprehensive local validation and CI quality gates:
 
-- **Unit & Integration Suite:**
+- **Unit, Integration & Coverage Suites:**
   ```bash
   npm test
+  npm run test:cov
   ```
-  Runs pretest container automation followed by Jest in sequential band execution (`jest --runInBand`).
+  `npm test` runs cached preflight automation followed by `jest --runInBand` without coverage instrumentation, while `npm run test:cov` runs `jest --coverage --runInBand` to generate `coverage/lcov.info` and enforce global coverage thresholds.
 
 - **Playwright End-to-End & Smoke Tests:**
   ```bash
@@ -150,7 +157,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   # or
   npm run check:all
   ```
-  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal and Storybook static builds (`npm run docs:build`, `npm run build-storybook`), and unit/integration tests — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
+  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal and Storybook static builds (`npm run docs:build`, `npm run build-storybook`), and full-coverage unit/integration tests (`npm run test:cov`) — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
 
 ## Writing New Tests
 

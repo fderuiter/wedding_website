@@ -73,7 +73,7 @@ export const steps: Step[] = [
     command: 'npm run build-storybook',
     remediation: 'Storybook static showcase compilation failed.\nRun "npm run build-storybook" (or "npm run storybook") locally to inspect Webpack build errors, broken story imports in "src/**/*.stories.tsx", or mock handler mismatches in ".storybook/preview.tsx" and "src/mocks/handlers.ts".',
   },
-  { name: 'Unit & Integration Tests', command: 'npm test' },
+  { name: 'Unit & Integration Tests', command: 'npm run test:cov' },
 ];
 
 export function main(options: QualityRunOptions = {}): void {

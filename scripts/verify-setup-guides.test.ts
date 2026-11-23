@@ -386,4 +386,57 @@ describe('verify-setup-guides contract check', () => {
       ])
     );
   });
+
+  it('rejects postinstall lock-hash omission, pretest portal/lifecycle regressions, missing TEST_DATABASE_URL support, and stale pretest guide claims', () => {
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs
+        .readFileSync(pkgPath, 'utf8')
+        .replace(
+          '"postinstall": "prisma generate && npx tsx scripts/generate-docs.ts && node scripts/pretest.mjs --record-install-state"',
+          '"postinstall": "prisma generate && npx tsx scripts/generate-docs.ts"'
+        )
+    );
+
+    const pretestPath = path.join(tempDir, 'scripts/pretest.mjs');
+    fs.writeFileSync(
+      pretestPath,
+      fs
+        .readFileSync(pretestPath, 'utf8')
+        .replace(/TEST_DATABASE_URL/g, 'LEGACY_DB_OVERRIDE')
+        .concat('\n// stale process.env.npm_lifecycle_event && scripts/generate-portal.ts\n')
+    );
+
+    const checkQualityPath = path.join(tempDir, 'scripts/check-quality.ts');
+    fs.writeFileSync(
+      checkQualityPath,
+      fs.readFileSync(checkQualityPath, 'utf8').replace('npm run test:cov', 'npm test')
+    );
+
+    const testingPath = path.join(tempDir, '.github/TESTING.md');
+    fs.writeFileSync(
+      testingPath,
+      fs
+        .readFileSync(testingPath, 'utf8')
+        .replace(/TEST_DATABASE_URL/g, 'LEGACY_OVERRIDE_DOC')
+        .replace(
+          '### Pretest Lifecycle & Database Automation\n',
+          '### Pretest Lifecycle & Database Automation\n\nLegacy `npm_lifecycle_event` and `npx tsx scripts/generate-portal.ts` step.\n'
+        )
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'package.json: "postinstall" must record lockfile state via "scripts/pretest.mjs --record-install-state" or ".package-lock-hash"',
+        'scripts/pretest.mjs: Must not unconditionally run "scripts/generate-portal.ts" during test preflight',
+        'scripts/pretest.mjs: Must not inspect "npm_lifecycle_event" or fall back to "npm run build"',
+        'scripts/pretest.mjs: Must honor explicit "TEST_DATABASE_URL" overrides before falling back to local Docker defaults',
+        'scripts/check-quality.ts: Must run "npm run test:cov" to enforce global coverage thresholds',
+        '.github/TESTING.md: Missing scripts/pretest.mjs or coverage workflow reference "TEST_DATABASE_URL"',
+        '.github/TESTING.md: Pretest Lifecycle section must not claim scripts/pretest.mjs runs "npx tsx scripts/generate-portal.ts" or inspects "npm_lifecycle_event"',
+      ])
+    );
+  });
 });

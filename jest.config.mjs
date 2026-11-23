@@ -5,6 +5,29 @@ const createJestConfig = nextJest({
   dir: './',
 });
 
+const cliArgs = process.argv.slice(2);
+const hasCoverageDisableFlag = cliArgs.some(
+  (arg) => arg === '--coverage=false' || arg === '--collectCoverage=false' || arg === '--no-coverage'
+);
+const hasCoverageEnableFlag = cliArgs.some(
+  (arg) =>
+    arg === '--coverage' ||
+    arg === '--collectCoverage' ||
+    arg === '--coverage=true' ||
+    arg === '--collectCoverage=true'
+);
+const lifecycleEvent = process.env.npm_lifecycle_event || '';
+const isCoverageRun =
+  !hasCoverageDisableFlag &&
+  (lifecycleEvent === 'test:cov' ||
+    lifecycleEvent === 'test:cov:html' ||
+    process.env.COLLECT_COVERAGE === 'true' ||
+    hasCoverageEnableFlag);
+const includeHtmlCoverage =
+  lifecycleEvent === 'test:cov:html' ||
+  process.env.COVERAGE_HTML === 'true' ||
+  cliArgs.some((arg) => arg.includes('coverageReporters') && arg.includes('html'));
+
 // Add any custom config to be passed to Jest
 /** @type {import('jest').Config} */
 const config = {
@@ -13,9 +36,12 @@ const config = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: './jsdom-env.cjs',
   testEnvironmentOptions: { url: 'http://localhost/' },
-  collectCoverage: true,
+  testTimeout: isCoverageRun ? 15000 : 10000,
+  collectCoverage: process.env.COLLECT_COVERAGE === 'true' && !hasCoverageDisableFlag,
   coverageDirectory: 'coverage',
-  coverageReporters: ['json', 'lcov', 'text', 'clover', 'html'], // Added 'html' for detailed report
+  coverageReporters: includeHtmlCoverage
+    ? ['json', 'lcov', 'text', 'clover', 'html']
+    : ['text-summary', 'lcovonly'],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}', // Collect coverage from all ts/tsx files in src
     '!src/**/*.d.ts', // Exclude type definition files
@@ -28,14 +54,18 @@ const config = {
     '!<rootDir>/postcss.config.mjs',
     '!<rootDir>/eslint.config.mjs',
   ],
-  coverageThreshold: {
-    global: {
-      branches: 68,
-      functions: 0,
-      lines: 80,
-      statements: 0,
-    },
-  },
+  ...(isCoverageRun
+    ? {
+      coverageThreshold: {
+        global: {
+          branches: 68,
+          functions: 0,
+          lines: 80,
+          statements: 0,
+        },
+      },
+    }
+    : {}),
   moduleNameMapper: {
     // Handle module aliases (if you have them in tsconfig.json)
     '^@/components/(.*)$': '<rootDir>/src/components/$1',

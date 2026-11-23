@@ -9,7 +9,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
   ```bash
   CI=true npm ci
   ```
-  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation and documentation sync via `postinstall`.)*
+  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation, documentation sync, and `node_modules/.package-lock-hash` recording via `postinstall`.)*
 - **Regenerate Prisma Client (after schema edits):**
   ```bash
   npm run prisma:generate
@@ -99,7 +99,7 @@ npm run quality
 13. Verify Setup & Contributor Guides Contract (`npm run check:setup-guides` / [`scripts/verify-setup-guides.ts`](scripts/verify-setup-guides.ts))
 14. Build Static Documentation Portal (`npm run docs:build`)
 15. Build Static Storybook Showcase (`npm run build-storybook`) — prints remediation instructions and removes any partial `storybook-static` output on failure
-16. Unit & Integration Tests (`npm test`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, checks `npm_lifecycle_event` and falls back to `npm run build` if invoked outside a `*test*` lifecycle, resets `test-results/jest-a11y-violations.json`, starts `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` + polls `pg_isready`, isolates env vars from `.env.test` against `wedding_test`, runs `npx prisma db push --accept-data-loss` and `npm run prisma:generate`, and stages portal docs via `npx tsx scripts/generate-portal.ts`) before running `jest --runInBand`
+16. Unit & Integration Tests (`npm run test:cov`) — invokes [`scripts/pretest.mjs`](scripts/pretest.mjs) (verifies `node_modules/.package-lock-hash`, resets `test-results/jest-a11y-violations.json`, isolates env vars from `.env.test` while honoring explicit `TEST_DATABASE_URL` overrides before falling back to local Docker `wedding_test`, probes PostgreSQL readiness before running `docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d db` + `pg_isready`, and caches `prisma/schema.prisma` hashes so `npx prisma db push --accept-data-loss` and `npm run prisma:generate` run only when invalidated) before running `jest --coverage --runInBand` to generate `coverage/lcov.info` and enforce `80%` line and `68%` branch coverage thresholds
 
 ### Storybook Static Showcase Verification
 
@@ -164,7 +164,7 @@ node scripts/a11y-report.mjs
   - ESLint enforces single quotes, 2-space indentation, semicolons, and import boundaries. Do not disable ESLint rules in [`eslint.config.mjs`](eslint.config.mjs) or Axe rules in [`src/a11y-config.ts`](src/a11y-config.ts).
   - Knip ([`knip.json`](knip.json)) enforces strict unused file, export, and type analysis; export only symbols imported by entry files.
 - **Documentation Portal:** `npm run docs:build` — Stages architectural and testing docs via [`scripts/generate-portal.ts`](scripts/generate-portal.ts) and compiles the VitePress documentation portal.
-- **Targeted Unit Tests:** `npx jest <path/to/file.test.ts> --coverage=false` (use `npm test` to run [`scripts/pretest.mjs`](scripts/pretest.mjs) and the full suite with isolated `wedding_test` database setup and coverage thresholds in [`jest.config.mjs`](jest.config.mjs)).
+- **Targeted & Coverage Unit Tests:** `npm test -- <path/to/file.test.ts>` or `npm run test:watch` for fast cached local runs without coverage instrumentation; use `npm run test:cov` (or `npm run test:cov:html` for interactive HTML output) to run the full suite and enforce global `80%` line and `68%` branch coverage thresholds in [`jest.config.mjs`](jest.config.mjs).
 - **Production Next.js Build:** `npm run build`
 - **Standalone & Container Smoke Tests:** `npm run test:standalone` ([`scripts/test-standalone.mjs`](scripts/test-standalone.mjs), **requires running `npm run build` first**) and `npm run test:container` ([`scripts/test-container.mjs`](scripts/test-container.mjs), layering [`docker-compose.ci.yml`](docker-compose.ci.yml)). **Warning:** Both smoke test scripts run `docker compose down -v` (with `-f docker-compose.yml -f docker-compose.ci.yml`), which deletes local Docker Compose PostgreSQL volumes (`db_data`).
 - **End-to-End & Smoke Browser Tests:** `npm run test:e2e` (`npx playwright test`) and `npm run test:e2e:smoke` (`playwright test --grep @smoke`) against `http://localhost:3000` in bundled Chromium (automatically initializes and seeds `wedding_test` when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or set `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned E2E secrets)

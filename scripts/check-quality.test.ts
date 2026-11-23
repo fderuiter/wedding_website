@@ -25,12 +25,12 @@ describe('check-quality', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('orders Build Static Storybook Showcase immediately after docs:build and before npm test', () => {
+  it('orders Build Static Storybook Showcase immediately after docs:build and before npm run test:cov', () => {
     const runbooksIdx = steps.findIndex((s) => s.command === 'npx tsx scripts/verify-deployment-runbooks.ts');
     const setupGuidesIdx = steps.findIndex((s) => s.command === 'npm run check:setup-guides');
     const docsIdx = steps.findIndex((s) => s.command === 'npm run docs:build');
     const storybookIdx = steps.findIndex((s) => s.command === 'npm run build-storybook');
-    const testIdx = steps.findIndex((s) => s.command === 'npm test');
+    const testIdx = steps.findIndex((s) => s.command === 'npm run test:cov');
 
     expect(runbooksIdx).toBeGreaterThanOrEqual(0);
     expect(runbooksIdx).toBeLessThan(docsIdx);
@@ -68,7 +68,7 @@ describe('check-quality', () => {
     expect(fs.existsSync(partialStaticDir)).toBe(false);
     expect(executedCommands).toContain('npm run docs:build');
     expect(executedCommands).toContain('npm run build-storybook');
-    expect(executedCommands).not.toContain('npm test');
+    expect(executedCommands).not.toContain('npm run test:cov');
 
     const errorOutput = mockConsoleError.mock.calls.map((args) => args.join(' ')).join('\n');
     expect(errorOutput).toContain('Build Static Storybook Showcase FAILED!');

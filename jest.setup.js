@@ -33,6 +33,7 @@ moduleModule.createRequire = function (filename) {
 (() => {
   const rootDir = process.cwd();
   const envPath = path.join(rootDir, '.env.test');
+  const explicitTestDbUrl = (process.env.TEST_DATABASE_URL || '').trim();
 
   // Clear parent shell database variables and other isolated test variables to ensure clean isolation
   const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
@@ -48,8 +49,12 @@ moduleModule.createRequire = function (filename) {
     }
   }
 
-  // Determine the isolated test database URL from dedicated test settings, or use safe fallback
-  const testDbUrl = process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
+  // Honor explicit TEST_DATABASE_URL overrides before falling back to dedicated test settings or local Docker defaults
+  const configuredTestDbOverride = explicitTestDbUrl || (process.env.TEST_DATABASE_URL || '').trim();
+  const testDbUrl =
+    configuredTestDbOverride ||
+    process.env.DATABASE_URL ||
+    'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public';
 
   process.env.DATABASE_URL = testDbUrl;
 })();
