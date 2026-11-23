@@ -54,6 +54,7 @@
     "migrate:dev": "dotenv -c development -- prisma migrate dev",
     "migrate:deploy": "dotenv -c development -- prisma migrate deploy",
     "migrate:status": "dotenv -c development -- tsx scripts/preflight-migration-summary.ts --require-db",
+    "preflight:env": "tsx scripts/preflight-env.ts",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "db:seed": "dotenv -c development -- tsx scripts/seed.ts",
