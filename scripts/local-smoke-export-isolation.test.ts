@@ -302,9 +302,11 @@ describe('local smoke isolation, staged static exports, and untracked next-env.d
       expect(pkg.scripts.postinstall.startsWith('next typegen && ')).toBe(true);
 
       const knip = JSON.parse(fs.readFileSync(path.join(repoRoot, 'knip.json'), 'utf8')) as {
-        ignore?: string[];
+        entry?: string[];
+        project?: string[];
       };
-      expect(knip.ignore).toContain('next-env.d.ts');
+      expect(knip.entry ?? []).not.toContain('next-env.d.ts');
+      expect(knip.project ?? []).not.toContain('next-env.d.ts');
 
       for (const tsFile of ['tsconfig.json', 'tsconfig.build.json', 'tsconfig.test.json']) {
         const parsed = JSON.parse(fs.readFileSync(path.join(repoRoot, tsFile), 'utf8')) as {
