@@ -1,14 +1,15 @@
 import { Worker } from 'node:worker_threads';
 import os from 'node:os';
 import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { logger } from '@/lib/logger';
 import { ApiError } from '@/utils/ApiError';
-import { getFileExtension, isHeicExtension } from './validationPrimitives';
+import {
+  getFileExtension,
+  isHeicExtension,
+  MAX_GUEST_PHOTO_SIZE,
+} from './validationPrimitives';
 import {
   isHeicBuffer,
-  processImageWorkerBuffer,
   type ProcessImageWorkerOptions,
   type WorkerReadyMessage,
   type WorkerResult,
@@ -24,11 +25,6 @@ const DEFAULT_MAX_WORKER_POOL_SIZE = Math.max(
       : os.cpus().length
   )
 );
-
-interface ResolvedWorkerConfig {
-  workerPath: string;
-  execArgv: string[] | undefined;
-}
 
 interface ActiveWorkerTask {
   id: number;
@@ -68,59 +64,13 @@ export interface ImageWorkerPoolStats {
   heicLoadedWorkerIds: number[];
 }
 
-let cachedWorkerConfig: ResolvedWorkerConfig | null = null;
 let workerPathOverride: string | null = null;
-let workerStartupUnavailable = false;
 let maxWorkerPoolSize = DEFAULT_MAX_WORKER_POOL_SIZE;
 let nextTaskId = 1;
 let nextWorkerId = 1;
 
 const workerPool: PooledWorkerSlot[] = [];
 const pendingTaskQueue: QueuedWorkerTask[] = [];
-
-function resolveWorkerPathUncached(): string {
-  try {
-    if (typeof import.meta.url === 'string' && import.meta.url.startsWith('file:')) {
-      const currentDir = path.dirname(fileURLToPath(import.meta.url));
-      const tsPath = path.join(currentDir, 'imageProcessorWorker.ts');
-      const jsPath = path.join(currentDir, 'imageProcessorWorker.js');
-      const mjsPath = path.join(currentDir, 'imageProcessorWorker.mjs');
-
-      if (fs.existsSync(tsPath)) return tsPath;
-      if (fs.existsSync(jsPath)) return jsPath;
-      if (fs.existsSync(mjsPath)) return mjsPath;
-    }
-  } catch {
-    // Fall back to workspace path resolution below
-  }
-
-  return path.join(process.cwd(), 'src', 'utils', 'imageProcessorWorker.ts');
-}
-
-function getWorkerPath(): string {
-  if (workerPathOverride) {
-    return workerPathOverride;
-  }
-  if (!cachedWorkerConfig) {
-    const workerPath = resolveWorkerPathUncached();
-    cachedWorkerConfig = {
-      workerPath,
-      execArgv: workerPath.endsWith('.ts') ? ['--experimental-strip-types'] : undefined,
-    };
-  }
-  return cachedWorkerConfig.workerPath;
-}
-
-function getWorkerConfig(): ResolvedWorkerConfig {
-  const workerPath = getWorkerPath();
-  if (cachedWorkerConfig && cachedWorkerConfig.workerPath === workerPath) {
-    return cachedWorkerConfig;
-  }
-  return {
-    workerPath,
-    execArgv: workerPath.endsWith('.ts') ? ['--experimental-strip-types'] : undefined,
-  };
-}
 
 function isReadyMessage(message: unknown): message is WorkerReadyMessage {
   return (
@@ -146,22 +96,10 @@ function removeSlotFromPool(slot: PooledWorkerSlot): void {
   }
 }
 
-function runFallbackInProcess(
-  buffer: Uint8Array,
-  options: ProcessImageWorkerOptions | undefined,
-  resolve: (_value: Uint8Array) => void,
-  reject: (_reason: ApiError) => void
-): void {
-  processImageWorkerBuffer(buffer, options)
-    .then(resolve)
-    .catch(() => {
-      reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
-    });
-}
-
 function postTaskToReadyWorker(slot: PooledWorkerSlot, task: ActiveWorkerTask): void {
   const { buffer } = task;
   const expectHeic = Boolean(task.options?.expectHeic);
+  const maxBytes = task.options?.maxBytes ?? MAX_GUEST_PHOTO_SIZE;
   const canTransferDirectly =
     !Buffer.isBuffer(buffer) &&
     buffer.buffer instanceof ArrayBuffer &&
@@ -174,6 +112,7 @@ function postTaskToReadyWorker(slot: PooledWorkerSlot, task: ActiveWorkerTask): 
         id: task.id,
         buffer,
         expectHeic,
+        maxBytes,
       };
       slot.worker.postMessage(payload, [buffer.buffer]);
       return;
@@ -187,8 +126,27 @@ function postTaskToReadyWorker(slot: PooledWorkerSlot, task: ActiveWorkerTask): 
     id: task.id,
     buffer: ownedBuffer,
     expectHeic,
+    maxBytes,
   };
   slot.worker.postMessage(payload, [ownedBuffer.buffer]);
+}
+
+function failAndEvictWorkerSlot(slot: PooledWorkerSlot): void {
+  removeSlotFromPool(slot);
+  slot.worker.unref();
+  void slot.worker.terminate();
+
+  const inFlight = slot.activeTask;
+  slot.activeTask = null;
+  if (inFlight && !inFlight.settled) {
+    inFlight.settled = true;
+    clearActiveTaskTimer(inFlight);
+    inFlight.reject(
+      new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.')
+    );
+  }
+
+  drainPendingTasks();
 }
 
 function attachTaskToSlot(slot: PooledWorkerSlot, queued: QueuedWorkerTask): void {
@@ -209,6 +167,7 @@ function attachTaskToSlot(slot: PooledWorkerSlot, queued: QueuedWorkerTask): voi
     if (slot.activeTask === activeTask) {
       slot.activeTask = null;
     }
+    logger.error(`Image processor worker timed out after ${queued.timeoutMs}ms`);
     removeSlotFromPool(slot);
     slot.worker.unref();
     void slot.worker.terminate();
@@ -222,80 +181,33 @@ function attachTaskToSlot(slot: PooledWorkerSlot, queued: QueuedWorkerTask): voi
   if (slot.ready) {
     try {
       postTaskToReadyWorker(slot, activeTask);
-    } catch {
-      if (!activeTask.settled) {
-        activeTask.settled = true;
-        clearActiveTaskTimer(activeTask);
-        slot.activeTask = null;
-        removeSlotFromPool(slot);
-        slot.worker.unref();
-        void slot.worker.terminate();
-        activeTask.reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
-        drainPendingTasks();
-      }
+    } catch (err) {
+      logger.error('Failed to dispatch task to image processor worker:', err);
+      failAndEvictWorkerSlot(slot);
     }
   }
-}
-
-function handleStartupFailure(slot: PooledWorkerSlot, err?: unknown): void {
-  removeSlotFromPool(slot);
-  slot.worker.unref();
-  void slot.worker.terminate();
-
-  const errCode =
-    typeof err === 'object' && err !== null && 'code' in err
-      ? String((err as { code?: unknown }).code)
-      : '';
-  if (
-    errCode === 'ERR_MODULE_NOT_FOUND' ||
-    errCode === 'MODULE_NOT_FOUND' ||
-    errCode === 'ENOENT'
-  ) {
-    workerStartupUnavailable = true;
-  }
-
-  const pendingTask = slot.activeTask;
-  slot.activeTask = null;
-  if (pendingTask && !pendingTask.settled) {
-    pendingTask.settled = true;
-    clearActiveTaskTimer(pendingTask);
-    // Input ArrayBuffer was never transferred because worker never signaled readiness
-    runFallbackInProcess(pendingTask.buffer, pendingTask.options, pendingTask.resolve, pendingTask.reject);
-  }
-
-  drainPendingTasks();
-}
-
-function handleRuntimeWorkerFailure(slot: PooledWorkerSlot): void {
-  removeSlotFromPool(slot);
-  slot.worker.unref();
-  void slot.worker.terminate();
-
-  const inFlight = slot.activeTask;
-  slot.activeTask = null;
-  if (inFlight && !inFlight.settled) {
-    inFlight.settled = true;
-    clearActiveTaskTimer(inFlight);
-    inFlight.reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
-  }
-
-  drainPendingTasks();
 }
 
 function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
-  const { workerPath, execArgv } = getWorkerConfig();
   let worker: Worker;
   try {
-    worker = new Worker(workerPath, {
-      workerData: { isImageProcessorPoolWorker: true },
-      execArgv,
-    });
-  } catch (err) {
-    const errCode = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code) : '';
-    if (errCode === 'ERR_MODULE_NOT_FOUND' || errCode === 'ENOENT' || errCode === 'ERR_WORKER_INVALID_EXEC_ARGV') {
-      workerStartupUnavailable = true;
+    if (process.env.NODE_ENV === 'test') {
+      const testWorkerPath = workerPathOverride
+        ?? path.resolve(process.cwd(), 'src', 'utils', 'imageProcessorWorker.ts');
+      worker = new Worker(/* turbopackIgnore: true */ testWorkerPath, {
+        workerData: { isImageProcessorPoolWorker: true },
+        execArgv: testWorkerPath.endsWith('.ts') ? ['--experimental-strip-types'] : undefined,
+      });
+    } else {
+      worker = new Worker(new URL('./imageProcessorWorker.ts', import.meta.url), {
+        workerData: { isImageProcessorPoolWorker: true },
+      });
     }
-    runFallbackInProcess(initialTask.buffer, initialTask.options, initialTask.resolve, initialTask.reject);
+  } catch (err) {
+    logger.error('Failed to initialize image processor worker:', err);
+    initialTask.reject(
+      new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.')
+    );
     drainPendingTasks();
     return;
   }
@@ -321,8 +233,9 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
       if (waitingTask && !waitingTask.settled) {
         try {
           postTaskToReadyWorker(slot, waitingTask);
-        } catch {
-          handleRuntimeWorkerFailure(slot);
+        } catch (err) {
+          logger.error('Failed to dispatch task to image processor worker:', err);
+          failAndEvictWorkerSlot(slot);
         }
       } else if (!slot.activeTask) {
         if (pendingTaskQueue.length > 0) {
@@ -354,6 +267,7 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
       }
       activeTask.resolve(result.buffer);
     } else {
+      logger.error('Image processor worker failed to sanitize image:', result.error);
       activeTask.reject(
         new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.')
       );
@@ -369,33 +283,24 @@ function spawnPooledWorkerForTask(initialTask: QueuedWorkerTask): void {
 
   worker.on('error', (err) => {
     if (slot.dead) return;
-    if (!slot.ready) {
-      handleStartupFailure(slot, err);
-    } else {
-      handleRuntimeWorkerFailure(slot);
-    }
+    logger.error('Image processor worker emitted an error:', err);
+    failAndEvictWorkerSlot(slot);
   });
 
   worker.on('exit', (code) => {
     if (slot.dead) return;
-    if (!slot.ready) {
-      handleStartupFailure(slot);
-    } else if (code !== 0 || slot.activeTask) {
-      handleRuntimeWorkerFailure(slot);
+    if (!slot.ready || code !== 0 || slot.activeTask) {
+      logger.error(`Image processor worker exited unexpectedly with code ${code}`);
+      failAndEvictWorkerSlot(slot);
     } else {
       removeSlotFromPool(slot);
+      drainPendingTasks();
     }
   });
 }
 
 function drainPendingTasks(): void {
   while (pendingTaskQueue.length > 0) {
-    if (workerStartupUnavailable) {
-      const task = pendingTaskQueue.shift()!;
-      runFallbackInProcess(task.buffer, task.options, task.resolve, task.reject);
-      continue;
-    }
-
     const idleReadySlot = workerPool.find(
       (slot) => !slot.dead && slot.ready && slot.activeTask === null
     );
@@ -450,7 +355,6 @@ export async function resetImageWorkerPool(options?: {
     task.reject(new ApiError(400, 'Image sanitization failed. The file may be corrupt or invalid.'));
   }
 
-  workerStartupUnavailable = false;
   if (options && 'workerPathOverride' in options) {
     workerPathOverride = options.workerPathOverride ?? null;
   } else {
@@ -466,10 +370,14 @@ export function offloadSanitizeToWorker(
   timeoutMs = 10000,
   options?: ProcessImageWorkerOptions
 ): Promise<Uint8Array> {
-  if (workerStartupUnavailable) {
-    return new Promise((resolve, reject) => {
-      runFallbackInProcess(buffer, options, resolve, reject);
-    });
+  const maxBytes = options?.maxBytes ?? MAX_GUEST_PHOTO_SIZE;
+  if (buffer.byteLength > maxBytes) {
+    logger.error(
+      `Image buffer size (${buffer.byteLength} bytes) exceeds maximum allowed limit (${maxBytes} bytes)`
+    );
+    return Promise.reject(
+      new ApiError(400, 'Image sanitization failed. File size exceeds maximum allowed limit.')
+    );
   }
 
   return new Promise((resolve, reject) => {
@@ -538,12 +446,21 @@ export async function sanitizeImage(file: File): Promise<File> {
   }
 
   try {
+    if (typeof file.size === 'number' && file.size > MAX_GUEST_PHOTO_SIZE) {
+      throw new ApiError(400, 'Image sanitization failed. File size exceeds maximum allowed limit.');
+    }
+
     const arrayBuffer = await file.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_GUEST_PHOTO_SIZE) {
+      throw new ApiError(400, 'Image sanitization failed. File size exceeds maximum allowed limit.');
+    }
+
     const buffer = new Uint8Array(arrayBuffer);
     const transcodeToJpeg = isHeicInput || isHeicBuffer(buffer);
 
     const sanitizedBuffer = await offloadSanitizeToWorker(buffer, 10000, {
       expectHeic: isHeicInput,
+      maxBytes: MAX_GUEST_PHOTO_SIZE,
     });
 
     const outputBuffer: Buffer<ArrayBuffer> =
