@@ -1,4 +1,3 @@
-import { AdminEntityCreateSchema } from '@/utils/adminEntitySchemas';
 import { AdminEntityReorderSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
@@ -107,8 +106,7 @@ export const POST = withApiMiddleware(async (request: NextRequest, context: { pa
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const body = await request.json();
-  AdminEntityCreateSchema.safeParse(body);
-  
+
   try {
     const newRecord = await serviceData.service.create(body);
     return NextResponse.json(newRecord, { status: 201 });

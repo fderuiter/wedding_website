@@ -565,6 +565,68 @@ describe('verify-deployment-runbooks', () => {
     );
   });
 
+  it('rejects missing webhook wire docs, missing release_ref promotion alignment, omitted CI verify scripts, and storybook.yml cache drift', () => {
+    const dockerPath = path.join(tempDir, 'docs/deployment/docker-vps.md');
+    fs.writeFileSync(
+      dockerPath,
+      fs
+        .readFileSync(dockerPath, 'utf8')
+        .replace(/\$\{X-Deploy-Timestamp\}\.\$\{PAYLOAD\}/g, 'REMOVED_HMAC_FORMULA')
+        .replace(/DEPLOY_WEBHOOK_SECRET/g, 'REMOVED_WEBHOOK_SECRET')
+    );
+
+    const deploymentPath = path.join(tempDir, 'DEPLOYMENT.md');
+    fs.writeFileSync(
+      deploymentPath,
+      fs
+        .readFileSync(deploymentPath, 'utf8')
+        .replace(/check:setup-guides/g, 'removed-setup-check')
+        .replace(/check:spec-contracts/g, 'removed-spec-check')
+        .replace(/release_ref/g, 'removed_ref_input')
+    );
+
+    const gcpPath = path.join(tempDir, 'docs/deployment/gcp-cloud-run.md');
+    fs.writeFileSync(
+      gcpPath,
+      fs.readFileSync(gcpPath, 'utf8').replace(/release_ref/g, 'removed_ref_input')
+    );
+
+    const storybookWorkflowPath = path.join(tempDir, '.github/workflows/storybook.yml');
+    fs.writeFileSync(
+      storybookWorkflowPath,
+      fs
+        .readFileSync(storybookWorkflowPath, 'utf8')
+        .replace('node_modules/.cache/storybook\n', '')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/deployment/docker-vps.md: Signed webhook adapter documentation is missing "DEPLOY_WEBHOOK_SECRET"'
+        ),
+        expect.stringContaining(
+          'docs/deployment/docker-vps.md: Must document timestamp-prefixed HMAC formula `${X-Deploy-Timestamp}.${PAYLOAD}`'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: `verify` (`ci.yml`) job overview omits CI verification script "check:setup-guides"'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: `verify` (`ci.yml`) job overview omits CI verification script "check:spec-contracts"'
+        ),
+        expect.stringContaining(
+          'DEPLOYMENT.md: Must document `release_ref` and `target_sha` commit resolution'
+        ),
+        expect.stringContaining(
+          'docs/deployment/gcp-cloud-run.md: Must document `release_ref` and `target_sha` commit resolution'
+        ),
+        expect.stringContaining(
+          '.github/workflows/storybook.yml: `actions/cache` must cache "node_modules/.cache/storybook"'
+        ),
+      ])
+    );
+  });
+
   it('fails with remediation hints when Prisma migrations, envSchema keys, or docker-compose :? guards drift from CHANGELOG.md and docs/upgrading.md', () => {
     fs.mkdirSync(path.join(tempDir, 'prisma/migrations/20261215000000_add_shuttle_manifest'), {
       recursive: true,

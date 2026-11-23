@@ -4,6 +4,7 @@ import { ts } from 'ts-morph';
 import { fileURLToPath } from 'url';
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { parsePostgresUrl, redactPostgresUrl } from '../src/lib/postgres-url.js';
+import { staticSteps } from './check-quality';
 import { getKeysFromSource } from './verify-env-docs';
 
 interface ExtractedMigrateCommand {
@@ -1805,6 +1806,235 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   for (const requiredCiJob of ['storybook-build', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
+    }
+  }
+
+  // 4a. Verify ci.yml `verify` job npm scripts are documented in DEPLOYMENT.md (`verify` (`ci.yml`) overview)
+  const ciDoc = parseDocument(ciWorkflowRaw, { version: '1.2' });
+  const storybookWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'storybook.yml'), 'utf8');
+  const storybookDoc = parseDocument(storybookWorkflowRaw, { version: '1.2' });
+
+  const extractJobSteps = (doc: ReturnType<typeof parseDocument>, jobId: string): unknown[] => {
+    const jobsNode: unknown = isMap(doc.contents) ? doc.contents.get('jobs', true) : null;
+    if (!isMap(jobsNode)) return [];
+    const jobNode: unknown = jobsNode.get(jobId, true);
+    if (!isMap(jobNode)) return [];
+    const stepsNode: unknown = jobNode.get('steps', true);
+    return isSeq(stepsNode) ? stepsNode.items : [];
+  };
+
+  const ciVerifyScripts: string[] = [];
+  for (const stepItem of extractJobSteps(ciDoc, 'verify')) {
+    if (!isMap(stepItem)) continue;
+    const runNode: unknown = stepItem.get('run', true);
+    if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
+    const skipsDocSync = /\bcheck:static\b[^\n]*--skip-doc-sync\b/.test(runNode.value);
+    const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
+    let scriptMatch: RegExpExecArray | null;
+    while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
+      const scriptName = scriptMatch[1];
+      if (scriptName !== 'prisma:generate' && !ciVerifyScripts.includes(scriptName)) {
+        ciVerifyScripts.push(scriptName);
+      }
+      if (scriptName === 'check:static') {
+        for (const staticStep of staticSteps) {
+          if (!staticStep.script) continue;
+          if (skipsDocSync && staticStep.script === 'check:doc-sync') continue;
+          if (!ciVerifyScripts.includes(staticStep.script)) {
+            ciVerifyScripts.push(staticStep.script);
+          }
+        }
+      }
+    }
+  }
+
+  const ciOverviewSection = extractSectionSlice(
+    deploymentMd,
+    /^###\s+1\.\s+Continuous Integration\b/,
+    '### '
+  );
+  const verifyJobBulletLine =
+    ciOverviewSection
+      .split(/\r?\n/)
+      .find((line) => /^\s*-\s+`verify`\s*\(`ci\.yml`\):/.test(line)) ?? '';
+  if (!verifyJobBulletLine) {
+    errors.push('DEPLOYMENT.md: Missing `- \`verify\` (\`ci.yml\`):` job bullet in Workflows Overview');
+  } else {
+    for (const verifyScript of ciVerifyScripts) {
+      if (!verifyJobBulletLine.includes(verifyScript)) {
+        errors.push(
+          `DEPLOYMENT.md: \`verify\` (\`ci.yml\`) job overview omits CI verification script "${verifyScript}" from .github/workflows/ci.yml`
+        );
+      }
+    }
+  }
+
+  // 4b. Verify storybook.yml `actions/cache` parity with ci.yml `storybook-build`
+  const extractCacheConfig = (
+    steps: unknown[]
+  ): { uses: string; paths: string[]; key: string; restoreKeys: string[] } | null => {
+    for (const stepItem of steps) {
+      if (!isMap(stepItem)) continue;
+      const usesNode: unknown = stepItem.get('uses', true);
+      if (
+        !isScalar(usesNode) ||
+        typeof usesNode.value !== 'string' ||
+        !usesNode.value.trim().startsWith('actions/cache@')
+      ) {
+        continue;
+      }
+      const withNode: unknown = stepItem.get('with', true);
+      const pathNode: unknown = isMap(withNode) ? withNode.get('path', true) : undefined;
+      const keyNode: unknown = isMap(withNode) ? withNode.get('key', true) : undefined;
+      const restoreNode: unknown = isMap(withNode) ? withNode.get('restore-keys', true) : undefined;
+      const rawPath = isScalar(pathNode) && typeof pathNode.value === 'string' ? pathNode.value : '';
+      const rawKey = isScalar(keyNode) && typeof keyNode.value === 'string' ? keyNode.value.trim() : '';
+      const rawRestore =
+        isScalar(restoreNode) && typeof restoreNode.value === 'string' ? restoreNode.value : '';
+      return {
+        uses: usesNode.value.trim(),
+        paths: rawPath
+          .split(/\r?\n/)
+          .map((p) => p.trim())
+          .filter(Boolean),
+        key: rawKey,
+        restoreKeys: rawRestore
+          .split(/\r?\n/)
+          .map((k) => k.trim())
+          .filter(Boolean),
+      };
+    }
+    return null;
+  };
+
+  const ciStorybookCache = extractCacheConfig(extractJobSteps(ciDoc, 'storybook-build'));
+  const standaloneStorybookCache = extractCacheConfig(extractJobSteps(storybookDoc, 'build'));
+  if (!ciStorybookCache) {
+    errors.push('.github/workflows/ci.yml: `storybook-build` job is missing `actions/cache` step');
+  }
+  if (!standaloneStorybookCache) {
+    errors.push(
+      '.github/workflows/storybook.yml: `build` job is missing `actions/cache` step matching .github/workflows/ci.yml `storybook-build`'
+    );
+  } else {
+    for (const requiredCachePath of ['node_modules/.cache/webpack', 'node_modules/.cache/storybook']) {
+      if (!standaloneStorybookCache.paths.includes(requiredCachePath)) {
+        errors.push(
+          `.github/workflows/storybook.yml: \`actions/cache\` must cache "${requiredCachePath}"`
+        );
+      }
+    }
+    if (
+      ciStorybookCache &&
+      (standaloneStorybookCache.uses !== ciStorybookCache.uses ||
+        standaloneStorybookCache.paths.join('\n') !== ciStorybookCache.paths.join('\n') ||
+        standaloneStorybookCache.key !== ciStorybookCache.key ||
+        standaloneStorybookCache.restoreKeys.join('\n') !== ciStorybookCache.restoreKeys.join('\n'))
+    ) {
+      errors.push(
+        '.github/workflows/storybook.yml: `actions/cache` configuration (`uses`, `path`, `key`, `restore-keys`) must match .github/workflows/ci.yml `storybook-build`'
+      );
+    }
+  }
+
+  // 4c. Verify deploy-provider.yml signed webhook wire contract is documented in DEPLOYMENT.md & docs/deployment/docker-vps.md
+  const usesSignedWebhookAdapter =
+    deployProviderRaw.includes('DEPLOY_WEBHOOK_URL') &&
+    deployProviderRaw.includes('DEPLOY_WEBHOOK_SECRET') &&
+    deployProviderRaw.includes('X-Hub-Signature-256') &&
+    deployProviderRaw.includes('X-Deploy-Timestamp') &&
+    deployProviderRaw.includes('X-Deploy-Signature-256');
+  if (usesSignedWebhookAdapter) {
+    for (const [docLabel, docText] of [
+      ['DEPLOYMENT.md', deploymentMd],
+      ['docs/deployment/docker-vps.md', dockerMd],
+    ] as const) {
+      for (const requiredToken of [
+        'deploy-provider.yml',
+        'docker-host',
+        'generic-webhook',
+        'DEPLOY_WEBHOOK_URL',
+        'DEPLOY_WEBHOOK_SECRET',
+        'X-Hub-Signature-256',
+        'X-Deploy-Timestamp',
+        'X-Deploy-Signature-256',
+        'jq -n',
+      ]) {
+        if (!docText.includes(requiredToken)) {
+          errors.push(
+            `${docLabel}: Signed webhook adapter documentation is missing "${requiredToken}" from .github/workflows/deploy-provider.yml`
+          );
+        }
+      }
+      if (
+        !(
+          (docText.includes('"image"') &&
+            docText.includes('"digest"') &&
+            docText.includes('"environment"')) ||
+          /\{\s*image\s*,\s*digest\s*,\s*environment\s*\}/.test(docText)
+        )
+      ) {
+        errors.push(
+          `${docLabel}: Must document the webhook POST JSON payload schema \`{image, digest, environment}\``
+        );
+      }
+      if (!/\$\{X-Deploy-Timestamp\}\.\$\{PAYLOAD\}/.test(docText)) {
+        errors.push(
+          `${docLabel}: Must document timestamp-prefixed HMAC formula \`\${X-Deploy-Timestamp}.\${PAYLOAD}\` for \`X-Deploy-Signature-256\``
+        );
+      }
+      if (!/raw[-\s]+(?:HTTP\s+)?(?:request\s+)?(?:body|bytes|buffer|PAYLOAD)/i.test(docText)) {
+        errors.push(
+          `${docLabel}: Must warn operators to verify webhook HMAC signatures over raw multi-line \`jq -n\` request bytes rather than re-serialized JSON`
+        );
+      }
+    }
+  }
+
+  // 4d. Verify release_ref & image_digest promotion commit resolution alignment across deploy.yml, DEPLOYMENT.md, and gcp-cloud-run.md
+  const deployDoc = parseDocument(deployWorkflowRaw, { version: '1.2' });
+  const deployOnNode: unknown = isMap(deployDoc.contents) ? deployDoc.contents.get('on', true) : null;
+  const hasTriggerInput = (triggerKey: string, inputKey: string): boolean => {
+    if (!isMap(deployOnNode)) return false;
+    const triggerNode: unknown = deployOnNode.get(triggerKey, true);
+    if (!isMap(triggerNode)) return false;
+    const inputsNode: unknown = triggerNode.get('inputs', true);
+    return isMap(inputsNode) && inputsNode.has(inputKey);
+  };
+  if (
+    !hasTriggerInput('workflow_dispatch', 'release_ref') ||
+    !hasTriggerInput('workflow_call', 'release_ref')
+  ) {
+    errors.push(
+      '.github/workflows/deploy.yml: Must define `release_ref` input on both `workflow_dispatch` and `workflow_call`'
+    );
+  }
+  if (
+    !deployWorkflowRaw.includes('RELEASE_REF: ${{ inputs.release_ref }}') ||
+    !deployWorkflowRaw.includes('/commits/${RELEASE_REF}') ||
+    !deployWorkflowRaw.includes('gh attestation verify')
+  ) {
+    errors.push(
+      '.github/workflows/deploy.yml: `ci-gate` must resolve `target_sha` from `inputs.release_ref` and `inputs.image_digest` OIDC attestation'
+    );
+  }
+  if (
+    !/schema-compatibility:[\s\S]*?Align Workspace to Verified Commit SHA[\s\S]*?inputs\.release_ref != ''[\s\S]*?inputs\.image_digest != ''/.test(
+      deployWorkflowRaw
+    )
+  ) {
+    errors.push(
+      '.github/workflows/deploy.yml: `schema-compatibility` must align checkout to `target_sha` when `release_ref` or `image_digest` is supplied'
+    );
+  }
+  for (const [docLabel, docText] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/gcp-cloud-run.md', gcpMd],
+  ] as const) {
+    if (!docText.includes('release_ref') || !docText.includes('target_sha')) {
+      errors.push(
+        `${docLabel}: Must document \`release_ref\` and \`target_sha\` commit resolution for manual tag/digest promotions in \`deploy.yml\``
+      );
     }
   }
 

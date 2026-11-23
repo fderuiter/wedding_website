@@ -20,6 +20,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'playwright.config.ts',
     '.githooks/pre-commit',
     '.githooks/pre-push',
+    'jest.setup.js',
     'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
@@ -456,6 +457,42 @@ describe('verify-setup-guides contract check', () => {
         'scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI',
         'README.md: Installation section must prescribe "npm ci" rather than "npm install"',
         'docs/versioning.md: Must cite "node:22-bookworm-slim" (not stale alpine or mismatched Node.js major)',
+      ])
+    );
+  });
+
+  it('rejects missing CI-aware pretest and jest.setup.js contracts or missing guide pretest tokens', () => {
+    const pretestPath = path.join(tempDir, 'scripts/pretest.mjs');
+    fs.writeFileSync(
+      pretestPath,
+      fs.readFileSync(pretestPath, 'utf8').replace(/\.package-lock\.json/g, '.legacy-marker')
+    );
+
+    const jestSetupPath = path.join(tempDir, 'jest.setup.js');
+    fs.writeFileSync(
+      jestSetupPath,
+      fs.readFileSync(jestSetupPath, 'utf8').replace(/TEST_DATABASE_URL/g, 'LEGACY_DB_FLAG')
+    );
+
+    const testingPath = path.join(tempDir, '.github/TESTING.md');
+    fs.writeFileSync(
+      testingPath,
+      fs.readFileSync(testingPath, 'utf8').replace(/--stage-only/g, '')
+    );
+
+    const agentsPath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(
+      agentsPath,
+      `${fs.readFileSync(agentsPath, 'utf8')}\nLegacy flag: --legacy-peer-deps\n`
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment'),
+        expect.stringContaining('jest.setup.js: Must preserve explicit DATABASE_URL'),
+        '.github/TESTING.md: Missing scripts/pretest.mjs step reference "--stage-only"',
+        'AGENTS.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap',
       ])
     );
   });

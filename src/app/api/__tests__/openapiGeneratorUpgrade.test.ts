@@ -1,6 +1,14 @@
+/**
+ * @jest-environment node
+ */
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { z } from 'zod';
+import {
+  AdminEntityCreateSchema,
+  AdminEntityUpdateSchema,
+} from '@/utils/adminEntitySchemas';
 import {
   collectApiRouteEntries,
   extractAdminEntityRows,
@@ -15,6 +23,7 @@ interface OpenApiParameter {
 
 interface OpenApiResponseObject {
   description: string;
+  headers?: Record<string, Record<string, unknown>>;
   content?: Record<string, { schema: Record<string, unknown> }>;
 }
 
@@ -33,15 +42,17 @@ interface OpenApiOperation {
 
 interface OpenApiDocument {
   openapi: string;
+  servers?: Array<{ url: string; description?: string }>;
   tags?: Array<{ name: string; description?: string }>;
   paths: Record<string, Record<string, unknown>>;
   components?: {
     securitySchemes?: Record<string, Record<string, unknown>>;
+    schemas?: Record<string, Record<string, unknown>>;
   };
 }
 
-const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
-const OPENAPI_UPPER_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head'] as const;
+const OPENAPI_UPPER_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']);
 const BODY_UPPER_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 function toOpenApiRoutePath(nextRoutePath: string): string {
@@ -89,6 +100,139 @@ function getExpectedOpenApiInventory() {
     expectedOperationKeys: expectedOperationKeys.sort(),
     expectedPublicOpKeys: expectedPublicOpKeys.sort(),
   };
+}
+
+function resolveJsonPointer(root: Record<string, unknown>, ref: string): Record<string, unknown> {
+  const clean = ref.replace(/^[^#]*#\//, '');
+  const parts = clean
+    .split('/')
+    .map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+  let current: unknown = root;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object') {
+      throw new Error(`Unresolvable $ref: ${ref}`);
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+  if (!current || typeof current !== 'object') {
+    throw new Error(`Invalid target for $ref: ${ref}`);
+  }
+  return current as Record<string, unknown>;
+}
+
+function validateOpenApiSchema(
+  schemaNode: Record<string, unknown>,
+  value: unknown,
+  rootDoc: Record<string, unknown>
+): boolean {
+  if (typeof schemaNode.$ref === 'string') {
+    return validateOpenApiSchema(resolveJsonPointer(rootDoc, schemaNode.$ref), value, rootDoc);
+  }
+
+  if (value === null) {
+    return schemaNode.nullable === true;
+  }
+
+  if (Array.isArray(schemaNode.enum)) {
+    if (!schemaNode.enum.includes(value)) return false;
+  }
+
+  if (typeof schemaNode.type === 'string') {
+    switch (schemaNode.type) {
+      case 'string':
+        if (typeof value !== 'string') return false;
+        if (typeof schemaNode.minLength === 'number' && value.length < schemaNode.minLength) return false;
+        if (typeof schemaNode.maxLength === 'number' && value.length > schemaNode.maxLength) return false;
+        break;
+      case 'number':
+      case 'integer':
+        if (typeof value !== 'number' || Number.isNaN(value)) return false;
+        if (schemaNode.type === 'integer' && !Number.isInteger(value)) return false;
+        if (typeof schemaNode.minimum === 'number') {
+          if (schemaNode.exclusiveMinimum === true ? value <= schemaNode.minimum : value < schemaNode.minimum) {
+            return false;
+          }
+        }
+        if (typeof schemaNode.maximum === 'number') {
+          if (schemaNode.exclusiveMaximum === true ? value >= schemaNode.maximum : value > schemaNode.maximum) {
+            return false;
+          }
+        }
+        break;
+      case 'boolean':
+        if (typeof value !== 'boolean') return false;
+        break;
+      case 'array':
+        if (!Array.isArray(value)) return false;
+        if (typeof schemaNode.minItems === 'number' && value.length < schemaNode.minItems) return false;
+        if (typeof schemaNode.maxItems === 'number' && value.length > schemaNode.maxItems) return false;
+        if (schemaNode.items && typeof schemaNode.items === 'object' && !Array.isArray(schemaNode.items)) {
+          for (const item of value) {
+            if (!validateOpenApiSchema(schemaNode.items as Record<string, unknown>, item, rootDoc)) {
+              return false;
+            }
+          }
+        }
+        break;
+      case 'object':
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    if (Array.isArray(schemaNode.required)) {
+      for (const reqKey of schemaNode.required) {
+        if (typeof reqKey === 'string' && (!Object.prototype.hasOwnProperty.call(obj, reqKey) || obj[reqKey] === undefined)) {
+          return false;
+        }
+      }
+    }
+    if (schemaNode.properties && typeof schemaNode.properties === 'object' && !Array.isArray(schemaNode.properties)) {
+      const props = schemaNode.properties as Record<string, Record<string, unknown>>;
+      for (const [propKey, propSchema] of Object.entries(props)) {
+        if (Object.prototype.hasOwnProperty.call(obj, propKey) && obj[propKey] !== undefined) {
+          if (!validateOpenApiSchema(propSchema, obj[propKey], rootDoc)) {
+            return false;
+          }
+        }
+      }
+      if (schemaNode.additionalProperties === false) {
+        for (const key of Object.keys(obj)) {
+          if (!Object.prototype.hasOwnProperty.call(props, key)) {
+            return false;
+          }
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(schemaNode.allOf)) {
+    for (const sub of schemaNode.allOf) {
+      if (sub && typeof sub === 'object' && !validateOpenApiSchema(sub as Record<string, unknown>, value, rootDoc)) {
+        return false;
+      }
+    }
+  }
+
+  if (Array.isArray(schemaNode.anyOf)) {
+    const matched = schemaNode.anyOf.some(
+      (sub) => sub && typeof sub === 'object' && validateOpenApiSchema(sub as Record<string, unknown>, value, rootDoc)
+    );
+    if (!matched) return false;
+  }
+
+  if (Array.isArray(schemaNode.oneOf)) {
+    const matches = schemaNode.oneOf.filter(
+      (sub) => sub && typeof sub === 'object' && validateOpenApiSchema(sub as Record<string, unknown>, value, rootDoc)
+    );
+    if (matches.length !== 1) return false;
+  }
+
+  return true;
 }
 
 function collectSchemaViolations(node: unknown, pointer = ''): string[] {
@@ -173,8 +317,10 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET /api/uploads/{path}, and POST /api/admin/invitation-codes/merge', () => {
+  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET & HEAD /api/uploads/{path}, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
+    expect(Array.isArray(openapi.servers)).toBe(true);
+    expect((openapi.servers ?? []).length).toBeGreaterThanOrEqual(1);
 
     const { expectedPaths, expectedOperationKeys } = getExpectedOpenApiInventory();
 
@@ -188,6 +334,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(actualOperationKeys).toEqual(expectedOperationKeys);
 
     expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
+    expect(openapi.paths['/api/uploads/{path}']?.head).toBeDefined();
     expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
 
     const ogRoute = openapi.paths['/api/og'];
@@ -225,6 +372,20 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
           );
         }
       }
+
+      for (const [status, resObj] of Object.entries(operation.responses)) {
+        for (const [mediaType, mediaObj] of Object.entries(resObj.content ?? {})) {
+          violations.push(
+            ...collectSchemaViolations(mediaObj.schema, `${method} ${routePath} response:${status}[${mediaType}]`)
+          );
+          nullableCount += countNullableProperties(mediaObj.schema);
+        }
+      }
+    }
+
+    for (const [schemaName, schemaObj] of Object.entries(openapi.components?.schemas ?? {})) {
+      violations.push(...collectSchemaViolations(schemaObj, `components.schemas.${schemaName}`));
+      nullableCount += countNullableProperties(schemaObj);
     }
 
     expect(violations).toEqual([]);
@@ -305,6 +466,8 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const schema = setupPost.requestBody?.content['application/json']?.schema as {
       properties?: Record<string, unknown>;
       required?: string[];
+      anyOf?: unknown[];
+      description?: string;
     };
 
     expect(schema.properties).toBeDefined();
@@ -315,6 +478,8 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.properties?.weddingDate).toBeDefined();
 
     expect(schema.required ?? []).toHaveLength(0);
+    expect(Array.isArray(schema.anyOf)).toBe(true);
+    expect(schema.description).toMatch(/ADMIN_PASSWORD_HASH/);
   });
 
   it('defines components.securitySchemes across every protected operation and query parameters across query operations', () => {
@@ -360,6 +525,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         'GET /api/registry/claim',
         'GET /api/registry/validate-code',
         'GET /api/uploads/{path}',
+        'HEAD /api/uploads/{path}',
         'POST /api/admin/login',
         'POST /api/admin/setup',
         'POST /api/guest/address/public',
@@ -502,37 +668,41 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(featuresSchema.properties?.features?.items?.properties?.type).toEqual({ type: 'string' });
   });
 
-  it('emits multi-branch oneOf schemas for POST /api/rsvp and POST /api/admin/invitation-codes/batch', () => {
+  it('emits multi-branch anyOf schemas for POST /api/rsvp and POST /api/admin/invitation-codes/batch without exclusive oneOf collisions', () => {
     const rsvpPost = openapi.paths['/api/rsvp']?.post as OpenApiOperation;
     const rsvpSchema = rsvpPost.requestBody?.content['application/json']?.schema as {
-      oneOf?: Array<{ properties?: Record<string, unknown> }>;
+      type?: string;
+      anyOf?: Array<{ properties?: Record<string, unknown> }>;
     };
-    expect(rsvpSchema.oneOf).toHaveLength(2);
+    expect(rsvpSchema.type).toBe('object');
+    expect(rsvpSchema.anyOf).toHaveLength(2);
     expect(
-      rsvpSchema.oneOf?.some((branch) => Boolean(branch.properties?.rsvps))
+      rsvpSchema.anyOf?.some((branch) => Boolean(branch.properties?.rsvps))
     ).toBe(true);
     expect(
-      rsvpSchema.oneOf?.some((branch) => Boolean(branch.properties?.subEventId))
+      rsvpSchema.anyOf?.some((branch) => Boolean(branch.properties?.subEventId))
     ).toBe(true);
 
     const inviteBatchPost = openapi.paths['/api/admin/invitation-codes/batch']
       ?.post as OpenApiOperation;
     const inviteBatchSchema = inviteBatchPost.requestBody?.content['application/json']?.schema as {
-      oneOf?: Array<{ properties?: Record<string, unknown> }>;
+      type?: string;
+      anyOf?: Array<{ properties?: Record<string, unknown> }>;
     };
-    expect(inviteBatchSchema.oneOf).toHaveLength(3);
+    expect(inviteBatchSchema.type).toBe('object');
+    expect(inviteBatchSchema.anyOf).toHaveLength(3);
     expect(
-      inviteBatchSchema.oneOf?.some(
+      inviteBatchSchema.anyOf?.some(
         (branch) => Boolean(branch.properties?.ids && !branch.properties?.tags)
       )
     ).toBe(true);
     expect(
-      inviteBatchSchema.oneOf?.some(
+      inviteBatchSchema.anyOf?.some(
         (branch) => Boolean(branch.properties?.ids && branch.properties?.tags && branch.properties?.action)
       )
     ).toBe(true);
     expect(
-      inviteBatchSchema.oneOf?.some((branch) => Boolean(branch.properties?.records))
+      inviteBatchSchema.anyOf?.some((branch) => Boolean(branch.properties?.records))
     ).toBe(true);
   });
 
@@ -553,7 +723,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect((putSchema.required ?? []).length).toBeGreaterThanOrEqual(19);
   });
 
-  it('emits {entity} path enums across every admin {entity} operation and matching oneOf schemas on entity POST/PUT', () => {
+  it('emits {entity} path enums across every admin {entity} operation and matching anyOf schemas resolved from src/features/admin/registry.ts on entity POST/PUT', () => {
     const expectedSlugs = extractAdminEntityRows().map((row) => row.entityKey);
     expect(expectedSlugs).toEqual(
       expect.arrayContaining([
@@ -589,18 +759,18 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const entityCreateSchema = (openapi.paths['/api/admin/{entity}']?.post as OpenApiOperation)
       .requestBody?.content['application/json']?.schema as {
       type?: string;
-      oneOf?: unknown[];
+      anyOf?: unknown[];
     };
     expect(entityCreateSchema.type).toBe('object');
-    expect(entityCreateSchema.oneOf).toHaveLength(expectedSlugs.length);
+    expect(entityCreateSchema.anyOf).toHaveLength(expectedSlugs.length);
 
     const entityUpdateSchema = (openapi.paths['/api/admin/{entity}/{id}']?.put as OpenApiOperation)
       .requestBody?.content['application/json']?.schema as {
       type?: string;
-      oneOf?: unknown[];
+      anyOf?: unknown[];
     };
     expect(entityUpdateSchema.type).toBe('object');
-    expect(entityUpdateSchema.oneOf).toHaveLength(expectedSlugs.length);
+    expect(entityUpdateSchema.anyOf).toHaveLength(expectedSlugs.length);
   });
 
   it('documents 201 Created responses on creation routes and explicit response media types on all 8 export operations', () => {
@@ -658,5 +828,170 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
         expect(declaredTags.has(tag)).toBe(true);
       }
     }
+  });
+
+  it('validates all 7 entity creates/updates, photo moderation forms, and invitation batch payloads without union collisions while rejecting empty {} on all 7 structurally guarded operations', () => {
+    // Direct check on AdminEntityCreateSchema & AdminEntityUpdateSchema (z.union -> anyOf, non-colliding)
+    const createJsonSchema = z.toJSONSchema(AdminEntityCreateSchema, {
+      target: 'openapi-3.0',
+      io: 'input',
+      unrepresentable: 'any',
+    }) as Record<string, unknown>;
+    const updateJsonSchema = z.toJSONSchema(AdminEntityUpdateSchema, {
+      target: 'openapi-3.0',
+      io: 'input',
+      unrepresentable: 'any',
+    }) as Record<string, unknown>;
+    expect(Array.isArray(createJsonSchema.anyOf)).toBe(true);
+    expect(createJsonSchema.oneOf).toBeUndefined();
+    expect(Array.isArray(updateJsonSchema.anyOf)).toBe(true);
+    expect(updateJsonSchema.oneOf).toBeUndefined();
+    expect(AdminEntityUpdateSchema.safeParse({ price: 249.99 }).success).toBe(true);
+
+    const rootDoc = openapi as unknown as Record<string, unknown>;
+    function compileRequestSchema(routePath: string, method: string) {
+      const op = openapi.paths[routePath]?.[method] as OpenApiOperation;
+      const schema = op.requestBody?.content['application/json']?.schema as Record<string, unknown>;
+      return (payload: unknown) => validateOpenApiSchema(schema, payload, rootDoc);
+    }
+
+    // 1. All 7 entity creates
+    const validateEntityCreate = compileRequestSchema('/api/admin/{entity}', 'post');
+    const entityCreates = [
+      { type: 'page', tags: ['home'], data: { title: 'Welcome', body: 'Hello' } },
+      { name: 'Jane Doe', role: 'Maid of Honor', bio: 'Best friend', order: 1 },
+      {
+        name: 'Botanical Garden',
+        description: 'Lush gardens',
+        category: 'Nature',
+        directions: '5 min walk',
+        latitude: 37.77,
+        longitude: -122.41,
+        isVisible: true,
+      },
+      { name: 'Stand Mixer', price: 299.99, category: 'Kitchen' },
+      { guestName: 'The Smith Family', maxGuests: 4 },
+      { name: 'Table 1', capacity: 8 },
+      { title: 'Welcome Drinks', startTime: '2026-06-19T18:00:00Z' },
+    ];
+    for (const payload of entityCreates) {
+      expect(validateEntityCreate(payload)).toBe(true);
+    }
+
+    // 2. All 7 entity updates (partial updates without exclusive union collision)
+    const validateEntityUpdate = compileRequestSchema('/api/admin/{entity}/{id}', 'put');
+    const entityUpdates = [
+      { tags: ['home', 'featured'] },
+      { role: 'Best Woman' },
+      { isVisible: false },
+      { price: 249.99 },
+      { maxGuests: 5 },
+      { capacity: 10 },
+      { location: 'Rooftop Terrace' },
+    ];
+    for (const payload of entityUpdates) {
+      expect(validateEntityUpdate(payload)).toBe(true);
+    }
+
+    // 3. Photo moderation forms
+    const validatePhotoIdPatch = compileRequestSchema('/api/admin/photos/{id}', 'patch');
+    expect(validatePhotoIdPatch({ action: 'approve' })).toBe(true);
+    expect(validatePhotoIdPatch({ status: 'APPROVED' })).toBe(true);
+
+    const validateModQueuePatch = compileRequestSchema('/api/admin/photos/moderation', 'patch');
+    expect(validateModQueuePatch({ id: 'photo-1', action: 'approve' })).toBe(true);
+    expect(validateModQueuePatch({ ids: ['photo-1', 'photo-2'], status: 'APPROVED' })).toBe(true);
+    expect(validateModQueuePatch({ action: 'approve' })).toBe(false);
+
+    const validateModBatchPost = compileRequestSchema('/api/admin/photos/moderation/batch', 'post');
+    expect(validateModBatchPost({ photoIds: ['photo-1'], action: 'reject' })).toBe(true);
+    expect(validateModBatchPost({ photoIds: [] })).toBe(false);
+
+    // 4. Invitation batch payloads
+    const validateInvBatchPost = compileRequestSchema('/api/admin/invitation-codes/batch', 'post');
+    expect(
+      validateInvBatchPost({
+        ids: ['123e4567-e89b-12d3-a456-426614174000'],
+        tags: ['vip'],
+        action: 'add',
+      })
+    ).toBe(true);
+    expect(validateInvBatchPost({ ids: ['id-1'], updates: { maxGuests: 4 } })).toBe(true);
+    expect(validateInvBatchPost({ records: [{ guestName: 'John Doe' }] })).toBe(true);
+
+    // 5. Reject empty {} across all 7 structurally guarded operations
+    const guardedOperations: Array<[string, string]> = [
+      ['/api/guest/lookup', 'post'],
+      ['/api/admin/photos/moderation/batch', 'post'],
+      ['/api/registry/contribute', 'post'],
+      ['/api/admin/invitation-codes/merge', 'post'],
+      ['/api/admin/photos/{id}', 'patch'],
+      ['/api/admin/photos/moderation', 'patch'],
+      ['/api/admin/setup', 'post'],
+    ];
+    for (const [routePath, method] of guardedOperations) {
+      const validate = compileRequestSchema(routePath, method);
+      expect(validate({})).toBe(false);
+    }
+
+    // Verify MergeInvitationCodesSchema documents disjoint primaryId/secondaryIds precondition
+    const mergeSchema = (
+      openapi.paths['/api/admin/invitation-codes/merge']?.post as OpenApiOperation
+    ).requestBody?.content['application/json']?.schema as { description?: string };
+    expect(mergeSchema.description).toMatch(/primaryId/);
+    expect(mergeSchema.description).toMatch(/secondaryIds/);
+  });
+
+  it('infers 2xx response schemas and 4xx/5xx error envelopes across every operation, including binary uploads and backup export', () => {
+    const { expectedOperationKeys } = getExpectedOpenApiInventory();
+    const operations = getAllOperations();
+    expect(operations).toHaveLength(expectedOperationKeys.length);
+
+    for (const { routePath, method, operation } of operations) {
+      const statusCodes = Object.keys(operation.responses);
+      const successCodes = statusCodes.filter((code) => code.startsWith('2'));
+      const errorCodes = statusCodes.filter((code) => code.startsWith('4') || code.startsWith('5'));
+
+      expect(successCodes.length).toBeGreaterThan(0);
+      expect(errorCodes.length).toBeGreaterThan(0);
+
+      for (const code of [...successCodes, ...errorCodes]) {
+        const resObj = operation.responses[code];
+        const mediaEntries = Object.entries(resObj.content ?? {});
+        expect(mediaEntries.length).toBeGreaterThan(0);
+        for (const [, mediaObj] of mediaEntries) {
+          expect(mediaObj.schema).toBeDefined();
+          expect(Object.keys(mediaObj.schema).length).toBeGreaterThan(0);
+        }
+      }
+
+      if (routePath === '/api/uploads/{path}' && (method === 'GET' || method === 'HEAD')) {
+        const okRes = operation.responses['200'];
+        expect(okRes.content?.['application/octet-stream']?.schema).toEqual({
+          type: 'string',
+          format: 'binary',
+        });
+        expect(Object.keys(okRes.headers ?? {})).toEqual(
+          expect.arrayContaining([
+            'Content-Type',
+            'Content-Length',
+            'Last-Modified',
+            'Cache-Control',
+            'X-Content-Type-Options',
+          ])
+        );
+      }
+    }
+
+    const maintenanceExport = openapi.paths['/api/admin/maintenance/export']
+      ?.get as OpenApiOperation;
+    const backupSchema = maintenanceExport.responses['200']?.content?.['application/json']
+      ?.schema as {
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+    expect(backupSchema.required).toEqual(expect.arrayContaining(['appConfig', 'registryItem']));
+    expect(backupSchema.properties?.appConfig).toBeDefined();
+    expect(maintenanceExport.responses['200']?.headers?.['Content-Disposition']).toBeDefined();
   });
 });

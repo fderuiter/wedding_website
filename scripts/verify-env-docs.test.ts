@@ -293,6 +293,7 @@ describe('verify-env-docs section-aware validation', () => {
         'docs-portal/.vitepress/config.mts',
         'Dockerfile',
         'docker-compose.yml',
+        'docker-compose.rollout.yml',
         '.env.example',
         'docs/runtime-contract.md',
         'DEPLOYMENT.md',

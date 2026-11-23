@@ -31,12 +31,19 @@ export type {
   UseSeatingStateOptions,
 } from './hooks/useSeatingState';
 export { generateSeatingChartPdf } from './pdf.service';
-export { computeSeatPosition, resolveSeatAssignments } from './seatLayout';
+export {
+  computeSeatPosition,
+  resolveDetailedSeatAssignments,
+  resolveSeatAssignments,
+} from './seatLayout';
 export {
   ADDRESS_COLLECTION_TAG,
   isGuestEligibleForSeating,
   getDietaryBadges,
   getGuestAttendanceStatus,
+  getGuestCompanionNames,
+  getGuestPartySize,
+  getGuestsHeadcount,
   hasAddressCollectionTag,
   isOneSidedTableShape,
 } from './utils/seatingHelpers';

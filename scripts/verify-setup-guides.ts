@@ -412,6 +412,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'playwright.config.ts',
     '.githooks/pre-commit',
     '.githooks/pre-push',
+    'jest.setup.js',
     'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
@@ -459,6 +460,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'utf8'
   );
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
+  const jestSetupRaw = fs.readFileSync(path.join(repoRoot, 'jest.setup.js'), 'utf8');
   const pretestMjsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/pretest.mjs'), 'utf8');
   const a11yReportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/a11y-report.mjs'), 'utf8');
   const seedRaw = fs.readFileSync(path.join(repoRoot, 'scripts/seed.ts'), 'utf8');
@@ -677,8 +679,26 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (pretestMjsRaw.includes('--legacy-peer-deps')) {
     errors.push('scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI');
   }
+  if (
+    !pretestMjsRaw.includes('.package-lock.json') ||
+    !pretestMjsRaw.includes('TEST_DATABASE_URL') ||
+    !pretestMjsRaw.includes('node:net') ||
+    !pretestMjsRaw.includes('--stage-only')
+  ) {
+    errors.push(
+      'scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment, "TEST_DATABASE_URL" preservation, TCP readiness probing ("node:net"), and "--stage-only" portal staging'
+    );
+  }
+  if (!jestSetupRaw.includes('TEST_DATABASE_URL') || !jestSetupRaw.includes('process.env.CI')) {
+    errors.push(
+      'jest.setup.js: Must preserve explicit DATABASE_URL when CI=true or TEST_DATABASE_URL is set'
+    );
+  }
   if (testingRaw.includes('--legacy-peer-deps')) {
     errors.push('.github/TESTING.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap');
+  }
+  if (agentsRaw.includes('--legacy-peer-deps')) {
+    errors.push('AGENTS.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap');
   }
   for (const [docLabel, docText] of [
     ['README.md', readmeRaw],
@@ -1229,6 +1249,9 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'jest-a11y-violations.json',
     'generate-portal.ts',
     'npm_lifecycle_event',
+    '.package-lock.json',
+    'TEST_DATABASE_URL',
+    '--stage-only',
   ]) {
     if (!testingRaw.includes(pretestToken)) {
       errors.push(`.github/TESTING.md: Missing scripts/pretest.mjs step reference "${pretestToken}"`);
