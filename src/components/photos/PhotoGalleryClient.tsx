@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { GuestPhotoDropzone, UploadedPhoto } from './GuestPhotoDropzone';
 import { Icon } from '@/components/ui/Icon';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs';
 import { useOptionalToast } from '@/components/ui/ToastProvider';
 import { triggerNativeExportDownload } from '@/utils/exportDownload';
+import { useStaticDemoPageOverrides } from '@/lib/staticDemo/runtime';
 
 export type PhotoCategory = 'curated' | 'guest';
 
@@ -132,11 +133,22 @@ const getServerHydratedSnapshot = () => false;
 export function PhotoGalleryClient({
   initialPhotos,
   defaultTab,
-  isAdmin = false,
+  isAdmin: initialIsAdmin = false,
   defaultUploaderName,
 }: PhotoGalleryClientProps) {
   const toast = useOptionalToast();
-  const [photos, setPhotos] = useState<NormalizedPhotoItem[]>(() => normalizeInitialPhotos(initialPhotos));
+  const demoOverrides = useStaticDemoPageOverrides();
+  const isAdmin = demoOverrides ? demoOverrides.isAdminAuthenticated : initialIsAdmin;
+  const [localPhotos, setPhotos] = useState<NormalizedPhotoItem[]>(() =>
+    normalizeInitialPhotos(initialPhotos),
+  );
+
+  const photos = useMemo<NormalizedPhotoItem[]>(() => {
+    if (!demoOverrides) {
+      return localPhotos;
+    }
+    return normalizeInitialPhotos(demoOverrides.galleryPhotos);
+  }, [demoOverrides, localPhotos]);
 
   const [activeTab, setActiveTab] = useState<PhotoCategory>(() => {
     if (defaultTab) return defaultTab;

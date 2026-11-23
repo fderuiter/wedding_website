@@ -1,9 +1,12 @@
 import { ARCHETYPE_PRESETS, type ArchetypeId } from '@/lib/sampleData/archetypes';
+import { findSeededRegistryItemById } from '@/lib/sampleData/builder';
 import { THEME_PRESET_KEYS, type ThemePreset } from '@/lib/theme/presets';
 import type { PublicAppConfig } from '@/lib/config';
-import type { InvitationCodeDTO, RegistryItem } from '@/features/registry';
-// eslint-disable-next-line no-restricted-imports
-import { substituteThankYouTemplateTokens } from '@/features/registry/types';
+import { formatCurrency } from '@/utils/intl';
+import type {
+  InvitationCodeDTO,
+  RegistryItem,
+} from '@/features/registry';
 import type { SeatingTableDTO } from '@/features/seating';
 import type { WeddingPartyMemberDTO, WeddingPartySide } from '@/features/wedding-party';
 import type { AttractionDTO } from '@/features/attractions';
@@ -32,10 +35,27 @@ function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
 }
 
-let demoEntitySequence = 0;
+let demoIdSequence = 0;
 function nextDemoId(prefix: string): string {
-  demoEntitySequence += 1;
-  return `${prefix}-${Date.now()}-${demoEntitySequence}`;
+  demoIdSequence += 1;
+  return `${prefix}-${Date.now()}-${demoIdSequence}`;
+}
+
+function substituteThankYouTemplateTokens(
+  template: string,
+  tokens: { guestName?: string; giftName?: string; amount?: number | string }
+): string {
+  const guestName = tokens.guestName?.trim() || 'Friend';
+  const giftName = tokens.giftName?.trim() || 'wedding gift';
+  const formattedAmount =
+    typeof tokens.amount === 'number'
+      ? formatCurrency(tokens.amount)
+      : tokens.amount?.trim() || '$0.00';
+
+  return template
+    .replace(/\{\{\s*guestName\s*\}\}/g, guestName)
+    .replace(/\{\{\s*giftName\s*\}\}/g, giftName)
+    .replace(/\{\{\s*amount\s*\}\}/g, formattedAmount);
 }
 
 function escapeDemoHtml(input: string): string {
@@ -105,7 +125,50 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
   }
 }
 
-async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
+type StaticDemoRouteRequestFn = (
+  input: RequestInfo | URL,
+  init?: RequestInit
+) => Promise<Response | null>;
+
+function getStaticDemoRouteRequest(): StaticDemoRouteRequestFn | null {
+  if (typeof window === 'undefined') return null;
+  const installed = (
+    window as Window & {
+      __STATIC_DEMO_INSTALLED__?: { routeRequest?: StaticDemoRouteRequestFn };
+    }
+  ).__STATIC_DEMO_INSTALLED__;
+  return typeof installed?.routeRequest === 'function' ? installed.routeRequest : null;
+}
+
+async function delegateToStaticDemoRouter(
+  input: RequestInfo | URL | undefined,
+  init: RequestInit | undefined,
+  method: string,
+  path: string
+): Promise<Response | null> {
+  const staticRouteRequest = getStaticDemoRouteRequest();
+  if (!staticRouteRequest || !input) return null;
+  const delegated = await staticRouteRequest(input, init);
+  if (!delegated) return null;
+
+  if (path === '/api/guest/login' && method === 'POST' && delegated.ok) {
+    const body = await parseJsonBody(init);
+    const matched = typeof body.code === 'string' ? findDemoGuestByCode(body.code) : null;
+    if (matched) {
+      setDemoGuestSession({ invitationCode: matched.code, guestName: matched.guestName });
+    }
+  } else if (path === '/api/guest/logout' && method === 'POST') {
+    setDemoGuestSession(null);
+  }
+
+  return delegated;
+}
+
+async function handleDemoApi(
+  url: URL,
+  init?: RequestInit,
+  rawInput?: RequestInfo | URL
+): Promise<Response> {
   const method = (init?.method || 'GET').toUpperCase();
   const path = url.pathname;
 
@@ -328,7 +391,11 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     const existing = currentItems.find((i) => i.id === itemId);
 
     if (method === 'GET') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      if (!existing) {
+        const seeded = findSeededRegistryItemById(itemId, { includeContributors: true });
+        if (seeded) return jsonResponse(seeded);
+        return jsonResponse({ error: 'Item not found' }, 404);
+      }
       return jsonResponse(existing);
     }
     if (method === 'DELETE') {
@@ -340,10 +407,12 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       return jsonResponse(existing);
     }
     if (method === 'PUT' || method === 'PATCH') {
-      if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
+      const target =
+        existing ?? findSeededRegistryItemById(itemId, { includeContributors: true });
+      if (!target) return jsonResponse({ error: 'Item not found' }, 404);
       const body = await parseJsonBody(init);
       const updated: RegistryItem = {
-        ...existing,
+        ...target,
         ...(typeof body.name === 'string' ? { name: body.name } : {}),
         ...(typeof body.description === 'string' ? { description: body.description } : {}),
         ...(typeof body.category === 'string' ? { category: body.category } : {}),
@@ -351,7 +420,9 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
       };
       mutateActiveDataset((current) => ({
         ...current,
-        registryItems: current.registryItems.map((i) => (i.id === itemId ? updated : i)),
+        registryItems: existing
+          ? current.registryItems.map((i) => (i.id === itemId ? updated : i))
+          : [updated, ...current.registryItems],
       }));
       return jsonResponse(updated);
     }
@@ -824,7 +895,7 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         ? (body.items as Array<Record<string, unknown>>)
         : [];
     const created: InvitationCodeDTO[] = records.map((rec, idx) => ({
-      id: `demo-imported-${Date.now()}-${idx}`,
+      id: `${nextDemoId('demo-imported')}-${idx}`,
       code: String(rec.code || `IMPORT${100 + idx}`).toUpperCase(),
       guestName: String(rec.guestName || `Imported Guest ${idx + 1}`),
       householdName: typeof rec.householdName === 'string' ? rec.householdName : '',
@@ -924,6 +995,17 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
         attractions: [...current.attractions, attraction],
       }));
       return jsonResponse({ success: true, data: attraction }, 201);
+    }
+  }
+
+  if (
+    path.startsWith('/api/admin/sub-events') ||
+    path === '/api/admin/invitation-codes/rsvps' ||
+    path.startsWith('/api/admin/broadcast')
+  ) {
+    const delegated = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+    if (delegated) {
+      return delegated;
     }
   }
 
@@ -1471,7 +1553,14 @@ async function handleDemoApi(url: URL, init?: RequestInit): Promise<Response> {
     });
   }
 
-  // Health & readiness probes
+  // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
+  // versions, maintenance, exports, guest login/lookup) to the staticDemo router when installed
+  const delegatedExtended = await delegateToStaticDemoRouter(rawInput ?? url, init, method, path);
+  if (delegatedExtended) {
+    return delegatedExtended;
+  }
+
+  // Health & readiness probes (standalone DemoProvider fallback)
   if (
     (path === '/api/health' || path === '/api/live' || path === '/api/ready') &&
     method === 'GET'
@@ -1873,7 +1962,7 @@ export function installDemoFetchInterceptor(): () => void {
           if (init?.signal?.aborted) {
             throw new DOMException('The operation was aborted.', 'AbortError');
           }
-          return handleDemoApi(apiUrl, init);
+          return handleDemoApi(apiUrl, init, input);
         }
       }
       return fallbackFetch(input, init);

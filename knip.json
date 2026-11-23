@@ -13,6 +13,8 @@
     "src/**/*.test.{ts,tsx}",
     "src/testing/**/*.ts",
     "scripts/**/*.test.ts",
+    "src/mocks/handlers.ts",
+    "src/mocks/server.ts",
     "scripts/*.ts",
     "scripts/*.mjs",
     "scripts/*.js"
