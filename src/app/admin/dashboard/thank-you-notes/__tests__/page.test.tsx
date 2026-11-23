@@ -1015,4 +1015,216 @@ describe('ThankYouNotesPage', () => {
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
+
+  it('supports searching and linking/unlinking a guest household and editing contributor postal address with zero axe violations', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/admin/invitation-codes/catalog')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: {
+              items: [
+                {
+                  id: 'inv-house-99',
+                  code: 'JOHNSON99',
+                  guestName: 'Alice & Mark Johnson',
+                  addressLine1: '900 Garden Way',
+                  city: 'Austin',
+                  state: 'TX',
+                  zipCode: '78704',
+                  country: 'USA',
+                },
+              ],
+            },
+          }),
+        });
+      }
+      if (url.startsWith('/api/registry/items')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, data: { items: [] } }),
+        });
+      }
+      if (url.endsWith('/api/admin/thank-you-notes/c1') && options?.method === 'PATCH') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true }),
+        });
+      }
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockData,
+        });
+      }
+      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit thank-you note for Alice Johnson' }));
+
+    const householdInput = screen.getByLabelText('Search guest household for Alice Johnson');
+    fireEvent.change(householdInput, { target: { value: 'Johnson' } });
+
+    const optionButton = await screen.findByRole('button', { name: /Alice & Mark Johnson/i });
+    fireEvent.click(optionButton);
+
+    // Selecting household prefills blank contributor postal fields
+    expect(screen.getByLabelText('Address Line 1 for Alice Johnson')).toHaveValue('900 Garden Way');
+    expect(screen.getByLabelText('City for Alice Johnson')).toHaveValue('Austin');
+
+    // Override street address and enable sync to guest household
+    fireEvent.change(screen.getByLabelText('Address Line 1 for Alice Johnson'), {
+      target: { value: '905 Updated Way' },
+    });
+    fireEvent.click(screen.getByLabelText('Sync address to linked guest household'));
+
+    const editResults = await axe(container);
+    expect(editResults).toHaveNoViolations();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/thank-you-notes/c1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.stringContaining('"invitationCodeId":"inv-house-99"'),
+        })
+      );
+    });
+
+    const patchCall = (global.fetch as jest.Mock).mock.calls.find(
+      (call) => call[0] === '/api/admin/thank-you-notes/c1' && call[1]?.method === 'PATCH'
+    );
+    const parsedPatch = JSON.parse(patchCall[1].body);
+    expect(parsedPatch).toMatchObject({
+      invitationCodeId: 'inv-house-99',
+      addressLine1: '905 Updated Way',
+      city: 'Austin',
+      state: 'TX',
+      zipCode: '78704',
+      country: 'USA',
+      syncAddressToGuest: true,
+    });
+  });
+
+  it('opens Compose Thank-You Email modal, previews, sends test email, dispatches final email, and passes axe', async () => {
+    (global.fetch as jest.Mock).mockImplementation((url: string, options?: RequestInit) => {
+      if (url.endsWith('/api/admin/thank-you-notes/c1/send-email') && options?.method === 'POST') {
+        const body = JSON.parse(String(options.body));
+        if (body.mode === 'preview') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              data: {
+                mode: 'preview',
+                to: 'alice@example.com',
+                testRecipient: 'couple@wedding.test',
+                subject: body.subject || 'Thank you!',
+                textBody: 'Dear Alice Johnson, thank you so much for the wonderful Espresso Machine!',
+                htmlBody: '<p>Dear Alice Johnson, thank you so much for the wonderful Espresso Machine!</p>',
+              },
+            }),
+          });
+        }
+        if (body.mode === 'test') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              success: true,
+              mode: 'test',
+              to: 'couple@wedding.test',
+              subject: '[TEST] Thank you!',
+              textBody: 'Dear Alice Johnson, thank you!',
+              htmlBody: '<p>Dear Alice Johnson, thank you!</p>',
+            }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            mode: 'send',
+            to: 'alice@example.com',
+            subject: body.subject || 'Thank you!',
+            textBody: body.body,
+            htmlBody: `<p>${body.body}</p>`,
+          }),
+        });
+      }
+      if (url.includes('/api/admin/thank-you-notes')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockData,
+        });
+      }
+      return Promise.reject(new Error(`Unknown endpoint: ${url}`));
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <ThankYouNotesPage />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Johnson')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compose thank-you email for Alice Johnson' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Compose Thank-You Email — Alice Johnson/)).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText('Starter Template'), {
+      target: { value: 'physical-gift' },
+    });
+    expect(within(dialog).getByLabelText('Message Body')).toHaveValue(
+      'Dear Alice Johnson, thank you so much for the wonderful Espresso Machine! We are so grateful for your thoughtfulness and love.'
+    );
+
+    // Preview Email
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview Email' }));
+    expect(await within(dialog).findByTestId('thank-you-email-preview')).toBeInTheDocument();
+
+    const axeModalResults = await axe(container);
+    expect(axeModalResults).toHaveNoViolations();
+
+    // Send Test Email
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send Test Email' }));
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/thank-you-notes/c1/send-email',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"mode":"test"'),
+        })
+      );
+      expect(within(dialog).getByRole('button', { name: 'Send Thank-You Email' })).not.toBeDisabled();
+    });
+
+    // Send Thank-You Email
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send Thank-You Email' }));
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/admin/thank-you-notes/c1/send-email',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"mode":"send"'),
+        })
+      );
+    });
+  });
 });

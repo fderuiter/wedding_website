@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Select, Checkbox } from '@/components/ui/forms';
 import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
 import { cn } from '@/utils/cn';
+import { withBasePath } from '@/lib/basePath';
 
 interface AttractionEditorFormProps {
   values: Partial<AttractionDTO>;
@@ -348,7 +349,7 @@ export function AttractionCard({
         {attraction.image && (
         // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={attraction.image.url || '/images/placeholder.png'}
+            src={withBasePath(attraction.image.url || '/images/placeholder.png')}
             alt={attraction.image.isDecorative ? '' : (attraction.image.altText || attraction.name)}
             className="w-12 h-12 rounded-lg object-cover bg-gray-100"
           />

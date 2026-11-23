@@ -220,21 +220,21 @@ describe('Documentation Generator - getZodType & Spec Tables', () => {
       expect(table).toContain('`Masked secret (hasTwilioAuthToken)`');
     });
 
-    it('lists all 81 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
+    it('lists all 82 API route handlers and marks /api/media and /api/admin/invitation-codes/merge Admin-only, /api/registry/webhook/stripe stripeSignature, and /api/live and /api/uploads/[...path] Public', () => {
       const apiSection = generateApiRoutesSection();
-      expect(apiSection).toContain('Total API route handlers: **81**');
+      expect(apiSection).toContain('Total API route handlers: **82**');
 
       const handlerRows = apiSection
         .split('\n')
         .filter((line) => line.startsWith('| `/api/'));
-      expect(handlerRows).toHaveLength(81);
+      expect(handlerRows).toHaveLength(82);
 
       expect(apiSection).toContain('| `/api/admin/geocode` | `src/app/api/admin/geocode/route.ts` | `GET` | `Admin-only` |');
-
       expect(apiSection).toContain('| `/api/live` | `src/app/api/live/route.ts` | `GET` | `Public` |');
       expect(apiSection).toContain('| `/api/registry/claim` | `src/app/api/registry/claim/route.ts` | `GET`, `POST` | `Public` |');
       expect(apiSection).toContain('| `/api/admin/broadcast/[id]` | `src/app/api/admin/broadcast/[id]/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/contributors/[id]/action` | `src/app/api/admin/contributors/[id]/action/route.ts` | `POST` | `Admin-only` |');
+      expect(apiSection).toContain('| `/api/admin/thank-you-notes/[id]/send-email` | `src/app/api/admin/thank-you-notes/[id]/send-email/route.ts` | `POST` | `Admin-only` |');
 
       expect(apiSection).toContain('| `/api/admin/invitation-codes/catalog` | `src/app/api/admin/invitation-codes/catalog/route.ts` | `GET` | `Admin-only` |');
       expect(apiSection).toContain('| `/api/admin/invitation-codes/rsvps` | `src/app/api/admin/invitation-codes/rsvps/route.ts` | `GET`, `PUT` | `Admin-only` |');

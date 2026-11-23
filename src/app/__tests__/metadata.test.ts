@@ -83,6 +83,53 @@ describe('generateMetadata', () => {
       process.env.ALLOWED_HOSTS = originalAllowedHosts;
     }
   });
+
+  it('prefixes favicon icons and relative ogImageUrl when NEXT_PUBLIC_BASE_PATH is configured', async () => {
+    const originalBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+    const { getAppConfig } = jest.requireMock('@/lib/config') as {
+      getAppConfig: jest.Mock;
+    };
+    getAppConfig.mockResolvedValueOnce({
+      partner1Name: 'TestBride',
+      partner2Name: 'TestGroom',
+      venueName: 'Test Venue',
+      venueCity: 'TestCity',
+      venueState: 'TS',
+      baseUrl: 'https://testsite.com',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/images/sunset-embrace.jpg',
+      colorPrimary: '#B91C1C',
+    });
+
+    try {
+      const metadata = await generateMetadata();
+      expect(metadata.icons).toEqual({
+        icon: '/wedding_website/demo/assets/favicon.png',
+        shortcut: '/wedding_website/demo/assets/favicon.png',
+        apple: '/wedding_website/demo/assets/favicon.png',
+      });
+      expect(metadata.openGraph?.images).toEqual([
+        {
+          url: 'https://testsite.com/wedding_website/demo/images/sunset-embrace.jpg',
+          width: 1024,
+          height: 1024,
+          alt: "A photo for TestBride and TestGroom's wedding.",
+        },
+      ]);
+      expect(metadata.twitter).toEqual(
+        expect.objectContaining({
+          images: ['https://testsite.com/wedding_website/demo/images/sunset-embrace.jpg'],
+        })
+      );
+    } finally {
+      if (originalBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = originalBasePath;
+      }
+    }
+  });
 });
 
 describe('generateViewport', () => {

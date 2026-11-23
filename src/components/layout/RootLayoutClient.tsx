@@ -23,6 +23,7 @@ if (typeof window !== 'undefined' && window.navigator.userAgent.includes('Headle
 }
 
 import type { PublicAppConfig } from '@/lib/config';
+import { withBasePath } from '@/lib/basePath';
 import SetupWizard from '@/components/setup/SetupWizard';
 import { DemoProvider, useOptionalDemo } from '@/components/demo/DemoContext';
 import { DemoToolbar } from '@/components/demo/DemoToolbar';
@@ -103,11 +104,12 @@ function RootLayoutInner({
   const isHeartPage = normalizedPathname === '/heart';
   const isSlideshowPage = normalizedPathname === '/photos/slideshow';
   const isSetupPage =
-    normalizedPathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
+    normalizedPathname === '/admin/setup' ||
+    Boolean(normalizedPathname?.startsWith('/admin/setup/'));
   const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
   const isAdminDashboardPage =
     normalizedPathname === '/admin/dashboard' ||
-    pathname?.startsWith('/admin/dashboard/') ||
+    Boolean(normalizedPathname?.startsWith('/admin/dashboard/')) ||
     isSetupPage;
 
   const handleLogout = async () => {
@@ -116,7 +118,7 @@ function RootLayoutInner({
       return;
     }
     try {
-      await fetch('/api/admin/logout', { method: 'POST' });
+      await fetch(withBasePath('/api/admin/logout'), { method: 'POST' });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {

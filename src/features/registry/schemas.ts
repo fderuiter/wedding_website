@@ -104,6 +104,12 @@ export const ContributorSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   email: z.string().nullable().optional(),
+  addressLine1: z.string().nullable().optional(),
+  addressLine2: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  zipCode: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
   isPlusOne: z.boolean().optional().default(false),
   amount: z.coerce
     .number({ message: 'Contribution amount must be a positive number.' })
@@ -126,6 +132,11 @@ export const ContributorSchema = z.object({
     .nullable()
     .optional()
     .transform((d) => (d ? new Date(d).toISOString() : null)),
+  thankYouEmailSentAt: z
+    .union([z.string(), z.date()])
+    .transform((d) => new Date(d).toISOString())
+    .nullable()
+    .optional(),
   thankYouNote: z.string().nullable().optional(),
   stripePaymentIntentId: z.string().nullable().optional(),
   stripeChargeId: z.string().nullable().optional(),
@@ -167,6 +178,7 @@ export const ContributorSchema = z.object({
       id: z.string().optional(),
       code: z.string().optional(),
       guestName: z.string().optional(),
+      email: z.string().nullable().optional(),
       householdName: z.string().nullable().optional(),
       addressLine1: z.string().nullable().optional(),
       addressLine2: z.string().nullable().optional(),
@@ -278,10 +290,29 @@ export const UpdateThankYouNoteSchema = z.object({
   invitationCodeId: z
     .string()
     .trim()
+    .max(255)
     .transform((val) => (val === '' ? null : val))
     .nullable()
     .optional(),
+  addressLine1: nullableOptionalTrimmedField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 1'),
+  addressLine2: nullableOptionalTrimmedField(ADDRESS_LINE_MAX_LENGTH, 'Address Line 2'),
+  city: nullableOptionalTrimmedField(CITY_MAX_LENGTH, 'City'),
+  state: nullableOptionalTrimmedField(STATE_MAX_LENGTH, 'State'),
+  zipCode: nullableOptionalTrimmedField(ZIP_CODE_MAX_LENGTH, 'Zip Code'),
+  country: nullableOptionalTrimmedField(COUNTRY_MAX_LENGTH, 'Country'),
+  syncAddressToGuest: z.boolean().optional(),
 });
+
+export type UpdateThankYouNoteDTO = z.infer<typeof UpdateThankYouNoteSchema>;
+
+export const SendThankYouEmailSchema = z.object({
+  mode: z.enum(['preview', 'test', 'send']),
+  subject: z.string().trim().max(200, 'Subject must be under 200 characters.').optional().or(z.literal('')),
+  body: z.string().trim().min(1, 'Message body is required.').max(5000, 'Message body must be under 5000 characters.'),
+  recipientEmail: optionalNullableEmailField,
+});
+
+export type SendThankYouEmailDTO = z.infer<typeof SendThankYouEmailSchema>;
 
 export const BatchUpdateThankYouNotesSchema = z.object({
   ids: z
@@ -322,6 +353,7 @@ export const ContributionSchema = z
       ),
       carrier: optionalNullableTrimmedField(100, 'Carrier'),
       trackingNumber: optionalNullableTrimmedField(120, 'Tracking number'),
+      ...optionalAddressFields,
     },
     { message: 'Invalid request body.' },
   )
@@ -375,6 +407,24 @@ export const ContributionSchema = z
       ...(data.trackingNumber !== undefined
         ? { trackingNumber: normalizeOptional(data.trackingNumber) }
         : {}),
+      ...(data.addressLine1 !== undefined
+        ? { addressLine1: normalizeOptional(data.addressLine1) }
+        : {}),
+      ...(data.addressLine2 !== undefined
+        ? { addressLine2: normalizeOptional(data.addressLine2) }
+        : {}),
+      ...(data.city !== undefined
+        ? { city: normalizeOptional(data.city) }
+        : {}),
+      ...(data.state !== undefined
+        ? { state: normalizeOptional(data.state) }
+        : {}),
+      ...(data.zipCode !== undefined
+        ? { zipCode: normalizeOptional(data.zipCode) }
+        : {}),
+      ...(data.country !== undefined
+        ? { country: normalizeOptional(data.country) }
+        : {}),
     };
   });
 
@@ -396,6 +446,7 @@ export const PaymentIntentRequestSchema = z.object({
     .optional()
     .nullable(),
   code: z.string().trim().optional(),
+  ...optionalAddressFields,
 });
 
 export type PaymentIntentRequestDTO = z.infer<
@@ -552,6 +603,12 @@ export function translateSnapshotToActive(snapshotData: any) {
 
 const CONTRIBUTOR_NULLABLE_STRING_COLUMNS = [
   'email',
+  'addressLine1',
+  'addressLine2',
+  'city',
+  'state',
+  'zipCode',
+  'country',
   'message',
   'thankYouNote',
   'stripePaymentIntentId',
@@ -563,6 +620,7 @@ const CONTRIBUTOR_NULLABLE_STRING_COLUMNS = [
 
 const CONTRIBUTOR_NULLABLE_DATE_COLUMNS = [
   'thankYouSentAt',
+  'thankYouEmailSentAt',
   'transactionTimestamp',
   'confirmationEmailSentAt',
   'alertEmailSentAt',
@@ -571,7 +629,7 @@ const CONTRIBUTOR_NULLABLE_DATE_COLUMNS = [
 
 /**
  * Translate a persisted `Contributor` snapshot into separate Prisma `update`
- * and `create` payloads across all 24 mutable columns while keeping omitted
+ * and `create` payloads across all 31 mutable columns while keeping omitted
  * (`undefined`) fields `undefined` on `update` to preserve live DB values.
  */
 export function translateContributorSnapshot(

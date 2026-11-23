@@ -2,6 +2,7 @@
 
 import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useToast } from '@/components/ui/ToastProvider';
+import { withBasePath } from '@/lib/basePath';
 
 type GuestPortalStatus = 'idle' | 'validating' | 'authenticated' | 'saving' | 'error';
 
@@ -266,7 +267,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
   const fetchAddressData = useCallback(
     async (signal: AbortSignal): Promise<{ success: boolean; data?: GuestAddressApiResponse; isAuth?: boolean; error?: string }> => {
       try {
-        const res = await fetch('/api/guest/address', { signal });
+        const res = await fetch(withBasePath('/api/guest/address'), { signal });
         if (signal.aborted) return { success: false };
 
         if (isAuthError(res.status)) {
@@ -338,7 +339,10 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
       dispatch({ type: 'VALIDATE_START', code: trimmedCode });
 
       try {
-        const res = await fetch(`/api/registry/validate-code?code=${encodeURIComponent(trimmedCode)}`, { signal });
+        const res = await fetch(
+          withBasePath(`/api/registry/validate-code?code=${encodeURIComponent(trimmedCode)}`),
+          { signal }
+        );
         if (signal.aborted) return;
 
         const data = await res.json().catch(() => null);
@@ -496,7 +500,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
       dispatch({ type: 'SAVE_START' });
 
       try {
-        const res = await fetch('/api/guest/address', {
+        const res = await fetch(withBasePath('/api/guest/address'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(stateRef.current.form),
