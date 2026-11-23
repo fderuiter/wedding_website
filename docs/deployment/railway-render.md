@@ -39,7 +39,7 @@ Set environment variables in the platform dashboard (Railway: **Variables** tab;
 | `DATABASE_URL` | Yes | Connection string for Railway or Render PostgreSQL (`datasource.url` in `prisma.config.ts`, used by runtime and `prisma migrate deploy`). |
 | `POSTGRES_URL_NON_POOLING` | No | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); can also store a direct PostgreSQL URL for an explicit `DATABASE_URL` override when `DATABASE_URL` uses PgBouncer. |
 | `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
-| `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.up.railway.app,wedding.onrender.com,wedding.mydomain.com`). |
+| `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.up.railway.app,wedding.onrender.com,wedding.mydomain.com`). Read-only (`GET` and `HEAD`) probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so internal probe hosts like `healthcheck.railway.app` do not need to be listed. |
 | `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
 | `TRUST_PROXY` | No | Trust `X-Forwarded-For` / `X-Real-IP` from platform ingress (`true` or hop count; default `false`). |
@@ -130,8 +130,8 @@ Both platforms support HTTP health check probes for zero-downtime deployment rol
 
 *   **Deployment Readiness Path (`/api/health`)**: Verifies PostgreSQL connectivity (`SELECT 1`) and returns HTTP 200 `{ "success": true, "data": { "status": "ok", "database": "connected", ... } }` before routing live user traffic to a newly deployed revision (or use `/api/ready` for unwrapped readiness responses with masked production error messages).
 *   **Process Liveness Path (`/api/live`)**: Returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL. Used by the `Dockerfile` `HEALTHCHECK` and recommended for continuous runtime liveness monitors so brief database blips do not trigger container restart loops.
-*   **Railway Configuration**: In **Settings > Healthcheck Path** (deploy-time readiness gate), enter `/api/health`.
-*   **Render Configuration**: In **Web Service Settings > Health Check Path**, enter `/api/live` to prevent runtime restart loops during transient database maintenance (or `/api/health` if gating database connectivity exclusively at deploy time).
+*   **Railway Configuration**: In **Settings > Healthcheck Path** (deploy-time readiness gate), enter `/api/health`. Railway's internal probe sends `Host: healthcheck.railway.app`, which passes syntactic `Host` validation automatically without adding `healthcheck.railway.app` to `ALLOWED_HOSTS`.
+*   **Render Configuration**: In **Web Service Settings > Health Check Path**, enter `/api/live` to prevent runtime restart loops during transient database maintenance (or `/api/health` if gating database connectivity exclusively at deploy time). Render's internal probe requests likewise succeed on `GET` and `HEAD` without extra `ALLOWED_HOSTS` entries.
 
 ---
 

@@ -11,18 +11,38 @@ import type {
   BroadcastTargetFilters,
 } from '@/features/broadcast';
 
-export function useAdminBroadcast() {
+interface UseAdminBroadcastOptions {
+  fetchHistory?: boolean;
+  page?: number;
+  limit?: number;
+}
+
+const HISTORY_QUERY_KEY = ['admin-broadcast-history'] as const;
+const DETAIL_QUERY_KEY = ['admin-broadcast-detail'] as const;
+
+export function useAdminBroadcast(options: UseAdminBroadcastOptions = {}) {
+  const { fetchHistory = false, page = 1, limit = 50 } = options;
+  const safePage = Math.max(1, Math.trunc(page));
+  const clampedLimit = Math.min(Math.max(1, Math.trunc(limit)), 100);
+
   const queryClient = useQueryClient();
-  const historyQueryKey = ['admin-broadcast-history'];
+
+  const invalidateBroadcastQueries = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: HISTORY_QUERY_KEY });
+    queryClient.invalidateQueries({ queryKey: DETAIL_QUERY_KEY });
+  }, [queryClient]);
 
   const {
     data: history = [],
     isLoading: loadingHistory,
   } = useQuery<BroadcastHistoryItem[], Error>({
-    queryKey: historyQueryKey,
+    queryKey: [...HISTORY_QUERY_KEY, { page: safePage, limit: clampedLimit }],
     queryFn: async () => {
-      return apiClient.get<BroadcastHistoryItem[]>('/api/admin/broadcast/history');
+      return apiClient.get<BroadcastHistoryItem[]>(
+        `/api/admin/broadcast/history?page=${safePage}&limit=${clampedLimit}`
+      );
     },
+    enabled: fetchHistory,
   });
 
   const { mutateAsync: sendBroadcast, isPending: sending } = useMutation({
@@ -30,7 +50,7 @@ export function useAdminBroadcast() {
       return apiClient.post('/api/admin/broadcast/send', payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: historyQueryKey });
+      invalidateBroadcastQueries();
     },
   });
 
@@ -86,7 +106,7 @@ export function useAdminBroadcast() {
       return apiClient.post('/api/admin/broadcast/retry', payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: historyQueryKey });
+      invalidateBroadcastQueries();
     },
   });
 
@@ -101,7 +121,7 @@ export function useAdminBroadcast() {
       return apiClient.delete(`/api/admin/broadcast/schedule/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: historyQueryKey });
+      invalidateBroadcastQueries();
     },
   });
 

@@ -172,7 +172,7 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "const h=(process.env.ALLOWED_HOSTS||'localhost').split(',').map((s)=>s.trim().replace(/^\*\./,'')).find(Boolean)||'localhost';fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live',{headers:{Host:h}}).then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/live').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"
 
 ENTRYPOINT ["/usr/bin/tini", "-s", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.js"]

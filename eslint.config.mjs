@@ -24,6 +24,11 @@ const ensureFlatConfig = (config) => {
   return compat.config(config);
 };
 
+const coreWebVitalsConfigs = ensureFlatConfig(nextCoreWebVitals);
+const jsxA11yPlugin = coreWebVitalsConfigs.find(
+  (cfg) => cfg.plugins?.['jsx-a11y']
+)?.plugins?.['jsx-a11y'];
+
 const REACT_FILES = [
   '**/*.{tsx,jsx}',
   'src/**/hooks/**/*.{ts,js}',
@@ -93,15 +98,13 @@ const scopeNextCoreWebVitals = (configs) =>
 
 const escapeGlobPath = (filePath) => filePath.replace(/([[\]])/g, '\\$1');
 
-// Shrink-only legacy baseline (capped at <= 119 unique files across all legacy groups).
+// Shrink-only legacy baseline (capped at <= 102 unique files across all legacy groups).
 // Do not add new files here; remove entries as legacy modules are refactored.
 const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/admin/dashboard/history/page.tsx',
   'src/app/admin/dashboard/invitation-codes/page.tsx',
   'src/app/admin/dashboard/media/page.tsx',
-  'src/app/admin/dashboard/settings/page.tsx',
   'src/app/admin/dashboard/site-manager/components/DragDropContainer.tsx',
-  'src/app/admin/dashboard/sub-events/page.tsx',
   'src/app/admin/dashboard/thank-you-notes/page.tsx',
   'src/app/admin/login/page.tsx',
   'src/app/api/admin/[entity]/[id]/route.ts',
@@ -116,8 +119,6 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/api/admin/seating/assign/route.ts',
   'src/app/api/admin/seating/export/route.ts',
   'src/app/api/admin/settings/route.ts',
-  'src/app/api/admin/setup/route.ts',
-  'src/app/api/admin/versions/[id]/restore/route.ts',
   'src/app/api/admin/versions/route.ts',
   'src/app/api/cron/broadcasts/route.ts',
   'src/app/api/guest/address/public/route.ts',
@@ -132,15 +133,12 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/app/page.tsx',
   'src/components/Dropzone.tsx',
   'src/components/admin/AdminPreviewLayout.tsx',
-  'src/components/admin/BroadcastModal.tsx',
-  'src/components/admin/CsvImportWizardModal.tsx',
   'src/components/admin/InvitationQRPreviewModal.tsx',
   'src/components/admin/SampleDataBanner.tsx',
   'src/components/home/HomePageClient.tsx',
   'src/components/layout/RootLayoutClient.tsx',
   'src/components/schedule/InteractiveTimeline.stories.tsx',
   'src/components/schedule/InteractiveTimeline.tsx',
-  'src/components/setup/SetupWizard.tsx',
   'src/components/ui/Interactive3DCard.tsx',
   'src/core/infrastructure/repository.ts',
   'src/core/infrastructure/service.ts',
@@ -168,7 +166,6 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/features/registry/api/webhook.ts',
   'src/features/registry/components/BatchUrlScraper.tsx',
   'src/features/registry/components/CsvRegistryImport.tsx',
-  'src/features/registry/components/RegistryItemCard.tsx',
   'src/features/registry/components/RegistryItemForm.tsx',
   'src/features/registry/components/RegistryPreviewTable.tsx',
   'src/features/registry/lib/masking.ts',
@@ -190,7 +187,6 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/hooks/admin/useAdminSettings.ts',
   'src/hooks/use3DInteraction.tsx',
   'src/hooks/useScheduleRsvpManager.ts',
-  'src/hooks/useUnified3DInput.ts',
   'src/lib/apiClient.ts',
   'src/lib/audit.ts',
   'src/lib/config.ts',
@@ -209,33 +205,6 @@ const LEGACY_EXPLICIT_ANY_BASELINE_FILES = [
   'src/utils/withApiMiddleware.ts',
 ];
 
-const LEGACY_NO_IMG_ELEMENT_BASELINE_FILES = [
-  'src/app/admin/dashboard/settings/page.tsx',
-  'src/components/MediaImage.tsx',
-  'src/components/layout/Navbar.tsx',
-];
-
-const LEGACY_LOCATION_ASSIGN_BASELINE_FILES = [
-  'src/components/admin/BroadcastModal.tsx',
-  'src/components/setup/SetupWizard.tsx',
-  'src/features/admin/apiClient.ts',
-];
-
-const LEGACY_UNESCAPED_ENTITIES_BASELINE_FILES = [
-  'src/app/admin/dashboard/sub-events/page.tsx',
-  'src/app/not-found.tsx',
-];
-
-const LEGACY_EXHAUSTIVE_DEPS_BASELINE_FILES = [
-  'src/components/admin/CsvImportWizardModal.tsx',
-  'src/features/registry/components/RegistryItemCard.tsx',
-  'src/hooks/useUnified3DInput.ts',
-];
-
-const LEGACY_JSX_A11Y_BASELINE_FILES = [
-  'src/components/ui/__tests__/Overlay.test.tsx',
-];
-
 const eslintConfig = [
   {
     ignores: [
@@ -250,16 +219,19 @@ const eslintConfig = [
       'test-results/**',
     ],
   },
-  ...scopeNextCoreWebVitals(ensureFlatConfig(nextCoreWebVitals)),
+  ...scopeNextCoreWebVitals(coreWebVitalsConfigs),
   ...ensureFlatConfig(nextTypescript),
   {
     files: REACT_FILES,
     plugins: {
       react,
       'react-hooks': reactHooks,
+      ...(jsxA11yPlugin ? { 'jsx-a11y': jsxA11yPlugin } : {}),
     },
     rules: {
-      'react/no-unescaped-entities': 'warn',
+      'react/no-unescaped-entities': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+      'jsx-a11y/role-supports-aria-props': 'error',
     },
   },
   {
@@ -291,12 +263,14 @@ const eslintConfig = [
       ],
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-require-imports': 'error',
-      'prefer-const': 'warn',
+      'prefer-const': 'error',
+      '@next/next/no-location-assign-relative-destination': 'error',
+      '@next/next/no-img-element': 'error',
 
       '@typescript-eslint/no-unused-vars': 'off',
       'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
-        'warn',
+        'error',
         {
           vars: 'all',
           varsIgnorePattern: '^_',
@@ -335,36 +309,6 @@ const eslintConfig = [
     files: LEGACY_EXPLICIT_ANY_BASELINE_FILES.map(escapeGlobPath),
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-    },
-  },
-  {
-    files: LEGACY_NO_IMG_ELEMENT_BASELINE_FILES.map(escapeGlobPath),
-    rules: {
-      '@next/next/no-img-element': 'off',
-    },
-  },
-  {
-    files: LEGACY_LOCATION_ASSIGN_BASELINE_FILES.map(escapeGlobPath),
-    rules: {
-      '@next/next/no-location-assign-relative-destination': 'off',
-    },
-  },
-  {
-    files: LEGACY_UNESCAPED_ENTITIES_BASELINE_FILES.map(escapeGlobPath),
-    rules: {
-      'react/no-unescaped-entities': 'off',
-    },
-  },
-  {
-    files: LEGACY_EXHAUSTIVE_DEPS_BASELINE_FILES.map(escapeGlobPath),
-    rules: {
-      'react-hooks/exhaustive-deps': 'off',
-    },
-  },
-  {
-    files: LEGACY_JSX_A11Y_BASELINE_FILES.map(escapeGlobPath),
-    rules: {
-      'jsx-a11y/role-supports-aria-props': 'off',
     },
   },
   {
