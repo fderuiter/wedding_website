@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   getAvailableDbPort,
-  httpRequest,
+  httpRequest as smokeHttpRequest,
   runCheckedCommand as runCommand,
   runSmokeRouteProbes,
   waitForPostgresReady,
@@ -29,6 +29,14 @@ const COMPOSE_ARGS = [
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
+// Real 16x16 HEIC fixture (ISOBMFF ftyp=heic, HEVC primary frame)
+const VALID_HEIC_BUFFER = Buffer.from(
+  'AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAXxtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAACJpbG9jAAAAAERAAAEAAQAAAAABoAABAAAAAAAAADUAAAAjaWluZgAAAAAAAQAAABVpbmZlAgAAAAABAABodmMxAAAAAA5waXRtAAAAAAABAAAA/GlwcnAAAADcaXBjbwAAAHVodmNDAQNwAAAAkAAAAAAAHvAA/P34+AAADwNgAAEAGEABDAH//wNwAAADAJAAAAMAAAMAHroCQGEAAQApQgEBA3AAAAMAkAAAAwAAAwAeoCCBBZbqrprm4CGgwIAAAAyAAAADAIRiAAEABkQBwXPBiQAAABNjb2xybmNseAABAA0ABoAAAAAUaXNwZQAAAAAAAABAAAAAQAAAAChjbGFwAAAAEAAAAAEAAAAQAAAAAf///9AAAAAC////0AAAAAIAAAAQcGl4aQAAAAADCAgIAAAAGGlwbWEAAAAAAAAAAQABBYECAwWEAAAAPW1kYXQAAAAxKAGvBPIWZzRxZNLf+Cv///V4+y/SYUEm1Qjs/VLEYCa/deugZMTNE6ls0CgrqKdepg==',
+  'base64'
+);
+const WORKER_ERROR_LOG_PATTERN =
+  /Image processor worker|Failed to sanitize image|Failed to initialize image processor worker|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|ERR_WORKER|Unhandled API Error/i;
+
 const DEFAULT_GHA_CACHE_SCOPE = process.arch === 'arm64' ? 'app-arm64' : 'app-amd64';
 
 function buildCiComposeEnv(extra = {}) {
@@ -49,11 +57,26 @@ function buildCiComposeEnv(extra = {}) {
   return env;
 }
 
-function request(urlPath, timeoutMs = 5000) {
-  return httpRequest(BASE_URL, urlPath, {
+function httpRequest(urlPath, options = {}) {
+  return smokeHttpRequest(BASE_URL, urlPath, {
     hostHeader: HOST_HEADER,
-    timeoutMs,
+    ...options,
   });
+}
+
+function request(urlPath, timeoutMs = 5000) {
+  return httpRequest(urlPath, { timeoutMs });
+}
+
+function buildHeicMultipartPayload(boundary) {
+  const preamble = Buffer.from(
+    `--${boundary}\r\n` +
+    'Content-Disposition: form-data; name="file"; filename="smoke-test.HEIC"\r\n' +
+    'Content-Type: image/heic\r\n\r\n',
+    'utf8'
+  );
+  const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  return Buffer.concat([preamble, VALID_HEIC_BUFFER, epilogue]);
 }
 
 function queryContainerDb(sql, composeEnv) {
@@ -243,7 +266,75 @@ async function main() {
       label: 'container',
     });
 
-    // 8. Verify shared globalThis pool across concurrent API and SSR traffic (<= 10 PostgreSQL connections)
+    // 8. Verify Guest Login, Read-Only Container Worker HEIC Upload, /api/live Responsiveness, and Zero Worker Errors
+    console.log('Testing container POST /api/guest/login and HEIC worker upload to /api/guest/photos/upload...');
+    const loginPayload = JSON.stringify({ passcode: composeEnv.GUEST_PASSCODE });
+    const loginRes = await httpRequest('/api/guest/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': String(Buffer.byteLength(loginPayload)),
+      },
+      body: loginPayload,
+    });
+    if (loginRes.statusCode !== 200) {
+      throw new Error(`Container guest login failed with status ${loginRes.statusCode}: ${loginRes.body}`);
+    }
+    const rawSetCookie = loginRes.headers['set-cookie'];
+    const setCookies = Array.isArray(rawSetCookie) ? rawSetCookie : (rawSetCookie ? [rawSetCookie] : []);
+    const guestCookie = setCookies
+      .map((header) => header.split(';')[0].trim())
+      .find((pair) => pair.startsWith('guest_auth='));
+    if (!guestCookie) {
+      throw new Error('Container guest login response did not set guest_auth cookie.');
+    }
+
+    const boundary = `----ContainerHeicSmokeBoundary${Date.now()}`;
+    const multipartBody = buildHeicMultipartPayload(boundary);
+    const [uploadRes, duringUploadLiveRes] = await Promise.all([
+      httpRequest('/api/guest/photos/upload', {
+        method: 'POST',
+        headers: {
+          Cookie: guestCookie,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': String(multipartBody.length),
+        },
+        body: multipartBody,
+        timeoutMs: 15000,
+      }),
+      request('/api/live', 1000),
+    ]);
+
+    if (uploadRes.statusCode !== 201) {
+      throw new Error(`Container HEIC photo upload returned status ${uploadRes.statusCode}: ${uploadRes.body}`);
+    }
+    const uploadJson = JSON.parse(uploadRes.body);
+    const uploadedUrl = uploadJson?.data?.[0]?.url;
+    if (uploadJson.success !== true || typeof uploadedUrl !== 'string' || !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)) {
+      throw new Error(`Unexpected container HEIC upload response payload: ${uploadRes.body}`);
+    }
+    if (duringUploadLiveRes.statusCode !== 200) {
+      throw new Error(`Concurrent container /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`);
+    }
+    const postUploadLiveRes = await request('/api/live', 1000);
+    if (postUploadLiveRes.statusCode !== 200 || JSON.parse(postUploadLiveRes.body).status !== 'alive') {
+      throw new Error(`Post-upload container /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`);
+    }
+
+    const appLogsAfterUpload = child_process.spawnSync(
+      'docker',
+      ['compose', ...COMPOSE_ARGS, 'logs', '--no-color', 'app'],
+      { cwd: rootDir, env: composeEnv, encoding: 'utf8' }
+    ).stdout || '';
+    if (WORKER_ERROR_LOG_PATTERN.test(appLogsAfterUpload)) {
+      throw new Error(`App container logged worker or sanitization errors during HEIC upload:\n${appLogsAfterUpload}`);
+    }
+    if (!appLogsAfterUpload.includes('Successfully transcoded and sanitized HEIC/HEIF image to image/jpeg')) {
+      throw new Error(`Expected container worker HEIC transcoding confirmation in logs, observed:\n${appLogsAfterUpload}`);
+    }
+    console.log(`✅ Container HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`);
+
+    // 9. Verify shared globalThis pool across concurrent API and SSR traffic (<= 10 PostgreSQL connections)
     console.log('Testing shared pg.Pool connection cap across concurrent API and SSR traffic...');
     const concurrentRequests = [
       ...Array.from({ length: 12 }, () => request('/api/ready', 15000)),
