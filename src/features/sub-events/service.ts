@@ -30,6 +30,7 @@ import {
   GlobalRsvpMealTotal,
   RsvpQuestionBreakdown,
   AdminInvitationRsvpsDetail,
+  AccessMatrixGuestEventRsvp,
   normalizeMealOptions,
   normalizeCustomQuestions,
   normalizeMealSelections,
@@ -757,6 +758,16 @@ export class SubEventService {
               `Please select a meal option for all ${expectedPartySize} attending guest${expectedPartySize === 1 ? '' : 's'} for "${subEvent.title}".`
             );
           }
+          if (
+            requestedPlusOnes > 0 &&
+            (normalizedPlusOneNames.length < requestedPlusOnes ||
+              normalizedPlusOneNames.some((n) => !n.trim()))
+          ) {
+            throw new ApiError(
+              400,
+              `Please provide full names for all plus-one guests attending "${subEvent.title}".`
+            );
+          }
           normalizedMeals = partyMeals;
         } else {
           normalizedMeals = rawMeals.slice(0, expectedPartySize);
@@ -993,11 +1004,23 @@ export class SubEventService {
             answer: string;
           }>;
         }> = [];
+        const eventRsvps: Array<{
+          subEventId: string;
+          subEventTitle: string;
+          status: 'attending' | 'declined' | 'pending';
+          plusOneCount: number;
+        }> = [];
 
         for (const r of effectiveRsvps) {
-          if (r.status !== 'attending') continue;
           const evtObj = r.subEvent ?? subEventMap.get(r.subEventId);
           const evtTitle = evtObj?.title || 'Event';
+          eventRsvps.push({
+            subEventId: r.subEventId,
+            subEventTitle: evtTitle,
+            status: r.status,
+            plusOneCount: r.plusOneCount ?? 0,
+          });
+          if (r.status !== 'attending') continue;
           const evtMealOpts = normalizeMealOptions(evtObj?.mealOptions);
           const evtQuestions = normalizeCustomQuestions(evtObj?.customQuestions);
           const rMeals = normalizeMealSelections(r.mealSelections);
@@ -1102,6 +1125,7 @@ export class SubEventService {
           mealSummary,
           customAnswers: structuredAnswers,
           customAnswersSummary,
+          eventRsvps,
         };
 
         await tx.invitationCode.update({
@@ -1327,6 +1351,7 @@ export class SubEventService {
     let rawPartyGroups: string[] = [];
     let rawHouseholdNames: string[] = [];
     let rawPartyTags: string[] = [];
+    let rawRsvpsByInvitationCodeId: Record<string, any[]> = {};
     let total = 0;
 
     if (typeof this.client.$queryRaw === 'function') {
@@ -1357,6 +1382,24 @@ export class SubEventService {
             ARRAY_AGG(sa."invitationCodeId" ORDER BY sa."id" ASC) AS "allowedInvitationCodeIds"
           FROM "SubEventAccess" sa
           GROUP BY sa."subEventId"
+        ),
+        sub_event_rsvps AS (
+          SELECT
+            sr."invitationCodeId",
+            json_agg(
+              json_build_object(
+                'subEventId', sr."subEventId",
+                'status', sr."status",
+                'plusOneCount', sr."plusOneCount",
+                'plusOneNames', sr."plusOneNames",
+                'mealSelections', sr."mealSelections",
+                'customAnswers', sr."customAnswers",
+                'dietaryNotes', sr."dietaryNotes"
+              )
+              ORDER BY sr."createdAt" ASC, sr."id" ASC
+            ) AS "rsvps"
+          FROM "SubEventRsvp" sr
+          GROUP BY sr."invitationCodeId"
         )
         SELECT
           COALESCE(
@@ -1391,7 +1434,14 @@ export class SubEventService {
           ) AS "subEvents",
           COALESCE((SELECT ARRAY_AGG(val) FROM distinct_groups), ARRAY[]::text[]) AS "partyGroups",
           COALESCE((SELECT ARRAY_AGG(val) FROM distinct_households), ARRAY[]::text[]) AS "householdNames",
-          COALESCE((SELECT ARRAY_AGG(val) FROM distinct_tags), ARRAY[]::text[]) AS "partyTags"
+          COALESCE((SELECT ARRAY_AGG(val) FROM distinct_tags), ARRAY[]::text[]) AS "partyTags",
+          COALESCE(
+            (
+              SELECT json_object_agg(ser."invitationCodeId", ser."rsvps")
+              FROM sub_event_rsvps ser
+            ),
+            '{}'::json
+          ) AS "rsvpsByInvitationCodeId"
       `;
 
       const [resolvedTotal, resolvedCodes, metadataRows] = await Promise.all([
@@ -1407,6 +1457,11 @@ export class SubEventService {
             householdName: true,
             partyGroup: true,
             partyTags: true,
+            used: true,
+            plusOneFirstName: true,
+            plusOneLastName: true,
+            dietaryNotes: true,
+            extraFields: true,
           },
           orderBy: {
             guestName: 'asc',
@@ -1433,6 +1488,22 @@ export class SubEventService {
         rawPartyGroups = Array.isArray(metaRow.partyGroups) ? metaRow.partyGroups : [];
         rawHouseholdNames = Array.isArray(metaRow.householdNames) ? metaRow.householdNames : [];
         rawPartyTags = Array.isArray(metaRow.partyTags) ? metaRow.partyTags : [];
+        if (
+          metaRow.rsvpsByInvitationCodeId &&
+          typeof metaRow.rsvpsByInvitationCodeId === 'object' &&
+          !Array.isArray(metaRow.rsvpsByInvitationCodeId)
+        ) {
+          rawRsvpsByInvitationCodeId = metaRow.rsvpsByInvitationCodeId as Record<string, any[]>;
+        } else if (typeof metaRow.rsvpsByInvitationCodeId === 'string') {
+          try {
+            const parsed = JSON.parse(metaRow.rsvpsByInvitationCodeId);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              rawRsvpsByInvitationCodeId = parsed as Record<string, any[]>;
+            }
+          } catch {
+            rawRsvpsByInvitationCodeId = {};
+          }
+        }
       }
     } else {
       const canFindCodes = Boolean(this.client.invitationCode.findMany);
@@ -1469,10 +1540,27 @@ export class SubEventService {
             householdName: true,
             partyGroup: true,
             partyTags: true,
+            used: true,
+            plusOneFirstName: true,
+            plusOneLastName: true,
+            dietaryNotes: true,
+            extraFields: true,
             subEventAccesses: {
               select: {
                 subEventId: true,
               },
+            },
+            subEventRsvps: {
+              select: {
+                subEventId: true,
+                status: true,
+                plusOneCount: true,
+                plusOneNames: true,
+                mealSelections: true,
+                customAnswers: true,
+                dietaryNotes: true,
+              },
+              orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
             },
           },
           orderBy: {
@@ -1566,6 +1654,10 @@ export class SubEventService {
       };
     });
 
+    const subEventById = new Map<string, (typeof normalizedSubEvents)[number]>(
+      normalizedSubEvents.map((se) => [se.id, se])
+    );
+
     const allowedSubEventsByCodeId = new Map<string, string[]>();
     for (const evt of normalizedSubEvents) {
       for (const codeId of evt.allowedInvitationCodeIds) {
@@ -1588,6 +1680,7 @@ export class SubEventService {
       partyGroup?: string | null;
       partyTags?: string[];
       allowedSubEventIds: string[];
+      eventRsvps?: Record<string, AccessMatrixGuestEventRsvp>;
     }> = (invitationCodes || []).map((c: any) => {
       const mappedFromEvents = allowedSubEventsByCodeId.get(c.id) ?? [];
       let allowedSubEventIds = mappedFromEvents;
@@ -1601,6 +1694,162 @@ export class SubEventService {
         allowedSubEventIds = Array.from(merged);
       }
 
+      const eventRsvps: Record<string, AccessMatrixGuestEventRsvp> = {};
+      const fallbackLegacyPlusOne = [c.plusOneFirstName, c.plusOneLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const extra = parseExtraFieldsObject(c.extraFields);
+      const extraPlusOneNames = Array.isArray(extra.plusOneNames)
+        ? extra.plusOneNames
+          .filter((v): v is string => typeof v === 'string')
+          .map((v) => v.trim())
+          .filter(Boolean)
+        : [];
+
+      const guestRsvps = Array.isArray(c.subEventRsvps)
+        ? c.subEventRsvps
+        : rawRsvpsByInvitationCodeId[c.id];
+
+      if (Array.isArray(guestRsvps)) {
+        for (const r of guestRsvps) {
+          if (!r || !r.subEventId) continue;
+          const se = subEventById.get(r.subEventId);
+          const mealOpts = normalizeMealOptions(se?.mealOptions);
+          const optMap = new Map(mealOpts.map((o) => [o.id, o]));
+          const questions = normalizeCustomQuestions(se?.customQuestions);
+          const qMap = new Map(questions.map((q) => [q.id, q]));
+
+          const plusOneCount =
+            r.status === 'attending' ? Math.max(0, Number(r.plusOneCount ?? 0) || 0) : 0;
+          let plusOneNames =
+            plusOneCount > 0
+              ? normalizePlusOneNames(r.plusOneNames)
+                .slice(0, plusOneCount)
+                .filter(Boolean)
+              : [];
+          if (plusOneCount > 0 && plusOneNames.length === 0) {
+            if (extraPlusOneNames.length > 0) {
+              plusOneNames = extraPlusOneNames.slice(0, plusOneCount);
+            } else if (fallbackLegacyPlusOne) {
+              plusOneNames = [fallbackLegacyPlusOne];
+            }
+          }
+
+          const meals: AccessMatrixGuestEventRsvp['meals'] = [];
+          if (r.status === 'attending') {
+            const rawMeals = normalizeMealSelections(r.mealSelections);
+            rawMeals.forEach((optId, idx) => {
+              if (!optId) return;
+              const opt = optMap.get(optId);
+              const attendee =
+                idx === 0
+                  ? c.guestName || 'Primary Guest'
+                  : plusOneNames[idx - 1] || `Plus-One #${idx}`;
+              meals.push({
+                attendee,
+                optionId: optId,
+                label: opt?.label || optId,
+                dietaryTags: opt?.dietaryTags ?? [],
+              });
+            });
+          }
+
+          const answers: AccessMatrixGuestEventRsvp['answers'] = [];
+          if (r.status !== 'declined') {
+            const rawAnswers = normalizeCustomAnswers(r.customAnswers);
+            for (const [qId, ans] of Object.entries(rawAnswers)) {
+              if (!ans) continue;
+              answers.push({
+                questionId: qId,
+                prompt: qMap.get(qId)?.prompt || qId,
+                answer: ans,
+              });
+            }
+          }
+
+          eventRsvps[r.subEventId] = {
+            status: (r.status || 'pending') as 'attending' | 'declined' | 'pending',
+            plusOneCount,
+            plusOneNames,
+            dietaryNotes:
+              typeof r.dietaryNotes === 'string' && r.dietaryNotes.trim()
+                ? r.dietaryNotes.trim()
+                : null,
+            meals,
+            answers,
+          };
+        }
+      }
+
+      if (Array.isArray(extra.eventRsvps)) {
+        for (const er of extra.eventRsvps) {
+          if (!er || typeof er !== 'object') continue;
+          const erObj = er as Record<string, unknown>;
+          const seId = typeof erObj.subEventId === 'string' ? erObj.subEventId : '';
+          if (!seId || eventRsvps[seId]) continue;
+          const status =
+            erObj.status === 'attending' || erObj.status === 'declined'
+              ? erObj.status
+              : 'pending';
+          const plusOneCount =
+            status === 'attending' ? Math.max(0, Number(erObj.plusOneCount ?? 0) || 0) : 0;
+          const plusOneNames =
+            plusOneCount > 0
+              ? extraPlusOneNames.length > 0
+                ? extraPlusOneNames.slice(0, plusOneCount)
+                : fallbackLegacyPlusOne
+                  ? [fallbackLegacyPlusOne]
+                  : []
+              : [];
+          const mealEntry = Array.isArray(extra.mealSelections)
+            ? (extra.mealSelections as Array<Record<string, unknown>>).find(
+              (m) => m && m.subEventId === seId
+            )
+            : undefined;
+          const meals: AccessMatrixGuestEventRsvp['meals'] = Array.isArray(mealEntry?.selections)
+            ? (mealEntry!.selections as Array<Record<string, unknown>>)
+              .filter((s) => s && typeof s.label === 'string' && s.label.trim())
+              .map((s) => ({
+                attendee: typeof s.attendee === 'string' ? s.attendee : c.guestName || 'Guest',
+                optionId: typeof s.optionId === 'string' ? s.optionId : String(s.label),
+                label: String(s.label),
+                dietaryTags: Array.isArray(s.dietaryTags)
+                  ? s.dietaryTags.filter((t): t is string => typeof t === 'string')
+                  : [],
+              }))
+            : [];
+          const answerEntry = Array.isArray(extra.customAnswers)
+            ? (extra.customAnswers as Array<Record<string, unknown>>).find(
+              (a) => a && a.subEventId === seId
+            )
+            : undefined;
+          const answers: AccessMatrixGuestEventRsvp['answers'] = Array.isArray(
+            answerEntry?.answers
+          )
+            ? (answerEntry!.answers as Array<Record<string, unknown>>)
+              .filter((a) => a && typeof a.answer === 'string' && a.answer.trim())
+              .map((a) => ({
+                questionId: typeof a.questionId === 'string' ? a.questionId : '',
+                prompt: typeof a.prompt === 'string' ? a.prompt : '',
+                answer: String(a.answer),
+              }))
+            : [];
+
+          eventRsvps[seId] = {
+            status,
+            plusOneCount,
+            plusOneNames,
+            dietaryNotes:
+              typeof c.dietaryNotes === 'string' && c.dietaryNotes.trim()
+                ? c.dietaryNotes.trim()
+                : null,
+            meals,
+            answers,
+          };
+        }
+      }
+
       return {
         id: c.id,
         code: c.code,
@@ -1609,6 +1858,7 @@ export class SubEventService {
         partyGroup: c.partyGroup || null,
         partyTags: c.partyTags || [],
         allowedSubEventIds,
+        ...(Object.keys(eventRsvps).length > 0 ? { eventRsvps } : {}),
       };
     });
 
@@ -1636,10 +1886,12 @@ export class SubEventService {
   async getRsvpSummary(): Promise<RsvpSummaryResponse> {
     const [invitations, subEvents] = await Promise.all([
       this.client.invitationCode.findMany({
+        where: { isSample: false },
         select: {
           id: true,
           guestName: true,
           used: true,
+          isSample: true,
           plusOneAllocations: true,
           plusOneFirstName: true,
           plusOneLastName: true,
@@ -1670,7 +1922,9 @@ export class SubEventService {
       }),
     ]);
 
-    const inviteList: any[] = Array.isArray(invitations) ? invitations : [];
+    const inviteList: any[] = Array.isArray(invitations)
+      ? invitations.filter((inv: any) => !inv?.isSample)
+      : [];
     const subEventList: any[] = Array.isArray(subEvents) ? subEvents : [];
     const inviteById = new Map<string, any>(inviteList.map((inv) => [inv.id, inv]));
     const allInviteIds = new Set<string>(inviteList.map((inv) => inv.id));
@@ -1724,6 +1978,18 @@ export class SubEventService {
           );
         } else if (typeof extra.plusOneCount === 'number' && extra.plusOneCount >= 0) {
           guestAttendingPlusOnes = Math.floor(extra.plusOneCount);
+        } else if (
+          typeof extra.attendingPlusOneCount === 'number' &&
+          extra.attendingPlusOneCount >= 0
+        ) {
+          guestAttendingPlusOnes = Math.floor(extra.attendingPlusOneCount);
+        } else if (Array.isArray(extra.plusOneNames)) {
+          const validNames = extra.plusOneNames.filter(
+            (n): n is string => typeof n === 'string' && Boolean(n.trim())
+          );
+          if (validNames.length > 0) {
+            guestAttendingPlusOnes = validNames.length;
+          }
         } else if (
           (typeof inv.plusOneFirstName === 'string' && inv.plusOneFirstName.trim()) ||
           (typeof inv.plusOneLastName === 'string' && inv.plusOneLastName.trim())
@@ -2447,6 +2713,52 @@ export class SubEventService {
     }
 
     return updated;
+  }
+
+  /**
+   * Resynchronizes InvitationCode RSVP projections (extraFields, plusOne columns, dietaryNotes)
+   * for a set of invitation IDs inside an active Prisma transaction after SubEvent menu/question
+   * updates or SubEvent deletion.
+   */
+  async resyncInvitationCodesByIds(invitationCodeIds: string[], author: string = 'Admin') {
+    const uniqueIds = Array.from(new Set(invitationCodeIds.filter(Boolean)));
+    if (
+      uniqueIds.length === 0 ||
+      typeof this.client?.invitationCode?.findMany !== 'function' ||
+      typeof this.client?.invitationCode?.update !== 'function' ||
+      typeof this.client?.subEventRsvp?.findMany !== 'function'
+    ) {
+      return [];
+    }
+
+    const invites = await this.client.invitationCode.findMany({
+      where: { id: { in: uniqueIds } },
+    });
+    if (!Array.isArray(invites) || invites.length === 0) {
+      return [];
+    }
+
+    const updatedRecords: any[] = [];
+    for (const invite of invites) {
+      const updated = await this.syncInvitationCodeFromDbRsvps(this.client, invite, {
+        clearedAll: false,
+        author,
+        skipIndividualAudit: true,
+      });
+      updatedRecords.push(updated);
+    }
+
+    if (updatedRecords.length > 0) {
+      if (typeof this.client?.snapshotVersion?.createMany === 'function') {
+        await createBatchAuditSnapshots('InvitationCode', updatedRecords, author, this.client);
+      } else if (typeof this.client?.snapshotVersion?.create === 'function') {
+        for (const rec of updatedRecords) {
+          await createAuditSnapshot('InvitationCode', rec.id, rec, author, this.client);
+        }
+      }
+    }
+
+    return updatedRecords;
   }
 
   /**

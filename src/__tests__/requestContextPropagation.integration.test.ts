@@ -415,6 +415,14 @@ describe('Per-request context propagation, guest session hydration, and AppConfi
     expect(updatedInvite?.plusOneLastName).toBe('Taylor');
     expect(updatedInvite?.dietaryNotes).toBe('Gluten-free');
     expect((updatedInvite?.extraFields as Record<string, unknown>)?.customNote).toBe('keep-me');
+    expect((updatedInvite?.extraFields as Record<string, unknown>)?.eventRsvps).toEqual([
+      {
+        subEventId: event.id,
+        subEventTitle: 'Reception Dinner',
+        status: 'attending',
+        plusOneCount: 1,
+      },
+    ]);
   });
 
   it('GET /api/schedule/[id]/ics, HomePage, and GET/PUT /api/guest/address each run 1 InvitationCode select per request', async () => {
