@@ -219,6 +219,14 @@ function validateDocumentedPostgresUrlsInRunbook(
         }
 
         const prefixBeforeMatch = snippet.slice(0, assignMatch.index + assignMatch[0].indexOf(envKey));
+        // Intentional container flag clearing an optional shadow URL (`-e POSTGRES_URL_NON_POOLING=""`)
+        if (
+          unquotedValue === '' &&
+          envKey !== 'DATABASE_URL' &&
+          /(?:^|\s)(?:-e|--env)(?:=|\s*)$/.test(prefixBeforeMatch)
+        ) {
+          continue;
+        }
         if (
           /--(?:set|update)-secrets\b/.test(prefixBeforeMatch) ||
           (/--(?:set|update)-secrets\b/.test(snippet) &&
@@ -494,9 +502,11 @@ function parseDockerComposeContract(composeContent: string): {
   appTmpfs: string[];
   appUploadsVolumeMounted: boolean;
   topLevelUploadsVolumeDeclared: boolean;
+  topLevelVolumes: string[];
 } {
   const lines = composeContent.split(/\r?\n/);
   const services: string[] = [];
+  const topLevelVolumes: string[] = [];
   const dbPorts: string[] = [];
   const appEnvMap = new Map<string, string>();
   const migrationTmpfs: string[] = [];
@@ -548,8 +558,12 @@ function parseDockerComposeContract(composeContent: string): {
       currentService = null;
     }
     if (inTopLevelVolumes) {
-      if (/^  uploads_data:\s*(?:#.*)?$/.test(line)) {
-        topLevelUploadsVolumeDeclared = true;
+      const volMatch = line.match(/^  ([a-zA-Z0-9_-]+):\s*(?:#.*)?$/);
+      if (volMatch) {
+        topLevelVolumes.push(volMatch[1]);
+        if (volMatch[1] === 'uploads_data') {
+          topLevelUploadsVolumeDeclared = true;
+        }
       }
       continue;
     }
@@ -712,6 +726,7 @@ function parseDockerComposeContract(composeContent: string): {
     appTmpfs,
     appUploadsVolumeMounted,
     topLevelUploadsVolumeDeclared,
+    topLevelVolumes,
   };
 }
 
@@ -816,6 +831,166 @@ function extractSectionSlice(markdown: string, headingPattern: RegExp, stopHeadi
   return collected.join('\n');
 }
 
+const BASELINE_0_1_0_LAST_MIGRATION = '20260930000000_neutral_partner_names';
+
+const BASELINE_0_1_0_ENV_KEYS = new Set([
+  'NODE_ENV',
+  'DATABASE_URL',
+  'POSTGRES_URL_NON_POOLING',
+  'ADMIN_PASSWORD',
+  'ALLOWED_HOSTS',
+  'MULTISITE_ENABLED',
+  'GUEST_PASSCODE',
+  'HISTORY_VERSION_LIMIT',
+  'S3_BUCKET',
+  'S3_REGION',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+  'S3_ENDPOINT',
+  'S3_PUBLIC_URL',
+]);
+
+const BASELINE_0_1_0_MODELS = new Set([
+  'AppConfig',
+  'Media',
+  'WeddingPartyMember',
+  'Attraction',
+  'RegistryItem',
+  'Contributor',
+  'InvitationCode',
+  'ContentNode',
+  'SnapshotVersion',
+]);
+
+function parsePrismaSchemaStats(schemaContent: string): {
+  modelNames: string[];
+  appConfigFieldCount: number;
+} {
+  const modelNames: string[] = [];
+  let inAppConfig = false;
+  let appConfigFieldCount = 0;
+
+  for (const rawLine of schemaContent.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    const modelMatch = trimmed.match(/^model\s+([A-Za-z0-9_]+)\s*\{$/);
+    if (modelMatch) {
+      const name = modelMatch[1];
+      modelNames.push(name);
+      inAppConfig = name === 'AppConfig';
+      continue;
+    }
+    if (inAppConfig) {
+      if (trimmed === '}') {
+        inAppConfig = false;
+        continue;
+      }
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) {
+        continue;
+      }
+      appConfigFieldCount += 1;
+    }
+  }
+
+  return { modelNames, appConfigFieldCount };
+}
+
+function parseModuleConfigKeys(modulesContent: string): string[] {
+  const sourceFile = ts.createSourceFile('modules.ts', modulesContent, ts.ScriptTarget.Latest, true);
+  const keys: string[] = [];
+
+  function visit(node: ts.Node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.name.getText(sourceFile) === 'ModuleConfigSchema' &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      node.initializer.arguments.length > 0 &&
+      ts.isObjectLiteralExpression(node.initializer.arguments[0])
+    ) {
+      for (const prop of node.initializer.arguments[0].properties) {
+        if (ts.isPropertyAssignment(prop)) {
+          keys.push(prop.name.getText(sourceFile).replace(/^['"]|['"]$/g, ''));
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return keys;
+}
+
+function parseBackupSchemaVersion(exportRouteContent: string): string | null {
+  const match = exportRouteContent.match(/\bBACKUP_SCHEMA_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  return match ? match[1] : null;
+}
+
+function listPrismaMigrations(migrationsDir: string): {
+  allMigrations: string[];
+  postBaselineMigrations: string[];
+  latestMigration: string | null;
+} {
+  if (!fs.existsSync(migrationsDir)) {
+    return { allMigrations: [], postBaselineMigrations: [], latestMigration: null };
+  }
+  const allMigrations = fs
+    .readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+  const postBaselineMigrations = allMigrations.filter((name) => name > BASELINE_0_1_0_LAST_MIGRATION);
+  const latestMigration =
+    allMigrations.length > 0 ? allMigrations[allMigrations.length - 1] : null;
+
+  return { allMigrations, postBaselineMigrations, latestMigration };
+}
+
+function extractPost010ChangelogSlice(changelogMd: string): {
+  topReleaseHeading: string | null;
+  topReleaseBody: string;
+  post010Body: string;
+  releaseCount: number;
+} {
+  const lines = changelogMd.split(/\r?\n/);
+  let topReleaseHeading: string | null = null;
+  const topLines: string[] = [];
+  const post010Lines: string[] = [];
+  let releaseIndex = 0;
+  let reached010 = false;
+  let inFence = false;
+
+  for (const line of lines) {
+    if (/^\s*(`{3,}|~{3,})/.test(line)) {
+      inFence = !inFence;
+    }
+    if (!inFence && /^##\s+\[[^\]]+\]/.test(line)) {
+      if (/^##\s+\[0\.1\.0\]/.test(line)) {
+        reached010 = true;
+        break;
+      }
+      releaseIndex += 1;
+      if (releaseIndex === 1) {
+        topReleaseHeading = line.trim();
+      }
+      post010Lines.push(line);
+      continue;
+    }
+    if (releaseIndex >= 1 && !reached010) {
+      post010Lines.push(line);
+      if (releaseIndex === 1) {
+        topLines.push(line);
+      }
+    }
+  }
+
+  return {
+    topReleaseHeading,
+    topReleaseBody: topLines.join('\n'),
+    post010Body: post010Lines.join('\n'),
+    releaseCount: releaseIndex,
+  };
+}
+
 export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): string[] {
   const errors: string[] = [];
 
@@ -825,15 +1000,22 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     'prisma.config.ts',
     'prisma/schema.prisma',
     'Dockerfile',
+    'docker-entrypoint.sh',
     'docker-compose.yml',
     'docker-compose.ci.yml',
     'next.config.ts',
     'vercel.json',
     'src/env.ts',
     'src/lib/config.ts',
+    'src/lib/modules.ts',
     'src/middleware.ts',
     'src/app/api/uploads/[...path]/route.ts',
+    'src/app/api/admin/maintenance/export/route.ts',
+    'scripts/preflight-env.ts',
+    'CHANGELOG.md',
     'DEPLOYMENT.md',
+    'docs/upgrading.md',
+    'docs/versioning.md',
     'docs/runtime-contract.md',
     'docs/deployment/README.md',
     'docs/deployment/vercel.md',
@@ -957,6 +1139,46 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       [urlEnvKey ?? 'DATABASE_URL', shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING'],
       errors
     );
+
+    const orderedSnippets = extractOrderedSnippets(content);
+    for (const { text: snippetText } of orderedSnippets) {
+      if (/\bgcloud\s+run\s+jobs\s+(?:create|update|deploy)\b/.test(snippetText)) {
+        if (/--(?:command|entrypoint)(?:=|\s+)["']?(?:\/usr\/local\/bin\/)?npx["']?(?:\s|$)/.test(snippetText) || /--(?:command|entrypoint)(?:=|\s+)/.test(snippetText)) {
+          errors.push(
+            `${relPath}: Cloud Run job command \`${snippetText}\` must not override ENTRYPOINT with \`--command\` (e.g. \`--command="npx"\`); omit \`--command\` and pass \`--args="./node_modules/.bin/prisma,migrate,deploy"\` to preserve \`/usr/bin/tini\` and \`docker-entrypoint.sh\``
+          );
+        }
+        if (
+          /--args(?:=|\s+)["']?(?:npx,|prisma,migrate)/.test(snippetText) &&
+          !snippetText.includes('./node_modules/.bin/prisma,migrate')
+        ) {
+          errors.push(
+            `${relPath}: Cloud Run job command \`${snippetText}\` must pass \`--args="./node_modules/.bin/prisma,migrate,deploy"\` to invoke the isolated Prisma CLI offline`
+          );
+        }
+      }
+
+      if (
+        prismaMajor >= 7 &&
+        urlEnvKey &&
+        shadowUrlEnvKey &&
+        /\bdocker(?:\s+compose|-compose)\b[\s\S]*?\brun\b/.test(snippetText) &&
+        new RegExp(`(?:^|[\\s"'])${urlEnvKey}=`).test(snippetText)
+      ) {
+        const guardsShadowEnv =
+          new RegExp(`(?:env\\s+-u\\s+${shadowUrlEnvKey}|unset\\s+${shadowUrlEnvKey})`).test(
+            snippetText
+          ) ||
+          new RegExp(
+            `(?:-e|--env)(?:=|\\s+)${shadowUrlEnvKey}=(?:""|''|(?=\\s|$))`
+          ).test(snippetText);
+        if (!guardsShadowEnv) {
+          errors.push(
+            `${relPath}: \`${snippetText}\` overrides ${urlEnvKey} on \`docker compose run\` without unsetting or clearing ${shadowUrlEnvKey} (triggers Prisma 7 P3025 shadow database collision)`
+          );
+        }
+      }
+    }
   }
 
   // Verify Vercel prisma migrate deploy explicitly overrides DATABASE_URL when non-pooling URL is documented
@@ -1093,6 +1315,18 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  const gcpMigrateJobLines = gcpFencedLines.filter((line) =>
+    /\bgcloud\s+run\s+jobs\s+create\b/.test(line)
+  );
+  if (
+    gcpMigrateJobLines.length === 0 ||
+    !gcpMigrateJobLines.some((line) => line.includes('./node_modules/.bin/prisma,migrate,deploy'))
+  ) {
+    errors.push(
+      'docs/deployment/gcp-cloud-run.md: Cloud Run migration job must pass `--args="./node_modules/.bin/prisma,migrate,deploy"` without `--command`'
+    );
+  }
+
   if (
     !gcpMd.includes('--startup-probe-request-path=/api/health') ||
     !gcpMd.includes('--liveness-probe-request-path=/api/live')
@@ -1171,9 +1405,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     );
   }
 
-  if (!composeContract.migrationDatabaseUrl?.startsWith('${DATABASE_URL:-')) {
+  if (!composeContract.migrationDatabaseUrl?.startsWith('${CONTAINER_DATABASE_URL:-')) {
     errors.push(
-      'docker-compose.yml: `migration` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
+      'docker-compose.yml: `migration` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
   if (composeContract.migrationCommand !== './node_modules/.bin/prisma migrate deploy') {
@@ -1207,9 +1441,9 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   if (!composeContract.appHasHealthcheck || !composeContract.appHealthcheckTargetsLive) {
     errors.push('docker-compose.yml: `app` service healthcheck must probe `/api/live`');
   }
-  if (!composeContract.appEnvMap.get('DATABASE_URL')?.startsWith('${DATABASE_URL:-')) {
+  if (!composeContract.appEnvMap.get('DATABASE_URL')?.startsWith('${CONTAINER_DATABASE_URL:-')) {
     errors.push(
-      'docker-compose.yml: `app` service must honor explicit `DATABASE_URL` overrides (`${DATABASE_URL:-...}`)'
+      'docker-compose.yml: `app` service must scope container `DATABASE_URL` overrides via `${CONTAINER_DATABASE_URL:-...}`'
     );
   }
   if (composeContract.appEnvMap.get('E2E_TEST') !== '${E2E_TEST:-false}') {
@@ -1266,7 +1500,7 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   if (!composeContract.appHasEnvFile) {
-    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT']) {
+    for (const envVar of ['DB_USER', 'DB_PASSWORD', 'DB_NAME', 'DB_PORT', 'CONTAINER_DATABASE_URL']) {
       if (composeContract.interpolatedVars.includes(envVar) && !dockerMd.includes(envVar)) {
         errors.push(
           `docs/deployment/docker-vps.md: Missing Compose-interpolated variable "${envVar}" from docker-compose.yml`
@@ -1313,6 +1547,11 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   const runtimeContractMd = runbookContents.get('docs/runtime-contract.md') ?? '';
   if (!/^ENV\s+HOSTNAME=(?:"0\.0\.0\.0"|'0\.0\.0\.0'|0\.0\.0\.0)\s*$/m.test(dockerfileRaw)) {
     errors.push('Dockerfile: Missing `ENV HOSTNAME="0.0.0.0"` in runner image');
+  }
+  if (!dockerfileRaw.includes('/usr/local/etc/npmrc') || !dockerfileRaw.includes('update-notifier=false')) {
+    errors.push(
+      'Dockerfile: Must write `update-notifier=false` to `/usr/local/etc/npmrc` to suppress npm update notices in Node global config'
+    );
   }
   if (composeContract.appHostname !== '0.0.0.0') {
     errors.push('docker-compose.yml: `app` service must set `HOSTNAME: "0.0.0.0"`');
@@ -1566,6 +1805,225 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   for (const requiredCiJob of ['storybook-build', 'deploy-docs']) {
     if (ciJobIds.includes(requiredCiJob) && !deploymentMd.includes(requiredCiJob)) {
       errors.push(`DEPLOYMENT.md: Missing ci.yml job reference "${requiredCiJob}"`);
+    }
+  }
+
+  // 4a. Verify ci.yml `verify` job npm scripts are documented in DEPLOYMENT.md (`verify` (`ci.yml`) overview)
+  const ciDoc = parseDocument(ciWorkflowRaw, { version: '1.2' });
+  const storybookWorkflowRaw = fs.readFileSync(path.join(workflowsDir, 'storybook.yml'), 'utf8');
+  const storybookDoc = parseDocument(storybookWorkflowRaw, { version: '1.2' });
+
+  const extractJobSteps = (doc: ReturnType<typeof parseDocument>, jobId: string): unknown[] => {
+    const jobsNode: unknown = isMap(doc.contents) ? doc.contents.get('jobs', true) : null;
+    if (!isMap(jobsNode)) return [];
+    const jobNode: unknown = jobsNode.get(jobId, true);
+    if (!isMap(jobNode)) return [];
+    const stepsNode: unknown = jobNode.get('steps', true);
+    return isSeq(stepsNode) ? stepsNode.items : [];
+  };
+
+  const ciVerifyScripts: string[] = [];
+  for (const stepItem of extractJobSteps(ciDoc, 'verify')) {
+    if (!isMap(stepItem)) continue;
+    const runNode: unknown = stepItem.get('run', true);
+    if (!isScalar(runNode) || typeof runNode.value !== 'string') continue;
+    const npmRunRegex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)\b/g;
+    let scriptMatch: RegExpExecArray | null;
+    while ((scriptMatch = npmRunRegex.exec(runNode.value)) !== null) {
+      const scriptName = scriptMatch[1];
+      if (scriptName !== 'prisma:generate' && !ciVerifyScripts.includes(scriptName)) {
+        ciVerifyScripts.push(scriptName);
+      }
+    }
+  }
+
+  const ciOverviewSection = extractSectionSlice(
+    deploymentMd,
+    /^###\s+1\.\s+Continuous Integration\b/,
+    '### '
+  );
+  const verifyJobBulletLine =
+    ciOverviewSection
+      .split(/\r?\n/)
+      .find((line) => /^\s*-\s+`verify`\s*\(`ci\.yml`\):/.test(line)) ?? '';
+  if (!verifyJobBulletLine) {
+    errors.push('DEPLOYMENT.md: Missing `- \`verify\` (\`ci.yml\`):` job bullet in Workflows Overview');
+  } else {
+    for (const verifyScript of ciVerifyScripts) {
+      if (!verifyJobBulletLine.includes(verifyScript)) {
+        errors.push(
+          `DEPLOYMENT.md: \`verify\` (\`ci.yml\`) job overview omits CI verification script "${verifyScript}" from .github/workflows/ci.yml`
+        );
+      }
+    }
+  }
+
+  // 4b. Verify storybook.yml `actions/cache` parity with ci.yml `storybook-build`
+  const extractCacheConfig = (
+    steps: unknown[]
+  ): { uses: string; paths: string[]; key: string; restoreKeys: string[] } | null => {
+    for (const stepItem of steps) {
+      if (!isMap(stepItem)) continue;
+      const usesNode: unknown = stepItem.get('uses', true);
+      if (
+        !isScalar(usesNode) ||
+        typeof usesNode.value !== 'string' ||
+        !usesNode.value.trim().startsWith('actions/cache@')
+      ) {
+        continue;
+      }
+      const withNode: unknown = stepItem.get('with', true);
+      const pathNode: unknown = isMap(withNode) ? withNode.get('path', true) : undefined;
+      const keyNode: unknown = isMap(withNode) ? withNode.get('key', true) : undefined;
+      const restoreNode: unknown = isMap(withNode) ? withNode.get('restore-keys', true) : undefined;
+      const rawPath = isScalar(pathNode) && typeof pathNode.value === 'string' ? pathNode.value : '';
+      const rawKey = isScalar(keyNode) && typeof keyNode.value === 'string' ? keyNode.value.trim() : '';
+      const rawRestore =
+        isScalar(restoreNode) && typeof restoreNode.value === 'string' ? restoreNode.value : '';
+      return {
+        uses: usesNode.value.trim(),
+        paths: rawPath
+          .split(/\r?\n/)
+          .map((p) => p.trim())
+          .filter(Boolean),
+        key: rawKey,
+        restoreKeys: rawRestore
+          .split(/\r?\n/)
+          .map((k) => k.trim())
+          .filter(Boolean),
+      };
+    }
+    return null;
+  };
+
+  const ciStorybookCache = extractCacheConfig(extractJobSteps(ciDoc, 'storybook-build'));
+  const standaloneStorybookCache = extractCacheConfig(extractJobSteps(storybookDoc, 'build'));
+  if (!ciStorybookCache) {
+    errors.push('.github/workflows/ci.yml: `storybook-build` job is missing `actions/cache` step');
+  }
+  if (!standaloneStorybookCache) {
+    errors.push(
+      '.github/workflows/storybook.yml: `build` job is missing `actions/cache` step matching .github/workflows/ci.yml `storybook-build`'
+    );
+  } else {
+    for (const requiredCachePath of ['node_modules/.cache/webpack', 'node_modules/.cache/storybook']) {
+      if (!standaloneStorybookCache.paths.includes(requiredCachePath)) {
+        errors.push(
+          `.github/workflows/storybook.yml: \`actions/cache\` must cache "${requiredCachePath}"`
+        );
+      }
+    }
+    if (
+      ciStorybookCache &&
+      (standaloneStorybookCache.uses !== ciStorybookCache.uses ||
+        standaloneStorybookCache.paths.join('\n') !== ciStorybookCache.paths.join('\n') ||
+        standaloneStorybookCache.key !== ciStorybookCache.key ||
+        standaloneStorybookCache.restoreKeys.join('\n') !== ciStorybookCache.restoreKeys.join('\n'))
+    ) {
+      errors.push(
+        '.github/workflows/storybook.yml: `actions/cache` configuration (`uses`, `path`, `key`, `restore-keys`) must match .github/workflows/ci.yml `storybook-build`'
+      );
+    }
+  }
+
+  // 4c. Verify deploy-provider.yml signed webhook wire contract is documented in DEPLOYMENT.md & docs/deployment/docker-vps.md
+  const usesSignedWebhookAdapter =
+    deployProviderRaw.includes('DEPLOY_WEBHOOK_URL') &&
+    deployProviderRaw.includes('DEPLOY_WEBHOOK_SECRET') &&
+    deployProviderRaw.includes('X-Hub-Signature-256') &&
+    deployProviderRaw.includes('X-Deploy-Timestamp') &&
+    deployProviderRaw.includes('X-Deploy-Signature-256');
+  if (usesSignedWebhookAdapter) {
+    for (const [docLabel, docText] of [
+      ['DEPLOYMENT.md', deploymentMd],
+      ['docs/deployment/docker-vps.md', dockerMd],
+    ] as const) {
+      for (const requiredToken of [
+        'deploy-provider.yml',
+        'docker-host',
+        'generic-webhook',
+        'DEPLOY_WEBHOOK_URL',
+        'DEPLOY_WEBHOOK_SECRET',
+        'X-Hub-Signature-256',
+        'X-Deploy-Timestamp',
+        'X-Deploy-Signature-256',
+        'jq -n',
+      ]) {
+        if (!docText.includes(requiredToken)) {
+          errors.push(
+            `${docLabel}: Signed webhook adapter documentation is missing "${requiredToken}" from .github/workflows/deploy-provider.yml`
+          );
+        }
+      }
+      if (
+        !(
+          (docText.includes('"image"') &&
+            docText.includes('"digest"') &&
+            docText.includes('"environment"')) ||
+          /\{\s*image\s*,\s*digest\s*,\s*environment\s*\}/.test(docText)
+        )
+      ) {
+        errors.push(
+          `${docLabel}: Must document the webhook POST JSON payload schema \`{image, digest, environment}\``
+        );
+      }
+      if (!/\$\{X-Deploy-Timestamp\}\.\$\{PAYLOAD\}/.test(docText)) {
+        errors.push(
+          `${docLabel}: Must document timestamp-prefixed HMAC formula \`\${X-Deploy-Timestamp}.\${PAYLOAD}\` for \`X-Deploy-Signature-256\``
+        );
+      }
+      if (!/raw[-\s]+(?:HTTP\s+)?(?:request\s+)?(?:body|bytes|buffer|PAYLOAD)/i.test(docText)) {
+        errors.push(
+          `${docLabel}: Must warn operators to verify webhook HMAC signatures over raw multi-line \`jq -n\` request bytes rather than re-serialized JSON`
+        );
+      }
+    }
+  }
+
+  // 4d. Verify release_ref & image_digest promotion commit resolution alignment across deploy.yml, DEPLOYMENT.md, and gcp-cloud-run.md
+  const deployDoc = parseDocument(deployWorkflowRaw, { version: '1.2' });
+  const deployOnNode: unknown = isMap(deployDoc.contents) ? deployDoc.contents.get('on', true) : null;
+  const hasTriggerInput = (triggerKey: string, inputKey: string): boolean => {
+    if (!isMap(deployOnNode)) return false;
+    const triggerNode: unknown = deployOnNode.get(triggerKey, true);
+    if (!isMap(triggerNode)) return false;
+    const inputsNode: unknown = triggerNode.get('inputs', true);
+    return isMap(inputsNode) && inputsNode.has(inputKey);
+  };
+  if (
+    !hasTriggerInput('workflow_dispatch', 'release_ref') ||
+    !hasTriggerInput('workflow_call', 'release_ref')
+  ) {
+    errors.push(
+      '.github/workflows/deploy.yml: Must define `release_ref` input on both `workflow_dispatch` and `workflow_call`'
+    );
+  }
+  if (
+    !deployWorkflowRaw.includes('RELEASE_REF: ${{ inputs.release_ref }}') ||
+    !deployWorkflowRaw.includes('/commits/${RELEASE_REF}') ||
+    !deployWorkflowRaw.includes('gh attestation verify')
+  ) {
+    errors.push(
+      '.github/workflows/deploy.yml: `ci-gate` must resolve `target_sha` from `inputs.release_ref` and `inputs.image_digest` OIDC attestation'
+    );
+  }
+  if (
+    !/schema-compatibility:[\s\S]*?Align Workspace to Verified Commit SHA[\s\S]*?inputs\.release_ref != ''[\s\S]*?inputs\.image_digest != ''/.test(
+      deployWorkflowRaw
+    )
+  ) {
+    errors.push(
+      '.github/workflows/deploy.yml: `schema-compatibility` must align checkout to `target_sha` when `release_ref` or `image_digest` is supplied'
+    );
+  }
+  for (const [docLabel, docText] of [
+    ['DEPLOYMENT.md', deploymentMd],
+    ['docs/deployment/gcp-cloud-run.md', gcpMd],
+  ] as const) {
+    if (!docText.includes('release_ref') || !docText.includes('target_sha')) {
+      errors.push(
+        `${docLabel}: Must document \`release_ref\` and \`target_sha\` commit resolution for manual tag/digest promotions in \`deploy.yml\``
+      );
     }
   }
 
@@ -1861,19 +2319,375 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
     }
   }
 
+  // 7. Release Notes (CHANGELOG.md), Downstream Upgrade Guide (docs/upgrading.md), & Env Preflight CLI Contract
+  const changelogMd = fs.readFileSync(path.join(repoRoot, 'CHANGELOG.md'), 'utf8');
+  const upgradingMd = fs.readFileSync(path.join(repoRoot, 'docs/upgrading.md'), 'utf8');
+  const dockerEntrypointRaw = fs.readFileSync(path.join(repoRoot, 'docker-entrypoint.sh'), 'utf8');
+  const modulesTsRaw = fs.readFileSync(path.join(repoRoot, 'src/lib/modules.ts'), 'utf8');
+  const exportRouteRaw = fs.readFileSync(
+    path.join(repoRoot, 'src/app/api/admin/maintenance/export/route.ts'),
+    'utf8'
+  );
+
+  for (const [docLabel, docContent] of [
+    ['CHANGELOG.md', changelogMd],
+    ['docs/upgrading.md', upgradingMd],
+  ] as const) {
+    if (docContent.includes('scrypt:c2FsdA==:aGFzaA==')) {
+      errors.push(
+        `${docLabel}: Must not document invalid 4-byte placeholder hash "scrypt:c2FsdA==:aGFzaA==" (Remediation: Reference node scripts/generate-password-hash.mjs instead of placeholder hashes)`
+      );
+    }
+    if (staleDocNodeLtsRegex.test(docContent) || staleDocNodeImageRegex.test(docContent)) {
+      errors.push(
+        `${docLabel}: References stale Node.js LTS major or container base image instead of Node.js v${expectedNodeMajor}.x LTS / node:${expectedNodeMajor}-bookworm-slim (Remediation: Align ${docLabel} with .nvmrc and Dockerfile)`
+      );
+    }
+  }
+
+  // Validate Prisma 7 CLI commands and PostgreSQL URIs inside docs/upgrading.md
+  for (const cmd of extractPrismaMigrateCommands('docs/upgrading.md', upgradingMd)) {
+    if (!VALID_MIGRATE_SUBCOMMANDS.has(cmd.subcommand)) {
+      errors.push(
+        `docs/upgrading.md: Invalid prisma migrate subcommand "${cmd.subcommand}" in \`${cmd.rawCommand}\` (Remediation: Use a valid Prisma ${prismaMajor} migrate subcommand)`
+      );
+      continue;
+    }
+    if (prismaMajor >= 7) {
+      for (const flag of cmd.flags) {
+        if (REMOVED_PRISMA_7_FLAGS.has(flag)) {
+          errors.push(
+            `docs/upgrading.md: Removed Prisma <7 flag "${flag}" used under Prisma ${prismaMajor}.x in \`${cmd.rawCommand}\` (Remediation: Replace removed Prisma 6 flags with Prisma 7 prisma.config.ts flags)`
+          );
+        } else {
+          const allowedFlags = VALID_PRISMA_7_SUBCOMMAND_FLAGS[cmd.subcommand];
+          if (allowedFlags && !allowedFlags.has(flag)) {
+            errors.push(
+              `docs/upgrading.md: Unsupported flag "${flag}" for "prisma migrate ${cmd.subcommand}" in \`${cmd.rawCommand}\``
+            );
+          }
+        }
+      }
+      if (
+        urlEnvKey &&
+        shadowUrlEnvKey &&
+        cmd.rawCommand.includes(`${urlEnvKey}=`) &&
+        cmd.rawCommand.includes(shadowUrlEnvKey) &&
+        !new RegExp(`(?:env\\s+-u\\s+${shadowUrlEnvKey}|unset\\s+${shadowUrlEnvKey})`).test(cmd.rawCommand)
+      ) {
+        errors.push(
+          `docs/upgrading.md: \`${cmd.rawCommand}\` overrides ${urlEnvKey} from ${shadowUrlEnvKey} without \`env -u ${shadowUrlEnvKey}\` (Remediation: Unset ${shadowUrlEnvKey} when overriding ${urlEnvKey} for Prisma 7 CLI)`
+        );
+      }
+    }
+  }
+  validateDocumentedPostgresUrlsInRunbook(
+    'docs/upgrading.md',
+    upgradingMd,
+    [urlEnvKey ?? 'DATABASE_URL', shadowUrlEnvKey ?? 'POSTGRES_URL_NON_POOLING'],
+    errors
+  );
+
+  // Verify package.json registers preflight:env CLI script
+  if (
+    !packageJson.scripts?.['preflight:env'] ||
+    !packageJson.scripts['preflight:env'].includes('scripts/preflight-env.ts')
+  ) {
+    errors.push(
+      'package.json: Missing `"preflight:env": "tsx scripts/preflight-env.ts"` npm script (Remediation: Register "preflight:env" in package.json scripts)'
+    );
+  }
+
+  const { modelNames, appConfigFieldCount } = parsePrismaSchemaStats(prismaSchemaRaw);
+  const post010Models = modelNames.filter((model) => !BASELINE_0_1_0_MODELS.has(model));
+  const post010EnvKeys = envSchemaKeys.filter((key) => !BASELINE_0_1_0_ENV_KEYS.has(key));
+  const moduleToggleKeys = parseModuleConfigKeys(modulesTsRaw);
+  const backupSchemaVersion = parseBackupSchemaVersion(exportRouteRaw);
+  const { allMigrations, postBaselineMigrations, latestMigration } = listPrismaMigrations(
+    path.join(repoRoot, 'prisma/migrations')
+  );
+  const { topReleaseHeading, topReleaseBody, post010Body, releaseCount } =
+    extractPost010ChangelogSlice(changelogMd);
+
+  const hasPost010BreakingOrSchemaChanges =
+    postBaselineMigrations.length > 0 ||
+    post010EnvKeys.length > 0 ||
+    composeContract.requiredVars.length > 0;
+
+  if (!topReleaseHeading || !post010Body.trim()) {
+    errors.push(
+      'CHANGELOG.md: Missing post-0.1.0 release section (e.g., `## [Unreleased]`) above `## [0.1.0]` (Remediation: Add `## [Unreleased]` with Keep-a-Changelog categories per docs/versioning.md)'
+    );
+  } else {
+    const adopterActionLineMatch = topReleaseBody.match(
+      /^>\s*\*\*Adopter Action Required\*\*:\s*(Yes|No)\b.*$/m
+    );
+    if (!adopterActionLineMatch) {
+      errors.push(
+        `CHANGELOG.md (${topReleaseHeading}): Missing \`> **Adopter Action Required**: Yes|No\` callout (Remediation: Add the Adopter Action Required callout per docs/versioning.md)`
+      );
+    } else if (
+      hasPost010BreakingOrSchemaChanges &&
+      releaseCount === 1 &&
+      adopterActionLineMatch[1] !== 'Yes'
+    ) {
+      errors.push(
+        `CHANGELOG.md (${topReleaseHeading}): Sets \`Adopter Action Required: No\` despite ${postBaselineMigrations.length} post-0.1.0 migrations, ${post010EnvKeys.length} added envSchema keys, and ${composeContract.requiredVars.length} Docker Compose \`:?\` guards (Remediation: Set \`> **Adopter Action Required**: Yes\` and document operator migration steps in CHANGELOG.md)`
+      );
+    }
+
+    for (const requiredHeading of [
+      '### 🚀 Application Changes',
+      '### 🗄️ Schema Changes',
+      '### ⚙️ Configuration Changes',
+      '### 🐳 Deployment & Infrastructure Changes',
+      '### ⚠️ Breaking Changes & Migration Guide',
+    ]) {
+      if (!post010Body.includes(requiredHeading)) {
+        errors.push(
+          `CHANGELOG.md: Post-0.1.0 release notes missing required section "${requiredHeading}" (Remediation: Add "${requiredHeading}" per docs/versioning.md)`
+        );
+      }
+    }
+
+    const breakingSection = extractSectionSlice(
+      post010Body,
+      /^###\s+.*Breaking Changes & Migration Guide\b/,
+      '### '
+    );
+    if (
+      hasPost010BreakingOrSchemaChanges &&
+      (!breakingSection.trim() || /^\s*-\s*None\.?\s*$/im.test(breakingSection.trim()))
+    ) {
+      errors.push(
+        'CHANGELOG.md: "Breaking Changes & Migration Guide" cannot be empty or "- None." when post-0.1.0 schema/secret/Compose changes exist (Remediation: Provide step-by-step migration instructions in CHANGELOG.md)'
+      );
+    }
+
+    if (postBaselineMigrations.length > 0) {
+      if (
+        !new RegExp(`\\b${postBaselineMigrations.length}\\b`).test(post010Body) ||
+        !new RegExp(`\\b${allMigrations.length}\\s+migrations\\s+total\\b`, 'i').test(post010Body)
+      ) {
+        errors.push(
+          `CHANGELOG.md: Migration count drift — prisma/migrations/ has ${postBaselineMigrations.length} post-0.1.0 migrations (${allMigrations.length} migrations total), which does not match CHANGELOG.md (Remediation: Update Schema Changes in CHANGELOG.md with the current migration counts)`
+        );
+      }
+      if (latestMigration && !post010Body.includes(latestMigration)) {
+        errors.push(
+          `CHANGELOG.md: Latest Prisma migration "${latestMigration}" in prisma/migrations/ is not cited in post-0.1.0 release notes (Remediation: Document "${latestMigration}" and update migration counts in CHANGELOG.md)`
+        );
+      }
+    }
+
+    if (!new RegExp(`\\b${modelNames.length}\\s+models\\b`, 'i').test(post010Body)) {
+      errors.push(
+        `CHANGELOG.md: Schema model count drift — prisma/schema.prisma defines ${modelNames.length} models (Remediation: Update Schema Changes in CHANGELOG.md to reflect ${modelNames.length} models)`
+      );
+    }
+    if (!new RegExp(`\\b${appConfigFieldCount}\\s+fields\\b`, 'i').test(post010Body)) {
+      errors.push(
+        `CHANGELOG.md: AppConfig field count drift — prisma/schema.prisma defines ${appConfigFieldCount} fields on AppConfig (Remediation: Update Schema Changes in CHANGELOG.md to reflect ${appConfigFieldCount} fields)`
+      );
+    }
+    for (const modelName of post010Models) {
+      if (!new RegExp(`\\b${modelName}\\b`).test(post010Body)) {
+        errors.push(
+          `CHANGELOG.md: Post-0.1.0 Prisma model "${modelName}" from prisma/schema.prisma is missing from release notes (Remediation: Document model "${modelName}" under Schema Changes in CHANGELOG.md)`
+        );
+      }
+      if (!new RegExp(`\\b${modelName}\\b`).test(upgradingMd)) {
+        errors.push(
+          `docs/upgrading.md: Prisma model "${modelName}" from prisma/schema.prisma is missing from downstream upgrade/backup documentation (Remediation: Add "${modelName}" to docs/upgrading.md)`
+        );
+      }
+    }
+
+    for (const envKey of post010EnvKeys) {
+      if (!new RegExp(`\\b${envKey}\\b`).test(post010Body)) {
+        errors.push(
+          `CHANGELOG.md: Added runtime environment variable "${envKey}" in src/env.ts is missing from post-0.1.0 Configuration Changes (Remediation: Document "${envKey}" in CHANGELOG.md)`
+        );
+      }
+    }
+    if (
+      !post010Body.includes('scripts/generate-password-hash.mjs') ||
+      !post010Body.includes('wedding2026') ||
+      !/32\s+characters/i.test(post010Body)
+    ) {
+      errors.push(
+        'CHANGELOG.md: Must document production secret validation rules (`scripts/generate-password-hash.mjs` 64-byte scrypt hash, rejected `wedding2026` passcode, and >= 32 characters `GUEST_SESSION_SECRET`) (Remediation: Update Configuration Changes in CHANGELOG.md)'
+      );
+    }
+
+    if (
+      moduleToggleKeys.length > 0 &&
+      (!new RegExp(`\\b${moduleToggleKeys.length}\\s+feature\\s+toggles\\b`, 'i').test(post010Body) ||
+        !moduleToggleKeys.every((toggle) => new RegExp(`\\b${toggle}\\b`).test(post010Body)) ||
+        !post010Body.includes('guestPasscode'))
+    ) {
+      errors.push(
+        `CHANGELOG.md: Module toggle contract drift with src/lib/modules.ts — must document all ${moduleToggleKeys.length} active ModuleConfigSchema toggles (${moduleToggleKeys.join(', ')}) and the retired \`guestPasscode\` toggle (Remediation: Reconcile CHANGELOG.md with src/lib/modules.ts)`
+      );
+    }
+    if (
+      moduleToggleKeys.length > 0 &&
+      (!new RegExp(`\\b${moduleToggleKeys.length}\\s+feature\\s+toggles\\b`, 'i').test(upgradingMd) ||
+        !moduleToggleKeys.every((toggle) => new RegExp(`\\b${toggle}\\b`).test(upgradingMd)))
+    ) {
+      errors.push(
+        `docs/upgrading.md: Module toggle contract drift with src/lib/modules.ts — must list all ${moduleToggleKeys.length} active ModuleConfigSchema toggles (${moduleToggleKeys.join(', ')}) (Remediation: Reconcile Section 3 of docs/upgrading.md with src/lib/modules.ts)`
+      );
+    }
+
+    if (backupSchemaVersion) {
+      const expectedSchemaBadge = `schemaVersion: "${backupSchemaVersion}"`;
+      if (
+        !post010Body.includes(expectedSchemaBadge) ||
+        !post010Body.includes('src/app/api/admin/maintenance/export/route.ts')
+      ) {
+        errors.push(
+          `CHANGELOG.md: Backup schema version drift — src/app/api/admin/maintenance/export/route.ts sets BACKUP_SCHEMA_VERSION="${backupSchemaVersion}", so CHANGELOG.md must cite \`${expectedSchemaBadge}\` and \`src/app/api/admin/maintenance/export/route.ts\` (Remediation: Update CHANGELOG.md backup export notes)`
+        );
+      }
+      if (!upgradingMd.includes(expectedSchemaBadge)) {
+        errors.push(
+          `docs/upgrading.md: Backup schema version drift — expected \`${expectedSchemaBadge}\` matching src/app/api/admin/maintenance/export/route.ts (Remediation: Update Backup & Restore instructions in docs/upgrading.md)`
+        );
+      }
+    }
+
+    for (const guardVar of composeContract.requiredVars) {
+      if (!new RegExp(`\\b${guardVar}\\b`).test(post010Body)) {
+        errors.push(
+          `CHANGELOG.md: Docker Compose mandatory \`:?\` secret guard "${guardVar}" in docker-compose.yml is missing from post-0.1.0 release notes (Remediation: Document "${guardVar}" in CHANGELOG.md Deployment & Breaking Changes sections)`
+        );
+      }
+      if (!new RegExp(`\\b${guardVar}\\b`).test(upgradingMd)) {
+        errors.push(
+          `docs/upgrading.md: Docker Compose mandatory \`:?\` secret guard "${guardVar}" in docker-compose.yml is missing from downstream upgrade guide (Remediation: Document "${guardVar}" in Step 7 / Compose preflight section of docs/upgrading.md)`
+        );
+      }
+    }
+
+    for (const volName of composeContract.topLevelVolumes) {
+      if (!new RegExp(`\\b${volName}\\b`).test(post010Body)) {
+        errors.push(
+          `CHANGELOG.md: Persistent Docker Compose volume "${volName}" from docker-compose.yml is missing from post-0.1.0 release notes (Remediation: Document "${volName}" under Deployment & Infrastructure Changes in CHANGELOG.md)`
+        );
+      }
+      if (!new RegExp(`\\b${volName}\\b`).test(upgradingMd)) {
+        errors.push(
+          `docs/upgrading.md: Persistent Docker Compose volume "${volName}" from docker-compose.yml is missing from downstream upgrade guide (Remediation: Document "${volName}" retention in docs/upgrading.md)`
+        );
+      }
+    }
+  }
+
+  // Verify docs/upgrading.md covers Docker Compose, Standalone Docker, Host Node.js, Step 7 preflight CLI, volume retention, and rollbacks
+  if (
+    !dockerEntrypointRaw.includes('RUN_MIGRATIONS') ||
+    !dockerEntrypointRaw.includes('prisma migrate deploy') ||
+    !dockerfileRaw.includes('/opt/prisma-cli')
+  ) {
+    errors.push(
+      'Dockerfile / docker-entrypoint.sh: Standalone container migration contract (`RUN_MIGRATIONS` -> `prisma migrate deploy` via `/opt/prisma-cli`) is missing (Remediation: Reconcile Dockerfile, docker-entrypoint.sh, and docs/upgrading.md)'
+    );
+  }
+
+  const upgradingStep7 = extractSectionSlice(upgradingMd, /^###\s+Step\s+7\b/, '### ');
+  if (
+    !upgradingStep7 ||
+    (!upgradingStep7.includes('scripts/preflight-env.ts') && !upgradingStep7.includes('preflight:env'))
+  ) {
+    errors.push(
+      'docs/upgrading.md: Step 7 must invoke the local operator `.env` preflight CLI (`npm run preflight:env` / `npx tsx scripts/preflight-env.ts`) rather than relying only on `verify-env-docs.ts` (Remediation: Update Step 7 in docs/upgrading.md)'
+    );
+  }
+
+  if (
+    !upgradingMd.includes('docker compose up -d --build') ||
+    !upgradingMd.includes('docker compose down -v') ||
+    !upgradingMd.includes('/app/public/uploads')
+  ) {
+    errors.push(
+      'docs/upgrading.md: Docker Compose upgrade track must document `docker compose up -d --build`, `/app/public/uploads` volume mounting, and warn against `docker compose down -v` (Remediation: Update Track A in docs/upgrading.md)'
+    );
+  }
+
+  if (
+    !upgradingMd.includes('RUN_MIGRATIONS=true') ||
+    !upgradingMd.includes('docker-entrypoint.sh') ||
+    !upgradingMd.includes('/opt/prisma-cli')
+  ) {
+    errors.push(
+      'docs/upgrading.md: Standalone Docker upgrade track must document `RUN_MIGRATIONS=true` via `docker-entrypoint.sh` and `/opt/prisma-cli` (Remediation: Update Track B in docs/upgrading.md)'
+    );
+  }
+
+  if (!upgradingMd.includes('npm run migrate:deploy') || !upgradingMd.includes('npm ci')) {
+    errors.push(
+      'docs/upgrading.md: Host Node.js upgrade track must document `npm ci` and `npm run migrate:deploy` (Remediation: Update Track C in docs/upgrading.md)'
+    );
+  }
+
+  if (
+    !upgradingMd.includes('wedding-website:previous') ||
+    !upgradingMd.includes('docker tag wedding-website:latest wedding-website:previous') ||
+    !upgradingMd.includes('docker compose up -d --no-deps app')
+  ) {
+    errors.push(
+      'docs/upgrading.md: Must document `wedding-website:previous` pre-upgrade image tagging and `docker compose up -d --no-deps app` rollback aligned with docs/deployment/docker-vps.md (Remediation: Update Step 2 and Section 4 Rollback in docs/upgrading.md)'
+    );
+  }
+
+  const upgradingRollbackSection = extractSectionSlice(upgradingMd, /^##\s+4\.\s+Rollback\b/, '## ');
+  for (const line of extractFencedLogicalLines(upgradingRollbackSection)) {
+    if (/\bdocker\s+run\b/.test(line)) {
+      if (!/(?:^|\s)(?:-p\s|--publish(?:=|\s))/.test(line)) {
+        errors.push(
+          `docs/upgrading.md: Rollback \`docker run\` command lacks host port mapping (-p / --publish): \`${line}\` (Remediation: Bind 127.0.0.1:3000:3000 on rollback container)`
+        );
+      }
+      if (!/(?:^|\s)--network(?:=|\s)/.test(line)) {
+        errors.push(
+          `docs/upgrading.md: Rollback \`docker run\` command lacks Compose network attachment (--network): \`${line}\` (Remediation: Attach --network wedding_website_default on rollback container)`
+        );
+      }
+      if (/:latest(?:\s|$)/.test(line)) {
+        errors.push(
+          `docs/upgrading.md: Rollback \`docker run\` command must not deploy mutable :latest tag: \`${line}\` (Remediation: Deploy wedding-website:previous)`
+        );
+      }
+    }
+  }
+
   return errors;
 }
 
 function main(): void {
   const errors = verifyDeploymentRunbooks(process.cwd());
   if (errors.length > 0) {
-    console.error('❌ Deployment runbook verification failed:');
+    console.error('❌ Deployment runbook & upgrade contract verification failed:');
     for (const err of errors) {
       console.error(`  - ${err}`);
     }
+    console.error(`
+================================================================================
+ACTIONABLE REMEDIATION:
+--------------------------------------------------------------------------------
+Run "npm run check:runbooks" locally and reconcile drifted documentation or
+runtime contracts across:
+  - CHANGELOG.md & docs/upgrading.md (migrations, envSchema keys, ModuleConfigSchema
+    toggles, BACKUP_SCHEMA_VERSION, Docker Compose ":?" guards & named volumes,
+    and Step 7 "npm run preflight:env" instructions)
+  - DEPLOYMENT.md, docs/runtime-contract.md, and docs/deployment/*.md
+  - docker-compose.yml, docker-compose.ci.yml, Dockerfile, and .github/workflows/
+================================================================================
+`);
     process.exit(1);
   }
-  console.log('✅ All deployment runbooks match live repository configurations and workflows.');
+  console.log('✅ All deployment runbooks, CHANGELOG.md, and docs/upgrading.md match live repository contracts.');
 }
 
 const isMain =

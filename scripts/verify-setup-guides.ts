@@ -85,13 +85,191 @@ function extractMarkdownSection(
   return out.join('\n');
 }
 
+const IGNORED_ROOT_DIRECTORIES = new Set([
+  '.git',
+  'node_modules',
+  '.pnp',
+  '.yarn',
+  'coverage',
+  '.next',
+  '.swc',
+  '.turbo',
+  'out',
+  'build',
+  'dist',
+  'storybook-static',
+  'logs',
+  '.vscode',
+  '.idea',
+  '.vercel',
+  '.jules',
+  '.Jules',
+  'test-results',
+  'playwright-report',
+  '.cache',
+  '.eslintcache',
+  '.parcel-cache',
+  '.tmp',
+  'tmp',
+]);
+
+interface ReadmeHeadingInfo {
+  level: number;
+  text: string;
+  slug: string;
+}
+
+function slugifyGithubHeading(rawHeading: string): string {
+  const plain = rawHeading
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_~]/g, '')
+    .trim();
+  return plain
+    .toLowerCase()
+    .replace(/[\uFE00-\uFE0F\u200D]/g, '')
+    .replace(/[^\p{L}\p{M}\p{N}_\- ]/gu, '')
+    .replace(/ /g, '-');
+}
+
+function extractReadmeHeadings(readmeContent: string): ReadmeHeadingInfo[] {
+  const headings: ReadmeHeadingInfo[] = [];
+  const slugCounts = new Map<string, number>();
+  const lines = readmeContent.split(/\r?\n/);
+  let inFrontmatter = false;
+  let inFence = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+  let inHtmlComment = false;
+
+  lines.forEach((rawLine, index) => {
+    if (index === 0 && rawLine.trim() === '---') {
+      inFrontmatter = true;
+      return;
+    }
+    if (inFrontmatter) {
+      if (rawLine.trim() === '---' || rawLine.trim() === '...') {
+        inFrontmatter = false;
+      }
+      return;
+    }
+
+    const fenceMatch = rawLine.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1];
+      const rest = fenceMatch[2];
+      const ch = marker[0];
+      const len = marker.length;
+      if (!inFence) {
+        if (!(ch === '`' && rest.includes('`'))) {
+          inFence = true;
+          fenceChar = ch;
+          fenceLen = len;
+          return;
+        }
+      } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
+        inFence = false;
+        fenceChar = '';
+        fenceLen = 0;
+        return;
+      }
+    }
+
+    if (inFence) {
+      return;
+    }
+
+    let line = rawLine;
+    if (inHtmlComment) {
+      const endIdx = line.indexOf('-->');
+      if (endIdx === -1) {
+        return;
+      }
+      line = line.slice(endIdx + 3);
+      inHtmlComment = false;
+    }
+    while (line.includes('<!--')) {
+      const startIdx = line.indexOf('<!--');
+      const endIdx = line.indexOf('-->', startIdx + 4);
+      if (endIdx === -1) {
+        line = line.slice(0, startIdx);
+        inHtmlComment = true;
+        break;
+      }
+      line = line.slice(0, startIdx) + line.slice(endIdx + 3);
+    }
+
+    const match = line.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+\s*)?$/);
+    if (!match) {
+      return;
+    }
+
+    const level = match[1].length;
+    const text = match[2].trim();
+    const baseSlug = slugifyGithubHeading(text);
+    const seen = slugCounts.get(baseSlug) ?? 0;
+    slugCounts.set(baseSlug, seen + 1);
+    const slug = seen === 0 ? baseSlug : `${baseSlug}-${seen}`;
+
+    headings.push({ level, text, slug });
+  });
+
+  return headings;
+}
+
+function extractReadmeTocAnchors(readmeContent: string): string[] {
+  const tocSection = extractMarkdownSection(
+    readmeContent,
+    /^##\s+Table of Contents\b/,
+    /^##\s+/
+  );
+  const anchors: string[] = [];
+  const linkRegex = /\[[^\]]+\]\(#([^)\s]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = linkRegex.exec(tocSection)) !== null) {
+    anchors.push(match[1].trim());
+  }
+  return anchors;
+}
+
+function collectGitignoredRootDirs(repoRoot: string): Set<string> {
+  const ignored = new Set<string>(IGNORED_ROOT_DIRECTORIES);
+  const gitignorePath = path.join(repoRoot, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) {
+    return ignored;
+  }
+
+  const lines = fs.readFileSync(gitignorePath, 'utf8').split(/\r?\n/);
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('!')) {
+      continue;
+    }
+    const normalized = trimmed.replace(/^\/+/, '').replace(/\/+\*?$/, '');
+    if (normalized && !normalized.includes('/') && !normalized.includes('*')) {
+      ignored.add(normalized);
+    }
+  }
+
+  return ignored;
+}
+
+function discoverTrackedRootDirectories(repoRoot: string): string[] {
+  const ignoredRootDirs = collectGitignoredRootDirs(repoRoot);
+  return fs
+    .readdirSync(repoRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !ignoredRootDirs.has(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+}
+
 function extractReadmeProjectStructurePaths(readmeContent: string): string[] {
   const section = extractMarkdownSection(readmeContent, /^##\s+Project Structure\b/, /^##\s+/);
   const paths: string[] = [];
   for (const line of section.split(/\r?\n/)) {
     const match = line.match(/^\s*[*-]\s+`([^`]+)`\s*:/);
     if (match) {
-      paths.push(match[1].trim());
+      paths.push(match[1].trim().replace(/^\.\/+/, '').replace(/\/+$/, ''));
     }
   }
   return paths;
@@ -112,14 +290,31 @@ function parseIssueTemplateFrontmatterName(markdown: string): string | null {
   return name;
 }
 
-function parsePreCommitScripts(preCommitContent: string): string[] {
+function parseHookScripts(hookContent: string): string[] {
   const scripts: string[] = [];
   const scriptRegex = /\{\s*name:\s*['"][^'"]+['"]\s*,\s*script:\s*['"]([^'"]+)['"]\s*\}/g;
   let match: RegExpExecArray | null;
-  while ((match = scriptRegex.exec(preCommitContent)) !== null) {
+  while ((match = scriptRegex.exec(hookContent)) !== null) {
     scripts.push(match[1]);
   }
   return scripts;
+}
+
+function findForbiddenHookCommands(hookContent: string): string[] {
+  const forbidden: string[] = [];
+  if (/\bgit\s+stash\b/.test(hookContent) || /['"]stash['"]/.test(hookContent)) {
+    forbidden.push('git stash');
+  }
+  if (/\bgit\s+reset\b/.test(hookContent) || /['"]reset['"]/.test(hookContent)) {
+    forbidden.push('git reset');
+  }
+  if (
+    /\bgit\s+checkout\s+--(?!\w)/.test(hookContent) ||
+    /['"]checkout['"]\s*,\s*['"]--['"]/.test(hookContent)
+  ) {
+    forbidden.push('git checkout -- .');
+  }
+  return forbidden;
 }
 
 function parseCheckStaticSubscripts(checkStaticCommand: string): string[] {
@@ -240,6 +435,9 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
+    'jest.setup.js',
+    'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
@@ -286,7 +484,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'utf8'
   );
   const preCommitRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-commit'), 'utf8');
+  const prePushRaw = fs.readFileSync(path.join(repoRoot, '.githooks/pre-push'), 'utf8');
+  const installHooksRaw = fs.readFileSync(
+    path.join(repoRoot, 'scripts/install-git-hooks.js'),
+    'utf8'
+  );
   const checkQualityRaw = fs.readFileSync(path.join(repoRoot, 'scripts/check-quality.ts'), 'utf8');
+  const jestSetupRaw = fs.readFileSync(path.join(repoRoot, 'jest.setup.js'), 'utf8');
   const pretestMjsRaw = fs.readFileSync(path.join(repoRoot, 'scripts/pretest.mjs'), 'utf8');
   const a11yReportRaw = fs.readFileSync(path.join(repoRoot, 'scripts/a11y-report.mjs'), 'utf8');
   const seedRaw = fs.readFileSync(path.join(repoRoot, 'scripts/seed.ts'), 'utf8');
@@ -338,10 +542,17 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       `.env.example: DATABASE_URL ("${envExampleDbUrl}") must default to "${expectedComposeDbPrefix}..." matching local setup guides and docker-compose.ci.yml`
     );
   }
-  const envExampleDbPassword = envExample.active.get('DB_PASSWORD') ?? '';
-  if (envExampleDbPassword !== composeDb.dbPassword) {
+  if (envExample.active.has('NODE_ENV')) {
     errors.push(
-      `.env.example: DB_PASSWORD ("${envExampleDbPassword}") must default to "${composeDb.dbPassword}" so "cp .env.example .env && docker compose config --services" succeeds without inline overrides`
+      '.env.example: Must omit active NODE_ENV assignment (keep "# NODE_ENV=development" commented) so host processes default to development in src/env.ts'
+    );
+  }
+  if (!envExample.commented.has('NODE_ENV')) {
+    errors.push('.env.example: Commented placeholder "# NODE_ENV=development" is missing');
+  }
+  if (envExample.active.get('DB_PASSWORD') !== composeDb.dbPassword) {
+    errors.push(
+      `.env.example: Must define active DB_PASSWORD="${composeDb.dbPassword}" so bare "docker compose up -d db" works after copying .env.example to .env`
     );
   }
 
@@ -363,6 +574,17 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
         `docker-compose.yml: Must not declare default fallback secret \${${requiredSecret}:-...}`
       );
     }
+  }
+  if (
+    (composeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2 ||
+    /DATABASE_URL:\s*\$\{DATABASE_URL:-/.test(composeRaw)
+  ) {
+    errors.push(
+      'docker-compose.yml: Must scope migration and app DATABASE_URL overrides via ${CONTAINER_DATABASE_URL:-...} so host DATABASE_URL never leaks into containers'
+    );
+  }
+  if (!/^\s*NODE_ENV:\s*production\s*$/m.test(composeRaw)) {
+    errors.push('docker-compose.yml: Must pin app container NODE_ENV to production');
   }
 
   const envCi = parseEnvAssignments(envCiRaw);
@@ -422,7 +644,6 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (envCi.active.get('E2E_TEST') !== 'true') {
     errors.push('.env.ci: E2E_TEST must be set to "true"');
   }
-
   if (!composeRaw.includes('127.0.0.1:${DB_PORT:-5432}:5432')) {
     errors.push('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432');
   }
@@ -431,10 +652,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
   if (
     !/POSTGRES_PASSWORD:\s*\$\{DB_PASSWORD:-wedding123\}/.test(ciComposeRaw) ||
-    !/E2E_TEST:\s*\$\{E2E_TEST:-true\}/.test(ciComposeRaw)
+    !/E2E_TEST:\s*\$\{E2E_TEST:-true\}/.test(ciComposeRaw) ||
+    (ciComposeRaw.match(/DATABASE_URL:\s*\$\{CONTAINER_DATABASE_URL:-/g) ?? []).length < 2
   ) {
     errors.push(
-      'docker-compose.ci.yml: Must isolate disposable CI database credentials and E2E_TEST: ${E2E_TEST:-true}'
+      'docker-compose.ci.yml: Must isolate disposable CI database credentials, ${CONTAINER_DATABASE_URL:-...} overrides, and E2E_TEST: ${E2E_TEST:-true}'
     );
   }
   const envFileComposeArgsPattern =
@@ -442,13 +664,13 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const bareComposeArgsPattern =
     /\\?['"]compose\\?['"]\s*,\s*\\?['"]-f\\?['"]\s*,\s*\\?['"]docker-compose\.yml\\?['"]\s*,\s*\\?['"]-f\\?['"]\s*,\s*\\?['"]docker-compose\.ci\.yml\\?['"]/;
   for (const [scriptLabel, scriptRaw] of [
+    ['scripts/pretest.mjs', pretestMjsRaw],
     ['scripts/test-standalone.mjs', testStandaloneRaw],
     ['scripts/test-container.mjs', testContainerRaw],
-    ['scripts/pretest.mjs', pretestMjsRaw],
     ['playwright.config.ts', playwrightConfigRaw],
   ] as const) {
-    if (!scriptRaw.includes('docker-compose.ci.yml')) {
-      errors.push(`${scriptLabel}: Must invoke isolated "docker-compose.ci.yml" override manifest`);
+    if (!scriptRaw.includes('docker-compose.ci.yml') || !scriptRaw.includes('.env.ci')) {
+      errors.push(`${scriptLabel}: Must pass "--env-file .env.ci" with isolated "docker-compose.ci.yml" override manifest`);
     }
     if (!envFileComposeArgsPattern.test(scriptRaw) || bareComposeArgsPattern.test(scriptRaw)) {
       errors.push(
@@ -482,6 +704,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   ) {
     errors.push(
       'scripts/test-container.mjs: buildCiComposeEnv must force NODE_ENV="production" and container DATABASE_URL (@db:5432) without inheriting host .env values'
+    );
+  }
+  if (!/NODE_ENV:\s*process\.env\.CI\s*\?\s*'production'\s*:\s*'development'/.test(playwrightConfigRaw)) {
+    errors.push(
+      'playwright.config.ts: Must set webServer.env.NODE_ENV to "development" locally and "production" in CI'
     );
   }
   for (const [label, rawText] of [
@@ -570,8 +797,26 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   if (pretestMjsRaw.includes('--legacy-peer-deps')) {
     errors.push('scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI');
   }
+  if (
+    !pretestMjsRaw.includes('.package-lock.json') ||
+    !pretestMjsRaw.includes('TEST_DATABASE_URL') ||
+    !pretestMjsRaw.includes('node:net') ||
+    !pretestMjsRaw.includes('--stage-only')
+  ) {
+    errors.push(
+      'scripts/pretest.mjs: Must enforce CI-aware ".package-lock.json" alignment, "TEST_DATABASE_URL" preservation, TCP readiness probing ("node:net"), and "--stage-only" portal staging'
+    );
+  }
+  if (!jestSetupRaw.includes('TEST_DATABASE_URL') || !jestSetupRaw.includes('process.env.CI')) {
+    errors.push(
+      'jest.setup.js: Must preserve explicit DATABASE_URL when CI=true or TEST_DATABASE_URL is set'
+    );
+  }
   if (testingRaw.includes('--legacy-peer-deps')) {
     errors.push('.github/TESTING.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap');
+  }
+  if (agentsRaw.includes('--legacy-peer-deps')) {
+    errors.push('AGENTS.md: Must not document "--legacy-peer-deps" for pretest/CI bootstrap');
   }
   for (const [docLabel, docText] of [
     ['README.md', readmeRaw],
@@ -686,14 +931,56 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   // 2. Hook, check:static parity, E2E runner, & check-quality.ts registration checks
-  const preCommitScripts = parsePreCommitScripts(preCommitRaw);
-  if (!preCommitScripts.includes('check:setup-guides')) {
-    errors.push('.githooks/pre-commit: Must run "check:setup-guides"');
+  if (
+    !installHooksRaw.includes('pre-commit') ||
+    !installHooksRaw.includes('pre-push') ||
+    !installHooksRaw.includes('0o755')
+  ) {
+    errors.push(
+      'scripts/install-git-hooks.js: Must configure executable 0o755 permissions on both .githooks/pre-commit and .githooks/pre-push'
+    );
+  }
+
+  if (!/\blint-staged\b/.test(preCommitRaw)) {
+    errors.push('.githooks/pre-commit: Must run "npx lint-staged" on staged files');
+  }
+  for (const legacyHelper of ['hasUnstagedChanges', 'pushStash', 'popStash']) {
+    if (preCommitRaw.includes(legacyHelper)) {
+      errors.push(`.githooks/pre-commit: Must remove legacy stash helper "${legacyHelper}"`);
+    }
+  }
+  const preCommitScripts = parseHookScripts(preCommitRaw);
+  if (preCommitScripts.length > 0) {
+    errors.push(
+      '.githooks/pre-commit: Must run only "npx lint-staged" without sequential workspace checks'
+    );
+  }
+
+  for (const [hookLabel, hookRaw] of [
+    ['.githooks/pre-commit', preCommitRaw],
+    ['.githooks/pre-push', prePushRaw],
+  ] as const) {
+    for (const forbiddenCmd of findForbiddenHookCommands(hookRaw)) {
+      errors.push(
+        `${hookLabel}: Must not invoke destructive workspace command "${forbiddenCmd}"`
+      );
+    }
+  }
+
+  const prePushScripts = parseHookScripts(prePushRaw);
+  if (!prePushScripts.includes('type-check') && !prePushScripts.includes('typecheck')) {
+    errors.push('.githooks/pre-push: Must run "type-check"');
+  }
+  if (!prePushScripts.includes('lint:unused')) {
+    errors.push('.githooks/pre-push: Must run "lint:unused"');
+  }
+  if (!prePushScripts.includes('check:setup-guides')) {
+    errors.push('.githooks/pre-push: Must run "check:setup-guides"');
   }
   for (const staticSubscript of checkStaticSubscripts) {
-    if (!preCommitScripts.includes(staticSubscript)) {
+    if (!prePushScripts.includes(staticSubscript)) {
       errors.push(
-        `.githooks/pre-commit: Must enforce check:static sub-script "${staticSubscript}"`
+        `.githooks/pre-push: Must enforce check:static sub-script "${staticSubscript}"`
       );
     }
   }
@@ -701,6 +988,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (preCommitScripts.includes(heavyBuildScript)) {
       errors.push(
         `.githooks/pre-commit: Must exclude heavy build step "${heavyBuildScript}" so local commits stay fast`
+      );
+    }
+    if (prePushScripts.includes(heavyBuildScript)) {
+      errors.push(
+        `.githooks/pre-push: Must exclude heavy build step "${heavyBuildScript}" so local pushes stay fast`
       );
     }
   }
@@ -806,6 +1098,38 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   // 3. README.md & docs/developer-setup.md onboarding contract checks
+  const readmeHeadings = extractReadmeHeadings(readmeRaw);
+  const readmeH1Headings = readmeHeadings.filter((heading) => heading.level === 1);
+  if (readmeH1Headings.length !== 1) {
+    errors.push(
+      `README.md: Must contain exactly one top-level "#" (h1) heading, found ${readmeH1Headings.length}`
+    );
+  }
+
+  const readmeTocAnchors = extractReadmeTocAnchors(readmeRaw);
+  if (readmeTocAnchors.length === 0) {
+    errors.push('README.md: Missing "## Table of Contents" anchor entries');
+  } else {
+    const tocAnchorSet = new Set(readmeTocAnchors);
+    const allHeadingSlugs = new Set(readmeHeadings.map((heading) => heading.slug));
+    const expectedTocHeadings = readmeHeadings.filter(
+      (heading) =>
+        (heading.level === 2 || heading.level === 3) && heading.slug !== 'table-of-contents'
+    );
+    for (const heading of expectedTocHeadings) {
+      if (!tocAnchorSet.has(heading.slug)) {
+        errors.push(
+          `README.md: Table of Contents is missing entry for "${heading.text}" (#${heading.slug})`
+        );
+      }
+    }
+    for (const anchor of readmeTocAnchors) {
+      if (!allHeadingSlugs.has(anchor)) {
+        errors.push(`README.md: Table of Contents links to nonexistent heading "#${anchor}"`);
+      }
+    }
+  }
+
   const readmeStructurePaths = extractReadmeProjectStructurePaths(readmeRaw);
   if (readmeStructurePaths.length === 0) {
     errors.push('README.md: Missing directory entries under "## Project Structure"');
@@ -813,6 +1137,14 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   for (const relDir of readmeStructurePaths) {
     if (!fs.existsSync(path.join(repoRoot, relDir))) {
       errors.push(`README.md: Project Structure lists nonexistent path "${relDir}"`);
+    }
+  }
+  const documentedRootDirs = new Set(
+    readmeStructurePaths.map((relDir) => relDir.split('/')[0]).filter(Boolean)
+  );
+  for (const rootDirName of discoverTrackedRootDirectories(repoRoot)) {
+    if (!documentedRootDirs.has(rootDirName)) {
+      errors.push(`README.md: Project Structure is missing root directory "${rootDirName}"`);
     }
   }
 
@@ -827,8 +1159,8 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
     for (const requiredVar of [
       'ADMIN_PASSWORD',
-      'DB_PASSWORD',
       'DATABASE_URL',
+      'DB_PASSWORD',
       'GUEST_PASSCODE',
       'GUEST_SESSION_SECRET',
       'ALLOWED_HOSTS',
@@ -839,7 +1171,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
     if (/\bDB_PASSWORD\s*=\s*\S+\s+docker\s+compose\b/.test(content)) {
       errors.push(
-        `${docLabel}: Must not require inline "DB_PASSWORD=... docker compose" overrides now that .env.example defines DB_PASSWORD`
+        `${docLabel}: Must prescribe bare "docker compose up -d db" without inline "DB_PASSWORD=... docker compose" overrides`
       );
     }
     if (!content.includes('scripts/generate-password-hash.mjs')) {
@@ -897,6 +1229,7 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     'no-unused-imports',
     'npm run scaffold',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
     'lint-staged',
     'src/utils/',
   ]) {
@@ -907,25 +1240,52 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   const contributingCommitSection =
     contributingRaw.split('7. **Commit Your Changes:**')[1]?.split('8. **Push to Your Fork:**')[0] ??
     contributingRaw;
-  for (const hookScript of preCommitScripts) {
-    if (!contributingCommitSection.includes(hookScript)) {
+  if (
+    !contributingCommitSection.includes('.githooks/pre-commit') ||
+    !contributingCommitSection.includes('lint-staged')
+  ) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must document ".githooks/pre-commit" running "npx lint-staged"'
+    );
+  }
+  if (/\bgit\s+stash\b/i.test(contributingCommitSection)) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must not prescribe or document "git stash"'
+    );
+  }
+  if (/\bsequential\s+workspace\s+checks\b/i.test(contributingCommitSection)) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Commit Your Changes section must not claim sequential workspace checks run during pre-commit'
+    );
+  }
+
+  const contributingPushSection =
+    contributingRaw.split('8. **Push to Your Fork:**')[1]?.split('9. **Open a Pull Request (PR):**')[0] ??
+    contributingRaw;
+  if (!contributingPushSection.includes('.githooks/pre-push')) {
+    errors.push(
+      '.github/CONTRIBUTING.md: Push to Your Fork section must document ".githooks/pre-push"'
+    );
+  }
+  for (const hookScript of prePushScripts) {
+    if (!contributingPushSection.includes(hookScript)) {
       errors.push(
-        `.github/CONTRIBUTING.md: Missing .githooks/pre-commit check script "${hookScript}" in Commit Your Changes section`
+        `.github/CONTRIBUTING.md: Missing .githooks/pre-push check script "${hookScript}" in Push to Your Fork section`
       );
     }
   }
-  const countMatch = contributingCommitSection.match(
+  const countMatch = contributingPushSection.match(
     /\bruns\s+([a-z0-9]+)\s+sequential\s+workspace\s+checks\b/i
   );
-  const expectedCountWord = NUMBER_WORDS[preCommitScripts.length];
-  const expectedCountNum = String(preCommitScripts.length);
+  const expectedCountWord = NUMBER_WORDS[prePushScripts.length];
+  const expectedCountNum = String(prePushScripts.length);
   if (
-    countMatch &&
-    countMatch[1].toLowerCase() !== expectedCountWord &&
-    countMatch[1] !== expectedCountNum
+    !countMatch ||
+    (countMatch[1].toLowerCase() !== expectedCountWord &&
+      countMatch[1] !== expectedCountNum)
   ) {
     errors.push(
-      `.github/CONTRIBUTING.md: Commit Your Changes claims "${countMatch[1]}" sequential workspace checks, expected "${expectedCountWord ?? expectedCountNum}" (${preCommitScripts.length})`
+      `.github/CONTRIBUTING.md: Push to Your Fork claims "${countMatch?.[1] ?? 'none'}" sequential workspace checks, expected "${expectedCountWord ?? expectedCountNum}" (${prePushScripts.length})`
     );
   }
 
@@ -991,6 +1351,11 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     ['.github/TESTING.md', testingRaw],
     ['AGENTS.md', agentsRaw],
   ] as const) {
+    if (!content.includes('.githooks/pre-commit') || !content.includes('.githooks/pre-push')) {
+      errors.push(
+        `${docLabel}: Must reference both ".githooks/pre-commit" and ".githooks/pre-push"`
+      );
+    }
     if (envTestGuestPasscode && !content.includes(envTestGuestPasscode)) {
       errors.push(
         `${docLabel}: Must report .env.test GUEST_PASSCODE value "${envTestGuestPasscode}"`
@@ -1018,6 +1383,9 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       'jest-a11y-violations.json',
       'generate-portal.ts',
       'npm_lifecycle_event',
+      '.package-lock.json',
+      'TEST_DATABASE_URL',
+      '--stage-only',
     ]) {
       if (!content.includes(pretestToken)) {
         errors.push(`${docLabel}: Missing scripts/pretest.mjs step reference "${pretestToken}"`);
@@ -1027,11 +1395,12 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     if (
       !content.includes('test-standalone.mjs') ||
       !content.includes('test-container.mjs') ||
+      !content.includes('.env.ci') ||
       !/docker compose(?:\s+(?:--env-file|-f)\s+\S+)*\s+down\s+-v/.test(content) ||
       !content.includes('npm run build')
     ) {
       errors.push(
-        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs in running "docker compose down -v"`
+        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs (.env.ci) in running "docker compose down -v"`
       );
     }
     if (

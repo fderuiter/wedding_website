@@ -877,5 +877,198 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.unassignedGuests).toHaveLength(3);
       expect(result.current.canUndo).toBe(false);
     });
+
+    it('fetches all catalog pages beyond 50 invitations and merges seated table occupants into state', async () => {
+      const page1Guests = Array.from({ length: 50 }, (_, idx) => ({
+        id: `inv-${idx + 1}`,
+        code: `CODE-${idx + 1}`,
+        guestName: `Guest ${idx + 1}`,
+        tableId: idx === 0 ? 'table-1' : null,
+        seatNumber: idx === 0 ? 1 : null,
+        used: true,
+        extraFields: { attending: true },
+        partyTags: [],
+      })) as unknown as InvitationCodeDTO[];
+
+      const page2Guests = Array.from({ length: 15 }, (_, idx) => ({
+        id: `inv-${51 + idx}`,
+        code: `CODE-${51 + idx}`,
+        guestName: `Guest ${51 + idx}`,
+        tableId: idx === 0 ? 'table-2' : null,
+        seatNumber: idx === 0 ? 1 : null,
+        used: false,
+        partyTags: [],
+      })) as unknown as InvitationCodeDTO[];
+
+      const tableOnlyGuest = {
+        id: 'inv-table-only',
+        code: 'CODE-TBL',
+        guestName: 'Table Embedded Guest',
+        tableId: 'table-1',
+        seatNumber: 2,
+        used: true,
+        extraFields: { attending: true },
+        partyTags: [],
+      } as unknown as InvitationCodeDTO;
+
+      fetchMock.mockImplementation((url: string | URL | Request) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables')) {
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({ 'X-Total-Pages': '1' }),
+            json: () =>
+              Promise.resolve([
+                { ...mockTable1, capacity: 4, invitationCodes: [page1Guests[0], tableOnlyGuest] },
+                { ...mockTable2, capacity: 4, invitationCodes: [page2Guests[0]] },
+              ]),
+          } as Response);
+        }
+        if (urlStr.includes('/api/admin/invitation-codes/catalog')) {
+          if (urlStr.includes('page=2')) {
+            return Promise.resolve({
+              ok: true,
+              headers: new Headers({ 'X-Total-Pages': '2' }),
+              json: () =>
+                Promise.resolve({
+                  data: page2Guests,
+                  meta: { page: 2, limit: 50, total: 65, totalPages: 2 },
+                }),
+            } as Response);
+          }
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({ 'X-Total-Pages': '2' }),
+            json: () =>
+              Promise.resolve({
+                data: page1Guests,
+                meta: { page: 1, limit: 50, total: 65, totalPages: 2 },
+              }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // 50 (page 1) + 15 (page 2) + 1 (embedded on table-1) = 66 total guests
+      expect(result.current.allGuests).toHaveLength(66);
+      // 3 guests seated (inv-1, inv-table-only, inv-51), 63 unassigned
+      expect(result.current.unassignedGuests).toHaveLength(63);
+      expect(result.current.tables.find((t) => t.id === 'table-1')?.invitationCodes).toHaveLength(2);
+      expect(result.current.tables.find((t) => t.id === 'table-2')?.invitationCodes).toHaveLength(1);
+    });
+
+    it('pushes undo snapshot on single-guest unassign, prunes deleted tableId from undoStack, and repacks seats on UPDATE_TABLE', async () => {
+      const table8: SeatingTableDTO = {
+        ...mockTable1,
+        id: 'table-8',
+        name: 'Table Eight',
+        capacity: 8,
+      };
+      const seatedHighGuest: InvitationCodeDTO = {
+        ...mockGuest1,
+        id: 'g-high',
+        guestName: 'High Seat Guest',
+        tableId: 'table-8',
+        seatNumber: 8,
+      };
+      const seatedTable2Guest: InvitationCodeDTO = {
+        ...mockGuest2,
+        id: 'g-t2',
+        guestName: 'Table Two Guest',
+        tableId: 'table-2',
+        seatNumber: 1,
+      };
+
+      fetchMock.mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.endsWith('/api/admin/seating-tables') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([table8, mockTable2]),
+          } as Response);
+        }
+        if (urlStr.includes('/api/admin/invitation-codes/catalog') && (!init || !init.method || init.method === 'GET')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([seatedHighGuest, seatedTable2Guest]),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating/assign') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string);
+          if (body.assignments) {
+            return Promise.resolve({
+              ok: true,
+              json: () =>
+                Promise.resolve({
+                  success: true,
+                  data: {
+                    updatedGuests: body.assignments.map((a: any) => ({
+                      id: a.invitationCodeId,
+                      tableId: a.tableId,
+                      seatNumber: a.seatNumber,
+                    })),
+                  },
+                }),
+            } as Response);
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: body.invitationCodeId,
+                tableId: body.tableId,
+                seatNumber: body.seatNumber ?? null,
+              }),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating-tables/table-8') && init?.method === 'PUT') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ ...table8, capacity: 6 }),
+          } as Response);
+        }
+        if (urlStr.endsWith('/api/admin/seating-tables/table-2') && init?.method === 'DELETE') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled mock: ${urlStr}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // 1. Shrink table-8 capacity from 8 to 6 -> g-high seatNumber 8 repacks into 1..6
+      await act(async () => {
+        await result.current.saveTable({ id: 'table-8', capacity: 6 });
+      });
+      const repackedGuest = result.current.allGuests.find((g) => g.id === 'g-high');
+      expect(repackedGuest?.seatNumber).toBe(1);
+
+      // 2. Single-guest unassign of g-t2 pushes onto undoStack so Undo is enabled
+      expect(result.current.canUndo).toBe(false);
+      await act(async () => {
+        await result.current.unassignGuest('g-t2');
+      });
+      expect(result.current.canUndo).toBe(true);
+      expect(result.current.undoLabel).toContain('Unassign Table Two Guest');
+
+      // 3. Deleting table-2 prunes table-2 snapshots from undoStack so Undo cannot reference deleted tableId
+      await act(async () => {
+        await result.current.deleteTable('table-2');
+      });
+      expect(result.current.canUndo).toBe(false);
+      expect(result.current.undoLabel).toBeNull();
+    });
   });
 });

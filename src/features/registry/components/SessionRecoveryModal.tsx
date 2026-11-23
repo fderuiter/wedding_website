@@ -32,7 +32,7 @@ const SessionRecoveryForm: React.FC<SessionRecoveryFormProps> = ({
 
   const code = draftCode ?? defaultCode;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     const cleanCode = code.trim().toUpperCase();
     if (!cleanCode) {

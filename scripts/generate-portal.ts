@@ -11,6 +11,7 @@ import {
   resolveVitePressHeadingSlug,
   safeDecodeURIComponent,
   scanLinksAndCodeInLine,
+  transformNonFencedMarkdownLines,
 } from './check-doc-links';
 import {
   generateApiRoutesSection,
@@ -51,217 +52,139 @@ export function rewriteMarkdownLinks(
 ): string {
   const srcFileAbs = path.join(rootDir, srcRelPath);
   const srcDir = path.dirname(srcFileAbs);
-  const chunks = content.match(/[^\r\n]*(?:\r?\n|$)/g) || [];
 
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
+  return transformNonFencedMarkdownLines(content, (line, lineNumber) => {
+    const { links } = scanLinksAndCodeInLine(line, lineNumber);
+    if (links.length === 0) {
+      return line;
+    }
 
-  return chunks
-    .map((chunk, idx) => {
-      if (!chunk) {
-        return '';
-      }
-      const lineMatch = chunk.match(/^([^\r\n]*)(\r?\n?)$/);
-      const line = lineMatch ? lineMatch[1] : chunk;
-      const eol = lineMatch ? lineMatch[2] : '';
+    let rebuilt = '';
+    let cursor = 0;
 
-      const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-      if (fenceMatch) {
-        const marker = fenceMatch[1];
-        const rest = fenceMatch[2];
-        const ch = marker[0];
-        const len = marker.length;
-        if (!inFence) {
-          if (!(ch === '`' && rest.includes('`'))) {
-            inFence = true;
-            fenceChar = ch;
-            fenceLen = len;
-            return chunk;
-          }
-        } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
-          inFence = false;
-          fenceChar = '';
-          fenceLen = 0;
-          return chunk;
-        }
-      }
+    for (const link of links) {
+      rebuilt += line.slice(cursor, link.startIndex);
+      const fullMatch = line.slice(link.startIndex, link.endIndex);
+      const text = link.linkText;
+      const trimmedTarget = link.rawTarget.trim();
 
-      if (inFence) {
-        return chunk;
-      }
-
-      const { links } = scanLinksAndCodeInLine(line, idx + 1);
-      if (links.length === 0) {
-        return chunk;
-      }
-
-      let rebuilt = '';
-      let cursor = 0;
-
-      for (const link of links) {
-        rebuilt += line.slice(cursor, link.startIndex);
-        const fullMatch = line.slice(link.startIndex, link.endIndex);
-        const text = link.linkText;
-        const trimmedTarget = link.rawTarget.trim();
-
-        if (
-          trimmedTarget.startsWith('http://') ||
-          trimmedTarget.startsWith('https://') ||
-          trimmedTarget.startsWith('mailto:') ||
-          trimmedTarget.startsWith('tel:')
-        ) {
-          rebuilt += fullMatch;
-          cursor = link.endIndex;
-          continue;
-        }
-
-        if (trimmedTarget.startsWith('#')) {
-          const intraHash = trimmedTarget.slice(1);
-          if (intraHash && fs.existsSync(srcFileAbs)) {
-            const mappedIntra = resolveVitePressHeadingSlug(
-              srcFileAbs,
-              intraHash,
-              headingsCache
-            );
-            rebuilt += `[${text}](#${mappedIntra})`;
-          } else {
-            rebuilt += fullMatch;
-          }
-          cursor = link.endIndex;
-          continue;
-        }
-
-        const hashIndex = trimmedTarget.indexOf('#');
-        const beforeHash =
-          hashIndex === -1 ? trimmedTarget : trimmedTarget.slice(0, hashIndex);
-        const hash = hashIndex === -1 ? '' : trimmedTarget.slice(hashIndex + 1);
-
-        const queryIndex = beforeHash.indexOf('?');
-        const rawPathPart =
-          queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex);
-        const queryPart = queryIndex === -1 ? '' : beforeHash.slice(queryIndex);
-
-        if (!rawPathPart) {
-          rebuilt += fullMatch;
-          cursor = link.endIndex;
-          continue;
-        }
-
-        const decodedPathPart = safeDecodeURIComponent(rawPathPart);
-        const resolvedFile = decodedPathPart.startsWith('/')
-          ? path.resolve(rootDir, decodedPathPart.slice(1))
-          : path.resolve(srcDir, decodedPathPart);
-        const resolvedRel = path
-          .relative(rootDir, resolvedFile)
-          .replace(/\\/g, '/')
-          .replace(/\/+$/, '');
-
-        if (DOC_LOOKUP.has(resolvedRel)) {
-          const targetDoc = DOC_LOOKUP.get(resolvedRel)!;
-          const vitepressRoute = '/' + targetDoc.dest.replace(/\.md$/, '');
-          const mappedHash = hash
-            ? resolveVitePressHeadingSlug(resolvedFile, hash, headingsCache)
-            : '';
-          const newTarget = `${vitepressRoute}${queryPart}${mappedHash ? '#' + mappedHash : ''}`;
-          rebuilt += `[${text}](${newTarget})`;
-          cursor = link.endIndex;
-          continue;
-        }
-
-        if (fs.existsSync(resolvedFile)) {
-          const isDir = fs.statSync(resolvedFile).isDirectory();
-          const refKind = isDir ? 'tree' : 'blob';
-          const githubUrl = `https://github.com/fderuiter/wedding_website/${refKind}/main/${resolvedRel}${queryPart}${hash ? '#' + hash : ''}`;
-          rebuilt += `[${text}](${githubUrl})`;
-          cursor = link.endIndex;
-          continue;
-        }
-
+      if (
+        trimmedTarget.startsWith('http://') ||
+        trimmedTarget.startsWith('https://') ||
+        trimmedTarget.startsWith('mailto:') ||
+        trimmedTarget.startsWith('tel:')
+      ) {
         rebuilt += fullMatch;
         cursor = link.endIndex;
+        continue;
       }
 
-      rebuilt += line.slice(cursor);
-      return rebuilt + eol;
-    })
-    .join('');
+      if (trimmedTarget.startsWith('#')) {
+        const intraHash = trimmedTarget.slice(1);
+        if (intraHash && fs.existsSync(srcFileAbs)) {
+          const mappedIntra = resolveVitePressHeadingSlug(
+            srcFileAbs,
+            intraHash,
+            headingsCache
+          );
+          rebuilt += `[${text}](#${mappedIntra})`;
+        } else {
+          rebuilt += fullMatch;
+        }
+        cursor = link.endIndex;
+        continue;
+      }
+
+      const hashIndex = trimmedTarget.indexOf('#');
+      const beforeHash =
+        hashIndex === -1 ? trimmedTarget : trimmedTarget.slice(0, hashIndex);
+      const hash = hashIndex === -1 ? '' : trimmedTarget.slice(hashIndex + 1);
+
+      const queryIndex = beforeHash.indexOf('?');
+      const rawPathPart =
+        queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex);
+      const queryPart = queryIndex === -1 ? '' : beforeHash.slice(queryIndex);
+
+      if (!rawPathPart) {
+        rebuilt += fullMatch;
+        cursor = link.endIndex;
+        continue;
+      }
+
+      const decodedPathPart = safeDecodeURIComponent(rawPathPart);
+      const resolvedFile = decodedPathPart.startsWith('/')
+        ? path.resolve(rootDir, decodedPathPart.slice(1))
+        : path.resolve(srcDir, decodedPathPart);
+      const resolvedRel = path
+        .relative(rootDir, resolvedFile)
+        .replace(/\\/g, '/')
+        .replace(/\/+$/, '');
+
+      if (DOC_LOOKUP.has(resolvedRel)) {
+        const targetDoc = DOC_LOOKUP.get(resolvedRel)!;
+        const vitepressRoute = '/' + targetDoc.dest.replace(/\.md$/, '');
+        const mappedHash = hash
+          ? resolveVitePressHeadingSlug(resolvedFile, hash, headingsCache)
+          : '';
+        const newTarget = `${vitepressRoute}${queryPart}${mappedHash ? '#' + mappedHash : ''}`;
+        rebuilt += `[${text}](${newTarget})`;
+        cursor = link.endIndex;
+        continue;
+      }
+
+      if (fs.existsSync(resolvedFile)) {
+        const isDir = fs.statSync(resolvedFile).isDirectory();
+        const refKind = isDir ? 'tree' : 'blob';
+        const githubUrl = `https://github.com/fderuiter/wedding_website/${refKind}/main/${resolvedRel}${queryPart}${hash ? '#' + hash : ''}`;
+        rebuilt += `[${text}](${githubUrl})`;
+        cursor = link.endIndex;
+        continue;
+      }
+
+      rebuilt += fullMatch;
+      cursor = link.endIndex;
+    }
+
+    rebuilt += line.slice(cursor);
+    return rebuilt;
+  });
 }
 
 export function escapeVueMustache(content: string): string {
-  const chunks = content.match(/[^\r\n]*(?:\r?\n|$)/g) || [];
-  let inFence = false;
-  let fenceChar = '';
-  let fenceLen = 0;
-
-  return chunks
-    .map(chunk => {
-      if (!chunk) {
-        return '';
-      }
-      const lineMatch = chunk.match(/^([^\r\n]*)(\r?\n?)$/);
-      const line = lineMatch ? lineMatch[1] : chunk;
-      const eol = lineMatch ? lineMatch[2] : '';
-
-      const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
-      if (fenceMatch) {
-        const marker = fenceMatch[1];
-        const rest = fenceMatch[2];
-        const ch = marker[0];
-        const len = marker.length;
-        if (!inFence) {
-          if (!(ch === '`' && rest.includes('`'))) {
-            inFence = true;
-            fenceChar = ch;
-            fenceLen = len;
-            return chunk;
-          }
-        } else if (ch === fenceChar && len >= fenceLen && /^\s*$/.test(rest)) {
-          inFence = false;
-          fenceChar = '';
-          fenceLen = 0;
-          return chunk;
-        }
-      }
-
-      if (inFence) {
-        return chunk;
-      }
-
-      let out = '';
-      let i = 0;
-      while (i < line.length) {
-        if (line[i] === '`') {
-          const { tickLen, closeEnd } = findInlineCodeEnd(line, i);
-          if (closeEnd !== null) {
-            out += line.slice(i, closeEnd);
-            i = closeEnd;
-            continue;
-          }
-          out += line.slice(i, i + tickLen);
-          i += tickLen;
+  return transformNonFencedMarkdownLines(content, line => {
+    let out = '';
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '`') {
+        const { tickLen, closeEnd } = findInlineCodeEnd(line, i);
+        if (closeEnd !== null) {
+          out += line.slice(i, closeEnd);
+          i = closeEnd;
           continue;
         }
-
-        if (line[i] === '{' && line[i + 1] === '{') {
-          out += '&#123;&#123;';
-          i += 2;
-          continue;
-        }
-
-        if (line[i] === '}' && line[i + 1] === '}') {
-          out += '&#125;&#125;';
-          i += 2;
-          continue;
-        }
-
-        out += line[i];
-        i++;
+        out += line.slice(i, i + tickLen);
+        i += tickLen;
+        continue;
       }
 
-      return out + eol;
-    })
-    .join('');
+      if (line[i] === '{' && line[i + 1] === '{') {
+        out += '&#123;&#123;';
+        i += 2;
+        continue;
+      }
+
+      if (line[i] === '}' && line[i + 1] === '}') {
+        out += '&#125;&#125;';
+        i += 2;
+        continue;
+      }
+
+      out += line[i];
+      i++;
+    }
+
+    return out;
+  });
 }
 
 export function cleanStagedPortalDocs(portalDir: string = PORTAL_DIR): number {
@@ -304,9 +227,11 @@ export function cleanStagedPortalDocs(portalDir: string = PORTAL_DIR): number {
   return removedCount;
 }
 
-export async function generatePortal() {
+export async function generatePortal(options: GeneratePortalOptions = {}) {
+  const rootDir = options.rootDir ?? ROOT_DIR;
+  const portalDir = options.portalDir ?? PORTAL_DIR;
   console.log('--- Step 1: Validating documentation cross-links ---');
-  const linkCheckResult = await checkDocLinks();
+  const linkCheckResult = await checkDocLinks(rootDir);
   if (!linkCheckResult.passed) {
     console.error(`❌ Link validation failed with ${linkCheckResult.errors.length} broken links!`);
     linkCheckResult.errors.forEach(err => {
@@ -316,37 +241,35 @@ export async function generatePortal() {
   }
   console.log(`✅ Pre-compilation link check passed (${linkCheckResult.count} Markdown files verified).`);
 
-  console.log('\n--- Step 2: Synchronizing architecture & OpenAPI specifications ---');
-  // Explicitly invoke generateConfigTable, generateRoutesDiagram, and generateApiRoutesSection
-  const configTable = generateConfigTable();
-  const routesDiagram = generateRoutesDiagram();
-  const apiRoutesSection = generateApiRoutesSection();
-  if (!configTable || !routesDiagram || !apiRoutesSection) {
-    throw new Error('Failed to generate configuration table, route diagram, or API routes inventory');
+  if (shouldSkipPortalDocSync(options, rootDir)) {
+    console.log('\n--- Step 2: Reusing pre-generated architecture & OpenAPI specifications ---');
+  } else {
+    console.log('\n--- Step 2: Synchronizing architecture & OpenAPI specifications ---');
+    const configTable = generateConfigTable();
+    const routesDiagram = generateRoutesDiagram();
+    const apiRoutesSection = generateApiRoutesSection();
+    if (!configTable || !routesDiagram || !apiRoutesSection) {
+      throw new Error('Failed to generate configuration table, route diagram, or API routes inventory');
+    }
+    updateArchitectureMd();
+    updateFeatureModulesMd();
+    await generateOpenApiSpec();
   }
 
-  // Update ARCHITECTURE.md, FEATURE_MODULES.md, and OpenAPI specification
-  updateArchitectureMd();
-  updateFeatureModulesMd();
-  await generateOpenApiSpec();
-
-  console.log(`\n--- Step 3: Staging ${ARCHITECTURAL_DOCS.length} architectural specifications into docs-portal ---`);
-  const removedStale = cleanStagedPortalDocs(PORTAL_DIR);
+  console.log(`\n--- Step 3: Staging ${(options.docs ?? ARCHITECTURAL_DOCS).length} architectural specifications into docs-portal ---`);
+  const removedStale = cleanStagedPortalDocs(portalDir);
   if (removedStale > 0) {
     console.log(`🧹 Cleaned ${removedStale} previously staged Markdown file(s).`);
   }
   let stagedCount = 0;
-
-  for (const doc of ARCHITECTURAL_DOCS) {
-    stagePortalDoc(doc, ROOT_DIR, PORTAL_DIR, false);
+  for (const doc of options.docs ?? ARCHITECTURAL_DOCS) {
+    stagePortalDoc(doc, rootDir, portalDir, false);
     stagedCount++;
   }
-
   console.log(`✅ Successfully staged all ${stagedCount} architectural specifications into VitePress folders.`);
 
   console.log('\n--- Step 4: Staging OpenAPI schema into portal assets ---');
-  stageOpenApiAsset(ROOT_DIR, PORTAL_DIR, true);
-
+  stageOpenApiAsset(rootDir, portalDir, true);
   console.log('\n✅ Portal generation and staging complete!');
 }
 
@@ -389,7 +312,7 @@ export function stagePortalDoc(
   let content = fs.readFileSync(srcPath, 'utf8');
   content = rewriteMarkdownLinks(content, doc.src, rootDir);
   content = escapeVueMustache(content);
-  content = prependGeneratedPortalComment(content, doc.src);
+  content = prependGeneratedPortalComment(prependPortalFrontmatterTitle(content, doc.title), doc.src);
 
   if (fs.existsSync(destPath)) {
     const existing = fs.readFileSync(destPath, 'utf8');
@@ -400,6 +323,17 @@ export function stagePortalDoc(
 
   fs.writeFileSync(destPath, content, 'utf8');
   return true;
+}
+
+export function prependPortalFrontmatterTitle(content: string, title: string): string {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle || /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(content)) {
+    return content;
+  }
+  const yamlTitle = /[:#[\]{}&*!|>'"%@`]|^\s|\s$|\r|\n/.test(trimmedTitle)
+    ? JSON.stringify(trimmedTitle)
+    : trimmedTitle;
+  return `---\ntitle: ${yamlTitle}\n---\n${content}`;
 }
 
 function stageOpenApiAsset(
@@ -432,6 +366,32 @@ function stageOpenApiAsset(
     console.log(`✅ Copied openapi.json to ${openApiDest}`);
   }
   return true;
+}
+
+export interface GeneratePortalOptions {
+  stageOnly?: boolean;
+  skipDocSync?: boolean;
+  rootDir?: string;
+  portalDir?: string;
+  docs?: readonly DocMapping[];
+}
+
+const PRE_GENERATED_PORTAL_ARTIFACTS = [
+  'ARCHITECTURE.md',
+  'FEATURE_MODULES.md',
+  'public/openapi.json',
+] as const;
+
+function shouldSkipPortalDocSync(
+  options: GeneratePortalOptions,
+  rootDir: string = ROOT_DIR
+): boolean {
+  if (!options.stageOnly && !options.skipDocSync) {
+    return false;
+  }
+  return PRE_GENERATED_PORTAL_ARTIFACTS.every(relPath =>
+    fs.existsSync(path.join(rootDir, relPath))
+  );
 }
 
 export interface WatchPortalOptions {
@@ -540,9 +500,16 @@ export function watchPortalDocs(options: WatchPortalOptions = {}): { close: () =
 async function runCli(rawArgs: string[]): Promise<void> {
   const watchMode = rawArgs.includes('--watch');
   const serveMode = rawArgs.includes('--serve');
-  const vitepressArgs = rawArgs.filter(arg => arg !== '--watch' && arg !== '--serve');
+  const stageOnly = rawArgs.includes('--stage-only') || rawArgs.includes('--skip-doc-sync');
+  const vitepressArgs = rawArgs.filter(
+    arg =>
+      arg !== '--watch' &&
+      arg !== '--serve' &&
+      arg !== '--stage-only' &&
+      arg !== '--skip-doc-sync'
+  );
 
-  await generatePortal();
+  await generatePortal({ stageOnly });
 
   if (!watchMode && !serveMode) {
     return;
