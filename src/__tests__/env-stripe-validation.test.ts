@@ -1,6 +1,6 @@
 /** @jest-environment node */
 
-import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   getStripeCapability,
@@ -9,6 +9,13 @@ import {
   isValidStripePublishableKey,
   isValidStripeSecretKey,
 } from '@/lib/stripe';
+import { spawnSync } from 'node:child_process';
+import {
+  CARD_PROCESSING_FEE_RATE,
+  calculateContributionAmounts,
+  getStripePromise as getClientStripePromise,
+  isValidStripePublishableKey as isValidClientStripePublishableKey,
+} from '@/lib/stripe.client';
 
 jest.mock('@stripe/stripe-js', () => ({
   loadStripe: jest.fn((key: string) => Promise.resolve({ mockedKey: key })),
@@ -178,6 +185,53 @@ describe('Stripe Startup Environment Validation & Runtime Capability Detection',
       const clientResult = await getStripePromise();
       expect(clientResult).toBeNull();
       expect(loadStripe).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Client Bundle Import Guard (src/lib/stripe.client.ts & invitation utils)', () => {
+    it('isolates browser Stripe helpers in src/lib/stripe.client.ts without importing server stripe SDK', () => {
+      const clientStripeSource = fs.readFileSync(
+        path.join(rootDir, 'src/lib/stripe.client.ts'),
+        'utf-8'
+      );
+
+      expect(clientStripeSource).not.toMatch(/from\s+['"]stripe['"]/);
+      expect(clientStripeSource).not.toContain('STRIPE_SECRET_KEY');
+      expect(clientStripeSource).not.toContain('isValidStripeSecretKey');
+      expect(clientStripeSource).not.toContain('getStripeInstance');
+
+      expect(isValidClientStripePublishableKey).toBe(isValidStripePublishableKey);
+      expect(getClientStripePromise).toBe(getStripePromise);
+      expect(CARD_PROCESSING_FEE_RATE).toBe(0.025);
+      expect(calculateContributionAmounts(100, true)).toEqual({
+        baseAmount: 100,
+        estimatedFee: 2.5,
+        feeAmount: 2.5,
+        totalChargeAmount: 102.5,
+        totalChargeCents: 10250,
+        netPayout: 100,
+      });
+    });
+
+    it('ensures client registry hooks and components import @/lib/stripe.client and invitation utils avoid Node crypto', () => {
+      const clientCallerPaths = [
+        'src/features/registry/hooks/useRegistryCapabilities.ts',
+        'src/features/registry/hooks/useRegistry.ts',
+        'src/features/registry/components/RegistryItemCard.tsx',
+      ];
+
+      for (const relPath of clientCallerPaths) {
+        const source = fs.readFileSync(path.join(rootDir, relPath), 'utf-8');
+        expect(source).toMatch(/from\s+['"]@\/lib\/stripe\.client['"]/);
+        expect(source).not.toMatch(/from\s+['"]@\/lib\/stripe['"]/);
+      }
+
+      const invitationSource = fs.readFileSync(
+        path.join(rootDir, 'src/features/registry/utils/invitation.ts'),
+        'utf-8'
+      );
+      expect(invitationSource).not.toMatch(/from\s+['"](?:node:)?crypto['"]/);
+      expect(invitationSource).toContain('globalThis.crypto.getRandomValues');
     });
   });
 });

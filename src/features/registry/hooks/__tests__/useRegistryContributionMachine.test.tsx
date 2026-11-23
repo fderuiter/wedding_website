@@ -58,12 +58,10 @@ describe('useRegistryContributionMachine Hook', () => {
         })
       );
 
-      expect(result.current.phase).toBe('idle');
       expect(result.current.isValidatingCode).toBe(false);
       expect(result.current.isCodeLocked).toBe(false);
       expect(result.current.isSubmitting).toBe(false);
       expect(result.current.isSuccess).toBe(false);
-      expect(result.current.isError).toBe(false);
       expect(result.current.isSubmitDisabled).toBe(false);
 
       expect(result.current.contributorName).toBe('');
@@ -76,7 +74,6 @@ describe('useRegistryContributionMachine Hook', () => {
       expect(result.current.fieldErrors).toEqual({});
       expect(result.current.codeError).toBeNull();
       expect(result.current.submissionError).toBeNull();
-      expect(result.current.error).toBeNull();
     });
 
     it('respects optional initial values provided in options', () => {
@@ -136,7 +133,6 @@ describe('useRegistryContributionMachine Hook', () => {
         { wrapper }
       );
 
-      expect(result.current.phase).toBe('code_locked');
       expect(result.current.isCodeLocked).toBe(true);
       expect(result.current.invitationCode).toBe('SESSION123');
       expect(result.current.contributorName).toBe('Verified Guest');
@@ -184,7 +180,6 @@ describe('useRegistryContributionMachine Hook', () => {
       });
 
       expect(clearSessionMock).toHaveBeenCalledTimes(1);
-      expect(result.current.phase).toBe('idle');
       expect(result.current.isCodeLocked).toBe(false);
       expect(result.current.invitationCode).toBe('');
       expect(result.current.contributorName).toBe('');
@@ -212,12 +207,10 @@ describe('useRegistryContributionMachine Hook', () => {
         result.current.handleCodeChange('VALDCODE');
       });
 
-      expect(result.current.phase).toBe('validating_code');
       expect(result.current.isValidatingCode).toBe(true);
       expect(result.current.isSubmitDisabled).toBe(true);
 
       await waitFor(() => {
-        expect(result.current.phase).toBe('code_locked');
         expect(result.current.isCodeLocked).toBe(true);
       });
 
@@ -244,7 +237,7 @@ describe('useRegistryContributionMachine Hook', () => {
       });
 
       await waitFor(() => {
-        expect(result.current.phase).toBe('idle');
+        expect(result.current.isValidatingCode).toBe(false);
         expect(result.current.codeError).toBe('Invalid invitation code.');
       });
 
@@ -267,7 +260,7 @@ describe('useRegistryContributionMachine Hook', () => {
       );
 
       act(() => {
-        result.current.setInvitationCode('MANUAL1');
+        result.current.handleCodeChange('MANUAL1');
       });
 
       let verifySuccess: boolean | undefined;
@@ -276,7 +269,7 @@ describe('useRegistryContributionMachine Hook', () => {
       });
 
       expect(verifySuccess).toBe(true);
-      expect(result.current.phase).toBe('code_locked');
+      expect(result.current.isCodeLocked).toBe(true);
       expect(result.current.contributorName).toBe('Manual Guest');
     });
 
@@ -379,7 +372,7 @@ describe('useRegistryContributionMachine Hook', () => {
 
       // Verify stale response did NOT overwrite user input
       expect(result.current.contributorName).toBe('My Manual Name');
-      expect(result.current.phase).toBe('idle');
+      expect(result.current.isValidatingCode).toBe(false);
       expect(result.current.isCodeLocked).toBe(false);
     });
   });
@@ -397,12 +390,10 @@ describe('useRegistryContributionMachine Hook', () => {
         await result.current.handleSubmit();
       });
 
-      expect(result.current.phase).toBe('error');
       expect(result.current.fieldErrors.name).toBe('Name is required and must be under 100 characters.');
       expect(result.current.fieldErrors.email).toBeUndefined();
       expect(result.current.fieldErrors.amount).toBeUndefined();
       expect(result.current.fieldErrors.message).toBeUndefined();
-      expect(result.current.error).toBe('Name is required and must be under 100 characters.');
 
       expect(mockOnContribute).not.toHaveBeenCalled();
     });
@@ -426,7 +417,6 @@ describe('useRegistryContributionMachine Hook', () => {
       });
 
       expect(result.current.fieldErrors.name).toBeUndefined();
-      expect(result.current.error).toBeNull();
     });
 
     it('isolates invalid email format exclusively to fieldErrors.email', async () => {
@@ -443,7 +433,6 @@ describe('useRegistryContributionMachine Hook', () => {
         await result.current.handleSubmit();
       });
 
-      expect(result.current.phase).toBe('error');
       expect(result.current.fieldErrors.email).toBe('Invalid email address.');
       expect(result.current.fieldErrors.name).toBeUndefined();
       expect(result.current.fieldErrors.amount).toBeUndefined();
@@ -463,7 +452,6 @@ describe('useRegistryContributionMachine Hook', () => {
         await result.current.handleSubmit();
       });
 
-      expect(result.current.phase).toBe('error');
       expect(result.current.fieldErrors.amount).toBe('Contribution amount must be a positive number.');
       expect(result.current.fieldErrors.name).toBeUndefined();
       expect(result.current.fieldErrors.email).toBeUndefined();
@@ -483,7 +471,6 @@ describe('useRegistryContributionMachine Hook', () => {
         await result.current.handleSubmit();
       });
 
-      expect(result.current.phase).toBe('error');
       expect(result.current.fieldErrors.amount).toBe('Amount cannot exceed the remaining $150.00.');
       expect(result.current.fieldErrors.name).toBeUndefined();
       expect(mockOnContribute).not.toHaveBeenCalled();
@@ -510,7 +497,6 @@ describe('useRegistryContributionMachine Hook', () => {
 
       expect(result.current.amount).toBe(100);
       expect(result.current.fieldErrors.amount).toBeUndefined();
-      expect(result.current.error).toBeNull();
     });
   });
 
@@ -586,7 +572,6 @@ describe('useRegistryContributionMachine Hook', () => {
         true,
         'generous@example.com'
       );
-      expect(result.current.phase).toBe('success');
       expect(result.current.isSuccess).toBe(true);
       expect(result.current.isSubmitting).toBe(false);
     });
@@ -606,10 +591,8 @@ describe('useRegistryContributionMachine Hook', () => {
         await result.current.handleSubmit();
       });
 
-      expect(result.current.phase).toBe('error');
-      expect(result.current.isError).toBe(true);
       expect(result.current.submissionError).toBe('Payment gateway timeout');
-      expect(result.current.error).toBe('Payment gateway timeout');
+      expect(result.current.isSuccess).toBe(false);
       expect(result.current.isSubmitting).toBe(false);
     });
   });

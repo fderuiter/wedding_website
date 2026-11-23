@@ -1,6 +1,6 @@
 import moduleModule from 'node:module';
 import path from 'node:path';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
@@ -139,6 +139,41 @@ describe('Global Jest Setup (jest.setup.js)', () => {
       const parsedForm = await formReq.formData();
       expect(parsedForm.get('uploaderName')).toBe('Alex');
       expect(parsedForm.get('caption')).toBe('Ceremony');
+    });
+
+    it('queues and flushes Next.js after() tasks inside __runWithAfterScope alongside NextRequest and NextResponse', async () => {
+      expect(() => after(() => {})).toThrow('`after` was called outside a request scope');
+
+      const runWithAfterScope = (
+        globalThis as unknown as {
+          __runWithAfterScope: <T>(_cb: () => Promise<T>) => Promise<{
+            result: T;
+            flush: () => Promise<void>;
+            pendingCount: () => number;
+          }>;
+        }
+      ).__runWithAfterScope;
+
+      const events: string[] = [];
+      const scoped = await runWithAfterScope(async () => {
+        const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({ amount: 50 }),
+        });
+        const body = await req.json();
+        after(async () => {
+          events.push(`deferred:${body.amount}`);
+        });
+        return NextResponse.json({ ok: true });
+      });
+
+      expect(scoped.result.status).toBe(200);
+      expect(scoped.pendingCount()).toBe(1);
+      expect(events).toEqual([]);
+
+      await scoped.flush();
+      expect(scoped.pendingCount()).toBe(0);
+      expect(events).toEqual(['deferred:50']);
     });
   });
 
