@@ -15,6 +15,7 @@ import {
 } from '@/features/registry';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
+import { withBasePath } from '@/lib/basePath';
 
 export interface ThankYouContributorItem {
   id: string;
@@ -106,7 +107,7 @@ async function requestThankYouNotes(query: ThankYouNotesQuery): Promise<ThankYou
   params.set('page', query.page.toString());
   params.set('pageSize', query.pageSize.toString());
 
-  const res = await fetch(`/api/admin/thank-you-notes?${params.toString()}`);
+  const res = await fetch(withBasePath(`/api/admin/thank-you-notes?${params.toString()}`));
   if (!res.ok) {
     throw new Error('Failed to fetch thank-you notes.');
   }
@@ -220,7 +221,7 @@ export default function ThankYouNotesPage() {
     const url = query ? `/api/admin/thank-you-notes/export?${query}` : '/api/admin/thank-you-notes/export';
 
     const link = document.createElement('a');
-    link.href = url;
+    link.href = withBasePath(url);
     link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
@@ -242,7 +243,7 @@ export default function ThankYouNotesPage() {
     const url = `/api/admin/thank-you-notes/export-labels?${query}`;
 
     const link = document.createElement('a');
-    link.href = url;
+    link.href = withBasePath(url);
     link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
@@ -318,7 +319,7 @@ export default function ThankYouNotesPage() {
     if (!isConfirmed) return;
 
     try {
-      const res = await fetch('/api/admin/thank-you-notes/batch', {
+      const res = await fetch(withBasePath('/api/admin/thank-you-notes/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -390,7 +391,7 @@ export default function ThankYouNotesPage() {
   const saveIndividualEdit = async (id: string) => {
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/admin/thank-you-notes/${id}`, {
+      const res = await fetch(withBasePath(`/api/admin/thank-you-notes/${id}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -429,11 +430,14 @@ export default function ThankYouNotesPage() {
 
     setPendingActionId(item.id);
     try {
-      const res = await fetch(`/api/admin/contributors/${encodeURIComponent(item.id)}/action`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
+      const res = await fetch(
+        withBasePath(`/api/admin/contributors/${encodeURIComponent(item.id)}/action`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        }
+      );
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));

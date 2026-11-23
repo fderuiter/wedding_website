@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { getAppConfig } from '@/lib/config';
+import { stripBasePath, withBasePath } from '@/lib/basePath';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
 import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
 import { deriveBrandMonogram } from '@/features/content';
@@ -69,16 +70,20 @@ export async function generateMetadata(): Promise<Metadata> {
     ? `Join ${partner1} and ${partner2} for their wedding celebration${venueLoc}.`
     : 'Welcome to our wedding website.';
 
+  const unprefixedOgImageUrl = stripBasePath(ogImageUrl);
+  const prefixedOgImageUrl = withBasePath(ogImageUrl);
   const siteConfig = {
     title: config.seoTitle || defaultTitle,
     description: config.seoDescription || defaultDescription,
     url: siteUrl,
-    ogImage: ogImageUrl.startsWith('http') ? ogImageUrl : `${siteUrl}${ogImageUrl.startsWith('/') ? ogImageUrl : `/${ogImageUrl}`}`,
-    favicon: faviconUrl,
+    ogImage: ogImageUrl.startsWith('http')
+      ? ogImageUrl
+      : `${siteUrl}${prefixedOgImageUrl.startsWith('/') ? prefixedOgImageUrl : `/${prefixedOgImageUrl}`}`,
+    favicon: withBasePath(faviconUrl),
   };
 
   const dynamicKeywords = interpolateKeywords(seoKeywords, config);
-  const dims = await getLocalImageDimensions(ogImageUrl);
+  const dims = await getLocalImageDimensions(unprefixedOgImageUrl);
   const ogImageObj = {
     url: siteConfig.ogImage,
     width: dims?.width || 1200,

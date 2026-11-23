@@ -19,6 +19,7 @@ if (typeof window !== 'undefined' && window.navigator.userAgent.includes('Headle
 }
 
 import type { PublicAppConfig } from '@/lib/config';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * @interface RootLayoutClientProps
@@ -109,15 +110,18 @@ export default function RootLayoutClient({
     return () => resizeObserver.disconnect();
   }, [pathname]);
 
-  const isHeartPage = pathname === '/heart';
-  const isSlideshowPage = pathname === '/photos/slideshow';
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const isHeartPage = normalizedPathname === '/heart';
+  const isSlideshowPage = normalizedPathname === '/photos/slideshow';
   const isStandalonePage = isHeartPage || isSlideshowPage;
   const isAdminDashboardPage =
-    pathname === '/admin/dashboard' || pathname?.startsWith('/admin/dashboard/');
+    normalizedPathname === '/admin/dashboard' ||
+    Boolean(normalizedPathname?.startsWith('/admin/dashboard/'));
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/admin/logout', { method: 'POST' });
+      await fetch(withBasePath('/api/admin/logout'), { method: 'POST' });
     } catch (error) {
       console.error('Logout error:', error);
     } finally {

@@ -17,6 +17,7 @@ import {
   BROADCAST_STARTER_TEMPLATES,
   summarizeBroadcastAudience,
 } from '@/features/broadcast';
+import { withBasePath } from '@/lib/basePath';
 
 export interface BroadcastModalProps {
   isOpen: boolean;
@@ -259,7 +260,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     if (onViewDeliveryLogs) {
       onViewDeliveryLogs();
     } else if (typeof window !== 'undefined') {
-      window.location.assign('/admin/dashboard/history?tab=broadcasts');
+      window.location.assign(withBasePath('/admin/dashboard/history?tab=broadcasts'));
     }
   };
 

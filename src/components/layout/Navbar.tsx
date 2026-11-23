@@ -25,6 +25,7 @@ import {
   useGuestHelp,
 } from '@/components/guest/GuestHelpModal';
 import { deriveBrandMonogram } from '@/features/content';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * @interface NavbarProps
@@ -101,6 +102,8 @@ export default function Navbar({
   hasVisibleFaqs,
 }: NavbarProps) {
   const pathname = usePathname();
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const { hasProvider } = useGuestHelp();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGuideMenuOpen, setIsGuideMenuOpen] = useState(false);
@@ -172,7 +175,7 @@ export default function Navbar({
   }, [config.features]);
 
   useEffect(() => {
-    if (pathname !== '/' || typeof window === 'undefined') return;
+    if (normalizedPathname !== '/' || typeof window === 'undefined') return;
 
     const sectionIds = features
       .filter((f): f is HomeFeatureSection & { id: string } => Boolean(f.visible && f.id && f.id !== 'hero'))
@@ -206,21 +209,21 @@ export default function Navbar({
     return () => {
       observer.disconnect();
     };
-  }, [pathname, features, setActiveHash]);
+  }, [normalizedPathname, features, setActiveHash]);
 
   const isLinkActive = (href: string) => {
     if (href.includes('#')) {
-      if (pathname !== '/') return false;
+      if (normalizedPathname !== '/') return false;
       const hashPart = href.substring(href.indexOf('#'));
       return activeHash === hashPart;
     }
-    if (pathname === '/') {
+    if (normalizedPathname === '/') {
       if (href === '/') {
         return !activeHash || activeHash === '#top' || activeHash === '#hero';
       }
       return false;
     }
-    return pathname === href;
+    return normalizedPathname === href;
   };
 
   const role = isAdmin ? 'admin' : 'public';
@@ -270,8 +273,8 @@ export default function Navbar({
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);
   const brandLogoAlt = config.brandLogoAlt || (couplesNames ? `${couplesNames} Logo` : 'Brand Logo');
   const monogram = deriveBrandMonogram(config);
-  const disablePrefetch = pathname === '/guest/login';
-  const defaultHelpCategory = resolveHelpCategoryForPath(pathname);
+  const disablePrefetch = normalizedPathname === '/guest/login';
+  const defaultHelpCategory = resolveHelpCategoryForPath(normalizedPathname);
 
   const handleGuideTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -353,7 +356,7 @@ export default function Navbar({
               >
                 {brandLogoUrl ? (
                   <img
-                    src={brandLogoUrl}
+                    src={withBasePath(brandLogoUrl)}
                     alt={brandLogoAlt}
                     className="h-10 max-h-12 w-auto object-contain"
                   />

@@ -21,6 +21,7 @@ import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPa
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -194,7 +195,7 @@ function SetupWizardContent() {
     e.preventDefault();
     startSubmit();
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
@@ -268,7 +269,7 @@ function SetupWizardContent() {
 
     startSubmit();
     try {
-      const res = await fetch('/api/admin/setup', {
+      const res = await fetch(withBasePath('/api/admin/setup'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -323,7 +324,7 @@ function SetupWizardContent() {
     startSubmit();
     try {
       if (selectedModules.length > 0) {
-        const res = await fetch('/api/admin/sample-data', {
+        const res = await fetch(withBasePath('/api/admin/sample-data'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -336,7 +337,7 @@ function SetupWizardContent() {
           throw new Error(data.error || 'Failed to generate sample data.');
         }
       } else {
-        await fetch('/api/admin/sample-data', { method: 'DELETE' });
+        await fetch(withBasePath('/api/admin/sample-data'), { method: 'DELETE' });
       }
       setStep(4);
     } catch (err: any) {
@@ -730,7 +731,7 @@ function SetupWizardContent() {
                 onClick={() => {
                   syncAdminLoginState();
                   clearPersistedState();
-                  window.location.href = '/admin/dashboard';
+                  window.location.href = withBasePath('/admin/dashboard');
                 }}
                 variant="primary"
                 className="flex-1 py-3"

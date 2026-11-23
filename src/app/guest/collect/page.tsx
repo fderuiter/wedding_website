@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { FormGroup, Label, Input, Textarea, FormMessage } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { GuestHelpTrigger } from '@/components/guest/GuestHelpModal';
+import { withBasePath } from '@/lib/basePath';
 
 type AddressFieldKey =
   | 'guestName'
@@ -107,7 +108,7 @@ export default function GuestAddressCollectPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/guest/address/public', {
+      const response = await fetch(withBasePath('/api/guest/address/public'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

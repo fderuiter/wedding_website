@@ -21,6 +21,7 @@ import {
 import { Dialog } from '@/components/ui/Dialog';
 import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 import { InvitationCodeDTO } from '@/features/registry';
+import { withBasePath } from '@/lib/basePath';
 
 function SeatingChartAdminContent() {
   const { confirm } = useToast();
@@ -217,7 +218,7 @@ function SeatingChartAdminContent() {
             </button>
 
             <a
-              href="/api/admin/seating/export?format=pdf"
+              href={withBasePath('/api/admin/seating/export?format=pdf')}
               download="seating-chart.pdf"
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >
@@ -228,7 +229,7 @@ function SeatingChartAdminContent() {
             </a>
 
             <a
-              href="/api/admin/seating/export"
+              href={withBasePath('/api/admin/seating/export')}
               download
               className="px-3.5 py-2 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-xs flex items-center gap-1.5"
             >

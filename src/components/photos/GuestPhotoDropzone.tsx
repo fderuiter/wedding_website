@@ -9,6 +9,7 @@ import {
   getFileExtension,
   isHeicExtension,
 } from '@/utils/validation';
+import { withBasePath } from '@/lib/basePath';
 
 const MAX_CONCURRENT_UPLOADS = 2;
 
@@ -111,7 +112,7 @@ export function GuestPhotoDropzone({ onUploadSuccess, className }: GuestPhotoDro
         return next;
       });
 
-      const response = await fetch('/api/guest/photos/upload', {
+      const response = await fetch(withBasePath('/api/guest/photos/upload'), {
         method: 'POST',
         body: formData,
         signal: controller.signal,

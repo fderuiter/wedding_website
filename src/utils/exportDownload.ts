@@ -1,3 +1,5 @@
+import { withBasePath } from '@/lib/basePath';
+
 interface NativeExportDownloadPayload {
   ids?: string[];
   tag?: string;
@@ -21,8 +23,10 @@ export async function triggerNativeExportDownload({
   filename,
   payload,
 }: NativeExportDownloadOptions): Promise<void> {
+  const resolvedUrl = withBasePath(url);
+
   if (payload) {
-    const preflightRes = await fetch(url, {
+    const preflightRes = await fetch(resolvedUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -38,7 +42,7 @@ export async function triggerNativeExportDownload({
 
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = url;
+    form.action = resolvedUrl;
     form.style.display = 'none';
 
     const appendField = (name: string, value: string) => {
@@ -71,7 +75,7 @@ export async function triggerNativeExportDownload({
     return;
   }
 
-  const parsedUrl = new URL(url, window.location.origin);
+  const parsedUrl = new URL(resolvedUrl, window.location.origin);
   const preflightUrl = new URL(parsedUrl.toString());
   preflightUrl.searchParams.set('preflight', '1');
   preflightUrl.searchParams.set('filename', filename);

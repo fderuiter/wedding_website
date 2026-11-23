@@ -37,6 +37,7 @@ import {
 import type { RsvpSummaryResponse, SubEventDTO } from '@/features/sub-events';
 import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
 import { INVITATION_DEFAULT_PAGE_SIZE } from '@/utils/invitationPagination';
+import { withBasePath } from '@/lib/basePath';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
 const RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
@@ -460,7 +461,7 @@ export default function InvitationCodesDashboardPage() {
     queryFn: async () => {
       if (typeof fetch !== 'function') return null;
       try {
-        const res = await fetch('/api/admin/sub-events/rsvp-summary');
+        const res = await fetch(withBasePath('/api/admin/sub-events/rsvp-summary'));
         if (!res || !res.ok) return null;
         const json = await res.json();
         return (json?.data ?? json ?? null) as RsvpSummaryResponse | null;
@@ -524,7 +525,7 @@ export default function InvitationCodesDashboardPage() {
     }
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -550,7 +551,7 @@ export default function InvitationCodesDashboardPage() {
 
   const fetchSubEventsAndMatrix = async () => {
     try {
-      const res = await fetch('/api/admin/sub-events/access');
+      const res = await fetch(withBasePath('/api/admin/sub-events/access'));
       if (res.ok) {
         const json = await res.json();
         const data = json.data || json;
@@ -610,7 +611,7 @@ export default function InvitationCodesDashboardPage() {
     setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: updated }));
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -993,7 +994,7 @@ export default function InvitationCodesDashboardPage() {
       if (typeof batchUpdateAttendance === 'function') {
         await batchUpdateAttendance(selectedIds, status);
       } else {
-        const res = await fetch('/api/admin/invitation-codes/rsvps', {
+        const res = await fetch(withBasePath('/api/admin/invitation-codes/rsvps'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1032,7 +1033,7 @@ export default function InvitationCodesDashboardPage() {
     params.set('ids', selectedIds.join(','));
 
     const link = document.createElement('a');
-    link.href = `/api/admin/invitation-codes/export?${params.toString()}`;
+    link.href = withBasePath(`/api/admin/invitation-codes/export?${params.toString()}`);
     link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
@@ -1227,7 +1228,7 @@ export default function InvitationCodesDashboardPage() {
     const exportUrl = `/api/admin/invitation-codes/export${queryString ? `?${queryString}` : ''}`;
 
     const link = document.createElement('a');
-    link.href = exportUrl;
+    link.href = withBasePath(exportUrl);
     link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
@@ -1236,7 +1237,7 @@ export default function InvitationCodesDashboardPage() {
   };
 
   const handleCopyShareableLink = () => {
-    const url = `${window.location.origin}/guest/collect`;
+    const url = `${window.location.origin}${withBasePath('/guest/collect')}`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(url);
     }

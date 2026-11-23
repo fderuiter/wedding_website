@@ -13,6 +13,7 @@ import {
   getGuestsHeadcount,
   isGuestEligibleForSeating,
 } from '../utils/seatingHelpers';
+import { withBasePath } from '@/lib/basePath';
 
 function useOptionalToast() {
   try {
@@ -816,8 +817,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
       const [tablesRes, guestsRes] = await Promise.all([
-        fetch('/api/admin/seating-tables'),
-        fetch('/api/admin/invitation-codes/catalog?limit=1000'),
+        fetch(withBasePath('/api/admin/seating-tables')),
+        fetch(withBasePath('/api/admin/invitation-codes/catalog?limit=1000')),
       ]);
 
       if (!tablesRes.ok || !guestsRes.ok) {
@@ -834,7 +835,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       if (tablesTotalPages > 1) {
         const extraTablePages = await Promise.all(
           Array.from({ length: tablesTotalPages - 1 }, (_, idx) =>
-            fetch(`/api/admin/seating-tables?page=${idx + 2}`).then(async (r) => {
+            fetch(withBasePath(`/api/admin/seating-tables?page=${idx + 2}`)).then(async (r) => {
               if (!r.ok) throw new Error('Failed to load additional seating table pages.');
               return extractTablesFromPayload(await r.json());
             })
@@ -853,7 +854,9 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
               : 1000;
         const extraGuestPages = await Promise.all(
           Array.from({ length: guestsTotalPages - 1 }, (_, idx) =>
-            fetch(`/api/admin/invitation-codes/catalog?limit=${pageLimit}&page=${idx + 2}`).then(
+            fetch(
+              withBasePath(`/api/admin/invitation-codes/catalog?limit=${pageLimit}&page=${idx + 2}`)
+            ).then(
               async (r) => {
                 if (!r.ok) throw new Error('Failed to load additional guest pages.');
                 return extractGuestsFromPayload(await r.json());
@@ -977,7 +980,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch('/api/admin/seating/assign', {
+        const res = await fetch(withBasePath('/api/admin/seating/assign'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1170,7 +1173,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch('/api/admin/seating/assign', {
+        const res = await fetch(withBasePath('/api/admin/seating/assign'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1277,7 +1280,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     dispatch({ type: 'APPLY_UNDO_OPTIMISTIC' });
 
     try {
-      const res = await fetch('/api/admin/seating/assign', {
+      const res = await fetch(withBasePath('/api/admin/seating/assign'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1328,7 +1331,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     async (tableData: Partial<SeatingTableDTO>): Promise<boolean> => {
       try {
         if (tableData.id) {
-          const res = await fetch(`/api/admin/seating-tables/${tableData.id}`, {
+          const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableData.id}`), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(tableData),
@@ -1343,7 +1346,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
         } else {
           const defaultX = (state.tables.length % 4) * 180 + 40;
           const defaultY = Math.floor(state.tables.length / 4) * 180 + 40;
-          const res = await fetch('/api/admin/seating-tables', {
+          const res = await fetch(withBasePath('/api/admin/seating-tables'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1394,7 +1397,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableId}`), {
           method: 'DELETE',
         });
         if (!res.ok) throw new Error('Failed to delete table');
@@ -1428,7 +1431,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableId}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ x, y }),
@@ -1466,7 +1469,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableId}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ rotation }),

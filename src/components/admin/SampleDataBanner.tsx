@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
+import { withBasePath } from '@/lib/basePath';
 
 export function SampleDataBanner() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export function SampleDataBanner() {
 
     const loadStatus = async () => {
       try {
-        const res = await fetch('/api/admin/sample-data');
+        const res = await fetch(withBasePath('/api/admin/sample-data'));
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (cancelled) return;
@@ -54,7 +55,7 @@ export function SampleDataBanner() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/sample-data', {
+      const res = await fetch(withBasePath('/api/admin/sample-data'), {
         method: 'DELETE',
       });
       if (res.ok) {

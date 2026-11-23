@@ -16,6 +16,7 @@ import {
   getGuestsHeadcount,
   isGuestEligibleForSeating,
 } from '../utils/seatingHelpers';
+import { withBasePath } from '@/lib/basePath';
 
 const POINTER_DRAG_THRESHOLD_PX = 8;
 
@@ -480,7 +481,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
         fetchInit.body = JSON.stringify({ includePending: false });
       }
 
-      const res = await fetch('/api/admin/seating/auto-assign', fetchInit);
+      const res = await fetch(withBasePath('/api/admin/seating/auto-assign'), fetchInit);
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));

@@ -14,6 +14,7 @@ import type {
   CustomRsvpQuestionDTO,
   SubEventRsvpSubmissionItem,
 } from '@/features/sub-events';
+import { withBasePath } from '@/lib/basePath';
 
 export type EventRsvpFiniteState = 'idle' | 'dirty' | 'submitting' | 'success' | 'error';
 
@@ -524,7 +525,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
       const payloadBody = buildSubmissionPayloadItem(item, meta);
 
       try {
-        const res = await fetch(apiEndpoint, {
+        const res = await fetch(withBasePath(apiEndpoint), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payloadBody),
@@ -670,7 +671,7 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     };
 
     try {
-      const res = await fetch(apiEndpoint, {
+      const res = await fetch(withBasePath(apiEndpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

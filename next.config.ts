@@ -44,6 +44,7 @@ const basePath = isStaticExport && rawBasePath && rawBasePath !== '/'
 const nextConfig: NextConfig = {
   // Support dual-mode build: output: 'standalone' by default, 'export' for static showcases
   output: isStaticExport ? 'export' : 'standalone',
+  trailingSlash: isStaticExport,
   typescript: {
     tsconfigPath: './tsconfig.build.json',
   },

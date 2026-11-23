@@ -21,6 +21,7 @@ import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
   sanitizeRsvpClosedMessage,
 } from '@/utils/rsvpDeadline';
+import { withBasePath } from '@/lib/basePath';
 
 interface CategoryColorStyle {
   bg?: string;
@@ -336,7 +337,7 @@ export default function InteractiveTimeline({
 
   const fetchAndApplySchedule = useCallback(async () => {
     try {
-      const res = await fetch('/api/schedule');
+      const res = await fetch(withBasePath('/api/schedule'));
       if (!isMountedRef.current) return;
       if (!res) {
         setIsLoadingSchedule(false);

@@ -4,6 +4,7 @@ import React, { useState, useRef, useId } from 'react';
 import { createGoogleCalendarLink, createYahooCalendarLink, createOutlookCalendarLink, createIcsFile, CalendarEvent } from '@/utils/calendar';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
+import { withBasePath } from '@/lib/basePath';
 
 /**
  * @interface AddToCalendarProps
@@ -73,7 +74,7 @@ export default function AddToCalendar({ event, className, downloadUrl, eventId }
       const directDownloadUrl = downloadUrl || (eventId ? `/api/schedule/${eventId}/ics` : (event.id ? `/api/schedule/${event.id}/ics` : undefined));
       if (directDownloadUrl) {
         const link = document.createElement('a');
-        link.href = directDownloadUrl;
+        link.href = withBasePath(directDownloadUrl);
         link.download = `${event.name}.ics`;
         document.body.appendChild(link);
         link.click();

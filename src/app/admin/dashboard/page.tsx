@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { OnboardingChecklist } from '@/components/admin/OnboardingChecklist';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { FeatureId, isFeatureEnabled } from '@/lib/modules';
+import { withBasePath } from '@/lib/basePath';
 
 interface OverviewWorkflowCard {
   id: string;
@@ -97,7 +98,7 @@ export default function AdminDashboardPage() {
 
     const loadModuleConfig = async () => {
       try {
-        const res = await fetch('/api/admin/settings');
+        const res = await fetch(withBasePath('/api/admin/settings'));
         if (!res || !res.ok || typeof res.json !== 'function' || cancelled) return;
         const raw = await res.json();
         if (cancelled) return;
