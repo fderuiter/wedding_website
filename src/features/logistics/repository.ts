@@ -7,120 +7,15 @@ import {
   isPrivateContentNode,
   type ContentNodeDTO,
 } from '@/features/content';
+import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 
-const STATIC_MOCK_LOGISTICS_NODES: ContentNodeDTO[] = [
-  {
-    id: 'mock-logistics-ceremony',
-    type: 'Logistics',
-    tags: ['Homepage', 'Schedule', 'Logistics'],
-    data: {
-      ceremonyTitle: 'Wedding Ceremony',
-      ceremonyTime: '4:00 PM',
-      receptionTitle: 'Evening Reception',
-      receptionTime: '6:00 PM',
-      receptionDetails: 'Dinner, toasts, and dancing into the evening.',
-      receptionAttire: 'Semi-Formal / Cocktail Attire',
-      startTime: '2026-09-19T16:00:00.000Z',
-      endTime: '2026-09-19T23:00:00.000Z',
-      locationName: 'The Glasshouse Estate',
-    },
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  },
-  {
-    id: 'mock-logistics-accommodations',
-    type: 'Logistics',
-    tags: ['Homepage', 'Logistics'],
-    data: {
-      title: 'Accommodations',
-      description: 'A block of rooms has been reserved at The Grand Hotel nearby. Mention the wedding code for a discounted rate.',
-    },
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  },
-  {
-    id: 'mock-logistics-travel',
-    type: 'Logistics',
-    tags: ['Homepage', 'Logistics'],
-    data: {
-      title: 'Travel & Parking',
-      description: 'Valet parking is provided at the estate gates. Ride-sharing drop-offs are available at the front turnaround.',
-    },
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  },
-  {
-    id: 'mock-faq-dress-code',
-    type: 'FAQ',
-    tags: ['Homepage', 'FAQ'],
-    data: {
-      question: 'What is the dress code for the wedding?',
-      answer: 'Semi-formal or cocktail attire is kindly requested. Consider comfortable footwear if you plan to stroll the garden terrace.',
-      category: 'Dress Code',
-      categoryTags: ['Dress Code'],
-      keywords: ['attire', 'dress code', 'formal', 'shoes'],
-      displayOrder: 0,
-      isVisible: true,
-    },
-    createdAt: new Date('2026-01-01T00:01:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:01:00.000Z'),
-  },
-  {
-    id: 'mock-faq-arrival',
-    type: 'FAQ',
-    tags: ['Homepage', 'FAQ'],
-    data: {
-      question: 'What time should guests arrive for the ceremony?',
-      answer: 'Please plan to arrive 20 to 30 minutes prior to the 4:00 PM ceremony so everyone can be seated comfortably before vows begin.',
-      category: 'Schedule',
-      categoryTags: ['Schedule'],
-      keywords: ['arrival', 'time', 'ceremony', 'doors'],
-      displayOrder: 1,
-      isVisible: true,
-    },
-    createdAt: new Date('2026-01-01T00:02:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:02:00.000Z'),
-  },
-  {
-    id: 'mock-faq-parking',
-    type: 'FAQ',
-    tags: ['Homepage', 'FAQ'],
-    data: {
-      question: 'Is parking or shuttle transportation available?',
-      answer: 'Complimentary valet parking is provided at the estate gates, and hotel shuttle details are listed in our [Local Guide](/things-to-do).',
-      category: 'Travel',
-      categoryTags: ['Travel'],
-      keywords: ['parking', 'valet', 'shuttle', 'transportation'],
-      displayOrder: 2,
-      isVisible: true,
-    },
-    createdAt: new Date('2026-01-01T00:03:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:03:00.000Z'),
-  },
-  {
-    id: 'mock-faq-rsvp-registry',
-    type: 'FAQ',
-    tags: ['Homepage', 'FAQ'],
-    data: {
-      question: 'How do I share dietary notes or view the wedding registry?',
-      answer: 'You can submit meal preferences and allergy notes in the [Guest Portal](/guest) and browse gift ideas on our [Wedding Registry](/registry).',
-      category: 'RSVP & Gifts',
-      categoryTags: ['RSVP & Gifts'],
-      keywords: ['dietary', 'allergy', 'rsvp', 'registry', 'gifts'],
-      displayOrder: 3,
-      isVisible: true,
-    },
-    createdAt: new Date('2026-01-01T00:04:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:04:00.000Z'),
-  },
-];
-
-function isStaticExportBuild(): boolean {
-  return (
-    process.env.STATIC_EXPORT === 'true' ||
-    process.env.STATIC_EXPORT === '1' ||
-    process.env.npm_lifecycle_event === 'build:export'
-  );
+function buildStaticLogisticsNodes(): ContentNodeDTO[] {
+  const seed = buildArchetypeSeedData('classic');
+  return [
+    ...seed.scheduleNodes,
+    ...seed.logisticsNodes,
+    ...seed.faqNodes,
+  ].map((node) => ContentNodeSchema.parse(node));
 }
 
 export class LogisticsRepository implements ILogisticsRepository {
@@ -128,7 +23,7 @@ export class LogisticsRepository implements ILogisticsRepository {
 
   async getLogisticsNodes(): Promise<ContentNodeDTO[]> {
     if (isStaticExportBuild()) {
-      return this.sortNodesChronologically(STATIC_MOCK_LOGISTICS_NODES);
+      return this.sortNodesChronologically(buildStaticLogisticsNodes());
     }
 
     const [nodes, publicSubEvents] = await Promise.all([
@@ -192,6 +87,10 @@ export class LogisticsRepository implements ILogisticsRepository {
             attireRules: evt.attireRules || evt.attire || undefined,
             isPrivate: false,
             isReadOnly: false,
+            ...(Array.isArray(evt.mealOptions) ? { mealOptions: evt.mealOptions } : {}),
+            ...(Array.isArray(evt.customQuestions)
+              ? { customQuestions: evt.customQuestions }
+              : {}),
           },
           createdAt: evt.createdAt ? new Date(evt.createdAt) : new Date(0),
           updatedAt: evt.updatedAt ? new Date(evt.updatedAt) : new Date(0),
@@ -225,10 +124,12 @@ export class LogisticsRepository implements ILogisticsRepository {
 
   async getVisibleFaqs(): Promise<Extract<ContentNodeDTO, { type: 'FAQ' }>[]> {
     if (isStaticExportBuild()) {
-      return STATIC_MOCK_LOGISTICS_NODES.filter(
-        (n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> =>
-          n.type === 'FAQ' && isFaqNodeVisible(n)
-      ).sort(compareFaqNodesByOrder);
+      return buildStaticLogisticsNodes()
+        .filter(
+          (n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> =>
+            n.type === 'FAQ' && isFaqNodeVisible(n)
+        )
+        .sort(compareFaqNodesByOrder);
     }
 
     if (!this.client?.contentNode?.findMany) {

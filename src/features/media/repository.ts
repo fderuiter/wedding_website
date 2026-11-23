@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { MediaDTO, MediaSchema } from './schemas';
 import { executeInTransaction } from '@/lib/transaction';
 import { createAuditSnapshot } from '@/lib/audit';
+import { buildArchetypeSeedData, isStaticExportBuild } from '@/lib/sampleData/builder';
 
 export interface MediaPaginationOptions {
   page?: number;
@@ -117,6 +118,22 @@ export class MediaRepository {
 
     const skip = (page - 1) * limit;
     const take = limit;
+
+    if (isStaticExportBuild()) {
+      const seedMedia = buildArchetypeSeedData('classic').media;
+      const total = seedMedia.length;
+      const data = seedMedia
+        .slice(skip, skip + take)
+        .map((item) => MediaSchema.parse(item));
+      const totalPages = total > 0 ? Math.ceil(total / limit) : 0;
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages,
+      };
+    }
 
     const [total, mediaList] = await Promise.all([
       this.client.media.count(),
