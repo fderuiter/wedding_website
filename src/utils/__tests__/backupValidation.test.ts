@@ -514,7 +514,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         ...APP_CONFIG_SECRET_KEYS,
       ].sort();
 
-      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(80);
+      expect(APP_CONFIG_BACKUP_KEYS).toHaveLength(82);
       expect(APP_CONFIG_SECRET_KEYS).toHaveLength(4);
       expect(combinedKeys).toEqual(prismaNames);
 
@@ -524,7 +524,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
       expect(overlap).toEqual([]);
     });
 
-    test('sanitizeAppConfigForBackup retains all 80 non-secret columns and strips secrets and virtual DTO keys', () => {
+    test('sanitizeAppConfigForBackup retains all 82 non-secret columns and strips secrets and virtual DTO keys', () => {
       const fullParsedDto = AppConfigSchema.parse({
         id: 'global',
         subdomain: 'couple',
@@ -678,6 +678,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         } else if (col === 'weddingDate') {
           populatedSnapshot[col] = '2026-06-20T00:00:00.000Z';
         } else if (
+          col === 'autoApproveGuestPhotos' ||
           col === 'showCountdown' ||
           col === 'showAddToCalendar' ||
           col === 'rsvpOpen' ||
@@ -686,6 +687,7 @@ describe('DatabaseBackupSchema Validation Tests', () => {
         ) {
           populatedSnapshot[col] = true;
         } else if (
+          col === 'guestPhotoQrTokenVersion' ||
           col === 'rsvpGracePeriodHours' ||
           col === 'smtpPort' ||
           col === 'broadcastBatchSize' ||

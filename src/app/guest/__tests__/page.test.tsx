@@ -10,6 +10,10 @@ jest.mock('@/components/ui/ToastProvider', () => ({
   useToast: () => ({
     addToast: mockAddToast,
   }),
+  useOptionalToast: () => ({
+    addToast: mockAddToast,
+    toasts: [],
+  }),
 }));
 
 const globalFetch = jest.fn();

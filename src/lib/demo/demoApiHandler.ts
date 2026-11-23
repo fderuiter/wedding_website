@@ -48,6 +48,8 @@ import {
 } from './demoStore';
 
 const DEMO_LANDMARK_SHAPES = new Set<string>(['dance-floor', 'bar', 'dj', 'buffet', 'cake']);
+let demoAutoApproveGuestPhotos = false;
+let demoPhotoQrTokenVersion = 1;
 
 function isDemoLandmarkShape(shape?: string): boolean {
   return Boolean(shape && DEMO_LANDMARK_SHAPES.has(shape));
@@ -1846,6 +1848,26 @@ async function handleDemoApi(
         totalPages: 1,
       },
     });
+  }
+
+  if (path === '/api/admin/photos/qr') {
+    if (method === 'POST') {
+      const body = await parseJsonBody(init);
+      if (typeof body.autoApproveGuestPhotos === 'boolean') {
+        demoAutoApproveGuestPhotos = body.autoApproveGuestPhotos;
+      }
+      if (body.action === 'rotate') {
+        demoPhotoQrTokenVersion += 1;
+      }
+    }
+    if (method === 'GET' || method === 'POST') {
+      return jsonResponse({
+        success: true,
+        uploadUrl: `${url.origin}/photos?tab=guest&v=${demoPhotoQrTokenVersion}`,
+        tokenVersion: demoPhotoQrTokenVersion,
+        autoApproveGuestPhotos: demoAutoApproveGuestPhotos,
+      });
+    }
   }
 
   // Delegate extended OpenAPI routes (schedule, rsvp, photos, weather, media, content-nodes,
