@@ -59,6 +59,37 @@ describe('Content Node Schema Validation', () => {
       }
     });
 
+    it('validates displayOrder, isVisible, and isSample inside FAQNodeSchema JSONB data', () => {
+      const orderedFaq = {
+        id: 'faq-order-1',
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'When should we arrive?',
+          answer: 'Doors open 30 minutes prior to the ceremony.',
+          displayOrder: 3,
+          isVisible: false,
+          isSample: true,
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const result = FAQNodeSchema.safeParse(orderedFaq);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.data.displayOrder).toBe(3);
+        expect(result.data.data.isVisible).toBe(false);
+        expect(result.data.data.isSample).toBe(true);
+      }
+
+      const negativeOrderFaq = {
+        ...orderedFaq,
+        data: { ...orderedFaq.data, displayOrder: -1 },
+      };
+      expect(FAQNodeSchema.safeParse(negativeOrderFaq).success).toBe(false);
+    });
+
     it('rejects FAQ node with mismatched type or invalid data structure', () => {
       const invalidTypeFAQ = {
         id: 'faq-3',

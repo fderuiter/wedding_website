@@ -133,7 +133,7 @@ const Forecast: React.FC = () => {
         role="alert"
       >
         <Icon name="AlertTriangle" className="w-12 h-12 text-primary mx-auto mb-1" />
-        <h3 className="text-xl font-bold">Unable to Load Weather</h3>
+        <h2 className="text-xl font-bold">Unable to Load Weather</h2>
         <p className="text-base text-red-500 font-medium">
           Failed to load forecast. Please try again later.
         </p>

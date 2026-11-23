@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { motion } from 'framer-motion';
 import { Icon } from '@/components/ui/Icon';
 import type { AttractionDTO } from '@/features/attractions';
-import type { ContentNodeDTO } from '@/features/content';
+import {
+  compareFaqNodesByOrder,
+  isFaqNodeVisible,
+  type ContentNodeDTO,
+} from '@/features/content';
 import type { PublicAppConfig } from '@/lib/config';
 import Link from 'next/link';
 import BackToTop from '@/components/BackToTop';
@@ -14,8 +18,9 @@ import { formatScheduleEventToCalendarEvent } from '@/utils/calendar';
 import Countdown from '@/components/Countdown';
 import AddToCalendar from '@/components/AddToCalendar';
 import InteractiveTimeline from '@/components/schedule/InteractiveTimeline';
-import FaqAccordion from '@/components/faq/FaqAccordion';
+import FaqAccordion, { type FAQItemInput } from '@/components/faq/FaqAccordion';
 import ThingsToDoCard from '@/app/things-to-do/components/ThingsToDoCard';
+import { useGuestHelp } from '@/components/guest/GuestHelpModal';
 
 import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
@@ -62,6 +67,13 @@ function isHotelRecommendation(attraction: AttractionDTO): boolean {
   return isHotelCategory || hasRoomBlockDetails;
 }
 
+const subscribePreviewNoop = () => () => {};
+const getAdminPreviewClientSnapshot = () =>
+  typeof window !== 'undefined' &&
+  (window !== window.parent ||
+    new URLSearchParams(window.location.search).get('preview') === 'true');
+const getAdminPreviewServerSnapshot = () => false;
+
 /**
  * Renders the client-side wedding homepage and updates its content live when receiving cross-window draft updates.
  *
@@ -84,6 +96,12 @@ export default function HomePageClient({
   const [config, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [contentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
   const [attractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+  const isAdminPreview = useSyncExternalStore(
+    subscribePreviewNoop,
+    getAdminPreviewClientSnapshot,
+    getAdminPreviewServerSnapshot
+  );
+  const { hasProvider: hasGuestHelpProvider, syncLiveConfig } = useGuestHelp();
   const { themePreset } = useTheme();
   const presetTokens = getPresetTokens(themePreset);
 
@@ -139,7 +157,40 @@ export default function HomePageClient({
     });
   }
 
-  const faqNodes = contentNodes.filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ');
+  const visibleFaqNodes = useMemo(
+    () =>
+      contentNodes
+        .filter((n) => {
+          if (n.type !== 'FAQ' || !isFaqNodeVisible(n)) return false;
+          const data =
+            n.data && typeof n.data === 'object' && !Array.isArray(n.data)
+              ? (n.data as Record<string, unknown>)
+              : {};
+          const question = typeof data.question === 'string' ? data.question.trim() : '';
+          const answer = typeof data.answer === 'string' ? data.answer.trim() : '';
+          return Boolean(question || answer);
+        })
+        .sort(compareFaqNodesByOrder),
+    [contentNodes]
+  );
+
+  useEffect(() => {
+    if (!hasGuestHelpProvider) return;
+    syncLiveConfig({
+      faqs: visibleFaqNodes.map((node, index) => {
+        const data = node.data as Record<string, unknown>;
+        return {
+          id: node.id,
+          question: typeof data.question === 'string' ? data.question : '',
+          answer: typeof data.answer === 'string' ? data.answer : '',
+          category: typeof data.category === 'string' ? data.category : undefined,
+          isVisible: typeof data.isVisible === 'boolean' ? data.isVisible : undefined,
+          displayOrder:
+            typeof data.displayOrder === 'number' ? data.displayOrder : index,
+        };
+      }),
+    });
+  }, [hasGuestHelpProvider, syncLiveConfig, visibleFaqNodes]);
 
   const logisticsNodes = contentNodes
     .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
@@ -299,10 +350,27 @@ export default function HomePageClient({
         );
       }
       case 'faq':
+        if (visibleFaqNodes.length === 0 && !isAdminPreview) {
+          return null;
+        }
         return (
           <motion.section key={feature.id} id={feature.id} className="mx-auto max-w-3xl space-y-8 px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
             <h2 className="text-center type-h2 text-primary mb-8">{feature.title || 'Questions You Probably Have'}</h2>
-            <FaqAccordion faqs={faqNodes} />
+            {visibleFaqNodes.length === 0 && isAdminPreview ? (
+              <div
+                data-testid="faq-admin-preview-empty"
+                className="rounded-xl border border-dashed border-amber-300 dark:border-amber-700 bg-amber-50/70 dark:bg-amber-950/30 p-6 text-center space-y-2"
+              >
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                  Preview Only — Hidden from Public Guests
+                </p>
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  Add at least one visible FAQ in the Content Hub to publish this section on your live homepage.
+                </p>
+              </div>
+            ) : (
+              <FaqAccordion faqs={visibleFaqNodes as FAQItemInput[]} />
+            )}
           </motion.section>
         );
       case 'custom':

@@ -12,8 +12,8 @@ interface GlobalPrismaState {
 }
 
 /**
- * Global object extended with the Prisma client and PostgreSQL pool to prevent
- * multiple instances in development (hot-reloading) and duplicate signal hooks.
+ * Global object extended with the Prisma client and PostgreSQL pool so every
+ * module graph in a single Node.js process shares one pool and signal hook.
  */
 const globalForPrisma = globalThis as unknown as GlobalPrismaState;
 
@@ -34,18 +34,15 @@ const runtime =
     : createPrismaRuntime();
 
 /**
- * Singleton instance of the PrismaClient.
- * In development, it reuses the existing instance if available.
- * In production, it creates a new instance.
+ * Singleton instance of the PrismaClient shared across all module graphs
+ * (SSR, API route handlers, hot-reload, and tests) in the current process.
  * @type {PrismaClient}
  */
 export const prisma: PrismaClient = runtime.prisma;
 const pool: Pool = runtime.pool;
 
-if (env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-  globalForPrisma.pgPool = pool;
-}
+globalForPrisma.prisma = prisma;
+globalForPrisma.pgPool = pool;
 
 /**
  * Gracefully disconnects Prisma and drains the underlying pg.Pool so active
@@ -56,17 +53,20 @@ async function shutdownPrisma(): Promise<void> {
     return globalForPrisma.prismaShutdownPromise;
   }
 
+  const activePrisma = globalForPrisma.prisma ?? prisma;
+  const activePool = globalForPrisma.pgPool ?? pool;
+
   const runShutdown = (async () => {
     try {
-      await prisma.$disconnect();
+      await activePrisma.$disconnect();
     } catch (error) {
       console.error('Error disconnecting Prisma client during shutdown:', error);
     }
 
     try {
-      const poolState = pool as Pool & { ending?: boolean; ended?: boolean };
-      if (typeof pool.end === 'function' && !poolState.ending && !poolState.ended) {
-        await pool.end();
+      const poolState = activePool as Pool & { ending?: boolean; ended?: boolean };
+      if (typeof activePool.end === 'function' && !poolState.ending && !poolState.ended) {
+        await activePool.end();
       }
     } catch (error) {
       console.error('Error draining PostgreSQL connection pool during shutdown:', error);
@@ -92,7 +92,13 @@ function registerPrismaShutdownHooks(): void {
     }
     exitIntercepted = true;
 
+    let exitDrainStarted = false;
     process.exit = ((code?: number) => {
+      if (exitDrainStarted) {
+        return undefined as never;
+      }
+      exitDrainStarted = true;
+
       const safetyTimer = setTimeout(() => {
         originalExit(code);
       }, 5000);
@@ -117,14 +123,9 @@ function registerPrismaShutdownHooks(): void {
     interceptProcessExitUntilDrained();
 
     if (hasFrameworkSignalListener) {
-      // Next.js standalone server closes HTTP listeners first and then invokes process.exit().
-      // Start a fallback timer in case the other listener never calls process.exit().
-      const fallbackTimer = setTimeout(() => {
-        void shutdownPrisma().finally(() => {
-          originalExit(signal === 'SIGINT' ? 130 : 143);
-        });
-      }, 4500);
-      fallbackTimer.unref?.();
+      // Framework signal listener (e.g. Next.js standalone start-server.js) closes HTTP
+      // listeners and finishes active requests before invoking process.exit(), which
+      // interceptProcessExitUntilDrained() defers until shutdownPrisma() drains the pool.
       return;
     }
 

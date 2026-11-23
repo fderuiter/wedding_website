@@ -1,9 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import type { ContentNodeDTO } from '@/features/content';
+import {
+  compareFaqNodesByOrder,
+  isFaqNodeVisible,
+  type ContentNodeDTO,
+} from '@/features/content';
 import { useAdminContent } from '@/hooks/admin/useAdminContent';
 // eslint-disable-next-line no-restricted-imports
 import { apiClient } from '@/features/admin/apiClient';
@@ -17,6 +21,73 @@ import { useToast } from '@/components/ui/ToastProvider';
 
 const STANDARD_CONTENT_TYPES = ['FAQ', 'Logistics', 'Schedule', 'Photo'] as const;
 type StandardContentType = (typeof STANDARD_CONTENT_TYPES)[number];
+type ContentFilterTab = 'ALL' | StandardContentType | 'CUSTOM';
+
+interface StarterFaqTemplate {
+  id: string;
+  label: string;
+  question: string;
+  answer: string;
+  category: string;
+  keywords: string;
+}
+
+const STARTER_FAQ_TEMPLATES: readonly StarterFaqTemplate[] = [
+  {
+    id: 'attire',
+    label: 'Dress Code & Attire',
+    question: 'What is the dress code for the wedding?',
+    answer:
+      'Cocktail or formal attire is kindly requested. Check the homepage schedule for any outdoor or weather-related footwear tips.',
+    category: 'Attire',
+    keywords: 'dress code, attire, formal, cocktail',
+  },
+  {
+    id: 'rsvp-deadline',
+    label: 'RSVP Deadline & Dietary Notes',
+    question: 'When is the RSVP deadline and how do I share food allergies?',
+    answer:
+      'Please submit your attendance and dietary notes in the [Guest Portal](/guest) by the RSVP deadline listed on your invitation.',
+    category: 'RSVP',
+    keywords: 'rsvp, deadline, allergy, dietary, meal',
+  },
+  {
+    id: 'plus-ones-kids',
+    label: 'Plus-Ones & Children',
+    question: 'Can I bring a plus-one or children?',
+    answer:
+      'Due to venue capacity, invitations include all named household guests and any allocated plus-ones shown in your [Guest Portal](/guest) profile.',
+    category: 'Guests',
+    keywords: 'plus one, children, kids, guests',
+  },
+  {
+    id: 'accommodations',
+    label: 'Hotel Blocks & Where to Stay',
+    question: 'Where should out-of-town guests book accommodations?',
+    answer:
+      'We reserved discounted group rates at nearby hotels—see our [Local Guide](/things-to-do) and #accommodations section for booking links and cutoff dates.',
+    category: 'Travel',
+    keywords: 'hotel, room block, accommodations, lodging',
+  },
+  {
+    id: 'parking-shuttle',
+    label: 'Parking & Venue Transportation',
+    question: 'Is there parking or shuttle service at the venue?',
+    answer:
+      'On-site parking is available at the venue entrance, and shuttle pickup times from partner hotels are posted in #accommodations.',
+    category: 'Venue',
+    keywords: 'parking, shuttle, transportation, directions',
+  },
+  {
+    id: 'registry',
+    label: 'Wedding Registry & Gifts',
+    question: 'Where can we find your wedding registry?',
+    answer:
+      'Your presence is the greatest gift! If you would like to browse our wish list or group funds, visit our [Wedding Registry](/registry).',
+    category: 'Registry',
+    keywords: 'registry, gifts, honeymoon fund',
+  },
+];
 
 interface ContentFormState {
   // FAQ
@@ -76,7 +147,7 @@ const EMPTY_FORM_STATE: ContentFormState = {
 };
 
 const KNOWN_DATA_KEYS: Record<StandardContentType, string[]> = {
-  FAQ: ['question', 'answer', 'category', 'categoryTags', 'keywords'],
+  FAQ: ['question', 'answer', 'category', 'categoryTags', 'keywords', 'isVisible'],
   Logistics: [
     'title',
     'description',
@@ -260,13 +331,15 @@ function buildTypedNodeData(
     const keywords = parseCommaList(form.faqKeywords);
     const category = form.faqCategory.trim();
     const existingTags = Array.isArray(extraData.categoryTags) ? extraData.categoryTags : undefined;
+    const { isSample: _removedSampleFlag, ...preservedFaqExtra } = extraData;
     return {
-      ...extraData,
+      ...preservedFaqExtra,
       question: form.question.trim(),
       answer: form.answer.trim(),
       ...(category ? { category } : {}),
       ...(existingTags ? { categoryTags: existingTags } : category ? { categoryTags: [category] } : {}),
       keywords,
+      isVisible: Boolean(form.isVisible),
     };
   }
 
@@ -347,10 +420,19 @@ function summarizeNodePreview(node: ContentNodeDTO): {
     const question = typeof d.question === 'string' && d.question.trim() ? d.question.trim() : 'Untitled question';
     const answer = typeof d.answer === 'string' && d.answer.trim() ? d.answer.trim() : 'No answer provided yet.';
     const category = typeof d.category === 'string' && d.category.trim() ? d.category.trim() : '';
+    const visible = isFaqNodeVisible(node);
+    const isSample = d.isSample === true || d.isSample === 'true';
+    const badge = !visible
+      ? { label: 'Hidden from Public', tone: 'warning' as const }
+      : isSample
+        ? { label: category ? `${category} • Sample` : 'Sample FAQ', tone: 'neutral' as const }
+        : category
+          ? { label: category, tone: 'neutral' as const }
+          : undefined;
     return {
       heading: question,
       details: answer.length > 140 ? `${answer.slice(0, 140)}…` : answer,
-      badge: category ? { label: category, tone: 'neutral' } : undefined,
+      badge,
     };
   }
 
@@ -438,6 +520,8 @@ interface ContentDashboardContentProps {
   create: (_payload: Partial<ContentNodeDTO>) => Promise<ContentNodeDTO>;
   update: (_id: string, _payload: Partial<ContentNodeDTO>) => Promise<ContentNodeDTO>;
   remove: (_id: string) => Promise<unknown>;
+  removeBatch?: (_ids: string[]) => Promise<unknown>;
+  reorder?: (_orderedIds: string[]) => Promise<unknown>;
 }
 
 function ContentDashboardContent({
@@ -446,10 +530,19 @@ function ContentDashboardContent({
   create,
   update,
   remove,
+  removeBatch,
+  reorder,
 }: ContentDashboardContentProps) {
   const router = useRouter();
   const { containerRef, captureFocusTarget } = useFocusSuccessor<HTMLDivElement>();
   const { confirm, addToast } = useToast();
+
+  const [activeFilter, setActiveFilter] = useState<ContentFilterTab>('ALL');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedStarterId, setSelectedStarterId] = useState('');
+  const [displayOrderOverrides, setDisplayOrderOverrides] = useState<Record<string, number>>({});
+  const [visibilityOverrides, setVisibilityOverrides] = useState<Record<string, boolean>>({});
+  const filterTabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const [isEditing, setIsEditing] = useState(false);
   const [currentNode, setCurrentNode] = useState<Partial<ContentNodeDTO>>({});
@@ -462,17 +555,119 @@ function ContentDashboardContent({
   const selectedType = currentNode.type || 'FAQ';
   const isCustomType = !isStandardContentType(selectedType);
 
+  const effectiveNodes = useMemo(() => {
+    const mapped = nodes.map((node) => {
+      const hasOrderOverride = Object.prototype.hasOwnProperty.call(displayOrderOverrides, node.id);
+      const hasVisibilityOverride = Object.prototype.hasOwnProperty.call(visibilityOverrides, node.id);
+      if (!hasOrderOverride && !hasVisibilityOverride) return node;
+      const rawData =
+        node.data && typeof node.data === 'object' && !Array.isArray(node.data)
+          ? (node.data as Record<string, unknown>)
+          : {};
+      return {
+        ...node,
+        data: {
+          ...rawData,
+          ...(hasOrderOverride ? { displayOrder: displayOrderOverrides[node.id] } : {}),
+          ...(hasVisibilityOverride ? { isVisible: visibilityOverrides[node.id] } : {}),
+        },
+      } as ContentNodeDTO;
+    });
+
+    const sortedFaqs = mapped
+      .filter((n) => n.type === 'FAQ')
+      .sort(compareFaqNodesByOrder);
+    let faqCursor = 0;
+    return mapped.map((n) => (n.type === 'FAQ' ? sortedFaqs[faqCursor++] : n));
+  }, [nodes, displayOrderOverrides, visibilityOverrides]);
+
+  const orderedFaqNodes = useMemo(
+    () => effectiveNodes.filter((n) => n.type === 'FAQ'),
+    [effectiveNodes]
+  );
+
+  const hasCustomNodes = useMemo(
+    () => effectiveNodes.some((n) => !isStandardContentType(n.type)),
+    [effectiveNodes]
+  );
+
+  const filterTabs = useMemo(() => {
+    const base: { id: ContentFilterTab; label: string; count: number }[] = [
+      { id: 'ALL', label: 'All', count: effectiveNodes.length },
+      {
+        id: 'FAQ',
+        label: 'FAQs',
+        count: effectiveNodes.filter((n) => n.type === 'FAQ').length,
+      },
+      {
+        id: 'Logistics',
+        label: 'Logistics',
+        count: effectiveNodes.filter((n) => n.type === 'Logistics').length,
+      },
+      {
+        id: 'Schedule',
+        label: 'Schedule',
+        count: effectiveNodes.filter((n) => n.type === 'Schedule').length,
+      },
+      {
+        id: 'Photo',
+        label: 'Photos',
+        count: effectiveNodes.filter((n) => n.type === 'Photo').length,
+      },
+    ];
+    if (hasCustomNodes) {
+      base.push({
+        id: 'CUSTOM',
+        label: 'Custom',
+        count: effectiveNodes.filter((n) => !isStandardContentType(n.type)).length,
+      });
+    }
+    return base;
+  }, [effectiveNodes, hasCustomNodes]);
+
+  const resolvedActiveFilter = filterTabs.some((t) => t.id === activeFilter) ? activeFilter : 'ALL';
+
+  const filteredNodes = useMemo(() => {
+    if (resolvedActiveFilter === 'ALL') return effectiveNodes;
+    if (resolvedActiveFilter === 'CUSTOM') {
+      return effectiveNodes.filter((n) => !isStandardContentType(n.type));
+    }
+    return effectiveNodes.filter((n) => n.type === resolvedActiveFilter);
+  }, [effectiveNodes, resolvedActiveFilter]);
+
+  const selectableFilteredIds = useMemo(
+    () => filteredNodes.filter((n) => !n.id.startsWith('temp-')).map((n) => n.id),
+    [filteredNodes]
+  );
+
+  const existingIdSet = useMemo(() => new Set(effectiveNodes.map((n) => n.id)), [effectiveNodes]);
+  const activeSelectedIds = useMemo(
+    () => selectedIds.filter((id) => existingIdSet.has(id)),
+    [selectedIds, existingIdSet]
+  );
+  const allFilteredSelected =
+    selectableFilteredIds.length > 0 &&
+    selectableFilteredIds.every((id) => activeSelectedIds.includes(id));
+
   const defaultTagsForType = (type: string): string => {
     if (type === 'Schedule') return 'Schedule';
     if (type === 'Photo') return 'Gallery';
+    if (type === 'FAQ') return 'Homepage, FAQ';
     return 'Homepage';
   };
 
   const handleOpenCreate = () => {
-    setCurrentNode({ type: 'FAQ', tags: ['Homepage'] });
+    const initialType: StandardContentType =
+      resolvedActiveFilter !== 'ALL' && resolvedActiveFilter !== 'CUSTOM'
+        ? resolvedActiveFilter
+        : 'FAQ';
+    const initialTags =
+      initialType === 'FAQ' ? 'Homepage' : defaultTagsForType(initialType);
+    setCurrentNode({ type: initialType, tags: parseCommaList(initialTags) });
     setFormState({ ...EMPTY_FORM_STATE, isVisible: true, photoStatus: 'APPROVED' });
     setExtraData({});
-    setTagsInput('Homepage');
+    setSelectedStarterId('');
+    setTagsInput(initialTags);
     setFormError('');
     setIsEditing(true);
   };
@@ -482,9 +677,24 @@ function ContentDashboardContent({
     setCurrentNode(node);
     setFormState(form);
     setExtraData(preserved);
+    setSelectedStarterId('');
     setTagsInput(Array.isArray(node.tags) ? node.tags.join(', ') : '');
     setFormError('');
     setIsEditing(true);
+  };
+
+  const handleApplyStarterTemplate = (templateId: string) => {
+    setSelectedStarterId(templateId);
+    const template = STARTER_FAQ_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+    setFormState((prev) => ({
+      ...prev,
+      question: template.question,
+      answer: template.answer,
+      faqCategory: template.category,
+      faqKeywords: template.keywords,
+      isVisible: true,
+    }));
   };
 
   const handleTypeSelectChange = (nextVal: string) => {
@@ -541,14 +751,33 @@ function ContentDashboardContent({
 
     try {
       const parsedTags = parseCommaList(tagsInput);
-      const payloadData = buildTypedNodeData(activeType, formState, extraData, !currentNode.id);
+      const nextFaqOrder =
+        activeType === 'FAQ' && !currentNode.id
+          ? orderedFaqNodes.reduce((maxOrder, faq, idx) => {
+            const rawOrder = (faq.data as Record<string, unknown> | undefined)?.displayOrder;
+            const numeric =
+              typeof rawOrder === 'number' && Number.isFinite(rawOrder) ? rawOrder : idx;
+            return Math.max(maxOrder, numeric + 1);
+          }, 0)
+          : undefined;
+      const baseExtra =
+        nextFaqOrder !== undefined && extraData.displayOrder === undefined
+          ? { ...extraData, displayOrder: nextFaqOrder }
+          : extraData;
+      const payloadData = buildTypedNodeData(activeType, formState, baseExtra, !currentNode.id);
       const payload: Partial<ContentNodeDTO> = {
         type: activeType,
-        tags: parsedTags.length > 0 ? parsedTags : [defaultTagsForType(activeType)],
+        tags: parsedTags.length > 0 ? parsedTags : parseCommaList(defaultTagsForType(activeType)),
         data: payloadData,
       };
 
       if (currentNode.id) {
+        if (activeType === 'FAQ') {
+          setVisibilityOverrides((prev) => ({
+            ...prev,
+            [currentNode.id!]: Boolean(formState.isVisible),
+          }));
+        }
         await update(currentNode.id, payload);
       } else {
         await create(payload);
@@ -556,6 +785,131 @@ function ContentDashboardContent({
       setIsEditing(false);
     } catch {
       // Error handled by global MutationCache
+    }
+  };
+
+  const handleToggleFaqVisibility = async (node: ContentNodeDTO) => {
+    const rawData =
+      node.data && typeof node.data === 'object' && !Array.isArray(node.data)
+        ? (node.data as Record<string, unknown>)
+        : {};
+    const nextVisible = !isFaqNodeVisible(node);
+    setVisibilityOverrides((prev) => ({ ...prev, [node.id]: nextVisible }));
+    try {
+      await update(node.id, {
+        type: node.type,
+        tags: node.tags,
+        data: {
+          ...rawData,
+          isVisible: nextVisible,
+        },
+      });
+    } catch {
+      setVisibilityOverrides((prev) => {
+        const next = { ...prev };
+        delete next[node.id];
+        return next;
+      });
+    }
+  };
+
+  const handleMoveFaq = async (nodeId: string, direction: 'up' | 'down') => {
+    const currentIndex = orderedFaqNodes.findIndex((n) => n.id === nodeId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= orderedFaqNodes.length) return;
+
+    const reorderedFaqs = [...orderedFaqNodes];
+    const [moved] = reorderedFaqs.splice(currentIndex, 1);
+    reorderedFaqs.splice(targetIndex, 0, moved);
+
+    const nextOverrides: Record<string, number> = {};
+    reorderedFaqs.forEach((faq, index) => {
+      nextOverrides[faq.id] = index;
+    });
+    setDisplayOrderOverrides((prev) => ({ ...prev, ...nextOverrides }));
+
+    const orderedFaqIds = reorderedFaqs.map((faq) => faq.id);
+    try {
+      if (typeof reorder === 'function') {
+        await reorder(orderedFaqIds);
+      } else {
+        await Promise.all(
+          reorderedFaqs.map((faq, index) => {
+            const rawData =
+              faq.data && typeof faq.data === 'object' && !Array.isArray(faq.data)
+                ? (faq.data as Record<string, unknown>)
+                : {};
+            return update(faq.id, {
+              type: faq.type,
+              tags: faq.tags,
+              data: {
+                ...rawData,
+                displayOrder: index,
+              },
+            });
+          })
+        );
+      }
+    } catch {
+      setDisplayOrderOverrides({});
+    }
+  };
+
+  const handleToggleSelectId = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      const filteredSet = new Set(selectableFilteredIds);
+      setSelectedIds((prev) => prev.filter((id) => !filteredSet.has(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...selectableFilteredIds])));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (activeSelectedIds.length === 0) return;
+    const count = activeSelectedIds.length;
+    if (
+      !(await confirm(
+        `Are you sure you want to delete ${count} selected content ${count === 1 ? 'item' : 'items'}?`
+      ))
+    ) {
+      return;
+    }
+    const idsToDelete = [...activeSelectedIds];
+    setSelectedIds([]);
+    try {
+      if (typeof removeBatch === 'function') {
+        await removeBatch(idsToDelete);
+      } else {
+        await Promise.all(idsToDelete.map((id) => remove(id)));
+      }
+    } catch {
+      // Error handled by global MutationCache
+    }
+  };
+
+  const handleFilterTabKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) => {
+    const total = filterTabs.length;
+    if (total === 0) return;
+    let nextIdx: number | null = null;
+    if (e.key === 'ArrowRight') nextIdx = (index + 1) % total;
+    else if (e.key === 'ArrowLeft') nextIdx = (index - 1 + total) % total;
+    else if (e.key === 'Home') nextIdx = 0;
+    else if (e.key === 'End') nextIdx = total - 1;
+    if (nextIdx !== null) {
+      e.preventDefault();
+      const targetTab = filterTabs[nextIdx];
+      setActiveFilter(targetTab.id);
+      filterTabRefs.current[targetTab.id]?.focus();
     }
   };
 
@@ -607,13 +961,15 @@ function ContentDashboardContent({
   const draftNode = {
     id: currentNode.id || 'draft',
     type: selectedType,
-    tags: draftTags.length > 0 ? draftTags : [defaultTagsForType(selectedType)],
+    tags: draftTags.length > 0 ? draftTags : parseCommaList(defaultTagsForType(selectedType)),
     data: buildTypedNodeData(selectedType, formState, extraData, !currentNode.id),
     createdAt: currentNode.createdAt || new Date(),
     updatedAt: currentNode.updatedAt || new Date(),
   } as ContentNodeDTO;
 
-  const currentNodesWithDraft = nodes.map((n) => (n.id === currentNode.id ? draftNode : n));
+  const currentNodesWithDraft = effectiveNodes.map((n) =>
+    n.id === currentNode.id ? draftNode : n
+  );
   if (!currentNode.id && isEditing) {
     currentNodesWithDraft.push(draftNode);
   }
@@ -717,6 +1073,23 @@ function ContentDashboardContent({
               {selectedType === 'FAQ' && (
                 <div className="space-y-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
                   <FormGroup>
+                    <Label htmlFor="faq-starter-template-select">
+                      Starter Question Template (Optional)
+                    </Label>
+                    <Select
+                      id="faq-starter-template-select"
+                      value={selectedStarterId}
+                      onChange={(e) => handleApplyStarterTemplate(e.target.value)}
+                    >
+                      <option value="">Choose a starter wedding Q&amp;A template...</option>
+                      {STARTER_FAQ_TEMPLATES.map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.label} — {template.question}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormGroup>
+                  <FormGroup>
                     <Label htmlFor="faq-question-input">Question</Label>
                     <Input
                       id="faq-question-input"
@@ -735,6 +1108,9 @@ function ContentDashboardContent({
                       value={formState.answer}
                       onChange={(e) => setFormState((prev) => ({ ...prev, answer: e.target.value }))}
                     />
+                    <FormMessage>
+                      Links are supported automatically: paste web URLs (https://...), emails, phone numbers, internal paths (/guest, /registry, /things-to-do), or [Label](https://...) markdown links.
+                    </FormMessage>
                   </FormGroup>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <FormGroup>
@@ -757,6 +1133,21 @@ function ContentDashboardContent({
                         onChange={(e) => setFormState((prev) => ({ ...prev, faqKeywords: e.target.value }))}
                       />
                     </FormGroup>
+                  </div>
+                  <div className="flex items-center gap-3 pt-1">
+                    <input
+                      id="faq-visible-checkbox"
+                      type="checkbox"
+                      checked={formState.isVisible}
+                      onChange={(e) => setFormState((prev) => ({ ...prev, isVisible: e.target.checked }))}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <label
+                      htmlFor="faq-visible-checkbox"
+                      className="text-sm font-medium text-gray-700 dark:text-gray-200 cursor-pointer"
+                    >
+                      Visible on Public Homepage &amp; Guest Help
+                    </label>
                   </div>
                 </div>
               )}
@@ -1116,49 +1507,189 @@ function ContentDashboardContent({
           </div>
         )}
 
-        <div className="grid gap-4 pb-10" ref={containerRef}>
-          {nodes.map((node) => {
+        <div className="mb-6 space-y-3">
+          <div
+            role="tablist"
+            aria-label="Filter content by type"
+            className="flex flex-wrap gap-2 border-b border-gray-200 dark:border-gray-700 pb-2"
+          >
+            {filterTabs.map((tab, idx) => {
+              const selected = tab.id === resolvedActiveFilter;
+              const tabDomId = `content-filter-tab-${tab.id.toLowerCase()}`;
+              return (
+                <button
+                  key={tab.id}
+                  ref={(el) => {
+                    filterTabRefs.current[tab.id] = el;
+                  }}
+                  id={tabDomId}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls="content-items-tabpanel"
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => setActiveFilter(tab.id)}
+                  onKeyDown={(e) => handleFilterTabKeyDown(e, idx)}
+                  className={`px-3.5 py-2 text-sm font-semibold rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    selected
+                      ? 'bg-gray-900 text-white border-gray-900 dark:bg-gray-100 dark:text-gray-900 dark:border-gray-100'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              );
+            })}
+          </div>
+
+          {selectableFilteredIds.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 px-4 py-2.5">
+              <div className="flex items-center gap-2.5">
+                <input
+                  id="select-all-content-checkbox"
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={handleToggleSelectAllFiltered}
+                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <label
+                  htmlFor="select-all-content-checkbox"
+                  className="text-sm font-medium text-gray-800 dark:text-gray-200 cursor-pointer"
+                >
+                  Select all ({selectableFilteredIds.length})
+                </label>
+              </div>
+
+              {activeSelectedIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                    {activeSelectedIds.length} selected
+                  </span>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                  >
+                    Delete Selected ({activeSelectedIds.length})
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedIds([])}
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div
+          id="content-items-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`content-filter-tab-${resolvedActiveFilter.toLowerCase()}`}
+          className="grid gap-4 pb-10"
+          ref={containerRef}
+        >
+          {filteredNodes.map((node) => {
             const preview = summarizeNodePreview(node);
+            const isTemp = node.id.startsWith('temp-');
+            const isSelected = activeSelectedIds.includes(node.id);
+            const isFaq = node.type === 'FAQ';
+            const faqIndex = isFaq ? orderedFaqNodes.findIndex((f) => f.id === node.id) : -1;
+            const faqVisible = isFaq ? isFaqNodeVisible(node) : true;
             return (
               <div
                 key={node.id}
                 className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-primary flex flex-col sm:flex-row justify-between sm:items-center gap-4"
               >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-primary/10 text-primary">
-                      {node.type || 'Unnamed'}
-                    </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      ({node.tags.join(', ')})
-                    </span>
-                    {preview.badge && (
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          preview.badge.tone === 'success'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
-                            : preview.badge.tone === 'warning'
-                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200'
-                              : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
-                        }`}
-                      >
-                        {preview.badge.label}
+                <div className="flex items-start gap-3 min-w-0">
+                  <input
+                    id={`select-content-${node.id}`}
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={isTemp}
+                    onChange={() => handleToggleSelectId(node.id)}
+                    aria-label={`Select ${preview.heading}`}
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded bg-primary/10 text-primary">
+                        {node.type || 'Unnamed'}
                       </span>
-                    )}
-                  </div>
-                  <div className="font-bold text-lg text-gray-900 dark:text-gray-100 break-words">
-                    {preview.heading}
-                  </div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300 break-words">
-                    {preview.details}
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        ({node.tags.join(', ')})
+                      </span>
+                      {preview.badge && (
+                        <span
+                          className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                            preview.badge.tone === 'success'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
+                              : preview.badge.tone === 'warning'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200'
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                          }`}
+                        >
+                          {preview.badge.label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-bold text-lg text-gray-900 dark:text-gray-100 break-words">
+                      {preview.heading}
+                    </div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300 break-words">
+                      {preview.details}
+                    </div>
                   </div>
                 </div>
-                <div className="space-x-2 flex shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {isFaq && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Move FAQ up: ${preview.heading}`}
+                        disabled={isTemp || faqIndex <= 0}
+                        onClick={() => handleMoveFaq(node.id, 'up')}
+                      >
+                        ↑ Up
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Move FAQ down: ${preview.heading}`}
+                        disabled={isTemp || faqIndex < 0 || faqIndex >= orderedFaqNodes.length - 1}
+                        onClick={() => handleMoveFaq(node.id, 'down')}
+                      >
+                        ↓ Down
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        aria-label={
+                          faqVisible
+                            ? `Hide FAQ: ${preview.heading}`
+                            : `Show FAQ: ${preview.heading}`
+                        }
+                        disabled={isTemp}
+                        onClick={() => handleToggleFaqVisibility(node)}
+                      >
+                        {faqVisible ? 'Hide' : 'Show'}
+                      </Button>
+                    </>
+                  )}
                   <Button
                     variant="secondary"
                     size="sm"
                     aria-label={node.type ? `Edit content: ${node.type}` : 'Edit unnamed item'}
-                    disabled={node.id.startsWith('temp-')}
+                    disabled={isTemp}
                     onClick={() => handleOpenEdit(node)}
                   >
                     Edit
@@ -1167,7 +1698,7 @@ function ContentDashboardContent({
                     variant="danger"
                     size="sm"
                     aria-label={node.type ? `Delete content: ${node.type}` : 'Delete unnamed item'}
-                    disabled={node.id.startsWith('temp-')}
+                    disabled={isTemp}
                     onClick={(e) => handleDelete(node.id, e)}
                   >
                     Delete
@@ -1176,7 +1707,9 @@ function ContentDashboardContent({
               </div>
             );
           })}
-          {nodes.length === 0 && <p className="text-gray-500 dark:text-gray-400">No content items found.</p>}
+          {filteredNodes.length === 0 && (
+            <p className="text-gray-500 dark:text-gray-400">No content items found.</p>
+          )}
         </div>
       </div>
     </AdminPreviewLayout>
@@ -1195,6 +1728,8 @@ export default function ContentDashboardPage() {
     create,
     update,
     remove,
+    removeBatch,
+    reorder,
   } = useAdminContent();
 
   return (
@@ -1210,6 +1745,8 @@ export default function ContentDashboardPage() {
         create={create}
         update={update}
         remove={remove}
+        removeBatch={removeBatch}
+        reorder={reorder}
       />
     </AdminViewState>
   );

@@ -36,7 +36,7 @@ export const initialSetupWizardState: SetupWizardPersistedState = {
   venueState: '',
   timezone: 'America/Chicago',
   sampleArchetype: 'classic',
-  selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
+  selectedModules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'],
   importedGuestCount: 0,
 };
 

@@ -9,20 +9,13 @@ import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { pruneSnapshotsBulk } from '@/lib/audit';
 import { logger } from '@/lib/logger';
-import { APP_CONFIG_SECRET_KEYS, sanitizeAppConfigForBackup } from '@/lib/config';
+import {
+  mergeAppConfigSecrets,
+  parseOptionalDate,
+  sanitizeAppConfigForBackup,
+  sanitizeSnapshotForBackup,
+} from '@/lib/backupPersistence';
 import { resolveModuleConfig } from '@/lib/modules';
-
-function hasNonEmptySecret(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function normalizeOptionalDate(value: Date | string | null | undefined): Date | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null || value === '') return null;
-  if (value instanceof Date) return value;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
 
 function serializeDatesForJson(value: unknown): Prisma.InputJsonValue {
   if (value instanceof Date) {
@@ -70,8 +63,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const normalizedSeatingTables: Prisma.SeatingTableCreateManyInput[] = (data.seatingTable ?? []).map((table) => {
     const { createdAt, updatedAt, ...rest } = table;
-    const normalizedCreated = normalizeOptionalDate(createdAt);
-    const normalizedUpdated = normalizeOptionalDate(updatedAt);
+    const normalizedCreated = parseOptionalDate(createdAt);
+    const normalizedUpdated = parseOptionalDate(updatedAt);
     return {
       ...rest,
       ...(normalizedCreated ? { createdAt: normalizedCreated } : {}),
@@ -196,17 +189,16 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
 
   const normalizedSnapshotVersions: Prisma.SnapshotVersionCreateManyInput[] = (data.snapshotVersion ?? []).map(
     (snap) => {
-      const sanitizedPayload =
-        snap.entityType === 'AppConfig' && snap.data && typeof snap.data === 'object' && !Array.isArray(snap.data)
-          ? sanitizeAppConfigForBackup(snap.data as Record<string, unknown>)
-          : snap.data;
+      const sanitizedSnap = sanitizeSnapshotForBackup(snap);
       return {
-        id: snap.id,
-        entityType: snap.entityType,
-        entityId: snap.entityId,
-        data: serializeDatesForJson(sanitizedPayload),
-        createdAt: snap.createdAt,
-        ...(typeof snap.author === 'string' && snap.author.length > 0 ? { author: snap.author } : {}),
+        id: sanitizedSnap.id,
+        entityType: sanitizedSnap.entityType,
+        entityId: sanitizedSnap.entityId,
+        data: serializeDatesForJson(sanitizedSnap.data),
+        createdAt: sanitizedSnap.createdAt,
+        ...(typeof sanitizedSnap.author === 'string' && sanitizedSnap.author.length > 0
+          ? { author: sanitizedSnap.author }
+          : {}),
       };
     },
   );
@@ -229,17 +221,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         ...rest
       } = cfg;
       const existing = existingById.get(cfg.id) ?? (cfg.id === 'global' ? fallbackGlobal : undefined);
-      const rawSecrets = { smtpPass, resendApiKey, sendgridApiKey, twilioAuthToken };
-      const mergedSecrets: Partial<Record<(typeof APP_CONFIG_SECRET_KEYS)[number], string>> = {};
-
-      for (const secretKey of APP_CONFIG_SECRET_KEYS) {
-        const incomingSecret = rawSecrets[secretKey];
-        if (hasNonEmptySecret(incomingSecret)) {
-          mergedSecrets[secretKey] = incomingSecret;
-        } else if (existing && hasNonEmptySecret(existing[secretKey])) {
-          mergedSecrets[secretKey] = existing[secretKey];
-        }
-      }
+      const mergedSecrets = mergeAppConfigSecrets(
+        { smtpPass, resendApiKey, sendgridApiKey, twilioAuthToken },
+        existing,
+      );
 
       const resolvedImportModules =
         modules !== undefined

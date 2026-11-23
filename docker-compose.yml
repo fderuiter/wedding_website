@@ -52,6 +52,7 @@ services:
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     init: true
+    stop_grace_period: 15s
     read_only: true
     cap_drop:
       - ALL

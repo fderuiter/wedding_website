@@ -34,12 +34,13 @@ describe('Sample Data Generator & Purge', () => {
     expect(status.counts.seating).toBe(0);
     expect(status.counts.weddingParty).toBe(0);
     expect(status.counts.attractions).toBe(0);
+    expect(status.counts.faqs).toBe(0);
   });
 
   test('generateSampleData generates tagged records for classic archetype preset', async () => {
     const result = await generateSampleData({
       archetype: 'classic',
-      modules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
+      modules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'],
     });
 
     expect(result.success).toBe(true);
@@ -49,14 +50,22 @@ describe('Sample Data Generator & Purge', () => {
     expect(result.createdCounts.seating).toBe(ARCHETYPE_PRESETS.classic.seatingTables.length);
     expect(result.createdCounts.weddingParty).toBe(ARCHETYPE_PRESETS.classic.weddingParty.length);
     expect(result.createdCounts.attractions).toBe(ARCHETYPE_PRESETS.classic.attractions.length);
+    expect(result.createdCounts.faqs).toBe(ARCHETYPE_PRESETS.classic.faqs.length);
 
     const status = await getSampleDataStatus();
     expect(status.hasSampleData).toBe(true);
     expect(status.counts.registry).toBe(ARCHETYPE_PRESETS.classic.registryItems.length);
+    expect(status.counts.faqs).toBe(ARCHETYPE_PRESETS.classic.faqs.length);
 
     // Verify records are tagged with isSample = true
     const sampleItems = await prisma.registryItem.findMany({ where: { isSample: true } });
     expect(sampleItems.length).toBe(ARCHETYPE_PRESETS.classic.registryItems.length);
+
+    const sampleFaqs = await prisma.contentNode.findMany({ where: { type: 'FAQ' } });
+    const taggedSampleFaqs = sampleFaqs.filter(
+      (f) => (f.data as Record<string, unknown> | null)?.isSample === true
+    );
+    expect(taggedSampleFaqs.length).toBe(ARCHETYPE_PRESETS.classic.faqs.length);
   });
 
   test('generateSampleData generates destination archetype preset records', async () => {
@@ -104,14 +113,29 @@ describe('Sample Data Generator & Purge', () => {
       },
     });
 
+    const realFaq = await prisma.contentNode.create({
+      data: {
+        type: 'FAQ',
+        tags: ['Homepage', 'FAQ'],
+        data: {
+          question: 'Real couple custom FAQ?',
+          answer: 'Parking is complimentary at the north lot.',
+          category: 'Venue',
+          isVisible: true,
+          isSample: false,
+        },
+      },
+    });
+
     // Generate sample data
     await generateSampleData({
       archetype: 'romantic',
-      modules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions'],
+      modules: ['registry', 'guests', 'seating', 'weddingParty', 'attractions', 'faqs'],
     });
 
     const statusBefore = await getSampleDataStatus();
     expect(statusBefore.hasSampleData).toBe(true);
+    expect(statusBefore.counts.faqs).toBe(ARCHETYPE_PRESETS.romantic.faqs.length);
 
     // Purge sample data
     const purgeResult = await purgeSampleData();
@@ -119,6 +143,7 @@ describe('Sample Data Generator & Purge', () => {
 
     const statusAfter = await getSampleDataStatus();
     expect(statusAfter.hasSampleData).toBe(false);
+    expect(statusAfter.counts.faqs).toBe(0);
 
     // Verify non-sample records still exist intact
     const foundRealItem = await prisma.registryItem.findUnique({ where: { id: realItem.id } });
@@ -129,7 +154,12 @@ describe('Sample Data Generator & Purge', () => {
     expect(foundRealGuest).not.toBeNull();
     expect(foundRealGuest?.guestName).toBe('Real Guest');
 
+    const foundRealFaq = await prisma.contentNode.findUnique({ where: { id: realFaq.id } });
+    expect(foundRealFaq).not.toBeNull();
+    expect((foundRealFaq?.data as Record<string, unknown>)?.question).toBe('Real couple custom FAQ?');
+
     // Clean up test non-sample records
+    await prisma.contentNode.delete({ where: { id: realFaq.id } });
     await prisma.registryItem.delete({ where: { id: realItem.id } });
     await prisma.invitationCode.delete({ where: { id: realGuest.id } });
     await prisma.media.delete({ where: { id: realMedia.id } });

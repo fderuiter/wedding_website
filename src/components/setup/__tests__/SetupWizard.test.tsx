@@ -1138,6 +1138,54 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(results).toHaveNoViolations();
   });
 
+  test('renders Wedding Q&A & Starter FAQs toggle on Step 3 and includes faqs in sample data generation payload', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 3,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+        sampleArchetype: 'classic',
+      })
+    );
+
+    let generatedSamplePayload: Record<string, unknown> | null = null;
+    global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('/api/admin/sample-data') && init?.body) {
+        generatedSamplePayload = JSON.parse(init.body as string);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+
+    const faqCheckbox = screen.getByRole('checkbox', { name: /Wedding Q&A & Starter FAQs/i });
+    expect(faqCheckbox).toBeChecked();
+
+    // Toggle off and back on to verify interactive state transition
+    fireEvent.click(faqCheckbox);
+    expect(faqCheckbox).not.toBeChecked();
+    fireEvent.click(faqCheckbox);
+    expect(faqCheckbox).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Populate Sample Data & Continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument();
+    });
+
+    expect(generatedSamplePayload).toBeTruthy();
+    expect(generatedSamplePayload!.archetype).toBe('classic');
+    expect(generatedSamplePayload!.modules).toContain('faqs');
+  });
+
   test('previews Step 2 essentials preset and brand color changes live via ThemeProvider and maintains dark mode accessibility', async () => {
     const { ThemeProvider } = await import('@/components/ThemeProvider');
     (checkAdminClient as jest.Mock).mockResolvedValue(true);

@@ -7,17 +7,13 @@ import { ApiError } from '@/utils/ApiError';
 import { PhotoDataSchema } from '@/features/content';
 import { MediaSchema } from '@/features/media';
 import { translateSnapshotToActive } from '@/features/registry';
-import { APP_CONFIG_SECRET_KEYS } from '@/lib/config';
+import {
+  APP_CONFIG_SECRET_KEYS,
+  hasNonEmptySecret,
+  parseOptionalDate,
+  stripAppConfigSecrets,
+} from '@/lib/backupPersistence';
 import { resolveModuleConfig } from '@/lib/modules';
-
-const FALLBACK_SECRET_KEYS = [
-  'smtpPass',
-  'resendApiKey',
-  'sendgridApiKey',
-  'twilioAuthToken',
-] as const;
-
-const SECRET_KEYS = APP_CONFIG_SECRET_KEYS ?? FALLBACK_SECRET_KEYS;
 
 const APP_CONFIG_DELIVERY_KEYS = [
   'emailProvider',
@@ -59,14 +55,25 @@ const BATCH_SUMMARY_IDS = new Set([
   'batch_delete',
 ]);
 
-function toOptionalDate(value: unknown): Date | null {
-  if (value === null || value === undefined || value === '') return null;
-  if (value instanceof Date) return value;
-  if (typeof value === 'string' || typeof value === 'number') {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
+interface ForeignKeyDelegate {
+  findUnique?: (_args: { where: { id: string } }) => Promise<unknown>;
+}
+
+async function resolveForeignKeyId<T>(
+  rawId: T,
+  delegate: ForeignKeyDelegate | undefined,
+): Promise<T | null> {
+  if (
+    typeof rawId === 'string' &&
+    rawId.length > 0 &&
+    typeof delegate?.findUnique === 'function'
+  ) {
+    const existing = await delegate.findUnique({ where: { id: rawId } });
+    if (existing === null) {
+      return null;
+    }
   }
-  return null;
+  return rawId;
 }
 
 function isFeatureToggleDelta(snapshotData: Record<string, unknown>): boolean {
@@ -121,9 +128,9 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
           optionalFields[key] = snapshotData[key];
         }
       }
-      for (const secretKey of SECRET_KEYS) {
+      for (const secretKey of APP_CONFIG_SECRET_KEYS) {
         const val = snapshotData[secretKey];
-        if (typeof val === 'string' && val.trim().length > 0) {
+        if (hasNonEmptySecret(val)) {
           optionalFields[secretKey] = val;
         }
       }
@@ -221,17 +228,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'WeddingPartyMember') {
-    let resolvedPhotoId = snapshotData.photoId;
-    if (
-      typeof resolvedPhotoId === 'string' &&
-      resolvedPhotoId.length > 0 &&
-      typeof prisma.media?.findUnique === 'function'
-    ) {
-      const existingPhoto = await prisma.media.findUnique({ where: { id: resolvedPhotoId } });
-      if (existingPhoto === null) {
-        resolvedPhotoId = null;
-      }
-    }
+    const resolvedPhotoId = await resolveForeignKeyId(snapshotData.photoId, prisma.media);
 
     const data = {
       name: snapshotData.name,
@@ -249,17 +246,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'Attraction') {
-    let resolvedImageId = snapshotData.imageId;
-    if (
-      typeof resolvedImageId === 'string' &&
-      resolvedImageId.length > 0 &&
-      typeof prisma.media?.findUnique === 'function'
-    ) {
-      const existingImage = await prisma.media.findUnique({ where: { id: resolvedImageId } });
-      if (existingImage === null) {
-        resolvedImageId = null;
-      }
-    }
+    const resolvedImageId = await resolveForeignKeyId(snapshotData.imageId, prisma.media);
 
     const data = {
       name: snapshotData.name,
@@ -307,33 +294,14 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'Contributor') {
-    let resolvedInvitationCodeId = snapshotData.invitationCodeId;
-    if (
-      typeof resolvedInvitationCodeId === 'string' &&
-      resolvedInvitationCodeId.length > 0 &&
-      typeof prisma.invitationCode?.findUnique === 'function'
-    ) {
-      const existingInvite = await prisma.invitationCode.findUnique({
-        where: { id: resolvedInvitationCodeId },
-      });
-      if (existingInvite === null) {
-        resolvedInvitationCodeId = null;
-      }
-    }
-
-    let resolvedRegistryItemId = snapshotData.registryItemId;
-    if (
-      typeof resolvedRegistryItemId === 'string' &&
-      resolvedRegistryItemId.length > 0 &&
-      typeof prisma.registryItem?.findUnique === 'function'
-    ) {
-      const existingItem = await prisma.registryItem.findUnique({
-        where: { id: resolvedRegistryItemId },
-      });
-      if (existingItem === null) {
-        resolvedRegistryItemId = null;
-      }
-    }
+    const resolvedInvitationCodeId = await resolveForeignKeyId(
+      snapshotData.invitationCodeId,
+      prisma.invitationCode,
+    );
+    const resolvedRegistryItemId = await resolveForeignKeyId(
+      snapshotData.registryItemId,
+      prisma.registryItem,
+    );
 
     const data = {
       name: snapshotData.name,
@@ -349,7 +317,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
         ? { thankYouStatus: snapshotData.thankYouStatus }
         : {}),
       ...(snapshotData.thankYouSentAt !== undefined
-        ? { thankYouSentAt: toOptionalDate(snapshotData.thankYouSentAt) }
+        ? { thankYouSentAt: parseOptionalDate(snapshotData.thankYouSentAt) }
         : {}),
       ...(snapshotData.thankYouNote !== undefined ? { thankYouNote: snapshotData.thankYouNote } : {}),
       ...(snapshotData.stripePaymentIntentId !== undefined
@@ -359,7 +327,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
         ? { stripeChargeId: snapshotData.stripeChargeId }
         : {}),
       ...(snapshotData.transactionTimestamp !== undefined
-        ? { transactionTimestamp: toOptionalDate(snapshotData.transactionTimestamp) }
+        ? { transactionTimestamp: parseOptionalDate(snapshotData.transactionTimestamp) }
         : {}),
       ...(resolvedInvitationCodeId !== undefined
         ? { invitationCodeId: resolvedInvitationCodeId }
@@ -397,17 +365,10 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       throw new ApiError(400, 'Batch operation snapshots cannot be restored as a single record');
     }
 
-    let resolvedTableId: string | null | undefined = snapshotData.tableId;
-    if (
-      typeof resolvedTableId === 'string' &&
-      resolvedTableId.length > 0 &&
-      typeof prisma.seatingTable?.findUnique === 'function'
-    ) {
-      const existingTable = await prisma.seatingTable.findUnique({ where: { id: resolvedTableId } });
-      if (existingTable === null) {
-        resolvedTableId = null;
-      }
-    }
+    const resolvedTableId = await resolveForeignKeyId<string | null | undefined>(
+      snapshotData.tableId,
+      prisma.seatingTable,
+    );
 
     if (
       (snapshotData.action === 'assignSeat' || snapshotData.action === 'autoAssign') &&
@@ -449,7 +410,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
             ? Prisma.DbNull
             : (snapshotData.extraFields as Prisma.InputJsonValue),
         used: Boolean(snapshotData.used),
-        usedAt: toOptionalDate(snapshotData.usedAt),
+        usedAt: parseOptionalDate(snapshotData.usedAt),
         tableId: resolvedTableId ?? null,
         seatNumber: resolvedTableId ? (snapshotData.seatNumber ?? null) : null,
         ...(snapshotData.isSample !== undefined ? { isSample: Boolean(snapshotData.isSample) } : {}),
@@ -489,11 +450,11 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       throw new ApiError(400, 'Invalid SubEvent snapshot data');
     }
 
-    const data: Prisma.SubEventUncheckedUpdateInput = {
+    const data = {
       title: snapshotData.title,
       description: snapshotData.description ?? '',
-      startTime: toOptionalDate(snapshotData.startTime),
-      endTime: toOptionalDate(snapshotData.endTime),
+      startTime: parseOptionalDate(snapshotData.startTime),
+      endTime: parseOptionalDate(snapshotData.endTime),
       locationName: snapshotData.locationName ?? '',
       location: snapshotData.location ?? '',
       category: snapshotData.category ?? '',
@@ -509,23 +470,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
     await prisma.subEvent.upsert({
       where: { id: version.entityId },
       update: data,
-      create: {
-        id: version.entityId,
-        title: snapshotData.title,
-        description: snapshotData.description ?? '',
-        startTime: toOptionalDate(snapshotData.startTime),
-        endTime: toOptionalDate(snapshotData.endTime),
-        locationName: snapshotData.locationName ?? '',
-        location: snapshotData.location ?? '',
-        category: snapshotData.category ?? '',
-        isPrivate: Boolean(snapshotData.isPrivate),
-        ...(Array.isArray(snapshotData.mealOptions)
-          ? { mealOptions: snapshotData.mealOptions as Prisma.InputJsonValue }
-          : {}),
-        ...(Array.isArray(snapshotData.customQuestions)
-          ? { customQuestions: snapshotData.customQuestions as Prisma.InputJsonValue }
-          : {}),
-      },
+      create: { id: version.entityId, ...data },
     });
   } else if (version.entityType === 'SubEventAccess') {
     if (
@@ -596,8 +541,8 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
         typeof snapshotData.totalRecipients === 'number' ? snapshotData.totalRecipients : 0,
       sentCount: typeof snapshotData.sentCount === 'number' ? snapshotData.sentCount : 0,
       failedCount: typeof snapshotData.failedCount === 'number' ? snapshotData.failedCount : 0,
-      scheduledFor: toOptionalDate(snapshotData.scheduledFor),
-      sentAt: toOptionalDate(snapshotData.sentAt),
+      scheduledFor: parseOptionalDate(snapshotData.scheduledFor),
+      sentAt: parseOptionalDate(snapshotData.sentAt),
     };
 
     const { id: _ignoredId, ...updateData } = data;
@@ -614,19 +559,10 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       throw new ApiError(400, 'Invalid BroadcastRecipient snapshot data');
     }
 
-    let resolvedInvitationCodeId: string | null | undefined = snapshotData.invitationCodeId;
-    if (
-      typeof resolvedInvitationCodeId === 'string' &&
-      resolvedInvitationCodeId.length > 0 &&
-      typeof prisma.invitationCode?.findUnique === 'function'
-    ) {
-      const existingInvite = await prisma.invitationCode.findUnique({
-        where: { id: resolvedInvitationCodeId },
-      });
-      if (existingInvite === null) {
-        resolvedInvitationCodeId = null;
-      }
-    }
+    const resolvedInvitationCodeId = await resolveForeignKeyId<string | null | undefined>(
+      snapshotData.invitationCodeId,
+      prisma.invitationCode,
+    );
 
     const data = {
       broadcastId: snapshotData.broadcastId,
@@ -635,7 +571,7 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
       destination: snapshotData.destination,
       status: snapshotData.status ?? 'PENDING',
       error: snapshotData.error ?? null,
-      sentAt: toOptionalDate(snapshotData.sentAt),
+      sentAt: parseOptionalDate(snapshotData.sentAt),
     };
 
     await prisma.broadcastRecipient.upsert({
@@ -647,16 +583,10 @@ export const POST = withApiMiddleware(async (_request: NextRequest, { params }: 
     throw new ApiError(400, 'Unsupported entity type');
   }
 
-  let rollbackSnapshotPayload: Record<string, any> = rawSnapshotData;
-  if (
-    version.entityType === 'AppConfig' &&
-    SECRET_KEYS.some((secretKey) => secretKey in rawSnapshotData)
-  ) {
-    rollbackSnapshotPayload = { ...rawSnapshotData };
-    for (const secretKey of SECRET_KEYS) {
-      delete rollbackSnapshotPayload[secretKey];
-    }
-  }
+  const rollbackSnapshotPayload =
+    version.entityType === 'AppConfig'
+      ? stripAppConfigSecrets(rawSnapshotData)
+      : rawSnapshotData;
 
   await prisma.snapshotVersion.create({
     data: {

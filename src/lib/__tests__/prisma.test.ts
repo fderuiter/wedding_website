@@ -3,6 +3,14 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import type { Pool } from 'pg';
+
+interface GlobalPrismaTestState {
+  prisma?: PrismaClient;
+  pgPool?: Pool;
+  prismaShutdownRegistered?: boolean;
+  prismaShutdownPromise?: Promise<void> | null;
+}
 
 const loadPrisma = async (): Promise<PrismaClient> => {
   let prisma!: PrismaClient;
@@ -15,38 +23,85 @@ const loadPrisma = async (): Promise<PrismaClient> => {
 
 describe('prisma singleton behavior', () => {
   const originalEnv = process.env.NODE_ENV;
-  const globalForPrisma = global as unknown as { prisma?: PrismaClient };
+  const originalExit = process.exit;
+  const globalForPrisma = globalThis as unknown as GlobalPrismaTestState;
 
-  beforeEach(() => {
+  const resetGlobalPrismaState = async () => {
+    if (globalForPrisma.prisma && typeof globalForPrisma.prisma.$disconnect === 'function') {
+      try {
+        await globalForPrisma.prisma.$disconnect();
+      } catch {
+        // Ignore teardown errors on mocked or uninitialized clients
+      }
+    }
+    if (globalForPrisma.pgPool && typeof globalForPrisma.pgPool.end === 'function') {
+      const poolState = globalForPrisma.pgPool as Pool & { ending?: boolean; ended?: boolean };
+      if (!poolState.ending && !poolState.ended) {
+        try {
+          await globalForPrisma.pgPool.end();
+        } catch {
+          // Ignore teardown errors on mocked or uninitialized pools
+        }
+      }
+    }
     delete globalForPrisma.prisma;
+    delete globalForPrisma.pgPool;
+    delete globalForPrisma.prismaShutdownRegistered;
+    delete globalForPrisma.prismaShutdownPromise;
+  };
+
+  beforeEach(async () => {
+    jest.spyOn(process, 'once').mockReturnValue(process);
+    await resetGlobalPrismaState();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    process.exit = originalExit;
     (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
-    delete globalForPrisma.prisma;
+    await resetGlobalPrismaState();
+    jest.restoreAllMocks();
   });
 
-  test('reuses the prisma client in development', async () => {
+  test('reuses the prisma client and pgPool in development', async () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
 
     const prisma1 = await loadPrisma();
+    const pool1 = globalForPrisma.pgPool;
     const prisma2 = await loadPrisma();
+    const pool2 = globalForPrisma.pgPool;
 
     expect(prisma1).toBe(prisma2);
-
-    await prisma1.$disconnect();
+    expect(globalForPrisma.prisma).toBe(prisma1);
+    expect(pool1).toBeDefined();
+    expect(pool1).toBe(pool2);
   });
 
-  test('creates a new prisma client per import in production', async () => {
+  test('reuses the prisma client and pgPool across isolated imports in production', async () => {
     (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
 
     const prisma1 = await loadPrisma();
+    const pool1 = globalForPrisma.pgPool;
     const prisma2 = await loadPrisma();
+    const pool2 = globalForPrisma.pgPool;
 
-    expect(prisma1).not.toBe(prisma2);
+    expect(prisma1).toBe(prisma2);
+    expect(globalForPrisma.prisma).toBe(prisma1);
+    expect(pool1).toBeDefined();
+    expect(pool1).toBe(pool2);
+  });
 
-    await prisma1.$disconnect();
-    await prisma2.$disconnect();
+  test('reuses the prisma client and pgPool in test mode', async () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'test';
+
+    const prisma1 = await loadPrisma();
+    const pool1 = globalForPrisma.pgPool;
+    const prisma2 = await loadPrisma();
+    const pool2 = globalForPrisma.pgPool;
+
+    expect(prisma1).toBe(prisma2);
+    expect(globalForPrisma.prisma).toBe(prisma1);
+    expect(pool1).toBeDefined();
+    expect(pool1).toBe(pool2);
   });
 
   test('redacts raw connection strings from console output during initialization', async () => {
@@ -105,7 +160,7 @@ describe('prisma singleton behavior', () => {
       });
       expect(adapterCalls[0]).toEqual({ schema: 'public' });
 
-      delete (global as unknown as { pgPool?: unknown }).pgPool;
+      delete globalForPrisma.pgPool;
       delete globalForPrisma.prisma;
 
       await jest.isolateModulesAsync(async () => {
@@ -146,7 +201,7 @@ describe('prisma singleton behavior', () => {
       } else {
         process.env.DATABASE_URL = originalDbUrl;
       }
-      delete (global as unknown as { pgPool?: unknown }).pgPool;
+      delete globalForPrisma.pgPool;
       jest.dontMock('pg');
       jest.dontMock('@prisma/adapter-pg');
       jest.dontMock('@prisma/client');

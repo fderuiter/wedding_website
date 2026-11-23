@@ -1,23 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { seedGuestAuthCookies } from './helpers/auth';
 
-test.describe('Metadata', () => {
+test.describe('Metadata', { tag: '@smoke' }, () => {
   test('should have the correct metadata', async ({ context, page }) => {
     await seedGuestAuthCookies(context);
 
-    try {
-      await page.goto('/', { waitUntil: 'domcontentloaded' });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('crashed') || msg.includes('closed') || msg.includes('net::ERR_ABORTED')) {
-        await seedGuestAuthCookies(context).catch(() => {});
-        page = await context.newPage();
-        await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      } else {
-        throw err;
-      }
-    }
-
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     expect(new URL(page.url()).pathname).toBe('/');
 
     // Check title

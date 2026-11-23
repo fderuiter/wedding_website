@@ -1,5 +1,4 @@
-import { defineConfig } from '@playwright/test';
-import fs from 'fs';
+import { defineConfig, devices } from '@playwright/test';
 
 const runWebServer = !process.env.TEST_CONTAINER;
 const reuseExistingServer = !process.env.CI && process.env.PLAYWRIGHT_REUSE_SERVER === 'true';
@@ -23,8 +22,7 @@ const localWebServerCommand = [
   'npx tsx scripts/seed.ts',
   'npm run dev',
 ].join(' && ');
-const defaultChromePath = '/usr/bin/google-chrome';
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || (fs.existsSync(defaultChromePath) ? defaultChromePath : undefined);
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
 
 export default defineConfig({
   testDir: './e2e',
@@ -34,12 +32,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   webServer: runWebServer ? {
     command: process.env.CI ? 'node .next/standalone/server.js' : localWebServerCommand,
-    url: 'http://127.0.0.1:3000/api/ready',
+    url: 'http://localhost:3000/api/ready',
     reuseExistingServer,
     timeout: 120000,
     env: {
       PORT: '3000',
-      HOSTNAME: '127.0.0.1',
+      HOSTNAME: 'localhost',
       NODE_ENV: 'production',
       NODE_OPTIONS: '--max-old-space-size=4096',
       DATABASE_URL: process.env.DATABASE_URL || 'postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public',
@@ -52,13 +50,12 @@ export default defineConfig({
     },
   } : undefined,
   use: {
-    baseURL: 'http://127.0.0.1:3000',
-    channel: 'chromium',
+    baseURL: 'http://localhost:3000',
     contextOptions: {
       reducedMotion: 'reduce',
     },
     launchOptions: {
-      executablePath,
+      ...(executablePath ? { executablePath } : {}),
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -66,4 +63,10 @@ export default defineConfig({
       ],
     },
   },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 });

@@ -30,13 +30,21 @@
       ]
     },
     "types": [
-      "node"
+      "node",
+      "jest",
+      "@testing-library/jest-dom",
+      "jest-axe"
     ]
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
+    "**/*.mts",
+    ".storybook/**/*.ts",
+    ".storybook/**/*.tsx",
+    "docs-portal/.vitepress/**/*.ts",
+    "docs-portal/.vitepress/**/*.mts",
     ".next/types/**/*.ts",
     "jest.config.mjs",
     ".next/dev/types/**/*.ts",
@@ -45,11 +53,12 @@
   "exclude": [
     "node_modules",
     "jest.setup.js",
-    "scripts",
-    "e2e",
-    "src/mocks",
-    "**/__tests__/**/*",
-    "**/*.test.ts",
-    "**/*.test.tsx"
+    "out",
+    "storybook-static",
+    "coverage",
+    "playwright-report",
+    "test-results",
+    "docs-portal/.vitepress/cache",
+    "docs-portal/.vitepress/dist"
   ]
 }

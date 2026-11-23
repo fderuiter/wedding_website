@@ -28,6 +28,11 @@ interface DockerfileInstruction {
 const ROOT_DIR = process.cwd();
 const SHA256_DIGEST_REGEX = /^sha256:[a-fA-F0-9]{64}$/;
 
+function parseLeadingMajorVersion(rawVersion: string): string | null {
+  const match = rawVersion.trim().match(/^(?:[\^~>=<v\s]*)(\d+)(?:\.\d+|\.x|\b|$)/i);
+  return match ? match[1] : null;
+}
+
 function normalizeImageKey(imageName: string): string {
   const trimmed = imageName.trim();
   if (trimmed.startsWith('docker.io/library/')) {
@@ -158,7 +163,8 @@ function checkDockerfileContent(
   dockerfileContent: string,
   relPath: string,
   violations: Violation[],
-  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>,
+  expectedNodeMajor: string | null
 ): void {
   if (!/COPY\s+--from=builder\b[^\n]*prisma\.config\.ts/.test(dockerfileContent)) {
     violations.push({
@@ -248,6 +254,7 @@ function checkDockerfileContent(
 
   const instructions = parseDockerfileInstructions(dockerfileContent);
   const stageAliases = new Set<string>();
+  let foundNodeBaseImage = false;
 
   for (const instr of instructions) {
     const fromMatch = instr.text.match(/^FROM\s+(.*)$/i);
@@ -268,6 +275,24 @@ function checkDockerfileContent(
             violations,
             pinnedOccurrences
           );
+
+          const rawRepo = imageSpec.trim().replace(/^['"]|['"]$/g, '').split('@')[0];
+          const normalizedRepo = normalizeImageKey(rawRepo);
+          if (normalizedRepo === 'node' || normalizedRepo.startsWith('node:')) {
+            foundNodeBaseImage = true;
+            if (expectedNodeMajor) {
+              const expectedPrefix = `node:${expectedNodeMajor}-bookworm-slim`;
+              if (normalizedRepo !== expectedPrefix) {
+                violations.push({
+                  filePath: relPath,
+                  lineNumber: instr.startLine,
+                  lineContent: instr.firstLineContent,
+                  imageRef: rawRepo,
+                  reason: `Dockerfile Node.js base image "${rawRepo}" does not match expected "${expectedPrefix}" from .nvmrc (Node.js ${expectedNodeMajor} LTS).`,
+                });
+              }
+            }
+          }
         }
 
         if (stageAlias) {
@@ -364,6 +389,16 @@ function checkDockerfileContent(
         });
       }
     }
+  }
+
+  if (expectedNodeMajor && !foundNodeBaseImage) {
+    violations.push({
+      filePath: relPath,
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: `node:${expectedNodeMajor}-bookworm-slim`,
+      reason: `Dockerfile must declare a "node:${expectedNodeMajor}-bookworm-slim" base stage matching .nvmrc.`,
+    });
   }
 }
 
@@ -586,6 +621,75 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
   const violations: Violation[] = [];
   const pinnedOccurrences = new Map<string, PinnedImageOccurrence[]>();
 
+  // 0. Check .nvmrc and package.json Node.js major version parity
+  let expectedNodeMajor: string | null = null;
+  const nvmrcPath = path.join(rootDir, '.nvmrc');
+  if (!fs.existsSync(nvmrcPath)) {
+    violations.push({
+      filePath: '.nvmrc',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '.nvmrc',
+      reason: '.nvmrc is missing from repository root.',
+    });
+  } else {
+    const nvmrcContent = fs.readFileSync(nvmrcPath, 'utf8').trim();
+    expectedNodeMajor = parseLeadingMajorVersion(nvmrcContent);
+    if (!expectedNodeMajor) {
+      violations.push({
+        filePath: '.nvmrc',
+        lineNumber: 1,
+        lineContent: nvmrcContent,
+        imageRef: '.nvmrc',
+        reason: `.nvmrc ("${nvmrcContent}") must declare a valid Node.js major version (e.g. "22").`,
+      });
+    }
+  }
+
+  const packageJsonPath = path.join(rootDir, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    violations.push({
+      filePath: 'package.json',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: 'package.json',
+      reason: 'package.json is missing from repository root.',
+    });
+  } else {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+        engines?: { node?: string };
+      };
+      const enginesNode = pkg.engines?.node ?? '';
+      const pkgNodeMajor = parseLeadingMajorVersion(enginesNode);
+      if (!pkgNodeMajor) {
+        violations.push({
+          filePath: 'package.json',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'engines.node',
+          reason: 'package.json must declare engines.node matching .nvmrc.',
+        });
+      } else if (expectedNodeMajor && pkgNodeMajor !== expectedNodeMajor) {
+        violations.push({
+          filePath: 'package.json',
+          lineNumber: 1,
+          lineContent: `"node": "${enginesNode}"`,
+          imageRef: 'engines.node',
+          reason: `package.json engines.node ("${enginesNode}") major version "${pkgNodeMajor}" does not match .nvmrc ("${expectedNodeMajor}").`,
+        });
+      }
+    } catch {
+      violations.push({
+        filePath: 'package.json',
+        lineNumber: 1,
+        lineContent: '',
+        imageRef: 'package.json',
+        reason: 'package.json contains invalid JSON.',
+      });
+    }
+  }
+
   // 1. Check Dockerfile
   const dockerfilePath = path.join(rootDir, 'Dockerfile');
   if (!fs.existsSync(dockerfilePath)) {
@@ -598,7 +702,13 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     });
   } else {
     const dockerfileContent = fs.readFileSync(dockerfilePath, 'utf8');
-    checkDockerfileContent(dockerfileContent, 'Dockerfile', violations, pinnedOccurrences);
+    checkDockerfileContent(
+      dockerfileContent,
+      'Dockerfile',
+      violations,
+      pinnedOccurrences,
+      expectedNodeMajor
+    );
   }
 
   // 2. Check docker-compose.yml
