@@ -26,6 +26,7 @@ export interface LabelThemeOptions {
   textColor?: string;
   primaryColor?: string;
   themeTokens?: Record<string, string>;
+  skipUnaddressed?: boolean;
 }
 
 export function resolvePdfFont(fontInput?: string): 'Helvetica' | 'Times-Roman' | 'Courier' | string {
@@ -129,6 +130,12 @@ const LABEL_TEMPLATES: Record<LabelTemplate, LabelTemplateConfig> = {
 
 export interface AddressContributorInput {
   name: string;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string | null;
   invitationCode?: {
     guestName?: string | null;
     addressLine1?: string | null;
@@ -140,7 +147,84 @@ export interface AddressContributorInput {
   } | null;
 }
 
-function formatAddressLines(data: AddressContributorInput): string[] {
+export interface ResolvedPostalAddress {
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+  source: 'contributor' | 'invitationCode' | 'none';
+  hasAddress: boolean;
+}
+
+export function resolveContributorPostalAddress(
+  data: Pick<
+    AddressContributorInput,
+    'addressLine1' | 'addressLine2' | 'city' | 'state' | 'zipCode' | 'country' | 'invitationCode'
+  >
+): ResolvedPostalAddress {
+  const contribAddr1 = data.addressLine1?.trim() || '';
+  const contribAddr2 = data.addressLine2?.trim() || '';
+  const contribCity = data.city?.trim() || '';
+  const contribState = data.state?.trim() || '';
+  const contribZip = data.zipCode?.trim() || '';
+  const contribCountry = data.country?.trim() || '';
+
+  const hasContributorAddress = Boolean(
+    contribAddr1 || contribAddr2 || contribCity || contribState || contribZip || contribCountry
+  );
+
+  if (hasContributorAddress) {
+    return {
+      addressLine1: contribAddr1,
+      addressLine2: contribAddr2,
+      city: contribCity,
+      state: contribState,
+      zipCode: contribZip,
+      country: contribCountry,
+      source: 'contributor',
+      hasAddress: Boolean(contribAddr1 || contribCity || contribState || contribZip),
+    };
+  }
+
+  const inviteAddr1 = data.invitationCode?.addressLine1?.trim() || '';
+  const inviteAddr2 = data.invitationCode?.addressLine2?.trim() || '';
+  const inviteCity = data.invitationCode?.city?.trim() || '';
+  const inviteState = data.invitationCode?.state?.trim() || '';
+  const inviteZip = data.invitationCode?.zipCode?.trim() || '';
+  const inviteCountry = data.invitationCode?.country?.trim() || '';
+
+  const hasInviteAddress = Boolean(
+    inviteAddr1 || inviteAddr2 || inviteCity || inviteState || inviteZip || inviteCountry
+  );
+
+  if (hasInviteAddress) {
+    return {
+      addressLine1: inviteAddr1,
+      addressLine2: inviteAddr2,
+      city: inviteCity,
+      state: inviteState,
+      zipCode: inviteZip,
+      country: inviteCountry,
+      source: 'invitationCode',
+      hasAddress: Boolean(inviteAddr1 || inviteCity || inviteState || inviteZip),
+    };
+  }
+
+  return {
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: '',
+    source: 'none',
+    hasAddress: false,
+  };
+}
+
+export function formatAddressLines(data: AddressContributorInput): string[] {
   const lines: string[] = [];
 
   const name = (data.name || data.invitationCode?.guestName || '').trim();
@@ -148,19 +232,20 @@ function formatAddressLines(data: AddressContributorInput): string[] {
     lines.push(name);
   }
 
-  const addr1 = data.invitationCode?.addressLine1?.trim();
+  const resolved = resolveContributorPostalAddress(data);
+  const addr1 = resolved.addressLine1;
   if (addr1) {
     lines.push(addr1);
   }
 
-  const addr2 = data.invitationCode?.addressLine2?.trim();
+  const addr2 = resolved.addressLine2;
   if (addr2) {
     lines.push(addr2);
   }
 
-  const city = data.invitationCode?.city?.trim();
-  const state = data.invitationCode?.state?.trim();
-  const zipCode = data.invitationCode?.zipCode?.trim();
+  const city = resolved.city;
+  const state = resolved.state;
+  const zipCode = resolved.zipCode;
 
   let cityState = '';
   if (city && state) {
@@ -179,7 +264,7 @@ function formatAddressLines(data: AddressContributorInput): string[] {
     lines.push(zipCode);
   }
 
-  const country = data.invitationCode?.country?.trim();
+  const country = resolved.country;
   if (country && country.toUpperCase() !== 'USA' && country.toUpperCase() !== 'US') {
     lines.push(country);
   }
@@ -202,6 +287,7 @@ export function generatePdfLabelSheetStream(
   themeOptions?: LabelThemeOptions
 ): ReadableStream<Uint8Array> {
   const config = LABEL_TEMPLATES[template] || LABEL_TEMPLATES.avery_5160;
+  const skipUnaddressed = Boolean(themeOptions?.skipUnaddressed);
 
   const headingFontInput =
     themeOptions?.fontHeading ||
@@ -264,6 +350,9 @@ export function generatePdfLabelSheetStream(
           }
 
           for (const contributor of items) {
+            if (skipUnaddressed && !resolveContributorPostalAddress(contributor).hasAddress) {
+              continue;
+            }
             totalItemsProcessed++;
 
             if (labelOnPageCount === 0) {

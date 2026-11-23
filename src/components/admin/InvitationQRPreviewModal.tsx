@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/Icon';
 import { useToast } from '@/components/ui/ToastProvider';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
+import { withBasePath } from '@/lib/basePath';
 
 export interface InvitationQRPreviewGuest {
   id?: string;
@@ -37,8 +38,16 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
 
   if (!guest) return null;
 
-  const baseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
-  const rsvpUrl = `${baseOrigin}/guest?code=${encodeURIComponent(guest.code || '')}`;
+  const guestPath = withBasePath('/guest');
+  const basePathPrefix = guestPath.endsWith('/guest')
+    ? guestPath.slice(0, -'/guest'.length)
+    : '';
+  const rawBaseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
+  const baseOrigin =
+    basePathPrefix && rawBaseOrigin.endsWith(basePathPrefix)
+      ? rawBaseOrigin.slice(0, -basePathPrefix.length)
+      : rawBaseOrigin;
+  const rsvpUrl = `${baseOrigin}${guestPath}?code=${encodeURIComponent(guest.code || '')}`;
   const plusOneName = [guest.plusOneFirstName, guest.plusOneLastName].filter(Boolean).join(' ');
 
   const handleCopyLink = async () => {

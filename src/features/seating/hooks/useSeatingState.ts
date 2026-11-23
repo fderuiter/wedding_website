@@ -22,6 +22,7 @@ import {
   isLandmarkTable,
   isLandmarkTableShape,
 } from '../utils/seatingHelpers';
+import { withBasePath } from '@/lib/basePath';
 
 function useOptionalToast() {
   try {
@@ -271,7 +272,9 @@ async function fetchRemainingPages<T extends { id?: string }>(
     const pageResponses = await Promise.all(
       offsets.map((skip, idx) =>
         fetch(
-          `${endpoint}?page=${idx + 1}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+          withBasePath(
+            `${endpoint}?page=${idx + 1}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+          )
         )
       )
     );
@@ -295,7 +298,9 @@ async function fetchRemainingPages<T extends { id?: string }>(
   // Sequential fallback when X-Has-Next-Page is present without X-Total-Count
   while (true) {
     const nextRes = await fetch(
-      `${endpoint}?page=${page}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+      withBasePath(
+        `${endpoint}?page=${page}&skip=${skip}&limit=${PAGE_LIMIT}&orderBy=id&orderDir=asc`
+      )
     );
     if (!nextRes.ok) {
       throw new Error('Failed to load seating chart data.');
@@ -332,7 +337,9 @@ async function fetchRemainingCatalogPages<T extends { id?: string }>(
     const pages = Array.from({ length: totalPages }, (_, idx) => idx + 1);
     const pageResponses = await Promise.all(
       pages.map((page) =>
-        fetch(`${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`)
+        fetch(
+          withBasePath(`${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`)
+        )
       )
     );
     for (const r of pageResponses) {
@@ -353,7 +360,7 @@ async function fetchRemainingCatalogPages<T extends { id?: string }>(
   let page = 1;
   while (true) {
     const nextRes = await fetch(
-      `${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`
+      withBasePath(`${endpoint}?page=${page}&limit=${pageLimit}&orderBy=code&orderDir=asc`)
     );
     if (!nextRes.ok) {
       throw new Error('Failed to load seating chart data.');
@@ -1075,8 +1082,8 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
       const [tablesRes, guestsRes] = await Promise.all([
-        fetch('/api/admin/seating-tables'),
-        fetch('/api/admin/invitation-codes/catalog?limit=1000'),
+        fetch(withBasePath('/api/admin/seating-tables')),
+        fetch(withBasePath('/api/admin/invitation-codes/catalog?limit=1000')),
       ]);
 
       if (!tablesRes.ok || !guestsRes.ok) {
@@ -1311,7 +1318,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch('/api/admin/seating/assign', {
+        const res = await fetch(withBasePath('/api/admin/seating/assign'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1554,7 +1561,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch('/api/admin/seating/assign', {
+        const res = await fetch(withBasePath('/api/admin/seating/assign'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1672,7 +1679,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     dispatch({ type: 'APPLY_UNDO_OPTIMISTIC' });
 
     try {
-      const res = await fetch('/api/admin/seating/assign', {
+      const res = await fetch(withBasePath('/api/admin/seating/assign'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1723,7 +1730,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
     async (tableData: Partial<SeatingTableDTO>): Promise<boolean> => {
       try {
         if (tableData.id) {
-          const res = await fetch(`/api/admin/seating-tables/${tableData.id}`, {
+          const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableData.id}`), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(tableData),
@@ -1743,7 +1750,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
           const resolvedShape = tableData.shape ?? 'round';
           const shapeDefaults = getDefaultShapeDimensions(resolvedShape);
           const isLandmark = isLandmarkTableShape(resolvedShape);
-          const res = await fetch('/api/admin/seating-tables', {
+          const res = await fetch(withBasePath('/api/admin/seating-tables'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1798,7 +1805,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableId}`), {
           method: 'DELETE',
         });
         if (!res.ok) throw new Error('Failed to delete table');
@@ -1833,7 +1840,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableId}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ x, y }),
@@ -1871,7 +1878,7 @@ export function useSeatingState(options: UseSeatingStateOptions = {}): UseSeatin
       });
 
       try {
-        const res = await fetch(`/api/admin/seating-tables/${tableId}`, {
+        const res = await fetch(withBasePath(`/api/admin/seating-tables/${tableId}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ rotation }),

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
 import { EnsureToastProvider } from '@/components/ui/ToastProvider';
 import { resolveConfiguredBaseUrl, useAdminSettings } from '@/hooks/admin/useAdminSettings';
+import { withBasePath } from '@/lib/basePath';
 
 export interface PrintableInvitationCode {
   id: string;
@@ -42,7 +43,15 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
     Math.min(CHUNK_SIZE, codes.length)
   );
 
-  const baseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
+  const guestPath = withBasePath('/guest');
+  const basePathPrefix = guestPath.endsWith('/guest')
+    ? guestPath.slice(0, -'/guest'.length)
+    : '';
+  const rawBaseOrigin = resolveConfiguredBaseUrl(config?.baseUrl);
+  const baseOrigin =
+    basePathPrefix && rawBaseOrigin.endsWith(basePathPrefix)
+      ? rawBaseOrigin.slice(0, -basePathPrefix.length)
+      : rawBaseOrigin;
 
   // Non-blocking chunked progressive rendering for up to 1,000 items
   useEffect(() => {
@@ -151,7 +160,7 @@ const InvitationQRPrintLabelsContent: React.FC<InvitationQRPrintLabelsContentPro
         }}
       >
         {visibleCodes.map((item) => {
-          const rsvpUrl = `${baseOrigin}/guest?code=${encodeURIComponent(item.code || '')}`;
+          const rsvpUrl = `${baseOrigin}${guestPath}?code=${encodeURIComponent(item.code || '')}`;
           const plusOne = [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ');
 
           return (

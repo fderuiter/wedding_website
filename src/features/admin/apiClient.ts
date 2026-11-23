@@ -1,4 +1,5 @@
 import { ApiClient } from '@/lib/apiClient';
+import { withBasePath } from '@/lib/basePath';
 
 
 export const apiClient = new ApiClient({
@@ -6,7 +7,7 @@ export const apiClient = new ApiClient({
     if (typeof window !== 'undefined') {
       localStorage.removeItem('isAdminLoggedIn');
       window.dispatchEvent(new Event('storage'));
-      window.location.assign(new URL('/admin/login', window.location.origin).href);
+      window.location.assign(new URL(withBasePath('/admin/login'), window.location.origin).href);
     }
   }
 });

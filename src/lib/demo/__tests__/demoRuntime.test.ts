@@ -693,25 +693,96 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
           })
         ).status
       ).toBe(201);
+      const sampleGuest = getActiveArchetypeDataset().guests[0];
+      const catalogSearchRes = await (
+        await window.fetch(
+          `/api/admin/invitation-codes/catalog?search=${encodeURIComponent(sampleGuest.code)}&limit=5`
+        )
+      ).json();
+      expect(catalogSearchRes.data.items.length).toBeGreaterThanOrEqual(1);
+
       expect(
         (
           await window.fetch(`/api/admin/thank-you-notes/${targetContributorId}`, {
             method: 'PATCH',
-            body: JSON.stringify({ thankYouStatus: 'Sent' }),
+            body: JSON.stringify({
+              thankYouStatus: 'Sent',
+              thankYouNote: 'Thank you so much!',
+              invitationCodeId: sampleGuest.id,
+              addressLine1: '742 Evergreen Terrace',
+              addressLine2: 'Suite 2',
+              city: 'Springfield',
+              state: 'IL',
+              zipCode: '62704',
+              country: 'USA',
+              syncAddressToGuest: true,
+            }),
           })
         ).status
       ).toBe(200);
+
+      const previewEmailRes = await (
+        await window.fetch(`/api/admin/thank-you-notes/${targetContributorId}/send-email`, {
+          method: 'POST',
+          body: JSON.stringify({
+            mode: 'preview',
+            body: 'Dear {{guestName}}, thank you for {{giftName}} ({{amount}})!',
+          }),
+        })
+      ).json();
+      expect(previewEmailRes.mode).toBe('preview');
+      expect(previewEmailRes.htmlBody).toContain('Updated Guest');
+
+      const testEmailRes = await (
+        await window.fetch(`/api/admin/thank-you-notes/${targetContributorId}/send-email`, {
+          method: 'POST',
+          body: JSON.stringify({
+            mode: 'test',
+            subject: 'Warm thanks',
+            body: 'Thank you kindly!',
+          }),
+        })
+      ).json();
+      expect(testEmailRes.mode).toBe('test');
+      expect(testEmailRes.subject).toBe('[TEST] Warm thanks');
+
+      const sendEmailRes = await (
+        await window.fetch(`/api/admin/thank-you-notes/${targetContributorId}/send-email`, {
+          method: 'POST',
+          body: JSON.stringify({
+            mode: 'send',
+            subject: 'Warm thanks',
+            body: 'Thank you kindly!',
+          }),
+        })
+      ).json();
+      expect(sendEmailRes.mode).toBe('send');
+      expect(sendEmailRes.thankYouStatus).toBe('Sent');
+      expect(
+        (
+          await window.fetch('/api/admin/thank-you-notes/missing-id/send-email', {
+            method: 'POST',
+            body: JSON.stringify({ mode: 'preview', body: 'Hi' }),
+          })
+        ).status
+      ).toBe(404);
+
       expect(
         (
           await window.fetch('/api/admin/thank-you-notes/batch', {
             method: 'POST',
-            body: JSON.stringify({ ids: [targetContributorId], thankYouStatus: 'Not Needed' }),
+            body: JSON.stringify({ ids: [targetContributorId], status: 'Not Needed' }),
           })
         ).status
       ).toBe(200);
 
       const thankYouPayload = await (await window.fetch('/api/admin/thank-you-notes')).json();
       expect(Array.isArray(thankYouPayload.items)).toBe(true);
+      const matchedThankYou = thankYouPayload.items.find(
+        (i: { id: string }) => i.id === targetContributorId
+      );
+      expect(matchedThankYou.addressLine1).toBe('742 Evergreen Terrace');
+      expect(matchedThankYou.invitationCode?.id).toBe(sampleGuest.id);
       expect(thankYouPayload.metrics).toBeDefined();
 
       expect(

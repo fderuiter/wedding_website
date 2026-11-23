@@ -9,6 +9,13 @@ import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getStripeInstance, calculateContributionAmounts } from '@/lib/stripe';
 import { timingSafeEqualJS } from '@/utils/crypto';
 
+const STRIPE_METADATA_VALUE_MAX_LENGTH = 500;
+
+function truncateStripeMetadata(value?: string | null): string {
+  if (!value) return '';
+  return value.slice(0, STRIPE_METADATA_VALUE_MAX_LENGTH);
+}
+
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   const config = await getAppConfig();
   if (!isFeatureEnabled('registry', config.modules)) {
@@ -22,7 +29,23 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     throw new ApiError(400, parseResult.error.issues[0].message);
   }
 
-  const { itemId, amount, coverFee, paymentIntentId, clientSecret, name, email, message, code } = parseResult.data;
+  const {
+    itemId,
+    amount,
+    coverFee,
+    paymentIntentId,
+    clientSecret,
+    name,
+    email,
+    message,
+    code,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zipCode,
+    country,
+  } = parseResult.data;
 
   const targetItem = await registryService.getItemById(itemId);
   if (!targetItem) {
@@ -86,17 +109,23 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     );
   }
   const trimmedEmail = email?.trim() || '';
-  const metadata = {
-    itemId: targetItem.id,
-    itemName: targetItem.name,
+  const metadata: Record<string, string> = {
+    itemId: truncateStripeMetadata(targetItem.id),
+    itemName: truncateStripeMetadata(targetItem.name),
     baseAmount: baseAmount.toFixed(2),
     feeAmount: feeAmount.toFixed(2),
     coverFee: coverFee ? 'true' : 'false',
     totalChargeAmount: totalChargeAmount.toFixed(2),
-    contributorName: name || '',
-    contributorEmail: trimmedEmail,
-    contributorMessage: message || '',
-    invitationCode: finalCode || '',
+    contributorName: truncateStripeMetadata(name),
+    contributorEmail: truncateStripeMetadata(trimmedEmail),
+    contributorMessage: truncateStripeMetadata(message),
+    invitationCode: truncateStripeMetadata(finalCode),
+    addressLine1: truncateStripeMetadata(addressLine1?.trim()),
+    addressLine2: truncateStripeMetadata(addressLine2?.trim()),
+    city: truncateStripeMetadata(city?.trim()),
+    state: truncateStripeMetadata(state?.trim()),
+    zipCode: truncateStripeMetadata(zipCode?.trim()),
+    country: truncateStripeMetadata(country?.trim()),
   };
 
   if (paymentIntentId) {

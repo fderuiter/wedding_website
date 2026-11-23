@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { isFaqNodeVisible, type ContentNodeDTO } from '@/features/content';
 import { tokenizeSafeLinks, type SafeLinkToken } from '@/utils/linkifyText';
+import { withBasePath } from '@/lib/basePath';
 
 interface FAQDataPayload {
   question?: string;
@@ -86,10 +87,11 @@ function normalizeFaqItem(item: FAQItemInput, index: number): NormalizedFAQItem 
 function renderSanitizedAnswerTokens(tokens: SafeLinkToken[]): React.ReactNode {
   return tokens.map((token, idx) => {
     if (token.type === 'link') {
+      const resolvedHref = token.isExternal ? token.href : withBasePath(token.href);
       return (
         <a
           key={`faq-link-${idx}-${token.href}`}
-          href={token.href}
+          href={resolvedHref}
           target={token.isExternal ? '_blank' : undefined}
           rel={token.isExternal ? 'noopener noreferrer' : undefined}
           className="underline underline-offset-2 font-medium text-[var(--color-primary-text,var(--color-primary,#B91C1C))] dark:text-red-300 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-sm"

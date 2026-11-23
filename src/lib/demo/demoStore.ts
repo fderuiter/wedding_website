@@ -492,6 +492,12 @@ export interface DemoContributionInput {
   retailerOrderNumber?: string;
   carrier?: string;
   trackingNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
 }
 
 export function recordDemoContribution(
@@ -512,10 +518,37 @@ export function recordDemoContribution(
       ? Math.round(input.amount * CARD_PROCESSING_FEE_RATE * 100) / 100
       : 0;
 
+    const normalizedEmail = input.email?.trim() || null;
+    const normalizedCode = input.code?.trim().toUpperCase() || '';
+    let linkedGuest = normalizedCode
+      ? current.guests.find((g) => g.code.toUpperCase() === normalizedCode) ?? null
+      : null;
+    if (!linkedGuest && !normalizedCode && normalizedEmail) {
+      const emailMatches = current.guests.filter(
+        (g) => (g.email || '').trim().toLowerCase() === normalizedEmail.toLowerCase()
+      );
+      if (emailMatches.length === 1) {
+        linkedGuest = emailMatches[0];
+      }
+    }
+
+    const addressLine1 = input.addressLine1?.trim() || null;
+    const addressLine2 = input.addressLine2?.trim() || null;
+    const city = input.city?.trim() || null;
+    const stateVal = input.state?.trim() || null;
+    const zipCode = input.zipCode?.trim() || null;
+    const country = input.country?.trim() || null;
+
     const newContributor: ContributorRecord = {
       id: contributorId,
       name: input.purchaserName.trim(),
-      email: input.email?.trim() || null,
+      email: normalizedEmail,
+      addressLine1,
+      addressLine2,
+      city,
+      state: stateVal,
+      zipCode,
+      country,
       isPlusOne: false,
       amount: input.amount,
       refundedAmount: 0,
@@ -526,6 +559,7 @@ export function recordDemoContribution(
       date: nowIso,
       thankYouStatus: 'Unsent',
       thankYouSentAt: null,
+      thankYouEmailSentAt: null,
       thankYouNote: null,
       stripePaymentIntentId: input.paymentIntentId ?? null,
       stripeChargeId: null,
@@ -534,7 +568,26 @@ export function recordDemoContribution(
       trackingNumber: input.trackingNumber ?? null,
       transactionTimestamp: nowIso,
       registryItemId: targetItem.id,
+      ...(linkedGuest ? { invitationCodeId: linkedGuest.id } : {}),
     };
+
+    const hasCompleteContributorAddress = Boolean(addressLine1 && city && stateVal && zipCode);
+    const nextGuests =
+      linkedGuest && hasCompleteContributorAddress && !linkedGuest.addressLine1?.trim()
+        ? current.guests.map((g) =>
+          g.id === linkedGuest.id
+            ? {
+              ...g,
+              addressLine1: g.addressLine1?.trim() ? g.addressLine1 : (addressLine1 ?? ''),
+              addressLine2: g.addressLine2?.trim() ? g.addressLine2 : (addressLine2 ?? ''),
+              city: g.city?.trim() ? g.city : (city ?? ''),
+              state: g.state?.trim() ? g.state : (stateVal ?? ''),
+              zipCode: g.zipCode?.trim() ? g.zipCode : (zipCode ?? ''),
+              country: g.country?.trim() ? g.country : (country ?? ''),
+            }
+            : g
+        )
+        : current.guests;
 
     const totalTarget = targetItem.price * Math.max(1, targetItem.quantity ?? 1);
     const nextContributed = Math.min(
@@ -586,6 +639,8 @@ export function recordDemoContribution(
         ...prev.datasets,
         [prev.archetype]: {
           ...current,
+          guests: nextGuests,
+          seatingTables: syncTableGuests(current.seatingTables, nextGuests),
           registryItems: current.registryItems.map((i) =>
             i.id === updatedItem.id ? updatedItem : i
           ),

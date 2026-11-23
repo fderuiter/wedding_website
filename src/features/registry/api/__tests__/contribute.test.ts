@@ -1201,4 +1201,66 @@ describe('POST /api/registry/contribute', () => {
       expect((await groupDisabledRes.json()).error).toContain('Group gifting is currently disabled');
     });
   });
+
+  it('forwards optional contributor return address fields and strips PII from public responses', async () => {
+    (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+      ...mockUpdatedItem,
+      contributors: [
+        {
+          id: 'c-addr-1',
+          name: 'Alex Giver',
+          email: 'alex@example.com',
+          addressLine1: '742 Evergreen Terrace',
+          addressLine2: 'Apt 2',
+          city: 'Springfield',
+          state: 'IL',
+          zipCode: '62704',
+          country: 'USA',
+          thankYouEmailSentAt: '2026-06-10T00:00:00.000Z',
+          amount: 50,
+          date: '2026-06-09T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+      method: 'POST',
+      body: JSON.stringify({
+        itemId: 'item-123',
+        name: 'Alex Giver',
+        email: 'alex@example.com',
+        amount: 50,
+        addressLine1: ' 742 Evergreen Terrace ',
+        addressLine2: ' Apt 2 ',
+        city: ' Springfield ',
+        state: ' IL ',
+        zipCode: ' 62704 ',
+        country: ' USA ',
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    expect(registryService.contributeToItem).toHaveBeenCalledWith(
+      'item-123',
+      expect.objectContaining({
+        name: 'Alex Giver',
+        email: 'alex@example.com',
+        amount: 50,
+        addressLine1: '742 Evergreen Terrace',
+        addressLine2: 'Apt 2',
+        city: 'Springfield',
+        state: 'IL',
+        zipCode: '62704',
+        country: 'USA',
+      })
+    );
+
+    const json = await response.json();
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain('742 Evergreen Terrace');
+    expect(serialized).not.toContain('Springfield');
+    expect(serialized).not.toContain('62704');
+    expect(serialized).not.toContain('alex@example.com');
+  });
 });

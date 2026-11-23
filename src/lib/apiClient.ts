@@ -1,4 +1,5 @@
 import { ApiError } from '../utils/ApiError';
+import { withBasePath } from './basePath';
 
 export { ApiError };
 
@@ -209,13 +210,13 @@ export class ApiClient {
 
   async requestWithMeta<T = any>(url: string, options: RequestInit = {}): Promise<ApiResponseWithMeta<T>> {
     const fetchOptions = this.buildFetchOptions(options);
-    const res = await fetch(url, fetchOptions);
+    const res = await fetch(withBasePath(url), fetchOptions);
     return this.handleResponseWithMeta<T>(res);
   }
 
   async request<T = any>(url: string, options: RequestInit = {}): Promise<T> {
     const fetchOptions = this.buildFetchOptions(options);
-    const res = await fetch(url, fetchOptions);
+    const res = await fetch(withBasePath(url), fetchOptions);
     return this.handleResponse<T>(res);
   }
 

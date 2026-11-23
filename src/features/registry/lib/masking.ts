@@ -1,6 +1,20 @@
-function sanitizeContributor(contributor: any) {
+export function sanitizeContributor(contributor: any) {
   if (!contributor) return contributor;
-  const { email: _email, ...rest } = contributor;
+  const {
+    email: _email,
+    addressLine1: _addressLine1,
+    addressLine2: _addressLine2,
+    city: _city,
+    state: _state,
+    zipCode: _zipCode,
+    country: _country,
+    thankYouEmailSentAt: _thankYouEmailSentAt,
+    confirmationEmailSentAt: _confirmationEmailSentAt,
+    alertEmailSentAt: _alertEmailSentAt,
+    reminderEmailSentAt: _reminderEmailSentAt,
+    invitationCode: _invitationCode,
+    ...rest
+  } = contributor;
   return rest;
 }
 
@@ -21,7 +35,7 @@ export function sanitizeRegistryItems(items: any) {
   return sanitizeRegistryItem(items);
 }
 
-function maskContributor(contributor: any) {
+export function maskContributor(contributor: any) {
   if (!contributor) return contributor;
   return {
     name: 'Anonymous',

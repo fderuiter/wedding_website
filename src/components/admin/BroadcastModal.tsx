@@ -20,6 +20,7 @@ import {
   renderStationeryCardHtml,
   summarizeBroadcastAudience,
 } from '@/features/broadcast';
+import { withBasePath } from '@/lib/basePath';
 
 interface BroadcastSubEventOption {
   id: string;
@@ -377,7 +378,8 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
     }
     if (typeof window !== 'undefined') {
       window.location.assign(
-        new URL('/admin/dashboard/history?tab=broadcasts', window.location.origin).href
+        new URL(withBasePath('/admin/dashboard/history?tab=broadcasts'), window.location.origin)
+          .href
       );
     }
   };

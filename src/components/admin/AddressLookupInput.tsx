@@ -5,6 +5,7 @@ import { FormGroup, Input, Label } from '@/components/ui/forms';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/utils/cn';
 import { hasValidCoordinates } from '@/utils/maps';
+import { withBasePath } from '@/lib/basePath';
 
 export interface AddressLookupCandidate {
   displayName: string;
@@ -82,7 +83,7 @@ export function AddressLookupInput({
 
     try {
       const res = await fetch(
-        `/api/admin/geocode?q=${encodeURIComponent(trimmed)}&limit=5`,
+        withBasePath(`/api/admin/geocode?q=${encodeURIComponent(trimmed)}&limit=5`),
         {
           method: 'GET',
           headers: { Accept: 'application/json' },
