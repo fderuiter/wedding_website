@@ -105,7 +105,7 @@ staging-database-migration:
     ) &&
     (needs.ci-gate.result == 'success') &&
     (needs.schema-compatibility.result == 'success') &&
-    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
+    (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped'))
   uses: ./.github/workflows/db-migrate.yml
   with:
     environment: 'staging'
@@ -121,6 +121,7 @@ staging-deploy-provider:
     attestations: read
     id-token: write
     deployments: read
+    actions: read
   needs: [ci-gate, publish-artifact, staging-database-migration]
   if: |
     !cancelled() &&
@@ -138,13 +139,13 @@ staging-deploy-provider:
     ) &&
     (needs.ci-gate.result == 'success') &&
     (needs.staging-database-migration.result == 'success') &&
-    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
+    (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped'))
   uses: ./.github/workflows/deploy-provider.yml
   with:
     environment: 'staging'
     commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
     image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-    image_tag: ${{ needs.publish-artifact.outputs.image_tag || inputs.release_ref || needs.ci-gate.outputs.target_sha }}
+    image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
     dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
@@ -169,7 +170,7 @@ production-database-migration:
     ) &&
     (needs.ci-gate.result == 'success') &&
     (needs.schema-compatibility.result == 'success') &&
-    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
+    (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped')) &&
     (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
   uses: ./.github/workflows/db-migrate.yml
   with:
@@ -186,6 +187,7 @@ production-deploy-provider:
     attestations: read
     id-token: write
     deployments: read
+    actions: read
   needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
   if: |
     !cancelled() &&
@@ -202,7 +204,7 @@ production-deploy-provider:
       )
     ) &&
     (needs.ci-gate.result == 'success') &&
-    (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
+    (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped')) &&
     (needs.production-database-migration.result == 'success') &&
     (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
   uses: ./.github/workflows/deploy-provider.yml
@@ -210,7 +212,7 @@ production-deploy-provider:
     environment: 'production'
     commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
     image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-    image_tag: ${{ needs.publish-artifact.outputs.image_tag || inputs.release_ref || needs.ci-gate.outputs.target_sha }}
+    image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
     dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
@@ -230,13 +232,14 @@ The release pipeline supports automated merges as well as manual triggers via Gi
         *   `all` (default): Executes staging migration and deployment, validates staging health, halts for the mandatory production reviewer approval gate, and promotes the identical `sha256` digest to production.
         *   `staging`: Dispatches only `staging-database-migration` and `staging-deploy-provider`, validating changes in the staging environment without promoting to production.
         *   `production`: Directly targets `production-database-migration` and `production-deploy-provider`, bypassing staging and immediately routing to the mandatory production approval gate.
-    *   `image_digest`: Optional immutable OCI image digest (`sha256:<64-hex>`) allowing production-only or manual runs to promote an existing attested artifact without rebuilding `main` `HEAD`. `ci-gate` verifies the digest's OIDC build provenance attestation (`gh attestation verify --format json` signed by `.github/workflows/publish-artifact.yml`) to resolve `target_sha` and checks out that exact release commit in `schema-compatibility` and `db-migrate.yml`.
-    *   `release_ref`: Optional immutable `v*` release tag (e.g., `v0.1.0`) or 40-character commit SHA to promote after newer commits have landed on `main` (mutable `latest` is rejected). `ci-gate` resolves `release_ref` to its 40-character `target_sha` via the GitHub Commits API (verifying it matches `image_digest` provenance if both are provided) so `ci-gate`, `schema-compatibility`, and `db-migrate.yml` execute against the exact tag commit rather than `main` `HEAD`.
+    *   `image_digest`: Optional immutable OCI image digest (`sha256:<64-hex>`) allowing production-only or manual runs to pin an existing attested artifact without rebuilding `main` `HEAD`. `ci-gate` verifies the digest's OIDC build provenance attestation (`gh attestation verify --format json` signed by `.github/workflows/publish-artifact.yml`) to resolve `target_sha` and checks out that exact release commit in `schema-compatibility` and `db-migrate.yml`.
+    *   `image_tag`: Optional immutable release tag (`v*`, resolved to its `origin/main` `target_sha` commit for CI, `schema-compatibility`, and `db-migrate.yml` verification) or commit SHA allowing manual runs to promote an existing attested release tag without rebuilding `HEAD`.
+    *   `release_ref`: Optional immutable `v*` release tag (e.g., `v0.1.0`) or 40-character commit SHA to promote after newer commits have landed on `main` (mutable `latest` is rejected). `ci-gate` resolves `release_ref` to its 40-character `target_sha` via the GitHub Commits API (verifying it matches `image_digest` provenance and `image_tag` if multiple promotion inputs are provided) so `ci-gate`, `schema-compatibility`, and `db-migrate.yml` execute against the exact tag commit rather than `main` `HEAD`.
     *   `provider`: Hosting provider adapter (defaults to `google-cloud-run`).
     *   `previous_tag`: Optional immutable container image tag override for automated rollback if health checks fail (defaults to `previous_image_digest` / `previous_image_tag` captured before rollout by `deploy-provider.yml`; mutable `latest` and the failing `commit_sha` / `github.sha` are rejected outside explicit dry-run mode).
     *   `rollback_environment`: Optional unguarded GitHub Environment name (e.g., `production-rollback`, or configured via repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT`) used by `rollback.yml` and `deploy-provider.yml` to resolve provider secrets and `vars.SERVICE_URL` (`secrets.SERVICE_URL` legacy fallback) without pausing on `production` reviewer gates.
 *   **Standalone Provider & Rollback Dispatches (`deploy-provider.yml` & `rollback.yml`)**:
-    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), optional 40-character hexadecimal `commit_sha` (defaulting to `github.sha` when omitted on `workflow_dispatch`), optional `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode), with job-scoped `deployments: read` permissions on deployment and caller jobs. Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner` and `--signer-workflow`) prior to Cloud Run rollout.
+    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), optional `source_ref` (`refs/heads/main` or `refs/tags/v*`), optional 40-character hexadecimal `commit_sha` (defaulting to `github.sha` when omitted on `workflow_dispatch`), optional `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode), with job-scoped `actions: read` and `deployments: read` permissions on deployment and caller jobs. Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner`, `--signer-workflow`, and `--source-ref`) plus standalone live `origin/main` ancestry, `ci.yml`, and `db-migrate.yml` checks prior to Cloud Run rollout.
     *   Exports `service_url`, `is_dry_run`, `previous_image_tag`, `previous_image_digest`, `image_digest`, `image_uri`, and `attestation_status` outputs and records them in `$GITHUB_STEP_SUMMARY`.
 *   **Standalone Database Migration Dispatches (`db-migrate.yml`)**:
     *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. Manual `workflow_dispatch` runs default `confirm` to `false` and abort immediately before touching PostgreSQL unless the operator explicitly sets `confirm: true` alongside `environment` (`production`, `staging`, or `development`).
@@ -315,7 +318,7 @@ Google Cloud Run provides free, automatically managed TLS certificates for custo
 ## 6. Build & Deploy Commands
 
 ### Automated Deployment via GitHub Actions
-The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch`); pushing a `v*` tag triggers `publish-artifact.yml` to publish `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy-provider.yml` (`image_tag: v0.1.0`), `deploy.yml` (`release_ref: v0.1.0` or `image_digest`, resolving `target_sha` to the tag commit for `schema-compatibility` and `db-migrate.yml`), or manual CLI deployment below:
+The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch` with optional `image_tag`, `release_ref`, or `image_digest`); pushing a `v*` tag triggers `publish-artifact.yml` (after verifying `origin/main` ancestry and `ci.yml` success) without automatically invoking `deploy.yml`, publishing `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy.yml` (`image_tag: v0.1.0`, `release_ref: v0.1.0`, or `image_digest`, resolving `target_sha` to the tag commit and running `schema-compatibility` and `db-migrate.yml` first before `deploy-provider.yml`), `deploy-provider.yml` (`image_tag: v0.1.0` after `db-migrate.yml`), or manual CLI deployment below:
 *   **GitHub Environment Variables** (`staging`, `production`, and optional `production-rollback`):
     *   `SERVICE_URL`: Public base URL of the Cloud Run service for post-deploy and post-rollback `/api/health` verification (`vars.SERVICE_URL` primary so job outputs and deployment summaries remain unmasked; `secrets.SERVICE_URL` is supported as a legacy fallback during migration).
     *   `CLOUD_RUN_SERVICE`: Target Cloud Run service name for the environment (defaults to `wedding-website-staging` in `staging` and `wedding-website` in `production`, allowing isolated staging and production services within a single shared GCP project).
@@ -330,18 +333,19 @@ The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publi
     *   `DATABASE_URL`, `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `GUEST_PASSCODE` (unique non-default passcode), and `GUEST_SESSION_SECRET` (at least 32 characters and distinct from `GUEST_PASSCODE` per `src/env.ts`).
 
 ### Manual CLI Deployment
-`.github/workflows/publish-artifact.yml` publishes multi-arch OCI images and OIDC build provenance attestations to `ghcr.io`, and `.github/workflows/deploy-provider.yml` rejects mutable `:latest` tags. Always deploy `wedding-website-staging` (staging) and `wedding-website` (production) using a verified immutable `ghcr.io` `@sha256:` digest and mount `GUEST_SESSION_SECRET` alongside the other production secrets:
+`.github/workflows/publish-artifact.yml` publishes multi-arch OCI images and OIDC build provenance attestations to `ghcr.io` (and `docker.io` when Docker Hub secrets are configured), and `.github/workflows/deploy-provider.yml` rejects mutable `:latest` tags while enforcing `--source-ref`, `ci.yml`, and `db-migrate.yml` status. Always deploy `wedding-website-staging` (staging) and `wedding-website` (production) using a verified immutable `ghcr.io` `@sha256:` digest and mount `GUEST_SESSION_SECRET` alongside the other production secrets:
 ```bash
 # 1. Authenticate with GCP via interactive gcloud login (or service account key fallback GCP_SA_KEY)
 gcloud auth activate-service-account --key-file="$GCP_SA_KEY"
 gcloud config set project YOUR_PROJECT_ID
 
-# 2. Resolve and verify the immutable ghcr.io OCI digest for a release tag or commit SHA
+# 2. Resolve and verify the immutable ghcr.io OCI digest and OIDC source-ref for a release tag
 RELEASE_TAG="v0.1.0"
 IMAGE_DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "ghcr.io/fderuiter/wedding_website:${RELEASE_TAG}")
 gh attestation verify "oci://ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
     --owner fderuiter \
-    --signer-workflow fderuiter/wedding_website/.github/workflows/publish-artifact.yml
+    --signer-workflow fderuiter/wedding_website/.github/workflows/publish-artifact.yml \
+    --source-ref "refs/tags/${RELEASE_TAG}"
 
 # 3a. Deploy digest-pinned container revision to isolated staging Cloud Run service wedding-website-staging
 gcloud run deploy wedding-website-staging \

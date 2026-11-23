@@ -267,6 +267,7 @@ jobs:
       attestations: read
       id-token: write
       deployments: read
+      actions: read
     needs: [preflight]
     uses: ./.github/workflows/deploy-provider.yml
     with:

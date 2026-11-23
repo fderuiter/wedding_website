@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import {
   extractDietaryTags,
   matchDietaryCategory,
@@ -263,18 +262,44 @@ describe('invitation utils', () => {
       expect(code1).not.toBe(code2);
     });
 
-    it('uses crypto.randomInt rather than Math.random', () => {
-      const randomIntSpy = jest.spyOn(crypto, 'randomInt');
+    it('uses globalThis.crypto.getRandomValues rather than Math.random and discards biased bytes >= 252', () => {
+      const getRandomValuesSpy = jest.spyOn(globalThis.crypto, 'getRandomValues');
       const mathRandomSpy = jest.spyOn(Math, 'random');
 
       try {
         const code = generateRandomCode();
         expect(code).toMatch(/^[A-Z0-9]{8}$/);
-        expect(randomIntSpy).toHaveBeenCalledTimes(8);
-        expect(randomIntSpy).toHaveBeenCalledWith(0, 36);
+        expect(getRandomValuesSpy).toHaveBeenCalled();
+        expect(getRandomValuesSpy.mock.calls[0]?.[0]).toBeInstanceOf(Uint8Array);
         expect(mathRandomSpy).not.toHaveBeenCalled();
+
+        getRandomValuesSpy.mockClear();
+        getRandomValuesSpy
+          .mockImplementationOnce(<T extends ArrayBufferView | null>(array: T): T => {
+            if (array instanceof Uint8Array) {
+              array.set([
+                252, 253, 254, 255,
+                0, 1, 35, 36, 251,
+                252, 253,
+                10, 11,
+                255, 254, 253,
+              ]);
+            }
+            return array;
+          })
+          .mockImplementationOnce(<T extends ArrayBufferView | null>(array: T): T => {
+            if (array instanceof Uint8Array) {
+              array.fill(255);
+              array[0] = 252;
+              array[1] = 34;
+            }
+            return array;
+          });
+
+        expect(generateRandomCode()).toBe('AB9A9KL8');
+        expect(getRandomValuesSpy).toHaveBeenCalledTimes(2);
       } finally {
-        randomIntSpy.mockRestore();
+        getRandomValuesSpy.mockRestore();
         mathRandomSpy.mockRestore();
       }
     });

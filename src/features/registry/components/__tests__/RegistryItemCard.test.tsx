@@ -1,6 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { axe, toHaveNoViolations } from 'jest-axe';
 import { Overlay } from '@/components/ui/Overlay';
+
+expect.extend(toHaveNoViolations);
 import { ThemeProvider } from '@/components/ThemeProvider';
 import RegistryItemCard from '../RegistryItemCard'; // Adjust the import path as necessary
 import { RegistryItem, GuestSessionProvider } from '@/features/registry';
@@ -663,7 +666,7 @@ describe('RegistryItemCard Component', () => {
         configurable: true,
       });
 
-      render(
+      const { container } = render(
         <ToastProvider>
           <Overlay isOpen={true} onClose={mockOnClose}>
             <RegistryItemCard item={mockSingleItem} onClose={mockOnClose} onContribute={mockOnContribute} />
@@ -671,8 +674,13 @@ describe('RegistryItemCard Component', () => {
         </ToastProvider>
       );
 
-      const shareButton = screen.getByRole('button', { name: `Share ${mockSingleItem.name}` });
+      const shareButton = screen.getByRole('button', {
+        name: `Share Gift for ${mockSingleItem.name}`,
+      });
       expect(shareButton).toBeInTheDocument();
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
 
       fireEvent.click(shareButton);
 
@@ -682,6 +690,12 @@ describe('RegistryItemCard Component', () => {
         );
       });
       expect(await screen.findByText('Link Copied!')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: `Link Copied! for ${mockSingleItem.name}` })
+      ).toBeInTheDocument();
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
       expect(await screen.findByText('Link copied to clipboard!')).toBeInTheDocument();
     });
   });
@@ -868,7 +882,7 @@ describe('RegistryItemCard Component', () => {
   });
 
   describe('QR Code & Payment Deep Links', () => {
-    it('renders QR code canvas and deep link for Venmo handle', () => {
+    it('renders QR code canvas and deep link for Venmo handle and passes jest-axe', async () => {
       const venmoItem: RegistryItem = {
         ...mockGroupItem,
         id: 'venmo-qr-1',
@@ -878,15 +892,20 @@ describe('RegistryItemCard Component', () => {
         paymentHandle: '@happy-couple',
       };
 
-      render(
+      const { container } = render(
         <Overlay isOpen={true} onClose={mockOnClose}>
           <RegistryItemCard item={venmoItem} onClose={mockOnClose} onContribute={mockOnContribute} />
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for Venmo \(opens in a new tab\)/i });
+      const link = screen.getByRole('link', {
+        name: 'Open Link for Venmo (opens in a new tab)',
+      });
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute('href', 'https://venmo.com/u/happy-couple');
+      expect(
+        await axe(container, { rules: { 'label-content-name-mismatch': { enabled: true } } })
+      ).toHaveNoViolations();
 
       const qrCode = screen.getByLabelText(/QR code to pay via Venmo/i);
       expect(qrCode).toBeInTheDocument();
@@ -909,7 +928,9 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for Cash App \(opens in a new tab\)/i });
+      const link = screen.getByRole('link', {
+        name: 'Open Link for Cash App (opens in a new tab)',
+      });
       expect(link).toHaveAttribute('href', 'https://cash.app/$happycouple');
       expect(screen.getByLabelText(/QR code to pay via Cash App/i)).toBeInTheDocument();
     });
@@ -930,7 +951,9 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for PayPal \(opens in a new tab\)/i });
+      const link = screen.getByRole('link', {
+        name: 'Open Link for PayPal (opens in a new tab)',
+      });
       expect(link).toHaveAttribute('href', 'https://paypal.me/happycouple');
       expect(screen.getByLabelText(/QR code to pay via PayPal/i)).toBeInTheDocument();
     });
@@ -951,7 +974,9 @@ describe('RegistryItemCard Component', () => {
         </Overlay>
       );
 
-      const link = screen.getByRole('link', { name: /Open payment link for Zelle \(opens in a new tab\)/i });
+      const link = screen.getByRole('link', {
+        name: 'Open Link for Zelle (opens in a new tab)',
+      });
       expect(link.getAttribute('href')).toContain('mailto:couple@example.com');
       expect(screen.getByLabelText(/QR code to pay via Zelle/i)).toBeInTheDocument();
     });
