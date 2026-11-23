@@ -73,6 +73,8 @@ interface InteractiveTimelineProps {
   timezone?: string;
   title?: string;
   className?: string;
+  sectionId?: string;
+  isPreview?: boolean;
   maxPlusOnes?: number | null;
   emptyStateMessage?: string;
   rsvpOpen?: boolean;
@@ -217,6 +219,8 @@ export default function InteractiveTimeline({
   timezone = 'UTC',
   title = 'Schedule of Events',
   className = '',
+  sectionId = 'schedule-timeline',
+  isPreview = false,
   maxPlusOnes,
   emptyStateMessage,
   rsvpOpen: rsvpOpenProp,
@@ -460,11 +464,14 @@ export default function InteractiveTimeline({
   }, [fetchAndApplySchedule]);
 
   const normalizedEvents = useMemo(() => {
+    if (isPreview) {
+      return normalizeEvents(initialNodes);
+    }
     if (subEventsFromApi && (subEventsFromApi.length > 0 || initialNodes.length === 0)) {
       return subEventsFromApi;
     }
     return normalizeEvents(initialNodes);
-  }, [initialNodes, subEventsFromApi]);
+  }, [initialNodes, isPreview, subEventsFromApi]);
 
   // Consolidate category color schemas across all events
   const globalCategoryColors = useMemo(() => {
@@ -532,7 +539,7 @@ export default function InteractiveTimeline({
       return null;
     }
     return (
-      <section className={`mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
+      <section className={`mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 ${className}`} id={sectionId}>
         <h2 className="text-center type-h2 text-[var(--color-primary-text)] mb-6">{title}</h2>
         {isLoadingSchedule ? (
           <p className="text-center text-sm text-gray-600 dark:text-zinc-300" role="status">
@@ -562,7 +569,7 @@ export default function InteractiveTimeline({
   const categoryLabelText = activeCategory.toLowerCase() === 'all' ? 'All categories' : activeCategory;
 
   return (
-    <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id="schedule-timeline">
+    <section className={`mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 ${className}`} id={sectionId}>
       <h2 className="text-center type-h2 text-[var(--color-primary-text)] mb-8">{title}</h2>
 
       {/* ARIA Live Status Region for Filter Updates */}

@@ -434,6 +434,7 @@ describe('PhotoGalleryClient', () => {
     const validFile = new File(['guest image bytes'], 'guest.jpg', { type: 'image/jpeg' });
 
     fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
     await waitFor(() => {
       expect(screen.getByTestId('upload-pending-notice')).toBeInTheDocument();
@@ -457,6 +458,7 @@ describe('PhotoGalleryClient', () => {
       const fileInput = screen.getByTestId('guest-photo-file-input');
       const file = new File(['image content'], `${id}.jpg`, { type: 'image/jpeg' });
       fireEvent.change(fileInput, { target: { files: [file] } });
+      fireEvent.click(screen.getByTestId('confirm-upload-btn'));
 
       await waitFor(() => {
         expect(screen.getByAltText(altText)).toBeInTheDocument();
@@ -795,6 +797,114 @@ describe('PhotoGalleryClient', () => {
 
     const tablist = screen.getByRole('tablist', { name: /photo gallery views/i });
     expect(tablist.contains(slideshowLink)).toBe(false);
+  });
+
+  it('renders Upload Guest Photos CTA on curated tab that activates guest tab, focuses GuestPhotoDropzone, and forwards defaultUploaderName', async () => {
+    render(
+      <PhotoGalleryClient
+        initialPhotos={['/uploads/curated1.jpg']}
+        defaultUploaderName="The Chen Household"
+      />
+    );
+
+    expect(screen.getByTestId('tab-curated')).toHaveAttribute('aria-selected', 'true');
+    const ctaBtn = screen.getByTestId('curated-upload-cta');
+    expect(ctaBtn).toBeInTheDocument();
+
+    fireEvent.click(ctaBtn);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tab-guest')).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByTestId('guest-photo-dropzone')).toHaveFocus();
+    });
+
+    expect(screen.getByTestId('guest-photo-uploader-name')).toHaveValue('The Chen Household');
+  });
+
+  it('updates gallery photos live via same-origin DRAFT_UPDATE postMessage and ignores cross-origin messages', async () => {
+    const originalParent = window.parent;
+    Object.defineProperty(window, 'parent', {
+      configurable: true,
+      value: {} as Window,
+    });
+
+    try {
+      render(<PhotoGalleryClient initialPhotos={['/uploads/curated1.jpg']} />);
+      expect(screen.getByTestId('tab-curated')).toHaveTextContent('1');
+
+      // Cross-origin message is ignored
+      fireEvent(
+        window,
+        new MessageEvent('message', {
+          origin: 'https://evil.example.com',
+          data: {
+            type: 'DRAFT_UPDATE',
+            draftType: 'content',
+            draftData: [
+              {
+                id: 'spoof-photo',
+                type: 'Photo',
+                tags: ['gallery'],
+                data: {
+                  url: '/uploads/spoof.jpg',
+                  title: 'Spoofed Photo',
+                  status: 'APPROVED',
+                  isVisible: true,
+                },
+              },
+            ],
+          },
+        })
+      );
+      expect(screen.queryByAltText('Spoofed Photo')).not.toBeInTheDocument();
+
+      // Same-origin message updates gallery live and prioritizes title over caption
+      fireEvent(
+        window,
+        new MessageEvent('message', {
+          origin: window.location.origin,
+          data: {
+            type: 'DRAFT_UPDATE',
+            draftType: 'content',
+            draftData: [
+              {
+                id: 'draft-curated-1',
+                type: 'Photo',
+                tags: ['gallery'],
+                data: {
+                  url: '/uploads/draft-sunset.jpg',
+                  title: 'Draft Sunset Portrait',
+                  caption: 'Original Guest Caption',
+                  status: 'APPROVED',
+                  isVisible: true,
+                },
+              },
+              {
+                id: 'draft-hidden-1',
+                type: 'Photo',
+                tags: ['gallery'],
+                data: {
+                  url: '/uploads/hidden.jpg',
+                  title: 'Hidden Draft Photo',
+                  status: 'APPROVED',
+                  isVisible: false,
+                },
+              },
+            ],
+          },
+        })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByAltText('Draft Sunset Portrait')).toBeInTheDocument();
+      });
+      expect(screen.queryByAltText('Hidden Draft Photo')).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, 'parent', {
+        configurable: true,
+        value: originalParent,
+      });
+    }
   });
 
   it('eliminates redundant thumbnail/lightbox captions and generic aria-label violations under jest-axe', async () => {

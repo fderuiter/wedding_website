@@ -43,6 +43,27 @@ const useSafeSearchParams: () => { get: (_key: string) => string | null } | null
     ? NextNavigation.useSearchParams
     : () => null;
 
+function countViewedRecipients(recipients: unknown): number {
+  if (!Array.isArray(recipients)) return 0;
+  return recipients.filter(
+    (r) => r && typeof r === 'object' && (r as { status?: string }).status === 'VIEWED'
+  ).length;
+}
+
+function resolveViewedCount(
+  item: { viewedCount?: number; recipients?: unknown } | null | undefined,
+  overrideRecipients?: unknown
+): number {
+  const recipients = overrideRecipients ?? item?.recipients;
+  if (Array.isArray(recipients) && recipients.length > 0) {
+    return countViewedRecipients(recipients);
+  }
+  if (typeof item?.viewedCount === 'number' && Number.isFinite(item.viewedCount)) {
+    return Math.max(0, Math.trunc(item.viewedCount));
+  }
+  return 0;
+}
+
 function resolveInitialHistoryTab(
   searchParams: { get: (_key: string) => string | null } | null
 ): 'timeline' | 'broadcasts' {
@@ -150,6 +171,34 @@ function HistoryTimelineContent({
       addToast('Retry initiated for failed recipients.', 'success');
     } catch (e: any) {
       addToast(e.message || 'Retry failed.', 'error');
+    }
+  };
+
+  const handleResendRecipient = async (
+    broadcastId: string,
+    recipient: { id: string; guestName: string }
+  ) => {
+    try {
+      const updated = (await retryBroadcast({
+        broadcastId,
+        recipientIds: [recipient.id],
+      })) as BroadcastHistoryItem | undefined;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-detail'] }),
+      ]);
+      addToast(`Resent broadcast to ${recipient.guestName}.`, 'success');
+      if (
+        updated &&
+        typeof updated === 'object' &&
+        'id' in updated &&
+        selectedBroadcast &&
+        selectedBroadcast.id === broadcastId
+      ) {
+        setSelectedBroadcast(updated);
+      }
+    } catch (e: any) {
+      addToast(e.message || 'Resend failed.', 'error');
     }
   };
 
@@ -318,6 +367,11 @@ function HistoryTimelineContent({
                     </TableCell>
                     <TableCell className="text-sm">
                       <span className="font-semibold">{item.sentCount}</span> / {item.totalRecipients} sent
+                      {resolveViewedCount(item) > 0 && (
+                        <span className="text-blue-600 dark:text-blue-400 font-semibold ml-1">
+                          ({resolveViewedCount(item)} viewed)
+                        </span>
+                      )}
                       {item.failedCount > 0 && <span className="text-red-500 font-bold ml-1">({item.failedCount} failed)</span>}
                     </TableCell>
                     <TableCell>
@@ -386,6 +440,7 @@ function HistoryTimelineContent({
                 <div><strong>Scheduled For:</strong> {formatDate(resolvedBroadcast.scheduledFor)}</div>
               )}
               <div><strong>Sent Count:</strong> {resolvedBroadcast.sentCount} / {resolvedBroadcast.totalRecipients}</div>
+              <div><strong>Viewed Count:</strong> {resolveViewedCount(resolvedBroadcast, resolvedRecipients)}</div>
               <div><strong>Failed Count:</strong> {resolvedBroadcast.failedCount}</div>
             </div>
 
@@ -429,20 +484,37 @@ function HistoryTimelineContent({
                   </div>
                 )}
                 {!showDetailLoading && resolvedRecipients?.map((r) => (
-                  <div key={r.id} className="p-2 text-xs flex justify-between items-center">
+                  <div key={r.id} className="p-2 text-xs flex justify-between items-center gap-2">
                     <div>
                       <span className="font-semibold">{r.guestName}</span> ({r.destination})
                       {r.error && <span className="block text-red-600 dark:text-red-400 text-[11px] mt-0.5">{r.error}</span>}
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      r.status === 'SENT'
-                        ? 'bg-green-100 text-green-800'
-                        : r.status === 'PENDING'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-red-100 text-red-800'
-                    }`}>
-                      {r.status}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        r.status === 'VIEWED'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
+                          : r.status === 'SENT'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
+                            : r.status === 'PENDING'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+                      }`}>
+                        {r.status}
+                      </span>
+                      {resolvedBroadcast.status !== 'SCHEDULED' &&
+                        resolvedBroadcast.status !== 'CANCELLED' && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="text-[11px] py-0.5 px-2 h-auto"
+                          disabled={retrying}
+                          aria-label={`Resend to ${r.guestName}`}
+                          onClick={() => void handleResendRecipient(resolvedBroadcast.id, r)}
+                        >
+                          Resend
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

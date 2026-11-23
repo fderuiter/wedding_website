@@ -5,13 +5,13 @@
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "engines": {
-    "node": "22.x",
+    "node": ">=22.22.1 <23.0.0",
     "npm": "^10.9.0"
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "^22.12.0",
+      "version": ">=22.22.1 <23.0.0",
       "onFail": "error"
     },
     "packageManager": {
@@ -102,7 +102,7 @@
     "leaflet": "^1.9.4",
     "next": "^16.4.6",
     "node-html-parser": "^9.0.7",
-    "pdfkit": "^0.20.2",
+    "pdfkit": "^0.21.0",
     "pg": "^8.23.1",
     "postprocessing": "^6.39.6",
     "qrcode.react": "^4.2.0",
@@ -112,7 +112,7 @@
     "sharp": "0.35.5",
     "stripe": "^23.2.0",
     "three": "^0.187.0",
-    "undici": "^8.12.4",
+    "undici": "^8.13.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -123,8 +123,8 @@
     "@babel/preset-typescript": "^8.0.7",
     "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.65.1",
-    "@storybook/react": "^10.6.7",
-    "@storybook/react-webpack5": "^10.6.7",
+    "@storybook/react": "^10.6.8",
+    "@storybook/react-webpack5": "^10.6.8",
     "@stylistic/eslint-plugin": "^6.0.1",
     "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/dom": "^10.4.2",
@@ -151,7 +151,7 @@
     "jest": "^30.5.2",
     "jest-axe": "^11.0.0",
     "jest-environment-jsdom": "^30.5.2",
-    "knip": "^6.46.1",
+    "knip": "^6.47.0",
     "lint-staged": "^17.6.1",
     "mermaid": "^12.3.0",
     "msw": "^3.0.7",
