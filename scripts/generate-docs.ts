@@ -2478,9 +2478,11 @@ if (isMain) {
   updateArchitectureMd();
   updateFeatureModulesMd();
   if (!process.argv.includes('--skip-openapi')) {
-    generateOpenApiSpec().catch((err) => {
-      console.error('Failed to generate OpenAPI specification:', err);
-      process.exit(1);
-    });
+    if (process.env.SKIP_OPENAPI_SYNC !== 'true') {
+      generateOpenApiSpec().catch((err) => {
+        console.error('Failed to generate OpenAPI specification:', err);
+        process.exit(1);
+      });
+    }
   }
 }

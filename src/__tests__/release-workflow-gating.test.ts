@@ -1201,4 +1201,49 @@ process.exit(1);
     expect(prismaStage).toContain('npm ci --omit=dev --no-audit --no-fund');
     expect(prismaStage).not.toContain('npm install');
   });
+
+  it('decouples npm lifecycle hooks, shares verified PostgreSQL digest, validates build:export after standalone archival, and scopes container E2E to smoke tests', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(pkg.scripts?.prebuild).toBeUndefined();
+    expect(pkg.scripts?.postinstall).toBe('prisma generate');
+    expect(pkg.scripts?.build).toBe('prisma generate && next build');
+
+    const verifySection = ciWorkflow.split(/\n  unit-test:\n/)[0] ?? '';
+    expect(verifySection).not.toContain('run: npm run prisma:generate');
+    expect(verifySection).toContain('db_image: ${{ steps.resolve-db-image.outputs.db_image }}');
+    expect(verifySection).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
+    expect(verifySection).toContain("SKIP_DOC_SYNC: 'true'");
+
+    const unitTestSection = (ciWorkflow.split(/\n  unit-test:\n/)[1] ?? '').split(/\n  build:\n/)[0] ?? '';
+    expect(unitTestSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+
+    const buildSection = (ciWorkflow.split(/\n  build:\n/)[1] ?? '').split(/\n  container-arm64:\n/)[0] ?? '';
+    const checkStandaloneIdx = buildSection.indexOf('run: npm run check:standalone -- --require-standalone');
+    const testStandaloneIdx = buildSection.indexOf('run: npm run test:standalone');
+    const uploadNextArtifactIdx = buildSection.indexOf('name: next-build-artifact');
+    const buildExportIdx = buildSection.indexOf('npm run build:export');
+    expect(checkStandaloneIdx).toBeGreaterThan(-1);
+    expect(testStandaloneIdx).toBeGreaterThan(checkStandaloneIdx);
+    expect(uploadNextArtifactIdx).toBeGreaterThan(testStandaloneIdx);
+    expect(buildExportIdx).toBeGreaterThan(uploadNextArtifactIdx);
+    expect(buildSection.slice(buildExportIdx)).toContain('rm -rf out');
+
+    const storybookCiSection = (ciWorkflow.split(/\n  storybook-build:\n/)[1] ?? '').split(/\n  e2e-test:\n/)[0] ?? '';
+    expect(storybookCiSection).toContain('run: npm ci --ignore-scripts');
+
+    const storybookWorkflow = readWorkflow('storybook.yml');
+    expect(storybookWorkflow).toContain('run: npm ci --ignore-scripts');
+
+    const e2eSection = (ciWorkflow.split(/\n  e2e-test:\n/)[1] ?? '').split(/\n  container-e2e-smoke:\n/)[0] ?? '';
+    expect(e2eSection).toContain('needs: [verify, build]');
+    expect(e2eSection).toContain('image: ${{ needs.verify.outputs.db_image }}');
+    expect(e2eSection).toContain('run: npx playwright test');
+
+    const containerSmokeSection = (ciWorkflow.split(/\n  container-e2e-smoke:\n/)[1] ?? '').split(/\n  a11y-report:\n/)[0] ?? '';
+    expect(containerSmokeSection).toContain('needs: build');
+    expect(containerSmokeSection).toContain('TEST_CONTAINER: "true"');
+    expect(containerSmokeSection).toContain('run: npm run test:e2e:smoke');
+  });
 });

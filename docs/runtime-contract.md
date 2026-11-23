@@ -197,7 +197,7 @@ The application expects to be deployed behind an HTTP reverse proxy, load balanc
 ```
 
 1. **Build Phase (`npm run build` / `npm run build:export`)**:
-   - Executes ESLint, migration and unused-export lints, Prisma Client generation (`prisma generate`), and Next.js standalone compilation (`output: 'standalone'`), or static HTML export (`output: 'export'`) via `npm run build:export` (`STATIC_EXPORT=true`).
+   - Executes Prisma Client generation (`prisma generate`), Next.js standalone compilation (`output: 'standalone'`), and standalone asset staging (`postbuild`), or static HTML export (`output: 'export'`) via `npm run build:export` (`STATIC_EXPORT=true`).
    - Does **not** require an active database connection. Safe for CI/CD build environments.
 2. **Migration Phase (`./node_modules/.bin/prisma migrate deploy` / `npx prisma migrate deploy`)**:
    - Runs before application startup via the `migration` service in `docker-compose.yml` (`./node_modules/.bin/prisma migrate deploy`), offline in `docker-entrypoint.sh` when `RUN_MIGRATIONS=true` (using the local `/app/node_modules/.bin/prisma` symlink with `NPM_CONFIG_UPDATE_NOTIFIER=false` and `CHECKPOINT_DISABLE=1` so zero npm registry calls occur), or via CI/CD release pipelines (`.github/workflows/db-migrate.yml`).

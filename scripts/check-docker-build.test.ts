@@ -740,6 +740,31 @@ describe('check-docker-build', () => {
     );
   });
 
+  it('accepts Dependabot postgres digest updates in docker-compose.yml alone when ci.yml shares verify.outputs.db_image', () => {
+    const bumpedDigest = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+    const liveCiYml = fs.readFileSync(
+      path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, '.github', 'workflows', 'ci.yml'), liveCiYml);
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${bumpedDigest}`,
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([]);
+  });
+
   describe('standalone output verification (pre-build vs --require-standalone)', () => {
     function writeValidStandaloneBundle(targetDir: string): void {
       const standaloneDir = path.join(targetDir, '.next', 'standalone');

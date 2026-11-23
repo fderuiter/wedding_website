@@ -9,7 +9,7 @@ This guide defines the local bootstrap, architecture boundaries, TypeScript conf
   ```bash
   CI=true npm ci
   ```
-  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation and documentation sync via `postinstall`.)*
+  *(Setting `CI=true` skips `.githooks` reconfiguration inside non-interactive sandboxes while still running Prisma Client generation via `postinstall`.)*
 - **Regenerate Prisma Client (after schema edits):**
   ```bash
   npm run prisma:generate
@@ -109,7 +109,7 @@ npm run quality
 npm run build-storybook
 ```
 
-- **CI Parity:** Pull requests and pushes to `main` execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build`, backed by Webpack 5 filesystem caching (`node_modules/.cache/webpack` and `node_modules/.cache/storybook`).
+- **CI Parity:** Pull requests and pushes to `main` execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build` (using `npm ci --ignore-scripts` and Webpack 5 filesystem caching across `node_modules/.cache/webpack` and `node_modules/.cache/storybook`), while manual dispatches of [`.github/workflows/storybook.yml`](.github/workflows/storybook.yml) share the same cache and `--ignore-scripts` install.
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Git Hook Scope:** `npm run build-storybook` is intentionally kept out of both [`.githooks/pre-commit`](.githooks/pre-commit) and [`.githooks/pre-push`](.githooks/pre-push) so local commits and pushes stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 

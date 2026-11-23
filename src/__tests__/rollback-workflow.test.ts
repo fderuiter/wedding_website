@@ -268,7 +268,34 @@ describe('Rollback & Provider Deployment Workflows', () => {
       expect(rollbackYml).toMatch(
         /Checkout Repository[\s\S]*?ref:\s*\$\{\{\s*inputs\.commit_sha\s*\}\}[\s\S]*?npm run lint:migrations/
       );
+      expect(rollbackYml).not.toContain('npm ci');
+      expect(rollbackYml).not.toContain("cache: 'npm'");
       expect(rollbackYml).not.toContain('Container service successfully restored to previous image tag.');
+
+      // Verify lint:migrations executes natively on Node 22 in an isolated workspace without node_modules
+      const isolatedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-zero-deps-'));
+      try {
+        fs.copyFileSync(path.join(process.cwd(), 'package.json'), path.join(isolatedDir, 'package.json'));
+        fs.mkdirSync(path.join(isolatedDir, 'scripts'), { recursive: true });
+        fs.copyFileSync(
+          path.join(process.cwd(), 'scripts', 'verify-migration-compatibility.ts'),
+          path.join(isolatedDir, 'scripts', 'verify-migration-compatibility.ts')
+        );
+        fs.mkdirSync(path.join(isolatedDir, 'prisma', 'migrations', '20260101000000_init'), { recursive: true });
+        fs.writeFileSync(
+          path.join(isolatedDir, 'prisma', 'migrations', '20260101000000_init', 'migration.sql'),
+          'CREATE TABLE "TestTable" ("id" TEXT NOT NULL PRIMARY KEY);\n'
+        );
+
+        const lintRes = spawnSync('npm', ['run', 'lint:migrations'], {
+          cwd: isolatedDir,
+          encoding: 'utf8',
+        });
+        expect(lintRes.status).toBe(0);
+        expect(lintRes.stdout).toContain('Migration compatibility check passed');
+      } finally {
+        fs.rmSync(isolatedDir, { recursive: true, force: true });
+      }
     });
 
     it('passes previous_image_tag, previous_image_digest, commit_sha, and provider from deploy.yml to rollback.yml without defaulting to latest', () => {

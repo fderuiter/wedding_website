@@ -21,6 +21,8 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+    outputs:
+      db_image: ${{ steps.resolve-db-image.outputs.db_image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -31,9 +33,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Generate Prisma Client
-        run: npm run prisma:generate
 
       - name: Verify Environment Variables Documentation
         run: npm run check:env-docs
@@ -54,6 +53,22 @@ jobs:
 
       - name: Check Container Digest Pins & Standalone Portability
         run: npm run check:standalone
+
+      - name: Export Verified PostgreSQL Service Image Digest
+        id: resolve-db-image
+        run: |
+          DB_IMAGE=$(node -e '
+            const fs = require("fs");
+            const { parseDocument } = require("yaml");
+            const doc = parseDocument(fs.readFileSync("docker-compose.yml", "utf8"), { version: "1.2", strict: true });
+            const image = String(doc.getIn(["services", "db", "image"]) || "").trim();
+            if (!/^postgres:[^\s@]+@sha256:[a-f0-9]{64}$/.test(image)) {
+              console.error("Invalid or unpinned services.db.image in docker-compose.yml:", image);
+              process.exit(1);
+            }
+            process.stdout.write(image);
+          ')
+          echo "db_image=${DB_IMAGE}" >> "$GITHUB_OUTPUT"
 
       - name: Check Documentation Relative Links
         run: npm run check:links
@@ -185,6 +200,7 @@ jobs:
       - name: Build static documentation portal
         env:
           VITEPRESS_BASE: /wedding_website/
+          SKIP_DOC_SYNC: 'true'
         run: npm run docs:build
 
   unit-test:
@@ -194,7 +210,7 @@ jobs:
       contents: read
     services:
       db:
-        image: postgres:15-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
+        image: ${{ needs.verify.outputs.db_image }}
         env:
           POSTGRES_USER: wedding
           POSTGRES_PASSWORD: wedding123
@@ -457,6 +473,13 @@ jobs:
             node_modules/.prisma
             node_modules/@prisma
 
+      - name: Verify Static HTML Showcase Export
+        run: |
+          trap 'rm -rf out' EXIT
+          npm run build:export
+          test -f out/index.html
+          rm -rf out
+
   container-arm64:
     needs: verify
     runs-on: ubuntu-24.04-arm
@@ -617,7 +640,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Cache Storybook Webpack build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -631,7 +654,7 @@ jobs:
         run: npm run build-storybook
 
   e2e-test:
-    needs: build
+    needs: [verify, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -639,7 +662,7 @@ jobs:
       GUEST_SESSION_SECRET: test-guest-session-secret-key-at-least-32-chars
     services:
       db:
-        image: postgres:15-alpine@sha256:e18480a22d6e48f4d816a6696769b1ec09ac73a824c5649e49c7d8b684913f3d
+        image: ${{ needs.verify.outputs.db_image }}
         env:
           POSTGRES_USER: wedding
           POSTGRES_PASSWORD: wedding123
