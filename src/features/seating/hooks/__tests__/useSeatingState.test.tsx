@@ -878,6 +878,181 @@ describe('useSeatingState & seatingReducer', () => {
       expect(result.current.canUndo).toBe(false);
     });
 
+    it('fetches all pages of invitations (>1000 catalog records) and tables (>50 records) without truncation', async () => {
+      const all1050Guests: InvitationCodeDTO[] = Array.from({ length: 1050 }, (_, idx) => ({
+        id: `g-page-${idx + 1}`,
+        code: `CODE-P-${String(idx + 1).padStart(4, '0')}`,
+        guestName: `Guest ${idx + 1}`,
+        tableId: null,
+        seatNumber: null,
+        plusOneSeatNumbers: [],
+        plusOneAllocations: 0,
+        partyTags: [],
+        isSample: false,
+        used: true,
+        extraFields: { attending: true },
+      }));
+
+      const all60Tables = Array.from({ length: 60 }, (_, idx) => ({
+        id: `tbl-page-${idx + 1}`,
+        name: `Table ${idx + 1}`,
+        shape: 'round',
+        capacity: 8,
+        x: 50,
+        y: 50,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      })) as SeatingTableDTO[];
+
+      fetchMock.mockImplementation((url: string | URL | Request) => {
+        const parsed = new URL(url.toString(), 'http://localhost:3000');
+
+        if (parsed.pathname === '/api/admin/seating-tables') {
+          const skip = Number(parsed.searchParams.get('skip') || '0');
+          const limit = Number(parsed.searchParams.get('limit') || '50');
+          const slice = all60Tables.slice(skip, skip + limit);
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({
+              'X-Total-Count': String(all60Tables.length),
+              'X-Has-Next-Page': String(skip + slice.length < all60Tables.length),
+            }),
+            json: () => Promise.resolve(slice),
+          } as Response);
+        }
+
+        if (parsed.pathname === '/api/admin/invitation-codes/catalog') {
+          const page = Number(parsed.searchParams.get('page') || '1');
+          const limit = Number(parsed.searchParams.get('limit') || '1000');
+          const skip = (page - 1) * limit;
+          const slice = all1050Guests.slice(skip, skip + limit);
+          const totalPages = Math.ceil(all1050Guests.length / limit);
+          return Promise.resolve({
+            ok: true,
+            headers: new Headers({
+              'X-Total-Count': String(all1050Guests.length),
+              'X-Page': String(page),
+              'X-Limit': String(limit),
+              'X-Total-Pages': String(totalPages),
+            }),
+            json: () =>
+              Promise.resolve({
+                items: slice,
+                total: all1050Guests.length,
+                page,
+                limit,
+                totalPages,
+              }),
+          } as Response);
+        }
+
+        return Promise.reject(new Error(`Unhandled URL: ${url.toString()}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.tables).toHaveLength(60);
+      expect(result.current.allGuests).toHaveLength(1050);
+      expect(result.current.unassignedGuests).toHaveLength(1050);
+    });
+
+    it('blocks multi-chair plus-one overflow and rejects assigning guests to zero-capacity landmarks', async () => {
+      const partyOfThree: InvitationCodeDTO = {
+        id: 'g-party-3',
+        code: 'PARTY3',
+        guestName: 'Primary Host',
+        tableId: null,
+        seatNumber: null,
+        plusOneSeatNumbers: [],
+        plusOneAllocations: 2,
+        partyTags: [],
+        isSample: false,
+        used: true,
+        extraFields: { attending: true, plusOneNames: ['Plus One A', 'Plus One B'] },
+      };
+
+      const landmarkDanceFloor: SeatingTableDTO = {
+        id: 'tbl-dance',
+        name: 'Main Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        x: 300,
+        y: 300,
+        width: 220,
+        height: 180,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      fetchMock.mockImplementation((url: string | URL | Request) => {
+        const parsed = new URL(url.toString(), 'http://localhost:3000');
+        if (parsed.pathname === '/api/admin/seating-tables') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([mockTable1, landmarkDanceFloor]),
+          } as Response);
+        }
+        if (parsed.pathname === '/api/admin/invitation-codes/catalog') {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                items: [partyOfThree],
+                total: 1,
+                page: 1,
+                limit: 1000,
+                totalPages: 1,
+              }),
+          } as Response);
+        }
+        return Promise.reject(new Error(`Unhandled URL: ${url.toString()}`));
+      });
+
+      const { result } = renderHook(() => useSeatingState());
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      fetchMock.mockClear();
+
+      // 1. Party of 3 cannot fit onto Table 1 (capacity 2)
+      let overflowOk = true;
+      await act(async () => {
+        overflowOk = await result.current.assignGuestToTable('g-party-3', 'table-1');
+      });
+      expect(overflowOk).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'Table "Table 1" has reached its maximum capacity of 2.',
+        'error'
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      mockAddToast.mockClear();
+
+      // 2. Zero-capacity landmark rejects guest drop
+      let landmarkOk = true;
+      await act(async () => {
+        landmarkOk = await result.current.assignGuestToTable('g-party-3', 'tbl-dance');
+      });
+      expect(landmarkOk).toBe(false);
+      expect(mockAddToast).toHaveBeenCalledWith(
+        'Cannot assign guests to landmark "Main Dance Floor".',
+        'error'
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('fetches all catalog pages beyond 50 invitations and merges seated table occupants into state', async () => {
       const page1Guests = Array.from({ length: 50 }, (_, idx) => ({
         id: `inv-${idx + 1}`,

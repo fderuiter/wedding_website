@@ -88,6 +88,7 @@ export function createMockInvitationCode(
     guestName: 'Test Guest',
     plusOneAllocations: 0,
     partyTags: [],
+    plusOneSeatNumbers: [],
     used: false,
     isSample: false,
     ...overrides,
