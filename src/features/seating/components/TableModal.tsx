@@ -126,7 +126,7 @@ function TableModalForm({
     return highSeats.sort((a, b) => a - b);
   }, [table, initialSnapshot.capacity, capacity]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!name.trim()) return;
 

@@ -508,7 +508,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     }
   };
 
-  const handleQuickAssignSubmit = (e: React.FormEvent) => {
+  const handleQuickAssignSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (selectedGuestForModal && targetTableId) {
       if (targetSeatNumber !== undefined) {
@@ -545,7 +545,7 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
     setTargetHouseholdTableId(firstFittingTable ? firstFittingTable.id : '');
   };
 
-  const handleHouseholdAssignSubmit = async (e: React.FormEvent) => {
+  const handleHouseholdAssignSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedHouseholdForModal || !targetHouseholdTableId) return;
 
@@ -773,14 +773,25 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
                       </span>
                     </div>
 
-                    <button
+                    <Button
                       type="button"
+                      variant="primary"
+                      size="sm"
                       onClick={() => openHouseholdModal(item)}
-                      className="min-h-[28px] px-2.5 py-1 text-[11px] font-semibold bg-purple-700 hover:bg-purple-800 text-white rounded transition-colors shrink-0"
-                      aria-label={`Seat ${item.householdName} household (${householdHeadcount} guests)`}
+                      srContext={`for ${item.householdName} (${householdHeadcount} guests)`}
+                      style={
+                        {
+                          '--btn-primary-bg': '#7e22ce',
+                          '--btn-primary-hover-bg': '#6b21a8',
+                          '--btn-primary-text': '#ffffff',
+                          borderRadius: '0.25rem',
+                          fontWeight: 600,
+                        } as React.CSSProperties
+                      }
+                      className="!h-auto min-h-[28px] !px-2.5 !py-1 !text-[11px] shrink-0"
                     >
                       Seat Household
-                    </button>
+                    </Button>
                   </div>
 
                   <div
@@ -909,16 +920,24 @@ export const UnassignedGuestPanel = React.memo(function UnassignedGuestPanel({
             onClick={handleAutoAssignAll}
             disabled={isAutoAssigning}
             className="w-full justify-center flex items-center gap-1.5 font-medium shadow-xs"
-            aria-label="Auto-Assign All"
           >
             {isAutoAssigning ? (
               <>
-                <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span
+                  aria-hidden="true"
+                  className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"
+                />
                 <span>Auto-Assigning...</span>
               </>
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
                 <span>Auto-Assign All</span>

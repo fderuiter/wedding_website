@@ -470,45 +470,11 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     [eventsMap]
   );
 
-  const resetRsvp = useCallback((subEventId?: string) => {
-    setEventsMap((prev) => {
-      const next = { ...prev };
-      if (subEventId) {
-        const item = prev[subEventId];
-        if (item) {
-          next[subEventId] = {
-            ...item,
-            current: cloneRsvpData(item.baseline),
-            state: 'idle',
-            isDirty: false,
-            message: null,
-            error: null,
-          };
-        }
-      } else {
-        Object.keys(next).forEach((id) => {
-          next[id] = {
-            ...next[id],
-            current: cloneRsvpData(next[id].baseline),
-            state: 'idle',
-            isDirty: false,
-            message: null,
-            error: null,
-          };
-        });
-      }
-      return next;
-    });
-    setBatchError(null);
-    setBatchSuccessMessage(null);
-  }, []);
-
   const dirtyEventIds = useMemo(() => {
     return Object.keys(eventsMap).filter((id) => eventsMap[id].isDirty);
   }, [eventsMap]);
 
   const dirtyCount = dirtyEventIds.length;
-  const isDirty = dirtyCount > 0;
 
   const isAnySubmitting = useMemo(() => {
     if (isBatchSubmitting) return true;
@@ -793,26 +759,17 @@ export function useScheduleRsvpManager(options?: UseScheduleRsvpManagerOptions) 
     }
   }, [dirtyEventIds, eventsMap, apiEndpoint]);
 
-  const clearLiveMessage = useCallback(() => {
-    setLiveMessage(null);
-  }, []);
-
   return {
-    eventsMap,
     getRsvpState,
     updateRsvp,
     submitSingle,
     submitBatch,
     initializeEvents,
-    resetRsvp,
     dirtyCount,
-    dirtyEventIds,
-    isDirty,
     isBatchSubmitting,
     isAnySubmitting,
     batchError,
     batchSuccessMessage,
     liveMessage,
-    clearLiveMessage,
   };
 }

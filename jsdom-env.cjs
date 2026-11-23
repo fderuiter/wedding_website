@@ -16,6 +16,7 @@ class CustomEnvironment extends JSDOMEnvironment {
     if (typeof CompressionStream !== 'undefined') this.global.CompressionStream = CompressionStream;
     if (typeof DecompressionStream !== 'undefined') this.global.DecompressionStream = DecompressionStream;
     const { MessagePort } = require('node:worker_threads');
+    if (typeof this.global.MessagePort === 'undefined') this.global.MessagePort = MessagePort;
     this.global.BroadcastChannel = globalThis.BroadcastChannel || class BroadcastChannel {
       constructor(name) { this.name = name; }
       postMessage() {}
@@ -23,7 +24,6 @@ class CustomEnvironment extends JSDOMEnvironment {
       addEventListener() {}
       removeEventListener() {}
     };
-    this.global.MessagePort = this.global.MessagePort || MessagePort;
     this.global.crypto = require('node:crypto').webcrypto;
     const originalFetch = fetch;
     this.global.fetch = (input, init) => {
