@@ -373,6 +373,9 @@ describe('rateLimit', () => {
       expect(normalizeApiPathname('/api/admin/evict/key-42.png')).toBe('/api/admin/:entity/:id');
       expect(normalizeApiPathname('/api/schedule/sub-1/ics')).toBe('/api/schedule/:id/ics');
       expect(normalizeApiPathname('/api/admin/versions/v-1/restore')).toBe('/api/admin/versions/:id/restore');
+      expect(normalizeApiPathname('/api/admin/broadcast/history')).toBe('/api/admin/broadcast/history');
+      expect(normalizeApiPathname('/api/admin/broadcast/bc-123')).toBe('/api/admin/broadcast/:id');
+      expect(normalizeApiPathname('/api/admin/broadcast/schedule/bc-123')).toBe('/api/admin/broadcast/schedule/:id');
     });
   });
 });

@@ -1468,7 +1468,7 @@ function validateSliceContentAgainstContext(
         continue;
       }
       const between = ctx.lineText.slice(sl.link.endIndex, ctx.citeStart);
-      if (/^\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i.test(between)) {
+      if ((sl.targetAbs === resolvedPath ? /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i : /^\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i).test(between)) {
         if (sl.targetAbs && sl.lineRange && fs.existsSync(sl.targetAbs) && fs.statSync(sl.targetAbs).isFile()) {
           const otherData = getSourceSliceData(sl.targetAbs, sliceCache, lineCountCache);
           if (isValidLineRange(sl.lineRange.start, sl.lineRange.end, otherData.lines.length)) {
@@ -1485,7 +1485,7 @@ function validateSliceContentAgainstContext(
       }
     } else if (sl.link.startIndex >= ctx.citeEnd) {
       const between = ctx.lineText.slice(ctx.citeEnd, sl.link.startIndex);
-      if (/^\s*(?:,|\/|\band\b|\bor\b|&)\s*$/i.test(between)) {
+      if ((sl.targetAbs === resolvedPath ? /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*$/i : /^\s*(?:,|\/|\band\b|\bor\b|&)\s*$/i).test(between)) {
         if (sl.targetAbs && sl.lineRange && fs.existsSync(sl.targetAbs) && fs.statSync(sl.targetAbs).isFile()) {
           const otherData = getSourceSliceData(sl.targetAbs, sliceCache, lineCountCache);
           if (isValidLineRange(sl.lineRange.start, sl.lineRange.end, otherData.lines.length)) {
@@ -1524,7 +1524,7 @@ function validateSliceContentAgainstContext(
     );
     if (memberCallMatch) {
       const memberName = memberCallMatch[2] ?? memberCallMatch[3];
-      if (memberName && !matchesSliceOrEnclosing(memberName)) {
+      if (memberName && !matchesSliceOrEnclosing(memberName, unionSliceRaw)) {
         return `Slice L${start}-L${end} does not contain cited member "${memberName}"`;
       }
     } else {
@@ -1532,7 +1532,7 @@ function validateSliceContentAgainstContext(
       const plainSymM = rawSpan.match(/^([A-Za-z_$][A-Za-z0-9_$]*)(?:\(.*\))?$/);
       const sym = assignM?.[1] ?? plainSymM?.[1];
       if (sym && !GENERIC_SLICE_STOP_TOKENS.has(sym) && !FILE_TOKEN_RE.test(rawSpan)) {
-        if (!matchesSliceOrEnclosing(sym)) {
+        if (!matchesSliceOrEnclosing(sym, unionSliceRaw)) {
           return `Slice L${start}-L${end} does not contain cited symbol "${sym}"`;
         }
       }

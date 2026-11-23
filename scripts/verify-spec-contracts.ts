@@ -1486,6 +1486,7 @@ interface SymbolCitation {
   requireExported: boolean;
   roleWord?: string;
   lineRange?: { start: number; end: number };
+  additionalLineRanges?: Array<{ start: number; end: number }>;
   expectedValue?: ConstPrimitiveValue;
   rawExpectedValue?: string;
 }
@@ -1730,6 +1731,7 @@ function extractSymbolCitationsFromLine(
 
   // Also record bare backticked `src/...ts(x)` targets on the line for symbol & constant resolution
   for (const span of lineCodeSpans) {
+    if (lineLinks.some((lk) => span.start >= lk.start && span.end <= lk.end)) continue;
     const srcRelPath = resolveDocCitedSrcPath(span.code, docAbsPath, rootDir);
     if (!srcRelPath) continue;
     const lineRange = parseLineRangeFromTarget(span.code);
@@ -1740,8 +1742,28 @@ function extractSymbolCitationsFromLine(
   const roleNounSuffixRe =
     /^(.*?)(\s+(?:handler|handlers|function|functions|helper|helpers|method|methods|schema|schemas|class|classes|type|types|interface|interfaces|constant|constants|service|services|hook|hooks))?(?:(?:\s*,)?\s+(?:in|from|at|inside|within|via|defined in|declared in|exported by|exported from|implemented in)\s+|\s*\(\s*(?:see\s+|in\s+|at\s+|via\s+)?|\s*,\s*)$/;
   const symChainSepRe = /^\s*(?:,|\/|\band\b|\bor\b|&|->|→)\s*(?:handler\s*(?:->|→)\s*)?$/;
+  const joinedTargetsBetweenRe =
+    /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i;
 
-  for (const target of resolvedLineTargets) {
+  const collectJoinedRangesAfter = (targetIdx: number): Array<{ start: number; end: number }> => {
+    const base = resolvedLineTargets[targetIdx];
+    if (!base.lineRange) return [];
+    const extras: Array<{ start: number; end: number }> = [];
+    let prev = base;
+    for (let nextIdx = targetIdx + 1; nextIdx < resolvedLineTargets.length; nextIdx++) {
+      const next = resolvedLineTargets[nextIdx];
+      const between = line.slice(prev.end, next.start);
+      if (!joinedTargetsBetweenRe.test(between)) break;
+      if (next.srcRelPath === base.srcRelPath && next.lineRange) {
+        extras.push(next.lineRange);
+      }
+      prev = next;
+    }
+    return extras;
+  };
+
+  for (let tIdx = 0; tIdx < resolvedLineTargets.length; tIdx++) {
+    const target = resolvedLineTargets[tIdx];
     const prefix = line.slice(0, target.start);
     const suffixMatch = prefix.match(roleNounSuffixRe);
     if (!suffixMatch) continue;
@@ -1777,6 +1799,7 @@ function extractSymbolCitationsFromLine(
       currIdx--;
     }
 
+    const additionalLineRanges = collectJoinedRangesAfter(tIdx);
     for (const entry of chainEntries) {
       if (shouldSkipSymbol(entry.symbol, target.srcRelPath)) {
         continue;
@@ -1787,6 +1810,7 @@ function extractSymbolCitationsFromLine(
         requireExported: false,
         roleWord,
         lineRange: target.lineRange,
+        additionalLineRanges: additionalLineRanges.length > 0 ? additionalLineRanges : undefined,
         expectedValue: entry.expectedValue,
         rawExpectedValue: entry.rawExpectedValue,
       });
@@ -1899,24 +1923,31 @@ function verifySymbolInModule(
 
   if (citation.lineRange) {
     const { start, end } = citation.lineRange;
+    const allRanges = [citation.lineRange, ...(citation.additionalLineRanges ?? [])];
     const sliceInv = getFileSliceInventory(absTarget);
-    if (start < 1 || end < start || end > sliceInv.lineCount) {
-      return `Line range #L${start}-L${end} is out of bounds for ${citation.srcRelPath} (${sliceInv.lineCount} lines)`;
+    for (const r of allRanges) {
+      if (r.start < 1 || r.end < r.start || r.end > sliceInv.lineCount) {
+        return `Line range #L${r.start}-L${r.end} is out of bounds for ${citation.srcRelPath} (${sliceInv.lineCount} lines)`;
+      }
     }
 
-    const sliceTokens = collectSliceTokens(
-      sliceInv.lines,
-      start,
-      end,
-      citation.srcRelPath.endsWith('.tsx'),
-    );
+    const sliceTokens = new Set<string>();
+    const isTsx = citation.srcRelPath.endsWith('.tsx');
+    for (const r of allRanges) {
+      for (const tok of collectSliceTokens(sliceInv.lines, r.start, r.end, isTsx)) {
+        sliceTokens.add(tok);
+      }
+    }
 
     const matchesSliceOrEnclosingDecl = (token: string): boolean => {
       if (sliceTokens.has(token)) {
         return true;
       }
       const ranges = sliceInv.declRanges.get(token);
-      if (ranges && ranges.some((r) => r.start <= start && end <= r.end)) {
+      if (
+        ranges &&
+        allRanges.some((citeR) => ranges.some((r) => r.start <= citeR.start && citeR.end <= r.end))
+      ) {
         return true;
       }
       return false;

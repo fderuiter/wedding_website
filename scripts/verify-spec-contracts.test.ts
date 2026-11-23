@@ -225,6 +225,7 @@ export function getStripeCapability() {
       [
         '# Scoped Symbols',
         '- Valid slice local hook: `useMemo` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L1-L4) and `localMemoValue` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L3-L4).',
+        '- Valid paired slices: Reads `computeCapability()` synchronously via `useMemo` ([`src/lib/localHookSample.ts`](../src/lib/localHookSample.ts#L2-L2) (L2-L2) and [`src/lib/localHookSample.ts`](../src/lib/localHookSample.ts#L3-L4) (L3-L4)).',
         '- Bare module local hook rejected: `useMemo` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts).',
         '- Bare module local variable rejected: `localMemoValue` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts).',
         '- Out-of-slice token rejected: `useMemo` in [src/lib/localHookSample.ts](../src/lib/localHookSample.ts#L4-L5).',
@@ -233,9 +234,9 @@ export function getStripeCapability() {
 
     const result = verifySpecContracts(tempDir, { specFiles: ['docs/SCOPED_SYMBOLS.md'] });
     expect(result.errors).toEqual([
-      'docs/SCOPED_SYMBOLS.md:3: Symbol "useMemo" is not declared or exported in src/lib/localHookSample.ts',
-      'docs/SCOPED_SYMBOLS.md:4: Symbol "localMemoValue" is not declared or exported in src/lib/localHookSample.ts',
-      'docs/SCOPED_SYMBOLS.md:5: Symbol "useMemo" is not declared or referenced in src/lib/localHookSample.ts#L4-L5',
+      'docs/SCOPED_SYMBOLS.md:4: Symbol "useMemo" is not declared or exported in src/lib/localHookSample.ts',
+      'docs/SCOPED_SYMBOLS.md:5: Symbol "localMemoValue" is not declared or exported in src/lib/localHookSample.ts',
+      'docs/SCOPED_SYMBOLS.md:6: Symbol "useMemo" is not declared or referenced in src/lib/localHookSample.ts#L4-L5',
     ]);
   });
 
