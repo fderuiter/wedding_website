@@ -265,6 +265,30 @@ describe('TableModal component', () => {
     });
   });
 
+  test('supports creating zero-capacity floorplan landmarks (dance-floor, bar, dj, buffet, cake) with disabled capacity input', () => {
+    render(<TableModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Main Dance Floor' } });
+    fireEvent.change(screen.getByLabelText(/shape/i), { target: { value: 'dance-floor' } });
+
+    const capacityInput = screen.getByLabelText(/Seating Capacity/i) as HTMLInputElement;
+    expect(capacityInput).toBeDisabled();
+    expect(capacityInput.value).toBe('0');
+    expect(screen.getByTestId('landmark-capacity-note')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /create table/i }));
+
+    expect(defaultProps.onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Main Dance Floor',
+        shape: 'dance-floor',
+        capacity: 0,
+        width: 200,
+        height: 200,
+      })
+    );
+  });
+
   test('warns and prompts via alertdialog when shrinking capacity from 8 to 6 repacks a guest at Seat 8 or falls below party headcount', async () => {
     const tableWithSeat8Guest: SeatingTableDTO = {
       ...mockTable,
