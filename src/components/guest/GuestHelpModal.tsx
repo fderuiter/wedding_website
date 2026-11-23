@@ -235,9 +235,9 @@ export function GuestHelpModal({
         answerTokens: tokenizeSafeLinks(item.answer),
         category: sanitizeConfigText(item.category, 60),
         displayOrder:
-            typeof item.displayOrder === 'number' && Number.isFinite(item.displayOrder)
-              ? item.displayOrder
-              : Number.MAX_SAFE_INTEGER,
+          typeof item.displayOrder === 'number' && Number.isFinite(item.displayOrder)
+            ? item.displayOrder
+            : Number.MAX_SAFE_INTEGER,
         originalIndex: idx,
       }))
       .sort((a, b) =>
