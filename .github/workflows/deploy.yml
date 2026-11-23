@@ -26,6 +26,11 @@ on:
         description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
         required: false
         type: string
+      image_tag:
+        description: 'Optional release tag (v*) or commit SHA to promote (resolved to git commit and OCI digest)'
+        required: false
+        default: ''
+        type: string
       previous_tag:
         description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
         required: false
@@ -56,6 +61,11 @@ on:
       image_digest:
         description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
         required: false
+        type: string
+      image_tag:
+        description: 'Optional release tag (v*) or commit SHA to promote (resolved to git commit and OCI digest)'
+        required: false
+        default: ''
         type: string
       previous_tag:
         description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
@@ -101,11 +111,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: read
       packages: read
       attestations: read
     outputs:
       target_sha: ${{ steps.resolve-sha.outputs.target_sha }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: "(github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.image_tag != ''"
+        with:
+          fetch-depth: 0
+
       - name: Resolve Target Commit SHA
         id: resolve-sha
         env:
@@ -115,6 +131,7 @@ jobs:
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CURRENT_SHA: ${{ github.sha }}
           INPUT_IMAGE_DIGEST: ${{ inputs.image_digest }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
@@ -174,13 +191,15 @@ jobs:
             SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
               [
                 (if type == "array" then .[] else . end)
-                | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
                 | (
-                    .buildDefinition.externalParameters.inputs.commit_sha,
-                    (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
-                    .buildDefinition.internalParameters.github.sha,
-                    .invocation.configSource.digest.sha1,
-                    (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                    ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                      .buildDefinition.externalParameters.inputs.commit_sha,
+                      (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                      .buildDefinition.internalParameters.github.sha,
+                      .invocation.configSource.digest.sha1,
+                      (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                    )),
+                    .verificationResult.signature.certificate.sourceRepositoryDigest
                   )
                 | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
               ][0] // empty
@@ -192,6 +211,32 @@ jobs:
             TARGET_SHA="${INDEX_REVISION:-${SLSA_REVISION}}"
             if [[ ! "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]; then
               echo "::error::Unable to resolve signed 40-character source revision from OCI metadata or SLSA provenance for '${IMAGE_URI}'. Release aborted."
+              exit 1
+            fi
+          elif [ -n "${INPUT_IMAGE_TAG:-}" ]; then
+            if [[ "${INPUT_IMAGE_TAG,,}" == "latest" ]]; then
+              echo "::error::Unpinned 'latest' image_tag is forbidden. Provide an immutable v* release tag or 40-character commit SHA."
+              exit 1
+            fi
+            if [[ ! "$INPUT_IMAGE_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+              echo "::error::Invalid image_tag '${INPUT_IMAGE_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+              exit 1
+            fi
+            if git remote get-url origin >/dev/null 2>&1; then
+              git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+            fi
+            if [[ "$INPUT_IMAGE_TAG" =~ ^[a-fA-F0-9]{40}$ ]]; then
+              TARGET_SHA="$INPUT_IMAGE_TAG"
+            elif ! TARGET_SHA=$(git rev-parse --verify "${INPUT_IMAGE_TAG}^{commit}" 2>/dev/null); then
+              echo "::error::Failed to resolve image_tag '${INPUT_IMAGE_TAG}' to a repository commit SHA."
+              exit 1
+            fi
+            if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+              echo "::error::Missing refs/remotes/origin/main reference required to verify main branch ancestry."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$TARGET_SHA" refs/remotes/origin/main; then
+              echo "::error::Target commit '${TARGET_SHA}' (resolved from '${INPUT_IMAGE_TAG}') is not an ancestor of origin/main."
               exit 1
             fi
           else
@@ -278,9 +323,11 @@ jobs:
           fetch-depth: 0
 
       - name: Align Workspace to Verified Commit SHA
-        if: github.event_name == 'workflow_run' || inputs.image_digest != ''
+        if: github.event_name == 'workflow_run' || inputs.image_digest != '' || inputs.image_tag != ''
         env:
           EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE_DIGEST: ${{ inputs.image_digest }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
           TARGET_SHA: ${{ needs.ci-gate.outputs.target_sha }}
         run: |
           if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
@@ -288,7 +335,7 @@ jobs:
             exit 1
           fi
 
-          if [ "$EVENT_NAME" = "workflow_run" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ] || { [ -n "${INPUT_IMAGE_TAG:-}" ] && [ -z "${INPUT_IMAGE_DIGEST:-}" ]; }; then
             if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
               echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
               exit 1
@@ -348,15 +395,16 @@ jobs:
       ) ||
       (
         (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-        inputs.image_digest == ''
+        inputs.image_digest == '' &&
+        inputs.image_tag == ''
       )
     permissions:
       contents: read
+      actions: read
       packages: write
       security-events: write
       id-token: write
       attestations: write
-      actions: read
     uses: ./.github/workflows/publish-artifact.yml
     with:
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
@@ -385,7 +433,7 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '') && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: 'staging'
@@ -419,13 +467,13 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.staging-database-migration.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '') && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'staging'
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+      image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
@@ -625,7 +673,7 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '') && needs.publish-artifact.result == 'skipped')) &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/db-migrate.yml
     with:
@@ -659,7 +707,7 @@ jobs:
         )
       ) &&
       (needs.ci-gate.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '') && needs.publish-artifact.result == 'skipped')) &&
       (needs.production-database-migration.result == 'success') &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/deploy-provider.yml
@@ -667,7 +715,7 @@ jobs:
       environment: 'production'
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+      image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit

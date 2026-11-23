@@ -645,6 +645,56 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
         expect(changedDiffRes.summary).not.toContain(historical);
       }
     });
+
+    it('defaults Target Environment to offline when DATABASE_URL is unset and development for local status checks when NODE_ENV/TARGET_ENVIRONMENT are omitted', () => {
+      const summaryFile = path.join(tmpDir, 'default_env_summary.md');
+      const origDbUrl = process.env.DATABASE_URL;
+      const origTargetEnv = process.env.TARGET_ENVIRONMENT;
+      const origNodeEnv = process.env.NODE_ENV;
+
+      try {
+        delete process.env.DATABASE_URL;
+        delete process.env.TARGET_ENVIRONMENT;
+        delete (process.env as Record<string, string | undefined>).NODE_ENV;
+
+        const offlineFallbackRes = runPreflightCheck({
+          cwd: tmpDir,
+          migrationsDir: tmpDir,
+          stepSummaryFile: summaryFile,
+        });
+        expect(offlineFallbackRes.success).toBe(true);
+        expect(offlineFallbackRes.summary).toContain('**Target Environment:** `offline`');
+        expect(offlineFallbackRes.summary).toContain('**Database Status:** `NOT QUERIED`');
+        expect(offlineFallbackRes.summary).not.toContain('PENDING MIGRATIONS DETECTED');
+        expect(offlineFallbackRes.summary).not.toContain('**Target Environment:** `production`');
+        expect(fs.readFileSync(summaryFile, 'utf8')).toContain('**Database Status:** `NOT QUERIED`');
+
+        const localDbRes = runPreflightCheck({
+          mockOutput: 'Database schema is up to date!',
+          mockExitCode: 0,
+          migrationsDir: tmpDir,
+        });
+        expect(localDbRes.success).toBe(true);
+        expect(localDbRes.summary).toContain('**Target Environment:** `development`');
+        expect(localDbRes.summary).toContain('**Database Status:** `UP TO DATE`');
+      } finally {
+        if (origDbUrl !== undefined) {
+          process.env.DATABASE_URL = origDbUrl;
+        } else {
+          delete process.env.DATABASE_URL;
+        }
+        if (origTargetEnv !== undefined) {
+          process.env.TARGET_ENVIRONMENT = origTargetEnv;
+        } else {
+          delete process.env.TARGET_ENVIRONMENT;
+        }
+        if (origNodeEnv !== undefined) {
+          (process.env as Record<string, string | undefined>).NODE_ENV = origNodeEnv;
+        } else {
+          delete (process.env as Record<string, string | undefined>).NODE_ENV;
+        }
+      }
+    });
   });
 
   describe('prisma.config.ts shadow and non-pooling URL resolution', () => {
@@ -691,7 +741,7 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(isSamePostgresDatabase(directDb, shadowDb)).toBe(false);
     });
 
-    it('resolves shadowDatabaseUrl to undefined outside migrate dev/reset or when matching DATABASE_URL', () => {
+    it('resolves shadowDatabaseUrl to undefined outside migrate dev/reset/diff or when matching DATABASE_URL', () => {
       expect(
         resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'deploy'])
       ).toBeUndefined();
@@ -707,12 +757,27 @@ CREATE INDEX "Contributor_coverFee_idx" ON "Contributor"("coverFee");
       expect(
         resolvePrismaShadowDatabaseUrl(directNeon, pooledNeon, ['node', 'prisma', 'migrate', 'dev'])
       ).toBeUndefined();
+      expect(
+        resolvePrismaShadowDatabaseUrl(directNeon, pooledNeon, ['node', 'prisma', 'migrate', 'diff'])
+      ).toBeUndefined();
 
       expect(
         resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'dev'])
       ).toBe(shadowDb);
       expect(
         resolvePrismaShadowDatabaseUrl(shadowDb, directDb, ['node', 'prisma', 'migrate', 'reset'])
+      ).toBe(shadowDb);
+      expect(
+        resolvePrismaShadowDatabaseUrl(shadowDb, directDb, [
+          'node',
+          'prisma',
+          'migrate',
+          'diff',
+          '--from-migrations',
+          'prisma/migrations',
+          '--to-schema',
+          'prisma/schema.prisma',
+        ])
       ).toBe(shadowDb);
     });
 

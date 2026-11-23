@@ -12,7 +12,7 @@ import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
-import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe';
+import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
 import {
   REGISTRY_INITIAL_VISIBLE_ITEMS,
   REGISTRY_MAX_CATALOG_LIMIT,
@@ -23,6 +23,8 @@ import { getItemTotalTargetAmount } from '../lib/registryStatusUtils';
 export type SortOption = 'default' | 'price-asc' | 'price-desc' | 'most-wanted';
 
 const EMPTY_ITEMS: RegistryItem[] = [];
+const REGISTRY_QUERY_KEY = ['registry-items', 1, REGISTRY_MAX_CATALOG_LIMIT] as const;
+const REGISTRY_ITEMS_ENDPOINT = `/api/registry/items?page=1&limit=${REGISTRY_MAX_CATALOG_LIMIT}`;
 
 type RegistryQueryData = PaginatedRegistryItems | RegistryItem[];
 
@@ -121,8 +123,6 @@ export function useRegistry() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [visibleItemsCount, setVisibleItemsCount] = useState(REGISTRY_INITIAL_VISIBLE_ITEMS);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(REGISTRY_MAX_CATALOG_LIMIT);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 1000]);
   const [showGroupGiftsOnly, setShowGroupGiftsOnlyState] = useState(false);
   const [showAvailableOnly, setShowAvailableOnlyState] = useState(false);
@@ -146,28 +146,19 @@ export function useRegistry() {
     };
   }, []);
 
-  const registryQueryKey = useMemo(() => ['registry-items', page, limit], [page, limit]);
-
-  const endpoint = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set('page', String(page));
-    params.set('limit', String(limit));
-    return `/api/registry/items?${params.toString()}`;
-  }, [page, limit]);
-
   const {
     data: queryResult,
     isLoading,
     error,
     refetch,
   } = useQuery<RegistryQueryData, Error>({
-    queryKey: registryQueryKey,
-    queryFn: async () => apiClient.get<RegistryQueryData>(endpoint),
+    queryKey: REGISTRY_QUERY_KEY,
+    queryFn: async () => apiClient.get<RegistryQueryData>(REGISTRY_ITEMS_ENDPOINT),
     placeholderData: (previousData) => previousData,
   });
 
   const { remove: deleteItem } = useEntityOrchestration<RegistryItem>({
-    queryKey: registryQueryKey,
+    queryKey: REGISTRY_QUERY_KEY,
     endpoint: '/api/registry/items',
     invalidateQueryKeys: [['admin-registry'], ['admin-registry-item']],
     entityName: 'registry item',
@@ -183,20 +174,6 @@ export function useRegistry() {
     }
     return EMPTY_ITEMS;
   }, [queryResult]);
-
-  const total = useMemo(() => {
-    if (queryResult && typeof queryResult === 'object' && 'total' in queryResult && typeof queryResult.total === 'number') {
-      return queryResult.total;
-    }
-    return items.length;
-  }, [queryResult, items.length]);
-
-  const totalPages = useMemo(() => {
-    if (queryResult && typeof queryResult === 'object' && 'totalPages' in queryResult && typeof queryResult.totalPages === 'number') {
-      return queryResult.totalPages;
-    }
-    return Math.ceil(total / limit) || 1;
-  }, [queryResult, total, limit]);
 
   const {
     categories,
@@ -513,23 +490,15 @@ export function useRegistry() {
     setSearchQueryState('');
     setSortOptionState('default');
     setVisibleItemsCount(REGISTRY_INITIAL_VISIBLE_ITEMS);
-    setPage(1);
   }, [setCategoryFilter, minPrice, maxPrice]);
 
   return {
     items,
-    total,
-    page,
-    setPage,
-    limit,
-    setLimit,
-    totalPages,
     isLoading,
     error,
     refetch,
     selectedItem,
     isModalOpen,
-    visibleItemsCount,
     setVisibleItemsCount,
     isAdmin,
     cardCheckoutEnabled,

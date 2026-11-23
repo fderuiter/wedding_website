@@ -22,6 +22,11 @@ on:
         description: 'OCI Image Tag or Commit SHA (resolved to digest if image_digest is omitted)'
         required: false
         type: string
+      source_ref:
+        description: 'Optional expected OIDC provenance source ref override (refs/heads/main or refs/tags/v*)'
+        required: false
+        default: ''
+        type: string
       provider:
         description: 'Hosting Provider Adapter'
         required: true
@@ -75,6 +80,11 @@ on:
       image_tag:
         description: 'OCI Image Tag or Commit SHA (resolved to digest if image_digest is omitted)'
         required: false
+        type: string
+      source_ref:
+        description: 'Optional expected OIDC provenance source ref override (refs/heads/main or refs/tags/v*)'
+        required: false
+        default: ''
         type: string
       provider:
         description: 'Hosting Provider Adapter'
@@ -277,15 +287,63 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
           IMAGE_DIGEST: ${{ steps.resolve.outputs.image_digest }}
+          RAW_TAG: ${{ inputs.image_tag }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           REPO_OWNER: ${{ github.repository_owner }}
           SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
-          echo "Verifying OIDC build provenance attestation for oci://${IMAGE_URI}..."
+          EXPLICIT_REF="false"
+          if [ -n "${INPUT_SOURCE_REF:-}" ]; then
+            EXPECTED_SOURCE_REF="$INPUT_SOURCE_REF"
+            EXPLICIT_REF="true"
+          elif [[ "${RAW_TAG:-}" =~ ^v[0-9][a-zA-Z0-9_.-]*$ ]]; then
+            EXPECTED_SOURCE_REF="refs/tags/${RAW_TAG}"
+            EXPLICIT_REF="true"
+          else
+            EXPECTED_SOURCE_REF="refs/heads/main"
+          fi
+
+          if [[ ! "$EXPECTED_SOURCE_REF" =~ ^(refs/heads/main|refs/tags/v[0-9][a-zA-Z0-9_.-]*)$ ]]; then
+            echo "::error::Unauthorized provenance source_ref '${EXPECTED_SOURCE_REF}'. Must be 'refs/heads/main' or 'refs/tags/v*'."
+            exit 1
+          fi
+
+          echo "Verifying OIDC build provenance attestation for oci://${IMAGE_URI} (source-ref: ${EXPECTED_SOURCE_REF})..."
+          if ! gh attestation verify "oci://${IMAGE_URI}" \
+            --owner "$REPO_OWNER" \
+            --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-ref "$EXPECTED_SOURCE_REF"; then
+            VERIFIED_FALLBACK="false"
+            if [ "$EXPLICIT_REF" = "false" ] && { [ -z "${RAW_TAG:-}" ] || [[ "${RAW_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; }; then
+              if ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
+                --owner "$REPO_OWNER" \
+                --signer-workflow "$SIGNER_WORKFLOW" \
+                --format json 2>/dev/null); then
+                CERT_SOURCE_REF=$(printf '%s' "$ATTESTATION_JSON" | jq -r '.[0].verificationResult.signature.certificate.sourceRepositoryRef // empty')
+                if [[ "$CERT_SOURCE_REF" =~ ^refs/tags/v[0-9][a-zA-Z0-9_.-]*$ ]]; then
+                  if gh attestation verify "oci://${IMAGE_URI}" \
+                    --owner "$REPO_OWNER" \
+                    --signer-workflow "$SIGNER_WORKFLOW" \
+                    --source-ref "$CERT_SOURCE_REF"; then
+                    EXPECTED_SOURCE_REF="$CERT_SOURCE_REF"
+                    VERIFIED_FALLBACK="true"
+                  fi
+                fi
+              fi
+            fi
+
+            if [ "$VERIFIED_FALLBACK" != "true" ]; then
+              echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}', signer workflow '${SIGNER_WORKFLOW}', and source ref '${EXPECTED_SOURCE_REF}'). Blocking deployment."
+              exit 1
+            fi
+          fi
+
           if ! ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
             --owner "$REPO_OWNER" \
             --signer-workflow "$SIGNER_WORKFLOW" \
+            --source-ref "$EXPECTED_SOURCE_REF" \
             --format json); then
-            echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}' and signer workflow '${SIGNER_WORKFLOW}'). Blocking deployment."
+            echo "::error::OIDC build provenance JSON verification failed for oci://${IMAGE_URI}. Blocking deployment."
             exit 1
           fi
 
@@ -321,13 +379,15 @@ jobs:
           SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
             [
               (if type == "array" then .[] else . end)
-              | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
               | (
-                  .buildDefinition.externalParameters.inputs.commit_sha,
-                  (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
-                  .buildDefinition.internalParameters.github.sha,
-                  .invocation.configSource.digest.sha1,
-                  (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                  ((.verificationResult.statement.predicate // .statement.predicate // .predicate // empty) | (
+                    .buildDefinition.externalParameters.inputs.commit_sha,
+                    (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                    .buildDefinition.internalParameters.github.sha,
+                    .invocation.configSource.digest.sha1,
+                    (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                  )),
+                  .verificationResult.signature.certificate.sourceRepositoryDigest
                 )
               | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
             ][0] // empty
@@ -374,9 +434,143 @@ jobs:
             exit 1
           fi
 
+          echo "source_ref=${EXPECTED_SOURCE_REF}" >> "$GITHUB_OUTPUT"
           echo "source_revision=${SOURCE_REVISION}" >> "$GITHUB_OUTPUT"
           echo "attestation_status=verified" >> "$GITHUB_OUTPUT"
-          echo "Verified OIDC build provenance attestation and passing ci.yml run (ID: ${VERIFIED_CI_RUN_ID}) for ${IMAGE_DIGEST} (revision: ${SOURCE_REVISION})."
+          echo "Verified OIDC build provenance attestation (${EXPECTED_SOURCE_REF}) and passing ci.yml run (ID: ${VERIFIED_CI_RUN_ID}) for ${IMAGE_DIGEST} (revision: ${SOURCE_REVISION})."
+
+      - name: Resolve Standalone Promotion Commit & Main Ancestry
+        id: standalone-target
+        if: "github.event_name == 'workflow_dispatch' && !inputs.dry_run"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_URI: ${{ steps.resolve.outputs.image_uri }}
+          RAW_TAG: ${{ inputs.image_tag }}
+          EXPECTED_SOURCE_REF: ${{ steps.provenance.outputs.source_ref }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
+        run: |
+          if git remote get-url origin >/dev/null 2>&1; then
+            if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+              git fetch --unshallow --tags origin +refs/heads/main:refs/remotes/origin/main
+            else
+              git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+            fi
+          fi
+
+          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+            echo "::error::Missing refs/remotes/origin/main reference required to verify main branch ancestry."
+            exit 1
+          fi
+
+          TARGET_SHA=""
+          if [[ "${RAW_TAG:-}" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            TARGET_SHA="$RAW_TAG"
+          elif [ -n "${RAW_TAG:-}" ]; then
+            if ! TARGET_SHA=$(git rev-parse --verify "${RAW_TAG}^{commit}" 2>/dev/null); then
+              echo "::error::Unable to resolve image_tag '${RAW_TAG}' to a repository commit SHA for CI and migration verification."
+              exit 1
+            fi
+          else
+            ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
+              --owner "$REPO_OWNER" \
+              --signer-workflow "$SIGNER_WORKFLOW" \
+              --source-ref "$EXPECTED_SOURCE_REF" \
+              --format json)
+            TARGET_SHA=$(printf '%s' "$ATTESTATION_JSON" | jq -r '.[0].verificationResult.signature.certificate.sourceRepositoryDigest // empty')
+          fi
+
+          if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Failed to resolve valid 40-character commit SHA for standalone promotion (got '${TARGET_SHA}')."
+            exit 1
+          fi
+
+          if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+            if git remote get-url origin >/dev/null 2>&1; then
+              git fetch --no-tags origin "$TARGET_SHA" || true
+            fi
+          fi
+
+          if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Commit '${TARGET_SHA}' does not exist in repository history."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$TARGET_SHA" refs/remotes/origin/main; then
+            echo "::error::Target commit '${TARGET_SHA}' is not an ancestor of origin/main. Standalone live promotion blocked."
+            exit 1
+          fi
+
+          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Verified standalone promotion commit ${TARGET_SHA} is an ancestor of origin/main."
+
+      - name: Verify Standalone CI & Database Migration Status
+        if: "github.event_name == 'workflow_dispatch' && !inputs.dry_run"
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TARGET_SHA: ${{ steps.standalone-target.outputs.target_sha }}
+          TARGET_ENV: ${{ inputs.environment || 'production' }}
+        with:
+          script: |
+            const targetSha = process.env.TARGET_SHA;
+            const targetEnv = process.env.TARGET_ENV || 'production';
+            const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
+
+            const ciRuns = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                head_sha: targetSha,
+                status: 'completed',
+                per_page: 100,
+              }
+            );
+
+            const successfulCiRun = ciRuns.find(
+              (run) =>
+                run.conclusion === 'success' &&
+                run.head_sha === targetSha &&
+                (!run.head_repository || run.head_repository.full_name === fullRepo)
+            );
+
+            if (!successfulCiRun) {
+              core.setFailed(
+                `Standalone live promotion blocked: no completed successful ci.yml workflow run found for commit ${targetSha} in ${fullRepo}.`
+              );
+              return;
+            }
+
+            const migrateRuns = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'db-migrate.yml',
+                head_sha: targetSha,
+                status: 'completed',
+                per_page: 100,
+              }
+            );
+
+            const successfulMigrateRun = migrateRuns.find(
+              (run) =>
+                run.conclusion === 'success' &&
+                run.head_sha === targetSha &&
+                (!run.head_repository || run.head_repository.full_name === fullRepo)
+            );
+
+            if (!successfulMigrateRun) {
+              core.setFailed(
+                `Standalone live promotion blocked: no completed successful db-migrate.yml workflow run found for commit ${targetSha} (${targetEnv}) in ${fullRepo}. Run deploy.yml or db-migrate.yml before promoting container revisions.`
+              );
+              return;
+            }
+
+            core.info(
+              `Verified CI run #${successfulCiRun.run_number} and database migration run #${successfulMigrateRun.run_number} for commit ${targetSha}.`
+            );
 
       - name: Verify Selected Provider Credentials
         id: verify-credentials

@@ -215,6 +215,34 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Verify Prisma Migration Sync
+        env:
+          DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
+          POSTGRES_URL_NON_POOLING: postgresql://wedding:wedding123@localhost:5432/wedding_shadow?schema=public
+        run: |
+          node --input-type=module -e '
+            import pg from "pg";
+            const adminUrl = new URL(process.env.POSTGRES_URL_NON_POOLING);
+            const shadowDb = decodeURIComponent(adminUrl.pathname.replace(/^\//, ""));
+            adminUrl.pathname = "/postgres";
+            adminUrl.search = "";
+            const client = new pg.Client({ connectionString: adminUrl.toString() });
+            await client.connect();
+            try {
+              const res = await client.query("SELECT 1 FROM pg_database WHERE datname = $1", [shadowDb]);
+              if (res.rowCount === 0) {
+                const escaped = shadowDb.replace(/"/g, "\"\"");
+                await client.query(`CREATE DATABASE "${escaped}"`);
+              }
+            } finally {
+              await client.end();
+            }
+          '
+          if ! npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code; then
+            echo "::error::Prisma migration drift detected between prisma/migrations/ and prisma/schema.prisma."
+            echo "To resolve schema drift, run 'npm run migrate:dev -- --name <migration_name>' locally against PostgreSQL (with POSTGRES_URL_NON_POOLING pointing to a shadow database via prisma.config.ts) and commit the generated migration file."
+            exit 1
+          fi
       - name: Run unit & integration tests
         env:
           DATABASE_URL: postgresql://wedding:wedding123@localhost:5432/wedding_test?schema=public
@@ -368,6 +396,14 @@ jobs:
             mkdir -p "$MOUNT_CACHE_DIR/next"
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
+
+      - name: Scan OCI Container Image with Trivy (amd64)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
 
       - name: Extract Standalone Output from Container Image
         run: |
@@ -551,6 +587,14 @@ jobs:
             mkdir -p "$MOUNT_CACHE_DIR/next"
             mv -f "$OUT_DIR/next/mounts.tar" "$MOUNT_CACHE_DIR/next/mounts.tar"
           fi
+
+      - name: Scan Native ARM64 OCI Container Image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: wedding-website:latest
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
 
       - name: Run Native ARM64 OCI Container & Clean Database Smoke Test
         env:
