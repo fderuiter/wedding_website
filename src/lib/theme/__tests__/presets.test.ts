@@ -119,6 +119,12 @@ describe('Theme Preset Catalog & Token Mapping', () => {
       expect(tokens['--floorplan-seat-assigned-bg']).toBeDefined();
       expect(tokens['--floorplan-seat-assigned-text']).toBeDefined();
       expect(tokens['--floorplan-seat-unassigned-hover']).toBeDefined();
+      expect(tokens['--floorplan-seat-dimmed-bg']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens['--floorplan-seat-dimmed-text']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens['--floorplan-seat-dimmed-border']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens.darkTokens?.['--floorplan-seat-dimmed-bg']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens.darkTokens?.['--floorplan-seat-dimmed-text']).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(tokens.darkTokens?.['--floorplan-seat-dimmed-border']).toMatch(/^#[0-9a-fA-F]{6}$/);
       expect(tokens['--floorplan-status-overcapacity-bg']).toBeDefined();
       expect(tokens['--floorplan-status-overcapacity-border']).toBeDefined();
 

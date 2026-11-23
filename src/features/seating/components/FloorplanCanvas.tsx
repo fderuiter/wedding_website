@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
+import { EnsureToastProvider, useToast } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../schemas';
 import {
   InvitationCodeDTO,
@@ -8,7 +11,11 @@ import {
   formatGuestMealSelections,
   formatGuestPlusOneNames,
 } from '@/features/registry';
-import { computeSeatPosition, resolveDetailedSeatAssignments } from '../seatLayout';
+import {
+  computeScaledTableDimensions,
+  computeSeatPosition,
+  resolveDetailedSeatAssignments,
+} from '../seatLayout';
 import {
   getGuestPartySize,
   getGuestPlusOneNamesList,
@@ -22,6 +29,8 @@ const EMPTY_SET = new Set<string>();
 const DEFAULT_STAGE_WIDTH = 800;
 const DEFAULT_STAGE_HEIGHT = 650;
 const STAGE_PADDING = 48;
+const NUDGE_STEP_PX = 20;
+const NUDGE_FAST_STEP_PX = 50;
 
 interface ActiveDropTarget {
   type: 'table' | 'seat';
@@ -79,6 +88,8 @@ interface FloorplanCanvasProps {
   searchQuery?: string;
   onOpenSeatAssignModal?: (tableId: string, seatNumber: number) => void;
   onAddTable?: () => void;
+  placementMode?: boolean;
+  onPlacementModeChange?: (active: boolean) => void;
 }
 
 function getSeatInitials(displayName: string, isCompanion: boolean): string {
@@ -102,7 +113,7 @@ function getSeatInitials(displayName: string, isCompanion: boolean): string {
   return `${parts[0]?.[0] || ''}${parts[1]?.[0] || ''}`;
 }
 
-export const FloorplanCanvas = React.memo(function FloorplanCanvas({
+function FloorplanCanvasContent({
   tables,
   guests,
   allGuests,
@@ -116,7 +127,10 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   searchQuery,
   onOpenSeatAssignModal,
   onAddTable,
+  placementMode,
+  onPlacementModeChange,
 }: FloorplanCanvasProps) {
+  const { confirm } = useToast();
   const canvasRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [activeGesture, setActiveGesture] = useState<ActivePointerGesture | null>(null);
@@ -126,22 +140,48 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const suppressClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const [activeDropTarget, setActiveDropTarget] = useState<ActiveDropTarget | null>(null);
+  const [internalPlacementTableId, setInternalPlacementTableId] = useState<string | null>(null);
+
+  const isPlacementMode =
+    Boolean(selectedTableId) &&
+    (placementMode !== undefined ? placementMode : internalPlacementTableId === selectedTableId);
+
+  const setPlacementMode = useCallback(
+    (nextActive: boolean) => {
+      setInternalPlacementTableId(nextActive ? selectedTableId : null);
+      onPlacementModeChange?.(nextActive);
+    },
+    [onPlacementModeChange, selectedTableId]
+  );
 
   const callbacksRef = useRef({ onUpdateTablePosition, onUpdateTableRotation });
-  callbacksRef.current = { onUpdateTablePosition, onUpdateTableRotation };
+  useEffect(() => {
+    callbacksRef.current = { onUpdateTablePosition, onUpdateTableRotation };
+  }, [onUpdateTablePosition, onUpdateTableRotation]);
 
-  // Compute scrollable inner stage dimensions so off-screen tables remain reachable on narrow viewports
+  const getTableScaledBounds = useCallback(
+    (table: SeatingTableDTO, rotationOverride?: number) =>
+      computeScaledTableDimensions({
+        shape: table.shape,
+        capacity: table.capacity,
+        width: table.width,
+        height: table.height,
+        rotation: rotationOverride ?? table.rotation ?? 0,
+      }),
+    []
+  );
+
+  // Compute scrollable inner stage dimensions so off-screen and high-capacity tables remain reachable
   const stageDimensions = useMemo(() => {
     let maxRight = DEFAULT_STAGE_WIDTH;
     let maxBottom = DEFAULT_STAGE_HEIGHT;
     for (const t of tables) {
-      const w = t.width || 120;
-      const h = t.height || 120;
+      const { width: w, height: h } = getTableScaledBounds(t);
       maxRight = Math.max(maxRight, t.x + w + STAGE_PADDING);
       maxBottom = Math.max(maxBottom, t.y + h + STAGE_PADDING);
     }
     return { width: maxRight, height: maxBottom };
-  }, [tables]);
+  }, [getTableScaledBounds, tables]);
 
   const getEffectiveStageBounds = useCallback(() => {
     let stageWidth = stageDimensions.width;
@@ -273,8 +313,51 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     setLiveAnnouncement(`${table.name} rotated to ${next} degrees`);
   };
 
+  const nudgeTableBy = useCallback(
+    (table: SeatingTableDTO, dx: number, dy: number) => {
+      const { width: tableWidth, height: tableHeight } = getTableScaledBounds(table);
+      const { width: canvasWidth, height: canvasHeight } = getEffectiveStageBounds();
+
+      const maxX = Math.max(0, canvasWidth - tableWidth);
+      const maxY = Math.max(0, canvasHeight - tableHeight);
+
+      const newX = Math.round(Math.max(0, Math.min(maxX, table.x + dx)));
+      const newY = Math.round(Math.max(0, Math.min(maxY, table.y + dy)));
+
+      onUpdateTablePosition(table.id, newX, newY);
+      setLiveAnnouncement(`${table.name} moved to X ${newX}, Y ${newY}`);
+    },
+    [getEffectiveStageBounds, getTableScaledBounds, onUpdateTablePosition]
+  );
+
+  useEffect(() => {
+    if (!isPlacementMode) return;
+    const selected = tables.find((t) => t.id === selectedTableId);
+    const handlePlacementEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setPlacementMode(false);
+        setLiveAnnouncement(
+          selected ? `Placement mode exited for ${selected.name}` : 'Placement mode exited'
+        );
+      }
+    };
+    window.addEventListener('keydown', handlePlacementEscape);
+    return () => {
+      window.removeEventListener('keydown', handlePlacementEscape);
+    };
+  }, [isPlacementMode, selectedTableId, setPlacementMode, tables]);
+
   // Handle table keyboard navigation, repositioning & rotation
   const handleTableKeyDown = (e: React.KeyboardEvent, table: SeatingTableDTO) => {
+    if (e.key === 'Escape' && isPlacementMode) {
+      e.preventDefault();
+      e.stopPropagation();
+      setPlacementMode(false);
+      setLiveAnnouncement(`Placement mode exited for ${table.name}`);
+      return;
+    }
+
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onSelectTable(table.id);
@@ -304,18 +387,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       if (e.key === 'ArrowUp') dy = -step;
       if (e.key === 'ArrowDown') dy = step;
 
-      const tableWidth = table.width || 120;
-      const tableHeight = table.height || 120;
-      const { width: canvasWidth, height: canvasHeight } = getEffectiveStageBounds();
-
-      const maxX = Math.max(0, canvasWidth - tableWidth);
-      const maxY = Math.max(0, canvasHeight - tableHeight);
-
-      const newX = Math.max(0, Math.min(maxX, table.x + dx));
-      const newY = Math.max(0, Math.min(maxY, table.y + dy));
-
-      onUpdateTablePosition(table.id, Math.round(newX), Math.round(newY));
-      setLiveAnnouncement(`${table.name} moved to X ${Math.round(newX)}, Y ${Math.round(newY)}`);
+      nudgeTableBy(table, dx, dy);
     }
   };
 
@@ -518,6 +590,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     onSelectTable(table.id);
 
     const startRotation = table.rotation || 0;
+    const { width: scaledW, height: scaledH } = getTableScaledBounds(table, startRotation);
     const nextGesture: ActivePointerGesture = {
       mode: 'rotate',
       tableId: table.id,
@@ -526,8 +599,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       previewRotation: startRotation,
       x: table.x,
       y: table.y,
-      width: table.width || 120,
-      height: table.height || 120,
+      width: scaledW,
+      height: scaledH,
       pointerStartX: clientX,
       pointerStartY: clientY,
       pointerId,
@@ -556,6 +629,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       offsetY = stagePoint.y - table.y;
     }
 
+    const { width: scaledW, height: scaledH } = getTableScaledBounds(table);
     const nextGesture: ActivePointerGesture = {
       mode: 'drag',
       tableId: table.id,
@@ -566,8 +640,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       previewY: table.y,
       offsetX,
       offsetY,
-      width: table.width || 120,
-      height: table.height || 120,
+      width: scaledW,
+      height: scaledH,
       pointerStartX: clientX,
       pointerStartY: clientY,
       pointerId,
@@ -671,8 +745,17 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       e.preventDefault();
       e.stopPropagation();
       if (assignedGuest) {
-        onUnassignGuest(assignedGuest.id);
-        setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${seatNumber}`);
+        void (async () => {
+          const confirmed = await confirm(
+            `Remove ${assignedGuest.guestName} from ${table.name} (Seat ${seatNumber})?`
+          );
+          if (confirmed) {
+            onUnassignGuest(assignedGuest.id);
+            setLiveAnnouncement(
+              `${assignedGuest.guestName} unassigned from ${table.name} Seat ${seatNumber}`
+            );
+          }
+        })();
       } else {
         onOpenSeatAssignModal?.(table.id, seatNumber);
       }
@@ -850,7 +933,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   };
 
   // Helper to render seat positions around table
-  const renderSeats = (table: SeatingTableDTO) => {
+  const renderSeats = (table: SeatingTableDTO, renderedRotation: number = 0) => {
     if (isLandmarkTable(table)) {
       return null;
     }
@@ -861,9 +944,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     const tableSeatedHeadcount = getGuestsHeadcount(table.invitationCodes || []);
     const isRound = table.shape === 'round';
     const isOneSided = isOneSidedTableShape(table.shape);
-    const width = table.width || 120;
-    const height = table.height || 120;
+    const { width, height } = getTableScaledBounds(table, renderedRotation);
     const seatOffset = isRound || isOneSided ? 18 : 16;
+    const seatCounterRotate = renderedRotation ? `rotate(${-renderedRotation}deg)` : undefined;
 
     for (let i = 1; i <= capacity; i++) {
       const occupant = detailedSeatMap.get(i);
@@ -938,16 +1021,16 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   : `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
                 : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
             }
-            className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
+            className={`absolute pointer-events-auto -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
               isSeatDropTarget
                 ? isSeatDropDisabled
                   ? 'scale-125 bg-red-100 dark:bg-red-950/40 border-red-500 ring-2 ring-red-500 z-30 font-bold shadow-lg cursor-not-allowed'
                   : 'scale-125 bg-primary/20 border-primary ring-2 ring-primary z-30 font-bold shadow-lg'
                 : assignedGuest
                   ? isMatch
-                    ? 'bg-amber-500 text-white border-amber-600 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
+                    ? 'bg-amber-700 text-white border-amber-800 ring-4 ring-amber-300 dark:ring-amber-500/50 shadow-lg scale-125 z-30 animate-pulse font-bold'
                     : isSearching
-                      ? 'opacity-60 shadow-sm'
+                      ? 'shadow-sm'
                       : 'shadow-sm hover:scale-110'
                   : 'hover:border-primary hover:bg-[var(--floorplan-seat-unassigned-hover,#fef2f2)]'
             }`}
@@ -957,20 +1040,38 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   ? {
                     left: `${seatX}px`,
                     top: `${seatY}px`,
+                    transform: seatCounterRotate,
                   }
-                  : {
-                    left: `${seatX}px`,
-                    top: `${seatY}px`,
-                    backgroundColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
-                    color: 'var(--floorplan-seat-assigned-text, #ffffff)',
-                    borderColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
-                  }
+                  : isSearching
+                    ? {
+                      left: `${seatX}px`,
+                      top: `${seatY}px`,
+                      transform: seatCounterRotate,
+                      backgroundColor: 'var(--floorplan-seat-dimmed-bg, #e5e7eb)',
+                      color: 'var(--floorplan-seat-dimmed-text, #374151)',
+                      borderColor: 'var(--floorplan-seat-dimmed-border, #9ca3af)',
+                    }
+                    : {
+                      left: `${seatX}px`,
+                      top: `${seatY}px`,
+                      transform: seatCounterRotate,
+                      backgroundColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                      color: 'var(--floorplan-seat-assigned-text, #ffffff)',
+                      borderColor: 'var(--floorplan-seat-assigned-bg, var(--color-primary, #B91C1C))',
+                    }
                 : {
                   left: `${seatX}px`,
                   top: `${seatY}px`,
-                  backgroundColor: 'var(--floorplan-table-bg, #ffffff)',
-                  color: 'color-mix(in srgb, var(--color-foreground, #1f2937) 75%, transparent)',
-                  borderColor: 'var(--floorplan-table-border, #9ca3af)',
+                  transform: seatCounterRotate,
+                  backgroundColor: isSearching
+                    ? 'var(--floorplan-seat-dimmed-bg, #e5e7eb)'
+                    : 'var(--floorplan-table-bg, #ffffff)',
+                  color: isSearching
+                    ? 'var(--floorplan-seat-dimmed-text, #374151)'
+                    : 'var(--color-muted-text, #4b5563)',
+                  borderColor: isSearching
+                    ? 'var(--floorplan-seat-dimmed-border, #9ca3af)'
+                    : 'var(--floorplan-table-border, #9ca3af)',
                   borderStyle: 'dashed',
                 }
             }
@@ -1093,14 +1194,31 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         }
       }}
       onDragEnd={() => setActiveDropTarget(null)}
-      onClick={() => {
+      onClick={(e) => {
         if (suppressCanvasClickRef.current) {
           suppressCanvasClickRef.current = false;
           return;
         }
+        if (isPlacementMode && selectedTableId) {
+          const targetTable = tables.find((t) => t.id === selectedTableId);
+          if (targetTable) {
+            const stagePoint = clientToStagePoint(e.clientX, e.clientY);
+            const { width: scaledW, height: scaledH } = getTableScaledBounds(targetTable);
+            const { width: canvasWidth, height: canvasHeight } = getEffectiveStageBounds();
+            const maxX = Math.max(0, canvasWidth - scaledW);
+            const maxY = Math.max(0, canvasHeight - scaledH);
+            const newX = Math.round(Math.max(0, Math.min(maxX, stagePoint.x - scaledW / 2)));
+            const newY = Math.round(Math.max(0, Math.min(maxY, stagePoint.y - scaledH / 2)));
+            onUpdateTablePosition(targetTable.id, newX, newY);
+            setLiveAnnouncement(`${targetTable.name} moved to X ${newX}, Y ${newY}`);
+            return;
+          }
+        }
         onSelectTable(null);
       }}
-      className="relative w-full h-[650px] rounded-xl overflow-auto shadow-inner select-none print:border-none print:bg-[var(--print-bg)]"
+      className={`relative w-full h-[650px] rounded-xl overflow-auto shadow-inner select-none print:border-none print:bg-[var(--print-bg)] ${
+        isPlacementMode ? 'cursor-crosshair' : ''
+      }`}
       style={{
         backgroundColor: 'var(--canvas-bg, #f8fafc)',
         border: 'var(--canvas-border, 2px dashed #cbd5e1)',
@@ -1129,25 +1247,29 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
       >
         {/* Canvas Header Banner */}
         <div
-          className="absolute top-3 left-3 backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"
+          className="absolute top-3 left-3 pointer-events-none backdrop-blur border px-3 py-1.5 font-medium shadow-sm z-10 flex items-center gap-2 text-xs"
           style={{
-            backgroundColor: 'color-mix(in srgb, var(--floorplan-table-bg, #ffffff) 90%, transparent)',
+            backgroundColor: 'var(--floorplan-table-bg, #ffffff)',
             borderColor: 'var(--floorplan-table-border, #e5e7eb)',
             borderRadius: 'var(--floorplan-table-radius, 0.5rem)',
             color: 'var(--color-foreground, #374151)',
           }}
         >
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          {isSearching ? (
+          {isPlacementMode ? (
+            <span>
+              Placement mode active: Click any open spot on the floorplan to move the selected table, or press Escape to exit.
+            </span>
+          ) : isSearching ? (
             totalSeatedMatches > 0 ? (
               <span>
-                Searching &ldquo;{searchQuery}&rdquo;: <strong className="text-amber-600 dark:text-amber-400">{totalSeatedMatches} seated match{totalSeatedMatches === 1 ? '' : 'es'}</strong> highlighted on floorplan
+                Searching &ldquo;{searchQuery}&rdquo;: <strong className="text-amber-800 dark:text-amber-300">{totalSeatedMatches} seated match{totalSeatedMatches === 1 ? '' : 'es'}</strong> highlighted on floorplan
               </span>
             ) : (
               <span>Searching &ldquo;{searchQuery}&rdquo;: No matching seated guests on floorplan.</span>
             )
           ) : (
-            <span>Drag tables to arrange floorplan. Drag guests onto table seats to assign.</span>
+            <span>Drag tables to arrange floorplan, or select a table for nudge and placement controls. Drag guests onto table seats to assign.</span>
           )}
         </div>
 
@@ -1166,7 +1288,25 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
           const renderedX = isDraggingThisTable ? activeGesture.previewX : table.x;
           const renderedY = isDraggingThisTable ? activeGesture.previewY : table.y;
           const renderedRotation = isRotatingThisTable ? activeGesture.previewRotation : (table.rotation || 0);
+          const { width: scaledW, height: scaledH } = getTableScaledBounds(table, renderedRotation);
           const isCircularSurface = table.shape === 'round' || table.shape === 'cake';
+
+          const cx = scaledW / 2;
+          const cy = scaledH / 2;
+          const rad = (renderedRotation * Math.PI) / 180;
+          const rotatedHalfExtentY =
+            Math.abs(cx * Math.sin(rad)) + Math.abs(cy * Math.cos(rad)) + (isLandmark ? 8 : 34);
+          const handleScreenExtentAbove = (cy + 54) * Math.cos(rad) + 16;
+          const handleScreenExtentBelow = -(cy + 54) * Math.cos(rad) + 16;
+          const clearanceAboveCenter = Math.max(rotatedHalfExtentY, handleScreenExtentAbove) + 21;
+          const clearanceBelowCenter = Math.max(rotatedHalfExtentY, handleScreenExtentBelow) + 21;
+          const placeToolbarBelow = renderedY + cy - clearanceAboveCenter < 14;
+          const screenOffsetY = placeToolbarBelow ? clearanceBelowCenter : -clearanceAboveCenter;
+          const screenOffsetX = Math.max(0, 165 - (renderedX + cx));
+          const toolbarLocalX =
+            cx + screenOffsetX * Math.cos(rad) + screenOffsetY * Math.sin(rad);
+          const toolbarLocalY =
+            cy - screenOffsetX * Math.sin(rad) + screenOffsetY * Math.cos(rad);
 
           return (
             <React.Fragment key={table.id}>
@@ -1204,8 +1344,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 style={{
                   left: `${renderedX}px`,
                   top: `${renderedY}px`,
-                  width: `${table.width || 120}px`,
-                  height: `${table.height || 120}px`,
+                  width: `${scaledW}px`,
+                  height: `${scaledH}px`,
                   transform: `rotate(${renderedRotation}deg)`,
                 }}
                 tabIndex={0}
@@ -1242,7 +1382,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                       ? '9999px'
                       : 'var(--floorplan-table-radius, 0.75rem)',
                     color: isOverCapacity || isDropDisabled
-                      ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
+                      ? 'var(--color-error-text, #991b1b)'
                       : 'var(--color-foreground, #1f2937)',
                   }}
                 >
@@ -1268,8 +1408,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 style={{
                   left: `${renderedX}px`,
                   top: `${renderedY}px`,
-                  width: `${table.width || 120}px`,
-                  height: `${table.height || 120}px`,
+                  width: `${scaledW}px`,
+                  height: `${scaledH}px`,
                   transform: `rotate(${renderedRotation}deg)`,
                 }}
               >
@@ -1279,7 +1419,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                       data-testid="table-landmark-badge"
                       className="text-[10px] font-semibold uppercase tracking-wide"
                       style={{
-                        color: 'color-mix(in srgb, var(--color-foreground, #1f2937) 75%, transparent)',
+                        color: 'var(--color-muted-text, #4b5563)',
                       }}
                     >
                       {getSeatingShapeLabel(table.shape)}
@@ -1289,8 +1429,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                       className="text-[10px] font-medium"
                       style={{
                         color: isOverCapacity
-                          ? 'var(--floorplan-status-overcapacity-border, #991b1b)'
-                          : 'color-mix(in srgb, var(--color-foreground, #1f2937) 65%, transparent)',
+                          ? 'var(--color-error-text, #991b1b)'
+                          : 'var(--color-muted-text, #4b5563)',
                       }}
                     >
                       {assignedCount} / {table.capacity} seats
@@ -1324,7 +1464,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                   {hasMatchingGuest && (
                     <span
                       data-testid="table-search-match-badge"
-                      className="absolute -top-2 -left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 animate-pulse z-30"
+                      className="absolute -top-2 -left-2 bg-amber-700 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-md flex items-center gap-1 animate-pulse z-30"
                     >
                       🔍 Match
                     </span>
@@ -1332,52 +1472,157 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                 </div>
 
                 {/* Individual Seat Circles around table (omitted on landmarks) */}
-                {!isLandmark && renderSeats(table)}
+                {!isLandmark && renderSeats(table, renderedRotation)}
 
-                {/* Rotation Controls and Handle for Selected Table */}
+                {/* Counter-Rotated Nudge, Placement & Rotation Controls and Handle for Selected Table */}
                 {isSelected && (
                   <>
-                    {/* Floating Quick Rotation Controls */}
+                    {/* Floating Quick Nudge, Placement & Rotation Controls (counter-rotated to screen axes) */}
                     <div
                       data-testid="rotation-controls"
-                      className="absolute pointer-events-auto -top-[104px] left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-md px-2 py-1 z-40 text-xs font-semibold select-none"
+                      role="toolbar"
+                      aria-label={`${table.name} position and rotation controls`}
+                      className="absolute pointer-events-auto flex items-center gap-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-md px-1.5 py-0.5 z-40 text-xs font-semibold select-none whitespace-nowrap"
+                      style={{
+                        left: `${toolbarLocalX}px`,
+                        top: `${toolbarLocalY}px`,
+                        transform: `translate(-50%, -50%) rotate(${-renderedRotation}deg)`,
+                      }}
                       onClick={(e) => e.stopPropagation()}
                       onPointerDown={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape' && isPlacementMode) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPlacementMode(false);
+                          setLiveAnnouncement(`Placement mode exited for ${table.name}`);
+                        }
+                      }}
                     >
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          nudgeTableBy(table, -(e.shiftKey ? NUDGE_FAST_STEP_PX : NUDGE_STEP_PX), 0);
+                        }}
+                        className="!h-7 !w-7 min-w-7 min-h-6 !p-0 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        title="Nudge left"
+                        aria-label={`Nudge ${table.name} left`}
+                      >
+                        <Icon name="ArrowLeft" size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          nudgeTableBy(table, 0, -(e.shiftKey ? NUDGE_FAST_STEP_PX : NUDGE_STEP_PX));
+                        }}
+                        className="!h-7 !w-7 min-w-7 min-h-6 !p-0 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        title="Nudge up"
+                        aria-label={`Nudge ${table.name} up`}
+                      >
+                        <Icon name="ArrowUp" size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          nudgeTableBy(table, 0, e.shiftKey ? NUDGE_FAST_STEP_PX : NUDGE_STEP_PX);
+                        }}
+                        className="!h-7 !w-7 min-w-7 min-h-6 !p-0 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        title="Nudge down"
+                        aria-label={`Nudge ${table.name} down`}
+                      >
+                        <Icon name="ArrowDown" size={14} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          nudgeTableBy(table, e.shiftKey ? NUDGE_FAST_STEP_PX : NUDGE_STEP_PX, 0);
+                        }}
+                        className="!h-7 !w-7 min-w-7 min-h-6 !p-0 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        title="Nudge right"
+                        aria-label={`Nudge ${table.name} right`}
+                      >
+                        <Icon name="ArrowRight" size={14} />
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant={isPlacementMode ? 'primary' : 'outline'}
+                        size="sm"
+                        pressed={isPlacementMode}
+                        srContext={`for ${table.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const next = !isPlacementMode;
+                          setPlacementMode(next);
+                          setLiveAnnouncement(
+                            next
+                              ? `Placement mode active for ${table.name}. Click an open spot on the floorplan to move table, or press Escape to exit.`
+                              : `Placement mode exited for ${table.name}`
+                          );
+                        }}
+                        className={`!h-7 min-h-6 !px-2 !py-0.5 !text-[11px] ${
+                          isPlacementMode
+                            ? ''
+                            : 'text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                        title="Click any open spot on the floorplan to place this table"
+                      >
+                        <Icon name="MapPin" size={13} className="mr-1 shrink-0" />
+                        Place
+                      </Button>
+
+                      <span className="h-4 w-px bg-gray-200 dark:bg-gray-700 mx-0.5" aria-hidden="true" />
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           rotateTableBy(table, -45);
                         }}
-                        className="min-w-7 min-h-6 inline-flex items-center justify-center px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="!h-7 min-w-7 min-h-6 !px-1.5 !py-0.5 !text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                         title="Rotate -45°"
                         aria-label={`Rotate ${table.name} -45 degrees`}
                       >
                         -45°
-                      </button>
+                      </Button>
                       <span className="px-1 font-mono text-[11px] text-primary" data-testid="table-rotation-display">
                         {renderedRotation}°
                       </span>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           rotateTableBy(table, 45);
                         }}
-                        className="min-w-7 min-h-6 inline-flex items-center justify-center px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="!h-7 min-w-7 min-h-6 !px-1.5 !py-0.5 !text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                         title="Rotate +45°"
                         aria-label={`Rotate ${table.name} +45 degrees`}
                       >
                         +45°
-                      </button>
+                      </Button>
                     </div>
 
-                    {/* Floating Handle Stem and Knob */}
+                    {/* Floating Handle Stem and Knob (positioned clear of top-center seats) */}
                     <div
                       data-testid="rotation-handle"
-                      className="absolute pointer-events-auto -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none z-40"
+                      className="absolute pointer-events-auto -top-[68px] left-1/2 -translate-x-1/2 flex flex-col items-center cursor-grab active:cursor-grabbing touch-none z-40"
                       onPointerDown={(e) => handleRotationPointerDown(e, table)}
                       onPointerMove={handleCanvasPointerMove}
                       onPointerUp={handleCanvasPointerUp}
@@ -1394,11 +1639,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
                         onMouseDown={(e) => handleRotationMouseDown(e, table)}
                         onKeyDown={(e) => handleTableKeyDown(e, table)}
                       >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
+                        <Icon name="RotateCw" size={14} />
                       </button>
-                      <div className="w-0.5 h-3 bg-primary" />
+                      <div className="w-0.5 h-1.5 bg-primary pointer-events-none" />
                     </div>
                   </>
                 )}
@@ -1408,6 +1651,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         })}
       </div>
     </div>
+  );
+}
+
+export const FloorplanCanvas = React.memo(function FloorplanCanvas(props: FloorplanCanvasProps) {
+  return (
+    <EnsureToastProvider>
+      <FloorplanCanvasContent {...props} />
+    </EnsureToastProvider>
   );
 });
 

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { FloorplanCanvas } from '../FloorplanCanvas';
@@ -1418,6 +1418,234 @@ describe('FloorplanCanvas component', () => {
       expect(
         screen.getByText('Cannot assign guests to landmark "Main Dance Floor".')
       ).toBeInTheDocument();
+    });
+
+    it('scales 50-seat tables, keeps rotation-handle clear of top seat, counter-rotates inline nudge controls, and supports Place mode + Escape exit', () => {
+      const onUpdateTablePosition = jest.fn();
+      const onPlacementModeChange = jest.fn();
+      const rotatedGalaTable: SeatingTableDTO = {
+        id: 'tbl-50',
+        name: 'Gala Round 50',
+        shape: 'round',
+        capacity: 50,
+        x: 240,
+        y: 220,
+        width: 120,
+        height: 120,
+        rotation: 45,
+        isSample: false,
+        invitationCodes: [],
+      };
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[rotatedGalaTable]}
+          selectedTableId="tbl-50"
+          onUpdateTablePosition={onUpdateTablePosition}
+          onPlacementModeChange={onPlacementModeChange}
+        />
+      );
+
+      const tableEl = screen.getByRole('button', { name: /Gala Round 50, shape round, capacity 50/i });
+      // Scaled perimeter is much larger than the raw 120px width/height
+      expect(parseFloat(tableEl.style.width)).toBeGreaterThan(500);
+      expect(parseFloat(tableEl.style.height)).toBeGreaterThan(500);
+
+      // Rotation handle sits at -top-[68px] (center -54px), >=36px clear of top seat (center -18px)
+      const rotationHandle = screen.getByTestId('rotation-handle');
+      expect(rotationHandle.className).toContain('-top-[68px]');
+      expect(rotationHandle.firstElementChild?.className).toContain('w-7 h-7 rounded-full');
+
+      // Counter-rotated inline floating toolbar so directional buttons follow screen axes
+      const floatingToolbar = screen.getByRole('toolbar', {
+        name: /Gala Round 50 position and rotation controls/i,
+      });
+      expect(floatingToolbar).toHaveAttribute('data-testid', 'rotation-controls');
+      expect(floatingToolbar.style.transform).toContain('rotate(-45deg)');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Nudge Gala Round 50 left' }));
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('tbl-50', 220, 220);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Nudge Gala Round 50 down' }));
+      expect(onUpdateTablePosition).toHaveBeenCalledWith('tbl-50', 240, 240);
+
+      // Toggle active placement mode via Place button
+      const placeToggle = screen.getByRole('button', { name: /^Place/i });
+      expect(placeToggle).toHaveAccessibleName('Place for Gala Round 50');
+      expect(placeToggle).toHaveAttribute('aria-pressed', 'false');
+
+      fireEvent.click(placeToggle);
+      expect(onPlacementModeChange).toHaveBeenCalledWith(true);
+      expect(placeToggle).toHaveAttribute('aria-pressed', 'true');
+
+      // Clicking open canvas spots moves the selected table there and announces X/Y while staying in placement mode until toggled or Escape
+      const canvasRoot = container.firstElementChild as HTMLElement;
+      jest.spyOn(canvasRoot, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 1200,
+        bottom: 900,
+        width: 1200,
+        height: 900,
+        x: 0,
+        y: 0,
+        toJSON: () => {},
+      });
+      fireEvent.click(canvasRoot, { clientX: 500, clientY: 450 });
+      expect(onUpdateTablePosition).toHaveBeenCalledTimes(3);
+      expect(placeToggle).toHaveAttribute('aria-pressed', 'true');
+      const liveRegion = container.querySelector('[aria-live="polite"]');
+      expect(liveRegion?.textContent).toMatch(/Gala Round 50 moved to X \d+, Y \d+/);
+
+      // Verify Escape exits placement mode cleanly without trapping focus
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(placeToggle).toHaveAttribute('aria-pressed', 'false');
+      expect(liveRegion?.textContent).toMatch(/Placement mode exited for Gala Round 50/i);
+    });
+
+    it('protects occupied seats from accidental single-click removal, confirms Enter/Space via alertdialog, and removes directly on Delete or double-click', async () => {
+      const onSelectTable = jest.fn();
+      const onUnassignGuest = jest.fn();
+      const tableWithOccupiedSeat: SeatingTableDTO = {
+        id: 'tbl-occ',
+        name: 'Orchard 1',
+        shape: 'round',
+        capacity: 4,
+        x: 120,
+        y: 120,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-occ-1',
+            guestName: 'River Song',
+            code: 'RS01',
+            tableId: 'tbl-occ',
+            seatNumber: 1,
+            used: true,
+            isSample: false,
+            partyTags: [],
+            plusOneAllocations: 0,
+            extraFields: { attending: true },
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[tableWithOccupiedSeat]}
+          onSelectTable={onSelectTable}
+          onUnassignGuest={onUnassignGuest}
+        />
+      );
+
+      const occupiedSeat = screen.getByRole('button', { name: 'Seat 1: River Song' });
+
+      // Single click selects table without unassigning guest
+      fireEvent.click(occupiedSeat);
+      expect(onSelectTable).toHaveBeenCalledWith('tbl-occ');
+      expect(onUnassignGuest).not.toHaveBeenCalled();
+
+      // Enter key opens accessible confirmation alertdialog before unassigning
+      fireEvent.keyDown(occupiedSeat, { key: 'Enter' });
+      const confirmDialog = await screen.findByRole('alertdialog');
+      expect(confirmDialog).toHaveTextContent(/Remove River Song from Orchard 1 \(Seat 1\)\?/i);
+      expect(onUnassignGuest).not.toHaveBeenCalled();
+
+      // Cancel preserves seat assignment
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      });
+      expect(onUnassignGuest).not.toHaveBeenCalled();
+
+      // Space key opens confirmation alertdialog and Confirm unassigns
+      fireEvent.keyDown(occupiedSeat, { key: ' ' });
+      await screen.findByRole('alertdialog');
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+      await waitFor(() => {
+        expect(onUnassignGuest).toHaveBeenCalledWith('g-occ-1');
+      });
+
+      // Delete key unassigns directly without confirmation prompt
+      onUnassignGuest.mockClear();
+      fireEvent.keyDown(occupiedSeat, { key: 'Delete' });
+      expect(onUnassignGuest).toHaveBeenCalledWith('g-occ-1');
+
+      // Double click unassigns directly
+      onUnassignGuest.mockClear();
+      fireEvent.doubleClick(occupiedSeat);
+      expect(onUnassignGuest).toHaveBeenCalledWith('g-occ-1');
+    });
+
+    it('uses solid hex dimmed seat CSS variables without opacity-60 during search and passes jest-axe including label-content-name-mismatch', async () => {
+      const { axe } = await import('jest-axe');
+      const searchTable: SeatingTableDTO = {
+        id: 'tbl-search',
+        name: 'Rose Table',
+        shape: 'round',
+        capacity: 4,
+        x: 160,
+        y: 160,
+        width: 120,
+        height: 120,
+        rotation: 30,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-match',
+            guestName: 'Martha Jones',
+            code: 'MJ01',
+            tableId: 'tbl-search',
+            seatNumber: 1,
+            used: true,
+            isSample: false,
+            partyTags: [],
+            plusOneAllocations: 0,
+            extraFields: { attending: true },
+          } as InvitationCodeDTO,
+          {
+            id: 'g-dimmed',
+            guestName: 'Donna Noble',
+            code: 'DN02',
+            tableId: 'tbl-search',
+            seatNumber: 2,
+            used: true,
+            isSample: false,
+            partyTags: [],
+            plusOneAllocations: 0,
+            extraFields: { attending: true },
+          } as InvitationCodeDTO,
+        ],
+      };
+
+      const { container } = render(
+        <FloorplanCanvas
+          {...defaultProps}
+          tables={[searchTable]}
+          guests={searchTable.invitationCodes || []}
+          selectedTableId="tbl-search"
+          searchQuery="Martha"
+        />
+      );
+
+      const dimmedAssigned = screen.getByRole('button', { name: 'Seat 2: Donna Noble' });
+      const dimmedEmpty = screen.getByRole('button', { name: 'Seat 3: Empty' });
+      expect(dimmedAssigned.className).not.toContain('opacity-60');
+      expect(dimmedEmpty.className).not.toContain('opacity-60');
+      expect(dimmedAssigned.style.backgroundColor).toContain('--floorplan-seat-dimmed-bg');
+      expect(dimmedAssigned.style.color).toContain('--floorplan-seat-dimmed-text');
+
+      const results = await axe(container, {
+        rules: {
+          'label-content-name-mismatch': { enabled: true },
+        },
+      });
+      expect(results.violations).toEqual([]);
     });
   });
 });
