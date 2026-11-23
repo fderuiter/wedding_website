@@ -295,7 +295,7 @@ jobs:
             fi
           else
             if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
-              git fetch --no-tags origin "$TARGET_SHA" --depth=1 || true
+              git fetch --no-tags origin "$TARGET_SHA" --depth=2 || true
             fi
             if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
               echo "::error::Signed source revision ${TARGET_SHA} does not exist in repository ${GITHUB_REPOSITORY}."
@@ -325,9 +325,16 @@ jobs:
           echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Generate Pre-Flight Schema Migration & SQL DDL Summary
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
         run: |
           echo "Generating pre-flight schema migration and SQL DDL summary for release review..."
-          npx tsx scripts/preflight-migration-summary.ts
+          if [[ "${BEFORE_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]] && [[ ! "${BEFORE_SHA}" =~ ^0+$ ]] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            npx tsx scripts/preflight-migration-summary.ts --offline --base-ref "$BEFORE_SHA"
+          else
+            npx tsx scripts/preflight-migration-summary.ts --offline
+          fi
 
   publish-artifact:
     name: Publish Release Artifact
@@ -393,6 +400,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
       actions: read
     needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
@@ -415,6 +423,7 @@ jobs:
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'staging'
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
@@ -579,13 +588,15 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
       actions: read
-    needs: [publish-artifact, staging-deploy-provider, staging-verify-deployment]
+    needs: [ci-gate, publish-artifact, staging-deploy-provider, staging-verify-deployment]
     if: failure() && needs.staging-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'staging'
       rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       previous_digest: ${{ inputs.previous_tag == '' && needs.staging-deploy-provider.outputs.previous_image_digest || '' }}
       previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.staging-deploy-provider.outputs.previous_image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
@@ -630,6 +641,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
       actions: read
     needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
@@ -653,6 +665,7 @@ jobs:
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'production'
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
       image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
@@ -819,13 +832,15 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
       actions: read
-    needs: [publish-artifact, production-deploy-provider, production-verify-deployment]
+    needs: [ci-gate, publish-artifact, production-deploy-provider, production-verify-deployment]
     if: failure() && needs.production-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'production'
       rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       previous_digest: ${{ inputs.previous_tag == '' && needs.production-deploy-provider.outputs.previous_image_digest || '' }}
       previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.production-deploy-provider.outputs.previous_image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
