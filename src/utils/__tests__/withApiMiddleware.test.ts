@@ -242,7 +242,7 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(handler).toHaveBeenCalledTimes(10);
     });
 
-    test('allows 6+ valid logins on /api/admin/login while enforcing strict 5 failed-attempt lockout and isolating socket IPs', async () => {
+    test('allows 10 consecutive valid logins on /api/admin/login while enforcing strict 5 failed-attempt lockout and isolating socket IPs', async () => {
       let shouldFail = false;
       const handler = jest.fn().mockImplementation(() => {
         if (shouldFail) {
@@ -255,8 +255,8 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       });
       const middleware = withApiMiddleware(handler);
 
-      // Six valid logins from 127.0.0.2 all return 200 without consuming the 5-attempt lockout
-      for (let i = 0; i < 6; i++) {
+      // Ten valid logins from 127.0.0.2 all return 200 without consuming the 5-attempt lockout
+      for (let i = 0; i < 10; i++) {
         const req = new NextRequest('http://localhost/api/admin/login', {
           method: 'POST',
           headers: createVerifiedSocketIpHeaders('127.0.0.2'),
@@ -300,7 +300,7 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       expect(validPeerRes.status).toBe(200);
     });
 
-    test('allows 6+ valid logins on /api/guest/login, locks out after 5 failed 401 responses, and caps total bursts at 100/min', async () => {
+    test('allows 10 consecutive valid logins on /api/guest/login, locks out after 5 failed 401 responses, and caps total bursts at 100/min', async () => {
       let statusToReturn = 200;
       const handler = jest.fn().mockImplementation(() =>
         new Response(
@@ -310,8 +310,8 @@ describe('withApiMiddleware - Targeted Catch-Block Logging', () => {
       );
       const middleware = withApiMiddleware(handler);
 
-      // Six valid guest logins from 127.0.0.2 succeed
-      for (let i = 0; i < 6; i++) {
+      // Ten valid guest logins from 127.0.0.2 succeed
+      for (let i = 0; i < 10; i++) {
         const req = new NextRequest('http://localhost/api/guest/login', {
           method: 'POST',
           headers: createVerifiedSocketIpHeaders('127.0.0.2'),

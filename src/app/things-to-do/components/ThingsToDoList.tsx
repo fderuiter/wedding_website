@@ -8,6 +8,7 @@ import type { AttractionDTO } from '@/features/attractions';
 import { useFilter } from '@/hooks/useFilter';
 import { CategoryFilter } from '@/components/ui/CategoryFilter';
 import EmptyState from '@/components/EmptyState';
+import { useOptionalDemo } from '@/components/demo/DemoContext';
 
 interface ThingsToDoListProps {
   attractions: AttractionDTO[];
@@ -25,7 +26,9 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
   defaultCenter,
   venue,
 }) => {
-  const [attractions, setAttractions] = useState(initialAttractions);
+  const demo = useOptionalDemo();
+  const [draftAttractions, setDraftAttractions] = useState(initialAttractions);
+  const attractions = demo?.isDemoMode ? demo.activeDataset.attractions : draftAttractions;
 
   const {
     categories,
@@ -38,7 +41,7 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
     if (typeof window !== 'undefined' && window !== window.parent) {
       const handleMessage = (event: MessageEvent) => {
         if (event.data?.type === 'DRAFT_UPDATE' && event.data.draftType === 'attractions') {
-          setAttractions(event.data.draftData);
+          setDraftAttractions(event.data.draftData);
         }
       };
       window.addEventListener('message', handleMessage);
@@ -46,10 +49,48 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
     }
   }, []);
 
-  const venueCoords = venue
-    ? { latitude: venue.latitude, longitude: venue.longitude }
-    : defaultCenter
-      ? { latitude: defaultCenter[0], longitude: defaultCenter[1] }
+  let effectiveCenter = defaultCenter;
+  let effectiveVenue = venue;
+  if (demo?.isDemoMode) {
+    const overrideLat = demo.configOverrides.latitude;
+    const overrideLng = demo.configOverrides.longitude;
+    if (
+      typeof overrideLat === 'number' &&
+      typeof overrideLng === 'number' &&
+      Number.isFinite(overrideLat) &&
+      Number.isFinite(overrideLng) &&
+      (overrideLat !== 0 || overrideLng !== 0)
+    ) {
+      effectiveCenter = [overrideLat, overrideLng];
+      effectiveVenue = {
+        name: demo.configOverrides.venueName?.trim() || venue?.name || 'Wedding Venue',
+        address: demo.configOverrides.venueAddress?.trim() || venue?.address || '',
+        latitude: overrideLat,
+        longitude: overrideLng,
+      };
+    } else if (demo.archetype === 'destination') {
+      effectiveCenter = [25.7743, -80.1304];
+      effectiveVenue = {
+        name: 'Oceanview Palms Beachfront Pavilion',
+        address: '450 Ocean Drive, Miami Beach, FL 33139',
+        latitude: 25.7743,
+        longitude: -80.1304,
+      };
+    } else if (demo.archetype === 'romantic') {
+      effectiveCenter = [38.2975, -122.2869];
+      effectiveVenue = {
+        name: 'Willow Creek Botanical Arbor',
+        address: '1120 Silverado Trail, Napa, CA 94558',
+        latitude: 38.2975,
+        longitude: -122.2869,
+      };
+    }
+  }
+
+  const venueCoords = effectiveVenue
+    ? { latitude: effectiveVenue.latitude, longitude: effectiveVenue.longitude }
+    : effectiveCenter
+      ? { latitude: effectiveCenter[0], longitude: effectiveCenter[1] }
       : undefined;
 
   return (
@@ -67,8 +108,8 @@ const ThingsToDoList: React.FC<ThingsToDoListProps> = ({
         <div className="relative h-96 lg:h-full rounded-lg overflow-hidden shadow-lg print:hidden">
           <ThingsToDoMap
             attractions={filteredAttractions}
-            defaultCenter={defaultCenter}
-            venue={venue}
+            defaultCenter={effectiveCenter}
+            venue={effectiveVenue}
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-2 print:overflow-visible">
