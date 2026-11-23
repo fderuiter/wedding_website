@@ -8,8 +8,13 @@ import {
   formatGuestMealSelections,
   formatGuestPlusOneNames,
 } from '@/features/registry';
-import { computeSeatPosition, resolveSeatAssignments } from '../seatLayout';
-import { getDietaryBadges, isOneSidedTableShape } from '../utils/seatingHelpers';
+import { computeSeatPosition, resolveDetailedSeatAssignments } from '../seatLayout';
+import {
+  getDietaryBadges,
+  getGuestPartySize,
+  getGuestsHeadcount,
+  isOneSidedTableShape,
+} from '../utils/seatingHelpers';
 
 const EMPTY_SET = new Set<string>();
 const DEFAULT_STAGE_WIDTH = 800;
@@ -60,6 +65,7 @@ type ActivePointerGesture =
 
 interface FloorplanCanvasProps {
   tables: SeatingTableDTO[];
+  guests?: InvitationCodeDTO[];
   selectedTableId: string | null;
   onSelectTable: (tableId: string | null) => void;
   onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
@@ -72,8 +78,30 @@ interface FloorplanCanvasProps {
   onAddTable?: () => void;
 }
 
+function getSeatInitials(displayName: string, isCompanion: boolean): string {
+  if (isCompanion) {
+    const parenIdx = displayName.indexOf('(');
+    const prefix = (parenIdx > 0 ? displayName.slice(0, parenIdx) : displayName).trim();
+    const parenTag = parenIdx >= 0 ? displayName.slice(parenIdx + 1).replace(/\).*/, '').trim() : '';
+    if (parenTag.startsWith('+') && !parenTag.includes(' of ')) {
+      return parenTag.slice(0, 3);
+    }
+    const parts = prefix.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`;
+    }
+    if (parts.length === 1 && parts[0].length > 0) {
+      return `${parts[0][0]}+`;
+    }
+    return '+1';
+  }
+  const parts = displayName.split(' ');
+  return `${parts[0]?.[0] || ''}${parts[1]?.[0] || ''}`;
+}
+
 export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   tables,
+  guests,
   selectedTableId,
   onSelectTable,
   onUpdateTablePosition,
@@ -635,12 +663,29 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     }
   };
 
+  const guestLookupById = useMemo(() => {
+    const map = new Map<string, InvitationCodeDTO>();
+    for (const g of guests || []) {
+      if (g?.id) map.set(g.id, g);
+    }
+    for (const t of tables) {
+      for (const g of t.invitationCodes || []) {
+        if (g?.id && !map.has(g.id)) {
+          map.set(g.id, g);
+        }
+      }
+    }
+    return map;
+  }, [guests, tables]);
+
   // HTML5 Drag and Drop Handlers for Dropzones
   const handleTableDragEnter = (e: React.DragEvent, tableId: string) => {
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const isFull = targetTable
+      ? getGuestsHeadcount(targetTable.invitationCodes || []) >= targetTable.capacity
+      : false;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
     }
@@ -651,7 +696,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const isFull = targetTable
+      ? getGuestsHeadcount(targetTable.invitationCodes || []) >= targetTable.capacity
+      : false;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
     }
@@ -673,7 +720,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const isFull = targetTable
+      ? getGuestsHeadcount(targetTable.invitationCodes || []) >= targetTable.capacity
+      : false;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
     }
@@ -684,7 +733,9 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     e.preventDefault();
     e.stopPropagation();
     const targetTable = tables.find((t) => t.id === tableId);
-    const isFull = targetTable ? (targetTable.invitationCodes?.length || 0) >= targetTable.capacity : false;
+    const isFull = targetTable
+      ? getGuestsHeadcount(targetTable.invitationCodes || []) >= targetTable.capacity
+      : false;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = isFull ? 'none' : 'move';
     }
@@ -736,11 +787,17 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
       if (targetTable) {
         const currentSeatedIds = new Set((targetTable.invitationCodes || []).map((g) => g.id));
-        const incomingCount = guestIds.filter((id) => !currentSeatedIds.has(id)).length;
-        const availableSeats = targetTable.capacity - currentSeatedIds.size;
-        if (incomingCount > availableSeats) {
+        const seatedHeadcount = getGuestsHeadcount(targetTable.invitationCodes || []);
+        const incomingHeadcount = guestIds
+          .filter((id) => !currentSeatedIds.has(id))
+          .reduce((sum, id) => {
+            const g = guestLookupById.get(id);
+            return sum + (g ? getGuestPartySize(g) : 1);
+          }, 0);
+        const availableSeats = Math.max(0, targetTable.capacity - seatedHeadcount);
+        if (incomingHeadcount > availableSeats) {
           setLiveAnnouncement(
-            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${guestIds.length} household members.`
+            `Table "${targetTable.name}" only has ${availableSeats} open seat${availableSeats === 1 ? '' : 's'} for ${incomingHeadcount} household members.`
           );
           return;
         }
@@ -756,10 +813,14 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
 
     const guestId = rawData;
     if (targetTable) {
-      const isFull = (targetTable.invitationCodes?.length || 0) >= targetTable.capacity;
       const isGuestAlreadyAtTable = targetTable.invitationCodes?.some((g) => g.id === guestId);
+      const otherSeatedHeadcount = getGuestsHeadcount(
+        (targetTable.invitationCodes || []).filter((g) => g.id !== guestId)
+      );
+      const draggedGuest = guestLookupById.get(guestId);
+      const incomingHeadcount = draggedGuest ? getGuestPartySize(draggedGuest) : 1;
 
-      if (isFull && !isGuestAlreadyAtTable) {
+      if (!isGuestAlreadyAtTable && otherSeatedHeadcount + incomingHeadcount > targetTable.capacity) {
         setLiveAnnouncement(
           `Table "${targetTable.name}" has reached its maximum capacity of ${targetTable.capacity}.`
         );
@@ -774,7 +835,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
   const renderSeats = (table: SeatingTableDTO) => {
     const seats = [];
     const capacity = table.capacity;
-    const seatMap = resolveSeatAssignments(table.invitationCodes, capacity);
+    const detailedSeatMap = resolveDetailedSeatAssignments(table.invitationCodes, capacity);
+    const tableSeatedHeadcount = getGuestsHeadcount(table.invitationCodes || []);
     const isRound = table.shape === 'round';
     const isOneSided = isOneSidedTableShape(table.shape);
     const width = table.width || 120;
@@ -782,21 +844,25 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
     const seatOffset = isRound || isOneSided ? 18 : 16;
 
     for (let i = 1; i <= capacity; i++) {
-      const assignedGuest = seatMap.get(i);
-      const dietaryBadges = assignedGuest
-        ? getDietaryBadges(
-          assignedGuest.dietaryNotes,
-          assignedGuest.extraFields,
-          assignedGuest.partyTags
-        )
-        : [];
+      const occupant = detailedSeatMap.get(i);
+      const assignedGuest = occupant?.guest;
+      const isCompanionSeat = Boolean(occupant?.isCompanion);
+      const seatDisplayLabel = occupant ? occupant.displayName : '';
+      const dietaryBadges =
+        assignedGuest && !isCompanionSeat
+          ? getDietaryBadges(
+            assignedGuest.dietaryNotes,
+            assignedGuest.extraFields,
+            assignedGuest.partyTags
+          )
+          : [];
       const dietarySummary = dietaryBadges.map((b) => b.label).join(', ');
       const isMatch = assignedGuest ? matchingGuestIds.has(assignedGuest.id) : false;
       const isSeatDropTarget =
         activeDropTarget?.tableId === table.id &&
         activeDropTarget?.type === 'seat' &&
         activeDropTarget?.seatNumber === i;
-      const isSeatDropDisabled = isSeatDropTarget && (table.invitationCodes?.length || 0) >= table.capacity;
+      const isSeatDropDisabled = isSeatDropTarget && tableSeatedHeadcount >= table.capacity;
 
       const { x: seatX, y: seatY } = computeSeatPosition({
         seatNumber: i,
@@ -818,8 +884,8 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             aria-label={
               assignedGuest
                 ? dietarySummary
-                  ? `Seat ${i}: ${assignedGuest.guestName}, Dietary: ${dietarySummary}`
-                  : `Seat ${i}: ${assignedGuest.guestName}`
+                  ? `Seat ${i}: ${seatDisplayLabel}, Dietary: ${dietarySummary}`
+                  : `Seat ${i}: ${seatDisplayLabel}`
                 : `Seat ${i}: Empty`
             }
             onDragEnter={(e) => handleSeatDragEnter(e, table.id, i)}
@@ -831,22 +897,29 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             onClick={(e) => {
               e.stopPropagation();
               if (assignedGuest) {
-                onUnassignGuest(assignedGuest.id);
-                setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
+                onSelectTable(table.id);
               } else {
                 onOpenSeatAssignModal?.(table.id, i);
+              }
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (assignedGuest) {
+                onUnassignGuest(assignedGuest.id);
+                setLiveAnnouncement(`${assignedGuest.guestName} unassigned from ${table.name} Seat ${i}`);
               }
             }}
             onKeyDown={(e) => handleSeatKeyDown(e, table, i, assignedGuest)}
             data-testid={isMatch ? 'matching-seat' : undefined}
             data-seat-side={isOneSided ? 'single' : undefined}
+            data-is-companion={isCompanionSeat ? 'true' : undefined}
             data-is-search-match={isMatch ? 'true' : 'false'}
             data-is-drop-target={isSeatDropTarget ? 'true' : undefined}
             title={
               assignedGuest
                 ? isMatch
-                  ? `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
-                  : `Seat ${i}: ${assignedGuest.guestName}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
+                  ? `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Search Match! Double click to unassign)`
+                  : `Seat ${i}: ${seatDisplayLabel}${dietarySummary ? ` (${dietarySummary})` : ''} (Double click or press Enter/Space/Delete to unassign)`
                 : `Seat ${i}: Empty (Drop guest or press Enter/Space to assign)`
             }
             className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-xs font-semibold flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-primary ${
@@ -889,7 +962,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
             {assignedGuest ? (
               <span
                 className="truncate px-0.5 text-[10px] before:content-[attr(data-initials)]"
-                data-initials={`${assignedGuest.guestName.split(' ')[0][0]}${assignedGuest.guestName.split(' ')[1]?.[0] || ''}`}
+                data-initials={getSeatInitials(seatDisplayLabel, isCompanionSeat)}
                 aria-hidden="true"
               />
             ) : (
@@ -1050,7 +1123,7 @@ export const FloorplanCanvas = React.memo(function FloorplanCanvas({
         </div>
 
         {tables.map((table) => {
-          const assignedCount = table.invitationCodes?.length || 0;
+          const assignedCount = getGuestsHeadcount(table.invitationCodes || []);
           const isSelected = selectedTableId === table.id;
           const isOverCapacity = assignedCount > table.capacity;
           const isFull = assignedCount >= table.capacity;

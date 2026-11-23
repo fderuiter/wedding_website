@@ -71,6 +71,55 @@ function buildMealSummaryFromEntries(
     .join(' | ');
 }
 
+const RESERVED_BATCH_UPDATE_RSVP_KEYS = new Set([
+  'attendanceStatus',
+  'rsvpStatus',
+  'attendance',
+  'rsvp',
+  'attending',
+  'status',
+  'plusOneCount',
+  'attendingPlusOneCount',
+  'dietaryTags',
+  'mealSelections',
+  'mealSummary',
+  'customAnswers',
+  'customAnswersSummary',
+  'eventRsvps',
+]);
+
+function sanitizeBatchUpdateExtraFields(
+  extraFields: Record<string, unknown> | null | undefined
+): Record<string, unknown> | undefined {
+  if (!extraFields || typeof extraFields !== 'object' || Array.isArray(extraFields)) {
+    return undefined;
+  }
+
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extraFields)) {
+    if (RESERVED_BATCH_UPDATE_RSVP_KEYS.has(key)) {
+      continue;
+    }
+    if (key === 'plusOneNames') {
+      if (Array.isArray(value)) {
+        const cleanedNames = value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter(Boolean);
+        if (cleanedNames.length > 0) {
+          sanitized.plusOneNames = cleanedNames;
+        }
+      }
+      continue;
+    }
+    if (value !== undefined) {
+      sanitized[key] = value;
+    }
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
+
 export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
   static ENTITY_KEY = 'invitation-codes';
 
@@ -548,15 +597,22 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
     if (row.zipCode !== undefined) updateData.zipCode = normalized.zipCode;
     if (row.country !== undefined) updateData.country = normalized.country;
     if (row.dietaryNotes !== undefined) updateData.dietaryNotes = normalized.dietaryNotes;
-    if (row.plusOneAllocations !== undefined) {
-      updateData.plusOneAllocations = normalized.plusOneAllocations ?? 0;
+    if (row.plusOneAllocations !== undefined && normalized.plusOneAllocations !== undefined) {
+      updateData.plusOneAllocations = normalized.plusOneAllocations;
     }
     if (row.plusOneFirstName !== undefined) updateData.plusOneFirstName = normalized.plusOneFirstName;
     if (row.plusOneLastName !== undefined) updateData.plusOneLastName = normalized.plusOneLastName;
     if (row.householdName !== undefined) updateData.householdName = normalized.householdName;
     if (row.partyGroup !== undefined) updateData.partyGroup = normalized.partyGroup;
     if (row.partyTags !== undefined) updateData.partyTags = normalized.partyTags;
-    if (row.extraFields !== undefined) updateData.extraFields = normalized.extraFields;
+    if (row.extraFields !== undefined) {
+      const sanitizedExtra = sanitizeBatchUpdateExtraFields(
+        normalized.extraFields as Record<string, unknown> | null | undefined
+      );
+      if (sanitizedExtra) {
+        updateData.extraFields = sanitizedExtra;
+      }
+    }
     return updateData;
   }
 
@@ -704,7 +760,24 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
         for (const item of toUpdate) {
           const existing = updatesById.get(item.id);
           if (existing) {
+            const prevExtra =
+              existing.extraFields &&
+              typeof existing.extraFields === 'object' &&
+              !Array.isArray(existing.extraFields)
+                ? (existing.extraFields as Record<string, unknown>)
+                : undefined;
+            const nextExtra =
+              item.data.extraFields &&
+              typeof item.data.extraFields === 'object' &&
+              !Array.isArray(item.data.extraFields)
+                ? (item.data.extraFields as Record<string, unknown>)
+                : undefined;
             Object.assign(existing, item.data);
+            if (prevExtra && nextExtra) {
+              existing.extraFields = { ...prevExtra, ...nextExtra };
+            } else if (prevExtra && !('extraFields' in item.data)) {
+              existing.extraFields = prevExtra;
+            }
           } else {
             updatesById.set(item.id, { ...item.data });
           }
@@ -767,7 +840,31 @@ export class InvitationCodeAdminService extends BaseService<InvitationCodeDTO> {
             "householdName" = CASE WHEN v."has_householdName" THEN v."householdName" ELSE t."householdName" END,
             "partyGroup" = CASE WHEN v."has_partyGroup" THEN v."partyGroup" ELSE t."partyGroup" END,
             "partyTags" = CASE WHEN v."has_partyTags" THEN v."partyTags" ELSE t."partyTags" END,
-            "extraFields" = CASE WHEN v."has_extraFields" THEN v."extraFields" ELSE t."extraFields" END,
+            "extraFields" = CASE
+              WHEN v."has_extraFields" AND v."extraFields" IS NOT NULL AND jsonb_typeof(v."extraFields") = 'object' THEN
+                (
+                  CASE
+                    WHEN t."extraFields" IS NOT NULL AND jsonb_typeof(t."extraFields") = 'object'
+                      THEN t."extraFields"
+                    ELSE '{}'::jsonb
+                  END
+                ) || (
+                  CASE
+                    WHEN t."used" = true
+                      OR (
+                        t."extraFields" IS NOT NULL
+                        AND jsonb_typeof(t."extraFields") = 'object'
+                        AND (
+                          (t."extraFields" -> 'attendanceStatus') IS NOT NULL
+                          OR jsonb_typeof(t."extraFields" -> 'plusOneNames') = 'array'
+                        )
+                      )
+                      THEN (v."extraFields" - 'plusOneNames')
+                    ELSE v."extraFields"
+                  END
+                )
+              ELSE t."extraFields"
+            END,
             "updatedAt" = NOW()
           FROM (VALUES ${values}) AS v(
             "id",

@@ -295,6 +295,49 @@ describe('InvitationCodeAdminService', () => {
       expect(rawQuery.values).toContain(JSON.stringify({ Group: 'VIP' }));
     });
 
+    it('merges extraFields via JSONB concatenation, strips reserved RSVP keys, and omits unmapped plusOneAllocations on update', async () => {
+      mockPrismaClient.invitationCode.findMany.mockResolvedValue([
+        { id: 'inv-1', code: 'GUEST1', guestName: 'Jane Doe' },
+      ]);
+      mockPrismaClient.$executeRaw.mockResolvedValue(1);
+
+      await service.importBatch(
+        [
+          {
+            guestName: 'Jane Doe',
+            code: 'GUEST1',
+            city: 'Boston',
+            extraFields: {
+              attendanceStatus: 'pending',
+              mealSelections: [{ choice: 'overwrite' }],
+              customAnswers: [{ answer: 'overwrite' }],
+              plusOneCount: 0,
+              phone: '+15551234567',
+              TableNote: 'Near Dance Floor',
+            },
+          },
+        ],
+        'update'
+      );
+
+      expect(mockPrismaClient.$executeRaw).toHaveBeenCalledTimes(1);
+      const rawQuery = mockPrismaClient.$executeRaw.mock.calls[0][0];
+      expect(rawQuery.sql).toContain('||');
+      // has_plusOneAllocations should be false (null value + false flag) when plusOneAllocations is omitted
+      expect(
+        rawQuery.values.some(
+          (val: unknown) =>
+            typeof val === 'string' &&
+            val.includes('"phone":"+15551234567"') &&
+            val.includes('"TableNote":"Near Dance Floor"') &&
+            !val.includes('attendanceStatus') &&
+            !val.includes('mealSelections') &&
+            !val.includes('customAnswers') &&
+            !val.includes('plusOneCount')
+        )
+      ).toBe(true);
+    });
+
     it('processes bulk updates in a single raw SQL execution', async () => {
       // Simulate 60 existing records in DB to exceed previous chunk boundaries
       const dbRecords = Array.from({ length: 60 }, (_, idx) => ({

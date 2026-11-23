@@ -284,11 +284,10 @@ describe('PrintableFloorplan component', () => {
       <PrintableFloorplan tables={tablesWithDetails} unassignedGuests={unassignedWithDetails} />
     );
 
-    const companionEls = screen.getAllByTestId('printable-companion-names');
-    expect(companionEls.map((el) => el.textContent).join(' ')).toContain(
-      'Damon Salvatore, Bonnie Bennett'
-    );
-    expect(companionEls.map((el) => el.textContent).join(' ')).toContain('Klaus Mikaelson');
+    expect(screen.getByText('Seat 1: Elena Gilbert')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Damon Salvatore (Elena Gilbert +1)')).toBeInTheDocument();
+    expect(screen.getByText('Seat 3: Bonnie Bennett (Elena Gilbert +2)')).toBeInTheDocument();
+    expect(screen.getByText('Caroline Forbes (+1: Klaus Mikaelson)')).toBeInTheDocument();
 
     const mealEls = screen.getAllByTestId('printable-meal-selections');
     expect(mealEls.map((el) => el.textContent).join(' ')).toContain('Herb Salmon');
@@ -300,5 +299,47 @@ describe('PrintableFloorplan component', () => {
 
     const badges = screen.getAllByTestId('printable-dietary-badge');
     expect(badges.map((b) => b.textContent).join(' ')).toContain('Kids Meal');
+  });
+
+  it('expands multi-person InvitationCode parties into companion seat rows and reports total attendee headcounts', () => {
+    const coupleTables: SeatingTableDTO[] = [
+      {
+        ...mockTables[0],
+        capacity: 4,
+        invitationCodes: [
+          createMockInvitationCode({
+            id: 'g-couple',
+            code: 'CPL99',
+            guestName: 'Jordan Taylor',
+            seatNumber: 1,
+            used: true,
+            plusOneAllocations: 1,
+            extraFields: {
+              attending: true,
+              plusOneCount: 1,
+              plusOneNames: ['Morgan Taylor'],
+            },
+          }),
+        ],
+      },
+    ];
+
+    const unassignedTrio: InvitationCodeDTO[] = [
+      createMockInvitationCode({
+        id: 'u-trio',
+        code: 'TRIO1',
+        guestName: 'Alex Rivera',
+        used: false,
+        plusOneAllocations: 2,
+      }),
+    ];
+
+    render(<PrintableFloorplan tables={coupleTables} unassignedGuests={unassignedTrio} />);
+
+    expect(screen.getByText(/Seated: 2/)).toBeInTheDocument();
+    expect(screen.getByText('Seat 1: Jordan Taylor')).toBeInTheDocument();
+    expect(screen.getByText('Seat 2: Morgan Taylor (Jordan Taylor +1)')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Unassigned Guests (3)' })).toBeInTheDocument();
+    expect(screen.getByText('Alex Rivera (+2)')).toBeInTheDocument();
   });
 });

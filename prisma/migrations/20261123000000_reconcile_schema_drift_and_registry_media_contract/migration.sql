@@ -66,40 +66,38 @@ BEGIN
       ON CONFLICT ("id") DO NOTHING
     $sql$;
   ELSE
-    EXECUTE $sql$
-      INSERT INTO "Media" ("id", "url", "altText", "isDecorative", "isSample", "createdAt", "updatedAt")
-      SELECT DISTINCT ON (target_media_id)
-        target_media_id,
-        '/images/placeholder.png',
-        NULL,
-        true,
-        r."isSample",
-        r."createdAt",
-        r."updatedAt"
-      FROM (
-        SELECT
-          ri.*,
-          CASE
-            WHEN ri."imageId" IS NOT NULL AND LENGTH(BTRIM(ri."imageId")) BETWEEN 1 AND 255
-              THEN BTRIM(ri."imageId")
-            ELSE (
-              SUBSTRING(md5('registry-item-media:' || ri."id") FROM 1 FOR 8) || '-' ||
-              SUBSTRING(md5('registry-item-media:' || ri."id") FROM 9 FOR 4) || '-4' ||
-              SUBSTRING(md5('registry-item-media:' || ri."id") FROM 14 FOR 3) || '-a' ||
-              SUBSTRING(md5('registry-item-media:' || ri."id") FROM 18 FOR 3) || '-' ||
-              SUBSTRING(md5('registry-item-media:' || ri."id") FROM 21 FOR 12)
-            )
-          END AS target_media_id
-        FROM "RegistryItem" ri
-        WHERE ri."imageId" IS NULL
-           OR LENGTH(BTRIM(ri."imageId")) NOT BETWEEN 1 AND 255
-           OR NOT EXISTS (
-             SELECT 1 FROM "Media" m WHERE m."id" = BTRIM(ri."imageId")
-           )
-      ) r
-      ORDER BY target_media_id, r."createdAt" ASC
-      ON CONFLICT ("id") DO NOTHING
-    $sql$;
+    INSERT INTO "Media" ("id", "url", "altText", "isDecorative", "isSample", "createdAt", "updatedAt")
+    SELECT DISTINCT ON (target_media_id)
+      target_media_id,
+      '/images/placeholder.png',
+      NULL,
+      true,
+      r."isSample",
+      r."createdAt",
+      r."updatedAt"
+    FROM (
+      SELECT
+        ri.*,
+        CASE
+          WHEN ri."imageId" IS NOT NULL AND LENGTH(BTRIM(ri."imageId")) BETWEEN 1 AND 255
+            THEN BTRIM(ri."imageId")
+          ELSE (
+            SUBSTRING(md5('registry-item-media:' || ri."id") FROM 1 FOR 8) || '-' ||
+            SUBSTRING(md5('registry-item-media:' || ri."id") FROM 9 FOR 4) || '-4' ||
+            SUBSTRING(md5('registry-item-media:' || ri."id") FROM 14 FOR 3) || '-a' ||
+            SUBSTRING(md5('registry-item-media:' || ri."id") FROM 18 FOR 3) || '-' ||
+            SUBSTRING(md5('registry-item-media:' || ri."id") FROM 21 FOR 12)
+          )
+        END AS target_media_id
+      FROM "RegistryItem" ri
+      WHERE ri."imageId" IS NULL
+         OR LENGTH(BTRIM(ri."imageId")) NOT BETWEEN 1 AND 255
+         OR NOT EXISTS (
+           SELECT 1 FROM "Media" m WHERE m."id" = BTRIM(ri."imageId")
+         )
+    ) r
+    ORDER BY target_media_id, r."createdAt" ASC
+    ON CONFLICT ("id") DO NOTHING;
   END IF;
 END $$;
 
@@ -186,9 +184,7 @@ BEGIN
     WHERE conname = 'WeddingPartyMember_photoId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "WeddingPartyMember"
-      ADD CONSTRAINT "WeddingPartyMember_photoId_fkey"
-      FOREIGN KEY ("photoId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    ALTER TABLE "WeddingPartyMember" ADD CONSTRAINT "WeddingPartyMember_photoId_fkey" FOREIGN KEY ("photoId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -197,9 +193,7 @@ BEGIN
     WHERE conname = 'Attraction_imageId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "Attraction"
-      ADD CONSTRAINT "Attraction_imageId_fkey"
-      FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    ALTER TABLE "Attraction" ADD CONSTRAINT "Attraction_imageId_fkey" FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -208,9 +202,7 @@ BEGIN
     WHERE conname = 'RegistryItem_imageId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "RegistryItem"
-      ADD CONSTRAINT "RegistryItem_imageId_fkey"
-      FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    ALTER TABLE "RegistryItem" ADD CONSTRAINT "RegistryItem_imageId_fkey" FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -219,9 +211,7 @@ BEGIN
     WHERE conname = 'Contributor_registryItemId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "Contributor"
-      ADD CONSTRAINT "Contributor_registryItemId_fkey"
-      FOREIGN KEY ("registryItemId") REFERENCES "RegistryItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    ALTER TABLE "Contributor" ADD CONSTRAINT "Contributor_registryItemId_fkey" FOREIGN KEY ("registryItemId") REFERENCES "RegistryItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -230,8 +220,6 @@ BEGIN
     WHERE conname = 'Contributor_invitationCodeId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "Contributor"
-      ADD CONSTRAINT "Contributor_invitationCodeId_fkey"
-      FOREIGN KEY ("invitationCodeId") REFERENCES "InvitationCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    ALTER TABLE "Contributor" ADD CONSTRAINT "Contributor_invitationCodeId_fkey" FOREIGN KEY ("invitationCodeId") REFERENCES "InvitationCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 END $$;
