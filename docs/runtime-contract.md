@@ -34,6 +34,17 @@ This document defines the authoritative, provider-neutral runtime contract for t
   - `POSTGRES_URL_NON_POOLING` *(Optional)*: Direct, non-pooled connection URL bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` for local shadow database creation (`prisma migrate dev`). Operators on pooled serverless databases can also store their direct PostgreSQL URL in `POSTGRES_URL_NON_POOLING` and pass it via an explicit `DATABASE_URL` override (`DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`) during release migrations.
 - **Provider Neutrality**: No database-vendor specific features or proprietary extensions are required. Standard relational PostgreSQL features (tables, foreign keys, indexes, JSONB) are used.
 
+### Persisted Entities, Full-Site Backups & Multi-Site Isolation (`prisma/schema.prisma`)
+
+- **Persisted Relational Entities**: `prisma/schema.prisma` defines the authoritative relational data model persisted in PostgreSQL:
+  - **Configuration & Content**: `AppConfig`, `ContentNode`, `SnapshotVersion`, `Media`
+  - **Celebration Roster & Venue Logistics**: `WeddingPartyMember`, `Attraction`, `SeatingTable`
+  - **Guest Access, Events & RSVPs**: `InvitationCode`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`
+  - **Gift Registry & Contributions**: `RegistryItem`, `Contributor`
+  - **Communications**: `BroadcastMessage`, `BroadcastRecipient`
+- **Full-Site Backup & Restore Coverage**: Administrative maintenance backups (`/api/admin/maintenance/export` and `/api/admin/maintenance/import`) export and restore all persisted `prisma/schema.prisma` models so operators can migrate or snapshot an entire wedding deployment without vendor lock-in.
+- **Multi-Site Subdomain Scope (`MULTISITE_ENABLED`)**: Enabling `MULTISITE_ENABLED=true` routes subdomain requests (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`) to subdomain-specific `AppConfig` branding/profile rows only. All other persisted models in `prisma/schema.prisma` are shared across subdomains without tenant row isolation.
+
 ---
 
 ## 4. Environment Variable Matrix
@@ -59,7 +70,7 @@ These variables provide convenience defaults for local `development` and `test` 
 | `NODE_ENV` | `development` | Runtime mode (`production`, `development`, `test`). Automatically set to `production` in `Dockerfile` runner environments. |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1,*.localhost` | Comma-separated list of whitelisted host domains or wildcard patterns validated against `X-Forwarded-Host` / `Host` in `src/middleware.ts`. Defaults to loopback hosts; production deployments serving custom domains must explicitly include their public hostnames (e.g., `localhost,127.0.0.1,wedding.example,*.wedding.example`). |
 | `POSTGRES_URL_NON_POOLING` | *None* | Direct non-pooled connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` (`prisma migrate dev`); can also supply an explicit `DATABASE_URL` override for `prisma migrate deploy` when bypassing PgBouncer. |
-| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; the other 14 tables in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
+| `MULTISITE_ENABLED` | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`src/lib/config.ts` resolves `X-Forwarded-Host` before `Host`). Switches `AppConfig` rows only; all other persisted models in `prisma/schema.prisma` are shared across subdomains without tenant row isolation. |
 | `RUN_MIGRATIONS` | `false` | Automatically run database schema migrations (`prisma migrate deploy`) during container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | `false` | Opt-in boolean (`true`/`false`) or non-negative integer hop count enabling `X-Forwarded-For` and `X-Real-IP` parsing for rate limiting behind trusted reverse proxies. |
 | `HISTORY_VERSION_LIMIT` | `50` | Maximum version history entries retained per content item (integer >= 1). |
@@ -104,7 +115,7 @@ These variables configure container port binding, static HTML export builds, Vit
 | `DB_PORT` | `5432` | Docker Compose (`docker-compose.yml`) | Loopback host TCP port published to container port `5432` for the `db` service (`127.0.0.1:${DB_PORT:-5432}:5432`). |
 
 ### Optional Site Configuration Overrides (`SITE_*`)
-`src/lib/config.ts` (`getEnvConfigOverrides`) supports 32 optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:
+`src/lib/config.ts` (`getEnvConfigOverrides`) supports optional Layer 1 environment variable overrides that take precedence over database `AppConfig` rows and `APP_DEFAULTS`:
 | Variable | Default Value | Target `AppConfig` Field | Description |
 |---|---|---|---|
 | `SITE_PARTNER1_NAME` | *None* | `partner1Name` | Override Partner 1 display name (when non-empty). |

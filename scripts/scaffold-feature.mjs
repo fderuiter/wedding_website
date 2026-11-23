@@ -32,10 +32,25 @@ if (fs.existsSync(featureDir)) {
 });
 
 // Create files
-fs.writeFileSync(path.join(featureDir, 'schemas.ts'), `import { z } from 'zod';\n\nexport const ${pascalCase}Schema = z.object({\n  id: z.string(),\n});\n`);
-fs.writeFileSync(path.join(featureDir, 'types.ts'), `export interface ${pascalCase} {\n  id: string;\n}\n`);
-fs.writeFileSync(path.join(featureDir, 'repository.ts'), `import { BaseRepository } from '@/core/infrastructure/repository';\nimport { ${pascalCase} } from './types';\n\nexport class ${pascalCase}Repository extends BaseRepository<${pascalCase}> {\n  constructor() {\n    super('${camelCase}');\n  }\n}\n`);
-fs.writeFileSync(path.join(featureDir, 'service.ts'), `import { BaseService } from '@/core/infrastructure/service';\nimport { ${pascalCase}Repository } from './repository';\nimport { ${pascalCase} } from './types';\n\nexport class ${pascalCase}Service extends BaseService<${pascalCase}> {\n  constructor() {\n    super(new ${pascalCase}Repository(), '${pascalCase}');\n  }\n}\n`);
-fs.writeFileSync(path.join(featureDir, 'index.ts'), 'export * from \'./types\';\nexport * from \'./schemas\';\nexport * from \'./repository\';\nexport * from \'./service\';\n');
+fs.writeFileSync(
+  path.join(featureDir, 'schemas.ts'),
+  `import { z } from 'zod';\n\nexport const ${pascalCase}Schema = z.object({\n  id: z.string(),\n});\n`
+);
+fs.writeFileSync(
+  path.join(featureDir, 'types.ts'),
+  `export interface ${pascalCase} {\n  id: string;\n}\n`
+);
+fs.writeFileSync(
+  path.join(featureDir, 'repository.ts'),
+  `import { BaseRepository } from '@/core/infrastructure/repository';\nimport type { ${pascalCase} } from './types';\n\nexport class ${pascalCase}Repository extends BaseRepository<${pascalCase}> {\n  constructor() {\n    super('${camelCase}');\n  }\n}\n`
+);
+fs.writeFileSync(
+  path.join(featureDir, 'service.ts'),
+  `import { BaseService } from '@/core/infrastructure/service';\nimport { ${pascalCase}Repository } from './repository';\nimport { ${pascalCase}Schema } from './schemas';\nimport type { ${pascalCase} } from './types';\n\nexport class ${pascalCase}Service extends BaseService<${pascalCase}> {\n  constructor() {\n    super(new ${pascalCase}Repository(), '${pascalCase}', ${pascalCase}Schema);\n  }\n}\n`
+);
+fs.writeFileSync(
+  path.join(featureDir, 'index.ts'),
+  `export { ${pascalCase}Schema } from './schemas';\nexport { ${pascalCase}Repository } from './repository';\nexport type { ${pascalCase} } from './types';\nexport { ${pascalCase}Service } from './service';\n`
+);
 
 console.log(`Successfully scaffolded feature ${featureName}`);

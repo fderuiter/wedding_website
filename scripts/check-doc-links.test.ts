@@ -32,11 +32,13 @@ describe('check-doc-links', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('verifies all 35 authored Markdown files in the repository with zero errors', async () => {
+  it('verifies all authored Markdown files in the repository with zero errors', async () => {
+    const expectedFiles = findMarkdownFiles(process.cwd());
     const result = await checkDocLinks(process.cwd());
     expect(result.errors).toEqual([]);
     expect(result.passed).toBe(true);
-    expect(result.count).toBe(35);
+    expect(result.count).toBeGreaterThan(0);
+    expect(result.count).toBe(expectedFiles.length);
   });
 
   it('excludes .git by exact segment without excluding .github/, and includes only authored docs-portal pages', () => {

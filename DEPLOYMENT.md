@@ -43,7 +43,7 @@ To distinguish officially verified deployment targets from community-maintained 
 ## Deployment Recipes Summary
 
 ### 1. [Generic Docker / VPS Deployment](./docs/deployment/docker-vps.md)
-The canonical portable baseline using the multi-platform `Dockerfile` (`tini` PID 1, `root:root` static `/app` ownership, setuid/setgid stripping) and hardened `docker-compose.yml` (`read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, with automated test overrides isolated in `docker-compose.ci.yml`). Orchestrates `db` bound to `127.0.0.1:${DB_PORT:-5432}:5432` with mandatory operator secrets, a dedicated one-shot `migration` service (`./node_modules/.bin/prisma migrate deploy` before `app` starts with `RUN_MIGRATIONS="false"`, plus optional offline `RUN_MIGRATIONS=true` in `docker-entrypoint.sh` for standalone containers), full 21-variable `.env` forwarding and `DATABASE_URL` override support, `E2E_TEST=false` default production onboarding configuration, built-in Compose liveness healthchecks via `/api/live` (with rollout/readiness verification via `/api/health` and `/api/ready`), graceful `SIGTERM` `pg.Pool` draining, Nginx/Caddy reverse proxy configurations with Let's Encrypt TLS, and networked port-mapped rollbacks.
+The canonical portable baseline using the multi-platform `Dockerfile` (`tini` PID 1, `root:root` static `/app` ownership, setuid/setgid stripping) and hardened `docker-compose.yml` (`read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, with automated test overrides isolated in `docker-compose.ci.yml`). Orchestrates `db` bound to `127.0.0.1:${DB_PORT:-5432}:5432` with mandatory operator secrets, a dedicated one-shot `migration` service (`./node_modules/.bin/prisma migrate deploy` before `app` starts with `RUN_MIGRATIONS="false"`, plus optional offline `RUN_MIGRATIONS=true` in `docker-entrypoint.sh` for standalone containers), full `.env` runtime variable forwarding and `DATABASE_URL` override support, `E2E_TEST=false` default production onboarding configuration, built-in Compose liveness healthchecks via `/api/live` (with rollout/readiness verification via `/api/health` and `/api/ready`), graceful `SIGTERM` `pg.Pool` draining, Nginx/Caddy reverse proxy configurations with Let's Encrypt TLS, and networked port-mapped rollbacks.
 
 ### 2. [Google Cloud Run Deployment](./docs/deployment/gcp-cloud-run.md)
 Managed serverless container target deploying attested `ghcr.io` immutable container digests to isolated Cloud Run services (`wedding-website-staging` for staging and `wedding-website` for production by default, or parameterized via `vars.CLOUD_RUN_SERVICE` and `vars.CLOUD_RUN_REGION`) using keyless Workload Identity Federation OIDC (`vars.GCP_WORKLOAD_IDENTITY_PROVIDER` and `vars.GCP_SERVICE_ACCOUNT`, with `secrets.GCP_SA_KEY` fallback), GCP Secret Manager, and Cloud SQL PostgreSQL. Automated via `.github/workflows/deploy.yml` with pre-deployment schema migrations, S3/R2 asset storage, and instant revision traffic splitting for rollbacks.
@@ -56,35 +56,11 @@ Low-friction PaaS deployment path with managed PostgreSQL add-ons, pre-deploy re
 
 ---
 
-## Environment Variables Reference
+## Runtime Configuration & Production Secrets
 
-The application requires the following environment variables. These match the runtime validation schema in `src/env.ts` and the `.env.example` template:
+Startup validation (`src/env.ts`) requires every production deployment (`NODE_ENV=production`) to configure non-default values for `DATABASE_URL`, `ADMIN_PASSWORD` (64-byte scrypt hash generated via `scripts/generate-password-hash.mjs`), `ALLOWED_HOSTS`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`).
 
-- `NODE_ENV`: Defines the environment the application is running in (`development`, `test`, `production`).
-- `DATABASE_URL`: Primary connection string to your PostgreSQL database (`datasource.url` in `prisma.config.ts`, used by both the Next.js runtime and `npx prisma migrate deploy`). *Required.*
-- `POSTGRES_URL_NON_POOLING`: Connection string bound to `datasource.shadowDatabaseUrl` in `prisma.config.ts` for local `prisma migrate dev` shadow database creation without a connection pooler; can also store a direct PostgreSQL URL passed via an explicit `DATABASE_URL` override when bypassing PgBouncer during `npx prisma migrate deploy`. *Optional.*
-- `ADMIN_PASSWORD`: Cryptographic hash of the administrative password. *Required.*
-  - **Format**: Must be an scrypt hash in the format `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` (64-byte derived key, 16-byte salt; placeholder hashes are rejected in production, and admin session cookies use a domain-separated key derived from the decoded hash).
-  - **Generation**: Use a standard scrypt generator or the provided `scripts/generate-password-hash.mjs` to create this hash securely. Never store plain text passwords.
-- `ALLOWED_HOSTS`: Comma-separated list of trusted host domains or wildcard patterns allowed to access the application (e.g. `localhost,127.0.0.1,wedding.example`). Wildcard DNS is not required for default single-site deployments. *Required.*
-- `MULTISITE_ENABLED`: Set to `true` to enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host` in `src/lib/config.ts`). Defaults to `false` (1 deployment = 1 wedding site). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. *Optional.*
-- `RUN_MIGRATIONS`: Set to `true` to automatically execute database schema migrations on container startup in `docker-entrypoint.sh`. Defaults to `false`. *Optional.*
-- `TRUST_PROXY`: Set to `true` (or a positive integer hop count such as `1` or `2`) when running behind a trusted reverse proxy or ingress controller so rate limiting reads `X-Forwarded-For` / `X-Real-IP`. Defaults to `false` (ignores forwarded IP headers on direct hosts). *Optional.*
-- `GUEST_PASSCODE`: Global passcode required for guest access to the website. *Required.*
-  - **Security Requirement**: Must be explicitly defined in production environment settings. Never rely on default passcodes.
-- `GUEST_SESSION_SECRET`: Dedicated server secret for signing and verifying guest invitation session tokens (HMAC-SHA256). *Required.*
-  - **Security Requirement**: Must be explicitly defined in production environment settings with a minimum length of 32 characters and kept strictly confidential on the server. Default fallbacks are rejected at production boot. Never use the value of `GUEST_PASSCODE` or disclose it to attendees.
-- `HISTORY_VERSION_LIMIT`: System limit for the number of history versions to keep for content entries (defaults to 50).
-- `CRON_SECRET`: Secret authorization token for background cron job triggers (e.g., `/api/cron/broadcasts`). *Optional (recommended).*
-- `S3_BUCKET`: The name of the S3/R2 bucket to store uploaded assets. *Optional (required if other S3 variables are specified).*
-- `S3_REGION`: The region of the S3 bucket (`us-east-1` or `auto` for Cloudflare R2). *Optional (required if other S3 variables are specified).*
-- `S3_ACCESS_KEY_ID`: S3/R2 API access key ID. *Optional (required if other S3 variables are specified).*
-- `S3_SECRET_ACCESS_KEY`: S3/R2 API secret access key. *Optional (required if other S3 variables are specified).*
-- `S3_ENDPOINT`: S3-compatible custom endpoint URL (required for Cloudflare R2). *Optional.*
-- `S3_PUBLIC_URL`: Public asset delivery URL or CDN prefix used to serve assets publicly. *Optional.*
-- `STRIPE_SECRET_KEY`: Server-side Stripe secret key (`sk_...` or `rk_...`) for online card checkout on registry funds. *Optional (required if `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is specified; placeholder keys are rejected).*
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Client-side Stripe publishable key (`pk_...`) for Stripe Elements card checkout on registry funds. *Optional (required if `STRIPE_SECRET_KEY` is specified; placeholder keys are rejected).*
-- `STRIPE_WEBHOOK_SECRET`: Stripe webhook signing secret (`whsec_...`) for verifying `/api/registry/webhook/stripe` deliveries (`payment_intent.succeeded`). *Optional.*
+For the canonical **Environment Variable Matrix**—including defaults, optional `S3_*` object storage credentials, `STRIPE_*` checkout keys, `CRON_SECRET`, `POSTGRES_URL_NON_POOLING` (`prisma.config.ts` shadow database / migration overrides), `SITE_*` overrides, and `prisma/schema.prisma` persisted entity and `MULTISITE_ENABLED` isolation rules—see the **[Application Runtime Contract](./docs/runtime-contract.md)** and [`.env.example`](./.env.example).
 
 ---
 

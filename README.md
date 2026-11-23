@@ -1,10 +1,8 @@
-# NOTE CURRENTLY UNDER MAINTAINANCE AND REFACTORING
-
 # Wedding Website & Custom Registry
 
-This project is a comprehensive, open-source wedding website that features a custom-built, fully functional gift registry system. It serves as a customizable and self-hostable alternative to traditional wedding registry platforms, complete with modern features like 3D animations and a full administrative interface.
+This project is an open-source, self-hostable wedding website and celebration management platform built with Next.js, TypeScript, and PostgreSQL. It combines guest invitation workflows, multi-event RSVPs, interactive seating charts, photo moderation, scheduled broadcasts, a customizable gift registry, 3D interactive scenes, and full-site backups without vendor lock-in.
 
-**[Live Demo](https://abbifred.com/)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
+**[Live Demo](https://abbifred.com/)** | **[Developer Setup](./docs/developer-setup.md)** | **[Architecture Overview](./ARCHITECTURE.md)** | **[Runtime Contract](./docs/runtime-contract.md)** | **[Deployment Recipes](./DEPLOYMENT.md)** | **[API Specification](./public/openapi.json)** | **[Asset Storage System](./docs/ASSET_STORAGE.md)** | **[Downstream Upgrade Guide](./docs/upgrading.md)** | **[Versioning Policy](./docs/versioning.md)**
 
 ## Table of Contents
 
@@ -12,39 +10,34 @@ This project is a comprehensive, open-source wedding website that features a cus
 2.  [Key Features](#key-features)
 3.  [Tech Stack](#tech-stack)
 4.  [Setup & Installation](#setup--installation)
-    *   [Prerequisites](#prerequisites)
-    *   [Installation Steps](#installation-steps)
-    *   [Environment Variables](#environment-variables)
-    *   [Database Setup](#database-setup)
-5.  [Usage](#usage)
-    *   [Development Server](#development-server)
-    *   [Admin Access](#admin-access)
-    *   [Registry Management](#registry-management)
+5.  [Upgrading & Upstream Maintenance](#upgrading--upstream-maintenance)
 6.  [Project Structure](#project-structure)
 7.  [Contributing](#contributing)
 8.  [License](#license)
 
 ## Purpose
 
-The primary goal of this project is to provide a personal, customizable, and cost-effective solution for couples who want more control over their wedding website and registry. Unlike commercial platforms that often charge fees or have limited customization, this open-source solution allows you to:
-*   Host your own registry without third-party fees.
-*   Customize the design and content to match your wedding theme.
-*   Integrate unique features like 3D interactive elements.
-*   Keep your guest data private.
+The primary goal of this project is to provide a personal, customizable, and cost-effective solution for couples who want full ownership over their wedding website, guest logistics, and registry:
+*   Host your own celebration portal and registry without third-party platform fees.
+*   Customize themes, layouts, print materials, and multi-event schedules from an administrative studio.
+*   Keep guest contact details, RSVPs, photos, and seating plans private in your own PostgreSQL database.
 
 ## Key Features
 
-*   **Interactive User Experience:**
-    *   Engaging 3D animations using **React Three Fiber** (e.g., the interactive Heart page).
-    *   A fully responsive design for seamless viewing on all devices.
-    *   Smooth page transitions and scroll-based animations with **Framer Motion**.
-    *   "Add to Calendar" functionality for guests.
-*   **Custom Gift Registry:**
-    *   **Add & Edit Items:** Manually input gift details or use the built-in web scraper to pre-fill item information from online stores (supports Open Graph metadata and basic Amazon scraping).
-    *   **Group Gifting:** Allow guests to contribute partial amounts towards higher-priced items. Progress bars visualize the contribution status.
-    *   **Filtering & Sorting:** Guests can easily browse the registry by filtering items by category, price range, and status.
-*   **Admin Dashboard:** A password-protected dashboard for managing registry items, including adding, editing, and deleting products.
-*   **Standard Wedding Info Pages:** Easily customizable pages for event details, travel information, weather forecasts, and photo galleries.
+*   **Invitation Codes & Multi-Event Responses (RSVPs):**
+    *   Household **invitation codes** (`InvitationCode`), CSV guest imports, cohort-scoped **sub-events** (`SubEvent`, `SubEventAccess`), and per-event **event responses** (`SubEventRsvp`) with meal choices, dietary notes, and plus-one rules.
+*   **Interactive Seating Charts:**
+    *   Drag-and-drop **seating charts** (`SeatingTable`) with table capacity tracking, household cohort grouping, and guest table lookup.
+*   **Guest Photo Uploads & Moderation:**
+    *   Mobile-friendly guest photo gallery uploads (`Media`) backed by local disk or S3-compatible object storage with administrative **moderation** queues.
+*   **Scheduled Broadcasts & Communications:**
+    *   Cohort-filtered announcements and scheduled email/SMS **broadcasts** (`BroadcastMessage`, `BroadcastRecipient`) processed via `/api/cron/broadcasts`.
+*   **Custom Gift Registry & Payments:**
+    *   Product URL metadata scraping, partial group gifting with live funding progress bars (`RegistryItem`, `Contributor`), direct peer-to-peer transfer links, and optional Stripe card checkout with webhook verification.
+*   **3D Interactive Experiences & Theme Studio:**
+    *   Interactive **React Three Fiber** and **Rapier** 3D scenes, **Framer Motion** transitions, "Add to Calendar" links, live weather forecasts, wedding party profiles (`WeddingPartyMember`), and local travel guides (`Attraction`).
+*   **Full-Site Backups & Portable Administration:**
+    *   Password-protected `/admin/dashboard` with content version history (`ContentNode`, `SnapshotVersion`) and **15-model full-site backups** (JSON/ZIP export and restore across every persisted `prisma/schema.prisma` entity).
 
 ## Tech Stack
 
@@ -63,137 +56,28 @@ This project is built with a modern, full-stack TypeScript architecture.
 
 ## Setup & Installation
 
-For detailed onboarding, local setup workflows, and testing runbooks, see the [Developer Setup Guide](./docs/developer-setup.md), [Testing Strategy](./.github/TESTING.md), and [Contribution Guidelines](./.github/CONTRIBUTING.md). For production hosting guidelines and minimum runtime requirements across container and cloud environments, see the [Application Runtime Contract](./docs/runtime-contract.md) and [Deployment Documentation](./DEPLOYMENT.md).
-
-### Prerequisites
-
-*   **Node.js & npm**: Node.js **v22.x LTS** (`^22.12.0`, pinned in [`.nvmrc`](./.nvmrc)) and **`npm@10.9.x`** (`^10.9.0`, enforced via [`.npmrc`](./.npmrc) and `devEngines` in [`package.json`](./package.json)).
-*   **Git**: For version control.
-*   **PostgreSQL Database**: Compatible with local PostgreSQL, the bundled Docker Compose `db` service (`DB_PASSWORD=wedding123 docker compose up -d db` after `cp .env.example .env`, binding `127.0.0.1:5432:5432` with user `wedding`, password `wedding123`, database `wedding` via [`docker-compose.yml`](./docker-compose.yml) and [`docker-compose.ci.yml`](./docker-compose.ci.yml)), or cloud providers (e.g. Neon, Supabase, Railway, RDS, Cloud SQL). See [DEPLOYMENT.md](./DEPLOYMENT.md) for the PostgreSQL Database Contract and operational guidance.
-
-### Installation Steps
-
-1.  **Clone the repository and select Node.js 22 LTS:**
-    ```bash
-    git clone https://github.com/fderuiter/wedding_website.git
-    cd wedding_website
-    nvm use
-    ```
-
-2.  **Install dependencies cleanly from the lockfile:**
-    ```bash
-    npm ci
-    ```
-
-### Environment Variables
-
-Create a `.env` file (or `.env.local`, `.env.development`, `.env.development.local`) in the root directory by copying [`.env.example`](./.env.example):
+Requires **Node.js v22.x LTS** (pinned in [`.nvmrc`](./.nvmrc)), **`npm@10.9.x`** (enforced via [`.npmrc`](./.npmrc) and [`package.json`](./package.json)), and **PostgreSQL 15+**.
 
 ```bash
+git clone https://github.com/fderuiter/wedding_website.git
+cd wedding_website
+nvm use
+npm ci
 cp .env.example .env
-```
-
-Optional integrations (`POSTGRES_URL_NON_POOLING`, `CRON_SECRET`, all six `S3_*` variables, and `STRIPE_*`) remain commented out by default in `.env.example` so local asset uploads use `LocalStorageProvider` ([`src/utils/storage.ts`](./src/utils/storage.ts)) and Prisma migrations ([`prisma.config.ts`](./prisma.config.ts)) manage temporary shadow databases automatically without broken shadow URLs.
-
-Configure the core local environment variables in `.env`:
-
-```env
-# PostgreSQL connection (matches local `DB_PASSWORD=wedding123 docker compose up -d db` / docker-compose.ci.yml)
-DATABASE_URL="postgresql://wedding:wedding123@localhost:5432/wedding?schema=public"
-
-# Admin login hash (16-byte salt + 64-byte scrypt key required by src/utils/password.ts — NOT plaintext)
-# Generate your hash with: node scripts/generate-password-hash.mjs "your_password"
-ADMIN_PASSWORD="scrypt:AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
-
-# Trusted hostnames allowed to access the application
-ALLOWED_HOSTS="localhost,127.0.0.1,*.localhost,wedding.example,*.wedding.example"
-
-# Global guest passcode and distinct HMAC-SHA256 guest session signing secret (32+ chars in production)
-GUEST_PASSCODE="your-unique-guest-passcode"
-GUEST_SESSION_SECRET="your-dedicated-guest-session-secret"
-```
-
-> **Important:** Replace the dummy `ADMIN_PASSWORD` placeholder by running `node scripts/generate-password-hash.mjs "your_password"` before signing in to the Setup Wizard or `/admin/login`.
-
-### Database Setup
-
-1.  **Start PostgreSQL (if using Docker Compose) & Run Migrations:** Apply the database schema to your PostgreSQL database:
-    ```bash
-    DB_PASSWORD=wedding123 docker compose up -d db
-    npm run migrate:dev
-    ```
-    `npm run migrate:dev` (`dotenv -c development -- prisma migrate dev`) loads `.env` automatically and creates all tables defined in `prisma/schema.prisma`.
-
-2.  **Seed Data (Optional):** Run the database seeding script to populate initial configuration settings:
-    ```bash
-    npm run db:seed
-    ```
-    `npm run db:seed` (`dotenv -c development -- tsx scripts/seed.ts`) loads `.env` automatically without manual shell exports and upserts the global `AppConfig` record (`partner1Name: 'Jane'`, `partner2Name: 'John'`, `baseUrl: 'http://localhost:3000'`, venue details, and hero text) from [`scripts/seed.ts`](./scripts/seed.ts).
-
-    > **Note on `SetupWizard` Bypass & Root Redirect:** Seeding `AppConfig` satisfies `isSiteInitialized` in [`src/lib/config.ts`](./src/lib/config.ts), which causes [`src/app/layout.tsx`](./src/app/layout.tsx) to skip rendering `<SetupWizard />` and [`src/middleware.ts`](./src/middleware.ts) to redirect unauthenticated requests to `/` (`303 See Other`) to `/guest/login`. Skip `npm run db:seed` if you want to walk through the First-Run Setup Wizard on an unseeded database.
-
-## Usage
-
-### Development Server
-
-Start the development server:
-
-```bash
+DB_PASSWORD=wedding123 docker compose up -d db
+npm run migrate:dev
 npm run dev
 ```
 
-The application will be available at `http://localhost:3000`.
+Generate a 64-byte scrypt hash for `ADMIN_PASSWORD` in `.env` with `node scripts/generate-password-hash.mjs "your_password"`, then open `http://localhost:3000` to complete the interactive First-Run Setup Wizard.
 
-### Linting & Testing
+*   **Local Setup, Environment Variables & First-Run Wizard:** [docs/developer-setup.md](./docs/developer-setup.md)
+*   **Unit, Accessibility, Container & Playwright E2E Testing:** [.github/TESTING.md](./.github/TESTING.md)
+*   **Feature Scaffolding, Linting & Pre-Commit Workflow:** [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md)
+*   **Canonical Environment Variable & Entity Reference:** [docs/runtime-contract.md](./docs/runtime-contract.md)
+*   **Production Hosting & CI/CD Deployment Recipes:** [DEPLOYMENT.md](./DEPLOYMENT.md)
 
-Run the linter to ensure code quality:
-
-```bash
-npm run lint
-```
-
-#### Running Tests with Isolated Database Setup
-
-This project features an automated, zero-configuration local testing setup. Running the test command automatically:
-1. Starts the local PostgreSQL database container (using Docker Compose) if it is not already running.
-2. Waits for the database to be fully ready and accepting connections.
-3. Automatically provisions and synchronizes the Prisma schema to an isolated, dedicated test database (`wedding_test`). This ensures that executing the test suite will never delete, modify, or insert records into your default development database.
-
-To execute the unit and integration test suite:
-
-```bash
-npm test
-```
-
-To run tests in watch mode:
-
-```bash
-npm run test:watch
-```
-
-### First-Run Setup & Bootstrap
-
-On an **unseeded** installation (before `AppConfig` satisfies `isSiteInitialized`), visiting `http://localhost:3000` renders the five-step [`SetupWizard`](./src/components/setup/SetupWizard.tsx):
-
-1. **Step 1 — Admin Authentication (`Welcome to Your Wedding Site!`):** Enter the plaintext admin password matching the 64-byte `ADMIN_PASSWORD` scrypt hash generated via `node scripts/generate-password-hash.mjs`. **No default password exists.**
-2. **Step 2 — The Essentials:** Configure Partner 1 and Partner 2 names, wedding date, timezone, canonical Site URL (`baseUrl`), optional host contact email, venue name/city/state, and theme preset and brand colors (`ThemeConfigurationPanel`, with layout and print styling deferred to Site Settings), saved via `/api/admin/setup`.
-3. **Step 3 — Sample Data Selection:** Choose a starter archetype preset and populate optional sample data modules (`registry`, `guests`, `seating`, `weddingParty`, `attractions`), or skip to start blank.
-4. **Step 4 — Guest List Import:** Import a guest list CSV spreadsheet (`CsvImportWizardModal`) to generate invitation codes immediately, or skip for later.
-5. **Step 5 — Complete Setup:** Optionally manage wedding party members (`WeddingPartyManagerModal`) and local attractions (`AttractionsManagerModal`), then proceed to `/admin/dashboard`. Once `AppConfig` is initialized, `/api/admin/setup` enforces replay protection (`403 Forbidden`) against unauthenticated requests, and `/` redirects unauthenticated visitors to `/guest/login`.
-
-### Admin Access
-
-1.  Navigate to `/admin/login`.
-2.  Enter the password you configured in `ADMIN_PASSWORD`.
-3.  Upon successful login, you will be redirected to `/admin/dashboard`.
-
-### Registry Management
-
-*   **Adding Items:** From the dashboard, click "Add New Item". You can paste a product URL to auto-fill details or enter them manually.
-*   **Group Gifts:** Toggle the "Allow Group Gifting?" checkbox to let multiple guests contribute to a single item.
-*   **Managing Contributions:** The dashboard shows the funded status of each item. You can edit items to update quantities or fix typos.
-
-### Upgrading & Upstream Maintenance
+## Upgrading & Upstream Maintenance
 
 If you cloned or forked this template to host your own wedding website, you can pull upstream fixes and new features using Git:
 

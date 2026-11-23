@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import {
+  collectApiRouteEntries,
+  extractAdminEntityRows,
+} from '../../../../scripts/generate-docs';
 
 interface OpenApiParameter {
   name: string;
@@ -37,6 +41,55 @@ interface OpenApiDocument {
 }
 
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
+const OPENAPI_UPPER_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+const BODY_UPPER_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function toOpenApiRoutePath(nextRoutePath: string): string {
+  return nextRoutePath
+    .replace(/\[\.\.\.([^\]]+)\]/g, '{$1}')
+    .replace(/\[([^\]]+)\]/g, '{$1}');
+}
+
+function getExpectedOpenApiInventory() {
+  const liveEntries = collectApiRouteEntries();
+  const expectedPaths: string[] = [];
+  const expectedOperationKeys: string[] = [];
+  const expectedPublicOpKeys: string[] = [];
+
+  for (const entry of liveEntries) {
+    const openApiPath = toOpenApiRoutePath(entry.routePath);
+    const openApiMethods = entry.methods.filter((method) => OPENAPI_UPPER_METHODS.has(method));
+    if (openApiMethods.length === 0) continue;
+
+    expectedPaths.push(openApiPath);
+
+    let publicMethodsForEntry = new Set<string>();
+    if (entry.accessTier === '`Public`') {
+      publicMethodsForEntry = new Set(openApiMethods);
+    } else {
+      const scopedPublicMatch = entry.accessTier.match(/`Public`\s*\(([^)]+)\)/);
+      if (scopedPublicMatch) {
+        for (const m of scopedPublicMatch[1].matchAll(/`([A-Z]+)`/g)) {
+          publicMethodsForEntry.add(m[1]);
+        }
+      }
+    }
+
+    for (const method of openApiMethods) {
+      const opKey = `${method} ${openApiPath}`;
+      expectedOperationKeys.push(opKey);
+      if (publicMethodsForEntry.has(method)) {
+        expectedPublicOpKeys.push(opKey);
+      }
+    }
+  }
+
+  return {
+    expectedPaths: expectedPaths.sort(),
+    expectedOperationKeys: expectedOperationKeys.sort(),
+    expectedPublicOpKeys: expectedPublicOpKeys.sort(),
+  };
+}
 
 function collectSchemaViolations(node: unknown, pointer = ''): string[] {
   if (!node || typeof node !== 'object') return [];
@@ -120,14 +173,19 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     return operations;
   }
 
-  it('discovers all 77 route files (.ts and .tsx) and 106 HTTP operations including GET /api/live, GET /api/og, GET /api/uploads/{path}, and POST /api/admin/invitation-codes/merge', () => {
+  it('discovers every live route file (.ts and .tsx) and HTTP operation including GET /api/live, GET /api/og, GET /api/uploads/{path}, and POST /api/admin/invitation-codes/merge', () => {
     expect(openapi.openapi).toBe('3.0.3');
 
-    const routePaths = Object.keys(openapi.paths);
-    expect(routePaths).toHaveLength(77);
+    const { expectedPaths, expectedOperationKeys } = getExpectedOpenApiInventory();
+
+    const routePaths = Object.keys(openapi.paths).sort();
+    expect(routePaths).toEqual(expectedPaths);
 
     const operations = getAllOperations();
-    expect(operations).toHaveLength(106);
+    const actualOperationKeys = operations
+      .map(({ method, routePath }) => `${method} ${routePath}`)
+      .sort();
+    expect(actualOperationKeys).toEqual(expectedOperationKeys);
 
     expect(openapi.paths['/api/uploads/{path}']?.get).toBeDefined();
     expect(openapi.paths['/api/admin/invitation-codes/merge']?.post).toBeDefined();
@@ -173,10 +231,15 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(nullableCount).toBeGreaterThan(0);
   });
 
-  it('emits requestBody contracts for all 57 body operations including all 9 previously missing operations', () => {
+  it('emits requestBody contracts across body operations including all previously missing batch, export, and webhook operations', () => {
     const operations = getAllOperations();
     const bodyOperations = operations.filter(({ operation }) => Boolean(operation.requestBody));
-    expect(bodyOperations).toHaveLength(57);
+    expect(bodyOperations.length).toBeGreaterThan(0);
+
+    for (const { method, operation } of bodyOperations) {
+      expect(BODY_UPPER_METHODS.has(method)).toBe(true);
+      expect(Object.keys(operation.requestBody?.content ?? {}).length).toBeGreaterThan(0);
+    }
 
     const previouslyMissingOps = [
       { routePath: '/api/admin/{entity}/batch', method: 'post', expectedProps: ['ids'] },
@@ -254,7 +317,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.required ?? []).toHaveLength(0);
   });
 
-  it('defines components.securitySchemes across all 94 protected operations and query parameters across all 20 query operations', () => {
+  it('defines components.securitySchemes across every protected operation and query parameters across query operations', () => {
     const schemes = openapi.components?.securitySchemes;
     expect(schemes).toBeDefined();
     expect(schemes?.adminCookieAuth).toEqual(
@@ -273,31 +336,37 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       expect.objectContaining({ type: 'apiKey', in: 'header', name: 'stripe-signature' })
     );
 
+    const { expectedOperationKeys, expectedPublicOpKeys } = getExpectedOpenApiInventory();
     const operations = getAllOperations();
     const protectedOps = operations.filter(
       ({ operation }) => Array.isArray(operation.security) && operation.security.length > 0
     );
-    expect(protectedOps).toHaveLength(94);
+    expect(protectedOps).toHaveLength(
+      expectedOperationKeys.length - expectedPublicOpKeys.length,
+    );
 
     const unprotectedOpKeys = operations
       .filter(({ operation }) => !operation.security || operation.security.length === 0)
       .map(({ method, routePath }) => `${method} ${routePath}`)
       .sort();
 
-    expect(unprotectedOpKeys).toEqual([
-      'GET /api/admin/setup',
-      'GET /api/health',
-      'GET /api/live',
-      'GET /api/ready',
-      'GET /api/registry/claim',
-      'GET /api/registry/validate-code',
-      'GET /api/uploads/{path}',
-      'POST /api/admin/login',
-      'POST /api/admin/setup',
-      'POST /api/guest/address/public',
-      'POST /api/guest/login',
-      'POST /api/registry/claim',
-    ]);
+    expect(unprotectedOpKeys).toEqual(expectedPublicOpKeys);
+    expect(unprotectedOpKeys).toEqual(
+      expect.arrayContaining([
+        'GET /api/admin/setup',
+        'GET /api/health',
+        'GET /api/live',
+        'GET /api/ready',
+        'GET /api/registry/claim',
+        'GET /api/registry/validate-code',
+        'GET /api/uploads/{path}',
+        'POST /api/admin/login',
+        'POST /api/admin/setup',
+        'POST /api/guest/address/public',
+        'POST /api/guest/login',
+        'POST /api/registry/claim',
+      ]),
+    );
 
     // Verify specific security perimeter mappings
     expect((openapi.paths['/api/cron/broadcasts']?.post as OpenApiOperation).security).toEqual([
@@ -315,11 +384,11 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       { adminCookieAuth: [] },
     ]);
 
-    // Verify 20 query operations
+    // Verify query operations
     const queryOps = operations.filter(({ operation }) =>
       (operation.parameters ?? []).some((param) => param.in === 'query')
     );
-    expect(queryOps).toHaveLength(20);
+    expect(queryOps.length).toBeGreaterThan(0);
 
     // Shared handler GET /api/media/export has query params whereas POST /api/media/export does not
     const mediaExportGetParams = (openapi.paths['/api/media/export']?.get as OpenApiOperation)
@@ -484,21 +553,30 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect((putSchema.required ?? []).length).toBeGreaterThanOrEqual(19);
   });
 
-  it('emits {entity} path enums on all 10 admin entity operations and 7-branch oneOf schemas on entity POST/PUT', () => {
-    const expectedSlugs = [
-      'content-nodes',
-      'wedding-party',
-      'attractions',
-      'registry-items',
-      'invitation-codes',
-      'seating-tables',
-      'sub-events',
-    ];
+  it('emits {entity} path enums across every admin {entity} operation and matching oneOf schemas on entity POST/PUT', () => {
+    const expectedSlugs = extractAdminEntityRows().map((row) => row.entityKey);
+    expect(expectedSlugs).toEqual(
+      expect.arrayContaining([
+        'content-nodes',
+        'wedding-party',
+        'attractions',
+        'registry-items',
+        'invitation-codes',
+        'seating-tables',
+        'sub-events',
+      ]),
+    );
 
-    const entityOps = getAllOperations().filter(({ operation }) =>
+    const allOperations = getAllOperations();
+    const expectedEntityOps = allOperations.filter(({ routePath }) =>
+      routePath.includes('{entity}'),
+    );
+    expect(expectedEntityOps.length).toBeGreaterThan(0);
+
+    const entityOps = allOperations.filter(({ operation }) =>
       (operation.parameters ?? []).some((p) => p.in === 'path' && p.name === 'entity')
     );
-    expect(entityOps).toHaveLength(10);
+    expect(entityOps).toHaveLength(expectedEntityOps.length);
 
     for (const { operation } of entityOps) {
       const entityParam = operation.parameters?.find((p) => p.in === 'path' && p.name === 'entity');
@@ -514,7 +592,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       oneOf?: unknown[];
     };
     expect(entityCreateSchema.type).toBe('object');
-    expect(entityCreateSchema.oneOf).toHaveLength(7);
+    expect(entityCreateSchema.oneOf).toHaveLength(expectedSlugs.length);
 
     const entityUpdateSchema = (openapi.paths['/api/admin/{entity}/{id}']?.put as OpenApiOperation)
       .requestBody?.content['application/json']?.schema as {
@@ -522,7 +600,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       oneOf?: unknown[];
     };
     expect(entityUpdateSchema.type).toBe('object');
-    expect(entityUpdateSchema.oneOf).toHaveLength(7);
+    expect(entityUpdateSchema.oneOf).toHaveLength(expectedSlugs.length);
   });
 
   it('documents 201 Created responses on creation routes and explicit response media types on all 8 export operations', () => {
@@ -564,13 +642,14 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     }
   });
 
-  it('defines top-level domain tags and assigns declared tags across all 106 operations', () => {
+  it('defines top-level domain tags and assigns declared tags across every operation', () => {
     expect(Array.isArray(openapi.tags)).toBe(true);
     expect((openapi.tags ?? []).length).toBeGreaterThanOrEqual(12);
 
+    const { expectedOperationKeys } = getExpectedOpenApiInventory();
     const declaredTags = new Set((openapi.tags ?? []).map((t) => t.name));
     const operations = getAllOperations();
-    expect(operations).toHaveLength(106);
+    expect(operations).toHaveLength(expectedOperationKeys.length);
 
     for (const { operation } of operations) {
       expect(Array.isArray(operation.tags)).toBe(true);

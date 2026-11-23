@@ -126,17 +126,7 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```bash
   npm run check:static
   ```
-  Executes all ten static verification gates configured in `package.json`:
-  - `npm run check:env-docs`: Validates environment variable documentation alignment across `.env.example` and deployment guides.
-  - `npm run check:runbooks`: Validates deployment runbooks against workflows, Docker Compose, and Prisma 7 contracts.
-  - `npm run check:identifiers`: Scans for accidentally committed personal/template identifiers.
-  - `npm run check:action-pins`: Validates strict YAML 1.2 workflow syntax across `.github/workflows/` and ensures GitHub Actions workflow actions are pinned to full 40-character commit SHAs.
-  - `npm run check:links`: Verifies that internal Markdown document links resolve cleanly without broken references.
-  - `npm run check:spec-contracts`: Verifies that `/api/*` routes, HTTP methods, dynamic admin `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural Markdown specs match live source files.
-  - `npm run check:prisma`: Validates Prisma schema formatting and relations.
-  - `npm run lint:migrations`: Verifies database migration compatibility.
-  - `npm run check:doc-sync`: Verifies generated OpenAPI (`public/openapi.json`), architecture (`ARCHITECTURE.md`), and feature module (`FEATURE_MODULES.md`) documentation match current schemas.
-  - `npm run check:setup-guides`: Verifies setup, contributor, and testing guides stay aligned with `.env.example`, `.env.test`, `package.json`, `.githooks/pre-commit`, `scripts/check-quality.ts`, and `tsconfig.json`.
+  Executes the shared static verification list in [scripts/check-quality.ts](../scripts/check-quality.ts) (`--static`), matching the `verify` job in [.github/workflows/ci.yml](workflows/ci.yml). For local environment setup, pre-commit hooks, and generated doc-sync rules, see the [Developer Setup Guide](../docs/developer-setup.md) and [Contribution Guidelines](CONTRIBUTING.md).
 
 - **Storybook Static Showcase Build:**
   ```bash

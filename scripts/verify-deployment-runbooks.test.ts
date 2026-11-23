@@ -452,4 +452,24 @@ describe('verify-deployment-runbooks', () => {
       ])
     );
   });
+
+  it('requires updating only docs/runtime-contract.md when a new Prisma model is added', () => {
+    const schemaPath = path.join(tempDir, 'prisma/schema.prisma');
+    fs.appendFileSync(schemaPath, '\nmodel GuestSurveyResponse {\n  id String @id @default(cuid())\n}\n');
+
+    const missingErrors = verifyDeploymentRunbooks(tempDir);
+    expect(missingErrors).toEqual([
+      'docs/runtime-contract.md: Missing persisted prisma/schema.prisma model `GuestSurveyResponse` in canonical runtime entity summary',
+    ]);
+
+    const runtimeContractPath = path.join(tempDir, 'docs/runtime-contract.md');
+    fs.writeFileSync(
+      runtimeContractPath,
+      fs
+        .readFileSync(runtimeContractPath, 'utf8')
+        .replace('`BroadcastRecipient`', '`BroadcastRecipient`, `GuestSurveyResponse`')
+    );
+
+    expect(verifyDeploymentRunbooks(tempDir)).toEqual([]);
+  });
 });

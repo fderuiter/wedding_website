@@ -1192,6 +1192,59 @@ export function validateRuntimeContract(
   return errors;
 }
 
+export function validateProviderRunbookScope(
+  docName: string,
+  docContent: string,
+  operatorKeys: string[],
+  envSchemaKeys: string[]
+): string[] {
+  const errors: string[] = [];
+
+  if (!docContent.includes('runtime-contract.md')) {
+    errors.push(
+      `${docName} must cross-reference docs/runtime-contract.md instead of duplicating the full environment variable matrix`
+    );
+  }
+
+  const sections = splitMarkdownSections(docContent);
+  const allowedProviderKeys = new Set<string>([...operatorKeys, 'PORT', 'HOSTNAME']);
+
+  for (const section of sections) {
+    if (
+      /\benvironment\s+variables\s+reference\b/i.test(section.heading) ||
+      /^##\s+\d+\.\s+required\s+environment\s+variables\b/i.test(section.heading)
+    ) {
+      errors.push(
+        `Duplicate full environment variable reference section "${section.heading}" in ${docName} (canonical definitions belong in docs/runtime-contract.md)`
+      );
+      continue;
+    }
+
+    if (envSchemaKeys.length > 0) {
+      const matchedSchemaKeys = envSchemaKeys.filter(
+        (key) => countStructuredKeyEntries(section.nonCodeLines, key) > 0
+      ).length;
+      if (matchedSchemaKeys >= envSchemaKeys.length) {
+        errors.push(
+          `Duplicate full environment variable matrix in section "${section.heading}" of ${docName} (${matchedSchemaKeys} structured entries; canonical definitions belong in docs/runtime-contract.md)`
+        );
+      }
+    }
+
+    if (docName.startsWith('docs/deployment/') && /^##\s+2\./.test(section.heading)) {
+      for (const documentedKey of extractStructuredKeys(section.nonCodeLines)) {
+        if (/^[A-Z][A-Z0-9_]*$/.test(documentedKey) && !allowedProviderKeys.has(documentedKey)) {
+          errors.push(
+            `Out-of-scope variable ${documentedKey} in section "${section.heading}" of ${docName} (provider runbooks are scoped to recognized operator keys, PORT, and HOSTNAME)`
+          );
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
 export function verifyEnvDocs(cwd: string = process.cwd()): void {
   const envFilePath = path.join(cwd, 'src/env.ts');
 
@@ -1212,9 +1265,10 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
   const { keys: operatorKeys, sources } = collectOperatorEnvKeys(cwd);
 
   const docsToVerify = [
-    { name: 'DEPLOYMENT.md', path: path.join(cwd, 'DEPLOYMENT.md') },
     { name: '.env.example', path: path.join(cwd, '.env.example') },
     { name: 'docs/runtime-contract.md', path: path.join(cwd, 'docs/runtime-contract.md') },
+    { name: 'DEPLOYMENT.md', path: path.join(cwd, 'DEPLOYMENT.md') },
+    { name: 'docs/deployment/README.md', path: path.join(cwd, 'docs/deployment/README.md') },
     { name: 'docs/deployment/docker-vps.md', path: path.join(cwd, 'docs/deployment/docker-vps.md') },
     { name: 'docs/deployment/gcp-cloud-run.md', path: path.join(cwd, 'docs/deployment/gcp-cloud-run.md') },
     { name: 'docs/deployment/vercel.md', path: path.join(cwd, 'docs/deployment/vercel.md') },
@@ -1244,7 +1298,9 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
     const docErrors =
       doc.name === 'docs/runtime-contract.md'
         ? validateRuntimeContract(docContent, operatorKeys, envSpecs, sources)
-        : validateEnvDocContent(doc.name, docContent, envSchemaKeys);
+        : doc.name === '.env.example'
+          ? validateEnvDocContent(doc.name, docContent, envSchemaKeys)
+          : validateProviderRunbookScope(doc.name, docContent, operatorKeys, envSchemaKeys);
 
     for (const err of docErrors) {
       console.error(`❌ ${err}`);

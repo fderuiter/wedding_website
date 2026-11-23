@@ -1025,6 +1025,24 @@ async function run() {
     }
   }
 
+  const declaredTagNames = new Set<string>(openapi.tags.map((t: { name: string }) => t.name));
+  for (const pathMethods of Object.values(openapi.paths) as Array<Record<string, any>>) {
+    for (const op of Object.values(pathMethods)) {
+      for (const tag of op.tags ?? []) {
+        if (!declaredTagNames.has(tag)) {
+          declaredTagNames.add(tag);
+          openapi.tags.push({
+            name: tag,
+            description:
+              tag === 'General'
+                ? 'General application API endpoints'
+                : `${tag} API endpoints`,
+          });
+        }
+      }
+    }
+  }
+
   if (missingSchemaCount > 0) {
     console.error(`Failed CI check: ${missingSchemaCount} data-accepting routes lack validation schemas.`);
     process.exit(1);

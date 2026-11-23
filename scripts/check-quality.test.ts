@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { main, steps } from './check-quality';
+import { main, resolveQualitySteps, staticSteps, steps } from './check-quality';
 
 describe('check-quality', () => {
   let tempDir: string;
@@ -97,5 +97,28 @@ describe('check-quality', () => {
     expect(ciWorkflow).toContain('node_modules/.cache/storybook');
     expect(ciWorkflow).toContain('run: npm run build-storybook');
     expect(storybookMain).toContain('fsCache: true');
+  });
+
+  it('shares staticSteps (including check:standalone) across check:static, steps, and .github/workflows/ci.yml', () => {
+    const repoRoot = process.cwd();
+    const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const ciWorkflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8');
+
+    expect(staticSteps.some((s) => s.script === 'check:standalone' || s.command === 'npm run check:standalone')).toBe(
+      true
+    );
+    expect(steps.slice(0, staticSteps.length)).toEqual(staticSteps);
+    expect(resolveQualitySteps({ staticOnly: true })).toEqual(staticSteps);
+    expect(
+      resolveQualitySteps({ staticOnly: true, skipDocSync: true }).some(
+        (s) => s.script === 'check:doc-sync'
+      )
+    ).toBe(false);
+
+    expect(pkg.scripts['check:static']).toBe('npx tsx scripts/check-quality.ts --static');
+    expect(ciWorkflow).toContain('run: npm run check:static -- --skip-doc-sync');
+    expect(ciWorkflow).toContain('run: npm run check:standalone -- --require-standalone');
   });
 });

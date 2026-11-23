@@ -1,6 +1,7 @@
 /** @jest-environment node */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { checkLinksInFile, type LinkError } from '../../scripts/check-doc-links';
 import {
@@ -8,6 +9,7 @@ import {
   escapeVueMustache,
   rewriteMarkdownLinks,
 } from '../../scripts/generate-portal';
+import { verifySpecContracts } from '../../scripts/verify-spec-contracts';
 
 describe('docs/ASSET_STORAGE.md Contract & Portal Staging Suite', () => {
   const rootDir = process.cwd();
@@ -15,162 +17,79 @@ describe('docs/ASSET_STORAGE.md Contract & Portal Staging Suite', () => {
   const docAbsPath = path.join(rootDir, docRelPath);
   const docContent = fs.readFileSync(docAbsPath, 'utf8');
 
-  function sliceFileLines(relFilePath: string, startLine: number, endLine: number): string {
-    const absPath = path.join(rootDir, relFilePath);
-    const lines = fs.readFileSync(absPath, 'utf8').split(/\r?\n/);
-    return lines.slice(startLine - 1, endLine).join('\n');
-  }
-
-  function extractRepoBlobAnchors(markdown: string): Array<{
-    relPath: string;
-    rawPath: string;
-    startLine: number;
-    endLine: number;
-  }> {
-    const re =
-      /https:\/\/github\.com\/fderuiter\/wedding_website\/blob\/HEAD\/([^)#?]+)#L(\d+)(?:-L(\d+))?/g;
-    const results: Array<{
-      relPath: string;
-      rawPath: string;
-      startLine: number;
-      endLine: number;
-    }> = [];
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(markdown)) !== null) {
-      const rawPath = match[1];
-      const relPath = decodeURIComponent(rawPath);
-      const startLine = Number.parseInt(match[2], 10);
-      const endLine = match[3] ? Number.parseInt(match[3], 10) : startLine;
-      results.push({ relPath, rawPath, startLine, endLine });
-    }
-    return results;
-  }
-
-  it('passes checkLinksInFile with zero broken links or out-of-range line fragments', () => {
+  it('passes checkLinksInFile with zero broken links and contains no brittle #L line-range anchors', () => {
     const errors: LinkError[] = [];
     checkLinksInFile(docAbsPath, errors, rootDir);
     expect(errors).toEqual([]);
+    expect(docContent).not.toMatch(/#L\d+/);
+    expect(docContent).not.toMatch(/\(L\d+[-–—]L\d+\)/);
   });
 
   it('percent-encodes bracketed Next.js route links so checkLinksInFile resolves [id] and [...path] routes', () => {
-    expect(docContent).toContain('src/app/api/media/%5Bid%5D/route.ts#L32-L43');
-    expect(docContent).toContain('src/app/api/uploads/%5B...path%5D/route.ts#L68-L126');
+    expect(docContent).toContain('src/app/api/media/%5Bid%5D/route.ts');
+    expect(docContent).toContain('src/app/api/uploads/%5B...path%5D/route.ts');
     expect(docContent).not.toMatch(
-      /https:\/\/github\.com\/fderuiter\/wedding_website\/blob\/HEAD\/[^\s)]*\[[^\s)]*\]/
+      /https:\/\/github\.com\/fderuiter\/wedding_website\/blob\/HEAD\/[^\s)]*\[[^\s)]*\]/,
     );
   });
 
-  it('anchors getStorageProvider and all referenced source symbols to their exact live line ranges', () => {
-    const anchors = extractRepoBlobAnchors(docContent);
-    expect(anchors.length).toBeGreaterThanOrEqual(20);
+  it('verifies getStorageProvider and all referenced routes and source symbols via verifySpecContracts without depending on line offsets', () => {
+    const result = verifySpecContracts(rootDir, { specFiles: [docRelPath] });
+    expect(result.errors).toEqual([]);
+    expect(result.checkedRoutes).toBeGreaterThanOrEqual(4);
+    expect(result.checkedSymbols).toBeGreaterThanOrEqual(25);
 
-    const expectedSymbolByTarget: Array<{
-      relPath: string;
-      symbolPattern: RegExp;
-    }> = [
-      {
-        relPath: 'src/utils/storage.ts',
-        symbolPattern: /export function getStorageProvider\(\): StorageProvider/,
-      },
-      {
-        relPath: 'src/utils/storage.ts',
-        symbolPattern: /export interface StorageUploadInputObject[\s\S]*export interface StorageValidationResult/,
-      },
-      {
-        relPath: 'src/utils/storage.ts',
-        symbolPattern: /function getLocalUploadMimeType\(/,
-      },
-      {
-        relPath: 'src/utils/storage.ts',
-        symbolPattern: /async getMetadata\(keyOrUrl: string\): Promise<StorageObject \| null>/,
-      },
-      {
-        relPath: 'src/utils/storage.ts',
-        symbolPattern: /forcePathStyle:\s*endpoint\s*\?\s*true\s*:\s*undefined/,
-      },
-      {
-        relPath: 'src/utils/storage.ts',
-        symbolPattern: /async validateConfig\(\): Promise<StorageValidationResult>[\s\S]*Incomplete S3 storage credentials/,
-      },
-      {
-        relPath: 'src/utils/pathContainment.ts',
-        symbolPattern: /export class PathContainmentError extends Error/,
-      },
-      {
-        relPath: 'src/utils/pathContainment.ts',
-        symbolPattern: /export async function resolveContainedExistingPath[\s\S]*export async function resolveContainedWritePath/,
-      },
-      {
-        relPath: 'src/utils/validationPrimitives.ts',
-        symbolPattern: /export function decodeUrlPathSafely[\s\S]*export function isSafeConfigAssetUrl[\s\S]*export function isSafeMediaOrPhotoUrl/,
-      },
-      {
-        relPath: 'src/utils/validation.ts',
-        symbolPattern: /export const GuestPhotoUploadSchema[\s\S]*Maximum 10 photos allowed per upload/,
-      },
-      {
-        relPath: 'src/utils/validation.ts',
-        symbolPattern: /export const AdminUploadSchema/,
-      },
-      {
-        relPath: 'src/app/api/admin/upload/route.ts',
-        symbolPattern: /getStorageProvider\(\)\.upload\(sanitizedFile\)/,
-      },
-      {
-        relPath: 'src/app/api/guest/photos/upload/route.ts',
-        symbolPattern: /folder:\s*'uploads\/photos'[\s\S]*mediaRepository\.createMedia[\s\S]*status:\s*'PENDING'/,
-      },
-      {
-        relPath: 'src/features/content/service.ts',
-        symbolPattern: /else if \(action === 'reject'\)[\s\S]*getStorageProvider\(\)\.delete\(data\.url\)[\s\S]*mediaRepository\.deleteMedia\(data\.mediaId\)/,
-      },
-      {
-        relPath: 'src/app/api/media/[id]/route.ts',
-        symbolPattern: /export const DELETE[\s\S]*mediaRepository\.deleteMedia\(id\)/,
-      },
-      {
-        relPath: 'src/features/media/repository.ts',
-        symbolPattern: /async deleteMedia\(/,
-      },
-      {
-        relPath: 'src/app/api/media/export/route.ts',
-        symbolPattern: /CONCURRENCY_LIMIT = 8[\s\S]*safeFetch[\s\S]*resolveContainedExistingPath[\s\S]*wedding-photos\.zip/,
-      },
-      {
-        relPath: 'src/utils/image-metadata.ts',
-        symbolPattern: /export async function getLocalImageDimensions/,
-      },
-      {
-        relPath: 'src/app/metadata.ts',
-        symbolPattern: /getLocalImageDimensions\(ogImageUrl\)/,
-      },
-    ];
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'asset-storage-doc-shift-'));
+    try {
+      for (const relPath of [
+        docRelPath,
+        'src/env.ts',
+        'src/middleware.ts',
+        'src/utils/storage.ts',
+        'src/utils/pathContainment.ts',
+        'src/utils/validationPrimitives.ts',
+        'src/utils/validation.ts',
+        'src/utils/imageProcessor.ts',
+        'src/utils/imageProcessorWorker.ts',
+        'src/utils/image-metadata.ts',
+        'src/app/metadata.ts',
+        'src/app/api/admin/upload/route.ts',
+        'src/app/api/guest/photos/upload/route.ts',
+        'src/app/api/media/[id]/route.ts',
+        'src/app/api/media/export/route.ts',
+        'src/app/api/uploads/[...path]/route.ts',
+        'src/features/content/service.ts',
+        'src/features/media/repository.ts',
+      ]) {
+        const srcPath = path.join(rootDir, relPath);
+        const destPath = path.join(tmpRoot, relPath);
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.copyFileSync(srcPath, destPath);
+      }
 
-    for (const expected of expectedSymbolByTarget) {
-      const matchingAnchors = anchors.filter((a) => a.relPath === expected.relPath);
-      expect(matchingAnchors.length).toBeGreaterThan(0);
+      const storageCopyPath = path.join(tmpRoot, 'src/utils/storage.ts');
+      const originalStorage = fs.readFileSync(storageCopyPath, 'utf8');
+      const shiftedStorage = originalStorage.replace(
+        'export function getStorageProvider(): StorageProvider',
+        [
+          '// Synthetic comment line 1 inserted above getStorageProvider',
+          '// Synthetic comment line 2 inserted above getStorageProvider',
+          'export function getStorageProvider(): StorageProvider',
+        ].join('\n'),
+      );
+      expect(shiftedStorage).not.toBe(originalStorage);
+      fs.writeFileSync(storageCopyPath, shiftedStorage, 'utf8');
 
-      const matched = matchingAnchors.some((anchor) => {
-        const snippet = sliceFileLines(anchor.relPath, anchor.startLine, anchor.endLine);
-        return expected.symbolPattern.test(snippet);
-      });
-      expect(matched).toBe(true);
+      const linkErrors: LinkError[] = [];
+      checkLinksInFile(path.join(tmpRoot, docRelPath), linkErrors, tmpRoot);
+      expect(linkErrors).toEqual([]);
+
+      const shiftedResult = verifySpecContracts(tmpRoot, { specFiles: [docRelPath] });
+      expect(shiftedResult.errors).toEqual([]);
+      expect(shiftedResult.checkedSymbols).toBe(result.checkedSymbols);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
-
-    // Specifically verify getStorageProvider anchor bounds match exact function declaration..closing brace
-    const storageLines = fs.readFileSync(path.join(rootDir, 'src/utils/storage.ts'), 'utf8').split(/\r?\n/);
-    const factoryStartLine =
-      storageLines.findIndex((line) => line.startsWith('export function getStorageProvider(): StorageProvider')) + 1;
-    expect(factoryStartLine).toBeGreaterThan(0);
-    let factoryEndLine = factoryStartLine;
-    while (factoryEndLine <= storageLines.length && storageLines[factoryEndLine - 1] !== '}') {
-      factoryEndLine++;
-    }
-
-    const factoryAnchors = anchors.filter(
-      (a) => a.relPath === 'src/utils/storage.ts' && a.startLine === factoryStartLine && a.endLine === factoryEndLine
-    );
-    expect(factoryAnchors.length).toBeGreaterThanOrEqual(1);
   });
 
   it('documents all required storage, containment, R2, URL guard, moderation, deletion, export, and metadata contracts', () => {
@@ -240,7 +159,6 @@ describe('docs/ASSET_STORAGE.md Contract & Portal Staging Suite', () => {
     expect(stagedInMemory).toContain('# Asset Storage System');
     expect(stagedInMemory).toContain('`${endpoint}/${bucket}`');
     expect(stagedInMemory).toContain('`${S3_ENDPOINT}/${S3_BUCKET}`');
-    // Ensure no unescaped Vue mustache interpolations leak into prose
     expect(stagedInMemory).not.toContain('&#123;&#123;');
   });
 });

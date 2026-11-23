@@ -35,32 +35,8 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Verify Environment Variables Documentation
-        run: npm run check:env-docs
-
-      - name: Verify Deployment Runbooks
-        run: npm run check:runbooks
-
-      - name: Verify Setup & Contributor Guides Contract
-        run: npm run check:setup-guides
-
-      - name: Check Personal/Template Identifier Isolation
-        run: npm run check:identifiers
-
-      - name: Check Third-Party Action Pin Commit SHAs
-        run: npm run check:action-pins
-
-      - name: Check Container Digest Pins & Standalone Portability
-        run: npm run check:standalone
-
-      - name: Check Documentation Relative Links
-        run: npm run check:links
-
-      - name: Verify Specification Route & Symbol Contracts
-        run: npm run check:spec-contracts
-
-      - name: Validate Prisma Schema
-        run: npm run check:prisma
+      - name: Run Unified Static Quality Checks
+        run: npm run check:static -- --skip-doc-sync
 
       - name: TypeScript Typecheck
         run: npm run typecheck
@@ -70,9 +46,6 @@ jobs:
 
       - name: Knip Unused Export Analysis
         run: npm run lint:unused
-
-      - name: Verify Migration Compatibility
-        run: npm run lint:migrations
 
       - name: Verify Documentation and Architecture Sync
         id: verify-docs
@@ -380,7 +353,7 @@ jobs:
         run: npm run test:standalone
 
       - name: Verify Standalone Output Portability
-        run: npm run check:standalone
+        run: npm run check:standalone -- --require-standalone
 
       - name: Security Dependency Audit
         run: npm run check:audit

@@ -39,25 +39,11 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
      ```
      Executes all static checks, linters, documentation portal and Storybook static builds, and unit/integration tests via [scripts/check-quality.ts](../scripts/check-quality.ts) (see [AGENTS.md](../AGENTS.md) and [TESTING.md](TESTING.md) for details).
 
-   - **Individual Quality Checks:**
-     - `npm run check:static` - Run the full static verification bundle (`check:env-docs`, `check:runbooks`, `check:identifiers`, `check:action-pins`, `check:links`, `check:spec-contracts`, `check:prisma`, `lint:migrations`, `check:doc-sync`, and `check:setup-guides`).
-     - `npm run check:env-docs` - Ensure environment variables match `.env.example` and deployment documentation.
-     - `npm run check:runbooks` - Verify deployment runbooks match live workflows, Docker Compose, and Prisma 7 contracts.
-     - `npm run check:setup-guides` - Verify setup, testing, and contributor guides match `.env.example`, `.env.test`, scripts, hooks, and `tsconfig.json`.
-     - `npm run check:identifiers` - Guard against hardcoded personal/template identifiers in core runtime files.
-     - `npm run check:action-pins` - Validate strict YAML 1.2 syntax in `.github/workflows/` and ensure third-party GitHub Actions are pinned to 40-character commit SHAs.
-     - `npm run check:links` - Validate relative documentation links across Markdown files.
-     - `npm run check:spec-contracts` - Verify `/api/*` routes, HTTP methods, dynamic `ENTITY_KEY` slugs, and TypeScript symbols cited in architectural specifications match live codebase exports.
-     - `npm run check:prisma` & `npm run lint:migrations` - Validate Prisma schema structure and migration compatibility.
-     - `npm run check:standalone` - Verify Next.js standalone build & container portability.
-     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift.
-     - `npm run docs:build` - Verify static VitePress documentation portal builds successfully.
-     - `npm run build-storybook` - Verify static Storybook component showcase, story imports, and MSW mock handlers compile cleanly via Webpack.
-     - `npm run typecheck` (or `npm run type-check`) - Check TypeScript types across `tsconfig.json`, `tsconfig.build.json`, `tsconfig.test.json`, `tsconfig.e2e.json`, and `tsconfig.scripts.json` (workspace IDE project, isolated production app build, unit/integration tests and `src/mocks`, Playwright E2E specs, and `scripts/`).
-     - `npm run lint` & `npm run lint:unused` - Run ESLint and Knip unused export analysis.
-     - `npm test` - Run Jest unit and integration tests.
-     - `npm run test:e2e` / `npm run test:e2e:smoke` (`npx playwright test`) - Run Playwright E2E or `@smoke`-tagged browser tests in bundled Chromium against `http://localhost:3000` and the isolated `wedding_test` database (automatically initialized and seeded when `CI` and `TEST_CONTAINER` are unset; stop any running `npm run dev` on port `3000` first, or opt into `PLAYWRIGHT_REUSE_SERVER=true` only when the existing server targets `wedding_test` with aligned `GUEST_SESSION_SECRET`, `GUEST_PASSCODE`, and `ADMIN_PASSWORD` values).
-     - `npm run test:a11y:unit` & `npm run test:a11y` - Run targeted `src/` `jest-axe` component suites (`--unit`), or chain component checks, `wedding_test` reseeding (`npx tsx scripts/seed.ts`), and `@a11y` Playwright WCAG 2.2 AA audits (`--run`) to generate `test-results/a11y-summary.md`.
+   - **Targeted Quality & Documentation Sync Commands:**
+     - `npm run check:static` - Run the shared static and container configuration checks defined in [`scripts/check-quality.ts`](../scripts/check-quality.ts) (`--static`).
+     - `npm run check:doc-sync` - Verify generated documentation (`public/openapi.json`, `ARCHITECTURE.md`, and `FEATURE_MODULES.md`) is synchronized with codebase schemas without drift (`npx tsx scripts/generate-openapi.ts && npx tsx scripts/generate-docs.ts`).
+     - `npm run typecheck`, `npm run lint`, & `npm run lint:unused` - Check TypeScript types (see [AGENTS.md](../AGENTS.md) for the five-file `tsconfig*.json` split), ESLint rules, and Knip unused exports.
+     - `npm test`, `npm run test:e2e`, & `npm run test:a11y` - Run Jest unit/integration tests, Playwright E2E specs, and WCAG 2.2 AA accessibility audits (see [TESTING.md](TESTING.md) for `wedding_test` database isolation, E2E secret alignment, and container smoke tests).
 7. **Commit Your Changes:** Write clear commit messages. Something like `fix: Correct spelling on registry item description` or `feat: Add animation to RSVP button`.
 
     ```bash
@@ -67,7 +53,7 @@ This project, while built for a specific wedding, is also a bit of a portfolio p
 
     Committing triggers [`.githooks/pre-commit`](../.githooks/pre-commit) (installed automatically by `npm ci`), which:
     1. Runs `npx lint-staged` (`eslint --fix` on staged `*.{js,jsx,ts,tsx}` files).
-    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs twelve sequential workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync`.
+    2. Temporarily stashes unstaged changes (`git stash push --keep-index --include-untracked`) and runs lightweight workspace checks before restoring stashed edits: `npm run type-check`, `npm run lint:unused`, `npm run check:env-docs`, `npm run check:runbooks`, `npm run check:setup-guides`, `npm run check:identifiers`, `npm run check:action-pins`, `npm run check:links`, `npm run check:spec-contracts`, `npm run check:prisma`, `npm run lint:migrations`, and `npm run check:doc-sync` (heavy builds and `check:standalone` are deferred to `npm run check:static`, `npm run quality`, and CI so commits stay fast).
 
 8. **Push to Your Fork:**
 

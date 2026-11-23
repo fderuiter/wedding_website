@@ -1850,13 +1850,33 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
   }
 
   const prismaSchemaRaw = fs.readFileSync(path.join(repoRoot, 'prisma/schema.prisma'), 'utf8');
-  const totalModels = (prismaSchemaRaw.match(/^model\s+[A-Za-z0-9_]+\s*\{/gm) ?? []).length;
-  const sharedTableCount = Math.max(0, totalModels - 1);
-  for (const relPath of runbookRelPaths) {
-    const content = runbookContents.get(relPath) ?? '';
-    if (!new RegExp(`\\b${sharedTableCount}\\s+tables\\b`).test(content) || !content.includes('AppConfig')) {
+  const prismaModels = Array.from(
+    prismaSchemaRaw.matchAll(/^model\s+([A-Za-z0-9_]+)\s*\{/gm),
+    (match) => match[1]
+  );
+  for (const modelName of prismaModels) {
+    if (!runtimeContractMd.includes(`\`${modelName}\``)) {
       errors.push(
-        `${relPath}: Must state that \`prisma/schema.prisma\` shares ${sharedTableCount} tables across subdomains (\`MULTISITE_ENABLED\` switches \`AppConfig\` rows only)`
+        `docs/runtime-contract.md: Missing persisted prisma/schema.prisma model \`${modelName}\` in canonical runtime entity summary`
+      );
+    }
+  }
+  if (
+    !runtimeContractMd.includes('MULTISITE_ENABLED') ||
+    !runtimeContractMd.includes('AppConfig') ||
+    !/all\s+other\s+persisted\s+models\s+in\s+`?prisma\/schema\.prisma`?\s+are\s+shared\s+across\s+subdomains/i.test(
+      runtimeContractMd
+    )
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: Must document that `MULTISITE_ENABLED` switches `AppConfig` rows only while all other persisted models in `prisma/schema.prisma` are shared across subdomains'
+    );
+  }
+  for (const relPath of hostingGuides) {
+    const content = runbookContents.get(relPath) ?? '';
+    if (!content.includes('runtime-contract.md')) {
+      errors.push(
+        `${relPath}: Must cross-reference \`docs/runtime-contract.md\` for canonical environment variable and persisted entity contracts`
       );
     }
   }

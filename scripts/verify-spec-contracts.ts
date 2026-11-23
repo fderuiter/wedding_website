@@ -723,17 +723,36 @@ function extractRouteCitationsFromLine(line: string): Array<{ methods: string[];
   return citations;
 }
 
+function safeDecodeUriPath(rawPath: string): string {
+  try {
+    return decodeURIComponent(rawPath);
+  } catch {
+    return rawPath;
+  }
+}
+
 function resolveDocCitedSrcPath(rawTarget: string, docAbsPath: string, rootDir: string): string | null {
   const withoutAnchor = rawTarget.replace(/[?#].*$/, '').trim();
-  if (!withoutAnchor || !/\.tsx?$/.test(withoutAnchor)) {
+  if (!withoutAnchor) {
+    return null;
+  }
+
+  const githubBlobMatch = withoutAnchor.match(
+    /^https?:\/\/github\.com\/fderuiter\/wedding_website\/blob\/(?:HEAD|main)\/(.+)$/,
+  );
+  const normalizedTarget = githubBlobMatch
+    ? safeDecodeUriPath(githubBlobMatch[1])
+    : safeDecodeUriPath(withoutAnchor);
+
+  if (!/\.tsx?$/.test(normalizedTarget)) {
     return null;
   }
 
   let candidateAbs: string;
-  if (withoutAnchor.startsWith('src/')) {
-    candidateAbs = path.join(rootDir, withoutAnchor);
-  } else if (withoutAnchor.startsWith('./') || withoutAnchor.startsWith('../')) {
-    candidateAbs = path.resolve(path.dirname(docAbsPath), withoutAnchor);
+  if (normalizedTarget.startsWith('src/')) {
+    candidateAbs = path.join(rootDir, normalizedTarget);
+  } else if (normalizedTarget.startsWith('./') || normalizedTarget.startsWith('../')) {
+    candidateAbs = path.resolve(path.dirname(docAbsPath), normalizedTarget);
   } else {
     return null;
   }
@@ -808,16 +827,16 @@ function extractSymbolCitationsFromLine(
   const singleSym = '`[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)?(?:\\(\\))?`';
   const symGroup = `(${singleSym}(?:\\s*(?:,|\\/|\\band\\b|\\bor\\b|&|->|→)\\s*(?:handler\\s*(?:->|→)\\s*)?${singleSym})*)`;
   const srcTarget =
-    '(?:\\[[^\\]]+\\]\\(([^)#?\\s]+\\.tsx?)(?:[#?][^)\\s]*)?\\)|`([^`\\s#?]+\\.tsx?)(?:[#?][^`\\s]*)?`)';
+    '(?:\\[(?:[^\\[\\]]|\\[[^\\[\\]]*\\])+\\]\\(([^)#?\\s]+\\.tsx?)(?:[#?][^)\\s]*)?\\)|`([^`\\s#?]+\\.tsx?)(?:[#?][^`\\s]*)?`)';
   const roleNoun =
     '(?:\\s+(handler|handlers|function|functions|helper|helpers|method|methods|schema|schemas|class|classes|type|types|interface|interfaces|constant|constants|service|services|hook|hooks))?';
 
   const connectorPattern = new RegExp(
-    `${symGroup}${roleNoun}\\s+(?:in|from|at|inside|within|via|defined in|declared in|exported by|exported from|implemented in)\\s+${srcTarget}`,
+    `${symGroup}(?:\\*\\*)?${roleNoun}\\s+(?:in|from|at|inside|within|via|defined in|declared in|exported by|exported from|implemented in)\\s+${srcTarget}`,
     'g',
   );
   const parenPattern = new RegExp(
-    `${symGroup}${roleNoun}\\s*\\(\\s*(?:see\\s+|in\\s+|at\\s+|via\\s+)?${srcTarget}`,
+    `${symGroup}(?:\\*\\*)?${roleNoun}\\s*\\(\\s*(?:see\\s+|in\\s+|at\\s+|via\\s+)?${srcTarget}`,
     'g',
   );
 

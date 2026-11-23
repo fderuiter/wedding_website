@@ -122,14 +122,24 @@ function parsePreCommitScripts(preCommitContent: string): string[] {
   return scripts;
 }
 
-function parseCheckStaticSubscripts(checkStaticCommand: string): string[] {
-  const subscripts: string[] = [];
-  const regex = /\bnpm\s+run\s+([a-zA-Z0-9:_-]+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(checkStaticCommand)) !== null) {
-    subscripts.push(match[1]);
+function parseStaticStepScripts(checkQualityContent: string): string[] {
+  const staticBlockMatch = checkQualityContent.match(
+    /export\s+const\s+staticSteps\s*(?::[^=]*)?=\s*\[([\s\S]*?)\];/
+  );
+  if (!staticBlockMatch) {
+    return [];
   }
-  return subscripts;
+  const scripts = new Set<string>();
+  const scriptPropRegex = /\bscript:\s*['"]([a-zA-Z0-9:_-]+)['"]/g;
+  let match: RegExpExecArray | null;
+  while ((match = scriptPropRegex.exec(staticBlockMatch[1])) !== null) {
+    scripts.add(match[1]);
+  }
+  const cmdRegex = /command:\s*['"]npm\s+run\s+([a-zA-Z0-9:_-]+)['"]/g;
+  while ((match = cmdRegex.exec(staticBlockMatch[1])) !== null) {
+    scripts.add(match[1]);
+  }
+  return Array.from(scripts);
 }
 
 function parseDefaultDocFiles(verifyDocSyncContent: string): string[] {
@@ -155,24 +165,6 @@ function extractDocSyncBulletLines(markdown: string): string {
     .join('\n');
 }
 
-const NUMBER_WORDS: Record<number, string> = {
-  1: 'one',
-  2: 'two',
-  3: 'three',
-  4: 'four',
-  5: 'five',
-  6: 'six',
-  7: 'seven',
-  8: 'eight',
-  9: 'nine',
-  10: 'ten',
-  11: 'eleven',
-  12: 'twelve',
-  13: 'thirteen',
-  14: 'fourteen',
-  15: 'fifteen',
-};
-
 function parseQualityStepCommands(checkQualityContent: string): string[] {
   const commands: string[] = [];
   const stepsSection = checkQualityContent.split('export function main')[0] ?? checkQualityContent;
@@ -182,18 +174,6 @@ function parseQualityStepCommands(checkQualityContent: string): string[] {
     commands.push(match[1]);
   }
   return commands;
-}
-
-function qualityCommandSearchToken(command: string): string {
-  const scriptPathMatch = command.match(/scripts\/[a-zA-Z0-9._-]+/);
-  if (scriptPathMatch) {
-    return scriptPathMatch[0];
-  }
-  const npmRunMatch = command.match(/^npm\s+run\s+([a-zA-Z0-9:_-]+)$/);
-  if (npmRunMatch) {
-    return npmRunMatch[1];
-  }
-  return command;
 }
 
 function parseDockerComposeDbDefaults(
@@ -474,12 +454,12 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       );
     }
   }
-  const readmeInstallSection = extractMarkdownSection(
+  const readmeSetupSection = extractMarkdownSection(
     readmeRaw,
-    /^###\s+Installation\b/,
-    /^###?\s+/
+    /^##\s+Setup & Installation\b/,
+    /^##\s+/
   );
-  if (!/\bnpm\s+ci\b/.test(readmeInstallSection) || /\bnpm\s+install\b/.test(readmeInstallSection)) {
+  if (!/\bnpm\s+ci\b/.test(readmeSetupSection) || /\bnpm\s+install\b/.test(readmeSetupSection)) {
     errors.push(
       'README.md: Installation section must prescribe "npm ci" rather than "npm install"'
     );
@@ -521,9 +501,20 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
   }
 
   const checkStaticCmd = scripts['check:static'] ?? '';
-  const checkStaticSubscripts = parseCheckStaticSubscripts(checkStaticCmd);
-  if (!checkStaticSubscripts.includes('check:setup-guides')) {
-    errors.push('package.json: "check:static" must include "npm run check:setup-guides"');
+  const staticStepScripts = parseStaticStepScripts(checkQualityRaw);
+  if (
+    !checkStaticCmd.includes('scripts/check-quality.ts') ||
+    !checkStaticCmd.includes('--static')
+  ) {
+    errors.push(
+      'package.json: "check:static" must delegate to "scripts/check-quality.ts --static" so local static checks, npm run quality, and CI share one static check source'
+    );
+  }
+  if (!staticStepScripts.includes('check:setup-guides')) {
+    errors.push('scripts/check-quality.ts: staticSteps must include "npm run check:setup-guides"');
+  }
+  if (!staticStepScripts.includes('check:standalone')) {
+    errors.push('scripts/check-quality.ts: staticSteps must include "npm run check:standalone"');
   }
 
   const pretestCmd = scripts['pretest'] ?? '';
@@ -562,22 +553,25 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
   }
 
-  // 2. Hook, check:static parity, E2E runner, & check-quality.ts registration checks
+  // 2. Hook, staticSteps parity, E2E runner, & check-quality.ts registration checks
   const preCommitScripts = parsePreCommitScripts(preCommitRaw);
   if (!preCommitScripts.includes('check:setup-guides')) {
     errors.push('.githooks/pre-commit: Must run "check:setup-guides"');
   }
-  for (const staticSubscript of checkStaticSubscripts) {
+  for (const staticSubscript of staticStepScripts) {
+    if (staticSubscript === 'check:standalone') {
+      continue;
+    }
     if (!preCommitScripts.includes(staticSubscript)) {
       errors.push(
-        `.githooks/pre-commit: Must enforce check:static sub-script "${staticSubscript}"`
+        `.githooks/pre-commit: Must enforce lightweight static check "${staticSubscript}"`
       );
     }
   }
-  for (const heavyBuildScript of ['docs:build', 'build-storybook', 'build']) {
+  for (const heavyBuildScript of ['check:standalone', 'docs:build', 'build-storybook', 'build']) {
     if (preCommitScripts.includes(heavyBuildScript)) {
       errors.push(
-        `.githooks/pre-commit: Must exclude heavy build step "${heavyBuildScript}" so local commits stay fast`
+        `.githooks/pre-commit: Must exclude heavy/build-coupled step "${heavyBuildScript}" so local commits stay fast`
       );
     }
   }
@@ -652,7 +646,28 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     errors.push('scripts/check-quality.ts: "check:setup-guides" must run before "npm run docs:build"');
   }
 
-  // 3. README.md & docs/developer-setup.md onboarding contract checks
+  // 3. README.md overview & docs/developer-setup.md canonical setup contract checks
+  if (/UNDER\s+MAINTAIN(?:AN|EN)CE/i.test(readmeRaw)) {
+    errors.push('README.md: Must not contain outdated maintenance banner');
+  }
+  for (const capability of [
+    'invitation codes',
+    'event responses',
+    'seating charts',
+    'moderation',
+    'broadcasts',
+    '15-model full-site backups',
+  ]) {
+    if (!new RegExp(capability.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(readmeRaw)) {
+      errors.push(`README.md: Must list shipped capability "${capability}"`);
+    }
+  }
+  for (const requiredLink of ['docs/developer-setup.md', 'DEPLOYMENT.md']) {
+    if (!readmeRaw.includes(requiredLink)) {
+      errors.push(`README.md: Must link directly to canonical guide "${requiredLink}"`);
+    }
+  }
+
   const readmeStructurePaths = extractReadmeProjectStructurePaths(readmeRaw);
   if (readmeStructurePaths.length === 0) {
     errors.push('README.md: Missing directory entries under "## Project Structure"');
@@ -663,52 +678,52 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     }
   }
 
-  for (const [docLabel, content] of [
-    ['README.md', readmeRaw],
-    ['docs/developer-setup.md', devSetupRaw],
-  ] as const) {
-    if (!content.includes(expectedComposeDbPrefix)) {
-      errors.push(
-        `${docLabel}: Must document local Docker Compose PostgreSQL URL "${expectedComposeDbPrefix}"`
-      );
+  if (!devSetupRaw.includes(expectedComposeDbPrefix)) {
+    errors.push(
+      `docs/developer-setup.md: Must document local Docker Compose PostgreSQL URL "${expectedComposeDbPrefix}"`
+    );
+  }
+  for (const requiredVar of [
+    'ADMIN_PASSWORD',
+    'DATABASE_URL',
+    'GUEST_PASSCODE',
+    'GUEST_SESSION_SECRET',
+    'ALLOWED_HOSTS',
+  ]) {
+    if (!devSetupRaw.includes(requiredVar)) {
+      errors.push(`docs/developer-setup.md: Missing required environment variable "${requiredVar}"`);
     }
-    for (const requiredVar of [
-      'ADMIN_PASSWORD',
-      'DATABASE_URL',
-      'GUEST_PASSCODE',
-      'GUEST_SESSION_SECRET',
-      'ALLOWED_HOSTS',
-    ]) {
-      if (!content.includes(requiredVar)) {
-        errors.push(`${docLabel}: Missing required environment variable "${requiredVar}"`);
-      }
+  }
+  if (!devSetupRaw.includes('scripts/generate-password-hash.mjs')) {
+    errors.push('docs/developer-setup.md: Must reference "scripts/generate-password-hash.mjs"');
+  }
+  for (const stepNum of [1, 2, 3, 4, 5]) {
+    if (!new RegExp(`\\bStep\\s+${stepNum}\\b`, 'i').test(devSetupRaw)) {
+      errors.push(`docs/developer-setup.md: Must document Step ${stepNum} of SetupWizard`);
     }
-    if (!content.includes('scripts/generate-password-hash.mjs')) {
-      errors.push(`${docLabel}: Must reference "scripts/generate-password-hash.mjs"`);
-    }
-    for (const stepNum of [1, 2, 3, 4, 5]) {
-      if (!new RegExp(`\\bStep\\s+${stepNum}\\b`, 'i').test(content)) {
-        errors.push(`${docLabel}: Must document Step ${stepNum} of SetupWizard`);
-      }
-    }
-    if (!/Sample Data/i.test(content) || !/Guest List Import|CSV/i.test(content)) {
-      errors.push(
-        `${docLabel}: Must document SetupWizard sample data selection and guest list CSV import steps`
-      );
-    }
-    if (
-      !content.includes('isSiteInitialized') ||
-      !content.includes('layout.tsx') ||
-      !content.includes('middleware.ts') ||
-      !content.includes('/guest/login')
-    ) {
-      errors.push(
-        `${docLabel}: Must document that seeding AppConfig satisfies isSiteInitialized (src/lib/config.ts), skips SetupWizard (src/app/layout.tsx), and redirects / to /guest/login (src/middleware.ts)`
-      );
+  }
+  if (!/Sample Data/i.test(devSetupRaw) || !/Guest List Import|CSV/i.test(devSetupRaw)) {
+    errors.push(
+      'docs/developer-setup.md: Must document SetupWizard sample data selection and guest list CSV import steps'
+    );
+  }
+  if (
+    !devSetupRaw.includes('isSiteInitialized') ||
+    !devSetupRaw.includes('layout.tsx') ||
+    !devSetupRaw.includes('middleware.ts') ||
+    !devSetupRaw.includes('/guest/login')
+  ) {
+    errors.push(
+      'docs/developer-setup.md: Must document that seeding AppConfig satisfies isSiteInitialized (src/lib/config.ts), skips SetupWizard (src/app/layout.tsx), and redirects / to /guest/login (src/middleware.ts)'
+    );
+  }
+  for (const crossRef of ['TESTING.md', 'CONTRIBUTING.md']) {
+    if (!devSetupRaw.includes(crossRef)) {
+      errors.push(`docs/developer-setup.md: Must cross-reference "${crossRef}"`);
     }
   }
 
-  // 4. .github/CONTRIBUTING.md contract checks
+  // 4. .github/CONTRIBUTING.md canonical contribution, scaffold, pre-commit & doc-sync checks
   const docTemplateName =
     parseIssueTemplateFrontmatterName(docIssueTemplateRaw) ?? 'Documentation Improvement';
   if (!contributingRaw.includes(docTemplateName)) {
@@ -740,6 +755,8 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
     '.githooks/pre-commit',
     'lint-staged',
     'src/utils/',
+    'developer-setup.md',
+    'TESTING.md',
   ]) {
     if (!contributingRaw.includes(requiredRuleToken)) {
       errors.push(`.github/CONTRIBUTING.md: Missing required contributor reference "${requiredRuleToken}"`);
@@ -755,125 +772,93 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
       );
     }
   }
-  const countMatch = contributingCommitSection.match(
-    /\bruns\s+([a-z0-9]+)\s+sequential\s+workspace\s+checks\b/i
-  );
-  const expectedCountWord = NUMBER_WORDS[preCommitScripts.length];
-  const expectedCountNum = String(preCommitScripts.length);
-  if (
-    countMatch &&
-    countMatch[1].toLowerCase() !== expectedCountWord &&
-    countMatch[1] !== expectedCountNum
-  ) {
-    errors.push(
-      `.github/CONTRIBUTING.md: Commit Your Changes claims "${countMatch[1]}" sequential workspace checks, expected "${expectedCountWord ?? expectedCountNum}" (${preCommitScripts.length})`
-    );
-  }
 
   const defaultDocFiles = parseDefaultDocFiles(verifyDocSyncRaw);
   if (defaultDocFiles.length === 0) {
     errors.push('scripts/verify-doc-sync.ts: DEFAULT_DOC_FILES must not be empty');
   }
-  for (const [docLabel, content] of [
-    ['.github/CONTRIBUTING.md', contributingRaw],
-    ['.github/TESTING.md', testingRaw],
-    ['AGENTS.md', agentsRaw],
-  ] as const) {
-    const docSyncLines = extractDocSyncBulletLines(content);
-    for (const docFile of defaultDocFiles) {
-      if (!docSyncLines.includes(docFile)) {
-        errors.push(
-          `${docLabel}: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "${docFile}"`
-        );
-      }
-    }
-    for (const subscript of checkStaticSubscripts) {
-      if (!content.includes(subscript)) {
-        errors.push(`${docLabel}: Missing check:static sub-script "${subscript}"`);
-      }
-    }
-    if (
-      !content.includes('PLAYWRIGHT_REUSE_SERVER') ||
-      !content.includes('wedding_test') ||
-      !content.includes('GUEST_SESSION_SECRET')
-    ) {
+  const contributingDocSyncLines = extractDocSyncBulletLines(contributingRaw);
+  for (const docFile of defaultDocFiles) {
+    if (!contributingDocSyncLines.includes(docFile)) {
       errors.push(
-        `${docLabel}: Must document PLAYWRIGHT_REUSE_SERVER opt-in, wedding_test isolation, and GUEST_SESSION_SECRET alignment for Playwright E2E workflows`
+        `.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "${docFile}"`
       );
     }
   }
 
-  const agentsA11ySection = extractMarkdownSection(
-    agentsRaw,
-    /^###\s+Accessibility Quality Gate\b/,
-    /^###\s+/
-  );
-  if (/\bdb:seed\b[\s\S]*\btest:a11y\b/.test(agentsA11ySection)) {
+  // 5. .github/TESTING.md canonical test, Playwright E2E, a11y, & smoke-test contract checks
+  if (
+    !testingRaw.includes('PLAYWRIGHT_REUSE_SERVER') ||
+    !testingRaw.includes('wedding_test') ||
+    !testingRaw.includes('GUEST_SESSION_SECRET')
+  ) {
     errors.push(
-      'AGENTS.md: Accessibility Quality Gate must not prescribe running "db:seed" before "test:a11y" (integration teardowns wipe AppConfig)'
+      '.github/TESTING.md: Must document PLAYWRIGHT_REUSE_SERVER opt-in, wedding_test isolation, and GUEST_SESSION_SECRET alignment for Playwright E2E workflows'
     );
   }
-  if (!agentsA11ySection.includes('scripts/seed.ts') || !agentsA11ySection.includes('SetupWizard')) {
+  const testingA11ySection = extractMarkdownSection(
+    testingRaw,
+    /^-\s+\*\*Accessibility \(A11y\) Audits:\*\*/,
+    /^-\s+\*\*/
+  );
+  if (/\bdb:seed\b[\s\S]*\btest:a11y\b/.test(testingA11ySection)) {
     errors.push(
-      'AGENTS.md: Accessibility Quality Gate must document post-Jest reseeding via "scripts/seed.ts" to skip SetupWizard'
+      '.github/TESTING.md: Accessibility section must not prescribe running "db:seed" before "test:a11y" (integration teardowns wipe AppConfig)'
+    );
+  }
+  if (!testingRaw.includes('scripts/seed.ts') || !testingRaw.includes('SetupWizard')) {
+    errors.push(
+      '.github/TESTING.md: Accessibility section must document post-Jest reseeding via "scripts/seed.ts" to skip SetupWizard'
     );
   }
 
-  // 5. .github/TESTING.md & AGENTS.md contract checks
   const envTest = parseEnvAssignments(envTestRaw);
   const envTestGuestPasscode = envTest.active.get('GUEST_PASSCODE');
   const envTestSessionSecret = envTest.active.get('GUEST_SESSION_SECRET');
 
-  for (const [docLabel, content] of [
-    ['.github/TESTING.md', testingRaw],
-    ['AGENTS.md', agentsRaw],
-  ] as const) {
-    if (envTestGuestPasscode && !content.includes(envTestGuestPasscode)) {
-      errors.push(
-        `${docLabel}: Must report .env.test GUEST_PASSCODE value "${envTestGuestPasscode}"`
-      );
-    }
-    if (envTestSessionSecret && !content.includes(envTestSessionSecret)) {
-      errors.push(
-        `${docLabel}: Must report .env.test GUEST_SESSION_SECRET value "${envTestSessionSecret}"`
-      );
-    }
-    if (/\.env\.test[^\n]*wedding2026/i.test(content)) {
-      errors.push(`${docLabel}: Stale claim that .env.test sets GUEST_PASSCODE to wedding2026`);
-    }
-    if (
-      /\.env\.test[^\n]*align[^\n]*GUEST_PASSCODE\s*\(`playwright-e2e-guest-passcode`\)/i.test(
-        content
-      )
-    ) {
-      errors.push(
-        `${docLabel}: Stale claim that .env.test aligns on GUEST_PASSCODE "playwright-e2e-guest-passcode"`
-      );
-    }
-
-    for (const pretestToken of [
-      'jest-a11y-violations.json',
-      'generate-portal.ts',
-      'npm_lifecycle_event',
-    ]) {
-      if (!content.includes(pretestToken)) {
-        errors.push(`${docLabel}: Missing scripts/pretest.mjs step reference "${pretestToken}"`);
-      }
-    }
-
-    if (
-      !content.includes('test-standalone.mjs') ||
-      !content.includes('test-container.mjs') ||
-      !/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/.test(content) ||
-      !content.includes('npm run build')
-    ) {
-      errors.push(
-        `${docLabel}: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs in running "docker compose down -v"`
-      );
+  if (envTestGuestPasscode && !testingRaw.includes(envTestGuestPasscode)) {
+    errors.push(
+      `.github/TESTING.md: Must report .env.test GUEST_PASSCODE value "${envTestGuestPasscode}"`
+    );
+  }
+  if (envTestSessionSecret && !testingRaw.includes(envTestSessionSecret)) {
+    errors.push(
+      `.github/TESTING.md: Must report .env.test GUEST_SESSION_SECRET value "${envTestSessionSecret}"`
+    );
+  }
+  if (/\.env\.test[^\n]*wedding2026/i.test(testingRaw)) {
+    errors.push('.github/TESTING.md: Stale claim that .env.test sets GUEST_PASSCODE to wedding2026');
+  }
+  if (
+    /\.env\.test[^\n]*align[^\n]*GUEST_PASSCODE\s*\(`playwright-e2e-guest-passcode`\)/i.test(
+      testingRaw
+    )
+  ) {
+    errors.push(
+      '.github/TESTING.md: Stale claim that .env.test aligns on GUEST_PASSCODE "playwright-e2e-guest-passcode"'
+    );
+  }
+  for (const pretestToken of [
+    'jest-a11y-violations.json',
+    'generate-portal.ts',
+    'npm_lifecycle_event',
+  ]) {
+    if (!testingRaw.includes(pretestToken)) {
+      errors.push(`.github/TESTING.md: Missing scripts/pretest.mjs step reference "${pretestToken}"`);
     }
   }
+  if (
+    !testingRaw.includes('test-standalone.mjs') ||
+    !testingRaw.includes('test-container.mjs') ||
+    !/docker compose(?:\s+-f\s+\S+)*\s+down\s+-v/.test(testingRaw) ||
+    !testingRaw.includes('npm run build')
+  ) {
+    errors.push(
+      '.github/TESTING.md: Must warn that scripts/test-standalone.mjs requires "npm run build" and joins scripts/test-container.mjs in running "docker compose down -v"'
+    );
+  }
 
-  // 6. AGENTS.md tsconfig.json & tsconfig.build.json exclude lists & check-quality.ts step order
+  // 6. AGENTS.md concise workflow & TypeScript configuration split checks
   const tsconfig = JSON.parse(tsconfigRaw) as { exclude?: string[] };
   const tsconfigExcludes = tsconfig.exclude ?? [];
   const tsconfigBuild = JSON.parse(tsconfigBuildRaw) as { exclude?: string[] };
@@ -900,26 +885,26 @@ export function verifySetupGuides(repoRoot: string = process.cwd()): string[] {
 
   const agentsQualitySection = extractMarkdownSection(
     agentsRaw,
-    /^###\s+Full Local Quality Gate\b/,
-    /^###\s+/
+    /^##\s+4\.\s+Verification & Quality Gates\b/,
+    /^##\s+/
   );
-  let previousMatchPos = -1;
-  for (const cmd of qualityCommands) {
-    const token = qualityCommandSearchToken(cmd);
-    const pos = agentsQualitySection.indexOf(token, previousMatchPos + 1);
-    if (pos === -1) {
-      const anyPos = agentsQualitySection.indexOf(token);
-      if (anyPos === -1) {
-        errors.push(
-          `AGENTS.md: Full Local Quality Gate section is missing check-quality.ts step "${cmd}"`
-        );
-      } else {
-        errors.push(
-          `AGENTS.md: Full Local Quality Gate section misorders check-quality.ts step "${cmd}"`
-        );
-      }
-    } else {
-      previousMatchPos = pos;
+  if (
+    !agentsQualitySection.includes('npm run check:static') ||
+    !agentsQualitySection.includes('npm run quality') ||
+    !agentsQualitySection.includes('scripts/check-quality.ts')
+  ) {
+    errors.push(
+      'AGENTS.md: Verification & Quality Gates section must prescribe "npm run check:static" and "npm run quality" delegating to "scripts/check-quality.ts"'
+    );
+  }
+  for (const agentsCrossRef of [
+    'e2e/helpers/auth.ts',
+    'docs/developer-setup.md',
+    '.github/TESTING.md',
+    '.github/CONTRIBUTING.md',
+  ]) {
+    if (!agentsRaw.includes(agentsCrossRef)) {
+      errors.push(`AGENTS.md: Missing canonical cross-reference "${agentsCrossRef}"`);
     }
   }
 

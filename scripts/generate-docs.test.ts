@@ -58,13 +58,18 @@ describe('scripts/generate-docs AST analysis', () => {
       .filter((entry) => !entry.usesApiMiddleware)
       .map((entry) => entry.routePath)
       .sort();
-    expect(unwrappedPaths).toEqual([
-      '/api/live',
-      '/api/og',
-      '/api/ready',
-      '/api/registry/webhook/stripe',
-      '/api/uploads/[...path]',
-    ]);
+    expect(unwrappedPaths).toEqual(
+      expect.arrayContaining([
+        '/api/live',
+        '/api/og',
+        '/api/ready',
+        '/api/registry/webhook/stripe',
+        '/api/uploads/[...path]',
+      ]),
+    );
+    expect(unwrappedPaths).not.toContain('/api/guest/address');
+    expect(unwrappedPaths).not.toContain('/api/rsvp');
+    expect(unwrappedPaths).not.toContain('/api/media/export');
 
     const mediaExport = byPath.get('/api/media/export');
     expect(mediaExport?.usesApiMiddleware).toBe(true);

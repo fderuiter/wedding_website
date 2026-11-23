@@ -29,35 +29,15 @@ Platform-as-a-Service (PaaS) providers like Railway and Render offer low-frictio
 
 ---
 
-## 2. Required Environment Variables
+## 2. Platform Secrets & Service Configuration
 
-Set environment variables in the platform dashboard (Railway: **Variables** tab; Render: **Environment** tab):
+For the complete environment variable matrix, defaults, and persisted `prisma/schema.prisma` entity rules, refer to the [Application Runtime Contract](../runtime-contract.md). Configure the following platform-specific settings in Railway (**Variables** tab) or Render (**Environment** tab):
 
-| Variable | Required | Description |
-|---|---|---|
-| `NODE_ENV` | Yes | Set to `production`. |
-| `DATABASE_URL` | Yes | Connection string for Railway or Render PostgreSQL (`datasource.url` in `prisma.config.ts`, used by runtime and `prisma migrate deploy`). |
-| `POSTGRES_URL_NON_POOLING` | No | Shadow database URL (`datasource.shadowDatabaseUrl` in `prisma.config.ts` for `prisma migrate dev`); can also store a direct PostgreSQL URL for an explicit `DATABASE_URL` override when `DATABASE_URL` uses PgBouncer. |
-| `ADMIN_PASSWORD` | Yes | Cryptographic password hash (`scrypt:[saltBase64]:[keyBase64]`). |
-| `ALLOWED_HOSTS` | Yes | Comma-separated domain whitelist (e.g. `wedding.up.railway.app,wedding.onrender.com,wedding.mydomain.com`). |
-| `MULTISITE_ENABLED` | No | Enable subdomain-based `AppConfig` branding/profile routing (`false`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
-| `RUN_MIGRATIONS` | No | Automatically run database migrations on container startup (`false`). |
-| `TRUST_PROXY` | No | Trust `X-Forwarded-For` / `X-Real-IP` from platform ingress (`true` or hop count; default `false`). |
-| `GUEST_PASSCODE` | Yes | Unique passcode required for guest access (default `wedding2026` is rejected in production). |
-| `GUEST_SESSION_SECRET` | Yes | Dedicated secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
-| `HISTORY_VERSION_LIMIT` | No | History retention limit per content entry (default `50`). |
-| `CRON_SECRET` | No | Authorization key for background cron triggers. |
-| `S3_BUCKET` | No* | Bucket name for S3 / Cloudflare R2 asset storage. |
-| `S3_REGION` | No* | Bucket region (`us-east-1` or `auto`). |
-| `S3_ACCESS_KEY_ID` | No* | S3 API access key ID. |
-| `S3_SECRET_ACCESS_KEY` | No* | S3 API secret access key. |
-| `S3_ENDPOINT` | No | Custom S3 endpoint URL (for Cloudflare R2). |
-| `S3_PUBLIC_URL` | No | CDN prefix URL for serving uploaded assets. |
-| `STRIPE_SECRET_KEY` | No | Server-side Stripe secret key (`sk_...` / `rk_...`), paired with `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` for card checkout. |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | No | Client-side Stripe publishable key (`pk_...`), paired with `STRIPE_SECRET_KEY` for card checkout. |
-| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret (`whsec_...`) for `/api/registry/webhook/stripe`. |
-
-*\* Note: On Render, you can alternatively mount a Render Persistent Disk at `/app/public/uploads` for local storage.*
+*   **Core Production Credentials**: Set `NODE_ENV=production`, `DATABASE_URL` (auto-shared by Railway PostgreSQL or copied from Render's Internal Database URL; bound to `datasource.url` in `prisma.config.ts`), `ADMIN_PASSWORD` (`scrypt:[saltBase64]:[keyBase64]`), `ALLOWED_HOSTS` (include your custom domain plus `*.up.railway.app` or `*.onrender.com`), `TRUST_PROXY=true`, `GUEST_PASSCODE`, and `GUEST_SESSION_SECRET` (32+ characters, distinct from `GUEST_PASSCODE`). If `DATABASE_URL` uses an external PgBouncer pooler, store a direct connection URL in `POSTGRES_URL_NON_POOLING` (`prisma.config.ts`) for release migration overrides.
+*   **Storage & Optional Integrations**:
+    *   **Railway**: Containers have ephemeral disks, so configure `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (plus optional `S3_ENDPOINT` / `S3_PUBLIC_URL`) for durable uploads.
+    *   **Render**: Either configure `S3_*` object storage or mount a Render Persistent Disk at `/app/public/uploads`.
+    *   **Payments & Cron**: Optionally set `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (+ `STRIPE_WEBHOOK_SECRET`) for card checkout and `CRON_SECRET` for scheduled broadcast jobs.
 
 ---
 
