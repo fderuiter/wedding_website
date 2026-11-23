@@ -32,6 +32,102 @@ function parseStoredContentNode(node: unknown): ContentNodeDTO {
   throw parsed.error;
 }
 
+function isStaticExportBuild(): boolean {
+  return (
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export'
+  );
+}
+
+export const STATIC_MOCK_PUBLIC_PHOTOS: ContentNodeDTO[] = [
+  {
+    id: 'demo-photo-1',
+    type: 'Photo',
+    tags: ['curated', 'engagement'],
+    data: {
+      url: '/images/sunset-embrace.jpg',
+      title: 'Sunset at the Overlook',
+      altText: 'Alex and Taylor embracing at sunset overlooking the valley',
+      caption: 'Engagement session golden hour overlooking the estate hills.',
+      uploaderName: 'Alex & Taylor',
+      status: 'APPROVED',
+      isVisible: true,
+      publishToGallery: true,
+    },
+    createdAt: new Date('2026-02-14T18:30:00.000Z'),
+    updatedAt: new Date('2026-02-14T18:30:00.000Z'),
+  },
+  {
+    id: 'demo-photo-2',
+    type: 'Photo',
+    tags: ['curated', 'ceremony'],
+    data: {
+      url: '/images/sample-photo-ceremony.jpg',
+      title: 'Golden Hour Vows',
+      altText: 'Ceremony terrace decorated with florals at golden hour',
+      caption: 'Our favorite view from the glasshouse ceremony terrace.',
+      uploaderName: 'Alex & Taylor',
+      status: 'APPROVED',
+      isVisible: true,
+      publishToGallery: true,
+    },
+    createdAt: new Date('2026-02-15T16:00:00.000Z'),
+    updatedAt: new Date('2026-02-15T16:00:00.000Z'),
+  },
+  {
+    id: 'demo-photo-3',
+    type: 'Photo',
+    tags: ['guest-upload', 'reception'],
+    data: {
+      url: '/images/sample-photo-toast.jpg',
+      title: 'Champagne Reception Toast',
+      altText: 'Raised champagne glasses during the welcome dinner toast',
+      caption: 'Raising a glass to kick off the wedding weekend!',
+      uploaderName: 'Elena Vance',
+      status: 'APPROVED',
+      isVisible: true,
+      publishToGallery: true,
+    },
+    createdAt: new Date('2026-02-16T20:15:00.000Z'),
+    updatedAt: new Date('2026-02-16T20:15:00.000Z'),
+  },
+  {
+    id: 'demo-photo-4',
+    type: 'Photo',
+    tags: ['guest-upload', 'candid'],
+    data: {
+      url: '/images/sample-photo-garden.jpg',
+      title: 'Botanical Courtyard Walk',
+      altText: 'Strolling along the botanical garden pathway',
+      caption: 'Morning stroll through the conservatory courtyard.',
+      uploaderName: 'Marcus Thorne',
+      status: 'APPROVED',
+      isVisible: true,
+      publishToGallery: true,
+    },
+    createdAt: new Date('2026-02-17T11:20:00.000Z'),
+    updatedAt: new Date('2026-02-17T11:20:00.000Z'),
+  },
+  {
+    id: 'demo-photo-5',
+    type: 'Photo',
+    tags: ['guest-upload', 'reception'],
+    data: {
+      url: '/images/sample-photo-dance.jpg',
+      title: 'Under the String Lights',
+      altText: 'Evening dance floor illuminated by warm string lights',
+      caption: 'Dancing under the conservatory lights.',
+      uploaderName: 'Clara Chen',
+      status: 'APPROVED',
+      isVisible: true,
+      publishToGallery: true,
+    },
+    createdAt: new Date('2026-02-18T22:05:00.000Z'),
+    updatedAt: new Date('2026-02-18T22:05:00.000Z'),
+  },
+];
+
 export class ContentRepository implements IContentRepository {
   constructor(public client: any = prisma) {}
 
@@ -155,6 +251,24 @@ export class ContentRepository implements IContentRepository {
   }
 
   async getPublicPhotos(options?: GetNodesByTypeOptions): Promise<ContentNodeDTO[]> {
+    if (this.client === prisma && isStaticExportBuild()) {
+      let items = STATIC_MOCK_PUBLIC_PHOTOS.map((n) => parseStoredPhotoNode(n));
+      if (options?.since) {
+        const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
+        if (!isNaN(sinceDate.getTime())) {
+          items = items.filter((n) => n.createdAt.getTime() > sinceDate.getTime());
+        }
+      }
+      items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      if (options?.limit !== undefined) {
+        const limit = Math.floor(Number(options.limit));
+        if (!isNaN(limit) && limit > 0) {
+          items = items.slice(0, Math.min(100, limit));
+        }
+      }
+      return items;
+    }
+
     let take: number | undefined;
     if (options?.limit !== undefined) {
       const limit = Math.floor(Number(options.limit));

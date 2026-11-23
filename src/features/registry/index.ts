@@ -29,6 +29,10 @@ export {
   InvitationCatalogQuerySchema,
 } from './schemas';
 export { registryService } from './service';
+export {
+  STATIC_EXPORT_REGISTRY_ITEMS,
+  STATIC_EXPORT_REGISTRY_ITEM_IDS,
+} from './repository';
 export { thankYouService, ThankYouService } from './thank-you.service';
 export type {
   ProgressMetrics,

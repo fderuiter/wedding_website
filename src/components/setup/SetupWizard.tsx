@@ -21,6 +21,7 @@ import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPa
 import { ThemeProvider, useTheme } from '@/components/ThemeProvider';
 import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
+import { withBasePath } from '@/utils/basePath';
 
 /**
  * Render a multi-step admin setup wizard for configuring a wedding site.
@@ -730,7 +731,13 @@ function SetupWizardContent() {
                 onClick={() => {
                   syncAdminLoginState();
                   clearPersistedState();
-                  window.location.href = '/admin/dashboard';
+                  if (typeof window !== 'undefined') {
+                    const evt = new CustomEvent('wedding-demo-setup-complete', { cancelable: true });
+                    const notCancelled = window.dispatchEvent(evt);
+                    if (notCancelled) {
+                      window.location.assign(withBasePath('/admin/dashboard'));
+                    }
+                  }
                 }}
                 variant="primary"
                 className="flex-1 py-3"

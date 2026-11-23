@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { getAppConfig } from '@/lib/config';
 import { getLocalImageDimensions } from '@/utils/image-metadata';
 import { getValidatedCanonicalUrl } from '@/utils/hostValidation';
+import { withBasePath } from '@/utils/basePath';
 import { deriveBrandMonogram } from '@/features/content';
 
 function interpolateKeywords(templateStr: string, config: any): string[] {
@@ -34,7 +35,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const rawOgImageUrl = config.ogImageUrl || '/api/og';
   const ogImageUrl = rawOgImageUrl === '/images/placeholder.png' ? '/api/og' : rawOgImageUrl;
-  const faviconUrl = config.faviconUrl || '/assets/favicon.png';
+  const faviconUrl = withBasePath(config.faviconUrl || '/assets/favicon.png');
   const seoKeywords = config.seoKeywords || '';
 
   let siteUrl = config.baseUrl || 'http://localhost:3000';

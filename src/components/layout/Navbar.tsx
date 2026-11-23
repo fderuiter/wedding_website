@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { PublicAppConfig } from '@/lib/config';
 import { getNavLinks } from '@/lib/routes';
+import { withBasePath } from '@/utils/basePath';
 import { useOverlay } from '@/hooks/useOverlay';
 import { useMenuNavigation } from '@/hooks/useMenuNavigation';
 import { ThemeSelector } from '../ui/ThemeSelector';
@@ -264,7 +265,7 @@ export default function Navbar({
   const mobileLinks = [...primaryLinks, ...secondaryLinks, ...adminLinks];
   const isSecondaryActive = secondaryLinks.some((link) => isLinkActive(link.href));
 
-  const brandLogoUrl = config.brandLogoUrl;
+  const brandLogoUrl = config.brandLogoUrl ? withBasePath(config.brandLogoUrl) : config.brandLogoUrl;
   const partner1 = config.partner1Name || config.brideName || '';
   const partner2 = config.partner2Name || config.groomName || '';
   const couplesNames = partner1 && partner2 ? `${partner1} & ${partner2}` : (partner1 || partner2);

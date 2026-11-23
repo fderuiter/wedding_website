@@ -3,10 +3,18 @@ layout: home
 
 hero:
   name: "Wedding Platform"
-  text: "Architecture & Developer Portal"
-  tagline: "Interactive architectural specifications, multi-cloud deployment topologies, security threat models, and OpenAPI previews."
+  text: "Interactive Showcase & Docs Portal"
+  tagline: "Explore the live zero-backend wedding platform demo, UI component Storybook, architectural blueprints, and OpenAPI reference."
   actions:
     - theme: brand
+      text: Live Interactive Demo
+      link: /demo/
+      target: _self
+    - theme: alt
+      text: Component Storybook
+      link: /storybook/
+      target: _self
+    - theme: alt
       text: Explore Architecture
       link: /architecture/architecture
     - theme: alt
@@ -14,6 +22,14 @@ hero:
       link: /api/
 
 features:
+  - title: Live Interactive Demo
+    details: Try the full guest experience, gift registry checkout, 3D physics heart, first-run Setup Wizard, and all 14 Admin Control Panel modules directly in your browser.
+    link: /demo/
+    target: _self
+  - title: Component Storybook
+    details: Browse isolated design-system primitives, interactive registry cards, seating floorplans, and accessibility-tested React components.
+    link: /storybook/
+    target: _self
   - title: System Architecture
     details: Complete architectural blueprint covering the Next.js 16 App Router, Prisma ORM schema, and runtime contracts.
     link: /architecture/architecture

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ThemedQRCode } from '@/components/ui/ThemedQRCode';
+import { withBasePath } from '@/utils/basePath';
 
 export interface SlideshowPhoto {
   id?: string;
@@ -410,7 +411,7 @@ export function ReceptionSlideshowClient({
       {activePhoto && (
         <div
           className="absolute inset-0 bg-cover bg-center filter blur-3xl opacity-25 scale-110 pointer-events-none transition-all duration-1000 ease-in-out"
-          style={{ backgroundImage: `url(${activePhoto.url})` }}
+          style={{ backgroundImage: `url(${withBasePath(activePhoto.url)})` }}
           aria-hidden="true"
         />
       )}
@@ -468,7 +469,7 @@ export function ReceptionSlideshowClient({
           <div className="relative max-w-full max-h-full flex flex-col items-center justify-center">
             <img
               key={activePhoto.url}
-              src={activePhoto.url}
+              src={withBasePath(activePhoto.url)}
               alt={activePhoto.altText || activePhoto.title || `Reception photo ${safeIndex + 1}`}
               className="max-h-[75vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl transition-opacity duration-700 ease-in-out"
               data-testid="slideshow-image"

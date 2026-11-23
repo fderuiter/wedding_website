@@ -11,6 +11,7 @@ import { ActiveCollisionTypes, RigidBodyType } from '@dimforge/rapier3d-compat';
 
 import { useTheme } from '@/components/ThemeProvider';
 import { useOverlay } from '@/hooks/useOverlay';
+import { withBasePath } from '@/utils/basePath';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
 import { Sparkles } from './components/Sparkles';
 import { Heart3D } from './components/Heart3D';
@@ -318,10 +319,18 @@ function PhysicsHeart({
       </RigidBody>
 
       {showEasterEgg && (
-        <Text position={[0, 0, 5]} fontSize={1.5} anchorX="center" anchorY="middle">
-          I love you!
-          <meshStandardMaterial color={accentColor} />
-        </Text>
+        <Suspense fallback={null}>
+          <Text
+            font={withBasePath('/fonts/Geist-Regular.ttf')}
+            position={[0, 0, 5]}
+            fontSize={1.5}
+            anchorX="center"
+            anchorY="middle"
+          >
+            I love you!
+            <meshStandardMaterial color={accentColor} />
+          </Text>
+        </Suspense>
       )}
     </>
   );
@@ -535,7 +544,12 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
   const [interacted, setInteracted] = useState(false);
   const [scale, setScale] = useState(0.6);
   const [resetKey, setResetKey] = useState(0);
-  const [webglSupported, setWebglSupported] = useState(true);
+  const [webglSupported, setWebglSupported] = useState(() => {
+    if (typeof document !== 'undefined' && document.documentElement.dataset.staticDemo === 'true') {
+      return isWebGLAvailable();
+    }
+    return true;
+  });
   const [performanceTier, setPerformanceTier] = useState<PerformanceTier>('high');
 
   const { overlayRef } = useOverlay(true, () => {});
@@ -611,10 +625,13 @@ export default function HeartClient({ partner1Name, partner2Name, brideName, gro
         <ambientLight intensity={lighting?.ambientIntensity ?? 0.8} />
         <directionalLight position={[5, 8, 5]} intensity={lighting?.directionalIntensity ?? 1.6} />
         <PerformanceTracker currentTier={performanceTier} onTierChange={setPerformanceTier} />
-        <Suspense fallback={<Html>Loading…</Html>}>
+        <Suspense fallback={null}>
           <Physics key={resetKey} gravity={[0, 0, 0]}>
             {performanceTier !== 'low' && <Sparkles />}
-            {performanceTier !== 'low' && <Environment preset="sunset" />}
+            {performanceTier !== 'low' &&
+              !(typeof document !== 'undefined' && document.documentElement.dataset.staticDemo === 'true') && (
+              <Environment preset="sunset" />
+            )}
             <PhysicsHeart 
               scale={scale} 
               interacted={interacted} 

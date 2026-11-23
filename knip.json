@@ -29,7 +29,13 @@
     "eslint-rules/**/*.mjs"
   ],
   "github-actions": false,
-  "ignore": ["next-env.d.ts", ".next/**"],
+  "ignore": [
+    "next-env.d.ts",
+    ".next/**",
+    "out/**",
+    "storybook-static/**",
+    "docs-portal/.vitepress/**"
+  ],
   "ignoreDependencies": [
     "@electric-sql/pglite",
     "@electric-sql/pglite-socket",

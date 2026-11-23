@@ -19,6 +19,60 @@ if (typeof window !== 'undefined' && window.navigator.userAgent.includes('Headle
 }
 
 import type { PublicAppConfig } from '@/lib/config';
+import { stripBasePath } from '@/utils/basePath';
+import type { DemoRuntimeProviderProps } from '@/components/demo/DemoRuntimeProvider';
+
+let staticDemoGateInstalled = false;
+
+function ensureStaticDemoFetchGate(): void {
+  if (staticDemoGateInstalled || typeof window === 'undefined') return;
+  staticDemoGateInstalled = true;
+  document.documentElement.dataset.staticDemo = 'true';
+  try {
+    if (window.localStorage.getItem('isAdminLoggedIn') === null) {
+      window.localStorage.setItem('isAdminLoggedIn', 'true');
+    }
+  } catch {
+    // Ignore storage errors
+  }
+
+  const win = window as Window & { __WEDDING_NATIVE_FETCH__?: typeof window.fetch };
+  const nativeFetch = win.__WEDDING_NATIVE_FETCH__ ?? window.fetch.bind(window);
+  win.__WEDDING_NATIVE_FETCH__ = nativeFetch;
+  const runtimePromise = import('@/lib/demo/runtime').then((mod) => {
+    mod.installDemoBrowserRuntime();
+    return mod;
+  });
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const rawUrl =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    try {
+      const parsed = new URL(rawUrl, window.location.origin);
+      if (
+        parsed.origin === window.location.origin &&
+        stripBasePath(parsed.pathname).startsWith('/api/')
+      ) {
+        const runtime = await runtimePromise;
+        return runtime.handleDemoFetch(input, init, nativeFetch);
+      }
+    } catch {
+      // Fall through to native fetch
+    }
+    return nativeFetch(input, init);
+  };
+}
+
+if (
+  typeof document !== 'undefined' &&
+  document.documentElement?.dataset?.staticDemo === 'true'
+) {
+  ensureStaticDemoFetchGate();
+}
 
 /**
  * @interface RootLayoutClientProps
@@ -30,6 +84,7 @@ interface RootLayoutClientProps {
   children: React.ReactNode;
   config: PublicAppConfig;
   faqs?: ContentNodeDTO[];
+  isStaticExport?: boolean;
 }
 
 /**
@@ -44,8 +99,18 @@ export default function RootLayoutClient({
   children,
   config,
   faqs,
+  isStaticExport = false,
 }: RootLayoutClientProps) {
+  if (isStaticExport && typeof window !== 'undefined') {
+    ensureStaticDemoFetchGate();
+  }
+
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSetupWizardPreview, setIsSetupWizardPreview] = useState(false);
+  const [demoConfigOverride, setDemoConfigOverride] = useState<PublicAppConfig | null>(null);
+  const [DemoRuntimeComponent, setDemoRuntimeComponent] =
+    useState<React.ComponentType<DemoRuntimeProviderProps> | null>(null);
+  const effectiveConfig = demoConfigOverride ?? config;
   const router = useRouter();
   const pathname = usePathname();
   const headerRef = useRef<HTMLElement>(null);
@@ -127,8 +192,21 @@ export default function RootLayoutClient({
     }
   };
 
+  useEffect(() => {
+    if (!isStaticExport) return;
+    let cancelled = false;
+    void import('@/components/demo/DemoRuntimeProvider').then((mod) => {
+      if (!cancelled) {
+        setDemoRuntimeComponent(() => mod.default);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isStaticExport]);
+
   const helpConfig = useMemo<GuestHelpConfig>(() => {
-    if (!faqs) return config;
+    if (!faqs) return effectiveConfig;
     const mappedFaqs: GuestHelpFaqItem[] = faqs
       .filter((n): n is Extract<ContentNodeDTO, { type: 'FAQ' }> => n.type === 'FAQ')
       .map((n, index) => ({
@@ -141,32 +219,41 @@ export default function RootLayoutClient({
           typeof n.data.displayOrder === 'number' ? n.data.displayOrder : index,
       }));
     return {
-      ...config,
+      ...effectiveConfig,
       faqs: mappedFaqs,
     };
-  }, [config, faqs]);
+  }, [effectiveConfig, faqs]);
 
   return (
     <QueryClientProvider client={queryClient}>
       <GuestHelpProvider config={helpConfig} pathname={pathname}>
         <GlobalRadialGlow />
-        {!isStandalonePage && (
+        {!isSetupWizardPreview && !isStandalonePage && (
           <Navbar
             headerRef={headerRef}
             isAdmin={isAdmin}
             handleLogout={handleLogout}
-            config={config}
+            config={effectiveConfig}
             hasVisibleFaqs={faqs ? faqs.length > 0 : undefined}
           />
         )}
-        {isAdminDashboardPage ? (
-          <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-            {children}
-          </div>
-        ) : (
-          <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
-            {children}
-          </main>
+        {!isSetupWizardPreview && (
+          isAdminDashboardPage ? (
+            <div style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+              {children}
+            </div>
+          ) : (
+            <main aria-label="Application Content" id="main-content" style={{ paddingTop: isStandalonePage ? 0 : mainPaddingTop }}>
+              {children}
+            </main>
+          )
+        )}
+        {isStaticExport && DemoRuntimeComponent && (
+          <DemoRuntimeComponent
+            onConfigSync={setDemoConfigOverride}
+            onAdminSync={setIsAdmin}
+            onSetupWizardPreviewSync={setIsSetupWizardPreview}
+          />
         )}
       </GuestHelpProvider>
     </QueryClientProvider>

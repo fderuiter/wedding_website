@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import { withBasePath } from '@/utils/basePath';
 
 interface MediaData {
   id: string;
@@ -67,7 +68,8 @@ export function MediaImage({ media, fallbackUrl, fallbackAlt, alt, src, onError,
   }
 
   const systemFallback = fallbackUrl || '/images/placeholder.png';
-  const url = hasError ? systemFallback : (safeOriginalUrl || systemFallback);
+  const rawUrl = hasError ? systemFallback : (safeOriginalUrl || systemFallback);
+  const url = rawUrl ? withBasePath(rawUrl) : rawUrl;
   
   if (!url) {
     return null; // Nothing to render

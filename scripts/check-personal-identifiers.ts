@@ -23,6 +23,8 @@ const ALLOWLIST_PREFIXES = [
   '.git/',
   'node_modules/',
   '.next/',
+  'out/',
+  'storybook-static/',
   'coverage/',
   'test-results/',
   'build/',

@@ -146,9 +146,27 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCente
 
   const { validAttractions } = calculateBoundsAndCentroid(attractions, defaultCenter);
 
-  const tileUrl = resolvedTheme === 'dark'
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  const isStaticDemo =
+    typeof document !== 'undefined' && document.documentElement.dataset.staticDemo === 'true';
+
+  const offlineLightTile =
+    'data:image/svg+xml;utf8,' +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#F1F5F9"/><path d="M0 64H256M0 128H256M0 192H256M64 0V256M128 0V256M192 0V256" stroke="#CBD5E1" stroke-width="1"/><path d="M0 24L256 216M36 256L228 0" stroke="#E2E8F0" stroke-width="4"/></svg>'
+    );
+  const offlineDarkTile =
+    'data:image/svg+xml;utf8,' +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" fill="#1E293B"/><path d="M0 64H256M0 128H256M0 192H256M64 0V256M128 0V256M192 0V256" stroke="#334155" stroke-width="1"/><path d="M0 24L256 216M36 256L228 0" stroke="#0F172A" stroke-width="4"/></svg>'
+    );
+
+  const tileUrl = isStaticDemo
+    ? resolvedTheme === 'dark'
+      ? offlineDarkTile
+      : offlineLightTile
+    : resolvedTheme === 'dark'
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
   const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 

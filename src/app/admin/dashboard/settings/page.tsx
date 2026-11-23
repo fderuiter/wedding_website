@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { MAX_UPLOAD_SIZE, ACCEPTED_IMAGE_TYPES } from '@/utils/validation';
+import { withBasePath } from '@/utils/basePath';
 import { FEATURE_METADATA, FeatureId, resolveModuleConfig } from '@/lib/modules';
 import { ThemeConfigurationPanel } from '@/components/admin/ThemeConfigurationPanel';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
@@ -1633,7 +1634,7 @@ export default function AdminSettingsPage() {
                       {localConfig.brandLogoUrl && (
                         <div className="flex items-center gap-2">
                           <img
-                            src={localConfig.brandLogoUrl}
+                            src={withBasePath(localConfig.brandLogoUrl)}
                             alt={localConfig.brandLogoAlt || 'Brand logo preview'}
                             className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
                           />
@@ -1682,7 +1683,7 @@ export default function AdminSettingsPage() {
                         {localConfig.heroImageUrl && (
                           <div className="flex items-center gap-2">
                             <img
-                              src={localConfig.heroImageUrl}
+                              src={withBasePath(localConfig.heroImageUrl)}
                               alt={localConfig.heroImageAlt || 'Hero visual preview'}
                               className="h-12 w-20 object-cover bg-gray-100 dark:bg-gray-700 rounded p-1"
                             />
@@ -1732,7 +1733,7 @@ export default function AdminSettingsPage() {
                         {localConfig.brandWatermarkUrl && (
                           <div className="flex items-center gap-2">
                             <img
-                              src={localConfig.brandWatermarkUrl}
+                              src={withBasePath(localConfig.brandWatermarkUrl)}
                               alt={localConfig.brandWatermarkAlt || 'Brand watermark preview'}
                               className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
                             />
@@ -1782,7 +1783,7 @@ export default function AdminSettingsPage() {
                         {localConfig.badgeGraphicUrl && (
                           <div className="flex items-center gap-2">
                             <img
-                              src={localConfig.badgeGraphicUrl}
+                              src={withBasePath(localConfig.badgeGraphicUrl)}
                               alt={localConfig.badgeGraphicAlt || 'Badge graphic preview'}
                               className="h-10 max-h-12 w-auto object-contain bg-gray-100 dark:bg-gray-700 rounded p-1"
                             />
@@ -1819,7 +1820,7 @@ export default function AdminSettingsPage() {
                       <Input type="file" accept=".ico,.png,image/png,image/x-icon" onChange={(e) => handleUpload(e, 'faviconUrl')} className="file:pt-1" />
                       {localConfig.faviconUrl && (
                         <div className="flex items-center gap-2">
-                          <img src={localConfig.faviconUrl} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
+                          <img src={withBasePath(localConfig.faviconUrl)} alt="Favicon preview" className="w-8 h-8 object-contain bg-gray-100 dark:bg-gray-700 rounded" />
                           <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.faviconUrl}</span>
                         </div>
                       )}
@@ -1831,7 +1832,7 @@ export default function AdminSettingsPage() {
                       <Input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => handleUpload(e, 'ogImageUrl')} className="file:pt-1" />
                       {localConfig.ogImageUrl && (
                         <div className="flex items-center gap-2">
-                          <img src={localConfig.ogImageUrl} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
+                          <img src={withBasePath(localConfig.ogImageUrl)} alt="OG Image preview" className="w-32 h-auto object-contain bg-gray-100 dark:bg-gray-700 rounded" />
                           <span className="text-xs text-gray-500 dark:text-gray-400 break-all">{localConfig.ogImageUrl}</span>
                         </div>
                       )}

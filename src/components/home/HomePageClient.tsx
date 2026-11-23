@@ -26,6 +26,7 @@ import { isFeatureEnabled } from '@/lib/modules';
 import { useTheme } from '@/components/ThemeProvider';
 import { getPresetTokens, parseMotionEasing, parseDurationSec } from '@/lib/theme/presets';
 import { sanitizeUrl } from '@/utils/validation';
+import { withBasePath } from '@/utils/basePath';
 import { MediaImage } from '@/components/MediaImage';
 
 function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
@@ -138,6 +139,33 @@ export default function HomePageClient({
       window.addEventListener('message', handleMessage);
       return () => window.removeEventListener('message', handleMessage);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleDemoSync = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          config?: Partial<PublicAppConfig>;
+          faqNodes?: ContentNodeDTO[];
+          attractions?: AttractionDTO[];
+        }>
+      ).detail;
+      if (!detail) return;
+      if (detail.config) {
+        setConfig((prev) => ({ ...prev, ...detail.config }));
+      }
+      if (Array.isArray(detail.faqNodes)) {
+        const nextFaqs = detail.faqNodes;
+        setContentNodes((prev) => [...prev.filter((n) => n.type !== 'FAQ'), ...nextFaqs]);
+      }
+      if (Array.isArray(detail.attractions)) {
+        setAttractions(detail.attractions);
+      }
+    };
+    window.addEventListener('wedding:demo-state-sync', handleDemoSync);
+    window.dispatchEvent(new Event('wedding:demo-request-sync'));
+    return () => window.removeEventListener('wedding:demo-state-sync', handleDemoSync);
   }, []);
 
   let formattedDate: string;
@@ -404,7 +432,7 @@ export default function HomePageClient({
   );
 
   const rawHeroBgUrl = config.heroImageUrl || (presetTokens['--brand-hero-image'] && presetTokens['--brand-hero-image'] !== 'none' ? presetTokens['--brand-hero-image'] : undefined);
-  const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl);
+  const safeHeroBgStyle = getSafeBackgroundImageStyle(rawHeroBgUrl ? withBasePath(rawHeroBgUrl) : rawHeroBgUrl);
   const safeWatermarkUrl = sanitizeUrl(config.brandWatermarkUrl);
   const safeBadgeUrl = sanitizeUrl(config.badgeGraphicUrl);
 

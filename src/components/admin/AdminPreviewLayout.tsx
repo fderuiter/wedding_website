@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 import { useToast } from '@/components/ui/ToastProvider';
+import { withBasePath } from '@/utils/basePath';
 import { formatDate } from '@/utils/intl';
 import { apiClient } from '@/features/admin';
 
@@ -160,7 +161,7 @@ export default function AdminPreviewLayout({
         
         <iframe 
           ref={iframeRef}
-          src={`${previewUrl}?preview=true`} 
+          src={`${withBasePath(previewUrl)}?preview=true`} 
           className="w-full h-full border-none"
           title="Live Preview"
         />

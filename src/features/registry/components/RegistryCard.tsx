@@ -7,6 +7,7 @@ import {
 } from '../lib/registryStatusUtils';
 import RegistryItemProgressBar from './RegistryItemProgressBar';
 import { MediaImage } from '@/components/MediaImage';
+import { withBasePath } from '@/utils/basePath';
 import { Interactive3DCard } from '@/components/ui/Interactive3DCard';
 import { formatCurrency } from '@/utils/intl';
 import { Button } from '@/components/ui/Button';
@@ -126,7 +127,7 @@ const RegistryCard: React.FC<RegistryCardProps> = ({
         {/* Blurred Background Layer via CSS */}
         <div
           className="absolute inset-0 bg-cover bg-center opacity-50 scale-125 blur-2xl"
-          style={{ backgroundImage: `url("${item.image?.url || '/images/placeholder.png'}")` }}
+          style={{ backgroundImage: `url("${withBasePath(item.image?.url || '/images/placeholder.png')}")` }}
           aria-hidden="true"
         />
         {/* Main Image Layer */}

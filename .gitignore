@@ -13,10 +13,12 @@
 /.next/
 /.turbo/
 /out/
+out/
 
 # Production
 /build
 /storybook-static
+storybook-static/
 
 # Misc
 .DS_Store

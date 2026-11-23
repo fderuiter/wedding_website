@@ -1,10 +1,10 @@
 import { notFound } from 'next/navigation';
-import { EditItemPage } from '@/features/registry';
+import { EditItemPage, STATIC_EXPORT_REGISTRY_ITEM_IDS } from '@/features/registry';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 
 export function generateStaticParams() {
-  return [{ id: '1' }];
+  return STATIC_EXPORT_REGISTRY_ITEM_IDS.map((id) => ({ id }));
 }
 
 export default async function Page() {

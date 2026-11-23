@@ -11,7 +11,7 @@ export default withMermaid(
     title: 'Wedding Platform Docs',
     description: 'Architectural specifications, deployment topologies, security models, and API reference',
     base: normalizeBasePath(process.env.VITEPRESS_BASE),
-    ignoreDeadLinks: false,
+    ignoreDeadLinks: [/^\/demo(\/|$)/, /^\/storybook(\/|$)/],
     markdown: {
       languageAlias: {
         env: 'dotenv',
@@ -27,6 +27,8 @@ export default withMermaid(
     },
     themeConfig: {
       nav: [
+        { text: 'Live Interactive Demo', link: '/demo/', target: '_self' },
+        { text: 'Component Storybook', link: '/storybook/', target: '_self' },
         { text: 'Architecture', link: '/architecture/architecture' },
         { text: 'Deployment', link: '/deployment/deployment' },
         { text: 'Development', link: '/development/developer-setup' },

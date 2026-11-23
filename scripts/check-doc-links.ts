@@ -1074,6 +1074,60 @@ function resolveProseFileToken(
   return path.resolve(rootDir, decoded);
 }
 
+const vitepressIgnoredDeadLinksCache = new Map<string, RegExp[]>();
+
+function getVitePressIgnoredDeadLinkPatterns(rootDir: string): RegExp[] {
+  const cached = vitepressIgnoredDeadLinksCache.get(rootDir);
+  if (cached) {
+    return cached;
+  }
+
+  const patterns: RegExp[] = [];
+  const configAbs = path.join(rootDir, 'docs-portal', '.vitepress', 'config.mts');
+  if (fs.existsSync(configAbs) && fs.statSync(configAbs).isFile()) {
+    try {
+      const content = fs.readFileSync(configAbs, 'utf8');
+      const sf = ts.createSourceFile(configAbs, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+      const visit = (node: ts.Node) => {
+        if (
+          ts.isPropertyAssignment(node) &&
+          (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+          node.name.text === 'ignoreDeadLinks' &&
+          ts.isArrayLiteralExpression(node.initializer)
+        ) {
+          for (const elem of node.initializer.elements) {
+            if (ts.isRegularExpressionLiteral(elem)) {
+              const rawRegex = elem.text;
+              const lastSlash = rawRegex.lastIndexOf('/');
+              if (rawRegex.startsWith('/') && lastSlash > 0) {
+                try {
+                  patterns.push(new RegExp(rawRegex.slice(1, lastSlash), rawRegex.slice(lastSlash + 1)));
+                } catch {
+                  // Ignore malformed regex literal
+                }
+              }
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  vitepressIgnoredDeadLinksCache.set(rootDir, patterns);
+  return patterns;
+}
+
+function isIgnoredPortalDeadLink(cleanRoute: string, rootDir: string): boolean {
+  const normalized = cleanRoute.startsWith('/') ? cleanRoute : `/${cleanRoute}`;
+  const patterns = getVitePressIgnoredDeadLinkPatterns(rootDir);
+  return patterns.some((re) => re.test(normalized));
+}
+
 function resolvePortalRouteToSourceFile(
   cleanRoute: string,
   sourceAbsPath: string,
@@ -1307,6 +1361,9 @@ export function validateLinkTarget(
 
   const resolvedPortalFile = resolvePortalRouteToSourceFile(cleanTarget, sourceAbsPath, rootDir);
   if (!resolvedPortalFile) {
+    if (!fragment && isIgnoredPortalDeadLink(cleanTarget, rootDir)) {
+      return;
+    }
     errors.push({
       sourceFile: relSource,
       line: lineNum,
