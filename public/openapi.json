@@ -10468,6 +10468,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "preflight",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10520,6 +10536,19 @@
                   },
                   "category": {
                     "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  },
+                  "preflight": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
                   }
                 }
               }

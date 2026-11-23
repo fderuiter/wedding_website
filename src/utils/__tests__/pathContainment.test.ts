@@ -115,6 +115,71 @@ describe('Shared Root Containment & LocalStorageProvider Real Filesystem Guards'
       await expect(fs.stat(path.join(outsideDir, 'nested'))).rejects.toThrow();
       expect(await fs.readFile(canaryPath, 'utf8')).toBe('CANARY_INTACT');
     });
+
+    it('reuses a pre-resolved canonicalRoot to execute a single fs.realpath per existing target while preserving all containment guards', async () => {
+      const fileA = path.join(uploadsDir, 'a.jpg');
+      const fileB = path.join(uploadsDir, 'b.png');
+      const canaryPath = path.join(outsideDir, 'secret.txt');
+      await fs.writeFile(fileA, 'bytes-a');
+      await fs.writeFile(fileB, 'bytes-b');
+      await fs.writeFile(canaryPath, 'secret');
+
+      const escapeSymlink = path.join(uploadsDir, 'escape-link.jpg');
+      await fs.symlink(canaryPath, escapeSymlink);
+      const danglingSymlink = path.join(uploadsDir, 'dangling-link.jpg');
+      await fs.symlink(path.join(outsideDir, 'missing.jpg'), danglingSymlink);
+
+      const canonicalPublicRoot = await fs.realpath(publicDir);
+      const realpathSpy = jest.spyOn(fs, 'realpath');
+
+      try {
+        const resA = await resolveContainedExistingPath('/uploads/a.jpg', {
+          baseDir: publicDir,
+          containmentRoot: publicDir,
+          canonicalRoot: canonicalPublicRoot,
+        });
+        const resB = await resolveContainedExistingPath('/uploads/b.png', {
+          baseDir: publicDir,
+          containmentRoot: publicDir,
+          canonicalRoot: canonicalPublicRoot,
+        });
+
+        expect(resA.exists).toBe(true);
+        expect(resB.exists).toBe(true);
+        // Only 1 fs.realpath call per existing target (none for baseDir or containmentRoot)
+        expect(realpathSpy).toHaveBeenCalledTimes(2);
+
+        // Missing file directly under publicDir does not re-run fs.realpath on publicDir
+        realpathSpy.mockClear();
+        const missingRootFile = await resolveContainedExistingPath('/missing-top-level.jpg', {
+          baseDir: publicDir,
+          containmentRoot: publicDir,
+          canonicalRoot: canonicalPublicRoot,
+        });
+        expect(missingRootFile.exists).toBe(false);
+        expect(realpathSpy).toHaveBeenCalledTimes(1);
+
+        // Security guards remain enforced when canonicalRoot is provided
+        for (const bad of [
+          '/../outside/secret.txt',
+          '/%2e%2e/outside/secret.txt',
+          '/uploads\\a.jpg',
+          '/uploads/a.jpg\0.png',
+          '/uploads/escape-link.jpg',
+          '/uploads/dangling-link.jpg',
+        ]) {
+          await expect(
+            resolveContainedExistingPath(bad, {
+              baseDir: publicDir,
+              containmentRoot: publicDir,
+              canonicalRoot: canonicalPublicRoot,
+            })
+          ).rejects.toThrow(PathContainmentError);
+        }
+      } finally {
+        realpathSpy.mockRestore();
+      }
+    });
   });
 
   describe('LocalStorageProvider real filesystem containment', () => {
