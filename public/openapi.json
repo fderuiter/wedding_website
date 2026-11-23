@@ -5694,17 +5694,6 @@
         ],
         "summary": "POST /api/admin/logout",
         "description": "Endpoint for /api/admin/logout",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -7344,17 +7333,6 @@
         ],
         "summary": "GET /api/admin/me",
         "description": "Endpoint for /api/admin/me",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful response"
@@ -10634,17 +10612,6 @@
         ],
         "summary": "GET /api/og",
         "description": "Endpoint for /api/og",
-        "security": [
-          {
-            "guestCookieAuth": []
-          },
-          {
-            "guestInviteCookieAuth": []
-          },
-          {
-            "adminCookieAuth": []
-          }
-        ],
         "parameters": [
           {
             "name": "p1",

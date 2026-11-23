@@ -254,7 +254,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     expect(schema.required ?? []).toHaveLength(0);
   });
 
-  it('defines components.securitySchemes across all 94 protected operations and query parameters across all 20 query operations', () => {
+  it('defines components.securitySchemes across all 91 protected operations and query parameters across all 20 query operations', () => {
     const schemes = openapi.components?.securitySchemes;
     expect(schemes).toBeDefined();
     expect(schemes?.adminCookieAuth).toEqual(
@@ -277,7 +277,7 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
     const protectedOps = operations.filter(
       ({ operation }) => Array.isArray(operation.security) && operation.security.length > 0
     );
-    expect(protectedOps).toHaveLength(94);
+    expect(protectedOps).toHaveLength(91);
 
     const unprotectedOpKeys = operations
       .filter(({ operation }) => !operation.security || operation.security.length === 0)
@@ -285,14 +285,17 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       .sort();
 
     expect(unprotectedOpKeys).toEqual([
+      'GET /api/admin/me',
       'GET /api/admin/setup',
       'GET /api/health',
       'GET /api/live',
+      'GET /api/og',
       'GET /api/ready',
       'GET /api/registry/claim',
       'GET /api/registry/validate-code',
       'GET /api/uploads/{path}',
       'POST /api/admin/login',
+      'POST /api/admin/logout',
       'POST /api/admin/setup',
       'POST /api/guest/address/public',
       'POST /api/guest/login',

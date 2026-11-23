@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { prisma } from './prisma';
-import { AppConfigSchema, PublicAppConfigSchema, PublicAppConfigDTO, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '../features/content/schemas';
-import type { AppConfigDTO } from '../features/content/schemas';
+import { AppConfigSchema, PublicAppConfigSchema, TypographyScaleSchema, SpacingScaleSchema, BorderTreatmentSchema, BrandDimensionsSchema } from '@/features/content';
+import type { AppConfigDTO, PublicAppConfigDTO } from '@/features/content';
 import { coordinateSchema } from '../utils/validation';
 import { isHostAllowed } from '../utils/hostValidation';
 import { evaluateRsvpCutoff, sanitizeRsvpClosedMessage } from '../utils/rsvpDeadline';
@@ -75,10 +75,10 @@ export const APP_DEFAULTS: LocalAppConfig = {
   layoutGridGap: '1.5rem',
   layoutCardPadding: '2rem',
   layoutBorderRadius: '1rem',
-  typographyScale: TypographyScaleSchema.parse({}),
-  spacingScale: SpacingScaleSchema.parse({}),
-  borderTreatment: BorderTreatmentSchema.parse({}),
-  brandDimensions: BrandDimensionsSchema.parse({}),
+  typographyScale: TypographyScaleSchema ? TypographyScaleSchema.parse({}) : { fontSizeXs: '0.75rem', fontSizeSm: '0.875rem', fontSizeBase: '1rem', fontSizeLg: '1.125rem', fontSizeXl: '1.25rem', fontSize2xl: '1.5rem', fontWeightNormal: '400', fontWeightMedium: '500', fontWeightBold: '700', lineHeightTight: '1.25', lineHeightNormal: '1.5', lineHeightRelaxed: '1.75' },
+  spacingScale: SpacingScaleSchema ? SpacingScaleSchema.parse({}) : { spacingXs: '0.25rem', spacingSm: '0.5rem', spacingMd: '1rem', spacingLg: '1.5rem', spacingXl: '2rem', spacing2xl: '3rem', containerMaxWidth: '64rem', gridGap: '1.5rem', cardPadding: '2rem' },
+  borderTreatment: BorderTreatmentSchema ? BorderTreatmentSchema.parse({}) : { borderRadiusSm: '0.25rem', borderRadiusMd: '0.5rem', borderRadiusLg: '1rem', borderRadiusFull: '9999px', borderWidthThin: '1px', borderWidthMedium: '2px', borderWidthThick: '4px', borderStyleDefault: 'solid' },
+  brandDimensions: BrandDimensionsSchema ? BrandDimensionsSchema.parse({}) : { logoWidth: '120px', logoHeight: '40px', heroHeight: '400px', watermarkWidth: '200px', watermarkOpacity: '0.1', badgeSize: '48px' },
   brandLogoWidth: '120px',
   brandLogoHeight: '40px',
   brandHeroHeight: '400px',
@@ -261,7 +261,7 @@ function getEnvConfigOverrides(): Partial<LocalAppConfig> {
   return overrides;
 }
 
-const PUBLIC_APP_CONFIG_KEYS = Object.keys(PublicAppConfigSchema.shape) as Array<keyof PublicAppConfigDTO>;
+const PUBLIC_APP_CONFIG_KEYS = Object.keys(PublicAppConfigSchema?.shape ?? {}) as Array<keyof PublicAppConfigDTO>;
 
 export interface AdminAppConfig extends PublicAppConfig {
   rsvpGracePeriodHours: number;

@@ -80,16 +80,18 @@ export const ModuleConfigSchema = z.object({
   - `/things-to-do` (`attractions`)
   - `/photos` and `/photos/slideshow` (`gallery`)
   - `/heart` (`interactive3D`)
-- **Homepage (`/`) Conditional Widgets ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L218-L299) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L380-L426))**:
+- **Homepage (`/`) Conditional Widgets & Schedule Fallback ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L218-L299) & [src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L380-L426))**:
   - Renders the countdown widget only when `config.showCountdown && isFeatureEnabled('countdown', config.modules)`.
   - Renders the Add-to-Calendar button only when `config.showAddToCalendar && isFeatureEnabled('addToCalendar', config.modules)`.
+  - In the `details` section ([src/components/home/HomePageClient.tsx](src/components/home/HomePageClient.tsx#L225-L268)), renders `InteractiveTimeline` when structured `Schedule` or `startTime` `ContentNode` / `SubEvent` items exist, and falls back to `Logistics` ceremony/reception summary cards when no structured timeline entries are present.
   - Hides homepage hotel block cards and the `/things-to-do` local guide link when `attractions` is disabled, hides the homepage photo gallery link when `gallery` is disabled, and hides the 3D experience callout when `interactive3D` is disabled.
 - **UI Pages Skipping Server-Side `isFeatureEnabled`**:
   - **Admin Dashboard Overview & Subpages**: `/admin/dashboard` renders a decoupled administrative overview (`OnboardingChecklist` + module-aware workflow cards) without querying registry items so core guest invitations, seating, and settings remain accessible when `registry` is disabled, while subpages (`/admin/dashboard/registry`, `/admin/dashboard/wedding-party`, `/admin/dashboard/attractions`, and `/admin/dashboard/media`) do not throw HTTP 404 on direct URL navigation so administrators can still curate underlying records while a guest-facing module is turned off.
 
-### Middleware & Guest Passcode Environment Gatekeeping
+### Middleware & Two-Tier Guest Session Gatekeeping
 
-- **Environment-Governed Login Gate (Not a Module Toggle)**: Site-wide guest passcode authentication is **not** part of `ModuleConfigSchema` or `FEATURE_METADATA`. Instead, [src/middleware.ts](src/middleware.ts#L91-L105) and `POST /api/guest/login` ([src/app/api/guest/login/route.ts](src/app/api/guest/login/route.ts)) enforce guest login protection strictly via environment configuration (`GUEST_PASSCODE` and `GUEST_SESSION_SECRET`) with zero database queries in Edge middleware. Site Settings (`/admin/dashboard/settings`) displays read-only guidance pointing administrators to those environment variables.
+- **Environment-Governed Login Gate (Not a Module Toggle)**: Site-wide guest passcode authentication is **not** part of `ModuleConfigSchema` or `FEATURE_METADATA`. Instead, [src/middleware.ts](src/middleware.ts#L91-L126) and `POST /api/guest/login` ([src/app/api/guest/login/route.ts](src/app/api/guest/login/route.ts)) enforce guest login protection strictly via environment configuration (`GUEST_PASSCODE` and `GUEST_SESSION_SECRET`) with zero database queries in Edge middleware, while exempting public crawlers and auth lifecycle endpoints (`GET /api/og`, `GET /api/admin/me`, `POST /api/admin/logout`, `/api/admin/login`, `/api/admin/setup`, `/api/guest/login`, `/api/guest/address/public`, `/api/registry/claim`, `/api/registry/validate-code`, `POST /api/registry/webhook/stripe`, `/api/uploads/*`, and health probes). Site Settings (`/admin/dashboard/settings`) displays read-only guidance pointing administrators to those environment variables.
+- **Two-Tier Personalized Invite Verification & Revocation**: Edge middleware validates `guest_invite_session` signatures statelessly via `getSignedGuestInviteSession` ([src/core/auth/guestInviteToken.ts](src/core/auth/guestInviteToken.ts#L46-L93)), whereas Node SSR layouts (`enforceActiveGuestPageSession` in [src/core/auth/guestInviteSession.ts](src/core/auth/guestInviteSession.ts#L168-L220), invoked by [src/app/layout.tsx](src/app/layout.tsx#L98-L100)) and `withApiMiddleware` (`getGuestInviteSession` / `isInviteRevocationExcludedApiPath` in [src/utils/withApiMiddleware.ts](src/utils/withApiMiddleware.ts#L33-L135)) verify against PostgreSQL `InvitationCode` (`isSample: false`) so deleted or rotated invitations are revoked immediately (redirecting SSR pages with `303 See Other` to `/guest/login` or returning HTTP `401` with `maxAge: 0` cookie clearing on APIs when no valid `admin_auth` or `guest_auth` fallback cookie exists).
 
 ### API Route Handlers (`/api/registry/*`, Weather, Gallery, & Schedule)
 
@@ -111,8 +113,12 @@ export const ModuleConfigSchema = z.object({
   - `POST /api/registry/webhook/stripe` (asynchronous settlement reconciliation for already-created PaymentIntents)
 - **Group Gifting Enforcement (HTTP 400 Bad Request, Not HTTP 404)**:
   - When `registry` is enabled (`true`) and `groupGifting` is disabled (`false`), partial or group-gift contributions (`targetItem.isGroupGift || amount < targetItem.price`) throw `new ApiError(400, 'Group gifting is currently disabled.')` (**HTTP 400**) in both [src/features/registry/api/contribute.ts](src/features/registry/api/contribute.ts#L33-L37) and [src/features/registry/api/payment-intent.ts](src/features/registry/api/payment-intent.ts#L39-L43).
-- **Schedule ICS Export**:
+- **Schedule ICS Export & Read-Only `ContentNode` Coexistence**:
   - `GET /api/schedule/[id]/ics` skips `isFeatureEnabled('addToCalendar')`.
+  - `SubEventService` ([src/features/sub-events/service.ts](src/features/sub-events/service.ts#L356-L391)) resolves structured `SubEvent` rows first and falls back to `Schedule` or `Logistics` `ContentNode` records marked `isReadOnly: true` (enforcing `isPrivateContentNode` access rules and rejecting RSVP submissions on read-only fallback items with HTTP `400`).
+- **JSONB Sub-Event RSVPs & One-Way `InvitationCode` Synchronization**:
+  - `SubEvent` (`mealOptions`, `customQuestions`) and `SubEventRsvp` (`mealSelections`, `customAnswers`, `plusOneNames`) persist structured JSONB payloads in [prisma/schema.prisma](prisma/schema.prisma#L296-L342).
+  - Guest RSVP writes (`POST /api/rsvp`) and admin RSVP overrides in `SubEventService` ([src/features/sub-events/service.ts](src/features/sub-events/service.ts#L649-L1065)) transactionally project aggregate RSVP state from `SubEventRsvp` into `InvitationCode` (`used`, `usedAt`, `plusOneFirstName`, `plusOneLastName`, `dietaryNotes`, and `extraFields` keys `attendanceStatus`, `plusOneCount`, `plusOneNames`, `dietaryTags`, `mealSelections`, `mealSummary`, `customAnswers`, `customAnswersSummary`, and `eventRsvps`), which downstream seating helpers (`getGuestAttendanceStatus`, `isGuestEligibleForSeating`, `getDietaryBadges` in [src/features/seating/utils/seatingHelpers.ts](src/features/seating/utils/seatingHelpers.ts#L57-L116)) consume. Direct `InvitationCode` mutations do not back-populate `SubEventRsvp`.
 
 ---
 

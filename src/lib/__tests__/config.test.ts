@@ -1,7 +1,7 @@
 import { headers } from 'next/headers';
 import { toPublicAppConfig, toAdminAppConfig, isMultisiteEnabled, APP_DEFAULTS, getAppConfig } from '../config';
 import type { AdminAppConfig } from '../config';
-import { PublicAppConfigSchema } from '../../features/content/schemas';
+import { PublicAppConfigSchema } from '@/features/content';
 import { prisma } from '../prisma';
 
 jest.mock('next/headers', () => ({
