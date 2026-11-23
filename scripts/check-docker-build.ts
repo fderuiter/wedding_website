@@ -598,11 +598,45 @@ function recordYamlDiagnostics(
   }
 }
 
+function collectComposeLocalBuildImages(composePath: string): Set<string> {
+  const localImages = new Set<string>();
+  if (!fs.existsSync(composePath)) {
+    return localImages;
+  }
+  const content = fs.readFileSync(composePath, 'utf8');
+  const doc = parseDocument(content, { version: '1.2', strict: true });
+  if (!isMap(doc.contents)) {
+    return localImages;
+  }
+  const servicesNode = doc.contents.get('services', true);
+  if (!isMap(servicesNode)) {
+    return localImages;
+  }
+  for (const svcPair of servicesNode.items) {
+    const svcMap = svcPair.value;
+    if (!isMap(svcMap)) {
+      continue;
+    }
+    const buildNode = svcMap.get('build', true);
+    const hasBuild =
+      buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null);
+    if (!hasBuild) {
+      continue;
+    }
+    const imageNode = svcMap.get('image', true);
+    if (isScalar(imageNode) && typeof imageNode.value === 'string' && imageNode.value.trim()) {
+      localImages.add(imageNode.value.trim());
+    }
+  }
+  return localImages;
+}
+
 function checkDockerComposeFile(
   composePath: string,
   baseDir: string,
   violations: Violation[],
-  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>
+  pinnedOccurrences: Map<string, PinnedImageOccurrence[]>,
+  sharedLocalBuildImages: ReadonlySet<string> = new Set()
 ): void {
   const relPath = path.relative(baseDir, composePath).replace(/\\/g, '/');
   const content = fs.readFileSync(composePath, 'utf8');
@@ -612,7 +646,20 @@ function checkDockerComposeFile(
 
   recordYamlDiagnostics(doc, relPath, lines, violations);
 
-  if (relPath === 'docker-compose.yml') {
+  lines.forEach((rawLine, idx) => {
+    const trimmed = rawLine.trim();
+    if (/^<<\s*:/.test(trimmed)) {
+      violations.push({
+        filePath: relPath,
+        lineNumber: idx + 1,
+        lineContent: trimmed,
+        imageRef: '<<',
+        reason: `${relPath} must not use YAML 1.1 "<<" merge keys; expand service mappings explicitly for strict YAML 1.2 compatibility.`,
+      });
+    }
+  });
+
+  if (relPath === 'docker-compose.yml' || relPath === 'docker-compose.rollout.yml') {
     lines.forEach((rawLine, idx) => {
       const trimmed = rawLine.trim();
       if (!trimmed || trimmed.startsWith('#')) {
@@ -625,7 +672,7 @@ function checkDockerComposeFile(
           lineContent: trimmed,
           imageRef: 'type=gha',
           reason:
-            'docker-compose.yml must remain provider-neutral and omit GitHub Actions BuildKit cache backends ("type=gha"); move CI cache_from overrides to docker-compose.ci.yml.',
+            `${relPath} must remain provider-neutral and omit GitHub Actions BuildKit cache backends ("type=gha"); move CI cache_from overrides to docker-compose.ci.yml.`,
         });
       }
       if (/\bGHA_CACHE_SCOPE\b/.test(trimmed)) {
@@ -635,7 +682,7 @@ function checkDockerComposeFile(
           lineContent: trimmed,
           imageRef: 'GHA_CACHE_SCOPE',
           reason:
-            'docker-compose.yml must omit "GHA_CACHE_SCOPE"; isolate CI cache scope configuration in docker-compose.ci.yml.',
+            `${relPath} must omit "GHA_CACHE_SCOPE"; isolate CI cache scope configuration in docker-compose.ci.yml.`,
         });
       }
     });
@@ -692,13 +739,28 @@ function checkDockerComposeFile(
     }
   }
 
+  const localBuildImages = new Set<string>(sharedLocalBuildImages);
+  for (const svcPair of servicesNode.items) {
+    const svcMap = svcPair.value;
+    if (!isMap(svcMap)) {
+      continue;
+    }
+    const buildNode = svcMap.get('build', true);
+    if (buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null)) {
+      const imageNode = svcMap.get('image', true);
+      if (isScalar(imageNode) && typeof imageNode.value === 'string' && imageNode.value.trim()) {
+        localBuildImages.add(imageNode.value.trim());
+      }
+    }
+  }
+
   for (const svcPair of servicesNode.items) {
     const svcMap = svcPair.value;
     if (!isMap(svcMap)) {
       continue;
     }
 
-    // Skip local Compose services that build from source (e.g. migration and app)
+    // Skip local Compose services that build from source (e.g. app)
     const buildNode = svcMap.get('build', true);
     if (buildNode !== undefined && (!isScalar(buildNode) || buildNode.value !== null)) {
       continue;
@@ -706,6 +768,15 @@ function checkDockerComposeFile(
 
     const imageNode = svcMap.get('image', true);
     if (isScalar(imageNode) && typeof imageNode.value === 'string') {
+      const pullPolicyNode = svcMap.get('pull_policy', true);
+      const hasNeverPullPolicy =
+        isScalar(pullPolicyNode) &&
+        typeof pullPolicyNode.value === 'string' &&
+        pullPolicyNode.value.trim() === 'never';
+      if (hasNeverPullPolicy && localBuildImages.has(imageNode.value.trim())) {
+        continue;
+      }
+
       const offset = imageNode.range?.[0] ?? 0;
       const lineNumber = lineCounter.linePos(offset).line;
       const lineContent = (lines[lineNumber - 1] ?? '').trim();
@@ -851,9 +922,17 @@ function checkWorkflowImages(
   }
 }
 
-export function checkDockerBuild(rootDir: string = ROOT_DIR): {
+interface CheckDockerBuildOptions {
+  requireStandalone?: boolean;
+}
+
+export function checkDockerBuild(
+  rootDir: string = ROOT_DIR,
+  options: CheckDockerBuildOptions = {}
+): {
   violations: Violation[];
 } {
+  const { requireStandalone = false } = options;
   const violations: Violation[] = [];
   const pinnedOccurrences = new Map<string, PinnedImageOccurrence[]>();
 
@@ -1004,8 +1083,9 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     }
   }
 
-  // 2. Check docker-compose.yml (and docker-compose.ci.yml if present)
+  // 2. Check docker-compose.yml (and docker-compose.ci.yml / docker-compose.rollout.yml if present)
   const composePath = path.join(rootDir, 'docker-compose.yml');
+  const sharedLocalBuildImages = collectComposeLocalBuildImages(composePath);
   if (!fs.existsSync(composePath)) {
     violations.push({
       filePath: 'docker-compose.yml',
@@ -1015,12 +1095,35 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
       reason: 'docker-compose.yml is missing from repository root.',
     });
   } else {
-    checkDockerComposeFile(composePath, rootDir, violations, pinnedOccurrences);
+    checkDockerComposeFile(
+      composePath,
+      rootDir,
+      violations,
+      pinnedOccurrences,
+      sharedLocalBuildImages
+    );
   }
 
   const ciComposePath = path.join(rootDir, 'docker-compose.ci.yml');
   if (fs.existsSync(ciComposePath)) {
-    checkDockerComposeFile(ciComposePath, rootDir, violations, pinnedOccurrences);
+    checkDockerComposeFile(
+      ciComposePath,
+      rootDir,
+      violations,
+      pinnedOccurrences,
+      sharedLocalBuildImages
+    );
+  }
+
+  const rolloutComposePath = path.join(rootDir, 'docker-compose.rollout.yml');
+  if (fs.existsSync(rolloutComposePath)) {
+    checkDockerComposeFile(
+      rolloutComposePath,
+      rootDir,
+      violations,
+      pinnedOccurrences,
+      sharedLocalBuildImages
+    );
   }
 
   // 3. Check .github/workflows/*.yml
@@ -1115,20 +1218,35 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
     });
   }
 
-  // 7. Check if build was executed and generated standalone directory
-  const standaloneDir = path.join(rootDir, '.next', 'standalone');
-  if (fs.existsSync(path.join(rootDir, '.next'))) {
-    if (!fs.existsSync(standaloneDir)) {
+  // 7. Check standalone build artifacts (.next/standalone) when present or required (--require-standalone)
+  const nextDir = path.join(rootDir, '.next');
+  const standaloneDir = path.join(nextDir, 'standalone');
+  const hasNextDir = fs.existsSync(nextDir) && fs.statSync(nextDir).isDirectory();
+
+  if (requireStandalone && !hasNextDir) {
+    violations.push({
+      filePath: '.next',
+      lineNumber: 1,
+      lineContent: '',
+      imageRef: '.next',
+      reason:
+        ".next build output directory is missing while --require-standalone is enabled. Run 'npm run build' first.",
+    });
+  } else if (requireStandalone || hasNextDir) {
+    const hasStandaloneDir =
+      fs.existsSync(standaloneDir) && fs.statSync(standaloneDir).isDirectory();
+    if (!hasStandaloneDir) {
       violations.push({
         filePath: '.next/standalone',
         lineNumber: 1,
         lineContent: '',
         imageRef: '.next/standalone',
-        reason: '.next directory exists but .next/standalone was not generated. Ensure Next.js build produces standalone output.',
+        reason:
+          '.next directory exists but .next/standalone was not generated. Ensure Next.js build produces standalone output.',
       });
     } else {
       const serverJs = path.join(standaloneDir, 'server.js');
-      if (!fs.existsSync(serverJs)) {
+      if (!fs.existsSync(serverJs) || !fs.statSync(serverJs).isFile()) {
         violations.push({
           filePath: '.next/standalone/server.js',
           lineNumber: 1,
@@ -1137,23 +1255,73 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
           reason: '.next/standalone/server.js is missing.',
         });
       }
-      if (fs.existsSync(path.join(standaloneDir, 'public', 'public'))) {
+
+      const standaloneStaticDir = path.join(standaloneDir, '.next', 'static');
+      if (!fs.existsSync(standaloneStaticDir) || !fs.statSync(standaloneStaticDir).isDirectory()) {
         violations.push({
-          filePath: '.next/standalone/public/public',
+          filePath: '.next/standalone/.next/static',
           lineNumber: 1,
           lineContent: '',
-          imageRef: 'public/public',
-          reason: '.next/standalone/public/public nested copy detected.',
+          imageRef: '.next/standalone/.next/static',
+          reason:
+            '.next/standalone/.next/static is missing. Copy .next/static into .next/standalone/.next/static after building.',
+        });
+      } else if (fs.readdirSync(standaloneStaticDir).length === 0) {
+        violations.push({
+          filePath: '.next/standalone/.next/static',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: '.next/standalone/.next/static',
+          reason: '.next/standalone/.next/static directory is empty.',
+        });
+      } else if (fs.existsSync(path.join(standaloneStaticDir, 'static'))) {
+        violations.push({
+          filePath: '.next/standalone/.next/static/static',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: 'static/static',
+          reason: '.next/standalone/.next/static/static nested copy detected.',
         });
       }
-      if (fs.existsSync(path.join(standaloneDir, 'public', 'mockServiceWorker.js'))) {
+
+      const standalonePublicDir = path.join(standaloneDir, 'public');
+      if (!fs.existsSync(standalonePublicDir) || !fs.statSync(standalonePublicDir).isDirectory()) {
         violations.push({
-          filePath: '.next/standalone/public/mockServiceWorker.js',
+          filePath: '.next/standalone/public',
           lineNumber: 1,
           lineContent: '',
-          imageRef: 'mockServiceWorker.js',
-          reason: '.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.',
+          imageRef: '.next/standalone/public',
+          reason:
+            '.next/standalone/public is missing. Copy public into .next/standalone/public after building.',
         });
+      } else if (fs.readdirSync(standalonePublicDir).length === 0) {
+        violations.push({
+          filePath: '.next/standalone/public',
+          lineNumber: 1,
+          lineContent: '',
+          imageRef: '.next/standalone/public',
+          reason: '.next/standalone/public directory is empty.',
+        });
+      } else {
+        if (fs.existsSync(path.join(standalonePublicDir, 'public'))) {
+          violations.push({
+            filePath: '.next/standalone/public/public',
+            lineNumber: 1,
+            lineContent: '',
+            imageRef: 'public/public',
+            reason: '.next/standalone/public/public nested copy detected.',
+          });
+        }
+        if (fs.existsSync(path.join(standalonePublicDir, 'mockServiceWorker.js'))) {
+          violations.push({
+            filePath: '.next/standalone/public/mockServiceWorker.js',
+            lineNumber: 1,
+            lineContent: '',
+            imageRef: 'mockServiceWorker.js',
+            reason:
+              '.next/standalone/public/mockServiceWorker.js must not be bundled in standalone output.',
+          });
+        }
       }
     }
   }
@@ -1162,9 +1330,17 @@ export function checkDockerBuild(rootDir: string = ROOT_DIR): {
 }
 
 function main(): void {
+  const args = process.argv.slice(2);
+  const requireStandalone = args.includes('--require-standalone');
+  const unknownFlags = args.filter((arg) => arg !== '--require-standalone');
+  if (unknownFlags.length > 0) {
+    console.error(`❌ Unknown option(s) passed to check-docker-build.ts: ${unknownFlags.join(', ')}`);
+    process.exit(1);
+  }
+
   console.log('🔍 Checking standalone & container portability, digest pins, and APT cache rules...');
 
-  const { violations } = checkDockerBuild(ROOT_DIR);
+  const { violations } = checkDockerBuild(ROOT_DIR, { requireStandalone });
 
   if (violations.length > 0) {
     console.error(`\n❌ Found ${violations.length} standalone or container configuration violation(s):\n`);

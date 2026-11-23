@@ -13,7 +13,6 @@ export function sanitizeContributor(contributor: any) {
     alertEmailSentAt: _alertEmailSentAt,
     reminderEmailSentAt: _reminderEmailSentAt,
     invitationCode: _invitationCode,
-    invitationCodeId: _invitationCodeId,
     ...rest
   } = contributor;
   return rest;

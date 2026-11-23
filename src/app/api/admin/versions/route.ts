@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { toPublicAppConfig } from '@/lib/config';
+import { PublicAppConfigSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 
 function maskEmail(email: string): string {
@@ -26,8 +27,18 @@ function sanitizeSnapshotData(data: any, entityType?: string): any {
   let result = { ...data };
 
   if (entityType === 'AppConfig') {
+    const rawFeatures = result.features;
     result = toPublicAppConfig(result);
+    if (rawFeatures !== undefined) {
+      const parsedFeatures = PublicAppConfigSchema.shape.features.safeParse(rawFeatures);
+      result = {
+        ...result,
+        features: parsedFeatures.success ? parsedFeatures.data : rawFeatures,
+      };
+    }
   }
+
+  const nestedEntityType = entityType === 'AppConfig' ? undefined : entityType;
 
   for (const key of Object.keys(result)) {
     const val = result[key];
@@ -41,7 +52,7 @@ function sanitizeSnapshotData(data: any, entityType?: string): any {
     ) {
       result[key] = '[REDACTED]';
     } else if (val && typeof val === 'object') {
-      result[key] = sanitizeSnapshotData(val, entityType);
+      result[key] = sanitizeSnapshotData(val, nestedEntityType);
     }
   }
 

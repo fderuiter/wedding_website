@@ -71,13 +71,11 @@ export interface UseRegistryContributionMachineOptions {
 }
 
 export interface UseRegistryContributionMachineReturn {
-  // Phase and deterministic flags
-  phase: ContributionPhase;
+  // Deterministic flags
   isValidatingCode: boolean;
   isCodeLocked: boolean;
   isSubmitting: boolean;
   isSuccess: boolean;
-  isError: boolean;
   isSubmitDisabled: boolean;
 
   // Form values
@@ -106,7 +104,6 @@ export interface UseRegistryContributionMachineReturn {
   fieldErrors: ContributionFieldErrors;
   codeError: string | null;
   submissionError: string | null;
-  error: string | null;
 
   // Setters
   setContributorName: (name: string) => void;
@@ -115,7 +112,6 @@ export interface UseRegistryContributionMachineReturn {
   setSelectedUnits: (units: number) => void;
   setMessage: (message: string) => void;
   setCoverFee: (coverFee: boolean | ((prev: boolean) => boolean)) => void;
-  setInvitationCode: (code: string) => void;
   setRetailerOrderNumber: (value: string) => void;
   setCarrier: (value: string) => void;
   setTrackingNumber: (value: string) => void;
@@ -135,7 +131,7 @@ export interface UseRegistryContributionMachineReturn {
   handleVerifyCode: () => Promise<boolean>;
   handleClearCode: () => Promise<void>;
   handleSubmit: (
-    e?: React.FormEvent,
+    e?: React.SubmitEvent<HTMLFormElement>,
     paymentIntentId?: string,
     options?: { coverFeeOverride?: boolean }
   ) => Promise<void>;
@@ -389,16 +385,6 @@ export function useRegistryContributionMachine({
     setCoverFeeState(val);
   }, []);
 
-  const setInvitationCode = useCallback(
-    (code: string) => {
-      if (currentSessionKey && code !== sessionCode) {
-        setDismissedSessionKey(currentSessionKey);
-      }
-      setInvitationCodeState(code);
-    },
-    [currentSessionKey, sessionCode]
-  );
-
   const handlePresetClick = useCallback((presetValue: number) => {
     setAmountState(presetValue);
     setFieldErrors((prev) => {
@@ -633,7 +619,7 @@ export function useRegistryContributionMachine({
   // Action: Submit contribution
   const handleSubmit = useCallback(
     async (
-      e?: React.FormEvent,
+      e?: React.SubmitEvent<HTMLFormElement>,
       paymentIntentId?: string,
       options?: { coverFeeOverride?: boolean }
     ) => {
@@ -866,35 +852,13 @@ export function useRegistryContributionMachine({
   const isCodeLocked = phase === 'code_locked';
   const isSubmitting = phase === 'submitting';
   const isSuccess = phase === 'success';
-  const isError = phase === 'error';
   const isSubmitDisabled = isValidatingCode || isSubmitting;
 
-  // Composite primary error string for backwards compatibility / global message
-  const primaryFieldError =
-    fieldErrors.name ||
-    fieldErrors.amount ||
-    fieldErrors.units ||
-    fieldErrors.email ||
-    fieldErrors.addressLine1 ||
-    fieldErrors.addressLine2 ||
-    fieldErrors.city ||
-    fieldErrors.state ||
-    fieldErrors.zipCode ||
-    fieldErrors.country ||
-    fieldErrors.retailerOrderNumber ||
-    fieldErrors.carrier ||
-    fieldErrors.trackingNumber ||
-    fieldErrors.message ||
-    null;
-  const error = submissionError || primaryFieldError;
-
   return {
-    phase,
     isValidatingCode,
     isCodeLocked,
     isSubmitting,
     isSuccess,
-    isError,
     isSubmitDisabled,
 
     contributorName,
@@ -920,7 +884,6 @@ export function useRegistryContributionMachine({
     fieldErrors,
     codeError,
     submissionError,
-    error,
 
     setContributorName,
     setEmail,
@@ -928,7 +891,6 @@ export function useRegistryContributionMachine({
     setSelectedUnits,
     setMessage,
     setCoverFee,
-    setInvitationCode,
     setRetailerOrderNumber,
     setCarrier,
     setTrackingNumber,

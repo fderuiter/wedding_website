@@ -562,7 +562,10 @@ describe('POST /api/registry/webhook/stripe', () => {
       new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
         method: 'POST',
         headers: { 'stripe-signature': 't=12345,v1=validsig' },
-        body: JSON.stringify({ type: 'payment_intent.succeeded' }),
+        body: JSON.stringify({
+          type: 'payment_intent.succeeded',
+          data: { object: mockPaymentIntent },
+        }),
       })
     );
     expect(response.status).toBe(200);
@@ -580,5 +583,220 @@ describe('POST /api/registry/webhook/stripe', () => {
         country: 'USA',
       })
     );
+  });
+
+  it('loads site config concurrently with gift write, sends both emails in parallel, and isolates single-branch failures', async () => {
+    const timeline: string[] = [];
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const sendEmailSpy = jest
+      .spyOn(MultiChannelMessagingProvider.prototype, 'sendEmail')
+      .mockImplementation(async (payload) => {
+        timeline.push(`email:${payload.to}:start`);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (payload.to === 'guest-fail@example.com') {
+          return {
+            success: false,
+            error: 'Provider rejected guest-fail@example.com for Parallel Guest',
+          };
+        }
+        return { success: true };
+      });
+
+    try {
+      (getAppConfig as jest.Mock).mockImplementationOnce(async () => {
+        timeline.push('getAppConfig:start');
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        timeline.push('getAppConfig:end');
+        return {
+          modules: ['registry', 'groupGifting'],
+          emailProvider: 'resend',
+          resendApiKey: 're_parallel_webhook',
+          contactEmail: 'couple@wedding.test',
+          baseUrl: 'https://couple.wedding.test',
+        };
+      });
+
+      (registryService.contributeToItem as jest.Mock).mockImplementationOnce(async () => {
+        timeline.push('contributeToItem:start');
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        timeline.push('contributeToItem:end');
+        return {
+          id: 'item-cash-fund-1',
+          name: 'Cash Fund',
+          itemType: 'CASH_FUND',
+          amountContributed: 75,
+          contributors: [
+            {
+              id: 'contrib-parallel-webhook',
+              name: 'Parallel Guest',
+              email: 'guest-fail@example.com',
+              amount: 75,
+              message: 'Secret parallel note',
+              stripePaymentIntentId: 'pi_parallel_webhook_1',
+            },
+          ],
+        };
+      });
+      (prisma.contributor.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      const mockPaymentIntent = {
+        id: 'pi_parallel_webhook_1',
+        status: 'succeeded',
+        amount: 7500,
+        amount_received: 7500,
+        currency: 'usd',
+        latest_charge: 'ch_parallel_webhook_1',
+        created: 1731763200,
+        metadata: {
+          itemId: 'item-cash-fund-1',
+          contributorName: 'Parallel Guest',
+          contributorEmail: 'guest-fail@example.com',
+          contributorMessage: 'Secret parallel note',
+          coverFee: 'false',
+          baseAmount: '75.00',
+        },
+      };
+
+      mockConstructEvent.mockReturnValueOnce({
+        type: 'payment_intent.succeeded',
+        data: { object: mockPaymentIntent },
+      });
+
+      const start = performance.now();
+      const response = await POST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: { 'stripe-signature': 't=12345,v1=validsig' },
+          body: JSON.stringify({
+            type: 'payment_intent.succeeded',
+            data: { object: mockPaymentIntent },
+          }),
+        })
+      );
+      const elapsedMs = performance.now() - start;
+
+      expect(response.status).toBe(200);
+      // getAppConfig was called once in parallel before contributeToItem finished
+      expect(getAppConfig).toHaveBeenCalledTimes(1);
+      expect(timeline.indexOf('getAppConfig:start')).toBeLessThan(
+        timeline.indexOf('contributeToItem:end')
+      );
+      expect(timeline.indexOf('contributeToItem:start')).toBeLessThan(
+        timeline.indexOf('getAppConfig:end')
+      );
+
+      // Both guest and couple emails ran concurrently via Promise.allSettled
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+      expect(
+        sendEmailSpy.mock.calls.some(([payload]) => payload.to === 'couple@wedding.test')
+      ).toBe(true);
+      // 40ms parallel DB+config + 80ms parallel emails (~120ms) stays well below serial 240ms
+      expect(elapsedMs).toBeLessThan(210);
+
+      // Guest failure warning is logged with PII redacted
+      const serializedWarnings = JSON.stringify(warnSpy.mock.calls);
+      expect(serializedWarnings).not.toContain('guest-fail@example.com');
+      expect(serializedWarnings).not.toContain('couple@wedding.test');
+      expect(serializedWarnings).not.toContain('Parallel Guest');
+      expect(serializedWarnings).not.toContain('Secret parallel note');
+    } finally {
+      sendEmailSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('aborts stalled outbound email provider calls at the configured timeout and returns HTTP 200', async () => {
+    const originalFetch = global.fetch;
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    try {
+      global.fetch = jest.fn((_url: string, init?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(signal.reason ?? new DOMException('Timed out', 'TimeoutError'));
+            },
+            { once: true }
+          );
+        });
+      }) as unknown as typeof fetch;
+
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'resend',
+        resendApiKey: 're_stalled_webhook',
+        emailTimeoutMs: 50,
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+      });
+      (prisma.contributor.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+
+      const mockPaymentIntent = {
+        id: 'pi_stalled_provider_99',
+        status: 'succeeded',
+        amount: 5000,
+        amount_received: 5000,
+        currency: 'usd',
+        latest_charge: 'ch_stalled_99',
+        created: 1731763200,
+        metadata: {
+          itemId: 'item-cash-fund-1',
+          contributorName: 'Timeout Guest',
+          contributorEmail: 'timeout.guest@example.com',
+          contributorMessage: 'Hope this settles fast!',
+          coverFee: 'false',
+          baseAmount: '50.00',
+        },
+      };
+
+      mockConstructEvent.mockReturnValueOnce({
+        type: 'payment_intent.succeeded',
+        data: { object: mockPaymentIntent },
+      });
+
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        id: 'item-cash-fund-1',
+        name: 'Cash Fund',
+        itemType: 'CASH_FUND',
+        amountContributed: 50,
+        contributors: [
+          {
+            id: 'contrib-stalled-99',
+            name: 'Timeout Guest',
+            email: 'timeout.guest@example.com',
+            amount: 50,
+            stripePaymentIntentId: 'pi_stalled_provider_99',
+          },
+        ],
+      });
+
+      const start = performance.now();
+      const res = await POST(
+        new NextRequest('http://localhost:3000/api/registry/webhook/stripe', {
+          method: 'POST',
+          headers: { 'stripe-signature': 't=12345,v1=validsig' },
+          body: JSON.stringify({
+            type: 'payment_intent.succeeded',
+            data: { object: mockPaymentIntent },
+          }),
+        })
+      );
+      const elapsedMs = performance.now() - start;
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ received: true });
+      // Both stalled Resend calls abort concurrently around 50ms instead of hanging past 3,000ms
+      expect(elapsedMs).toBeLessThan(400);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const serializedWarnings = JSON.stringify(warnSpy.mock.calls);
+      expect(serializedWarnings).not.toContain('timeout.guest@example.com');
+      expect(serializedWarnings).not.toContain('couple@wedding.test');
+      expect(serializedWarnings).not.toContain('Timeout Guest');
+    } finally {
+      global.fetch = originalFetch;
+      warnSpy.mockRestore();
+    }
   });
 });

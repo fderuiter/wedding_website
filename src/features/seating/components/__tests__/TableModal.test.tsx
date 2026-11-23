@@ -264,4 +264,62 @@ describe('TableModal component', () => {
       );
     });
   });
+
+  test('warns and prompts via alertdialog when shrinking capacity from 8 to 6 repacks a guest at Seat 8 or falls below party headcount', async () => {
+    const tableWithSeat8Guest: SeatingTableDTO = {
+      ...mockTable,
+      capacity: 8,
+      invitationCodes: [
+        {
+          id: 'g-seat-8',
+          code: 'S8',
+          guestName: 'Octavia Eight',
+          tableId: 'table-1',
+          seatNumber: 8,
+          plusOneAllocations: 0,
+        } as unknown as NonNullable<SeatingTableDTO['invitationCodes']>[number],
+      ],
+    };
+
+    const { unmount } = render(<TableModal {...defaultProps} table={tableWithSeat8Guest} />);
+
+    // Lower capacity from 8 to 6 (headcount is 1 <= 6, but Seat 8 > 6 will be repacked)
+    const capInput = screen.getByLabelText(/Seating Capacity/i);
+    fireEvent.change(capInput, { target: { value: '6' } });
+
+    const warning = screen.getByTestId('capacity-warning');
+    expect(warning).toHaveTextContent(/repack Seat 8 into seats 1–6/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+    const repackDialog = await screen.findByRole('alertdialog');
+    expect(repackDialog).toHaveTextContent(/repack Seat 8 into seats 1–6/i);
+
+    fireEvent.click(within(repackDialog).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(defaultProps.onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'table-1', capacity: 6 })
+      );
+    });
+
+    unmount();
+    jest.clearAllMocks();
+
+    // Party headcount check: 3 couples = 6 attendees on an 8-seat table lowered to capacity 4
+    const tableWithThreeCouples: SeatingTableDTO = {
+      ...mockTable,
+      capacity: 8,
+      invitationCodes: [1, 2, 3].map((idx) => ({
+        id: `couple-${idx}`,
+        code: `CPL-${idx}`,
+        guestName: `Couple ${idx}`,
+        tableId: 'table-1',
+        seatNumber: idx * 2 - 1,
+        plusOneAllocations: 1,
+      })) as unknown as NonNullable<SeatingTableDTO['invitationCodes']>,
+    };
+
+    render(<TableModal {...defaultProps} table={tableWithThreeCouples} />);
+    fireEvent.change(screen.getByLabelText(/Seating Capacity/i), { target: { value: '4' } });
+    expect(screen.getByTestId('capacity-warning')).toHaveTextContent(/Table has 6 seated guests/i);
+  });
 });

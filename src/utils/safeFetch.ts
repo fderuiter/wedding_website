@@ -1,83 +1,12 @@
 import { validateAndResolveHost } from './ssrf';
-import { Agent, type Dispatcher } from 'undici';
-
-interface LegacyUndiciV6Handler {
-  onConnect?: (abort: (err?: Error) => void, context?: unknown) => void;
-  onRequestSent?: () => void;
-  onBodySent?: (chunk: unknown) => void;
-  onHeaders?: (
-    statusCode: number,
-    rawHeaders: Buffer[],
-    resume: () => void,
-    statusMessage: string
-  ) => boolean | void;
-  onData?: (chunk: Uint8Array) => boolean | void;
-  onComplete?: (rawTrailers: string[] | null) => void;
-  onError?: (err: Error) => void;
-}
-
-function adaptDispatchHandler(
-  handler: Dispatcher.DispatchHandler
-): Dispatcher.DispatchHandler {
-  if (!handler || typeof handler.onRequestStart === 'function') {
-    return handler;
-  }
-  const legacy = handler as unknown as LegacyUndiciV6Handler;
-  return {
-    onRequestStart(controller, context) {
-      legacy.onConnect?.((err) => controller.abort(err ?? new Error('Request aborted')), context);
-    },
-    onRequestSent() {
-      legacy.onRequestSent?.();
-    },
-    onBodySent(chunk) {
-      legacy.onBodySent?.(chunk);
-    },
-    onResponseStart(controller, statusCode, headers, statusMessage) {
-      const ctrlWithRaw = controller as Dispatcher.DispatchController & {
-        rawHeaders?: Buffer[];
-      };
-      const rawHeaders =
-        ctrlWithRaw.rawHeaders ??
-        Object.entries(headers || {}).flatMap(([key, val]) =>
-          Array.isArray(val)
-            ? val.flatMap((item) => [Buffer.from(key), Buffer.from(String(item))])
-            : [Buffer.from(key), Buffer.from(String(val ?? ''))]
-        );
-      const shouldContinue = legacy.onHeaders?.(
-        statusCode,
-        rawHeaders,
-        () => controller.resume(),
-        statusMessage ?? ''
-      );
-      if (shouldContinue === false) {
-        controller.pause();
-      }
-    },
-    onResponseData(controller, chunk) {
-      const shouldContinue = legacy.onData?.(chunk);
-      if (shouldContinue === false) {
-        controller.pause();
-      }
-    },
-    onResponseEnd(controller) {
-      const ctrlWithRaw = controller as Dispatcher.DispatchController & {
-        rawTrailers?: string[];
-      };
-      legacy.onComplete?.(ctrlWithRaw.rawTrailers ?? []);
-    },
-    onResponseError(_controller, err) {
-      legacy.onError?.(err);
-    },
-  };
-}
+import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
 /**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  const agent = new Agent({
+  return bridgeLegacyDispatcher(new Agent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -93,11 +22,7 @@ export function createPinnedDispatcher(address: string, family: number): Agent {
         }
       },
     },
-  });
-  const originalDispatch = agent.dispatch.bind(agent);
-  agent.dispatch = (opts, handler) =>
-    originalDispatch(opts, adaptDispatchHandler(handler));
-  return agent;
+  }));
 }
 
 /**
@@ -182,4 +107,13 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       return res;
     }
   }
+}
+
+function bridgeLegacyDispatcher(agent: Agent): Agent {
+  const target: Dispatcher = Object.assign(Object.create(agent) as Dispatcher, {
+    dispatch: agent.dispatch.bind(agent),
+  });
+  const wrapper = new Dispatcher1Wrapper(target);
+  agent.dispatch = wrapper.dispatch.bind(wrapper);
+  return agent;
 }
