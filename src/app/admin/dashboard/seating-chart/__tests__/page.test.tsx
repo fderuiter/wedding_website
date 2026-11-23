@@ -260,4 +260,82 @@ describe('SeatingChartAdminPage Dialog integration', () => {
     fireEvent.click(undoBtn);
     expect(mockUndoLastBatchAction).toHaveBeenCalledTimes(1);
   });
+
+  it('prompts via alertdialog before deleting an occupied table from the inspector and shows party seat ranges', async () => {
+    const mockClearTableSeats = jest.fn();
+    const mockUndoLastBatchAction = jest.fn();
+    const mockAssignGuestsToTable = jest.fn();
+
+    const occupiedCoupleTable = {
+      ...mockTable,
+      capacity: 8,
+      invitationCodes: [
+        {
+          id: 'g-couple-seated',
+          guestName: 'Jordan Taylor',
+          code: 'CPL10',
+          tableId: 'table-1',
+          seatNumber: 1,
+          used: true,
+          plusOneAllocations: 1,
+          extraFields: {
+            attending: true,
+            plusOneCount: 1,
+            plusOneNames: ['Morgan Taylor'],
+          },
+        },
+      ],
+    };
+
+    (useSeatingState as jest.Mock).mockReturnValue({
+      tables: [occupiedCoupleTable],
+      allGuests: occupiedCoupleTable.invitationCodes,
+      unassignedGuests: [],
+      isLoading: false,
+      errorMsg: null,
+      canUndo: false,
+      undoLabel: null,
+      assignGuestToTable: mockAssignGuestToTable,
+      assignGuestsToTable: mockAssignGuestsToTable,
+      unassignGuest: mockUnassignGuest,
+      clearTableSeats: mockClearTableSeats,
+      undoLastBatchAction: mockUndoLastBatchAction,
+      applyAutoAssignResult: mockApplyAutoAssignResult,
+      saveTable: mockSaveTable,
+      deleteTable: mockDeleteTable,
+      updateTablePosition: mockUpdateTablePosition,
+      updateTableRotation: mockUpdateTableRotation,
+    });
+
+    render(<SeatingChartAdminPage />);
+
+    // Select occupied table via single-click on Seat 1 dot
+    fireEvent.click(screen.getByLabelText('Seat 1: Jordan Taylor'));
+    expect(mockUnassignGuest).not.toHaveBeenCalled();
+
+    // Inspector shows 2 seated out of 8 capacity and Seats 1, 2 range with companion name
+    expect(screen.getByText('(round, 8 capacity, 2 seated)')).toBeInTheDocument();
+    expect(screen.getByText('Seats 1, 2: Jordan Taylor (+1: Morgan Taylor)')).toBeInTheDocument();
+
+    // Clicking Delete Table on occupied table prompts for confirmation
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Table' }));
+    const confirmDialog = await screen.findByRole('alertdialog');
+    expect(confirmDialog).toHaveTextContent(/2 seated guests will become unassigned/i);
+    expect(mockDeleteTable).not.toHaveBeenCalled();
+
+    // Cancel keeps the table
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockDeleteTable).not.toHaveBeenCalled();
+
+    // Click Delete Table again and confirm
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Table' }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(mockDeleteTable).toHaveBeenCalledWith('table-1');
+    });
+  });
 });
