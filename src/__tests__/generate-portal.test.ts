@@ -322,4 +322,27 @@ describe('Portal Documentation Generator & Development Section', () => {
       expect(prependPortalFrontmatterTitle(existing, 'Overridden Title')).toBe(existing);
     });
   });
+
+  describe('API Explorer dark-mode accessibility and static server gating', () => {
+    it('replaces CSS invert filters with explicit WCAG AA dark-mode Swagger UI rules in custom.css', () => {
+      const customCssPath = path.join(rootDir, 'docs-portal/.vitepress/theme/custom.css');
+      const css = fs.readFileSync(customCssPath, 'utf8');
+
+      expect(css).not.toMatch(/invert\s*\(/i);
+      expect(css).toContain('.dark #swagger-ui-container .swagger-ui .model-box');
+      expect(css).toContain('.dark #swagger-ui-container .swagger-ui .prop-type');
+    });
+
+    it('gates interactive Try it out requests in ApiExplorer.vue until a valid target server URL is configured', () => {
+      const explorerPath = path.join(
+        rootDir,
+        'docs-portal/.vitepress/theme/components/ApiExplorer.vue'
+      );
+      const vue = fs.readFileSync(explorerPath, 'utf8');
+
+      expect(vue).toContain('supportedSubmitMethods: isLiveEnabled ? SUBMIT_METHODS : []');
+      expect(vue).toContain('servers: []');
+      expect(vue).toContain("description: 'Configured target deployment'");
+    });
+  });
 });

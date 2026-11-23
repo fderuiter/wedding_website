@@ -256,6 +256,26 @@ export const ContributionSchema = z
       });
     }
   })
+  .meta({
+    description:
+      'Gift contribution payload requiring itemId, a positive amount, and a contributor name (name or purchaserName, 1-100 characters).',
+    anyOf: [
+      {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+      },
+      {
+        type: 'object',
+        required: ['purchaserName'],
+        properties: {
+          purchaserName: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+      },
+    ],
+  })
   .transform((data) => {
     const resolvedName = (data.name || data.purchaserName || '').trim();
     const normalizeOptional = (value?: string | null) =>
@@ -789,6 +809,26 @@ export const BatchUpdateInvitationTagsSchema = z
           'At least one non-empty tag is required when adding or removing tags.',
       });
     }
+  })
+  .meta({
+    description:
+      "Batch party-tag update payload. Requires at least one non-empty tag in tags when action is 'add' (default) or 'remove'; an empty tags array is only permitted when action is 'replace'.",
+    anyOf: [
+      {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['replace'] },
+        },
+      },
+      {
+        type: 'object',
+        required: ['tags'],
+        properties: {
+          tags: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
+        },
+      },
+    ],
   });
 
 export type BatchUpdateInvitationTagsDTO = z.infer<
@@ -954,11 +994,15 @@ export const MergeInvitationCodesSchema = z
     primaryId: z
       .string({ message: 'Primary guest ID is required.' })
       .trim()
-      .min(1, 'Primary guest ID is required.'),
+      .min(1, 'Primary guest ID is required.')
+      .describe('Target primary invitation record ID that survives the merge.'),
     secondaryIds: z
       .array(z.string().trim().min(1, 'Secondary guest ID cannot be empty.'))
       .min(1, 'At least one secondary guest ID is required.')
       .max(100, 'Maximum of 100 secondary guest records allowed per merge.')
+      .describe(
+        'Deduplicated list of 1-100 secondary invitation record IDs to merge into primaryId; must include at least one ID distinct from primaryId.'
+      )
       .transform((ids) => Array.from(new Set(ids))),
   })
   .superRefine((data, ctx) => {
@@ -973,6 +1017,10 @@ export const MergeInvitationCodesSchema = z
           'At least one distinct secondary guest ID is required to merge.',
       });
     }
+  })
+  .meta({
+    description:
+      'Merges duplicate guest invitation records into primaryId. Precondition: secondaryIds must contain at least one guest record ID distinct from primaryId (entries matching primaryId are filtered out before merging).',
   })
   .transform((data) => ({
     primaryId: data.primaryId,
