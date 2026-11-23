@@ -313,12 +313,84 @@ export function useStaticDemoPageOverrides(): StaticDemoPageOverrides | null {
   }, [snapshot]);
 }
 
+export interface StaticDemoSavedSetupConfig {
+  step?: 1 | 2 | 3 | 4 | 5;
+  partner1Name?: string;
+  partner2Name?: string;
+  weddingDate?: string;
+  baseUrl?: string;
+  contactEmail?: string;
+  venueName?: string;
+  venueCity?: string;
+  venueState?: string;
+  timezone?: string;
+  themePreset?: PublicAppConfig['themePreset'];
+  colorPrimary?: string;
+  colorSecondary?: string;
+}
+
+export function getStaticDemoSavedSetupConfig():
+  | StaticDemoSavedSetupConfig
+  | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  const activeStore = window.__STATIC_DEMO_INSTALLED__?.store;
+  if (!activeStore) {
+    return undefined;
+  }
+  const snapshot = activeStore.getSnapshot();
+  const rawConfig = getActiveAppConfig(snapshot);
+  if (!snapshot.setupStep2Saved || rawConfig.setupCompleted !== false) {
+    return undefined;
+  }
+  const partner1Name = (
+    rawConfig.partner1Name ||
+    rawConfig.brideName ||
+    ''
+  ).trim();
+  const partner2Name = (
+    rawConfig.partner2Name ||
+    rawConfig.groomName ||
+    ''
+  ).trim();
+  const baseUrl = (rawConfig.baseUrl || '').trim();
+  if (!partner1Name || !partner2Name || !baseUrl) {
+    return undefined;
+  }
+
+  const publicCfg = toPublicConfigDto(rawConfig);
+  const cleanVenue = (val: string | null | undefined) =>
+    val && val.trim().toUpperCase() !== 'TBD' ? val.trim() : '';
+  const parsedDate = new Date(rawConfig.weddingDate);
+  const weddingDate = Number.isNaN(parsedDate.getTime())
+    ? ''
+    : parsedDate.toISOString().slice(0, 10);
+
+  return {
+    step: 3,
+    partner1Name,
+    partner2Name,
+    weddingDate,
+    baseUrl,
+    contactEmail: (rawConfig.contactEmail || '').trim(),
+    venueName: cleanVenue(rawConfig.venueName),
+    venueCity: cleanVenue(rawConfig.venueCity),
+    venueState: cleanVenue(rawConfig.venueState),
+    timezone: rawConfig.timezone || 'America/Chicago',
+    themePreset: publicCfg.themePreset as PublicAppConfig['themePreset'],
+    colorPrimary: rawConfig.colorPrimary || undefined,
+    colorSecondary: rawConfig.colorSecondary || undefined,
+  };
+}
+
 export function completeStaticDemoSetup(): void {
   if (typeof window === 'undefined') return;
   const activeStore = window.__STATIC_DEMO_INSTALLED__?.store;
   if (!activeStore) return;
   activeStore.mutate((draft) => {
     draft.isSetupMode = false;
+    draft.setupStep2Saved = false;
     draft.isAdminAuthenticated = true;
     const cfg = getActiveAppConfig(draft);
     cfg.setupCompleted = true;

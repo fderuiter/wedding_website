@@ -92,7 +92,11 @@ function stageWorkspace() {
 
   const publicSrc = path.join(rootDir, 'public');
   if (fs.existsSync(publicSrc)) {
-    fs.cpSync(publicSrc, path.join(dir, 'public'), { recursive: true });
+    fs.cpSync(publicSrc, path.join(dir, 'public'), {
+      recursive: true,
+      filter: (sourcePath) =>
+        path.basename(sourcePath) !== 'mockServiceWorker.js',
+    });
   }
 
   const srcSourceDir = path.join(rootDir, 'src');

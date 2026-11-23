@@ -352,6 +352,7 @@ export interface StaticDemoSnapshot {
   schemaVersion: string;
   activeArchetype: ArchetypeId;
   isSetupMode: boolean;
+  setupStep2Saved?: boolean;
   isAdminAuthenticated: boolean;
   guestSession: DemoGuestSession | null;
   storageWarning: string | null;

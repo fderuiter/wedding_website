@@ -124,17 +124,52 @@ export async function handleRegistryRoutes(
   if (pathname === '/api/registry/items' && method === 'GET') {
     const snapshot = store.getSnapshot();
     const category = searchParams.get('category')?.trim();
+    const minPriceRaw = searchParams.get('minPrice');
+    const maxPriceRaw = searchParams.get('maxPrice');
+    const minPrice =
+      minPriceRaw !== null && minPriceRaw.trim() !== ''
+        ? Number(minPriceRaw)
+        : null;
+    const maxPrice =
+      maxPriceRaw !== null && maxPriceRaw.trim() !== ''
+        ? Number(maxPriceRaw)
+        : null;
+    const sortBy = (
+      searchParams.get('sortBy') ??
+      searchParams.get('sort') ??
+      ''
+    )
+      .trim()
+      .toLowerCase();
+
     const items = snapshot.registryItem
       .filter((item) => {
         if (category && category !== 'All') {
-          return item.category.toLowerCase() === category.toLowerCase();
+          if (item.category.toLowerCase() !== category.toLowerCase()) {
+            return false;
+          }
+        }
+        if (minPrice !== null && Number.isFinite(minPrice) && item.price < minPrice) {
+          return false;
+        }
+        if (maxPrice !== null && Number.isFinite(maxPrice) && item.price > maxPrice) {
+          return false;
         }
         return true;
       })
-      .sort(
-        (a, b) =>
-          a.displayOrder - b.displayOrder || b.createdAt.localeCompare(a.createdAt),
-      )
+      .sort((a, b) => {
+        if (sortBy === 'price-asc') {
+          return a.price - b.price || a.displayOrder - b.displayOrder;
+        }
+        if (sortBy === 'price-desc') {
+          return b.price - a.price || a.displayOrder - b.displayOrder;
+        }
+        return (
+          Number(Boolean(b.isMostWanted)) - Number(Boolean(a.isMostWanted)) ||
+          a.displayOrder - b.displayOrder ||
+          b.createdAt.localeCompare(a.createdAt)
+        );
+      })
       .map((item) =>
         toRegistryItemDto(snapshot, item, {
           maskPublic: !snapshot.isAdminAuthenticated,
@@ -413,7 +448,12 @@ export async function handleRegistryRoutes(
   if (pathname === '/api/registry/contribute' && method === 'POST') {
     const body = await readJsonBody(request);
     const itemId = typeof body.itemId === 'string' ? body.itemId.trim() : '';
-    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const name =
+      typeof body.name === 'string' && body.name.trim()
+        ? body.name.trim()
+        : typeof body.purchaserName === 'string' && body.purchaserName.trim()
+          ? body.purchaserName.trim()
+          : '';
     const amount = Number(body.amount ?? 0);
 
     if (!itemId || !name || !Number.isFinite(amount) || amount <= 0) {
@@ -495,7 +535,10 @@ export async function handleRegistryRoutes(
       recalculateRegistryItemTotals(draft, item.id);
       pushAuditVersion(draft, 'Contributor', newContributor.id, newContributor, name);
 
-      const dto = toRegistryItemDto(draft, item);
+      const dto = toRegistryItemDto(draft, item, {
+        maskPublic: !draft.isAdminAuthenticated,
+        emptyPublicContributors: !draft.isAdminAuthenticated,
+      });
       if (!paymentIntentId) {
         return {
           errorStatus: null,
@@ -567,28 +610,50 @@ export async function handleRegistryRoutes(
       const item = contributor?.registryItemId
         ? draft.registryItem.find((r) => r.id === contributor.registryItemId)
         : null;
-      if (!contributor || !item) return null;
+      if (!contributor || !item) {
+        return { kind: 'not_found' as const };
+      }
+
+      if (decoded.action === 'cancel' && contributor.status === 'CONFIRMED') {
+        return {
+          kind: 'conflict' as const,
+          message:
+            'Confirmed gifts cannot be cancelled via this link. Please contact the couple if you need assistance.',
+        };
+      }
 
       const targetStatus =
         decoded.action === 'confirm' ? 'CONFIRMED' : 'CANCELLED';
       const changed = contributor.status !== targetStatus;
       contributor.status = targetStatus;
+      if (
+        targetStatus === 'CANCELLED' &&
+        (contributor.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'
+      ) {
+        contributor.thankYouStatus = 'Not Needed';
+      }
       contributor.updatedAt = new Date().toISOString();
       recalculateRegistryItemTotals(draft, item.id);
       pushAuditVersion(draft, 'Contributor', contributor.id, contributor, 'Guest');
 
       return {
-        action: decoded.action,
-        status: contributor.status,
-        changed,
-        item: toRegistryItemDto(draft, item, { maskPublic: true }),
+        kind: 'ok' as const,
+        payload: {
+          action: decoded.action,
+          status: contributor.status,
+          changed,
+          item: toRegistryItemDto(draft, item, { maskPublic: true }),
+        },
       };
     });
 
-    if (!mutated) {
+    if (mutated.kind === 'not_found') {
       return errorJson(404, 'Gift reservation not found.');
     }
-    return wrapMiddlewareJson(mutated);
+    if (mutated.kind === 'conflict') {
+      return errorJson(409, mutated.message);
+    }
+    return wrapMiddlewareJson(mutated.payload);
   }
 
   if (pathname === '/api/registry/payment-intent' && method === 'POST') {

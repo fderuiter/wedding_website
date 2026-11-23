@@ -307,6 +307,7 @@ export function createDemoStore(options: CreateDemoStoreOptions = {}): StaticDem
     setSetupMode: (enabled: boolean): StaticDemoSnapshot => {
       const draft = cloneSnapshot(state);
       draft.isSetupMode = enabled;
+      draft.setupStep2Saved = false;
       if (draft.appConfig[0]) {
         draft.appConfig[0].setupCompleted = !enabled;
       }

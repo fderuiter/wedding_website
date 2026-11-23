@@ -32,6 +32,7 @@ import { ThemePreset } from '@/lib/theme/presets';
 import { ARCHETYPE_PRESETS, ArchetypeId } from '@/lib/sampleData/archetypes';
 import {
   ensureStaticDemoRuntime,
+  getStaticDemoSavedSetupConfig,
   completeStaticDemoSetup,
 } from '@/lib/staticDemo/runtime';
 import { prefixWithBasePath } from '@/lib/staticDemo/url';
@@ -929,6 +930,8 @@ function SetupWizardContent({
 
 export default function SetupWizard({ initialSavedConfig }: SetupWizardProps = {}) {
   ensureStaticDemoRuntime();
+  const resolvedSavedConfig =
+    initialSavedConfig ?? getStaticDemoSavedSetupConfig();
   const outerQueryClient = useContext(QueryClientContext);
   const outerToast = useContext(ToastContext);
   const [fallbackQueryClient] = useState(() => new QueryClient());
@@ -938,7 +941,7 @@ export default function SetupWizard({ initialSavedConfig }: SetupWizardProps = {
   const hasAppShell = Boolean(outerQueryClient && outerToast);
   const content = (
     <SetupWizardContent
-      initialSavedConfig={initialSavedConfig}
+      initialSavedConfig={resolvedSavedConfig}
       hasAppShell={hasAppShell}
     />
   );

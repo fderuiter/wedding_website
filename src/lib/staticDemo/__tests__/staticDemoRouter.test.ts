@@ -204,7 +204,12 @@ function buildOpenApiRequestInit(
     if (resolvedPath.endsWith('/action')) {
       body = { action: 'confirm' };
     } else if (method === 'PATCH') {
-      body = { name: 'Updated Donor', amount: 75, status: 'CONFIRMED' };
+      body = {
+        name: 'Updated Donor',
+        amount: 75,
+        status: 'CONFIRMED',
+        confirmVerifiedPayment: true,
+      };
     } else if (method === 'DELETE') {
       body = { confirmVerifiedPayment: true };
     } else {
@@ -703,5 +708,215 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
       expect(pdfRes?.status).toBe(200);
       expect(pdfRes?.headers.get('content-type')).toBe('application/pdf');
     }
+  });
+
+  it('enforces PR #1242 guest privacy masking, admin email sanitization, purchaserName contributions, and 409 verified-payment guards', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    // Log out admin to test public guest privacy masking
+    await router('http://localhost:3000/api/admin/logout', { method: 'POST' });
+    expect(store.getSnapshot().isAdminAuthenticated).toBe(false);
+
+    // UI contribution payload uses purchaserName (from useRegistry.ts / RegistryItemCard)
+    const targetItem = store
+      .getSnapshot()
+      .registryItem.find((item) => !item.isSample && !item.purchased)!;
+    const contributeRes = await router(
+      'http://localhost:3000/api/registry/contribute',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: targetItem.id,
+          purchaserName: 'Casey Guest',
+          email: 'casey@example.org',
+          amount: 45,
+          message: 'Enjoy!',
+        }),
+      },
+    );
+    expect(contributeRes?.status).toBe(200);
+    const contributeJson = await contributeRes!.json();
+    const contributedDto = contributeJson.data ?? contributeJson;
+    expect(contributedDto.purchaserName).toBe('Anonymous');
+    expect(contributedDto.contributors).toEqual([]);
+    expect(contributedDto.claimActions?.confirmToken).toBeTruthy();
+    expect(contributedDto.claimActions?.cancelToken).toBeTruthy();
+
+    // Public GET /api/registry/items masks purchaserName & active contributor identities
+    const publicItemsRes = await router(
+      'http://localhost:3000/api/registry/items?sortBy=price-asc',
+    );
+    expect(publicItemsRes?.status).toBe(200);
+    const publicItemsJson = await publicItemsRes!.json();
+    const publicItems = (publicItemsJson.data ?? publicItemsJson) as Array<{
+      id: string;
+      price: number;
+      purchaserName: string | null;
+      contributors: Array<Record<string, unknown>>;
+    }>;
+    expect(publicItems[0].price).toBeLessThanOrEqual(
+      publicItems[publicItems.length - 1].price,
+    );
+    const publicTarget = publicItems.find((item) => item.id === targetItem.id)!;
+    expect(publicTarget.purchaserName).toBe('Anonymous');
+    expect(publicTarget.contributors.length).toBeGreaterThan(0);
+    expect(publicTarget.contributors[0]).toEqual({
+      name: 'Anonymous',
+      amount: 'Anonymous',
+      date: 'Anonymous',
+    });
+
+    // Confirming via claim link then trying to cancel via claim link returns 409
+    const confirmClaimRes = await router('http://localhost:3000/api/registry/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: contributedDto.claimActions.confirmToken }),
+    });
+    expect(confirmClaimRes?.status).toBe(200);
+
+    const cancelConfirmedRes = await router(
+      'http://localhost:3000/api/registry/claim',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: contributedDto.claimActions.cancelToken }),
+      },
+    );
+    expect(cancelConfirmedRes?.status).toBe(409);
+
+    // Log back in as admin: embedded contributors omit email, while thank-you-notes retains email
+    await router('http://localhost:3000/api/admin/login', { method: 'POST' });
+    const adminItemRes = await router(
+      `http://localhost:3000/api/registry/items/${targetItem.id}`,
+    );
+    const adminItemJson = await adminItemRes!.json();
+    const adminItem = adminItemJson.data ?? adminItemJson;
+    expect(adminItem.purchaserName).toBe('Casey Guest');
+    expect(adminItem.contributors[0].name).toBe('Casey Guest');
+    expect(adminItem.contributors[0]).not.toHaveProperty('email');
+
+    const thankYouRes = await router(
+      'http://localhost:3000/api/admin/thank-you-notes',
+    );
+    const thankYouJson = await thankYouRes!.json();
+    const thankYouData = thankYouJson.data ?? thankYouJson;
+    const caseyNote = (thankYouData.items as Array<Record<string, unknown>>).find(
+      (n) => n.name === 'Casey Guest',
+    )!;
+    expect(caseyNote.email).toBe('casey@example.org');
+
+    // Create a Stripe-verified contribution to test 409 reconciliation guards
+    const stripeContribRes = await router(
+      'http://localhost:3000/api/registry/contribute',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: targetItem.id,
+          name: 'Verified Stripe Donor',
+          amount: 55,
+          paymentIntentId: 'pi_demo_verified_123',
+        }),
+      },
+    );
+    expect(stripeContribRes?.status).toBe(200);
+    const stripeContrib = store
+      .getSnapshot()
+      .contributor.find((c) => c.stripePaymentIntentId === 'pi_demo_verified_123')!;
+
+    // Unclaim, PATCH, and DELETE without confirmVerifiedPayment must return 409
+    const unclaimBlocked = await router(
+      `http://localhost:3000/api/admin/registry/items/${targetItem.id}/unclaim`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(unclaimBlocked?.status).toBe(409);
+
+    const patchBlocked = await router(
+      `http://localhost:3000/api/admin/contributors/${stripeContrib.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: 60 }),
+      },
+    );
+    expect(patchBlocked?.status).toBe(409);
+
+    const deleteBlocked = await router(
+      `http://localhost:3000/api/admin/contributors/${stripeContrib.id}`,
+      { method: 'DELETE' },
+    );
+    expect(deleteBlocked?.status).toBe(409);
+
+    // Unclaim with confirmVerifiedPayment: true cancels active claims and marks Unsent thank-you notes Not Needed
+    const unclaimAllowed = await router(
+      `http://localhost:3000/api/admin/registry/items/${targetItem.id}/unclaim`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmVerifiedPayment: true }),
+      },
+    );
+    expect(unclaimAllowed?.status).toBe(200);
+    const cancelledStripeContrib = store
+      .getSnapshot()
+      .contributor.find((c) => c.id === stripeContrib.id)!;
+    expect(cancelledStripeContrib.status).toBe('CANCELLED');
+    expect(cancelledStripeContrib.thankYouStatus).toBe('Not Needed');
+
+    // DELETE with ?confirmVerifiedPayment=true query param succeeds
+    const deleteAllowed = await router(
+      `http://localhost:3000/api/admin/contributors/${stripeContrib.id}?confirmVerifiedPayment=true`,
+      { method: 'DELETE' },
+    );
+    expect(deleteAllowed?.status).toBe(200);
+  });
+
+  it('persists resumable setupCompleted=false state on POST /api/admin/setup for PR #1231 cross-tab recovery', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+    store.setSetupMode(true);
+
+    const step2SaveRes = await router('http://localhost:3000/api/admin/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        partner1Name: 'Taylor',
+        partner2Name: 'Jordan',
+        weddingDate: '2027-06-19',
+        baseUrl: 'https://taylorandjordan.org',
+        contactEmail: 'hello@taylorandjordan.org',
+        venueName: 'Conservatory Hall',
+        venueCity: 'Chicago',
+        venueState: 'IL',
+        timezone: 'America/Chicago',
+        setupCompleted: false,
+      }),
+    });
+    expect(step2SaveRes?.status).toBe(200);
+
+    const statusRes = await router('http://localhost:3000/api/admin/setup');
+    const statusJson = await statusRes!.json();
+    const statusData = statusJson.data ?? statusJson;
+    expect(statusData.setupCompleted).toBe(false);
+    expect(statusData.requiresSetup).toBe(true);
+    expect(store.getSnapshot().appConfig[0].partner1Name).toBe('Taylor');
+    expect(store.getSnapshot().appConfig[0].setupCompleted).toBe(false);
+
+    // Completing Step 5 flips setupCompleted true and clears requiresSetup
+    const step5Res = await router('http://localhost:3000/api/admin/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ setupCompleted: true }),
+    });
+    expect(step5Res?.status).toBe(200);
+    const afterStep5 = store.getSnapshot();
+    expect(afterStep5.isSetupMode).toBe(false);
+    expect(afterStep5.appConfig[0].setupCompleted).toBe(true);
   });
 });

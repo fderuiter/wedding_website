@@ -1,5 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { StaticDemoPageOverrides } from './runtime';
+import type {
+  StaticDemoPageOverrides,
+  StaticDemoSavedSetupConfig,
+} from './runtime';
 import type { StaticDemoStore } from './types';
 
 export function installStaticDemoFetchRouter(): StaticDemoStore | null {
@@ -12,6 +15,12 @@ export function ensureStaticDemoRuntime(): StaticDemoStore | null {
 
 export function useStaticDemoPageOverrides(): StaticDemoPageOverrides | null {
   return null;
+}
+
+export function getStaticDemoSavedSetupConfig():
+  | StaticDemoSavedSetupConfig
+  | undefined {
+  return undefined;
 }
 
 export function completeStaticDemoSetup(): void {

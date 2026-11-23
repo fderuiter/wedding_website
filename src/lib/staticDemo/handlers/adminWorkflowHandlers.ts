@@ -171,6 +171,7 @@ export async function handleAdminWorkflowRoutes(
             config.setupCompleted = body.setupCompleted;
             if (body.setupCompleted) {
               draft.isSetupMode = false;
+              draft.setupStep2Saved = false;
             }
             config.updatedAt = new Date().toISOString();
           }
@@ -255,6 +256,7 @@ export async function handleAdminWorkflowRoutes(
             : `${partner1Name} & ${partner2Name}`;
         config.seoTitle = `${partner1Name} & ${partner2Name} Wedding`;
         config.setupCompleted = requestedSetupCompleted;
+        draft.setupStep2Saved = !requestedSetupCompleted;
         if (requestedSetupCompleted) {
           draft.isSetupMode = false;
         }
@@ -2230,19 +2232,38 @@ export async function handleAdminWorkflowRoutes(
     if (!itemId) {
       return errorJson(400, 'Registry item ID is required');
     }
+    const body = await readJsonBody(request);
+    const confirmVerifiedPayment = body.confirmVerifiedPayment === true;
 
     const unclaimed = store.mutate((draft) => {
       const item = draft.registryItem.find((r) => r.id === itemId);
-      if (!item) return null;
-      const nowIso = new Date().toISOString();
-      for (const c of draft.contributor) {
-        if (
+      if (!item) {
+        return { kind: 'not_found' as const };
+      }
+      const activeContributors = draft.contributor.filter(
+        (c) =>
           c.registryItemId === itemId &&
-          (c.status === 'RESERVED' || c.status === 'CONFIRMED')
-        ) {
-          c.status = 'CANCELLED';
-          c.updatedAt = nowIso;
+          (c.status === 'RESERVED' || c.status === 'CONFIRMED'),
+      );
+      const hasVerifiedPayment = activeContributors.some((c) =>
+        Boolean(c.stripePaymentIntentId || c.stripeChargeId),
+      );
+      if (hasVerifiedPayment && !confirmVerifiedPayment) {
+        return {
+          kind: 'conflict' as const,
+          message:
+            'Explicit admin confirmation is required before releasing a claim with a verified Stripe payment.',
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      for (const c of activeContributors) {
+        c.status = 'CANCELLED';
+        if ((c.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent') {
+          c.thankYouStatus = 'Not Needed';
         }
+        c.updatedAt = nowIso;
+        pushAuditVersion(draft, 'Contributor', c.id, c);
       }
       item.purchased = false;
       item.purchaserName = null;
@@ -2250,13 +2271,19 @@ export async function handleAdminWorkflowRoutes(
       item.updatedAt = nowIso;
       recalculateRegistryItemTotals(draft, item.id);
       pushAuditVersion(draft, 'RegistryItem', item.id, item);
-      return toRegistryItemDto(draft, item);
+      return {
+        kind: 'ok' as const,
+        item: toRegistryItemDto(draft, item),
+      };
     });
 
-    if (!unclaimed) {
-      return errorJson(404, 'Registry item not found');
+    if (unclaimed.kind === 'not_found') {
+      return errorJson(404, 'Registry item not found.');
     }
-    return wrapMiddlewareJson({ item: unclaimed });
+    if (unclaimed.kind === 'conflict') {
+      return errorJson(409, unclaimed.message);
+    }
+    return wrapMiddlewareJson({ item: unclaimed.item });
   }
 
   if (pathname === '/api/admin/thank-you-notes' && method === 'POST') {
@@ -2574,9 +2601,19 @@ export async function handleAdminWorkflowRoutes(
         changed = contributor.status !== 'REFUNDED';
         contributor.status = 'REFUNDED';
         contributor.refundedAmount = contributor.amount;
+        if (
+          (contributor.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'
+        ) {
+          contributor.thankYouStatus = 'Not Needed';
+        }
       } else {
         changed = contributor.status !== 'CANCELLED';
         contributor.status = 'CANCELLED';
+        if (
+          (contributor.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'
+        ) {
+          contributor.thankYouStatus = 'Not Needed';
+        }
       }
 
       contributor.updatedAt = nowIso;
@@ -2613,9 +2650,22 @@ export async function handleAdminWorkflowRoutes(
 
     if (method === 'PATCH') {
       const body = await readJsonBody(request);
+      const confirmVerifiedPayment = body.confirmVerifiedPayment === true;
       const updated = store.mutate((draft) => {
         const contributor = draft.contributor.find((c) => c.id === contributorId);
-        if (!contributor) return null;
+        if (!contributor) {
+          return { kind: 'not_found' as const };
+        }
+        const hasVerifiedPayment = Boolean(
+          contributor.stripePaymentIntentId || contributor.stripeChargeId,
+        );
+        if (hasVerifiedPayment && !confirmVerifiedPayment) {
+          return {
+            kind: 'conflict' as const,
+            message:
+              'Explicit admin confirmation is required before editing a verified Stripe contribution.',
+          };
+        }
         const nowIso = new Date().toISOString();
 
         if (typeof body.name === 'string' && body.name.trim()) {
@@ -2637,6 +2687,12 @@ export async function handleAdminWorkflowRoutes(
           body.status === 'REFUNDED'
         ) {
           contributor.status = body.status;
+          if (
+            (body.status === 'CANCELLED' || body.status === 'REFUNDED') &&
+            (contributor.thankYouStatus || 'Unsent').trim().toLowerCase() === 'unsent'
+          ) {
+            contributor.thankYouStatus = 'Not Needed';
+          }
         }
         if (body.message !== undefined) {
           contributor.message =
@@ -2650,21 +2706,47 @@ export async function handleAdminWorkflowRoutes(
           : null;
         pushAuditVersion(draft, 'Contributor', contributor.id, contributor);
         return {
-          contributor: toContributorDto(draft, contributor),
-          item: item ? toRegistryItemDto(draft, item) : null,
+          kind: 'ok' as const,
+          payload: {
+            contributor: toContributorDto(draft, contributor),
+            item: item ? toRegistryItemDto(draft, item) : null,
+          },
         };
       });
 
-      if (!updated) {
-        return errorJson(404, 'Contributor not found');
+      if (updated.kind === 'not_found') {
+        return errorJson(404, 'Contribution record not found.');
       }
-      return wrapMiddlewareJson(updated);
+      if (updated.kind === 'conflict') {
+        return errorJson(409, updated.message);
+      }
+      return wrapMiddlewareJson(updated.payload);
     }
 
     if (method === 'DELETE') {
+      const body = await readJsonBody(request);
+      const confirmVerifiedPayment =
+        'confirmVerifiedPayment' in body
+          ? body.confirmVerifiedPayment === true
+          : searchParams.get('confirmVerifiedPayment') === 'true';
+
       const deleted = store.mutate((draft) => {
         const idx = draft.contributor.findIndex((c) => c.id === contributorId);
-        if (idx < 0) return null;
+        if (idx < 0) {
+          return { kind: 'not_found' as const };
+        }
+        const target = draft.contributor[idx];
+        const hasVerifiedPayment = Boolean(
+          target.stripePaymentIntentId || target.stripeChargeId,
+        );
+        if (hasVerifiedPayment && !confirmVerifiedPayment) {
+          return {
+            kind: 'conflict' as const,
+            message:
+              'Explicit admin confirmation is required before deleting a verified Stripe contribution.',
+          };
+        }
+
         const [removed] = draft.contributor.splice(idx, 1);
         const item = removed.registryItemId
           ? recalculateRegistryItemTotals(draft, removed.registryItemId)
@@ -2674,15 +2756,21 @@ export async function handleAdminWorkflowRoutes(
           previous: removed,
         });
         return {
-          deletedId: contributorId,
-          item: item ? toRegistryItemDto(draft, item) : null,
+          kind: 'ok' as const,
+          payload: {
+            deletedId: contributorId,
+            item: item ? toRegistryItemDto(draft, item) : null,
+          },
         };
       });
 
-      if (!deleted) {
-        return errorJson(404, 'Contributor not found');
+      if (deleted.kind === 'not_found') {
+        return errorJson(404, 'Contribution record not found.');
       }
-      return wrapMiddlewareJson(deleted);
+      if (deleted.kind === 'conflict') {
+        return errorJson(409, deleted.message);
+      }
+      return wrapMiddlewareJson(deleted.payload);
     }
   }
 

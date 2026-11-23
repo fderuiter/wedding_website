@@ -94,21 +94,26 @@ export function recalculateRegistryItemTotals(
 export function toContributorDto(
   snapshot: StaticDemoSnapshot,
   contributor: DemoContributorRecord,
-  options: { maskPublic?: boolean; includeRelations?: boolean } = {},
+  options: {
+    maskPublic?: boolean;
+    includeRelations?: boolean;
+    omitEmail?: boolean;
+  } = {},
 ): Record<string, unknown> {
   if (options.maskPublic) {
     return {
-      id: contributor.id,
-      name: contributor.name,
-      amount: contributor.amount,
-      date: contributor.date,
-      status: contributor.status,
+      name: 'Anonymous',
+      amount: 'Anonymous',
+      date: 'Anonymous',
     };
   }
 
   const base: Record<string, unknown> = {
     ...contributor,
   };
+  if (options.omitEmail) {
+    delete base.email;
+  }
 
   if (options.includeRelations) {
     const regItem = contributor.registryItemId
@@ -129,6 +134,7 @@ export function toContributorDto(
         id: inv.id,
         code: inv.code,
         guestName: inv.guestName,
+        householdName: inv.householdName,
         addressLine1: inv.addressLine1,
         addressLine2: inv.addressLine2,
         city: inv.city,
@@ -145,7 +151,7 @@ export function toContributorDto(
 export function toRegistryItemDto(
   snapshot: StaticDemoSnapshot,
   item: DemoRegistryItemRecord,
-  options: { maskPublic?: boolean } = {},
+  options: { maskPublic?: boolean; emptyPublicContributors?: boolean } = {},
 ): Record<string, unknown> {
   const media = findMediaRecord(snapshot, item.imageId);
   const fallbackUrl = createDemoSvgDataUrl(
@@ -176,16 +182,31 @@ export function toRegistryItemDto(
     Math.round((item.price - item.amountContributed) * 100) / 100,
   );
 
+  const contributors = options.maskPublic
+    ? options.emptyPublicContributors
+      ? []
+      : itemContributors
+        .filter((c) => {
+          const status = c.status.toUpperCase();
+          return status !== 'CANCELLED' && status !== 'REFUNDED';
+        })
+        .map((c) => toContributorDto(snapshot, c, { maskPublic: true }))
+    : itemContributors.map((c) =>
+      toContributorDto(snapshot, c, { omitEmail: true }),
+    );
+
   return {
     ...item,
+    purchaserName:
+      options.maskPublic && item.purchaserName
+        ? 'Anonymous'
+        : item.purchaserName,
     imageUrl: resolvedMedia.url,
     image: resolvedMedia,
     media: resolvedMedia,
     remainingAmount,
     isFullyFunded: item.purchased || remainingAmount <= 0,
-    contributors: options.maskPublic
-      ? []
-      : itemContributors.map((c) => toContributorDto(snapshot, c)),
+    contributors,
   };
 }
 
