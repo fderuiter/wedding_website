@@ -135,6 +135,7 @@ jobs:
           echo "image_repository=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
           echo "dockerhub_repository=${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
           echo "registries=${REGISTRIES}" >> "$GITHUB_OUTPUT"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -206,6 +207,10 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           load: true
+          labels: |
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+          annotations: |
+            manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
           tags: |
             wedding-website:latest
             ${{ steps.meta.outputs.primary_uri }}-${{ matrix.arch }}
@@ -302,6 +307,10 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
+          annotations: |
+            manifest:org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}
           outputs: type=image,"name=${{ steps.meta.outputs.registries }}",push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=app-${{ matrix.arch }}
 
@@ -411,6 +420,7 @@ jobs:
 
           echo "image_repository=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
           echo "dockerhub_repository=${DOCKERHUB_REPO}" >> "$GITHUB_OUTPUT"
+          echo "revision=${RESOLVED_SHA}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "primary_uri=${GHCR_PRIMARY}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -445,6 +455,7 @@ jobs:
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image_repository }}
           DOCKERHUB_REPOSITORY: ${{ steps.meta.outputs.dockerhub_repository }}
           PRIMARY_URI: ${{ steps.meta.outputs.primary_uri }}
+          REVISION: ${{ steps.meta.outputs.revision }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           for required_arch in amd64 arm64; do
@@ -467,6 +478,11 @@ jobs:
           IFS=',' read -r -a ALL_TAGS <<< "$TAGS"
           GHCR_TAG_ARGS=()
           DOCKERHUB_TAG_ARGS=()
+          ANNOTATION_ARGS=()
+
+          if [ -n "${REVISION:-}" ]; then
+            ANNOTATION_ARGS+=("--annotation" "index:org.opencontainers.image.revision=${REVISION}")
+          fi
 
           for tag_ref in "${ALL_TAGS[@]}"; do
             [ -z "$tag_ref" ] && continue
@@ -479,12 +495,14 @@ jobs:
 
           docker buildx imagetools create \
             "${GHCR_TAG_ARGS[@]}" \
+            "${ANNOTATION_ARGS[@]}" \
             "${IMAGE_REPOSITORY}@${AMD64_DIGEST}" \
             "${IMAGE_REPOSITORY}@${ARM64_DIGEST}"
 
           if [ -n "$DOCKERHUB_REPOSITORY" ] && [ "${#DOCKERHUB_TAG_ARGS[@]}" -gt 0 ]; then
             docker buildx imagetools create \
               "${DOCKERHUB_TAG_ARGS[@]}" \
+              "${ANNOTATION_ARGS[@]}" \
               "${DOCKERHUB_REPOSITORY}@${AMD64_DIGEST}" \
               "${DOCKERHUB_REPOSITORY}@${ARM64_DIGEST}"
           fi

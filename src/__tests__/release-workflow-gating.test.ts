@@ -74,6 +74,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
   const ciWorkflow = readWorkflow('ci.yml');
   const publishWorkflow = readWorkflow('publish-artifact.yml');
   const deployWorkflow = readWorkflow('deploy.yml');
+  const deployProviderWorkflow = readWorkflow('deploy-provider.yml');
+  const rollbackWorkflow = readWorkflow('rollback.yml');
   const migrateWorkflow = readWorkflow('db-migrate.yml');
 
   it('preserves CI workflow triggers, job names, and zero-secret execution', () => {
@@ -104,6 +106,8 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     for (const [name, content] of [
       ['publish-artifact.yml', publishWorkflow],
       ['deploy.yml', deployWorkflow],
+      ['deploy-provider.yml', deployProviderWorkflow],
+      ['rollback.yml', rollbackWorkflow],
       ['db-migrate.yml', migrateWorkflow],
     ] as const) {
       const topPermissions = extractTopLevelSection(content, 'permissions');
@@ -118,10 +122,15 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
       /publish:\n[\s\S]*?permissions:\n\s+contents: read\n\s+packages: write\n\s+security-events: write\n\s+id-token: write\n\s+attestations: write/
     );
 
-    // actions: read in deploy.yml lives strictly inside ci-gate
+    // actions: read and deployments: write in deploy.yml live strictly inside individual jobs (never top-level)
     const actionsReadMatches = deployWorkflow.match(/actions:\s*read/g) ?? [];
-    expect(actionsReadMatches).toHaveLength(1);
-    expect(deployWorkflow).toMatch(/ci-gate:[\s\S]*?permissions:\n\s+actions: read/);
+    expect(actionsReadMatches).toHaveLength(5);
+    expect(deployWorkflow).toMatch(/ci-gate:[\s\S]*?permissions:\n\s+actions: read\n\s+contents: read\n\s+packages: read\n\s+attestations: read/);
+    const deploymentsWriteMatches = deployWorkflow.match(/deployments:\s*write/g) ?? [];
+    expect(deploymentsWriteMatches).toHaveLength(4);
+    expect(deployProviderWorkflow).toMatch(
+      /deploy:[\s\S]*?permissions:\n\s+actions: read\n\s+contents: read\n\s+packages: read\n\s+attestations: read\n\s+deployments: write\n\s+id-token: write/
+    );
   });
 
   it('triggers deploy.yml via workflow_run on CI completion for main instead of push', () => {
@@ -164,18 +173,23 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(deployWorkflow).toContain('WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}');
     expect(deployWorkflow).toContain('CURRENT_SHA: ${{ github.sha }}');
 
-    // Resolved SHA aligned in schema-compatibility only on workflow_run after ancestry check (preventing default-branch cache poisoning on workflow_dispatch) and passed to workflow calls
+    // Resolved SHA aligned in schema-compatibility on workflow_run or non-HEAD target_sha after ancestry check and passed to workflow calls
     expect(deployWorkflow).not.toContain('ref: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toMatch(
-      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run'[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
+      /schema-compatibility:[\s\S]*?fetch-depth:\s*0[\s\S]*?if:\s*github\.event_name == 'workflow_run' \|\| needs\.ci-gate\.outputs\.target_sha != github\.sha[\s\S]*?TARGET_SHA:\s*\$\{\{\s*needs\.ci-gate\.outputs\.target_sha\s*\}\}[\s\S]*?git merge-base --is-ancestor "\$TARGET_SHA" HEAD[\s\S]*?git checkout --detach "\$TARGET_SHA"/
     );
     expect(deployWorkflow).toContain('commit_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).toContain('tag_name: ${{ needs.ci-gate.outputs.target_sha }}');
+    expect(deployWorkflow).toContain('target_sha: ${{ needs.ci-gate.outputs.target_sha }}');
     expect(deployWorkflow).not.toContain('|| github.sha');
 
     expect(publishWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
     expect(publishWorkflow).toContain('INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}');
+    expect(publishWorkflow).toContain('org.opencontainers.image.revision=${{ steps.meta.outputs.revision }}');
     expect(migrateWorkflow).toContain('ref: ${{ inputs.commit_sha }}');
+    expect(migrateWorkflow).toContain('fetch-depth: 0');
+    expect(deployProviderWorkflow).toContain('ref: ${{ inputs.target_sha }}');
+    expect(rollbackWorkflow).toContain('ref: ${{ inputs.target_sha || inputs.failing_sha }}');
   });
 
   it('passes event fields and inputs via env variables with zero direct ${{ ... }} interpolation in run scripts', () => {
@@ -478,6 +492,27 @@ process.exit(1);
       );
       expect(calls).toContain(
         `buildx imagetools create --tag fderuiter/wedding-website:v0.1.0 --tag fderuiter/wedding-website:latest fderuiter/wedding-website@${amd64Digest} fderuiter/wedding-website@${arm64Digest}`
+      );
+
+      // Verify index:org.opencontainers.image.revision annotation is stamped when REVISION is set
+      fs.writeFileSync(callsFile, '');
+      const revisionSha = 'abcdef0123456789abcdef0123456789abcdef01';
+      const revRes = spawnSync('bash', ['-eo', 'pipefail', '-c', mergeScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          GITHUB_OUTPUT: outputFile,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          DOCKERHUB_REPOSITORY: '',
+          PRIMARY_URI: `ghcr.io/fderuiter/wedding_website:${revisionSha}`,
+          REVISION: revisionSha,
+          TAGS: `ghcr.io/fderuiter/wedding_website:${revisionSha}`,
+        },
+      });
+      expect(revRes.status).toBe(0);
+      expect(fs.readFileSync(callsFile, 'utf8')).toContain(
+        `--annotation index:org.opencontainers.image.revision=${revisionSha}`
       );
 
       // Verify missing linux/arm64 manifest in merged index fails closed

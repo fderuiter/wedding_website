@@ -116,9 +116,11 @@ staging-database-migration:
 staging-deploy-provider:
   name: Staging Provider Deployment
   permissions:
+    actions: read
     contents: read
     packages: read
     attestations: read
+    deployments: write
     id-token: write
   needs: [ci-gate, publish-artifact, staging-database-migration]
   if: |
@@ -143,7 +145,10 @@ staging-deploy-provider:
     environment: 'staging'
     image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
     image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+    target_sha: ${{ needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
+    cloud_run_service: ${{ inputs.cloud_run_service || '' }}
+    cloud_run_region: ${{ inputs.cloud_run_region || '' }}
     dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
 
@@ -179,9 +184,11 @@ production-database-migration:
 production-deploy-provider:
   name: Production Provider Deployment
   permissions:
+    actions: read
     contents: read
     packages: read
     attestations: read
+    deployments: write
     id-token: write
   needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
   if: |
@@ -207,7 +214,10 @@ production-deploy-provider:
     environment: 'production'
     image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
     image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+    target_sha: ${{ needs.ci-gate.outputs.target_sha }}
     provider: ${{ inputs.provider || 'google-cloud-run' }}
+    cloud_run_service: ${{ inputs.cloud_run_service || '' }}
+    cloud_run_region: ${{ inputs.cloud_run_region || '' }}
     dry_run: ${{ inputs.dry_run || false }}
   secrets: inherit
 ```
@@ -216,7 +226,7 @@ production-deploy-provider:
 To safeguard live user traffic and database integrity, production database migrations and container deployments are gated by GitHub Environment protection rules, isolated Cloud Run targets, and cryptographic OIDC provenance verification:
 1. **Automated Staging Delivery & Preflight Gate**: Merging to `main` triggers schema backwards compatibility validation (`npm run lint:migrations`) and generates a file-based **Pre-Flight Schema Migration Status & SQL DDL Summary** from `prisma/migrations/` in `$GITHUB_STEP_SUMMARY` (`schema-compatibility` runs without `DATABASE_URL`). `publish-artifact` builds and signs the multi-arch container image on `ghcr.io`, `staging-database-migration` applies migrations against staging `DATABASE_URL`, and `staging-deploy-provider` verifies OIDC provenance via `gh attestation verify` against `.github/workflows/publish-artifact.yml` before deploying the immutable `ghcr.io/<owner>/<repo>@sha256:<hex>` digest to the isolated staging Cloud Run service (`wedding-website-staging` by default, or `vars.CLOUD_RUN_SERVICE` in `vars.CLOUD_RUN_REGION`).
 2. **Mandatory Human Sign-Off**: The `production-database-migration` job delegates to `.github/workflows/db-migrate.yml` configured with `environment: production`. GitHub Actions pauses the job before exposing production secrets. Maintainers review the file-based preflight DDL summary and live staging health check outcome before approving the deployment; after approval, `db-migrate.yml` audits live production `DATABASE_URL` (`npx prisma migrate status`), emits the live pending DDL summary, and runs `npx prisma migrate deploy`, after which `production-deploy-provider` re-verifies OIDC provenance for the exact `image_digest` validated in staging before updating the production Cloud Run service (`wedding-website` by default, or `vars.CLOUD_RUN_SERVICE` in `vars.CLOUD_RUN_REGION`).
-3. **Automated Rollback Guarantee**: Before updating the Cloud Run service, `.github/workflows/deploy-provider.yml` inspects the currently serving Cloud Run revision image in the resolved service and region (capturing `previous_image_digest` and `previous_image_tag`, falling back to the last successful release commit SHA). If the staging or production post-deployment health check (`/api/health`) fails after deployment, `.github/workflows/deploy.yml` automatically triggers `.github/workflows/rollback.yml` with the captured `previous_image_digest`, `previous_image_tag`, `provider`, and optional unguarded `rollback_environment` (e.g., `production-rollback`, configured without Required Reviewers, setting `SERVICE_URL`, `CLOUD_RUN_SERVICE`, `CLOUD_RUN_REGION`, and Workload Identity Federation variables `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` via `vars.*`, or holding fallback `GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, and `DEPLOY_WEBHOOK_SECRET`). `rollback.yml` rejects mutable `latest` or the failing `github.sha`, verifies `npm run lint:migrations`, redeploys the previous image via `deploy-provider.yml` (including OIDC provenance verification and fail-closed credential checks) **without requiring a second human approval gate**, and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `.data.status == "ok"`, `.data.database == "connected"`) before reporting `SUCCESS`.
+3. **Automated Rollback Guarantee**: Before updating the Cloud Run service, `.github/workflows/deploy-provider.yml` inspects the currently serving Cloud Run revision image in the resolved service and region (capturing `previous_image_digest` and extracting `previous_image_tag` from `@sha256:` revision OIDC provenance attestations, Cloud Run `commit-sha` / OCI `org.opencontainers.image.revision` labels, GitHub Deployments state, or environment-filtered non-`dry_run` workflow runs). If the staging or production post-deployment health check (`/api/health`, bounded by `curl --connect-timeout 5 --max-time 10` and `timeout-minutes: 5`) fails or is cancelled (`failure() || cancelled()`) after deployment, `.github/workflows/deploy.yml` automatically triggers `.github/workflows/rollback.yml` with the captured `previous_image_digest`, `previous_image_tag`, `failing_sha` (`target_sha`), `provider`, `cloud_run_service`, `cloud_run_region`, and optional unguarded `rollback_environment` (e.g., `production-rollback`, configured without Required Reviewers, setting `SERVICE_URL`, `CLOUD_RUN_SERVICE`, `CLOUD_RUN_REGION`, and Workload Identity Federation variables `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` via `vars.*`, or holding fallback `GCP_SA_KEY`, `GCP_PROJECT_ID`, `DEPLOY_WEBHOOK_URL`, and `DEPLOY_WEBHOOK_SECRET`). `rollback.yml` accepts digest-pinned rollbacks (`previous_digest` with empty `previous_tag`), rejects mutable `latest` or `failing_sha`, verifies `npm run lint:migrations`, redeploys the previous image via `deploy-provider.yml` (including OIDC provenance verification and fail-closed credential checks), and polls `${SERVICE_URL}/api/health` (`HTTP 200`, `.data.status == "ok"`, `.data.database == "connected"`) **without gating `verify` on `production` a second time** before reporting `SUCCESS`.
 
 #### Workflow Parameters, Manual Dispatches & Preflight Checks
 The release pipeline supports automated merges as well as manual triggers via GitHub Actions `workflow_dispatch`:
@@ -226,13 +236,15 @@ The release pipeline supports automated merges as well as manual triggers via Gi
         *   `all` (default): Executes staging migration and deployment, validates staging health, halts for the mandatory production reviewer approval gate, and promotes the identical `sha256` digest to production.
         *   `staging`: Dispatches only `staging-database-migration` and `staging-deploy-provider`, validating changes in the staging environment without promoting to production.
         *   `production`: Directly targets `production-database-migration` and `production-deploy-provider`, bypassing staging and immediately routing to the mandatory production approval gate.
-    *   `image_digest`: Optional immutable OCI image digest (`sha256:<64-hex>`) allowing production-only or manual runs to pin an existing attested artifact without rebuilding HEAD.
+    *   `image_digest`: Optional immutable OCI image digest (`sha256:<64-hex>`) allowing production-only or manual runs to pin an existing attested artifact without rebuilding `HEAD` (`ci-gate` resolves `target_sha` from the image's OIDC provenance attestation or `org.opencontainers.image.revision` annotation so newer `HEAD` migrations are skipped).
+    *   `commit_sha`: Optional 40-character commit SHA override for manual dispatches (verified against `ci.yml` and attested image provenance).
     *   `provider`: Hosting provider adapter (defaults to `google-cloud-run`).
-    *   `previous_tag`: Optional immutable container image tag override for automated rollback if health checks fail (defaults to `previous_image_digest` / `previous_image_tag` captured before rollout by `deploy-provider.yml`; mutable `latest` and the failing `github.sha` are rejected outside explicit dry-run mode).
+    *   `cloud_run_service` / `cloud_run_region`: Optional Cloud Run service and region overrides forwarded across `deploy-provider.yml` and `rollback.yml`.
+    *   `previous_tag`: Optional immutable container image tag override for automated rollback if health checks fail (defaults to `previous_image_digest` / `previous_image_tag` captured before rollout by `deploy-provider.yml`; mutable `latest` and the failing `target_sha` are rejected outside explicit dry-run mode).
     *   `rollback_environment`: Optional unguarded GitHub Environment name (e.g., `production-rollback`, or configured via repository variable `PRODUCTION_ROLLBACK_ENVIRONMENT`) used by `rollback.yml` and `deploy-provider.yml` to resolve provider secrets and `vars.SERVICE_URL` (`secrets.SERVICE_URL` legacy fallback) without pausing on `production` reviewer gates.
 *   **Standalone Provider Dispatches (`deploy-provider.yml`)**:
-    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), plus optional `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode). Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner` and `--signer-workflow`) prior to Cloud Run rollout.
-    *   Exports `service_url`, `is_dry_run`, `previous_image_tag`, `previous_image_digest`, `image_digest`, `image_uri`, and `attestation_status` outputs and records them in `$GITHUB_STEP_SUMMARY`.
+    *   Accepts `image_digest` (`sha256:<64-hex>`) or an immutable release/commit `image_tag` (unpinned `latest` defaults are rejected), plus optional `target_sha`, `cloud_run_service`, `cloud_run_region`, and explicit `dry_run` (`false` by default; missing credentials fail closed rather than entering dry-run mode). Tag-only dispatches are resolved to an immutable `sha256` digest via `docker buildx imagetools inspect`, validated against `^sha256:[a-f0-9]{64}$`, and verified with `gh attestation verify` (`--owner` and `--signer-workflow`) prior to Cloud Run rollout.
+    *   Exports `service_url`, `is_dry_run`, `previous_image_tag`, `previous_image_digest`, `image_digest`, `image_uri`, `attestation_status`, `cloud_run_service`, and `cloud_run_region` outputs and records them in `$GITHUB_STEP_SUMMARY` and GitHub Deployments.
 *   **Standalone Database Migration Dispatches (`db-migrate.yml`)**:
     *   Operators can also invoke the reusable migration workflow directly if an out-of-band schema migration is required. Manual `workflow_dispatch` runs default `confirm` to `false` and abort immediately before touching PostgreSQL unless the operator explicitly sets `confirm: true` alongside `environment` (`production`, `staging`, or `development`).
 *   **Workflow Secrets**:

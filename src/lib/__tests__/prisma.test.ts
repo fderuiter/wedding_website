@@ -121,7 +121,7 @@ describe('prisma singleton behavior', () => {
     consoleSpy.mockRestore();
   });
 
-  test('configures Pool defaults (max=5, connectionTimeoutMillis=10000) and passes { schema } to PrismaPg while honoring URI overrides', async () => {
+  test('configures Pool defaults (max=5, connectionTimeoutMillis=10000, query_timeout=10000) and passes { schema } to PrismaPg while honoring URI overrides', async () => {
     const originalDbUrl = process.env.DATABASE_URL;
     const poolCalls: unknown[] = [];
     const adapterCalls: unknown[] = [];
@@ -156,6 +156,7 @@ describe('prisma singleton behavior', () => {
         database: 'wedding_test',
         max: 5,
         connectionTimeoutMillis: 10000,
+        query_timeout: 10000,
         ssl: false,
       });
       expect(adapterCalls[0]).toEqual({ schema: 'public' });

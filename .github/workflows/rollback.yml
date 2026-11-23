@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       previous_tag:
-        description: 'Immutable container image tag or commit SHA to restore'
-        required: true
+        description: 'Immutable container image tag or commit SHA to restore (optional when previous_digest is provided)'
+        required: false
+        default: ''
         type: string
       previous_digest:
         description: 'Optional immutable container image digest (sha256:<64-hex>) to restore'
@@ -40,6 +41,21 @@ on:
         required: false
         default: false
         type: boolean
+      failing_sha:
+        description: 'Optional failing release commit SHA to reject during rollback validation (defaults to github.sha)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       previous_tag:
@@ -77,6 +93,26 @@ on:
         required: false
         default: false
         type: boolean
+      failing_sha:
+        description: 'Optional failing release commit SHA to reject during rollback validation (defaults to github.sha)'
+        required: false
+        default: ''
+        type: string
+      target_sha:
+        description: 'Optional verified target commit SHA for preflight workspace checkout alignment'
+        required: false
+        default: ''
+        type: string
+      cloud_run_service:
+        description: 'Optional Cloud Run service name override (defaults to vars.CLOUD_RUN_SERVICE or environment-isolated service name)'
+        required: false
+        default: ''
+        type: string
+      cloud_run_region:
+        description: 'Optional Cloud Run region override (defaults to vars.CLOUD_RUN_REGION or us-central1)'
+        required: false
+        default: ''
+        type: string
     secrets:
       GCP_SA_KEY:
         required: false
@@ -109,6 +145,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.target_sha || inputs.failing_sha }}
+          fetch-depth: 0
 
       - name: Log Rollback Request Details
         id: validate
@@ -120,6 +159,7 @@ jobs:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          FAILING_SHA: ${{ inputs.failing_sha || inputs.target_sha }}
           CURRENT_SHA: ${{ github.sha }}
         run: |
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
@@ -137,31 +177,37 @@ jobs:
             exit 1
           fi
 
+          if [ -n "${FAILING_SHA:-}" ] && [[ ! "$FAILING_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid failing_sha '${FAILING_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+          EFFECTIVE_FAILING_SHA="${FAILING_SHA:-${CURRENT_SHA:-}}"
+
           EFFECTIVE_DIGEST="${PREVIOUS_DIGEST:-}"
           if [ -n "$EFFECTIVE_DIGEST" ] && [[ ! "$EFFECTIVE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
             echo "::error::Invalid rollback image digest '${EFFECTIVE_DIGEST}'. Must match ^sha256:[a-f0-9]{64}$."
             exit 1
           fi
 
-          EFFECTIVE_TAG="$PREVIOUS_TAG"
+          EFFECTIVE_TAG="${PREVIOUS_TAG:-}"
           if [ "$DRY_RUN" = "true" ]; then
             if [ -z "$EFFECTIVE_TAG" ] && [ -z "$EFFECTIVE_DIGEST" ]; then
               EFFECTIVE_TAG="latest"
             fi
-            if [ "$EFFECTIVE_TAG" = "latest" ] || [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
+            if [ "$EFFECTIVE_TAG" = "latest" ] || { [ -n "$EFFECTIVE_FAILING_SHA" ] && [ "$EFFECTIVE_TAG" = "$EFFECTIVE_FAILING_SHA" ]; }; then
               echo "::warning::Explicit dry-run mode enabled: permitting rollback tag '${EFFECTIVE_TAG}' for dry-run validation only."
             fi
           else
             if [ -z "$EFFECTIVE_TAG" ] && [ -z "$EFFECTIVE_DIGEST" ]; then
-              echo "::error::Missing rollback image tag. Specify an immutable previous image tag or commit SHA."
+              echo "::error::Missing rollback image tag or digest. Specify an immutable previous image tag, commit SHA, or sha256 digest."
               exit 1
             fi
             if [ "$EFFECTIVE_TAG" = "latest" ]; then
               echo "::error::Mutable image tag 'latest' is rejected outside explicit dry-run mode. Specify an immutable previous release tag or commit SHA."
               exit 1
             fi
-            if [ -n "$CURRENT_SHA" ] && [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
-              echo "::error::Rollback image tag '${EFFECTIVE_TAG}' matches the failing commit SHA '${CURRENT_SHA}'. Specify the previous healthy release tag."
+            if [ -n "$EFFECTIVE_TAG" ] && [ -n "$EFFECTIVE_FAILING_SHA" ] && [ "$EFFECTIVE_TAG" = "$EFFECTIVE_FAILING_SHA" ]; then
+              echo "::error::Rollback image tag '${EFFECTIVE_TAG}' matches the failing commit SHA '${EFFECTIVE_FAILING_SHA}'. Specify the previous healthy release tag."
               exit 1
             fi
           fi
@@ -239,9 +285,11 @@ jobs:
   redeploy:
     name: Redeploy Previous Validated Container Image
     permissions:
+      actions: read
       contents: read
       packages: read
       attestations: read
+      deployments: write
       id-token: write
     needs: [preflight]
     uses: ./.github/workflows/deploy-provider.yml
@@ -251,6 +299,8 @@ jobs:
       image_digest: ${{ needs.preflight.outputs.effective_digest || '' }}
       image_tag: ${{ needs.preflight.outputs.effective_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
+      cloud_run_service: ${{ inputs.cloud_run_service || '' }}
+      cloud_run_region: ${{ inputs.cloud_run_region || '' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
 
@@ -258,7 +308,7 @@ jobs:
     name: Verify Restored Container Health
     needs: [preflight, redeploy]
     runs-on: ubuntu-latest
-    environment: ${{ inputs.rollback_environment || inputs.target_environment || 'production' }}
+    timeout-minutes: 5
     outputs:
       health_status: ${{ steps.health_probe.outputs.health_status }}
       service_url: ${{ steps.health_probe.outputs.service_url }}
@@ -272,7 +322,7 @@ jobs:
           PROVIDER_SERVICE_URL: ${{ needs.redeploy.outputs.service_url }}
           IS_DRY_RUN: ${{ (inputs.dry_run && needs.redeploy.outputs.is_dry_run == 'true') && 'true' || 'false' }}
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
-          RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag }}
+          RESTORED_TAG: ${{ needs.preflight.outputs.effective_tag || needs.preflight.outputs.effective_digest }}
         run: |
           CONFIGURED_SERVICE_URL=""
           USED_SECRET_FALLBACK="false"
@@ -403,7 +453,7 @@ jobs:
         env:
           TARGET_ENV: ${{ inputs.target_environment || 'production' }}
           ROLLBACK_ENV: ${{ inputs.rollback_environment }}
-          PREVIOUS_TAG: ${{ needs.preflight.outputs.effective_tag || inputs.previous_tag }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.effective_tag || needs.preflight.outputs.effective_digest || inputs.previous_tag || inputs.previous_digest }}
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
           PREFLIGHT_RESULT: ${{ needs.preflight.result }}
