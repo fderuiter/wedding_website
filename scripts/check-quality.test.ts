@@ -140,6 +140,17 @@ describe('check-quality', () => {
     expect(ciWorkflow).toContain('node_modules/.cache/storybook');
     expect(ciWorkflow).toContain('run: npm run build-storybook');
     expect(storybookMain).toContain('fsCache: true');
+    expect(storybookMain).toContain("'@storybook/addon-docs'");
+    expect(storybookMain).toContain('onlyRemoveTypeImports: false');
+    expect(storybookMain).toContain('../public/fonts');
+    expect(storybookMain).toContain('../public/mockServiceWorker.js');
+    expect(storybookMain).not.toContain("staticDirs: ['../public']");
+
+    const workerScript = fs.readFileSync(path.join(repoRoot, 'public', 'mockServiceWorker.js'), 'utf8');
+    const installedMswPkg = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'node_modules', 'msw', 'package.json'), 'utf8'),
+    ) as { version: string };
+    expect(workerScript).toContain(`const PACKAGE_VERSION = '${installedMswPkg.version}'`);
 
     expect(ciWorkflow).toContain('  static-export-build:\n    needs: verify');
     expect(ciWorkflow).toContain('path: .next-export/cache');

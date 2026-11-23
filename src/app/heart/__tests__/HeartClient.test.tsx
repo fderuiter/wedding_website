@@ -381,6 +381,42 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     expect(resolveHeartFontUrl('wedding_website/demo/')).toBe(
       '/wedding_website/demo/fonts/noto-sans-latin-400-normal.woff',
     );
+    expect(resolveHeartFontUrl(undefined, '/wedding_website/storybook/iframe.html')).toBe(
+      '/wedding_website/storybook/fonts/noto-sans-latin-400-normal.woff',
+    );
+    expect(resolveHeartFontUrl(undefined, '/storybook/iframe.html')).toBe(
+      '/storybook/fonts/noto-sans-latin-400-normal.woff',
+    );
+    expect(resolveHeartFontUrl(undefined, '/iframe.html')).toBe(
+      '/fonts/noto-sans-latin-400-normal.woff',
+    );
+    expect(resolveHeartFontUrl(undefined, '/wedding_website/storybook/')).toBe(
+      '/wedding_website/storybook/fonts/noto-sans-latin-400-normal.woff',
+    );
+    expect(resolveHeartFontUrl(undefined, '/wedding_website/demo/heart/')).toBe(
+      '/wedding_website/demo/fonts/noto-sans-latin-400-normal.woff',
+    );
+    expect(resolveHeartFontUrl(undefined, '/heart')).toBe(
+      '/fonts/noto-sans-latin-400-normal.woff',
+    );
+  });
+
+  it('resolves local WOFF font URL dynamically from window.location.pathname under Storybook subpaths', () => {
+    const initialPath = window.location.pathname;
+    window.history.pushState({}, '', '/wedding_website/storybook/iframe.html?id=visual-graphical-heart3d--full-heart');
+    try {
+      render(<HeartClient partner1Name="Alex" partner2Name="Jordan" />);
+      const partnerTexts = screen.getAllByTestId('webgl-text');
+      expect(partnerTexts.length).toBeGreaterThanOrEqual(2);
+      for (const node of partnerTexts) {
+        expect(node).toHaveAttribute(
+          'data-font',
+          '/wedding_website/storybook/fonts/noto-sans-latin-400-normal.woff',
+        );
+      }
+    } finally {
+      window.history.pushState({}, '', initialPath);
+    }
   });
 
   it('uses procedural Lightformer Environment without remote HDRI preset', () => {

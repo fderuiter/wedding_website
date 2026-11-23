@@ -1,4 +1,4 @@
-import { createEvent, EventAttributes } from 'ics';
+import { createEvent, type EventAttributes } from 'ics';
 import { joinEventLocations } from './maps';
 
 /**

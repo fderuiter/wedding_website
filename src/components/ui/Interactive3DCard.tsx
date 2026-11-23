@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback, ElementType, ComponentPropsWithRef } from 'react';
+import React, { useRef, useEffect, useCallback, type ElementType, type ComponentPropsWithRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useUnified3DInput } from '../../hooks/useUnified3DInput';
 import { useTheme } from '../ThemeProvider';

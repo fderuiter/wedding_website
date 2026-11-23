@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { useReducedMotion } from './useReducedMotion';
-import { use3DInteraction, Use3DInteractionOptions } from './use3DInteraction';
+import { use3DInteraction, type Use3DInteractionOptions } from './use3DInteraction';
 
 interface UseUnified3DInputOptions {
   // DOM element for bounding box (if DOM-based)
