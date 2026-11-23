@@ -29,7 +29,6 @@ function recordRouteViolations(route: string, violations: unknown[]) {
 test.describe('UI Verification', { tag: '@a11y' }, () => {
   test(
     'should show the main content on visit and be accessible',
-    { tag: '@smoke' },
     async ({ context, page }) => {
       await seedGuestAuthCookies(context);
 

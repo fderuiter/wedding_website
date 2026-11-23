@@ -11,6 +11,8 @@ export interface ParsedMigrateStatus {
   hasDrift?: boolean;
   hasError?: boolean;
   errorMessage?: string;
+  hasFatalError?: boolean;
+  errorSummary?: string;
 }
 
 export interface MigrationDdlSummary {
@@ -22,6 +24,7 @@ export interface MigrationDdlSummary {
 
 export interface OfflineDiffMetadata {
   baseRef: string;
+  headRef?: string;
   baseRefMissing: boolean;
 }
 
@@ -29,6 +32,7 @@ export interface PreflightCliArgs {
   requireDb: boolean;
   offline: boolean;
   baseRef: string;
+  headRef?: string;
   cliError?: string;
 }
 
@@ -42,6 +46,7 @@ export interface PreflightCheckOptions {
   requireDb?: boolean;
   offline?: boolean;
   baseRef?: string;
+  headRef?: string;
   cwd?: string;
   databaseUrl?: string;
 }
@@ -61,12 +66,14 @@ export function redactDatabaseUrls(input: string): string {
 }
 
 /**
- * Parses CLI flags (`--require-db`, `--offline`, `--base-ref <ref>` / `--base-ref=<ref>`).
+ * Parses CLI flags (`--require-db`, `--offline`, `--base-ref <ref>` / `--base-ref=<ref>`,
+ * plus optional `--base` / `--head` / `--head-ref` aliases).
  */
 export function parsePreflightCliArgs(argv: string[]): PreflightCliArgs {
   let requireDb = false;
   let offline = false;
   let baseRef = DEFAULT_BASE_REF;
+  let headRef: string | undefined;
   let cliError: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
@@ -75,7 +82,7 @@ export function parsePreflightCliArgs(argv: string[]): PreflightCliArgs {
       requireDb = true;
     } else if (arg === '--offline') {
       offline = true;
-    } else if (arg === '--base-ref') {
+    } else if (arg === '--base-ref' || arg === '--base') {
       const next = argv[i + 1];
       if (!next || next.startsWith('-')) {
         cliError = 'Invalid or missing value for --base-ref.';
@@ -83,13 +90,30 @@ export function parsePreflightCliArgs(argv: string[]): PreflightCliArgs {
       }
       baseRef = next;
       i++;
-    } else if (arg.startsWith('--base-ref=')) {
-      const val = arg.slice('--base-ref='.length).trim();
+    } else if (arg.startsWith('--base-ref=') || arg.startsWith('--base=')) {
+      const eqIdx = arg.indexOf('=');
+      const val = arg.slice(eqIdx + 1).trim();
       if (!val || val.startsWith('-')) {
         cliError = 'Invalid or missing value for --base-ref.';
         break;
       }
       baseRef = val;
+    } else if (arg === '--head-ref' || arg === '--head') {
+      const next = argv[i + 1];
+      if (!next || next.startsWith('-')) {
+        cliError = 'Invalid or missing value for --head-ref.';
+        break;
+      }
+      headRef = next;
+      i++;
+    } else if (arg.startsWith('--head-ref=') || arg.startsWith('--head=')) {
+      const eqIdx = arg.indexOf('=');
+      const val = arg.slice(eqIdx + 1).trim();
+      if (!val || val.startsWith('-')) {
+        cliError = 'Invalid or missing value for --head-ref.';
+        break;
+      }
+      headRef = val;
     } else if (arg.startsWith('-')) {
       cliError = `Unknown CLI option: ${arg}`;
       break;
@@ -100,12 +124,16 @@ export function parsePreflightCliArgs(argv: string[]): PreflightCliArgs {
     cliError = 'Cannot specify both --require-db and --offline.';
   }
 
-  return {
+  const parsed: PreflightCliArgs = {
     requireDb,
     offline,
     baseRef,
     cliError,
   };
+  if (headRef !== undefined) {
+    parsed.headRef = headRef;
+  }
+  return parsed;
 }
 
 function extractMigrationNamesFromBlock(block: string): string[] {
@@ -121,7 +149,8 @@ function extractMigrationNamesFromBlock(block: string): string[] {
 
 /**
  * Parses the raw output and optional exit code / spawn error of `prisma migrate status`
- * to determine pending, failed, diverged, or errored migration states.
+ * to determine pending, failed, diverged, or errored migration states across Prisma 7.10.1
+ * singular and plural headers.
  */
 export function parsePrismaMigrateStatus(
   output: string,
@@ -136,12 +165,14 @@ export function parsePrismaMigrateStatus(
   // Match singular or plural pending migrations block in Prisma 7 (`databaseIsBehind`):
   // "Following migration(s) have not yet been applied:"
   const pendingSectionRegex =
-    /Following migrations? (?:have|has) not yet been applied:\s*([\s\S]*?)(?:\n\s*\n|To apply migrations|Database schema is up to date|$)/i;
-  const pendingMatch = cleanOutput.match(pendingSectionRegex);
-  if (pendingMatch && pendingMatch[1]) {
-    for (const name of extractMigrationNamesFromBlock(pendingMatch[1])) {
-      if (!pendingMigrations.includes(name)) {
-        pendingMigrations.push(name);
+    /Following\s+migrations?\s+(?:have|has)\s+not\s+yet\s+been\s+applied:\s*([\s\S]*?)(?:\n\s*\n|To apply migrations|Following\s+migrations?\s+(?:have|has)\s+failed|Database schema is up to date|$)/gi;
+  let pendingMatch: RegExpExecArray | null;
+  while ((pendingMatch = pendingSectionRegex.exec(cleanOutput)) !== null) {
+    if (pendingMatch[1]) {
+      for (const name of extractMigrationNamesFromBlock(pendingMatch[1])) {
+        if (!pendingMigrations.includes(name)) {
+          pendingMigrations.push(name);
+        }
       }
     }
   }
@@ -159,12 +190,14 @@ export function parsePrismaMigrateStatus(
   // Match Prisma 7 failed migrations block:
   // "Following migration(s) have failed:"
   const failedSectionRegex =
-    /Following migrations? (?:have|has) failed:\s*([\s\S]*?)(?:\n\s*\n|During development|The failed migration|$)/i;
-  const failedSectionMatch = cleanOutput.match(failedSectionRegex);
-  if (failedSectionMatch && failedSectionMatch[1]) {
-    for (const name of extractMigrationNamesFromBlock(failedSectionMatch[1])) {
-      if (!failedMigrations.includes(name)) {
-        failedMigrations.push(name);
+    /Following\s+migrations?\s+(?:have|has)\s+failed:\s*([\s\S]*?)(?:\n\s*\n|During development|The failed migration|Read more about|$)/gi;
+  let failedSectionMatch: RegExpExecArray | null;
+  while ((failedSectionMatch = failedSectionRegex.exec(cleanOutput)) !== null) {
+    if (failedSectionMatch[1]) {
+      for (const name of extractMigrationNamesFromBlock(failedSectionMatch[1])) {
+        if (!failedMigrations.includes(name)) {
+          failedMigrations.push(name);
+        }
       }
     }
   }
@@ -173,13 +206,19 @@ export function parsePrismaMigrateStatus(
   const hasDrift =
     /Your local migration history and the migrations table from your database are different/i.test(cleanOutput) ||
     /from the database are not found locally in prisma\/migrations/i.test(cleanOutput) ||
+    /\bhistories?\s+diverge\b/i.test(cleanOutput) ||
     /\bdrift detected\b/i.test(cleanOutput) ||
     /\bhistoriesDiverge\b/i.test(cleanOutput) ||
     /The current database is not managed by Prisma Migrate/i.test(cleanOutput);
 
   const prismaErrorCodeMatch = cleanOutput.match(/\b(P[1-9]\d{3})\b/);
+  const genericEngineErrorLine = cleanOutput
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^(?:Error:|PrismaClient\w*Error\b|Schema engine error\b)/i.test(line));
   const hasExplicitCliError =
     Boolean(prismaErrorCodeMatch) ||
+    Boolean(genericEngineErrorLine) ||
     /\bCan't reach database server\b/i.test(cleanOutput) ||
     /\bConnection refused\b/i.test(cleanOutput) ||
     /\bAuthentication failed\b/i.test(cleanOutput) ||
@@ -198,7 +237,9 @@ export function parsePrismaMigrateStatus(
     hasError = true;
     errorMessage = prismaErrorCodeMatch
       ? `Prisma CLI reported error ${prismaErrorCodeMatch[1]} during migration status check`
-      : 'Database connectivity or Prisma CLI error during migration status check';
+      : genericEngineErrorLine
+        ? redactDatabaseUrls(genericEngineErrorLine)
+        : 'Database connectivity or Prisma CLI error during migration status check';
   } else if (exitCode !== undefined && failedMigrations.length === 0 && !hasDrift) {
     // When exitCode is observed:
     // - exit 0 is valid only when schema is cleanly up to date with 0 pending migrations
@@ -229,6 +270,12 @@ export function parsePrismaMigrateStatus(
     failedMigrations.length === 0 &&
     !hasDrift &&
     !hasError;
+  const hasFatalError = Boolean(hasDrift || hasError);
+  const errorSummary =
+    errorMessage ??
+    (hasDrift
+      ? 'Database migration history has diverged from local prisma/migrations or database is unmanaged'
+      : undefined);
 
   return {
     isUpToDate,
@@ -238,6 +285,8 @@ export function parsePrismaMigrateStatus(
     hasDrift,
     hasError,
     errorMessage,
+    hasFatalError,
+    errorSummary,
   };
 }
 
@@ -245,7 +294,6 @@ export function parsePrismaMigrateStatus(
  * Extracts key DDL statements from migration SQL content.
  */
 export function extractDdlStatements(sqlContent: string): string[] {
-  // Strip block comments /* ... */
   const cleanSql = sqlContent.replace(/\/\*[\s\S]*?\*\//g, '');
   const lines = cleanSql.split(/\r?\n/);
 
@@ -320,16 +368,18 @@ function findNearestExistingDir(targetPath: string): string {
 }
 
 /**
- * Discovers migration directories added or modified between `baseRef` and `HEAD` via `git diff`.
- * Falls back cleanly to zero diff items when `baseRef` (e.g. `HEAD^1`) or git metadata is missing.
+ * Discovers migration directories added or modified between `baseRef` and `headRef` (default `HEAD`)
+ * via `git diff`. Falls back cleanly to zero diff items when `baseRef` (e.g. `HEAD^1`) or git metadata is missing.
  */
 export function getChangedMigrationsFromGitDiff(params: {
   migrationsDir: string;
   baseRef?: string;
+  headRef?: string;
   cwd?: string;
 }): { changedMigrations: string[]; baseRef: string; baseRefMissing: boolean } {
   const baseRef = params.baseRef || DEFAULT_BASE_REF;
-  if (!baseRef || baseRef.startsWith('-')) {
+  const headRef = params.headRef?.trim() || 'HEAD';
+  if (!baseRef || baseRef.startsWith('-') || headRef.startsWith('-')) {
     return { changedMigrations: [], baseRef, baseRefMissing: true };
   }
 
@@ -353,6 +403,14 @@ export function getChangedMigrationsFromGitDiff(params: {
     return { changedMigrations: [], baseRef, baseRefMissing: true };
   }
 
+  const verifyHeadRes = child_process.spawnSync('git', ['rev-parse', '--verify', '--quiet', `${headRef}^{commit}`], {
+    cwd: gitRoot,
+    encoding: 'utf8',
+  });
+  if (verifyHeadRes.error || verifyHeadRes.status !== 0) {
+    return { changedMigrations: [], baseRef, baseRefMissing: true };
+  }
+
   const resolvedMigrationsDir = path.resolve(params.migrationsDir);
   const relMigrationsDir = path.relative(gitRoot, resolvedMigrationsDir).replace(/\\/g, '/');
   if (!relMigrationsDir || relMigrationsDir.startsWith('..')) {
@@ -361,7 +419,7 @@ export function getChangedMigrationsFromGitDiff(params: {
 
   const diffRes = child_process.spawnSync(
     'git',
-    ['diff', '--name-only', '--diff-filter=ACMR', baseRef, 'HEAD', '--', relMigrationsDir],
+    ['diff', '--name-only', '--diff-filter=ACMR', baseRef, headRef, '--', relMigrationsDir],
     {
       cwd: gitRoot,
       encoding: 'utf8',
@@ -443,7 +501,8 @@ export function formatPreflightSummary(params: {
   md += `- **Target Environment:** \`${environment}\`\n`;
 
   if (offlineDiff) {
-    md += `- **Execution Mode:** \`OFFLINE (git diff ${offlineDiff.baseRef}..HEAD)\`\n`;
+    const targetHead = offlineDiff.headRef || 'HEAD';
+    md += `- **Execution Mode:** \`OFFLINE (git diff ${offlineDiff.baseRef}..${targetHead})\`\n`;
     md += '- **Pre-Flight Gate:** `PASSED (STATIC DIFF)` 🟢\n';
     md += '- **Database Status:** `NOT QUERIED`\n';
     md += `- **Changed Migration Files:** \`${ddlSummaries.length}\`\n\n`;
@@ -454,11 +513,11 @@ export function formatPreflightSummary(params: {
     }
 
     if (ddlSummaries.length === 0) {
-      md += `ℹ️ Live database was not queried. No migration SQL files changed between \`${offlineDiff.baseRef}\` and \`HEAD\`.\n`;
+      md += `ℹ️ Live database was not queried. No migration SQL files changed between \`${offlineDiff.baseRef}\` and \`${targetHead}\`.\n`;
       return md;
     }
 
-    md += `#### 🔍 Changed Migration DDL Details (${ddlSummaries.length} file(s) in \`${offlineDiff.baseRef}..HEAD\`)\n\n`;
+    md += `#### 🔍 Changed Migration DDL Details (${ddlSummaries.length} file(s) in \`${offlineDiff.baseRef}..${targetHead}\`)\n\n`;
     md += renderDdlSummaryList(ddlSummaries);
     return md;
   }
@@ -537,6 +596,7 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
   const requireDb = Boolean(options?.requireDb);
   const offline = Boolean(options?.offline);
   const baseRef = options?.baseRef || DEFAULT_BASE_REF;
+  const headRef = options?.headRef;
   const databaseUrl =
     options?.databaseUrl !== undefined ? options.databaseUrl : process.env.DATABASE_URL;
   const isOfflineMode =
@@ -565,7 +625,7 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
     return { success: false, summary: conflictSummary };
   }
 
-  if (baseRef.startsWith('-')) {
+  if (baseRef.startsWith('-') || (headRef && headRef.startsWith('-'))) {
     const badRefSummary = formatPreflightSummary({
       environment,
       status: {
@@ -574,7 +634,7 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
         failedMigrations: [],
         rawOutput: '',
         hasError: true,
-        errorMessage: 'Invalid --base-ref value.',
+        errorMessage: 'Invalid --base-ref or --head-ref value.',
       },
       ddlSummaries: [],
     });
@@ -591,6 +651,7 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
     const diffResult = getChangedMigrationsFromGitDiff({
       migrationsDir,
       baseRef,
+      headRef,
       cwd: options?.cwd,
     });
     const ddlSummaries = getMigrationDdlSummaries(
@@ -609,6 +670,7 @@ export function runPreflightCheck(options?: PreflightCheckOptions): { success: b
       ddlSummaries,
       offlineDiff: {
         baseRef: diffResult.baseRef,
+        headRef,
         baseRefMissing: diffResult.baseRefMissing,
       },
     });
@@ -698,6 +760,7 @@ if (isMain) {
     requireDb: cliArgs.requireDb,
     offline: cliArgs.offline,
     baseRef: cliArgs.baseRef,
+    headRef: cliArgs.headRef,
   });
   if (!result.success) {
     process.exit(1);
