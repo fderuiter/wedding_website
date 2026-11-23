@@ -169,4 +169,60 @@ describe('docker-entrypoint.sh', () => {
       },
     );
   });
+
+  it('runs node scripts/generate-password-hash.mjs without DATABASE_URL or executing migrations', (done) => {
+    const repoRoot = path.resolve(__dirname, '../..');
+    const cleanEnv: NodeJS.ProcessEnv = { ...process.env };
+    delete cleanEnv.DATABASE_URL;
+    cleanEnv.RUN_MIGRATIONS = 'true';
+
+    execFile(
+      ENTRYPOINT_PATH,
+      ['node', 'scripts/generate-password-hash.mjs', 'secret'],
+      {
+        cwd: repoRoot,
+        env: cleanEnv,
+      },
+      (error, stdout, stderr) => {
+        expect(error).toBeNull();
+        expect(stderr).toBe('');
+        expect(stdout.trim()).toMatch(/^scrypt:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/);
+        done();
+      },
+    );
+  });
+
+  it('strips matching outer double and single quotes from DATABASE_URL injected by docker run --env-file', (done) => {
+    const rawUrl = 'postgresql://wedding:wedding123@localhost:5432/wedding?schema=public';
+    execFile(
+      ENTRYPOINT_PATH,
+      ['node', '-e', 'process.stdout.write("UNQUOTED_URL=" + process.env.DATABASE_URL + "\\n")'],
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: `"${rawUrl}"`,
+        },
+      },
+      (doubleErr, doubleStdout) => {
+        expect(doubleErr).toBeNull();
+        expect(doubleStdout).toContain(`UNQUOTED_URL=${rawUrl}`);
+
+        execFile(
+          ENTRYPOINT_PATH,
+          ['node', '-e', 'process.stdout.write("UNQUOTED_SINGLE=" + process.env.DATABASE_URL + "\\n")'],
+          {
+            env: {
+              ...process.env,
+              DATABASE_URL: `'${rawUrl}'`,
+            },
+          },
+          (singleErr, singleStdout) => {
+            expect(singleErr).toBeNull();
+            expect(singleStdout).toContain(`UNQUOTED_SINGLE=${rawUrl}`);
+            done();
+          },
+        );
+      },
+    );
+  });
 });

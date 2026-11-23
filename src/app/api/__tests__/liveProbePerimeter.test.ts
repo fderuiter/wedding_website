@@ -32,14 +32,35 @@ describe('/api/live perimeter and middleware exemptions', () => {
     expect(gatedRes.status).toBe(401);
   });
 
-  it('rejects GET /api/live with HTTP 400 when Host header is not in ALLOWED_HOSTS', async () => {
-    const req = new NextRequest('http://evil.attacker.invalid/api/live', {
+  it('allows GET and HEAD probes on /api/live, /api/health, and /api/ready with healthcheck.railway.app or internal kubelet IPs while rejecting non-probe routes and POST /api/live', async () => {
+    for (const probePath of ['/api/live', '/api/health', '/api/ready']) {
+      for (const method of ['GET', 'HEAD']) {
+        for (const probeHost of ['healthcheck.railway.app', '169.254.169.126:3000']) {
+          const probeReq = new NextRequest(`http://localhost:3000${probePath}`, {
+            method,
+            headers: { host: probeHost },
+          });
+          const probeRes = await middleware(probeReq);
+          expect(probeRes.status).toBe(200);
+        }
+      }
+    }
+
+    const photosReq = new NextRequest('http://evil.attacker.invalid/api/photos', {
+      method: 'GET',
       headers: { host: 'evil.attacker.invalid' },
     });
-    const res = await middleware(req);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body).toEqual({ error: 'Invalid Host header' });
+    const photosRes = await middleware(photosReq);
+    expect(photosRes.status).toBe(400);
+    expect(await photosRes.json()).toEqual({ error: 'Invalid Host header' });
+
+    const postLiveReq = new NextRequest('http://evil.attacker.invalid/api/live', {
+      method: 'POST',
+      headers: { host: 'healthcheck.railway.app' },
+    });
+    const postLiveRes = await middleware(postLiveReq);
+    expect(postLiveRes.status).toBe(400);
+    expect(await postLiveRes.json()).toEqual({ error: 'Invalid Host header' });
   });
 
   it('exempts /api/live from rate limiting inside withApiMiddleware even with limit=1', async () => {

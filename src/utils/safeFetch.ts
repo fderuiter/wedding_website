@@ -1,12 +1,12 @@
 import { validateAndResolveHost } from './ssrf';
-import { Agent } from 'undici';
+import { Agent, type Dispatcher } from 'undici';
 
 /**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  return new Agent({
+  return new PinnedAgent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -106,5 +106,75 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       // Return the final successful non-redirect response
       return res;
     }
+  }
+}
+
+interface LegacyDispatchHandler {
+  onConnect?: (_abort: (_err?: Error) => void, _context: unknown) => void;
+  onHeaders?: (
+    _statusCode: number,
+    _rawHeaders: Buffer[] | string[] | null,
+    _resume: () => void,
+    _statusMessage: string
+  ) => boolean | void;
+  onData?: (_chunk: Buffer) => boolean | void;
+  onComplete?: (_rawTrailers: string[] | Buffer[] | null) => void;
+  onError?: (_err: Error) => void;
+  onBodySent?: (_chunk: Buffer) => void;
+  onRequestSent?: () => void;
+}
+
+/**
+ * Bridges Node 22's built-in fetch (Undici v6 handler ABI) with Undici v8's
+ * Agent dispatcher interface while preserving `instanceof Agent`.
+ */
+class PinnedAgent extends Agent {
+  override dispatch(
+    options: Dispatcher.DispatchOptions,
+    handler: Dispatcher.DispatchHandler
+  ): boolean {
+    if (handler && typeof handler === 'object' && typeof handler.onRequestStart !== 'function') {
+      const legacy = handler as unknown as LegacyDispatchHandler;
+      if (typeof legacy.onConnect === 'function') {
+        const adapted: Dispatcher.DispatchHandler = {
+          onRequestStart(controller, context) {
+            legacy.onConnect?.((err) => controller.abort(err ?? new Error('Aborted')), context);
+          },
+          onResponseStart(controller, statusCode, _headers, statusMessage) {
+            const rawHeaders = Array.isArray(controller.rawHeaders) ? controller.rawHeaders : [];
+            const ret = legacy.onHeaders?.(
+              statusCode,
+              rawHeaders,
+              () => controller.resume(),
+              statusMessage ?? ''
+            );
+            if (ret === false) {
+              controller.pause();
+            }
+          },
+          onResponseData(controller, chunk) {
+            const ret = legacy.onData?.(chunk);
+            if (ret === false) {
+              controller.pause();
+            }
+          },
+          onResponseEnd(controller) {
+            const rawTrailers = Array.isArray(controller.rawTrailers) ? controller.rawTrailers : null;
+            legacy.onComplete?.(rawTrailers);
+          },
+          onResponseError(_controller, error) {
+            legacy.onError?.(error);
+          },
+          ...(typeof legacy.onBodySent === 'function'
+            ? { onBodySent: (chunk: Buffer) => legacy.onBodySent?.(chunk) }
+            : {}),
+          ...(typeof legacy.onRequestSent === 'function'
+            ? { onRequestSent: () => legacy.onRequestSent?.() }
+            : {}),
+        };
+        return super.dispatch(options, adapted);
+      }
+    }
+    return super.dispatch(options, handler);
   }
 }

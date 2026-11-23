@@ -274,8 +274,9 @@ IMAGE_DIGEST="sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789a
 
 gcloud run jobs create wedding-migrate \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
-    --command="npx" \
-    --args="prisma,migrate,deploy" \
+    --command="./node_modules/.bin/prisma" \
+    --args="migrate,deploy" \
+    --set-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
     --set-secrets="DATABASE_URL=DATABASE_URL_DIRECT:latest" \
     --region=us-central1
 
@@ -290,9 +291,12 @@ gcloud run jobs execute wedding-migrate --region=us-central1 --wait
 
 Cloud Run containers have ephemeral, read-only root filesystems. Persistent asset storage **must** use S3-compatible object storage (Cloudflare R2, AWS S3, or Google Cloud Storage with S3 Interoperability enabled):
 
-1. Create a Google Cloud Storage bucket or Cloudflare R2 bucket.
-2. Enable Cloud Storage S3 Interoperability or obtain Cloudflare R2 API tokens.
-3. Pass `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_PUBLIC_URL` as Cloud Run environment secrets.
+1. Create a Google Cloud Storage bucket, Cloudflare R2 bucket, or AWS S3 bucket.
+2. Enable Cloud Storage S3 Interoperability (HMAC keys) or generate Cloudflare R2 / AWS S3 API credentials.
+3. Configure the six `S3_*` variables (`S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`, and `S3_PUBLIC_URL`) in GCP Secret Manager / Cloud Run environment settings:
+   * **Google Cloud Storage (S3 Interoperability)**: Set `S3_BUCKET`, `S3_REGION=us-central1` (matching your bucket region), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://storage.googleapis.com`, and optional `S3_PUBLIC_URL`.
+   * **Cloudflare R2**: Set `S3_BUCKET`, `S3_REGION=auto`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, and `S3_PUBLIC_URL=https://assets.wedding.mydomain.com` (an R2 Custom Domain or public `https://pub-<id>.r2.dev` URL; private `*.r2.cloudflarestorage.com` endpoints require `S3_PUBLIC_URL`).
+   * **AWS S3**: Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` (with `S3_ENDPOINT` omitted and `S3_PUBLIC_URL` optional for CloudFront).
 
 ---
 
@@ -340,13 +344,14 @@ gh attestation verify "oci://ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" 
     --signer-workflow fderuiter/wedding_website/.github/workflows/publish-artifact.yml
 
 # 3a. Deploy digest-pinned container revision to isolated staging Cloud Run service wedding-website-staging
+#     Use gcloud custom delimiter syntax (`^|^`) so commas inside ALLOWED_HOSTS are not parsed as new env var keys
 gcloud run deploy wedding-website-staging \
     --image="ghcr.io/fderuiter/wedding_website@${IMAGE_DIGEST}" \
     --platform=managed \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-staging-db \
-    --set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=staging.wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=STAGING_DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 
@@ -357,7 +362,7 @@ gcloud run deploy wedding-website \
     --region=us-central1 \
     --allow-unauthenticated \
     --add-cloudsql-instances=YOUR_PROJECT_ID:us-central1:wedding-db \
-    --set-env-vars="NODE_ENV=production,ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
+    --set-env-vars="^|^NODE_ENV=production|ALLOWED_HOSTS=wedding.mydomain.com,*.run.app" \
     --set-secrets="DATABASE_URL=DATABASE_URL:latest,ADMIN_PASSWORD=ADMIN_PASSWORD:latest,GUEST_PASSCODE=GUEST_PASSCODE:latest,GUEST_SESSION_SECRET=GUEST_SESSION_SECRET:latest" \
     --port=3000
 ```
@@ -369,22 +374,15 @@ gcloud run deploy wedding-website \
 Cloud Run separates startup readiness from ongoing process liveness so brief Cloud SQL blips do not restart warm instances.
 
 ### Cloud Run Probes Configuration
-Configure the startup probe on `wedding-website` to query `/api/health` (verifying PostgreSQL connectivity before serving traffic) and the liveness probe to query `/api/live` (process liveness decoupled from PostgreSQL) on port `3000`:
+Configure the startup probe on `wedding-website` via `--startup-probe` to query `/api/health` (verifying PostgreSQL connectivity before serving traffic) and the liveness probe via `--liveness-probe` to query `/api/live` (process liveness decoupled from PostgreSQL) on port `3000`:
 ```bash
 gcloud run services update wedding-website \
     --region=us-central1 \
-    --startup-probe-type=http \
-    --startup-probe-request-path=/api/health \
-    --startup-probe-port=3000 \
-    --startup-probe-initial-delay=5s \
-    --startup-probe-period=10s \
-    --liveness-probe-type=http \
-    --liveness-probe-request-path=/api/live \
-    --liveness-probe-port=3000 \
-    --liveness-probe-period=30s
+    --startup-probe=httpGet.path=/api/health,httpGet.port=3000,initialDelaySeconds=5,periodSeconds=10 \
+    --liveness-probe=httpGet.path=/api/live,httpGet.port=3000,periodSeconds=30
 ```
 
-The startup probe (and `.github/workflows/deploy.yml` / `.github/workflows/rollback.yml` rollout checks) verifies database query capability via `/api/health` before routing live user traffic to new instances, while `/api/live` returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL so transient database blips do not trigger container restart loops.
+`src/middleware.ts` exempts `GET` and `HEAD` probes on `/api/health`, `/api/live`, and `/api/ready` from `ALLOWED_HOSTS` validation so internal Cloud Run kubelet IPs receive HTTP 200 / 503 responses without custom probe `Host` headers. The startup probe (and `.github/workflows/deploy.yml` / `.github/workflows/rollback.yml` rollout checks) verifies database query capability via `/api/health` before routing live user traffic to new instances, while `/api/live` returns HTTP 200 `{ "status": "alive", "timestamp": "..." }` without querying PostgreSQL so transient database blips do not trigger container restart loops.
 
 ---
 
