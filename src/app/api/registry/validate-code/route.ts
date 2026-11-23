@@ -8,6 +8,7 @@ import {
   setGuestInviteSessionCookie,
   signGuestInviteSessionToken,
 } from '@/core/auth/guestInviteSession';
+import { hasAddressCollectionTag } from '@/features/registry';
 
 async function findActiveInvitationCode(rawCode: string | undefined | null) {
   const code = rawCode?.trim().toUpperCase();
@@ -19,7 +20,7 @@ async function findActiveInvitationCode(rawCode: string | undefined | null) {
     where: { code },
   });
 
-  if (!invite || invite.isSample) {
+  if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
     throw new ApiError(404, 'Invalid invitation code.');
   }
 

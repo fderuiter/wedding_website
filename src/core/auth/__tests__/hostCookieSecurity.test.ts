@@ -20,6 +20,11 @@ import {
   signGuestInviteSessionToken,
 } from '@/core/auth/guestInviteToken';
 import {
+  GUEST_PHOTO_COOKIE,
+  getSignedPhotoUploadSession,
+  signPhotoUploadSessionToken,
+} from '@/core/auth/photoUploadToken';
+import {
   clearSessionCookie,
   getSessionCookieOptions,
   readRequestCookieCandidates,
@@ -69,6 +74,9 @@ describe('__Host- session cookie security and multi-cookie HMAC verification', (
       expect(resolveSessionCookieName(GUEST_COOKIE, httpsReq)).toBe('__Host-guest_auth');
       expect(resolveSessionCookieName(GUEST_INVITE_COOKIE, httpsReq)).toBe(
         '__Host-guest_invite_session'
+      );
+      expect(resolveSessionCookieName(GUEST_PHOTO_COOKIE, httpsReq)).toBe(
+        '__Host-guest_photo_session'
       );
 
       const opts = getSessionCookieOptions(3600, httpsReq);
@@ -268,6 +276,21 @@ describe('__Host- session cookie security and multi-cookie HMAC verification', (
       expect(fallbackInvite).toMatchObject({
         code: 'OLD2025',
         guestName: 'Stale Household',
+      });
+
+      // 5. Shadowed QR photo session cookie falls through to valid __Host-guest_photo_session
+      const validPhotoToken = await signPhotoUploadSessionToken({ v: 2 });
+      const shadowedPhotoReq = new NextRequest('https://wedding.example/api/guest/photos/upload', {
+        method: 'POST',
+        headers: {
+          host: 'wedding.example',
+          cookie: `guest_photo_session=forged.photo; __Host-guest_photo_session=${validPhotoToken}`,
+        },
+      });
+      const verifiedPhoto = await getSignedPhotoUploadSession(shadowedPhotoReq);
+      expect(verifiedPhoto).toMatchObject({
+        purpose: 'photo_upload_session',
+        v: 2,
       });
     });
 

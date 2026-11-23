@@ -163,6 +163,8 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
     seoDescription: site.seoDescription,
     contactEmail: site.contactEmail,
     photoAlbumUrl: '',
+    autoApproveGuestPhotos: false,
+    guestPhotoQrTokenVersion: 1,
     faviconUrl: site.faviconUrl,
     ogImageUrl: site.ogImageUrl,
     brandMonogram: undefined,

@@ -91,6 +91,7 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     for (const jobId of [
       'verify:',
+      'doc-drift-comment:',
       'unit-test:',
       'build:',
       'container-arm64:',
@@ -103,6 +104,19 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     ]) {
       expect(ciWorkflow).toContain(`  ${jobId}`);
     }
+
+    const verifyJobBlock = ciWorkflow.split(/\n  doc-drift-comment:\n/)[0]?.split(/\n  verify:\n/)[1] ?? '';
+    expect(verifyJobBlock).toMatch(/permissions:\n\s+contents: read\n/);
+    expect(verifyJobBlock).not.toContain('pull-requests: write');
+    expect(verifyJobBlock).not.toContain('issues: write');
+
+    const docDriftCommentBlock =
+      ciWorkflow.split(/\n  unit-test:\n/)[0]?.split(/\n  doc-drift-comment:\n/)[1] ?? '';
+    expect(docDriftCommentBlock).toContain('needs: [verify]');
+    expect(docDriftCommentBlock).toContain('pull-requests: write');
+    expect(docDriftCommentBlock).toContain('issues: write');
+    expect(docDriftCommentBlock).not.toContain('actions/checkout');
+    expect(docDriftCommentBlock).not.toContain('npm ci');
     expect(ciWorkflow).toMatch(
       /deploy-docs:\n\s+needs:\s*\[verify, static-export-build, storybook-build\]\n\s+if:\s*\(github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'\) \|\| github\.event_name == 'release'/
     );
@@ -728,8 +742,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(publishWorkflow).toContain('cache-from: type=gha,scope=app-${{ matrix.arch }}');
     expect(publishWorkflow).toContain('cache-to: type=gha,scope=app-${{ matrix.arch }},mode=max');
     expect(publishWorkflow).toContain('actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9');
-    expect(publishWorkflow).toContain('buildkit-deps-${{ matrix.arch }}-');
-    expect(publishWorkflow).toContain('buildkit-next-${{ matrix.arch }}-');
+    expect(publishWorkflow).toContain('key: release-buildkit-deps-${{ matrix.arch }}-');
+    expect(publishWorkflow).toContain('key: release-buildkit-next-${{ matrix.arch }}-');
+    expect(publishWorkflow).not.toContain('restore-keys');
+    expect(publishWorkflow).toContain('--no-same-owner --no-same-permissions');
+    expect(publishWorkflow).toContain('validate_cache_archive');
     for (const mountTarget of ['/var/cache/apt', '/var/lib/apt', '/root/.npm', '/app/.next/cache']) {
       expect(publishWorkflow).toContain(`target=${mountTarget}`);
     }
@@ -767,39 +784,65 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
 
     expect(buildJobSection).toContain('image-ref: wedding-website:latest');
     expect(buildJobSection).toContain("ignore-unfixed: 'true'");
-    expect(buildJobSection).toContain("severity: 'CRITICAL,HIGH'");
+    expect(buildJobSection).toContain("severity: 'CRITICAL,HIGH,MEDIUM'");
     expect(buildJobSection).toContain("exit-code: '1'");
+    expect(buildJobSection).toContain("format: 'spdx-json'");
+    expect(buildJobSection).toContain("output: 'sbom-${{ matrix.arch }}.spdx.json'");
     expect(buildJobSection).toContain("category: 'trivy-${{ matrix.arch }}'");
     expect(buildJobSection).toContain('compression-level: 0');
 
-    // Verify publish job step ordering: download -> login -> skopeo inspect & copy --preserve-digests -> merge -> v4.2.2 primary & secondary attestations
+    // Verify publish job step ordering: download -> login -> verify SBOMs -> skopeo inspect & copy --preserve-digests -> merge -> index SBOM -> v4.2.2 per-arch & index provenance + SPDX SBOM attestations
     const publishJobSection = publishWorkflow.split(/\n  publish:\n/)[1] ?? '';
     expect(publishJobSection).toContain('needs: [build]');
 
     const downloadIdx = publishJobSection.indexOf('actions/download-artifact@');
     const ghcrLoginIdx = publishJobSection.indexOf('registry: ghcr.io');
+    const verifySbomIdx = publishJobSection.indexOf('- name: Verify Per-Architecture SPDX SBOM Artifacts');
     const skopeoInspectIdx = publishJobSection.indexOf("skopeo inspect --format '{{.Digest}}'");
     const skopeoCopyIdx = publishJobSection.indexOf('skopeo copy --preserve-digests');
     const mergeIdx = publishJobSection.indexOf('docker buildx imagetools create');
+    const indexSbomIdx = publishJobSection.indexOf('- name: Generate Multi-Platform Index SPDX SBOM');
+    const primaryAmd64AttestIdx = publishJobSection.indexOf('- name: Attest amd64 Build Provenance');
+    const primaryArm64AttestIdx = publishJobSection.indexOf('- name: Attest arm64 Build Provenance');
     const primaryAttestIdx = publishJobSection.indexOf('- name: Attest Build Provenance');
+    const primaryAmd64SbomIdx = publishJobSection.indexOf('- name: Attest amd64 SPDX SBOM');
+    const primaryArm64SbomIdx = publishJobSection.indexOf('- name: Attest arm64 SPDX SBOM');
+    const primaryIndexSbomIdx = publishJobSection.indexOf('- name: Attest Index SPDX SBOM');
     const secondaryAttestIdx = publishJobSection.indexOf(
       '- name: Attest Docker Hub Build Provenance (optional)'
     );
 
     expect(downloadIdx).toBeGreaterThan(-1);
     expect(ghcrLoginIdx).toBeGreaterThan(downloadIdx);
-    expect(skopeoInspectIdx).toBeGreaterThan(ghcrLoginIdx);
+    expect(verifySbomIdx).toBeGreaterThan(ghcrLoginIdx);
+    expect(skopeoInspectIdx).toBeGreaterThan(verifySbomIdx);
     expect(skopeoCopyIdx).toBeGreaterThan(skopeoInspectIdx);
     expect(mergeIdx).toBeGreaterThan(skopeoCopyIdx);
-    expect(primaryAttestIdx).toBeGreaterThan(mergeIdx);
-    expect(secondaryAttestIdx).toBeGreaterThan(primaryAttestIdx);
+    expect(indexSbomIdx).toBeGreaterThan(mergeIdx);
+    expect(primaryAmd64AttestIdx).toBeGreaterThan(indexSbomIdx);
+    expect(primaryArm64AttestIdx).toBeGreaterThan(primaryAmd64AttestIdx);
+    expect(primaryAttestIdx).toBeGreaterThan(primaryArm64AttestIdx);
+    expect(primaryAmd64SbomIdx).toBeGreaterThan(primaryAttestIdx);
+    expect(primaryArm64SbomIdx).toBeGreaterThan(primaryAmd64SbomIdx);
+    expect(primaryIndexSbomIdx).toBeGreaterThan(primaryArm64SbomIdx);
+    expect(secondaryAttestIdx).toBeGreaterThan(primaryIndexSbomIdx);
 
     expect(publishJobSection).not.toContain('c0744595e72338575084a4bf85ed76e1eb521ddf');
     expect(
       publishJobSection.match(
         /uses:\s*actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4\.2\.2/g
       )
-    ).toHaveLength(2);
+    ).toHaveLength(6);
+    expect(
+      publishJobSection.match(
+        /uses:\s*actions\/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4\.2\.2/g
+      )
+    ).toHaveLength(6);
+    expect(publishJobSection).toContain('subject-digest: ${{ steps.merge.outputs.amd64_digest }}');
+    expect(publishJobSection).toContain('subject-digest: ${{ steps.merge.outputs.arm64_digest }}');
+    expect(publishJobSection).toContain('sbom-path: /tmp/oci-handoff/sbom-amd64.spdx.json');
+    expect(publishJobSection).toContain('sbom-path: /tmp/oci-handoff/sbom-arm64.spdx.json');
+    expect(publishJobSection).toContain('sbom-path: /tmp/oci-handoff/sbom-index.spdx.json');
     expect(publishJobSection).toContain('subject-name: docker.io/${{ steps.meta.outputs.dockerhub_repository }}');
     expect(publishJobSection).toContain('subject-digest: ${{ steps.merge.outputs.dockerhub_digest }}');
     expect(publishJobSection).toContain('create-storage-record: false');
@@ -819,6 +862,11 @@ describe('Release Workflow CI Gating & Artifact Deduplication', () => {
     expect(ciComposeContent).not.toContain('mode=max');
 
     expect(ciWorkflow).toContain('crazy-max/ghaction-github-runtime@');
+    const runtimeStepGuards =
+      ciWorkflow.match(
+        /- name: Expose GitHub Runtime for BuildKit Cache\n\s+if:\s*github\.event_name != 'pull_request'\n\s+uses:\s*crazy-max\/ghaction-github-runtime@/g
+      ) ?? [];
+    expect(runtimeStepGuards).toHaveLength(2);
     expect(ciWorkflow).toContain('GHA_CACHE_SCOPE: app-amd64');
     expect(ciWorkflow).toContain('runs-on: ubuntu-24.04-arm');
     expect(ciWorkflow).toContain('GHA_CACHE_SCOPE: app-arm64');
@@ -1516,7 +1564,7 @@ process.exit(1);
     expect(pkg.scripts?.postinstall).not.toContain('generate-docs');
     expect(pkg.scripts?.build).toBe('prisma generate && next build');
 
-    const verifySection = ciWorkflow.split(/\n  unit-test:\n/)[0] ?? '';
+    const verifySection = ciWorkflow.split(/\n  doc-drift-comment:\n/)[0] ?? '';
     expect(verifySection).not.toContain('run: npm run prisma:generate');
     expect(verifySection).toContain('db_image: ${{ steps.resolve-db-image.outputs.db_image }}');
     expect(verifySection).toContain('npx tsx scripts/generate-docs.ts --skip-openapi');
@@ -1551,5 +1599,195 @@ process.exit(1);
     expect(containerSmokeSection).toContain('needs: build');
     expect(containerSmokeSection).toContain('TEST_CONTAINER: "true"');
     expect(containerSmokeSection).toContain('run: npm run test:e2e:smoke');
+  });
+
+  it('validates BuildKit tar cache archive members and synthesizes multi-platform SPDX 2.3 index SBOMs in publish-artifact.yml', () => {
+    const runBlocks = extractRunBlocks(publishWorkflow);
+    const hydrateScript = runBlocks.find((block) => block.includes('validate_cache_archive'));
+    const verifySbomScript = runBlocks.find(
+      (block) =>
+        block.includes('SBOM_FILE="/tmp/oci-handoff/sbom-${required_arch}.spdx.json"') &&
+        !block.includes('sbom-index.spdx.json')
+    );
+    const indexSbomScript = runBlocks.find((block) =>
+      block.includes('/tmp/oci-handoff/sbom-index.spdx.json')
+    );
+
+    expect(hydrateScript).toBeDefined();
+    expect(verifySbomScript).toBeDefined();
+    expect(indexSbomScript).toBeDefined();
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-sbom-cache-test-'));
+    const binDir = path.join(tempDir, 'bin');
+    const mountCacheDir = path.join(tempDir, 'mounts');
+    const handoffDir = path.join('/tmp', 'oci-handoff');
+
+    try {
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.mkdirSync(path.join(mountCacheDir, 'deps'), { recursive: true });
+      fs.mkdirSync(path.join(mountCacheDir, 'next'), { recursive: true });
+
+      // Mock docker shim so Hydrate BuildKit Cache Mounts completes without running buildx daemon
+      fs.writeFileSync(
+        path.join(binDir, 'docker'),
+        '#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n',
+        { mode: 0o755 }
+      );
+
+      // 1. Rejects cache tar archive containing unexpected paths outside BuildKit cache directories
+      const badStage = path.join(tempDir, 'bad-stage');
+      fs.mkdirSync(path.join(badStage, 'etc'), { recursive: true });
+      fs.writeFileSync(path.join(badStage, 'etc', 'passwd'), 'bad');
+      execFileSync('tar', ['-cf', path.join(mountCacheDir, 'deps', 'mounts.tar'), '-C', badStage, 'etc']);
+
+      const badArchiveRes = spawnSync('bash', ['-eo', 'pipefail', '-c', hydrateScript!], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          TARGET_PLATFORM: 'linux/amd64',
+          MOUNT_CACHE_DIR: mountCacheDir,
+        },
+      });
+      expect(badArchiveRes.status).not.toBe(0);
+      expect(badArchiveRes.stdout + badArchiveRes.stderr).toContain('contains unexpected path');
+
+      // 2. Rejects cache tar archive containing symlinks
+      const symlinkStage = path.join(tempDir, 'symlink-stage');
+      fs.mkdirSync(path.join(symlinkStage, 'root', '.npm'), { recursive: true });
+      fs.symlinkSync('/etc/shadow', path.join(symlinkStage, 'root', '.npm', 'escape'));
+      execFileSync('tar', ['-cf', path.join(mountCacheDir, 'deps', 'mounts.tar'), '-C', symlinkStage, 'root']);
+
+      const symlinkRes = spawnSync('bash', ['-eo', 'pipefail', '-c', hydrateScript!], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          TARGET_PLATFORM: 'linux/amd64',
+          MOUNT_CACHE_DIR: mountCacheDir,
+        },
+      });
+      expect(symlinkRes.status).not.toBe(0);
+      expect(symlinkRes.stdout + symlinkRes.stderr).toContain('contains disallowed link or device entries');
+
+      // 3. Accepts valid BuildKit cache directory entries
+      const goodStage = path.join(tempDir, 'good-stage');
+      fs.mkdirSync(path.join(goodStage, 'root', '.npm'), { recursive: true });
+      fs.writeFileSync(path.join(goodStage, 'root', '.npm', 'index.json'), '{}');
+      execFileSync('tar', ['-cf', path.join(mountCacheDir, 'deps', 'mounts.tar'), '-C', goodStage, 'root/.npm']);
+
+      const goodArchiveRes = spawnSync('bash', ['-eo', 'pipefail', '-c', hydrateScript!], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          TARGET_PLATFORM: 'linux/amd64',
+          MOUNT_CACHE_DIR: mountCacheDir,
+        },
+      });
+      expect(goodArchiveRes.status).toBe(0);
+
+      // 4. Verifies per-architecture SPDX SBOMs and synthesizes merged index SPDX 2.3 SBOM
+      fs.rmSync(handoffDir, { recursive: true, force: true });
+      fs.mkdirSync(handoffDir, { recursive: true });
+
+      const missingSbomRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifySbomScript!], {
+        encoding: 'utf8',
+      });
+      expect(missingSbomRes.status).not.toBe(0);
+
+      fs.writeFileSync(
+        path.join(handoffDir, 'sbom-amd64.spdx.json'),
+        JSON.stringify({
+          spdxVersion: 'SPDX-2.3',
+          SPDXID: 'SPDXRef-DOCUMENT',
+          packages: [{ name: 'next', SPDXID: 'SPDXRef-Pkg-next', versionInfo: '16.0.0' }],
+          relationships: [
+            {
+              spdxElementId: 'SPDXRef-DOCUMENT',
+              relationshipType: 'DESCRIBES',
+              relatedSpdxElement: 'SPDXRef-Pkg-next',
+            },
+          ],
+        })
+      );
+      fs.writeFileSync(
+        path.join(handoffDir, 'sbom-arm64.spdx.json'),
+        JSON.stringify({
+          spdxVersion: 'SPDX-2.3',
+          SPDXID: 'SPDXRef-DOCUMENT',
+          packages: [{ name: 'prisma', SPDXID: 'SPDXRef-Pkg-prisma', versionInfo: '7.0.0' }],
+          relationships: [
+            {
+              spdxElementId: 'SPDXRef-DOCUMENT',
+              relationshipType: 'DESCRIBES',
+              relatedSpdxElement: 'SPDXRef-Pkg-prisma',
+            },
+          ],
+        })
+      );
+
+      const okSbomRes = spawnSync('bash', ['-eo', 'pipefail', '-c', verifySbomScript!], {
+        encoding: 'utf8',
+      });
+      expect(okSbomRes.status).toBe(0);
+
+      const amd64Digest = 'sha256:1111111111111111111111111111111111111111111111111111111111111111';
+      const arm64Digest = 'sha256:2222222222222222222222222222222222222222222222222222222222222222';
+      const indexDigest = 'sha256:3333333333333333333333333333333333333333333333333333333333333333';
+      const revision = '0123456789abcdef0123456789abcdef01234567';
+
+      const synthRes = spawnSync('bash', ['-eo', 'pipefail', '-c', indexSbomScript!], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          IMAGE_REPOSITORY: 'ghcr.io/fderuiter/wedding_website',
+          AMD64_DIGEST: amd64Digest,
+          ARM64_DIGEST: arm64Digest,
+          INDEX_DIGEST: indexDigest,
+          REVISION: revision,
+          RESOLVED_SHA: revision,
+        },
+      });
+      expect(synthRes.status).toBe(0);
+
+      const indexSbom = JSON.parse(
+        fs.readFileSync(path.join(handoffDir, 'sbom-index.spdx.json'), 'utf8')
+      ) as {
+        spdxVersion: string;
+        packages: Array<{ SPDXID: string; checksums?: Array<{ checksumValue: string }> }>;
+        relationships: Array<{ spdxElementId: string; relationshipType: string; relatedSpdxElement: string }>;
+      };
+      expect(indexSbom.spdxVersion).toBe('SPDX-2.3');
+      expect(indexSbom.packages.map((p) => p.SPDXID)).toEqual(
+        expect.arrayContaining([
+          'SPDXRef-Index',
+          'SPDXRef-Root-amd64',
+          'SPDXRef-Root-arm64',
+          'SPDXRef-amd64-Pkg-next',
+          'SPDXRef-arm64-Pkg-prisma',
+        ])
+      );
+      expect(indexSbom.relationships).toEqual(
+        expect.arrayContaining([
+          {
+            spdxElementId: 'SPDXRef-Root-amd64',
+            relationshipType: 'VARIANT_OF',
+            relatedSpdxElement: 'SPDXRef-Index',
+          },
+          {
+            spdxElementId: 'SPDXRef-Root-arm64',
+            relationshipType: 'VARIANT_OF',
+            relatedSpdxElement: 'SPDXRef-Index',
+          },
+        ])
+      );
+    } finally {
+      fs.rmSync(handoffDir, { recursive: true, force: true });
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

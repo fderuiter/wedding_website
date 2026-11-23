@@ -74,6 +74,7 @@ const KNOWN_STATIC_API_PATHS = new Set([
   '/api/admin/onboarding-milestones',
   '/api/admin/photos/moderation',
   '/api/admin/photos/moderation/batch',
+  '/api/admin/photos/qr',
   '/api/admin/sample-data',
   '/api/admin/seating/assign',
   '/api/admin/seating/auto-assign',
@@ -161,7 +162,7 @@ export function normalizeApiPathname(pathname: string): string {
   if (/^\/api\/admin\/contributors\/[^/]+\/action$/.test(cleaned)) {
     return '/api/admin/contributors/:id/action';
   }
-  if (/^\/api\/admin\/photos\/(?!moderation$)[^/]+$/.test(cleaned)) {
+  if (/^\/api\/admin\/photos\/(?!(?:moderation|qr)$)[^/]+$/.test(cleaned)) {
     return '/api/admin/photos/:id';
   }
   if (/^\/api\/admin\/registry\/items\/[^/]+\/unclaim$/.test(cleaned)) {

@@ -20,6 +20,14 @@ import {
   signGuestInviteSessionToken,
   verifyGuestInviteSessionToken,
 } from './guestInviteToken';
+import {
+  GUEST_PHOTO_COOKIE,
+  type PhotoUploadSessionPayload,
+  getSignedPhotoUploadSession,
+  isPhotoScopedPagePath,
+  verifyPhotoUploadSessionToken,
+} from './photoUploadToken';
+import { readRequestCookieCandidates } from './tokenCookieHelpers';
 
 export {
   GUEST_INVITE_COOKIE,
@@ -34,6 +42,14 @@ interface InvitationLookupRecord extends Record<string, unknown> {
   code?: string;
   guestName?: string;
   isSample?: boolean;
+  partyTags?: unknown;
+}
+
+function hasUnpromotedAddressCollectionTag(partyTags: unknown): boolean {
+  if (!Array.isArray(partyTags)) return false;
+  return partyTags.some(
+    (tag) => typeof tag === 'string' && tag.trim().toLowerCase() === 'address-collection'
+  );
 }
 
 interface InvitationCodeLookupDelegate {
@@ -43,6 +59,20 @@ interface InvitationCodeLookupDelegate {
   findFirst?: (args: {
     where: { code: { equals: string; mode: 'insensitive' }; isSample: boolean };
   }) => Promise<InvitationLookupRecord | null | undefined>;
+}
+
+interface AppConfigTokenVersionRecord {
+  guestPhotoQrTokenVersion?: number | null;
+}
+
+interface AppConfigTokenVersionLookupDelegate {
+  findUnique?: (args: {
+    where: { id: string };
+    select: { guestPhotoQrTokenVersion: boolean };
+  }) => Promise<AppConfigTokenVersionRecord | null | undefined>;
+  findFirst?: (args: {
+    select: { guestPhotoQrTokenVersion: boolean };
+  }) => Promise<AppConfigTokenVersionRecord | null | undefined>;
 }
 
 function isStaticExportBuild(): boolean {
@@ -87,7 +117,7 @@ async function resolveActiveInvitationSession(
       });
     }
 
-    if (!invite || invite.isSample === true) {
+    if (!invite || invite.isSample === true || hasUnpromotedAddressCollectionTag(invite.partyTags)) {
       return null;
     }
 
@@ -116,6 +146,22 @@ function buildGuestSessionCacheKey(payload: GuestInviteSessionPayload): string {
 }
 
 const getCachedServerSignedGuestInviteSession = cache(() => getSignedGuestInviteSession());
+const getCachedVerifiedPhotoUploadSession = cache((cookieValue: string) =>
+  verifyPhotoUploadSessionToken(cookieValue)
+);
+
+async function resolveServerSignedPhotoUploadSession(): Promise<PhotoUploadSessionPayload | null> {
+  const candidates = await readRequestCookieCandidates(GUEST_PHOTO_COOKIE, undefined, {
+    suppressErrors: true,
+  });
+  for (const cookieValue of candidates) {
+    const payload = await getCachedVerifiedPhotoUploadSession(cookieValue);
+    if (payload && payload.exp >= Date.now()) {
+      return payload;
+    }
+  }
+  return null;
+}
 
 async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessionPayload | null> {
   if (isStaticExportBuild()) {
@@ -183,10 +229,78 @@ function redirectWithSeeOther(url: string): void {
   }
 }
 
+async function resolveActivePhotoTokenVersion(expectedVersion?: number): Promise<number> {
+  if (
+    typeof expectedVersion === 'number' &&
+    Number.isInteger(expectedVersion) &&
+    expectedVersion >= 1
+  ) {
+    return expectedVersion;
+  }
+
+  try {
+    const delegate = (
+      prisma as unknown as { appConfig?: AppConfigTokenVersionLookupDelegate }
+    )?.appConfig;
+    if (!delegate) {
+      return 1;
+    }
+
+    let record: AppConfigTokenVersionRecord | null | undefined;
+    if (typeof delegate.findUnique === 'function') {
+      record = await delegate.findUnique({
+        where: { id: 'global' },
+        select: { guestPhotoQrTokenVersion: true },
+      });
+    }
+    if (record === undefined && typeof delegate.findFirst === 'function') {
+      record = await delegate.findFirst({
+        select: { guestPhotoQrTokenVersion: true },
+      });
+    }
+
+    const version = record?.guestPhotoQrTokenVersion;
+    if (typeof version === 'number' && Number.isInteger(version) && version >= 1) {
+      return version;
+    }
+    return 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Retrieves and verifies the active photo-scoped session cookie against the current
+ * database QR token rotation version. Returns null when missing, expired, or rotated.
+ */
+export async function getActivePhotoUploadSession(
+  req?: NextRequest,
+  expectedVersion?: number
+): Promise<PhotoUploadSessionPayload | null> {
+  if (isStaticExportBuild()) {
+    return null;
+  }
+
+  const signedPayload = req
+    ? await getSignedPhotoUploadSession(req)
+    : await resolveServerSignedPhotoUploadSession();
+  if (!signedPayload) {
+    return null;
+  }
+
+  const activeVersion = await resolveActivePhotoTokenVersion(expectedVersion);
+  if (signedPayload.v !== activeVersion) {
+    return null;
+  }
+
+  return signedPayload;
+}
+
 /**
  * Server-side rendering guard for guest-gated pages and layouts.
  * Redirects callers holding a revoked, rotated, or sample guest_invite_session cookie
- * (without a valid guest_auth or admin_auth cookie) to /guest/login with HTTP 303.
+ * or a rotated/out-of-scope guest_photo_session cookie (without a valid guest_auth
+ * or admin_auth cookie) to /guest/login with HTTP 303.
  */
 export async function enforceActiveGuestPageSession(): Promise<void> {
   if (isStaticExportBuild()) {
@@ -194,7 +308,8 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
   }
 
   const signedInvite = await getCachedServerSignedGuestInviteSession();
-  if (!signedInvite) {
+  const signedPhoto = await resolveServerSignedPhotoUploadSession();
+  if (!signedInvite && !signedPhoto) {
     return;
   }
 
@@ -210,6 +325,25 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
     }
   } catch {
     // Request headers may be unavailable in isolated unit test renders
+  }
+
+  const rawCallbackPath = callbackUrlHeader ? callbackUrlHeader.split('?')[0] : null;
+  const normalizedCallbackPath =
+    rawCallbackPath && rawCallbackPath.length > 1
+      ? rawCallbackPath.replace(/\/+$/, '') || '/'
+      : rawCallbackPath;
+
+  if (
+    normalizedCallbackPath === '/guest' &&
+    !callbackUrlHeader?.includes('code=') &&
+    signedPhoto &&
+    !signedInvite
+  ) {
+    if ((await isAdminRequest()) || (await isGuestRequest())) {
+      return;
+    }
+    redirectWithSeeOther(buildGuestLoginRedirectTarget(callbackUrlHeader));
+    return;
   }
 
   if (isGuestGatedPage === '0') {
@@ -236,8 +370,23 @@ export async function enforceActiveGuestPageSession(): Promise<void> {
     return;
   }
 
-  const activeSession = await getGuestInviteSession();
-  if (!activeSession) {
-    redirectWithSeeOther(buildGuestLoginRedirectTarget(callbackUrlHeader));
+  if (signedInvite) {
+    const activeSession = await getGuestInviteSession();
+    if (activeSession) {
+      return;
+    }
   }
+
+  if (
+    normalizedCallbackPath &&
+    isPhotoScopedPagePath(normalizedCallbackPath) &&
+    signedPhoto
+  ) {
+    const activePhotoSession = await getActivePhotoUploadSession();
+    if (activePhotoSession) {
+      return;
+    }
+  }
+
+  redirectWithSeeOther(buildGuestLoginRedirectTarget(callbackUrlHeader));
 }

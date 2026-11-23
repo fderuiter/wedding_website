@@ -9,11 +9,6 @@ import {
   PublicAddressCollectDTO,
   generateRandomCode,
 } from '@/features/registry';
-import {
-  mergeDietaryNotes,
-  normalizeBatchInvitationRecord,
-  resolveBatchGuestMatches,
-} from '@/utils/invitationValidation';
 
 function toPlainObject(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -99,116 +94,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const normalizedCountry = country ? country.trim() : '';
   const normalizedNotes = notes ? notes.trim() : '';
 
-  // 4. Match against active non-sample guests via resolveBatchGuestMatches
-  const activeGuests =
-    typeof prisma.invitationCode?.findMany === 'function'
-      ? await prisma.invitationCode.findMany({
-        where: { isSample: false },
-      })
-      : [];
-
-  const { matches } = resolveBatchGuestMatches(
-    [
-      normalizeBatchInvitationRecord({
-        guestName: normalizedGuestName,
-        email: normalizedEmail || null,
-        householdName: normalizedHouseholdName || null,
-      }),
-    ],
-    activeGuests
-  );
-
-  const matchedCandidate = matches[0]?.matchedRecord ?? null;
-  const matchedRecord = matchedCandidate
-    ? (activeGuests.find((g) => g.id === matchedCandidate.id) ?? null)
-    : null;
-
-  const existingAddressLine1 = matchedRecord?.addressLine1 ? matchedRecord.addressLine1.trim() : '';
-  const hasAddressConflict = Boolean(
-    matchedRecord &&
-      existingAddressLine1 &&
-      normalizedAddressLine1 &&
-      existingAddressLine1.toLowerCase() !== normalizedAddressLine1.toLowerCase()
-  );
-
-  if (matchedRecord && !hasAddressConflict) {
-    const updateData: Record<string, unknown> = {};
-
-    if (!(matchedRecord.email ?? '').trim() && normalizedEmail) {
-      updateData.email = normalizedEmail;
-    }
-    if (!(matchedRecord.householdName ?? '').trim() && normalizedHouseholdName) {
-      updateData.householdName = normalizedHouseholdName;
-    }
-    if (!existingAddressLine1 && normalizedAddressLine1) {
-      updateData.addressLine1 = normalizedAddressLine1;
-    }
-    if (!(matchedRecord.addressLine2 ?? '').trim() && normalizedAddressLine2) {
-      updateData.addressLine2 = normalizedAddressLine2;
-    }
-    if (!(matchedRecord.city ?? '').trim() && normalizedCity) {
-      updateData.city = normalizedCity;
-    }
-    if (!(matchedRecord.state ?? '').trim() && normalizedState) {
-      updateData.state = normalizedState;
-    }
-    if (!(matchedRecord.zipCode ?? '').trim() && normalizedZipCode) {
-      updateData.zipCode = normalizedZipCode;
-    }
-    if (!(matchedRecord.country ?? '').trim() && normalizedCountry) {
-      updateData.country = normalizedCountry;
-    }
-
-    const existingExtra = toPlainObject(matchedRecord.extraFields);
-    const nextExtra: Record<string, unknown> = { ...existingExtra };
-    let extraChanged = false;
-
-    if (normalizedPhone) {
-      const hasPhone = typeof existingExtra.phone === 'string' && existingExtra.phone.trim().length > 0;
-      const hasMobile = typeof existingExtra.mobile === 'string' && existingExtra.mobile.trim().length > 0;
-      if (!hasPhone) {
-        nextExtra.phone = normalizedPhone;
-        extraChanged = true;
-      }
-      if (!hasMobile) {
-        nextExtra.mobile = normalizedPhone;
-        extraChanged = true;
-      }
-    }
-
-    if (normalizedNotes) {
-      const existingHouseholdNotes =
-        typeof existingExtra.householdNotes === 'string' ? existingExtra.householdNotes.trim() : '';
-      const combinedHouseholdNotes = existingHouseholdNotes
-        ? (mergeDietaryNotes([existingHouseholdNotes, normalizedNotes]) ?? normalizedNotes)
-        : normalizedNotes;
-      if (combinedHouseholdNotes !== existingHouseholdNotes) {
-        nextExtra.householdNotes = combinedHouseholdNotes;
-        extraChanged = true;
-      }
-    }
-
-    if (extraChanged) {
-      updateData.extraFields = nextExtra;
-    }
-
-    if (Object.keys(updateData).length > 0) {
-      await prisma.invitationCode.update({
-        where: { id: matchedRecord.id },
-        data: updateData as any,
-      });
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Address submitted successfully.',
-      },
-      { status: 200 }
-    );
-  }
-
-  // 5. Generate Unique Invitation Code for unmatched or conflicting address submission
+  // 4. Generate Unique Invitation Code for quarantined address-collection submission
   let uniqueCode = '';
   let attempts = 0;
   while (attempts < 10) {
@@ -230,7 +116,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     );
   }
 
-  // 6. Create InvitationCode Record Tagged with 'address-collection' for admin review/merge
+  // 5. Create InvitationCode Record Tagged with 'address-collection' for admin review/merge
   const extraFields: Record<string, string> = {};
   if (normalizedPhone) {
     extraFields.phone = normalizedPhone;

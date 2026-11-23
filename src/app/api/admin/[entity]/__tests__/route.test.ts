@@ -95,13 +95,13 @@ describe('GET /api/admin/[entity] - Server-Side Pagination', () => {
   });
 
   describe('Limit capping', () => {
-    it('clamps limit above 100 down to 100 items', async () => {
+    it('clamps limit above 100 down to 100 items for standard entities', async () => {
       const records = Array.from({ length: 100 }, (_, i) => ({ id: `rec-${i + 1}` }));
       mockService.count.mockResolvedValue(250);
       mockService.findMany.mockResolvedValue(records);
 
-      const req = createRequest('http://localhost/api/admin/invitation-codes?limit=500');
-      const res = await GET(req, { params: Promise.resolve({ entity: 'invitation-codes' }) });
+      const req = createRequest('http://localhost/api/admin/registry-items?limit=500');
+      const res = await GET(req, { params: Promise.resolve({ entity: 'registry-items' }) });
 
       expect(res.status).toBe(200);
       expect(mockService.findMany).toHaveBeenCalledWith({
@@ -111,6 +111,39 @@ describe('GET /api/admin/[entity] - Server-Side Pagination', () => {
       });
       expect(res.headers.get('X-Limit')).toBe('100');
       expect(res.headers.get('X-Total-Pages')).toBe('3');
+    });
+
+    it('supports limit up to 1000 for invitation-codes and clamps values above 1000', async () => {
+      const records = Array.from({ length: 122 }, (_, i) => ({ id: `inv-${i + 1}` }));
+      mockService.count.mockResolvedValue(122);
+      mockService.findMany.mockResolvedValue(records);
+
+      const req = createRequest('http://localhost/api/admin/invitation-codes?limit=1000');
+      const res = await GET(req, { params: Promise.resolve({ entity: 'invitation-codes' }) });
+
+      expect(res.status).toBe(200);
+      expect(mockService.findMany).toHaveBeenCalledWith({
+        take: 1000,
+        skip: 0,
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(res.headers.get('X-Total-Count')).toBe('122');
+      expect(res.headers.get('X-Limit')).toBe('1000');
+      expect(res.headers.get('X-Total-Pages')).toBe('1');
+
+      mockService.findMany.mockClear();
+      const clampedReq = createRequest('http://localhost/api/admin/invitation-codes?limit=2500');
+      const clampedRes = await GET(clampedReq, {
+        params: Promise.resolve({ entity: 'invitation-codes' }),
+      });
+
+      expect(clampedRes.status).toBe(200);
+      expect(mockService.findMany).toHaveBeenCalledWith({
+        take: 1000,
+        skip: 0,
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(clampedRes.headers.get('X-Limit')).toBe('1000');
     });
   });
 

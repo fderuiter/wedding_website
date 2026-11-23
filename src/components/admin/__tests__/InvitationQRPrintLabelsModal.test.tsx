@@ -54,11 +54,12 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     expect(screen.getByText('BINGLEY26')).toBeInTheDocument();
   });
 
-  it('adds printing-qr-labels class to body when mounted', () => {
+  it('adds printing-qr-labels and printing-qr-portal classes to body when mounted', () => {
     render(
       <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
     );
     expect(document.body.classList.contains('printing-qr-labels')).toBe(true);
+    expect(document.body.classList.contains('printing-qr-portal')).toBe(true);
   });
 
   it('allows switching between Avery 5163 and Avery 5160 templates without triggering print', () => {
@@ -140,7 +141,7 @@ describe('InvitationQRPrintLabelsModal Component', () => {
     window.print = originalPrint;
   });
 
-  it('removes printing-qr-labels class from body and calls onClose when Done is clicked', () => {
+  it('removes printing-qr-labels and printing-qr-portal classes from body and calls onClose when Done is clicked', () => {
     const mockClose = jest.fn();
     render(
       <InvitationQRPrintLabelsModal isOpen={true} onClose={mockClose} codes={sampleCodes} />
@@ -151,5 +152,86 @@ describe('InvitationQRPrintLabelsModal Component', () => {
 
     expect(mockClose).toHaveBeenCalledTimes(1);
     expect(document.body.classList.contains('printing-qr-labels')).toBe(false);
+    expect(document.body.classList.contains('printing-qr-portal')).toBe(false);
+  });
+
+  it('renders via document.body portal outside clipped ancestors, disables Print Sheet while empty or progressively rendering, and encodes AppConfig.baseUrl', async () => {
+    jest.useFakeTimers();
+    const { act } = await import('@testing-library/react');
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['admin-settings', 'global'], {
+      baseUrl: 'https://wedding.custom-domain.org/',
+    });
+    queryClient.setQueryData(['admin-profiles-list'], []);
+
+    const sixtyCodes = Array.from({ length: 60 }, (_, idx) => ({
+      id: `code-${idx + 1}`,
+      guestName: `Household ${idx + 1}`,
+      code: `INV${String(idx + 1).padStart(3, '0')}`,
+    }));
+
+    const { container, rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <div className="overflow-hidden fixed inset-0" data-testid="clipped-wrapper">
+          <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sixtyCodes} />
+        </div>
+      </QueryClientProvider>
+    );
+
+    const portalRoot = document.body.querySelector('.printable-qr-portal-root');
+    expect(portalRoot).not.toBeNull();
+    expect(portalRoot?.parentElement).toBe(document.body);
+    expect(container.querySelector('.printable-qr-portal-root')).toBeNull();
+
+    // Initially only 30 of 60 QR canvases are rendered -> Print Sheet must be disabled
+    const printBtn = screen.getByRole('button', { name: 'Print Sheet of QR code labels' });
+    expect(printBtn).toBeDisabled();
+
+    // Advance timers so all 60 labels complete rendering -> Print Sheet becomes enabled
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+    await screen.findByText('Household 60');
+    expect(printBtn).not.toBeDisabled();
+
+    const sheet = screen.getByTestId('qr-print-sheet');
+    expect(sheet).toHaveClass('qr-print-sheet--avery-5163');
+    fireEvent.change(screen.getByLabelText(/Select Avery label template/i), {
+      target: { value: 'avery_5160' },
+    });
+    expect(sheet).toHaveClass('qr-print-sheet--avery-5160');
+
+    // Empty codes array keeps Print Sheet disabled
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={[]} />
+      </QueryClientProvider>
+    );
+    expect(screen.getByRole('button', { name: 'Print Sheet of QR code labels' })).toBeDisabled();
+
+    jest.useRealTimers();
+  });
+
+  it('defaults modal title heading to h2 so page-level h1 remains unique with zero heading-order violations', async () => {
+    render(
+      <main>
+        <h1>Pre-Authorized Guest Invitation Codes</h1>
+        <InvitationQRPrintLabelsModal isOpen={true} onClose={jest.fn()} codes={sampleCodes} />
+      </main>
+    );
+
+    expect(document.body.querySelectorAll('h1')).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Printable Invitation QR Labels' })
+    ).toBeInTheDocument();
+    expect(
+      await axe(document.body, {
+        rules: {
+          'page-has-heading-one': { enabled: true },
+          'heading-order': { enabled: true },
+        },
+      })
+    ).toHaveNoViolations();
   });
 });

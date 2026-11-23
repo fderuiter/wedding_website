@@ -820,6 +820,83 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
       expect((await window.fetch('/api/admin/overview-stats')).status).toBe(200);
       expect((await window.fetch('/api/unknown-endpoint', { method: 'POST', body: '["array-body"]' })).status).toBe(404);
 
+      // Public address collection postal validation, tag isolation, and promotion to invited
+      resetDemoState();
+      setDemoRuntimeActive(true);
+      purgeDemoSampleData();
+      const catalogRes = await window.fetch('/api/admin/invitation-codes?limit=1000');
+      expect(catalogRes.headers.get('X-Total-Count')).toBe('0');
+
+      const invalidCollectRes = await window.fetch('/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({ guestName: 'Incomplete Postal' }),
+      });
+      expect(invalidCollectRes.status).toBe(400);
+
+      const validCollectRes = await window.fetch('/api/guest/address/public', {
+        method: 'POST',
+        body: JSON.stringify({
+          guestName: 'Morgan Address Only',
+          addressLine1: '742 Evergreen Terrace',
+          city: 'Springfield',
+          state: 'IL',
+          zipCode: '62704',
+          notes: 'Gate code 4815',
+        }),
+      });
+      expect(validCollectRes.status).toBe(200);
+      const validCollectJson = await validCollectRes.json();
+      expect(validCollectJson).toEqual({
+        success: true,
+        message: 'Address submitted successfully.',
+      });
+
+      const collectedGuest = getActiveArchetypeDataset().guests.find(
+        (g) => g.guestName === 'Morgan Address Only'
+      );
+      expect(collectedGuest).toBeDefined();
+      const collectedId = collectedGuest!.id;
+      const collectedCode = collectedGuest!.code;
+      expect(collectedGuest?.dietaryNotes).toBeNull();
+      expect((collectedGuest?.extraFields as Record<string, unknown>)?.householdNotes).toBe(
+        'Gate code 4815'
+      );
+
+      // Unpromoted address-collection records cannot validate as invited guests or complete Guest List milestone
+      expect(
+        (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
+          .status
+      ).toBe(404);
+      const milestonesBeforePromote = await (
+        await window.fetch('/api/admin/onboarding-milestones')
+      ).json();
+      expect(
+        milestonesBeforePromote.data.milestones.find((m: { id: string }) => m.id === 'guest-list')
+          ?.completed
+      ).toBe(false);
+
+      // Promoting removes 'address-collection' tag and unlocks validation + milestone completion
+      const promoteRes = await window.fetch('/api/admin/invitation-codes/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          ids: [collectedId],
+          tags: ['address-collection'],
+          action: 'remove',
+        }),
+      });
+      expect(promoteRes.status).toBe(200);
+      expect(
+        (await window.fetch(`/api/registry/validate-code?code=${encodeURIComponent(collectedCode)}`))
+          .status
+      ).toBe(200);
+      const milestonesAfterPromote = await (
+        await window.fetch('/api/admin/onboarding-milestones')
+      ).json();
+      expect(
+        milestonesAfterPromote.data.milestones.find((m: { id: string }) => m.id === 'guest-list')
+          ?.completed
+      ).toBe(true);
+
       // Uninstalling restores fallback fetch behavior for /api/* routes
       uninstallSecond();
       uninstallFirst();

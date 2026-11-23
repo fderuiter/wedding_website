@@ -1,6 +1,7 @@
 import { AdminEntityReorderSchema } from '@/utils/validation';
 import { NextRequest, NextResponse } from 'next/server';
 import { getEntityService } from '@/features/admin';
+import { INVITATION_MAX_CATALOG_LIMIT } from '@/utils/invitationPagination';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { parseJsonRequestBody } from '@/utils/contentType';
@@ -11,6 +12,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, context: { par
   if (!serviceData) throw new ApiError(404, 'Entity not found');
 
   const { searchParams } = new URL(request.url);
+  const maxCatalogLimit = entity === 'invitation-codes' ? INVITATION_MAX_CATALOG_LIMIT : 100;
 
   // Parse and validate pagination parameters
   let limit = 50;
@@ -23,8 +25,7 @@ export const GET = withApiMiddleware(async (request: NextRequest, context: { par
     if (parsedLimit <= 0) {
       throw new ApiError(400, 'Invalid limit parameter');
     }
-    // Cap limit at 100
-    limit = Math.min(parsedLimit, 100);
+    limit = Math.min(parsedLimit, maxCatalogLimit);
   }
 
   let page = 1;

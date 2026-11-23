@@ -26,6 +26,109 @@ interface SeatCoordinates {
   y: number;
 }
 
+export interface ScaledTableDimensionsOptions {
+  shape: string;
+  capacity: number;
+  width?: number | null;
+  height?: number | null;
+  rotation?: number | null;
+  offset?: number;
+}
+
+export interface ScaledTableDimensions {
+  width: number;
+  height: number;
+}
+
+/**
+ * Scales rendered table bounds automatically for capacities 1 through 50 so adjacent seat targets
+ * maintain at least 24x24 CSS pixels of unobscured space (WCAG 2.5.8 & C42) on the floorplan
+ * and exported PDF schematics, while preserving configured dimensions for landmarks and tables that already fit.
+ */
+export function computeScaledTableDimensions({
+  shape,
+  capacity,
+  width,
+  height,
+  rotation = 0,
+  offset,
+}: ScaledTableDimensionsOptions): ScaledTableDimensions {
+  const baseWidth = Math.max(60, Number(width) || 120);
+  const baseHeight = Math.max(60, Number(height) || 120);
+
+  if (isLandmarkTableShape(shape) || capacity <= 0) {
+    return { width: baseWidth, height: baseHeight };
+  }
+
+  const safeCapacity = Math.max(1, Math.floor(Number(capacity) || 1));
+  const shapeLower = (shape || 'round').toLowerCase();
+  const isRound = shapeLower === 'round';
+  const isOneSided = isOneSidedTableShape(shapeLower);
+  const resolvedOffset = offset ?? (isRound || isOneSided ? 18 : 16);
+
+  // 36px center-to-center spacing guarantees >= 25.45px (> 24px) axis-aligned separation even at 45° diagonals
+  const diagonalSafeSpacing = 36;
+  // 33px axis-aligned spacing preserves zero overlap for 32x32px seat buttons on unrotated 2-seat edges
+  const axisAlignedTwoSeatSpacing = 33;
+  const normalizedRotation = (((Number(rotation) || 0) % 360) + 360) % 360;
+  const isAxisAligned = normalizedRotation % 90 === 0;
+
+  if (isRound) {
+    if (safeCapacity <= 1) {
+      return { width: baseWidth, height: baseHeight };
+    }
+    const sinHalfAngle = Math.sin(Math.PI / safeCapacity);
+    const minRadius = diagonalSafeSpacing / (2 * sinHalfAngle);
+    const minDiameter = Math.ceil(Math.max(60, (minRadius - resolvedOffset) * 2));
+    return {
+      width: Math.max(baseWidth, minDiameter),
+      height: Math.max(baseHeight, minDiameter),
+    };
+  }
+
+  if (isOneSided) {
+    const minOneSidedWidth = Math.ceil(diagonalSafeSpacing * (safeCapacity + 1));
+    return {
+      width: Math.max(baseWidth, minOneSidedWidth),
+      height: baseHeight,
+    };
+  }
+
+  const sideCounts = [0, 0, 0, 0];
+  for (let s = 1; s <= safeCapacity; s++) {
+    const perimeterIndex = s - 1;
+    const side = Math.min(3, Math.max(0, Math.floor((perimeterIndex * 4) / safeCapacity)));
+    sideCounts[side]++;
+  }
+
+  const maxHorizontalEdgeSeats = Math.max(sideCounts[0], sideCounts[2]);
+  const maxVerticalEdgeSeats = Math.max(sideCounts[1], sideCounts[3]);
+
+  const requiredEdgeDimension = (edgeSeats: number, rawDim: number): number => {
+    if (edgeSeats <= 1) {
+      return rawDim;
+    }
+    if (edgeSeats === 2 && isAxisAligned && rawDim >= axisAlignedTwoSeatSpacing * 3) {
+      return rawDim;
+    }
+    return Math.max(rawDim, Math.ceil(diagonalSafeSpacing * (edgeSeats + 1)));
+  };
+
+  let scaledWidth = requiredEdgeDimension(maxHorizontalEdgeSeats, baseWidth);
+  let scaledHeight = requiredEdgeDimension(maxVerticalEdgeSeats, baseHeight);
+
+  if (shapeLower === 'square') {
+    const squareSide = Math.max(scaledWidth, scaledHeight);
+    scaledWidth = squareSide;
+    scaledHeight = squareSide;
+  }
+
+  return {
+    width: scaledWidth,
+    height: scaledHeight,
+  };
+}
+
 export interface ResolvedSeatOccupant {
   seatNumber: number;
   guest: InvitationCodeDTO;

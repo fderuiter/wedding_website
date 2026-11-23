@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import { Icon } from '@/components/ui/Icon';
 import { contentService } from '@/features/content';
@@ -9,10 +9,13 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { isGuestRequest } from '@/core/auth/guest.server';
 import {
   enforceActiveGuestPageSession,
+  getActivePhotoUploadSession,
   getGuestInviteSession,
 } from '@/core/auth/guestInviteSession';
+import { getSignedPhotoUploadSession } from '@/core/auth/photoUploadToken';
 
 import {
   PhotoCategory,
@@ -31,6 +34,25 @@ interface PhotosPageProps {
   searchParams?: Promise<{ tab?: string | string[] }>;
 }
 
+function redirectToGuestLogin(): never {
+  try {
+    redirect('/guest/login?callbackUrl=%2Fphotos%3Ftab%3Dguest');
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'digest' in err &&
+      typeof (err as { digest?: unknown }).digest === 'string' &&
+      (err as { digest: string }).digest.startsWith('NEXT_REDIRECT;')
+    ) {
+      (err as { digest: string }).digest = (err as { digest: string }).digest.replace(
+        /;30[78];$/,
+        ';303;'
+      );
+    }
+    throw err;
+  }
+}
 /**
  * @page PhotosPage
  * @description A page that displays a gallery of wedding photos and guest uploads.
@@ -59,6 +81,25 @@ export default async function PhotosPage(props?: PhotosPageProps) {
   ]);
   if (!isFeatureEnabled('gallery', config.modules)) {
     notFound();
+  }
+
+  let isPhotoScopedVisitor = false;
+
+  if (!isStaticExport) {
+    const signedPhoto = await getSignedPhotoUploadSession();
+    if (signedPhoto) {
+      const hasFullAuth = isAdmin || (await isGuestRequest()) || Boolean(guestSession);
+      if (!hasFullAuth) {
+        const activePhotoSession = await getActivePhotoUploadSession(
+          undefined,
+          config.guestPhotoQrTokenVersion
+        );
+        if (!activePhotoSession) {
+          redirectToGuestLogin();
+        }
+        isPhotoScopedVisitor = true;
+      }
+    }
   }
 
   const photoNodes = await withPageQuery(
@@ -113,7 +154,12 @@ export default async function PhotosPage(props?: PhotosPageProps) {
 
   const hasCuratedPhotos = initialPhotos.some((p) => p.category === 'curated');
   const defaultTab: PhotoCategory =
-    requestedTab ?? (hasCuratedPhotos || initialPhotos.length === 0 ? 'curated' : 'guest');
+    requestedTab ??
+    (isPhotoScopedVisitor
+      ? 'guest'
+      : hasCuratedPhotos || initialPhotos.length === 0
+        ? 'curated'
+        : 'guest');
   const defaultUploaderName = guestSession?.guestName?.trim() || undefined;
   const albumUrl = config.photoAlbumUrl?.trim() || '';
 

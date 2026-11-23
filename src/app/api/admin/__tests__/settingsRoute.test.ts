@@ -634,6 +634,97 @@ describe('PUT /api/admin/settings', () => {
     });
   });
 
+  it('clears stored smtpPass when smtpHost changes or TLS/STARTTLS does not apply without a new password, while keeping it when normalized smtpHost matches', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+
+    // 1. Changing smtpHost with blank smtpPass must clear existing.smtpPass
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'global',
+      subdomain: null,
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpPass: 'existing-smtp-pass',
+    });
+    const hostChangedReq = makeAuthReq({
+      ...validConfigData,
+      smtpHost: 'smtp.attacker.example.com',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpPass: '',
+    });
+    const hostChangedRes = await PUT(hostChangedReq);
+    expect(hostChangedRes.status).toBe(200);
+    expect(mockPrisma.appConfig.update).toHaveBeenLastCalledWith({
+      where: { id: 'global' },
+      data: expect.objectContaining({
+        smtpHost: 'smtp.attacker.example.com',
+        smtpPass: '',
+      }),
+    });
+
+    // 2. Matching normalized smtpHost (case/whitespace) on STARTTLS port 587 preserves existing.smtpPass
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'global',
+      subdomain: null,
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpPass: 'existing-smtp-pass',
+    });
+    const sameHostReq = makeAuthReq({
+      ...validConfigData,
+      smtpHost: '  SMTP.MAILGUN.ORG  ',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpPass: '   ',
+    });
+    const sameHostRes = await PUT(sameHostReq);
+    expect(sameHostRes.status).toBe(200);
+    expect(mockPrisma.appConfig.update).toHaveBeenLastCalledWith({
+      where: { id: 'global' },
+      data: expect.objectContaining({
+        smtpPass: 'existing-smtp-pass',
+      }),
+    });
+
+    // 3. Downgrading to plain port 25 with smtpSecure: false and blank smtpPass clears existing.smtpPass
+    (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'global',
+      subdomain: null,
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpPass: 'existing-smtp-pass',
+    });
+    const plainPort25Req = makeAuthReq({
+      ...validConfigData,
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: 25,
+      smtpSecure: false,
+      smtpPass: '',
+    });
+    const plainPort25Res = await PUT(plainPort25Req);
+    expect(plainPort25Res.status).toBe(200);
+    expect(mockPrisma.appConfig.update).toHaveBeenLastCalledWith({
+      where: { id: 'global' },
+      data: expect.objectContaining({
+        smtpPort: 25,
+        smtpSecure: false,
+        smtpPass: '',
+      }),
+    });
+
+    // 4. Disallowed smtpPort is rejected with 400
+    const badPortReq = makeAuthReq({
+      ...validConfigData,
+      smtpHost: 'smtp.mailgun.org',
+      smtpPort: 6379,
+    });
+    const badPortRes = await PUT(badPortReq);
+    expect(badPortRes.status).toBe(400);
+  });
+
   it('persists a valid timezone to database', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const req = makeAuthReq({

@@ -222,16 +222,14 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   );
 
   const usesRsvpUrl = body.includes('{{rsvpUrl}}') || subject.includes('{{rsvpUrl}}');
-  const requiresServerCount =
-    !Array.isArray(guests) || Boolean(effectiveTargetFilters?.subEventId);
+  const hasServerCountFn = typeof countRecipients === 'function';
   const shouldFetchCount =
-    typeof countRecipients === 'function' &&
-    (requiresServerCount || (usesRsvpUrl && !hasCheckedBaseUrl));
+    hasServerCountFn && (!isManualSelection || (usesRsvpUrl && !hasCheckedBaseUrl));
 
   const countingRecipients =
-    typeof countRecipients === 'function' &&
-    requiresServerCount &&
-    resolvedCountKey !== filtersKey;
+    shouldFetchCount &&
+    resolvedCountKey !== filtersKey &&
+    (!Array.isArray(guests) || Boolean(effectiveTargetFilters?.subEventId));
 
   useEffect(() => {
     if (!shouldFetchCount || typeof countRecipients !== 'function') {
@@ -284,9 +282,6 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   );
 
   const audienceStats = useMemo(() => {
-    if (Array.isArray(guests) && !effectiveTargetFilters?.subEventId) {
-      return summarizeBroadcastAudience(guests, effectiveTargetFilters, channel);
-    }
     if (
       previewResult &&
       typeof previewResult.matchedCount === 'number' &&
@@ -298,7 +293,17 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
         reachableCount: previewResult.matchedCount - previewResult.missingContactCount,
       };
     }
-    if (serverAudienceCounts && channel === 'EMAIL') {
+
+    const localStats =
+      Array.isArray(guests) && !effectiveTargetFilters?.subEventId
+        ? summarizeBroadcastAudience(guests, effectiveTargetFilters, channel)
+        : null;
+
+    if (
+      serverAudienceCounts &&
+      resolvedCountKey === filtersKey &&
+      (channel === 'EMAIL' || localStats === null)
+    ) {
       return {
         matchedCount: serverAudienceCounts.matchedCount,
         missingContactCount: serverAudienceCounts.missingContactCount,
@@ -306,12 +311,42 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
           serverAudienceCounts.matchedCount - serverAudienceCounts.missingContactCount,
       };
     }
+
+    if (localStats !== null) {
+      if (
+        serverAudienceCounts &&
+        resolvedCountKey === filtersKey &&
+        serverAudienceCounts.matchedCount !== localStats.matchedCount
+      ) {
+        return {
+          matchedCount: serverAudienceCounts.matchedCount,
+          missingContactCount: localStats.missingContactCount,
+          reachableCount: Math.max(
+            0,
+            serverAudienceCounts.matchedCount - localStats.missingContactCount
+          ),
+        };
+      }
+      return localStats;
+    }
+
     return null;
-  }, [guests, effectiveTargetFilters, channel, previewResult, serverAudienceCounts]);
+  }, [
+    guests,
+    effectiveTargetFilters,
+    channel,
+    previewResult,
+    serverAudienceCounts,
+    resolvedCountKey,
+    filtersKey,
+  ]);
 
   const effectiveRecipientCount = useMemo(() => {
     if (isManualSelection) {
       return manualSelectionCount ?? audienceStats?.matchedCount ?? null;
+    }
+    if (hasServerCountFn && resolvedCountKey === filtersKey && recipientCount !== null) {
+      return recipientCount;
     }
     if (effectiveTargetFilters?.subEventId) {
       return recipientCount;
@@ -323,6 +358,9 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   }, [
     isManualSelection,
     manualSelectionCount,
+    hasServerCountFn,
+    resolvedCountKey,
+    filtersKey,
     effectiveTargetFilters?.subEventId,
     guests,
     audienceStats,

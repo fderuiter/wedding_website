@@ -755,7 +755,12 @@ export async function handleRegistryRoutes(
     const invite = snapshot.invitationCode.find(
       (inv) => inv.code.toUpperCase() === code,
     );
-    if (!invite) {
+    if (
+      !invite ||
+      invite.partyTags.some(
+        (tag) => tag.trim().toLowerCase() === 'address-collection',
+      )
+    ) {
       return errorJson(404, 'Invalid invitation code.');
     }
     if (method === 'POST') {
@@ -790,7 +795,12 @@ export async function handleRegistryRoutes(
           (i) => i.code.toUpperCase() === sessionCode.toUpperCase(),
         )
         : null;
-      if (!invite) {
+      if (
+        !invite ||
+        invite.partyTags.some(
+          (tag) => tag.trim().toLowerCase() === 'address-collection',
+        )
+      ) {
         return wrapMiddlewareJson({
           isVerified: false,
           invitationCode: null,
