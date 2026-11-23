@@ -171,7 +171,17 @@ async function main() {
     const envPath = path.join(rootDir, '.env.test');
 
     // Strict Test Environment Isolation: Ignore parent shell database environment variables and isolated test variables
-    const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
+    const pgVars = [
+      'DATABASE_URL',
+      'POSTGRES_URL_NON_POOLING',
+      'PGDATABASE',
+      'PGUSER',
+      'PGPASSWORD',
+      'PGHOST',
+      'PGPORT',
+      'PGDATASOURCE',
+      'ADMIN_PASSWORD',
+    ];
     for (const v of pgVars) {
       delete process.env[v];
     }
@@ -189,15 +199,88 @@ async function main() {
 
     process.env.DATABASE_URL = testDbUrl;
 
-    console.log('Synchronizing schema to isolated test database (provider: postgresql)...');
+    const parsedTestUrl = new URL(testDbUrl);
+    const targetDbName = decodeURIComponent(parsedTestUrl.pathname.replace(/^\//, ''));
+    const targetSchema = parsedTestUrl.searchParams.get('schema') || 'public';
+    const isIsolatedTestDb = targetDbName === 'wedding_test' || targetDbName.endsWith('_test');
 
-    runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl }
+    if (isIsolatedTestDb && /^[A-Za-z0-9_-]+$/.test(targetDbName)) {
+      try {
+        const { default: pg } = await import('pg');
+        const adminUrl = new URL(testDbUrl);
+        adminUrl.pathname = '/postgres';
+        adminUrl.search = '';
+        const adminClient = new pg.Client({ connectionString: adminUrl.toString() });
+        await adminClient.connect();
+        try {
+          const existsResult = await adminClient.query(
+            'SELECT 1 FROM pg_database WHERE datname = $1',
+            [targetDbName]
+          );
+          if (existsResult.rowCount === 0) {
+            const escapedDb = targetDbName.replace(/"/g, '""');
+            await adminClient.query(`CREATE DATABASE "${escapedDb}"`);
+          }
+        } finally {
+          await adminClient.end();
+        }
+      } catch {
+        // Database may be unreachable when running unit-only suites without Docker; let Prisma report if needed
+      }
+    }
+
+    console.log('Applying Prisma migrations to isolated test database (provider: postgresql)...');
+
+    const migrateEnv = { ...process.env, DATABASE_URL: testDbUrl };
+    delete migrateEnv.POSTGRES_URL_NON_POOLING;
+
+    const migrateResult = child_process.spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+      cwd: rootDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
+      env: migrateEnv,
     });
+
+    const migrateStdout = migrateResult.stdout ? migrateResult.stdout.toString() : '';
+    const migrateStderr = migrateResult.stderr ? migrateResult.stderr.toString() : '';
+    if (migrateStdout) process.stdout.write(migrateStdout);
+    if (migrateStderr) process.stderr.write(migrateStderr);
+
+    if (migrateResult.status !== 0) {
+      const combinedMigrateOutput = `${migrateStdout}\n${migrateStderr}`;
+      if (
+        /\bP3005\b/.test(combinedMigrateOutput) &&
+        isIsolatedTestDb &&
+        /^[A-Za-z_][A-Za-z0-9_]*$/.test(targetSchema)
+      ) {
+        console.warn(
+          `Detected unbaselined schema "${targetSchema}" in "${targetDbName}" from prior local "prisma db push" state (P3005). Resetting "${targetSchema}" schema and retrying "npx prisma migrate deploy"...`
+        );
+        const { default: pg } = await import('pg');
+        const resetClient = new pg.Client({ connectionString: testDbUrl });
+        await resetClient.connect();
+        try {
+          const escapedSchema = targetSchema.replace(/"/g, '""');
+          await resetClient.query(`DROP SCHEMA IF EXISTS "${escapedSchema}" CASCADE`);
+          await resetClient.query(`CREATE SCHEMA "${escapedSchema}"`);
+          await resetClient.query(`GRANT ALL ON SCHEMA "${escapedSchema}" TO CURRENT_USER`);
+          await resetClient.query(`GRANT ALL ON SCHEMA "${escapedSchema}" TO PUBLIC`);
+        } finally {
+          await resetClient.end();
+        }
+
+        runCommand('npx', ['prisma', 'migrate', 'deploy'], {
+          env: migrateEnv,
+        });
+      } else {
+        console.error('Command failed: npx prisma migrate deploy');
+        process.exit(migrateResult.status || 1);
+      }
+    }
 
     const prismaClientDir = path.join(rootDir, 'node_modules', '.prisma', 'client');
     if (!isCi || !fs.existsSync(prismaClientDir)) {
-      // Run Prisma Client generation after db push when running locally or if client artifacts are missing
+      // Run Prisma Client generation after migrate deploy when running locally or if client artifacts are missing
       console.log('Generating Prisma Client...');
       runCommand('npm', ['run', 'prisma:generate']);
     }

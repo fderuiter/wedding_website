@@ -152,9 +152,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     ...(body.contactEmail !== undefined
       ? {
         contactEmail:
-            typeof body.contactEmail === 'string'
-              ? body.contactEmail.trim()
-              : body.contactEmail,
+          typeof body.contactEmail === 'string'
+            ? body.contactEmail.trim()
+            : body.contactEmail,
       }
       : {}),
     venueName: fallbackVenueField(body.venueName),
