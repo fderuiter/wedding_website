@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { contentService, PhotoModerationSchema } from '@/features/content';
+import { contentService, QueuePhotoModerationSchema } from '@/features/content';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
 import { getAppConfig } from '@/lib/config';
@@ -60,28 +60,17 @@ export const PATCH = withApiMiddleware(async (request: NextRequest) => {
     return handleBatchPhotoModeration(body);
   }
 
-  const parsed = PhotoModerationSchema.safeParse(body);
+  const parsed = QueuePhotoModerationSchema.safeParse(body);
   if (!parsed.success) {
-    throw new ApiError(400, 'Invalid moderation payload');
+    throw new ApiError(400, parsed.error.issues[0]?.message || 'Invalid moderation payload');
   }
 
-  const id = body.id || body.nodeId || body.photoId;
-  if (!id) {
-    throw new ApiError(400, 'Photo ID (id or nodeId) is required');
-  }
-
-  let action: 'approve' | 'reject';
-  if (body.action) {
-    action = String(body.action).toLowerCase() as 'approve' | 'reject';
-  } else if (body.status) {
-    action = String(body.status).toUpperCase() === 'APPROVED' ? 'approve' : 'reject';
-  } else {
-    throw new ApiError(400, "Action ('approve' or 'reject') or status ('APPROVED' or 'REJECTED') is required");
-  }
-
-  if (action !== 'approve' && action !== 'reject') {
-    throw new ApiError(400, "Invalid moderation action. Must be 'approve' or 'reject'");
-  }
+  const id = (parsed.data.id || parsed.data.nodeId || parsed.data.photoId)!;
+  const action: 'approve' | 'reject' = parsed.data.action
+    ? (String(parsed.data.action).toLowerCase() as 'approve' | 'reject')
+    : String(parsed.data.status).toUpperCase() === 'APPROVED'
+      ? 'approve'
+      : 'reject';
 
   const result = await contentService.moderatePhoto(id, action, 'Admin');
 

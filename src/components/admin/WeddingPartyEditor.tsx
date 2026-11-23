@@ -251,7 +251,7 @@ export function WeddingPartyCard({
             <Button
               variant="outline"
               size="sm"
-              aria-label={`Move ${member.name || 'member'} up`}
+              srContext={member.name || 'member'}
               disabled={disableMoveUp || isTemp}
               onClick={() => onMove('up')}
             >
@@ -260,7 +260,7 @@ export function WeddingPartyCard({
             <Button
               variant="outline"
               size="sm"
-              aria-label={`Move ${member.name || 'member'} down`}
+              srContext={member.name || 'member'}
               disabled={disableMoveDown || isTemp}
               onClick={() => onMove('down')}
             >
