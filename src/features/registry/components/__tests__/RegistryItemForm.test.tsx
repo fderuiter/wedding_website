@@ -396,4 +396,41 @@ describe('RegistryItemForm', () => {
     });
     expect(vendorUrlInput).toHaveValue('https://custom-vendor.com/already-typed');
   });
+
+  it('clears persisted sessionStorage draft and restores baseline values when Reset Draft is clicked', () => {
+    window.sessionStorage.clear();
+    render(
+      <RegistryItemForm
+        mode="edit"
+        initialValues={{ id: 'item-42', name: 'Original Kettle', price: 85, quantity: 1, category: 'Kitchen' }}
+        onSubmit={jest.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Item Name/i), {
+      target: { value: 'Accidental Draft Name' },
+    });
+    expect(window.sessionStorage.getItem('registry_item_form_edit_item-42')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Draft' }));
+
+    expect(window.sessionStorage.getItem('registry_item_form_edit_item-42')).toBeNull();
+    expect(screen.getByLabelText(/Item Name/i)).toHaveValue('Original Kettle');
+  });
+
+  it('clears persisted sessionStorage draft and invokes onCancel when Cancel is clicked', () => {
+    window.sessionStorage.clear();
+    const onCancel = jest.fn();
+    render(<RegistryItemForm mode="add" onSubmit={jest.fn()} onCancel={onCancel} />);
+
+    fireEvent.change(screen.getByLabelText(/Item Name/i), {
+      target: { value: 'Temporary Draft' },
+    });
+    expect(window.sessionStorage.getItem('registry_item_form_add')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(window.sessionStorage.getItem('registry_item_form_add')).toBeNull();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
 });

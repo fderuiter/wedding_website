@@ -1,0 +1,11 @@
+{
+  "name": "@prisma/studio-core",
+  "version": "0.0.0-disabled",
+  "private": true,
+  "exports": {
+    "./data/bff": "./index.cjs",
+    "./data/mysql2": "./index.cjs",
+    "./data/node-sqlite": "./index.cjs",
+    "./data/postgresjs": "./index.cjs"
+  }
+}

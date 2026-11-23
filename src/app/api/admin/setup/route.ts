@@ -6,6 +6,7 @@ import {
   toPublicAppConfig,
   sanitizeAppConfigForBackup,
   isSiteInitialized,
+  isSetupCompleted,
 } from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
@@ -35,7 +36,7 @@ type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
 
 function fallbackVenueField(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value.trim() : 'TBD';
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
 function normalizeOptionalName(value: unknown): unknown {
@@ -77,10 +78,12 @@ function isReservedBaseUrl(url: string): boolean {
 export const GET = withApiMiddleware(async () => {
   const config = await getAppConfig();
   const initialized = isSiteInitialized(config);
+  const setupCompleted = isSetupCompleted(config);
   return NextResponse.json({
     success: true,
     initialized,
-    requiresSetup: !initialized,
+    setupCompleted,
+    requiresSetup: !initialized || !setupCompleted,
   });
 });
 
@@ -148,14 +151,51 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     body.contactEmail !== undefined;
 
   if (!hasConfigPayload) {
+    if (initialized && isAdmin && typeof body.setupCompleted === 'boolean') {
+      await prisma.appConfig.upsert({
+        where: { id: 'global' },
+        update: { setupCompleted: body.setupCompleted },
+        create: { id: 'global', setupCompleted: body.setupCompleted },
+      });
+
+      try {
+        revalidatePath('/', 'layout');
+        revalidatePath('/admin/setup');
+        revalidatePath('/admin/dashboard');
+      } catch {
+        // Ignore in non-Next runtime/test environments
+      }
+
+      const iat = Date.now();
+      const exp = iat + 60 * 60 * 8 * 1000;
+      const token = await signAdminToken({ isAdmin: true, iat, exp });
+      const response = NextResponse.json({
+        success: true,
+        initialized: true,
+        setupCompleted: body.setupCompleted,
+        requiresSetup: !body.setupCompleted,
+      });
+      setAdminAuthCookie(response, token);
+      return response;
+    }
+
     // Auth-only check for step 1
     const iat = Date.now();
     const exp = iat + 60 * 60 * 8 * 1000;
     const token = await signAdminToken({ isAdmin: true, iat, exp });
-    const response = NextResponse.json({ success: true, initialized });
+    const completed = isSetupCompleted(config);
+    const response = NextResponse.json({
+      success: true,
+      initialized,
+      setupCompleted: completed,
+      requiresSetup: !initialized || !completed,
+    });
     setAdminAuthCookie(response, token);
     return response;
   }
+
+  const requestedSetupCompleted =
+    typeof body.setupCompleted === 'boolean' ? body.setupCompleted : true;
 
   // Validate setup configuration payload
   const normalizedSetupConfig = {
@@ -218,6 +258,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     showCountdown: body.showCountdown ?? config.showCountdown ?? true,
     showAddToCalendar:
       body.showAddToCalendar ?? config.showAddToCalendar ?? true,
+    setupCompleted: requestedSetupCompleted,
     modules: body.modules ?? config.modules,
     subdomain: body.subdomain || null,
   };
@@ -304,6 +345,8 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   try {
     revalidatePath('/', 'layout');
+    revalidatePath('/admin/setup');
+    revalidatePath('/admin/dashboard');
   } catch {
     // Ignore in non-Next runtime/test environments
   }
@@ -315,6 +358,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const response = NextResponse.json({
     success: true,
     ...toPublicAppConfig(parsedUpdatedConfig),
+    setupCompleted: parsedUpdatedConfig.setupCompleted !== false,
   });
   setAdminAuthCookie(response, token);
   return response;

@@ -39,6 +39,15 @@ function getSafeBackgroundImageStyle(rawUrl?: string): string | undefined {
   return safe ? `url("${safe}")` : undefined;
 }
 
+function cleanDisplayVenueField(value?: string | null): string {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const upper = trimmed.toUpperCase();
+  if (upper === 'TBD' || upper === 'TBD VENUE') return '';
+  return trimmed;
+}
+
 function splitParagraphs(text?: string | null): string[] {
   if (!text || typeof text !== 'string') return [];
   return text
@@ -209,6 +218,22 @@ export default function HomePageClient({
     .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
     .map(n => n.data);
 
+  const cleanVenueName = cleanDisplayVenueField(config.venueName);
+  const cleanVenueAddress = cleanDisplayVenueField(config.venueAddress);
+  const cleanVenueCity = cleanDisplayVenueField(config.venueCity);
+  const cleanVenueState = cleanDisplayVenueField(config.venueState);
+  const ceremonyVenueLine = [cleanVenueName, cleanVenueAddress].filter(Boolean).join(' · ');
+  const locationSummary = [cleanVenueCity, cleanVenueState].filter(Boolean).join(', ');
+  const partner1Display = (config.partner1Name || config.brideName || '').trim();
+  const partner2Display = (config.partner2Name || config.groomName || '').trim();
+  const defaultHeroTitle =
+    partner1Display && partner2Display
+      ? `${partner1Display} & ${partner2Display}`
+      : 'Celebrate With Us';
+  const defaultHeroSubtitle = locationSummary
+    ? `Join us as we celebrate our wedding on ${formattedDate} in ${locationSummary}.`
+    : `Join us as we celebrate our wedding on ${formattedDate}.`;
+
   let features = config.features || [];
 
   if (features.length === 0) {
@@ -274,8 +299,8 @@ export default function HomePageClient({
                   <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
                   <ul className="space-y-2 text-gray-800 dark:text-gray-100">
                     <li>{detailsNode.ceremonyTime}</li>
-                    <li>{config.venueName} · {config.venueAddress}</li>
-                    <li>{config.venueCity}, {config.venueState}</li>
+                    {ceremonyVenueLine && <li>{ceremonyVenueLine}</li>}
+                    {locationSummary && <li>{locationSummary}</li>}
                   </ul>
                 </div>
                 <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
@@ -414,15 +439,18 @@ export default function HomePageClient({
 
   const weddingDateObj = new Date(config.weddingDate);
   const hasValidWeddingDate = !isNaN(weddingDateObj.getTime());
+  const calendarLocation = [cleanVenueName, cleanVenueCity, cleanVenueState]
+    .filter(Boolean)
+    .join(', ');
   const calendarEvent = formatScheduleEventToCalendarEvent(
     {
-      title: config.heroTitle || 'Wedding',
+      title: config.heroTitle || defaultHeroTitle,
       startTime: hasValidWeddingDate ? weddingDateObj.toISOString() : undefined,
       endTime: hasValidWeddingDate
         ? new Date(weddingDateObj.getTime() + 6 * 60 * 60 * 1000).toISOString()
         : undefined,
-      location: `${config.venueName}, ${config.venueCity}, ${config.venueState}`,
-      description: config.heroSubtitle || 'Join us for our wedding!',
+      location: calendarLocation,
+      description: config.heroSubtitle || defaultHeroSubtitle,
     },
     undefined,
     config.timezone
@@ -465,10 +493,10 @@ export default function HomePageClient({
                 />
               )}
               <motion.h1 className="mb-6 type-display text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
-                {config.heroTitle || 'We Tied the Knot!'}
+                {config.heroTitle || defaultHeroTitle}
               </motion.h1>
               <motion.p className="mb-4 type-body" variants={fadeUp} initial="hidden" animate="visible" custom={1}>
-                {config.heroSubtitle || `Thank you for celebrating with us on ${formattedDate}, in ${config.venueCity}, ${config.venueState}. We're so grateful for all the love and support from our family and friends.`}
+                {config.heroSubtitle || defaultHeroSubtitle}
               </motion.p>
               {config.showCountdown && isFeatureEnabled('countdown', config.modules) && (
                 <motion.div className="mb-8 text-2xl font-semibold text-primary" variants={fadeUp} initial="hidden" animate="visible" custom={2}>
@@ -497,8 +525,11 @@ export default function HomePageClient({
           {features.map((feature, index) => renderSection(feature, index + 3))}
 
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-600 dark:text-gray-400">
-            <p>© {new Date().getFullYear()} {config.partner1Name || config.brideName} & {config.partner2Name || config.groomName} • Designed with ❤️ in {config.venueState}</p>
-            <p>Stay tuned for more updates from our lives together!</p>
+            <p>
+              © {new Date().getFullYear()} {partner1Display} &amp; {partner2Display}
+              {cleanVenueState ? ` • Designed with ❤️ in ${cleanVenueState}` : ''}
+            </p>
+            <p>We look forward to celebrating with you!</p>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
               <a href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</a>
               <span aria-hidden="true" className="text-gray-400 dark:text-gray-600">•</span>
