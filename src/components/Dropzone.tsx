@@ -11,16 +11,20 @@ import {
   getFileExtension,
 } from '@/utils/validation';
 
-interface DropzoneProps extends React.ComponentPropsWithRef<'div'> {
-  uploadUrl?: string;
+interface DropzoneProps extends Omit<React.ComponentPropsWithRef<'div'>, 'onError'> {
+  uploadUrl?: string | null;
   maxSize?: number;
   acceptTypes?: string[];
   allowedExtensions?: string[];
+  validate?: (file: File) => string | null;
   onUploadSuccess?: (url: string, file: File) => void;
   onUploadError?: (error: string) => void;
   onFileSelect?: (file: File) => void;
-  label?: string;
-  hint?: string;
+  label?: React.ReactNode;
+  hint?: React.ReactNode;
+  busy?: boolean;
+  busyLabel?: string;
+  error?: string | null;
   disabled?: boolean;
   className?: string;
 }
@@ -30,11 +34,15 @@ function Dropzone({
   maxSize = MAX_UPLOAD_SIZE,
   acceptTypes = ACCEPTED_IMAGE_TYPES,
   allowedExtensions = ALLOWED_EXTENSIONS,
+  validate,
   onUploadSuccess,
   onUploadError,
   onFileSelect,
   label = 'Drag and drop an image file here, or click to browse',
   hint = 'Supports JPG, PNG, and ICO files up to 5MB',
+  busy = false,
+  busyLabel = 'Uploading image...',
+  error: externalError,
   disabled = false,
   className,
   ref,
@@ -44,9 +52,22 @@ function Dropzone({
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const promptId = useId();
+  const hintId = useId();
   const errorId = useId();
 
+  const isBusy = isUploading || busy;
+  const activeError = externalError !== undefined ? externalError : error;
+  const hasHint = Boolean(hint) && !isBusy;
+  const describedBy =
+    [hasHint ? hintId : null, activeError ? errorId : null].filter(Boolean).join(' ') ||
+    undefined;
+
   const validateFile = (file: File): string | null => {
+    if (validate) {
+      return validate(file);
+    }
+
     if (file.size > maxSize) {
       return 'File size exceeds 5MB limit';
     }
@@ -78,6 +99,10 @@ function Dropzone({
       onFileSelect(file);
     }
 
+    if (!uploadUrl) {
+      return;
+    }
+
     setIsUploading(true);
     try {
       const formData = new FormData();
@@ -101,7 +126,7 @@ function Dropzone({
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!disabled && !isUploading) {
+    if (!disabled && !isBusy) {
       setIsDragActive(true);
     }
   };
@@ -117,7 +142,7 @@ function Dropzone({
     e.stopPropagation();
     setIsDragActive(false);
 
-    if (disabled || isUploading) return;
+    if (disabled || isBusy) return;
 
     const droppedFiles = e.dataTransfer.files;
     if (droppedFiles && droppedFiles.length > 0) {
@@ -126,13 +151,13 @@ function Dropzone({
   };
 
   const handleClick = () => {
-    if (!disabled && !isUploading && fileInputRef.current) {
+    if (!disabled && !isBusy && fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !disabled && !isUploading) {
+    if ((e.key === 'Enter' || e.key === ' ') && !disabled && !isBusy) {
       e.preventDefault();
       handleClick();
     }
@@ -153,9 +178,9 @@ function Dropzone({
         ref={ref}
         role="button"
         tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled || isUploading}
-        aria-describedby={error ? errorId : undefined}
-        aria-label="File upload dropzone"
+        aria-disabled={disabled || isBusy}
+        aria-labelledby={promptId}
+        aria-describedby={describedBy}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         onDragOver={handleDragOver}
@@ -166,8 +191,8 @@ function Dropzone({
           isDragActive
             ? 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20'
             : 'border-gray-300 dark:border-gray-700 hover:border-rose-400 dark:hover:border-rose-500 bg-gray-50/50 dark:bg-gray-800/50',
-          (disabled || isUploading) && 'opacity-60 cursor-not-allowed pointer-events-none',
-          error && 'border-red-500 dark:border-red-500 bg-red-50/30 dark:bg-red-950/20',
+          (disabled || isBusy) && 'opacity-60 cursor-not-allowed pointer-events-none',
+          activeError && 'border-red-500 dark:border-red-500 bg-red-50/30 dark:bg-red-950/20',
           className
         )}
         {...props}
@@ -177,31 +202,36 @@ function Dropzone({
           type="file"
           accept={allowedExtensions.join(',')}
           onChange={handleInputChange}
-          disabled={disabled || isUploading}
+          disabled={disabled || isBusy}
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ display: 'none' }}
           className="hidden"
           data-testid="dropzone-file-input"
         />
 
         <Icon
-          name={isUploading ? 'Loader2' : 'UploadCloud'}
+          name={isBusy ? 'Loader2' : 'UploadCloud'}
           className={cn(
             'h-10 w-10 mb-2 text-gray-400 dark:text-gray-500',
-            isUploading && 'animate-spin text-rose-500'
+            isBusy && 'animate-spin text-rose-500'
           )}
         />
 
-        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-          {isUploading ? 'Uploading image...' : label}
+        <p id={promptId} className="text-sm font-medium text-gray-700 dark:text-gray-200">
+          {isBusy ? busyLabel : label}
         </p>
 
-        {hint && !isUploading && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{hint}</p>
+        {hasHint && (
+          <p id={hintId} className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {hint}
+          </p>
         )}
       </div>
 
-      {error && (
+      {activeError && (
         <p id={errorId} role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
-          {error}
+          {activeError}
         </p>
       )}
     </div>
