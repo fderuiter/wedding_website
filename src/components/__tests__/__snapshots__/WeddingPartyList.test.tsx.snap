@@ -65,11 +65,15 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="relative h-64 w-full"
           >
-            <img
-              alt="John smiling"
-              class="rounded-t-lg w-full h-full object-cover"
-              src="https://example.com/john.jpg"
-            />
+            <picture
+              class="contents"
+            >
+              <img
+                alt="John smiling"
+                class="rounded-t-lg w-full h-full object-cover"
+                src="https://example.com/john.jpg"
+              />
+            </picture>
           </div>
           <div
             class="p-6"
@@ -129,11 +133,15 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="relative h-64 w-full"
           >
-            <img
-              alt="Photo of Jane Smith"
-              class="rounded-t-lg w-full h-full object-cover"
-              src="/images/placeholder.png"
-            />
+            <picture
+              class="contents"
+            >
+              <img
+                alt="Photo of Jane Smith"
+                class="rounded-t-lg w-full h-full object-cover"
+                src="/images/placeholder.png"
+              />
+            </picture>
           </div>
           <div
             class="p-6"
@@ -161,11 +169,15 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="relative h-64 w-full"
           >
-            <img
-              alt="Photo of Sam Wilson"
-              class="rounded-t-lg w-full h-full object-cover"
-              src="/images/placeholder.png"
-            />
+            <picture
+              class="contents"
+            >
+              <img
+                alt="Photo of Sam Wilson"
+                class="rounded-t-lg w-full h-full object-cover"
+                src="/images/placeholder.png"
+              />
+            </picture>
           </div>
           <div
             class="p-6"
@@ -193,11 +205,15 @@ exports[`WeddingPartyList matches the grid markup changes using baseline Jest sn
           <div
             class="relative h-64 w-full"
           >
-            <img
-              alt="Photo of Alex Taylor"
-              class="rounded-t-lg w-full h-full object-cover"
-              src="/images/placeholder.png"
-            />
+            <picture
+              class="contents"
+            >
+              <img
+                alt="Photo of Alex Taylor"
+                class="rounded-t-lg w-full h-full object-cover"
+                src="/images/placeholder.png"
+              />
+            </picture>
           </div>
           <div
             class="p-6"

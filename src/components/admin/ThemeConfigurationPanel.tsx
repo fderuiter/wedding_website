@@ -208,7 +208,6 @@ export function ThemeConfigurationPanel({
                 type="button"
                 role="radio"
                 aria-checked={isSelected}
-                aria-label={presetLabel}
                 tabIndex={isTabbable ? 0 : -1}
                 data-preset={preset}
                 onClick={() => handlePresetChange(preset)}

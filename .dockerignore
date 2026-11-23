@@ -72,6 +72,7 @@ src/**/__tests__
 src/mocks
 src/testing
 public/mockServiceWorker.js
+public/uploads
 scripts/*
 !scripts/generate-password-hash.mjs
 
@@ -91,5 +92,7 @@ lerna-debug.log*
 .DS_Store
 ._*
 
-# 8. TypeScript build caches
+# 8. TypeScript & ESLint build caches
 tsconfig.tsbuildinfo
+*.tsbuildinfo
+.eslintcache

@@ -1,13 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAppConfig, toPublicAppConfig, isSiteInitialized } from '@/lib/config';
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import {
+  getAppConfig,
+  toPublicAppConfig,
+  sanitizeAppConfigForBackup,
+  isSiteInitialized,
+} from '@/lib/config';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { ApiError } from '@/utils/ApiError';
-import { AppConfigSchema, UpdateAppConfigSchema, toAppConfigDbPayload } from '@/features/content';
+import {
+  AppConfigSchema,
+  UpdateAppConfigSchema,
+  toAppConfigDbPayload,
+} from '@/features/content';
 import { stripPresetDefaultTokens } from '@/lib/theme/presets';
 import { AdminSetupSchema, formatZodError } from '@/utils/validation';
-import { isAdminRequest, setAdminAuthCookie, signAdminToken } from '@/core/auth/auth.server';
+import {
+  isAdminRequest,
+  setAdminAuthCookie,
+  signAdminToken,
+} from '@/core/auth/auth.server';
 import { verifyPassword } from '@/utils/password';
 import { env } from '@/env';
 
@@ -18,6 +33,10 @@ import {
   synthesizeSetupStarterCopy,
 } from '@/lib/setupCopy';
 
+type SetupRequestPayload = z.infer<typeof AdminSetupSchema> & {
+  modules?: unknown;
+};
+
 const RESERVED_PARTNER_PLACEHOLDERS = new Set(['partner 1', 'partner 2']);
 
 function normalizeOptionalName(value: unknown): unknown {
@@ -26,7 +45,10 @@ function normalizeOptionalName(value: unknown): unknown {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function isReservedPartnerPair(partner1Name: string, partner2Name: string): boolean {
+function isReservedPartnerPair(
+  partner1Name: string,
+  partner2Name: string,
+): boolean {
   const p1Lower = partner1Name.trim().toLowerCase();
   const p2Lower = partner2Name.trim().toLowerCase();
   return (
@@ -68,9 +90,9 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
   const initialized = isSiteInitialized(config);
   const isAdmin = await isAdminRequest(req);
 
-  let body: any = {};
+  let rawBody: unknown = {};
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     // Body can be empty if only headers/cookies sent
   }
@@ -82,24 +104,40 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   // First-run setup authorization check
   if (!initialized && !isAdmin) {
-    const password = body.password;
-    if (!password) {
-      throw new ApiError(401, 'Admin password is required for setup.');
+    const rawPassword =
+      rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>).password
+        : undefined;
+    if (!rawPassword || typeof rawPassword !== 'string') {
+      throw new ApiError(
+        401,
+        !rawPassword
+          ? 'Admin password is required for setup.'
+          : 'Invalid admin password.',
+      );
     }
     const adminPassword = env.ADMIN_PASSWORD;
     if (!adminPassword) {
       throw new ApiError(500, 'Admin password not configured in environment.');
     }
-    const isMatch = await verifyPassword(password, adminPassword);
+    const isMatch = await verifyPassword(rawPassword, adminPassword);
     if (!isMatch) {
       throw new ApiError(401, 'Invalid admin password.');
     }
   }
 
-  const setupBodyResult = AdminSetupSchema.safeParse(body);
+  const setupBodyResult = AdminSetupSchema.safeParse(rawBody);
   if (!setupBodyResult.success) {
-    throw new ApiError(400, `Validation Error: ${formatZodError(setupBodyResult.error)}`);
+    throw new ApiError(
+      400,
+      `Validation Error: ${formatZodError(setupBodyResult.error)}`,
+    );
   }
+
+  const body: SetupRequestPayload = {
+    ...(rawBody as Record<string, unknown>),
+    ...setupBodyResult.data,
+  };
 
   // Determine if this request is submitting site setup configuration
   const hasConfigPayload =
@@ -153,9 +191,17 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     brideName: normalizeOptionalName(body.brideName),
     groomName: normalizeOptionalName(body.groomName),
     weddingDate: resolvedWeddingDate,
-    baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl.trim() : (body.baseUrl ?? ''),
+    baseUrl:
+      typeof body.baseUrl === 'string'
+        ? body.baseUrl.trim()
+        : (body.baseUrl ?? ''),
     ...(body.contactEmail !== undefined
-      ? { contactEmail: typeof body.contactEmail === 'string' ? body.contactEmail.trim() : body.contactEmail }
+      ? {
+        contactEmail:
+          typeof body.contactEmail === 'string'
+            ? body.contactEmail.trim()
+            : body.contactEmail,
+      }
       : {}),
     venueName: cleanedVenueName,
     venueAddress: cleanedVenueAddress,
@@ -189,7 +235,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     themeTokens: stripPresetDefaultTokens(
       body.themeTokens ?? {},
       body.themePreset ?? 'classic',
-      config.themePreset
+      config.themePreset,
     ),
     layoutContainerMaxWidth: body.layoutContainerMaxWidth,
     layoutGridGap: body.layoutGridGap,
@@ -197,32 +243,54 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     layoutBorderRadius: body.layoutBorderRadius,
     timezone: body.timezone ?? 'America/Chicago',
     showCountdown: body.showCountdown ?? config.showCountdown ?? true,
-    showAddToCalendar: body.showAddToCalendar ?? config.showAddToCalendar ?? true,
+    showAddToCalendar:
+      body.showAddToCalendar ?? config.showAddToCalendar ?? true,
     modules: body.modules ?? config.modules,
     subdomain: body.subdomain || null,
   };
   const parseResult = UpdateAppConfigSchema.safeParse(normalizedSetupConfig);
 
   if (!parseResult.success) {
-    throw new ApiError(400, `Validation Error: ${formatZodError(parseResult.error)}`);
+    throw new ApiError(
+      400,
+      `Validation Error: ${formatZodError(parseResult.error)}`,
+    );
   }
 
   const validData = parseResult.data;
 
   if (!validData.partner1Name.trim() || !validData.partner2Name.trim()) {
-    throw new ApiError(400, 'Validation Error: Partner names are required to complete setup.');
+    throw new ApiError(
+      400,
+      'Validation Error: Partner names are required to complete setup.',
+    );
   }
   if (isReservedPartnerPair(validData.partner1Name, validData.partner2Name)) {
-    throw new ApiError(400, 'Validation Error: Partner names cannot use reserved placeholder values.');
+    throw new ApiError(
+      400,
+      'Validation Error: Partner names cannot use reserved placeholder values.',
+    );
   }
   if (!validData.baseUrl.trim()) {
-    throw new ApiError(400, 'Validation Error: Site base URL is required to complete setup.');
+    throw new ApiError(
+      400,
+      'Validation Error: Site base URL is required to complete setup.',
+    );
   }
   if (isReservedBaseUrl(validData.baseUrl)) {
-    throw new ApiError(400, 'Validation Error: Site base URL cannot use a reserved placeholder domain.');
+    throw new ApiError(
+      400,
+      'Validation Error: Site base URL cannot use a reserved placeholder domain.',
+    );
   }
-  if (validData.contactEmail && validData.contactEmail.trim().toLowerCase() === 'hosts@wedding.example') {
-    throw new ApiError(400, 'Validation Error: Contact email cannot use a reserved placeholder address.');
+  if (
+    validData.contactEmail &&
+    validData.contactEmail.trim().toLowerCase() === 'hosts@wedding.example'
+  ) {
+    throw new ApiError(
+      400,
+      'Validation Error: Contact email cannot use a reserved placeholder address.',
+    );
   }
 
   const targetId = 'global';
@@ -237,13 +305,15 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     },
   });
 
-  const sanitizedUpdatedConfig = toPublicAppConfig(AppConfigSchema.parse(updatedConfig));
+  const parsedUpdatedConfig = AppConfigSchema.parse(updatedConfig);
 
   await prisma.snapshotVersion.create({
     data: {
       entityType: 'AppConfig',
       entityId: targetId,
-      data: sanitizedUpdatedConfig as any,
+      data: sanitizeAppConfigForBackup(
+        parsedUpdatedConfig,
+      ) as Prisma.InputJsonValue,
       author: 'Admin (Setup)',
     },
   });
@@ -271,7 +341,7 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
 
   const response = NextResponse.json({
     success: true,
-    ...toPublicAppConfig(AppConfigSchema.parse(updatedConfig)),
+    ...toPublicAppConfig(parsedUpdatedConfig),
   });
   setAdminAuthCookie(response, token);
   return response;

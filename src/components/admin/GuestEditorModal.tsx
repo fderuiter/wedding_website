@@ -65,6 +65,17 @@ interface GuestFormState {
 
 function getInitialExtraFieldsObject(extraFields: unknown): Record<string, unknown> {
   if (!extraFields) return {};
+  if (typeof extraFields === 'string') {
+    try {
+      const parsed = JSON.parse(extraFields);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ...(parsed as Record<string, unknown>) };
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  }
   if (typeof extraFields === 'object' && !Array.isArray(extraFields)) {
     return { ...(extraFields as Record<string, unknown>) };
   }
@@ -73,8 +84,16 @@ function getInitialExtraFieldsObject(extraFields: unknown): Record<string, unkno
 
 function getInitialGuestPhone(guest: InvitationCodeDTO): string {
   const extra = getInitialExtraFieldsObject(guest.extraFields);
-  const rawPhone = extra.phone ?? extra.mobile;
-  return typeof rawPhone === 'string' ? rawPhone : '';
+  const candidates = [extra.phone, extra.mobile, extra.phoneNumber, extra['Phone Number']];
+  for (const rawPhone of candidates) {
+    if (typeof rawPhone === 'string' && rawPhone.trim()) {
+      return rawPhone.trim().replace(/^'(?=[+\d(])/, '').trim();
+    }
+    if (typeof rawPhone === 'number' && Number.isFinite(rawPhone)) {
+      return String(rawPhone);
+    }
+  }
+  return '';
 }
 
 function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFormState {
@@ -132,6 +151,7 @@ interface GuestEditorFormBaseProps {
   onDirtyChange?: (_isDirty: boolean) => void;
   actionsAlign?: 'start' | 'end';
   className?: string;
+  ref?: React.Ref<HTMLFormElement>;
 }
 
 type GuestEditorFormProps =
@@ -145,452 +165,467 @@ type GuestEditorFormProps =
     onSave: (_id: string, _payload: Partial<InvitationCodeDTO>) => Promise<unknown>;
     rsvpOverrideSlot?: React.ReactNode;
     rsvpDirty?: boolean;
-    onSaveRsvpOverrides?: () => Promise<void>;
+    onSaveRsvpOverrides?: (_profileContext?: {
+      guestName: string;
+      plusOneFirstName: string | null;
+      plusOneLastName: string | null;
+    }) => Promise<void>;
+    onProfileCompanionChange?: (_firstName: string, _lastName: string) => void;
   });
 
-const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormProps>(
-  (props, ref) => {
-    const { onClose, onDirtyChange, actionsAlign = 'end', className } = props;
-    const isEditMode = props.mode === 'edit';
-    const guest = isEditMode ? props.guest : null;
-    const rsvpDirty = isEditMode ? Boolean(props.rsvpDirty) : false;
+function GuestEditorFormInner(props: GuestEditorFormProps) {
+  const { onClose, onDirtyChange, actionsAlign = 'end', className, ref } = props;
+  const isEditMode = props.mode === 'edit';
+  const guest = isEditMode ? props.guest : null;
+  const rsvpDirty = isEditMode ? Boolean(props.rsvpDirty) : false;
 
-    const initialFormState = useMemo(() => createInitialGuestFormState(guest), [guest]);
-    const [formState, setFormState] = useState<GuestFormState>(() => initialFormState);
-    const [validationError, setValidationError] = useState<string | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
+  const initialFormState = useMemo(() => createInitialGuestFormState(guest), [guest]);
+  const [formState, setFormState] = useState<GuestFormState>(() => initialFormState);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-    const isProfileDirty = isGuestFormDirty(formState, initialFormState);
-    const isDirty = isProfileDirty || rsvpDirty;
-    const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
+  const isProfileDirty = isGuestFormDirty(formState, initialFormState);
+  const isDirty = isProfileDirty || rsvpDirty;
+  const handleRequestClose = useDirtyConfirmClose(isDirty, onClose);
 
-    const originalCodeNormalized = guest ? normalizeInvitationCode(guest.code) : '';
-    const enteredCodeNormalized = normalizeInvitationCode(formState.code);
-    const hasCodeChanged =
-      isEditMode && Boolean(originalCodeNormalized) && enteredCodeNormalized !== originalCodeNormalized;
+  const originalCodeNormalized = guest ? normalizeInvitationCode(guest.code) : '';
+  const enteredCodeNormalized = normalizeInvitationCode(formState.code);
+  const hasCodeChanged =
+    isEditMode && Boolean(originalCodeNormalized) && enteredCodeNormalized !== originalCodeNormalized;
 
-    const updateField = <K extends keyof GuestFormState>(field: K, value: GuestFormState[K]) => {
-      const next = { ...formState, [field]: value };
-      setFormState(next);
-      onDirtyChange?.(isGuestFormDirty(next, initialFormState) || rsvpDirty);
-      if (validationError) setValidationError(null);
-    };
+  const updateField = <K extends keyof GuestFormState>(field: K, value: GuestFormState[K]) => {
+    const next = { ...formState, [field]: value };
+    setFormState(next);
+    onDirtyChange?.(isGuestFormDirty(next, initialFormState) || rsvpDirty);
+    if (
+      props.mode === 'edit' &&
+      (field === 'plusOneFirstName' || field === 'plusOneLastName')
+    ) {
+      props.onProfileCompanionChange?.(next.plusOneFirstName, next.plusOneLastName);
+    }
+    if (validationError) setValidationError(null);
+  };
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
 
-      const trimmedName = formState.guestName.trim();
-      if (!trimmedName) {
-        setValidationError('Guest name is required.');
-        return;
+    const trimmedName = formState.guestName.trim();
+    if (!trimmedName) {
+      setValidationError('Guest name is required.');
+      return;
+    }
+    if (trimmedName.length > GUEST_NAME_MAX_LENGTH) {
+      setValidationError(`Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`);
+      return;
+    }
+
+    const trimmedCode = normalizeInvitationCode(formState.code);
+    if (isEditMode && !trimmedCode) {
+      setValidationError('Invitation code is required.');
+      return;
+    }
+    if (trimmedCode && trimmedCode.length > INVITATION_CODE_MAX_LENGTH) {
+      setValidationError(`Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`);
+      return;
+    }
+
+    const parsedAllocations =
+      formState.plusOneAllocations.trim() === '' ? 0 : Number(formState.plusOneAllocations);
+    if (!Number.isInteger(parsedAllocations) || parsedAllocations < 0) {
+      setValidationError('Plus-one allocations must be a non-negative whole number.');
+      return;
+    }
+
+    const phoneError = validateGuestPhone(formState.phone);
+    if (phoneError) {
+      setValidationError(phoneError);
+      return;
+    }
+
+    const normalizedPhone = normalizeGuestPhone(formState.phone);
+    const normalizedEmail = normalizeNullableString(formState.email);
+    const normalizedHouseholdName = normalizeNullableString(formState.householdName);
+    const normalizedPartyGroup = normalizeNullableString(formState.partyGroup);
+    const normalizedPartyTags = normalizePartyTags(formState.partyTags, { dedupe: true });
+    const normalizedPlusOneFirstName = normalizeNullableString(formState.plusOneFirstName);
+    const normalizedPlusOneLastName = normalizeNullableString(formState.plusOneLastName);
+    const normalizedDietaryNotes = normalizeNullableString(formState.dietaryNotes);
+    const normalizedAddressLine1 = normalizeNullableString(formState.addressLine1);
+    const normalizedAddressLine2 = normalizeNullableString(formState.addressLine2);
+    const normalizedCity = normalizeNullableString(formState.city);
+    const normalizedState = normalizeNullableString(formState.state);
+    const normalizedZipCode = normalizeNullableString(formState.zipCode);
+    const normalizedCountry = normalizeNullableString(formState.country);
+
+    let payload: Partial<InvitationCodeDTO>;
+
+    if (isEditMode && guest) {
+      const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
+      payload = {
+        guestName: trimmedName,
+        code: trimmedCode,
+        email: normalizedEmail,
+        householdName: normalizedHouseholdName,
+        partyGroup: normalizedPartyGroup,
+        partyTags: normalizedPartyTags,
+        plusOneAllocations: parsedAllocations,
+        plusOneFirstName: normalizedPlusOneFirstName,
+        plusOneLastName: normalizedPlusOneLastName,
+        dietaryNotes: normalizedDietaryNotes,
+        addressLine1: normalizedAddressLine1,
+        addressLine2: normalizedAddressLine2,
+        city: normalizedCity,
+        state: normalizedState,
+        zipCode: normalizedZipCode,
+        country: normalizedCountry,
+      };
+
+      if (normalizedPhone !== originalPhone) {
+        const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
+        if (normalizedPhone) {
+          nextExtraFields.phone = normalizedPhone;
+          delete nextExtraFields.phoneNumber;
+          delete nextExtraFields['Phone Number'];
+        } else {
+          delete nextExtraFields.phone;
+          delete nextExtraFields.mobile;
+          delete nextExtraFields.phoneNumber;
+          delete nextExtraFields['Phone Number'];
+        }
+        payload.extraFields = nextExtraFields;
       }
-      if (trimmedName.length > GUEST_NAME_MAX_LENGTH) {
-        setValidationError(`Guest name must be under ${GUEST_NAME_MAX_LENGTH} characters.`);
-        return;
-      }
+    } else {
+      payload = {
+        guestName: trimmedName,
+        used: false,
+      };
+      if (trimmedCode) payload.code = trimmedCode;
+      if (normalizedEmail) payload.email = normalizedEmail;
+      if (normalizedHouseholdName) payload.householdName = normalizedHouseholdName;
+      if (normalizedPartyGroup) payload.partyGroup = normalizedPartyGroup;
+      if (normalizedPartyTags.length > 0) payload.partyTags = normalizedPartyTags;
+      if (parsedAllocations > 0) payload.plusOneAllocations = parsedAllocations;
+      if (normalizedPlusOneFirstName) payload.plusOneFirstName = normalizedPlusOneFirstName;
+      if (normalizedPlusOneLastName) payload.plusOneLastName = normalizedPlusOneLastName;
+      if (normalizedDietaryNotes) payload.dietaryNotes = normalizedDietaryNotes;
+      if (normalizedAddressLine1) payload.addressLine1 = normalizedAddressLine1;
+      if (normalizedAddressLine2) payload.addressLine2 = normalizedAddressLine2;
+      if (normalizedCity) payload.city = normalizedCity;
+      if (normalizedState) payload.state = normalizedState;
+      if (normalizedZipCode) payload.zipCode = normalizedZipCode;
+      if (normalizedCountry) payload.country = normalizedCountry;
+      if (normalizedPhone) payload.extraFields = { phone: normalizedPhone };
+    }
 
-      const trimmedCode = normalizeInvitationCode(formState.code);
-      if (isEditMode && !trimmedCode) {
-        setValidationError('Invitation code is required.');
-        return;
-      }
-      if (trimmedCode && trimmedCode.length > INVITATION_CODE_MAX_LENGTH) {
-        setValidationError(`Invitation code must be under ${INVITATION_CODE_MAX_LENGTH} characters.`);
-        return;
-      }
+    const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
+    if (fieldErrors.length > 0) {
+      setValidationError(fieldErrors[0]);
+      return;
+    }
 
-      const parsedAllocations =
-        formState.plusOneAllocations.trim() === '' ? 0 : Number(formState.plusOneAllocations);
-      if (!Number.isInteger(parsedAllocations) || parsedAllocations < 0) {
-        setValidationError('Plus-one allocations must be a non-negative whole number.');
-        return;
-      }
-
-      const phoneError = validateGuestPhone(formState.phone);
-      if (phoneError) {
-        setValidationError(phoneError);
-        return;
-      }
-
-      const normalizedPhone = normalizeGuestPhone(formState.phone);
-      const normalizedEmail = normalizeNullableString(formState.email);
-      const normalizedHouseholdName = normalizeNullableString(formState.householdName);
-      const normalizedPartyGroup = normalizeNullableString(formState.partyGroup);
-      const normalizedPartyTags = normalizePartyTags(formState.partyTags, { dedupe: true });
-      const normalizedPlusOneFirstName = normalizeNullableString(formState.plusOneFirstName);
-      const normalizedPlusOneLastName = normalizeNullableString(formState.plusOneLastName);
-      const normalizedDietaryNotes = normalizeNullableString(formState.dietaryNotes);
-      const normalizedAddressLine1 = normalizeNullableString(formState.addressLine1);
-      const normalizedAddressLine2 = normalizeNullableString(formState.addressLine2);
-      const normalizedCity = normalizeNullableString(formState.city);
-      const normalizedState = normalizeNullableString(formState.state);
-      const normalizedZipCode = normalizeNullableString(formState.zipCode);
-      const normalizedCountry = normalizeNullableString(formState.country);
-
-      let payload: Partial<InvitationCodeDTO>;
-
-      if (isEditMode && guest) {
-        const originalPhone = normalizeGuestPhone(getInitialGuestPhone(guest));
-        payload = {
-          guestName: trimmedName,
-          code: trimmedCode,
-          email: normalizedEmail,
-          householdName: normalizedHouseholdName,
-          partyGroup: normalizedPartyGroup,
-          partyTags: normalizedPartyTags,
-          plusOneAllocations: parsedAllocations,
-          plusOneFirstName: normalizedPlusOneFirstName,
-          plusOneLastName: normalizedPlusOneLastName,
-          dietaryNotes: normalizedDietaryNotes,
-          addressLine1: normalizedAddressLine1,
-          addressLine2: normalizedAddressLine2,
-          city: normalizedCity,
-          state: normalizedState,
-          zipCode: normalizedZipCode,
-          country: normalizedCountry,
-        };
-
-        if (normalizedPhone !== originalPhone) {
-          const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
-          if (normalizedPhone) {
-            nextExtraFields.phone = normalizedPhone;
-          } else {
-            delete nextExtraFields.phone;
-            delete nextExtraFields.mobile;
-          }
-          payload.extraFields = nextExtraFields;
+    setIsSaving(true);
+    try {
+      if (props.mode === 'edit') {
+        await props.onSave(props.guest.id, payload);
+        if (props.rsvpDirty && props.onSaveRsvpOverrides) {
+          await props.onSaveRsvpOverrides({
+            guestName: trimmedName,
+            plusOneFirstName: normalizedPlusOneFirstName,
+            plusOneLastName: normalizedPlusOneLastName,
+          });
         }
       } else {
-        payload = {
-          guestName: trimmedName,
-          used: false,
-        };
-        if (trimmedCode) payload.code = trimmedCode;
-        if (normalizedEmail) payload.email = normalizedEmail;
-        if (normalizedHouseholdName) payload.householdName = normalizedHouseholdName;
-        if (normalizedPartyGroup) payload.partyGroup = normalizedPartyGroup;
-        if (normalizedPartyTags.length > 0) payload.partyTags = normalizedPartyTags;
-        if (parsedAllocations > 0) payload.plusOneAllocations = parsedAllocations;
-        if (normalizedPlusOneFirstName) payload.plusOneFirstName = normalizedPlusOneFirstName;
-        if (normalizedPlusOneLastName) payload.plusOneLastName = normalizedPlusOneLastName;
-        if (normalizedDietaryNotes) payload.dietaryNotes = normalizedDietaryNotes;
-        if (normalizedAddressLine1) payload.addressLine1 = normalizedAddressLine1;
-        if (normalizedAddressLine2) payload.addressLine2 = normalizedAddressLine2;
-        if (normalizedCity) payload.city = normalizedCity;
-        if (normalizedState) payload.state = normalizedState;
-        if (normalizedZipCode) payload.zipCode = normalizedZipCode;
-        if (normalizedCountry) payload.country = normalizedCountry;
-        if (normalizedPhone) payload.extraFields = { phone: normalizedPhone };
+        await props.onCreate(payload);
       }
+      onClose();
+    } catch (err: unknown) {
+      setValidationError(
+        err instanceof Error && err.message
+          ? err.message
+          : isEditMode
+            ? 'Failed to update guest details.'
+            : 'Failed to create invitation code.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
-      const fieldErrors = validateInvitationGuestFields(payload, { mode: 'row' });
-      if (fieldErrors.length > 0) {
-        setValidationError(fieldErrors[0]);
-        return;
-      }
+  const submitButtonLabel = isEditMode
+    ? isSaving
+      ? 'Saving...'
+      : 'Save Guest Changes'
+    : isSaving
+      ? 'Generating...'
+      : 'Generate';
 
-      setIsSaving(true);
-      try {
-        if (props.mode === 'edit') {
-          await props.onSave(props.guest.id, payload);
-          if (props.rsvpDirty && props.onSaveRsvpOverrides) {
-            await props.onSaveRsvpOverrides();
-          }
-        } else {
-          await props.onCreate(payload);
-        }
-        onClose();
-      } catch (err: unknown) {
-        setValidationError(
-          err instanceof Error && err.message
-            ? err.message
-            : isEditMode
-              ? 'Failed to update guest details.'
-              : 'Failed to create invitation code.'
-        );
-      } finally {
-        setIsSaving(false);
-      }
-    };
-
-    const submitButtonLabel = isEditMode
-      ? isSaving
-        ? 'Saving...'
-        : 'Save Guest Changes'
-      : isSaving
-        ? 'Generating...'
-        : 'Generate';
-
-    return (
-      <form ref={ref} noValidate onSubmit={handleSubmit} className={cn('space-y-5', className)}>
-        {validationError && (
-          <div
-            role="alert"
-            className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 px-3.5 py-2.5 text-sm text-red-700 dark:text-red-300 font-medium"
-          >
-            {validationError}
-          </div>
-        )}
-
-        {hasCodeChanged && guest && (
-          <div
-            role="status"
-            data-testid="code-change-warning"
-            className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-700 px-3.5 py-2.5 text-sm text-amber-900 dark:text-amber-200"
-          >
-            <strong className="font-semibold">Warning:</strong> Changing the invitation code means
-            printed QR links and previously shared URLs will stop matching the old code (
-            <code className="font-mono font-bold">{guest.code}</code>).
-          </div>
-        )}
-
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
-            Guest Profile &amp; Invitation
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup>
-              <Label>Guest Name *</Label>
-              <Input
-                type="text"
-                required
-                maxLength={GUEST_NAME_MAX_LENGTH}
-                value={formState.guestName}
-                onChange={(e) => updateField('guestName', e.target.value)}
-                placeholder={isEditMode ? 'e.g. Alice Smith' : 'e.g. John Doe'}
-              />
-            </FormGroup>
-
-            <FormGroup state={hasCodeChanged ? 'warning' : 'default'}>
-              <Label>
-                {isEditMode
-                  ? 'Invitation Code *'
-                  : 'Invitation Code (Optional - auto-generated if blank)'}
-              </Label>
-              <Input
-                type="text"
-                required={isEditMode}
-                maxLength={INVITATION_CODE_MAX_LENGTH}
-                value={formState.code}
-                onChange={(e) => updateField('code', e.target.value)}
-                className="font-mono uppercase"
-                placeholder={isEditMode ? 'e.g. ALICE123' : 'e.g. JOHN123'}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={formState.email}
-                onChange={(e) => updateField('email', e.target.value)}
-                placeholder="guest@example.com"
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Phone</Label>
-              <Input
-                type="tel"
-                maxLength={PHONE_MAX_LENGTH}
-                value={formState.phone}
-                onChange={(e) => updateField('phone', e.target.value)}
-                placeholder="e.g. +15551234567"
-              />
-            </FormGroup>
-
-            <FormGroup className="sm:col-span-2">
-              <Label>Plus-One Allocations</Label>
-              <Input
-                type="number"
-                min={0}
-                step={1}
-                value={formState.plusOneAllocations}
-                onChange={(e) => updateField('plusOneAllocations', e.target.value)}
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Plus-One First Name</Label>
-              <Input
-                type="text"
-                maxLength={PLUS_ONE_NAME_MAX_LENGTH}
-                value={formState.plusOneFirstName}
-                onChange={(e) => updateField('plusOneFirstName', e.target.value)}
-                placeholder="e.g. Jordan"
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Plus-One Last Name</Label>
-              <Input
-                type="text"
-                maxLength={PLUS_ONE_NAME_MAX_LENGTH}
-                value={formState.plusOneLastName}
-                onChange={(e) => updateField('plusOneLastName', e.target.value)}
-                placeholder="e.g. Smith"
-              />
-            </FormGroup>
-          </div>
+  return (
+    <form ref={ref} noValidate onSubmit={handleSubmit} className={cn('space-y-5', className)}>
+      {validationError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 px-3.5 py-2.5 text-sm text-red-700 dark:text-red-300 font-medium"
+        >
+          {validationError}
         </div>
+      )}
 
-        <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
-            Household, Party &amp; Dietary Notes
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup>
-              <Label>Household Name</Label>
-              <Input
-                type="text"
-                maxLength={HOUSEHOLD_NAME_MAX_LENGTH}
-                value={formState.householdName}
-                onChange={(e) => updateField('householdName', e.target.value)}
-                placeholder="e.g. The Smith Family"
-              />
-            </FormGroup>
-
-            <FormGroup>
-              <Label>Party Group</Label>
-              <Input
-                type="text"
-                maxLength={PARTY_GROUP_MAX_LENGTH}
-                value={formState.partyGroup}
-                onChange={(e) => updateField('partyGroup', e.target.value)}
-                placeholder="e.g. Bridal Party"
-              />
-            </FormGroup>
-
-            <FormGroup className="sm:col-span-2">
-              <Label>Party Tags (Comma-Separated)</Label>
-              <Input
-                type="text"
-                value={formState.partyTags}
-                onChange={(e) => updateField('partyTags', e.target.value)}
-                placeholder="e.g. VIP, Out of Town"
-              />
-            </FormGroup>
-
-            <FormGroup className="sm:col-span-2">
-              <Label>Dietary Notes</Label>
-              <Textarea
-                rows={2}
-                value={formState.dietaryNotes}
-                onChange={(e) => updateField('dietaryNotes', e.target.value)}
-                placeholder="e.g. Gluten-free, nut allergy"
-              />
-            </FormGroup>
-          </div>
+      {hasCodeChanged && guest && (
+        <div
+          role="status"
+          data-testid="code-change-warning"
+          className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-700 px-3.5 py-2.5 text-sm text-amber-900 dark:text-amber-200"
+        >
+          <strong className="font-semibold">Warning:</strong> Changing the invitation code means
+          printed QR links and previously shared URLs will stop matching the old code (
+          <code className="font-mono font-bold">{guest.code}</code>).
         </div>
+      )}
 
-        <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
-            Mailing Address
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormGroup className="sm:col-span-2">
-              <Label>Address Line 1</Label>
-              <Input
-                type="text"
-                maxLength={ADDRESS_LINE_MAX_LENGTH}
-                value={formState.addressLine1}
-                onChange={(e) => updateField('addressLine1', e.target.value)}
-                placeholder="123 Main St"
-              />
-            </FormGroup>
+      <div>
+        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+          Guest Profile &amp; Invitation
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormGroup>
+            <Label>Guest Name *</Label>
+            <Input
+              type="text"
+              required
+              maxLength={GUEST_NAME_MAX_LENGTH}
+              value={formState.guestName}
+              onChange={(e) => updateField('guestName', e.target.value)}
+              placeholder={isEditMode ? 'e.g. Alice Smith' : 'e.g. John Doe'}
+            />
+          </FormGroup>
 
-            <FormGroup className="sm:col-span-2">
-              <Label>Address Line 2</Label>
-              <Input
-                type="text"
-                maxLength={ADDRESS_LINE_MAX_LENGTH}
-                value={formState.addressLine2}
-                onChange={(e) => updateField('addressLine2', e.target.value)}
-                placeholder="Apt 4B"
-              />
-            </FormGroup>
+          <FormGroup state={hasCodeChanged ? 'warning' : 'default'}>
+            <Label>
+              {isEditMode
+                ? 'Invitation Code *'
+                : 'Invitation Code (Optional - auto-generated if blank)'}
+            </Label>
+            <Input
+              type="text"
+              required={isEditMode}
+              maxLength={INVITATION_CODE_MAX_LENGTH}
+              value={formState.code}
+              onChange={(e) => updateField('code', e.target.value)}
+              className="font-mono uppercase"
+              placeholder={isEditMode ? 'e.g. ALICE123' : 'e.g. JOHN123'}
+            />
+          </FormGroup>
 
-            <FormGroup>
-              <Label>City</Label>
-              <Input
-                type="text"
-                maxLength={CITY_MAX_LENGTH}
-                value={formState.city}
-                onChange={(e) => updateField('city', e.target.value)}
-                placeholder="Seattle"
-              />
-            </FormGroup>
+          <FormGroup>
+            <Label>Email</Label>
+            <Input
+              type="email"
+              value={formState.email}
+              onChange={(e) => updateField('email', e.target.value)}
+              placeholder="guest@example.com"
+            />
+          </FormGroup>
 
-            <FormGroup>
-              <Label>State / Province</Label>
-              <Input
-                type="text"
-                maxLength={STATE_MAX_LENGTH}
-                value={formState.state}
-                onChange={(e) => updateField('state', e.target.value)}
-                placeholder="WA"
-              />
-            </FormGroup>
+          <FormGroup>
+            <Label>Phone</Label>
+            <Input
+              type="tel"
+              maxLength={PHONE_MAX_LENGTH}
+              value={formState.phone}
+              onChange={(e) => updateField('phone', e.target.value)}
+              placeholder="e.g. +15551234567"
+            />
+          </FormGroup>
 
-            <FormGroup>
-              <Label>Zip / Postal Code</Label>
-              <Input
-                type="text"
-                maxLength={ZIP_CODE_MAX_LENGTH}
-                value={formState.zipCode}
-                onChange={(e) => updateField('zipCode', e.target.value)}
-                placeholder="98101"
-              />
-            </FormGroup>
+          <FormGroup className="sm:col-span-2">
+            <Label>Plus-One Allocations</Label>
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={formState.plusOneAllocations}
+              onChange={(e) => updateField('plusOneAllocations', e.target.value)}
+            />
+          </FormGroup>
 
-            <FormGroup>
-              <Label>Country</Label>
-              <Input
-                type="text"
-                maxLength={COUNTRY_MAX_LENGTH}
-                value={formState.country}
-                onChange={(e) => updateField('country', e.target.value)}
-                placeholder="USA"
-              />
-            </FormGroup>
-          </div>
+          <FormGroup>
+            <Label>Plus-One First Name</Label>
+            <Input
+              type="text"
+              maxLength={PLUS_ONE_NAME_MAX_LENGTH}
+              value={formState.plusOneFirstName}
+              onChange={(e) => updateField('plusOneFirstName', e.target.value)}
+              placeholder="e.g. Jordan"
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>Plus-One Last Name</Label>
+            <Input
+              type="text"
+              maxLength={PLUS_ONE_NAME_MAX_LENGTH}
+              value={formState.plusOneLastName}
+              onChange={(e) => updateField('plusOneLastName', e.target.value)}
+              placeholder="e.g. Smith"
+            />
+          </FormGroup>
         </div>
+      </div>
 
-        {isEditMode && props.rsvpOverrideSlot}
+      <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+          Household, Party &amp; Dietary Notes
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormGroup>
+            <Label>Household Name</Label>
+            <Input
+              type="text"
+              maxLength={HOUSEHOLD_NAME_MAX_LENGTH}
+              value={formState.householdName}
+              onChange={(e) => updateField('householdName', e.target.value)}
+              placeholder="e.g. The Smith Family"
+            />
+          </FormGroup>
 
-        {actionsAlign === 'start' ? (
-          <div className="flex gap-4 pt-3 border-t border-gray-100 dark:border-zinc-800">
-            <Button type="submit" variant="primary" disabled={isSaving}>
-              {submitButtonLabel}
-            </Button>
-            <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-zinc-800">
-            <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={isSaving}>
-              {submitButtonLabel}
-            </Button>
-          </div>
-        )}
-      </form>
-    );
-  }
-);
-GuestEditorFormInner.displayName = 'GuestEditorFormInner';
+          <FormGroup>
+            <Label>Party Group</Label>
+            <Input
+              type="text"
+              maxLength={PARTY_GROUP_MAX_LENGTH}
+              value={formState.partyGroup}
+              onChange={(e) => updateField('partyGroup', e.target.value)}
+              placeholder="e.g. Bridal Party"
+            />
+          </FormGroup>
 
-export const GuestEditorForm = React.forwardRef<HTMLFormElement, GuestEditorFormProps>(
-  (props, ref) => (
+          <FormGroup className="sm:col-span-2">
+            <Label>Party Tags (Comma-Separated)</Label>
+            <Input
+              type="text"
+              value={formState.partyTags}
+              onChange={(e) => updateField('partyTags', e.target.value)}
+              placeholder="e.g. VIP, Out of Town"
+            />
+          </FormGroup>
+
+          <FormGroup className="sm:col-span-2">
+            <Label>Dietary Notes</Label>
+            <Textarea
+              rows={2}
+              value={formState.dietaryNotes}
+              onChange={(e) => updateField('dietaryNotes', e.target.value)}
+              placeholder="e.g. Gluten-free, nut allergy"
+            />
+          </FormGroup>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-100 dark:border-zinc-800 pt-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+          Mailing Address
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormGroup className="sm:col-span-2">
+            <Label>Address Line 1</Label>
+            <Input
+              type="text"
+              maxLength={ADDRESS_LINE_MAX_LENGTH}
+              value={formState.addressLine1}
+              onChange={(e) => updateField('addressLine1', e.target.value)}
+              placeholder="123 Main St"
+            />
+          </FormGroup>
+
+          <FormGroup className="sm:col-span-2">
+            <Label>Address Line 2</Label>
+            <Input
+              type="text"
+              maxLength={ADDRESS_LINE_MAX_LENGTH}
+              value={formState.addressLine2}
+              onChange={(e) => updateField('addressLine2', e.target.value)}
+              placeholder="Apt 4B"
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>City</Label>
+            <Input
+              type="text"
+              maxLength={CITY_MAX_LENGTH}
+              value={formState.city}
+              onChange={(e) => updateField('city', e.target.value)}
+              placeholder="Seattle"
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>State / Province</Label>
+            <Input
+              type="text"
+              maxLength={STATE_MAX_LENGTH}
+              value={formState.state}
+              onChange={(e) => updateField('state', e.target.value)}
+              placeholder="WA"
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>Zip / Postal Code</Label>
+            <Input
+              type="text"
+              maxLength={ZIP_CODE_MAX_LENGTH}
+              value={formState.zipCode}
+              onChange={(e) => updateField('zipCode', e.target.value)}
+              placeholder="98101"
+            />
+          </FormGroup>
+
+          <FormGroup>
+            <Label>Country</Label>
+            <Input
+              type="text"
+              maxLength={COUNTRY_MAX_LENGTH}
+              value={formState.country}
+              onChange={(e) => updateField('country', e.target.value)}
+              placeholder="USA"
+            />
+          </FormGroup>
+        </div>
+      </div>
+
+      {isEditMode && props.rsvpOverrideSlot}
+
+      {actionsAlign === 'start' ? (
+        <div className="flex gap-4 pt-3 border-t border-gray-100 dark:border-zinc-800">
+          <Button type="submit" variant="primary" disabled={isSaving}>
+            {submitButtonLabel}
+          </Button>
+          <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div className="flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-zinc-800">
+          <Button type="button" variant="secondary" onClick={handleRequestClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={isSaving}>
+            {submitButtonLabel}
+          </Button>
+        </div>
+      )}
+    </form>
+  );
+}
+
+export function GuestEditorForm(props: GuestEditorFormProps) {
+  return (
     <EnsureToastProvider>
-      <GuestEditorFormInner {...props} ref={ref} />
+      <GuestEditorFormInner {...props} />
     </EnsureToastProvider>
-  )
-);
-GuestEditorForm.displayName = 'GuestEditorForm';
+  );
+}
 
 interface EventRsvpDraft {
   status: 'unresponded' | 'attending' | 'declined' | 'pending' | 'clear';
@@ -638,6 +673,15 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
   const [directPlusOneNames, setDirectPlusOneNames] = useState<string>(() =>
     formatGuestPlusOneNames(guest)
   );
+  const [sharedCompanionNames, setSharedCompanionNames] = useState<string[]>(() => {
+    const formatted = formatGuestPlusOneNames(guest);
+    return formatted
+      ? formatted
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean)
+      : [];
+  });
   const [subEvents, setSubEvents] = useState<AdminInvitationRsvpsDetail['subEvents']>([]);
   const [eventDrafts, setEventDrafts] = useState<Record<string, EventRsvpDraft>>({});
 
@@ -653,22 +697,60 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       })
       .then((detail) => {
         if (cancelled || !detail || !Array.isArray(detail.subEvents)) return;
-        const rsvpMap = new Map(
-          (Array.isArray(detail.rsvps) ? detail.rsvps : []).map((r) => [r.subEventId, r])
-        );
+        const rsvpList = Array.isArray(detail.rsvps) ? detail.rsvps : [];
+        const rsvpMap = new Map(rsvpList.map((r) => [r.subEventId, r]));
+
+        const discoveredNames: string[] = [];
+        for (const r of rsvpList) {
+          if (Array.isArray(r.plusOneNames)) {
+            r.plusOneNames.forEach((rawName, idx) => {
+              const trimmed = typeof rawName === 'string' ? rawName.trim() : '';
+              if (trimmed && !discoveredNames[idx]) {
+                discoveredNames[idx] = trimmed;
+              }
+            });
+          }
+        }
+        const detailGuestFallback = detail.invitationCode
+          ? formatGuestPlusOneNames(detail.invitationCode)
+          : formatGuestPlusOneNames(guest);
+        if (detailGuestFallback) {
+          detailGuestFallback
+            .split(',')
+            .map((n) => n.trim())
+            .filter(Boolean)
+            .forEach((n, idx) => {
+              if (!discoveredNames[idx]) {
+                discoveredNames[idx] = n;
+              }
+            });
+        }
+
         const initialDrafts: Record<string, EventRsvpDraft> = {};
         for (const se of detail.subEvents) {
           const existing = rsvpMap.get(se.id);
-          initialDrafts[se.id] = existing
-            ? {
+          if (existing) {
+            const poCount = existing.plusOneCount ?? 0;
+            const rawExistingNames = Array.isArray(existing.plusOneNames)
+              ? [...existing.plusOneNames]
+              : [];
+            if (existing.status === 'attending' && poCount > 0) {
+              for (let i = 0; i < poCount; i++) {
+                if (!rawExistingNames[i]?.trim() && discoveredNames[i]) {
+                  rawExistingNames[i] = discoveredNames[i];
+                }
+              }
+            }
+            initialDrafts[se.id] = {
               status: existing.status,
-              plusOneCount: existing.plusOneCount ?? 0,
-              plusOneNames: Array.isArray(existing.plusOneNames) ? existing.plusOneNames : [],
+              plusOneCount: poCount,
+              plusOneNames: rawExistingNames,
               mealSelections: Array.isArray(existing.mealSelections) ? existing.mealSelections : [],
               dietaryNotes: existing.dietaryNotes ?? '',
               customAnswers: existing.customAnswers ? { ...existing.customAnswers } : {},
-            }
-            : {
+            };
+          } else {
+            initialDrafts[se.id] = {
               status: 'unresponded',
               plusOneCount: 0,
               plusOneNames: [],
@@ -676,6 +758,10 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
               dietaryNotes: '',
               customAnswers: {},
             };
+          }
+        }
+        if (discoveredNames.some(Boolean)) {
+          setSharedCompanionNames(discoveredNames);
         }
         setSubEvents(detail.subEvents);
         setEventDrafts(initialDrafts);
@@ -687,7 +773,7 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [guest.id]);
+  }, [guest]);
 
   const markRsvpDirty = (nextRsvpDirty: boolean) => {
     setRsvpDirty(nextRsvpDirty);
@@ -699,7 +785,68 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
     onCombinedDirtyChange(nextProfileDirty || rsvpDirty);
   };
 
-  const updateEventDraft = (subEventId: string, updater: (_prev: EventRsvpDraft) => EventRsvpDraft) => {
+  const handleProfileCompanionChange = (firstName: string, lastName: string) => {
+    const nextSlot0 = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ').trim();
+    const prevSlot0 = sharedCompanionNames[0] ?? '';
+
+    setSharedCompanionNames((prev) => {
+      const next = [...prev];
+      next[0] = nextSlot0;
+      return next;
+    });
+
+    setDirectPlusOneNames((prev) => {
+      const parts = prev
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean);
+      if (parts.length === 0 || parts[0] === prevSlot0) {
+        if (nextSlot0) {
+          parts[0] = nextSlot0;
+        } else {
+          parts.shift();
+        }
+        return parts.join(', ');
+      }
+      return prev;
+    });
+
+    setEventDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [id, draft] of Object.entries(prev)) {
+        if (draft.status === 'attending' && draft.plusOneCount > 0) {
+          const cur0 = (draft.plusOneNames[0] ?? '').trim();
+          if (!cur0 || cur0 === prevSlot0) {
+            const nextNames = [...draft.plusOneNames];
+            nextNames[0] = nextSlot0;
+            next[id] = { ...draft, plusOneNames: nextNames };
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  };
+
+  const updateEventDraft = (
+    subEventId: string,
+    updater: (_prev: EventRsvpDraft) => EventRsvpDraft,
+    editedPlusOneSlot?: { index: number; value: string }
+  ) => {
+    const prevSharedValue =
+      editedPlusOneSlot !== undefined
+        ? (sharedCompanionNames[editedPlusOneSlot.index] ?? '')
+        : '';
+
+    if (editedPlusOneSlot !== undefined) {
+      setSharedCompanionNames((prev) => {
+        const next = [...prev];
+        next[editedPlusOneSlot.index] = editedPlusOneSlot.value;
+        return next;
+      });
+    }
+
     setEventDrafts((prev) => {
       const current = prev[subEventId] ?? {
         status: 'unresponded',
@@ -709,17 +856,63 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
         dietaryNotes: '',
         customAnswers: {},
       };
-      return {
+      const updated = updater(current);
+      if (updated.status === 'attending' && updated.plusOneCount > 0 && !editedPlusOneSlot) {
+        const prefilledNames = [...updated.plusOneNames];
+        let prefilled = false;
+        for (let idx = 0; idx < updated.plusOneCount; idx++) {
+          if (!prefilledNames[idx]?.trim() && sharedCompanionNames[idx]?.trim()) {
+            prefilledNames[idx] = sharedCompanionNames[idx];
+            prefilled = true;
+          }
+        }
+        if (prefilled) {
+          updated.plusOneNames = prefilledNames;
+        }
+      }
+
+      const nextMap: Record<string, EventRsvpDraft> = {
         ...prev,
-        [subEventId]: updater(current),
+        [subEventId]: updated,
       };
+
+      if (editedPlusOneSlot !== undefined) {
+        const { index, value } = editedPlusOneSlot;
+        for (const [otherId, otherDraft] of Object.entries(prev)) {
+          if (otherId === subEventId) continue;
+          if (otherDraft.status !== 'declined' && otherDraft.plusOneCount > index) {
+            const existingSlot = otherDraft.plusOneNames[index] ?? '';
+            if (!existingSlot.trim() || existingSlot === prevSharedValue) {
+              const syncedNames = [...otherDraft.plusOneNames];
+              syncedNames[index] = value;
+              nextMap[otherId] = {
+                ...otherDraft,
+                plusOneNames: syncedNames,
+              };
+            }
+          }
+        }
+      }
+
+      return nextMap;
     });
     setClearAllPending(false);
     markRsvpDirty(true);
   };
 
-  const handleSaveRsvpOverrides = async () => {
+  const handleSaveRsvpOverrides = async (profileContext?: {
+    guestName: string;
+    plusOneFirstName: string | null;
+    plusOneLastName: string | null;
+  }) => {
     if (!rsvpDirty) return;
+
+    const profileSlot0 = profileContext
+      ? [profileContext.plusOneFirstName, profileContext.plusOneLastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+      : '';
 
     let bodyPayload: Record<string, unknown>;
     if (clearAllPending) {
@@ -732,17 +925,20 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       for (const se of subEvents) {
         const draft = eventDrafts[se.id];
         if (!draft || draft.status === 'unresponded') continue;
+        const poCount = draft.status === 'attending' ? Math.max(0, draft.plusOneCount) : 0;
+        const resolvedPoNames =
+          draft.status === 'attending' ? draft.plusOneNames.slice(0, poCount) : [];
+        if (draft.status === 'attending' && poCount > 0 && !resolvedPoNames[0]?.trim() && profileSlot0) {
+          resolvedPoNames[0] = profileSlot0;
+        }
         rsvpsPayload.push({
           subEventId: se.id,
           status: draft.status,
-          plusOneCount: draft.status === 'attending' ? Math.max(0, draft.plusOneCount) : 0,
-          plusOneNames:
-            draft.status === 'attending'
-              ? draft.plusOneNames.slice(0, Math.max(0, draft.plusOneCount))
-              : [],
+          plusOneCount: poCount,
+          plusOneNames: resolvedPoNames,
           mealSelections:
             draft.status === 'attending'
-              ? draft.mealSelections.slice(0, 1 + Math.max(0, draft.plusOneCount))
+              ? draft.mealSelections.slice(0, 1 + poCount)
               : [],
           dietaryNotes: draft.dietaryNotes.trim() || null,
           customAnswers: draft.status !== 'declined' ? draft.customAnswers : {},
@@ -760,6 +956,9 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
         .map((n) => n.trim())
         .filter(Boolean)
         .slice(0, parsedPlusOnes);
+      if (overallStatus === 'attending' && parsedPlusOnes > 0 && !parsedNames[0] && profileSlot0) {
+        parsedNames[0] = profileSlot0;
+      }
       bodyPayload = {
         invitationCodeId: guest.id,
         overallAttendanceStatus: overallStatus,
@@ -995,11 +1194,15 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                               maxLength={120}
                               value={draft.plusOneNames[idx] ?? ''}
                               onChange={(e) =>
-                                updateEventDraft(se.id, (prev) => {
-                                  const nextNames = [...prev.plusOneNames];
-                                  nextNames[idx] = e.target.value;
-                                  return { ...prev, plusOneNames: nextNames };
-                                })
+                                updateEventDraft(
+                                  se.id,
+                                  (prev) => {
+                                    const nextNames = [...prev.plusOneNames];
+                                    nextNames[idx] = e.target.value;
+                                    return { ...prev, plusOneNames: nextNames };
+                                  },
+                                  { index: idx, value: e.target.value }
+                                )
                               }
                               placeholder={`Plus-One #${idx + 1} full name`}
                             />
@@ -1038,6 +1241,14 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                                 className={selectControlClassName}
                               >
                                 <option value="">-- Select meal --</option>
+                                {draft.mealSelections[attendeeIdx] &&
+                                  !se.mealOptions.some(
+                                    (opt) => opt.id === draft.mealSelections[attendeeIdx]
+                                  ) && (
+                                  <option value={draft.mealSelections[attendeeIdx]}>
+                                    {`${draft.mealSelections[attendeeIdx]} (Unavailable — previously selected)`}
+                                  </option>
+                                )}
                                 {se.mealOptions.map((opt) => (
                                   <option key={opt.id} value={opt.id}>
                                     {opt.label}
@@ -1083,6 +1294,11 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
                               className={selectControlClassName}
                             >
                               <option value="">-- Select response --</option>
+                              {currentVal && !q.options.includes(currentVal) && (
+                                <option value={currentVal}>
+                                  {`${currentVal} (Unavailable — previously selected)`}
+                                </option>
+                              )}
                               {q.options.map((opt) => (
                                 <option key={opt} value={opt}>
                                   {opt}
@@ -1130,6 +1346,7 @@ const GuestEditorModalBody: React.FC<GuestEditorModalBodyProps> = ({
       rsvpOverrideSlot={rsvpOverrideSection}
       rsvpDirty={rsvpDirty}
       onSaveRsvpOverrides={handleSaveRsvpOverrides}
+      onProfileCompanionChange={handleProfileCompanionChange}
       onDirtyChange={handleProfileDirtyChange}
     />
   );

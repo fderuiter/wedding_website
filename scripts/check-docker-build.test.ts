@@ -256,6 +256,27 @@ describe('check-docker-build', () => {
     expect(violations[0].reason).toContain('docker-compose.yml:3');
   });
 
+  it('rejects mismatched external image tags (postgres:18-alpine vs postgres:15-alpine) across docker-compose.yml and workflows', () => {
+    const composePath = path.join(tempDir, 'docker-compose.yml');
+    fs.writeFileSync(
+      composePath,
+      fs
+        .readFileSync(composePath, 'utf8')
+        .replace(`postgres:15-alpine@${POSTGRES_DIGEST}`, `postgres:18-alpine@${ALT_DIGEST}`)
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toMatchObject({
+      filePath: '.github/workflows/ci.yml',
+      lineNumber: 9,
+      imageRef: `postgres:15-alpine@${POSTGRES_DIGEST}`,
+    });
+    expect(violations[0].reason).toContain('postgres:15-alpine');
+    expect(violations[0].reason).toContain('postgres:18-alpine');
+    expect(violations[0].reason).toContain('docker-compose.yml:3');
+  });
+
   it('enforces BuildKit APT cache rules and --no-install-recommends in Dockerfile', () => {
     fs.writeFileSync(
       path.join(tempDir, 'Dockerfile'),
@@ -634,5 +655,239 @@ describe('check-docker-build', () => {
         }),
       ])
     );
+  });
+
+  it('allows pull_policy: never services sharing a local build image across docker-compose.yml and docker-compose.rollout.yml', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  migration:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.rollout.yml'),
+      [
+        'services:',
+        '  app-standby:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([]);
+  });
+
+  it('rejects Compose services without build when pull_policy: never is omitted or image is not locally built, and rejects merge keys in docker-compose.rollout.yml', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  migration:',
+        '    image: wedding-website:latest',
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.rollout.yml'),
+      [
+        'x-defaults: &defaults',
+        '  read_only: true',
+        'services:',
+        '  app-standby:',
+        '    <<: *defaults',
+        '    image: unpinned-external-image:latest',
+        '    pull_policy: never',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'wedding-website:latest',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.rollout.yml',
+          imageRef: 'unpinned-external-image:latest',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.rollout.yml',
+          reason: expect.stringContaining('<<'),
+        }),
+      ])
+    );
+  });
+
+  it('accepts Dependabot postgres digest updates in docker-compose.yml alone when ci.yml shares verify.outputs.db_image', () => {
+    const bumpedDigest = 'sha256:9999999999999999999999999999999999999999999999999999999999999999';
+    const liveCiYml = fs.readFileSync(
+      path.join(process.cwd(), '.github', 'workflows', 'ci.yml'),
+      'utf8'
+    );
+    fs.writeFileSync(path.join(tempDir, '.github', 'workflows', 'ci.yml'), liveCiYml);
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${bumpedDigest}`,
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([]);
+  });
+
+  describe('standalone output verification (pre-build vs --require-standalone)', () => {
+    function writeValidStandaloneBundle(targetDir: string): void {
+      const standaloneDir = path.join(targetDir, '.next', 'standalone');
+      const staticChunksDir = path.join(standaloneDir, '.next', 'static', 'chunks');
+      const publicAssetsDir = path.join(standaloneDir, 'public', 'assets');
+      fs.mkdirSync(staticChunksDir, { recursive: true });
+      fs.mkdirSync(publicAssetsDir, { recursive: true });
+      fs.writeFileSync(path.join(standaloneDir, 'server.js'), 'console.log("standalone");\n');
+      fs.writeFileSync(path.join(staticChunksDir, 'main.js'), 'console.log("chunk");\n');
+      fs.writeFileSync(path.join(publicAssetsDir, 'favicon.png'), 'png-bytes');
+    }
+
+    it('passes in pre-build mode when .next does not exist, and fails with --require-standalone', () => {
+      expect(checkDockerBuild(tempDir).violations).toEqual([]);
+
+      const requireRes = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(requireRes.violations).toEqual([
+        expect.objectContaining({
+          filePath: '.next',
+          imageRef: '.next',
+        }),
+      ]);
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(1);
+      expect(cliResult.stderr).toContain('.next build output directory is missing');
+    });
+
+    it('exits with code 0 under --require-standalone when server.js, .next/static, and public are staged cleanly', () => {
+      writeValidStandaloneBundle(tempDir);
+
+      expect(checkDockerBuild(tempDir, { requireStandalone: true }).violations).toEqual([]);
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(0);
+      expect(cliResult.stdout).toContain('passed');
+    });
+
+    it('fails with --require-standalone when server.js, .next/standalone/.next/static, or .next/standalone/public is missing', () => {
+      writeValidStandaloneBundle(tempDir);
+      fs.rmSync(path.join(tempDir, '.next', 'standalone', 'server.js'));
+      fs.rmSync(path.join(tempDir, '.next', 'standalone', '.next', 'static'), {
+        recursive: true,
+        force: true,
+      });
+      fs.rmSync(path.join(tempDir, '.next', 'standalone', 'public'), {
+        recursive: true,
+        force: true,
+      });
+
+      const { violations } = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: '.next/standalone/server.js',
+            imageRef: 'server.js',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static',
+            imageRef: '.next/standalone/.next/static',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/public',
+            imageRef: '.next/standalone/public',
+          }),
+        ])
+      );
+
+      const cliResult = spawnSync(
+        process.execPath,
+        [TSX_CLI_PATH, CHECK_SCRIPT_PATH, '--require-standalone'],
+        {
+          cwd: tempDir,
+          encoding: 'utf8',
+        }
+      );
+      expect(cliResult.status).toBe(1);
+    });
+
+    it('fails when standalone assets contain nested duplicate directories or mockServiceWorker.js contamination', () => {
+      writeValidStandaloneBundle(tempDir);
+      fs.mkdirSync(path.join(tempDir, '.next', 'standalone', 'public', 'public'), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(tempDir, '.next', 'standalone', '.next', 'static', 'static'), {
+        recursive: true,
+      });
+      fs.writeFileSync(
+        path.join(tempDir, '.next', 'standalone', 'public', 'mockServiceWorker.js'),
+        '// dev worker\n'
+      );
+
+      const { violations } = checkDockerBuild(tempDir, { requireStandalone: true });
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: '.next/standalone/public/public',
+            imageRef: 'public/public',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/.next/static/static',
+            imageRef: 'static/static',
+          }),
+          expect.objectContaining({
+            filePath: '.next/standalone/public/mockServiceWorker.js',
+            imageRef: 'mockServiceWorker.js',
+          }),
+        ])
+      );
+    });
   });
 });

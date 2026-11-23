@@ -11,8 +11,6 @@ export const DIETARY_TAG_OPTIONS = [
   'kids',
 ] as const;
 
-export type DietaryTagOption = (typeof DIETARY_TAG_OPTIONS)[number];
-
 export const MAX_RSVP_PLUS_ONE_COUNT = 20;
 
 export const MealOptionSchema = z.object({

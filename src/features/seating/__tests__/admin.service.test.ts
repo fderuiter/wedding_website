@@ -792,5 +792,161 @@ describe('SeatingTableAdminService', () => {
         service.restoreSeatAssignments([{ invitationCodeId: 'g1', tableId: 'table-1', seatNumber: 1 }])
       ).rejects.toThrow('Validation Error: Table "Table 1" has reached its maximum capacity of 1.');
     });
+
+    it('seats 4 couples (8 attendees) on an 8-seat table, leaves 4 couples unassigned, and rejects a 5th couple across assign methods', async () => {
+      const eightCouples = Array.from({ length: 8 }, (_, idx) => ({
+        id: `couple-${idx + 1}`,
+        code: `CPL-${idx + 1}`,
+        guestName: `Couple ${idx + 1}`,
+        tableId: null,
+        seatNumber: null,
+        used: true,
+        plusOneAllocations: 1,
+        extraFields: { attending: true, plusOneCount: 1 },
+        partyTags: [],
+        householdId: null,
+      }));
+
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce(eightCouples);
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        { id: 'table-8', name: 'Round Eight', capacity: 8 },
+      ]);
+      mockTxExecuteRaw.mockResolvedValueOnce(4);
+
+      const autoResult = await service.autoAssignSeats('Admin');
+
+      // 4 couples = 8 attendees seated on primary seats 1, 3, 5, 7; 4 couples = 8 attendees unassigned
+      expect(autoResult.assignedCount).toBe(8);
+      expect(autoResult.unassignedCount).toBe(8);
+      expect(autoResult.assignedGuests).toHaveLength(4);
+      expect(autoResult.assignedGuests.map((g) => g.seatNumber)).toEqual([1, 3, 5, 7]);
+
+      const seatedFourCouples = eightCouples.slice(0, 4).map((c, idx) => ({
+        ...c,
+        tableId: 'table-8',
+        seatNumber: idx * 2 + 1,
+      }));
+      const fifthCouple = eightCouples[4];
+
+      // Manual single assignSeat rejects 5th couple on full 8-seat table
+      mockTxInvitationCodeFindFirst.mockResolvedValueOnce(fifthCouple);
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([fifthCouple]);
+      mockTxSeatingTableFindUnique.mockResolvedValueOnce({
+        id: 'table-8',
+        name: 'Round Eight',
+        capacity: 8,
+        invitationCodes: seatedFourCouples,
+      });
+
+      await expect(service.assignSeat(fifthCouple.id, 'table-8', null, 'Admin')).rejects.toThrow(
+        /only has 0 open seats for "Couple 5" \(party of 2\)|reached its maximum capacity of 8/
+      );
+
+      // Batch assignSeatsBatch rejects 5th couple on full 8-seat table
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([fifthCouple]);
+      mockTxSeatingTableFindUnique.mockResolvedValueOnce({
+        id: 'table-8',
+        name: 'Round Eight',
+        capacity: 8,
+        invitationCodes: seatedFourCouples,
+      });
+
+      await expect(service.assignSeatsBatch([fifthCouple.id], 'table-8')).rejects.toThrow(
+        /only has 0 open seats for 2 guests|maximum capacity of 8/
+      );
+
+      // Never splits a single InvitationCode party across two tables with 1 open seat each
+      mockTxInvitationCodeFindMany.mockResolvedValueOnce([fifthCouple]);
+      mockTxSeatingTableFindMany.mockResolvedValueOnce([
+        {
+          id: 'tbl-a',
+          name: 'Table A',
+          capacity: 2,
+          invitationCodes: [
+            {
+              id: 'occ-a',
+              guestName: 'Occ A',
+              tableId: 'tbl-a',
+              seatNumber: 1,
+              used: true,
+              plusOneAllocations: 0,
+              extraFields: { attending: true, plusOneCount: 0 },
+              partyTags: [],
+            },
+          ],
+        },
+        {
+          id: 'tbl-b',
+          name: 'Table B',
+          capacity: 2,
+          invitationCodes: [
+            {
+              id: 'occ-b',
+              guestName: 'Occ B',
+              tableId: 'tbl-b',
+              seatNumber: 1,
+              used: true,
+              plusOneAllocations: 0,
+              extraFields: { attending: true, plusOneCount: 0 },
+              partyTags: [],
+            },
+          ],
+        },
+      ]);
+
+      const unsplitResult = await service.autoAssignSeats('Admin');
+      expect(unsplitResult.assignedCount).toBe(0);
+      expect(unsplitResult.unassignedCount).toBe(2);
+      expect(unsplitResult.assignedGuests).toHaveLength(0);
+    });
+
+    it('repacks out-of-range seatNumber into 1..capacity when SeatingTableAdminService.update shrinks table capacity', async () => {
+      const existingTable = {
+        id: 'table-shrink',
+        name: 'Shrink Table',
+        shape: 'round',
+        capacity: 8,
+        x: 0,
+        y: 0,
+        width: 120,
+        height: 120,
+        rotation: 0,
+        isSample: false,
+        invitationCodes: [
+          {
+            id: 'g-seat-8',
+            code: 'S8',
+            guestName: 'Seat Eight Guest',
+            tableId: 'table-shrink',
+            seatNumber: 8,
+            plusOneAllocations: 0,
+          },
+        ],
+      };
+
+      mockTxSeatingTableFindUnique
+        .mockResolvedValueOnce(existingTable)
+        .mockResolvedValueOnce({
+          ...existingTable,
+          capacity: 6,
+          invitationCodes: [
+            {
+              ...existingTable.invitationCodes[0],
+              seatNumber: 1,
+            },
+          ],
+        });
+      mockTxSeatingTableUpdate.mockResolvedValueOnce({
+        ...existingTable,
+        capacity: 6,
+      });
+      mockTxExecuteRaw.mockResolvedValueOnce(1);
+
+      const updated = await service.update('table-shrink', { capacity: 6 }, 'Admin');
+      expect(mockTxExecuteRaw).toHaveBeenCalledTimes(1);
+      expect(updated.capacity).toBe(6);
+      expect(updated.invitationCodes?.[0]?.seatNumber).toBe(1);
+      expect(createBatchAuditSnapshots).toHaveBeenCalled();
+    });
   });
 });

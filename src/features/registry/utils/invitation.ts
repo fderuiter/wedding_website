@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 export type AttendanceStatus = 'attending' | 'declined' | 'pending';
 
 export interface AttendanceStatusItem {
@@ -222,6 +220,10 @@ export function formatGuestPlusOneNames(item: {
   plusOneFirstName?: string | null;
   plusOneLastName?: string | null;
   extraFields?: unknown;
+  subEventRsvps?: Array<{
+    status?: string | null;
+    plusOneNames?: unknown;
+  }> | null;
 }): string {
   const extra = parseExtraFieldsObject(item.extraFields);
   if (extra && Array.isArray(extra.plusOneNames)) {
@@ -231,6 +233,23 @@ export function formatGuestPlusOneNames(item: {
       .filter(Boolean);
     if (names.length > 0) {
       return names.join(', ');
+    }
+  }
+  if (Array.isArray(item.subEventRsvps)) {
+    const rsvpNames: string[] = [];
+    for (const rsvp of item.subEventRsvps) {
+      if (rsvp?.status !== 'attending' || !Array.isArray(rsvp.plusOneNames)) continue;
+      for (const rawName of rsvp.plusOneNames) {
+        if (typeof rawName === 'string') {
+          const trimmed = rawName.trim();
+          if (trimmed && !rsvpNames.includes(trimmed)) {
+            rsvpNames.push(trimmed);
+          }
+        }
+      }
+    }
+    if (rsvpNames.length > 0) {
+      return rsvpNames.join(', ');
     }
   }
   return [item.plusOneFirstName, item.plusOneLastName].filter(Boolean).join(' ').trim();
@@ -250,6 +269,7 @@ export function formatGuestMealSelections(item: { extraFields?: unknown }): stri
   if (Array.isArray(extra.mealSelections)) {
     const multipleEvents = extra.mealSelections.length > 1;
     const segments: string[] = [];
+    const flatParts: string[] = [];
     for (const entry of extra.mealSelections) {
       if (!entry || typeof entry !== 'object') continue;
       const obj = entry as Record<string, unknown>;
@@ -273,7 +293,18 @@ export function formatGuestMealSelections(item: { extraFields?: unknown }): stri
           const joined = selParts.join('; ');
           segments.push(multipleEvents && eventTitle ? `${eventTitle} - ${joined}` : joined);
         }
+      } else if (typeof obj.label === 'string' && obj.label.trim()) {
+        const attendee = typeof obj.attendee === 'string' ? obj.attendee.trim() : '';
+        const label = obj.label.trim();
+        const tags = Array.isArray(obj.dietaryTags)
+          ? obj.dietaryTags.filter((t): t is string => typeof t === 'string' && Boolean(t.trim()))
+          : [];
+        const tagSuffix = tags.length > 0 ? ` (${tags.join(', ')})` : '';
+        flatParts.push(attendee ? `${attendee}: ${label}${tagSuffix}` : `${label}${tagSuffix}`);
       }
+    }
+    if (flatParts.length > 0) {
+      segments.push(flatParts.join('; '));
     }
     return segments.join(' | ');
   }
@@ -295,6 +326,7 @@ export function formatGuestCustomAnswers(item: { extraFields?: unknown }): strin
   if (Array.isArray(extra.customAnswers)) {
     const multipleEvents = extra.customAnswers.length > 1;
     const segments: string[] = [];
+    const flatParts: string[] = [];
     for (const entry of extra.customAnswers) {
       if (!entry || typeof entry !== 'object') continue;
       const obj = entry as Record<string, unknown>;
@@ -314,7 +346,14 @@ export function formatGuestCustomAnswers(item: { extraFields?: unknown }): strin
           const joined = ansParts.join('; ');
           segments.push(multipleEvents && eventTitle ? `${eventTitle} - ${joined}` : joined);
         }
+      } else if (typeof obj.answer === 'string' && obj.answer.trim()) {
+        const prompt = typeof obj.prompt === 'string' ? obj.prompt.trim() : '';
+        const answer = obj.answer.trim();
+        flatParts.push(prompt ? `${prompt}: ${answer}` : answer);
       }
+    }
+    if (flatParts.length > 0) {
+      segments.push(flatParts.join('; '));
     }
     return segments.join(' | ');
   }
@@ -335,15 +374,27 @@ export function isAddressComplete(item?: AddressItem | null): boolean {
   );
 }
 
+const INVITATION_CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const INVITATION_CODE_LENGTH = 8;
+const INVITATION_CODE_MAX_UNBIASED_BYTE = 252;
+
 /**
  * Generates an eight-character cryptographically random alphanumeric string using uppercase characters and numbers.
  */
 export function generateRandomCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
-  for (let i = 0; i < 8; i++) {
-    result += chars.charAt(crypto.randomInt(0, chars.length));
+  const randomBytes = new Uint8Array(16);
+
+  while (result.length < INVITATION_CODE_LENGTH) {
+    globalThis.crypto.getRandomValues(randomBytes);
+    for (let i = 0; i < randomBytes.length && result.length < INVITATION_CODE_LENGTH; i++) {
+      const byte = randomBytes[i];
+      if (byte < INVITATION_CODE_MAX_UNBIASED_BYTE) {
+        result += INVITATION_CODE_CHARS.charAt(byte % INVITATION_CODE_CHARS.length);
+      }
+    }
   }
+
   return result;
 }
 

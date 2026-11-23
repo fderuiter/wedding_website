@@ -8,7 +8,7 @@ const meta: Meta<typeof Button> = {
   argTypes: {
     variant: {
       control: 'select',
-      options: ['primary', 'secondary', 'danger', 'ghost', 'outline'],
+      options: ['primary', 'secondary', 'danger', 'ghost', 'outline', 'inverse'],
     },
     size: {
       control: 'select',
@@ -19,6 +19,9 @@ const meta: Meta<typeof Button> = {
     },
     pressed: {
       control: 'boolean',
+    },
+    srContext: {
+      control: 'text',
     },
   },
   args: {
@@ -67,6 +70,17 @@ export const Outline: Story = {
   },
 };
 
+export const Inverse: Story = {
+  render: () => (
+    <div className="p-4 rounded-lg bg-[#15803d] text-white inline-flex items-center gap-3">
+      <span className="text-sm">Photo uploaded</span>
+      <Button variant="inverse" size="sm">
+        Undo
+      </Button>
+    </div>
+  ),
+};
+
 export const Disabled: Story = {
   args: {
     variant: 'primary',
@@ -88,10 +102,10 @@ export const AllSizes: Story = {
 export const TogglePressed: Story = {
   render: () => (
     <div className="flex items-center gap-4">
-      <Button variant="outline" pressed={true} aria-label="Our Story: Visible">
+      <Button variant="outline" pressed={true} srContext="for Our Story">
         Visible
       </Button>
-      <Button variant="ghost" pressed={false} aria-label="Wedding Day Details: Hidden">
+      <Button variant="ghost" pressed={false} srContext="for Wedding Day Details">
         Hidden
       </Button>
     </div>

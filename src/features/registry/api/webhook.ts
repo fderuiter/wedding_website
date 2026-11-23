@@ -6,6 +6,7 @@ import {
   dispatchLedgerAdjustmentNotification,
 } from '../notifications';
 import { getStripeInstance, validatePaymentIntentInvariants } from '@/lib/stripe';
+import { getAppConfig } from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { StripeWebhookEventSchema } from '@/utils/validation';
 
@@ -104,6 +105,10 @@ export async function POST(request: NextRequest) {
         : new Date();
 
       try {
+        const configPromise = Promise.resolve()
+          .then(() => getAppConfig())
+          .catch(() => undefined);
+
         const updatedItem = await registryService.contributeToItem(itemId, {
           name,
           email,
@@ -115,6 +120,8 @@ export async function POST(request: NextRequest) {
           stripeChargeId,
           transactionTimestamp,
         });
+
+        const config = await configPromise;
 
         await dispatchContributionNotifications({
           itemId,
@@ -128,6 +135,7 @@ export async function POST(request: NextRequest) {
             stripePaymentIntentId,
             transactionTimestamp,
           },
+          config,
           requestUrl: request.url,
         });
       } catch (err: any) {
