@@ -51,12 +51,22 @@ on:
         required: false
         default: ''
         type: string
+      commit_sha:
+        description: 'Optional 40-character commit SHA to check out and anchor rollback history against (defaults to github.sha)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
       environment:
         description: 'Target Deployment Environment'
         required: false
         default: 'production'
+        type: string
+      commit_sha:
+        description: 'Optional 40-character commit SHA to check out and anchor rollback history against (defaults to github.sha)'
+        required: false
+        default: ''
         type: string
       image_digest:
         description: 'Immutable OCI Image Digest (sha256:<64-hex>) to deploy'
@@ -140,6 +150,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
     environment: ${{ inputs.rollback_environment || inputs.environment || 'production' }}
     outputs:
       service_url: ${{ steps.resolve-url.outputs.service_url }}
@@ -150,8 +161,19 @@ jobs:
       image_uri: ${{ steps.resolve.outputs.image_uri }}
       attestation_status: ${{ steps.provenance.outputs.attestation_status }}
     steps:
+      - name: Validate Commit SHA Input
+        id: validate-sha
+        env:
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.commit_sha }}
           fetch-depth: 2
 
       - name: Resolve Artifact Image URI
@@ -159,6 +181,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
           RAW_DIGEST: ${{ inputs.image_digest }}
           RAW_TAG: ${{ inputs.image_tag }}
           TARGET_ENV: ${{ inputs.environment || 'production' }}
@@ -166,6 +189,11 @@ jobs:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ] && [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+            exit 1
+          fi
+
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
             echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
             exit 1
@@ -390,7 +418,8 @@ jobs:
           CLOUD_RUN_REGION: ${{ vars.CLOUD_RUN_REGION }}
           INCOMING_TAG: ${{ inputs.image_tag || '' }}
           INCOMING_DIGEST: ${{ steps.resolve.outputs.image_digest }}
-          CURRENT_SHA: ${{ github.sha }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
@@ -400,6 +429,16 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_ACTOR_LOGIN: ${{ github.actor }}
         run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ]; then
+            if [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+              echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+              exit 1
+            fi
+            CURRENT_SHA="$INPUT_COMMIT_SHA"
+          else
+            CURRENT_SHA="${CURRENT_SHA:-${GITHUB_SHA:-}}"
+          fi
+
           PREVIOUS_IMAGE_TAG=""
           PREVIOUS_IMAGE_DIGEST=""
           TAG_SOURCE="none"
@@ -411,7 +450,7 @@ jobs:
             if [ -z "$candidate" ]; then
               return 1
             fi
-            if [ "$candidate" = "latest" ] || [ "$candidate" = "$CURRENT_SHA" ] || [ "$candidate" = "$INCOMING_TAG" ]; then
+            if [ "$candidate" = "latest" ] || { [ -n "${CURRENT_SHA:-}" ] && [ "${candidate,,}" = "${CURRENT_SHA,,}" ]; } || [ "$candidate" = "$INCOMING_TAG" ]; then
               return 1
             fi
             if [[ ! "$candidate" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
@@ -451,7 +490,7 @@ jobs:
               return 1
             fi
 
-            if [ -n "$REPO_LOWER" ] && command -v docker >/dev/null 2>&1; then
+            if [ -z "$PREVIOUS_IMAGE_DIGEST" ] && [ -n "$REPO_LOWER" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ] && command -v docker >/dev/null 2>&1; then
               ensure_ghcr_login
               local tag_uri="ghcr.io/${REPO_LOWER}:${candidate}"
               local resolved_digest=""
@@ -538,153 +577,219 @@ jobs:
             fi
           fi
 
-          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -z "$PREVIOUS_IMAGE_DIGEST" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
             API_BASE="${GITHUB_API_URL:-https://api.github.com}"
-            DEPLOY_RUNS_JSON=$(curl -fsSL \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?status=completed&per_page=20" 2>/dev/null || true)
-            PROVIDER_RUNS_JSON=$(curl -fsSL \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-provider.yml/runs?status=completed&per_page=20" 2>/dev/null || true)
             DEPLOYMENTS_JSON=$(curl -fsSL \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GITHUB_TOKEN}" \
               "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments?environment=${EFFECTIVE_ENV}&per_page=20" 2>/dev/null || true)
 
-            if [ "$EFFECTIVE_ENV" = "staging" ]; then
-              PROVIDER_JOB_PREFIX="Staging Provider Deployment"
-              VERIFY_JOB_NAME="Staging Post-Deployment Health Verification"
-            else
-              PROVIDER_JOB_PREFIX="Production Provider Deployment"
-              VERIFY_JOB_NAME="Production Post-Deployment Health Verification"
-            fi
+            if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -z "$PREVIOUS_IMAGE_DIGEST" ]; then
+              DEPLOY_RUNS_JSON=$(curl -fsSL \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?status=completed&per_page=20" 2>/dev/null || true)
+              PROVIDER_RUNS_JSON=$(curl -fsSL \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-provider.yml/runs?status=completed&per_page=20" 2>/dev/null || true)
 
-            MERGED_RUNS=$(jq -rn \
-              --argjson d "${DEPLOY_RUNS_JSON:-null}" \
-              --argjson p "${PROVIDER_RUNS_JSON:-null}" \
-              '
-                [
-                  (($d.workflow_runs // [])[]? | select(.event != "workflow_call") | . + {_wf: "deploy.yml"}),
-                  (($p.workflow_runs // [])[]? | select(.event != "workflow_call") | . + {_wf: "deploy-provider.yml"})
-                ]
-                | sort_by(.updated_at // .created_at // "")
-                | reverse
-                | .[]
-                | [(.id | tostring), ._wf, (.conclusion // ""), (.head_sha // ""), (.head_branch // ""), (.environment // "")]
-                | @tsv
-              ' 2>/dev/null || true)
+              if [ "$EFFECTIVE_ENV" = "staging" ]; then
+                PROVIDER_JOB_PREFIX="Staging Provider Deployment"
+                VERIFY_JOB_NAME="Staging Post-Deployment Health Verification"
+              else
+                PROVIDER_JOB_PREFIX="Production Provider Deployment"
+                VERIFY_JOB_NAME="Production Post-Deployment Health Verification"
+              fi
 
-            if [ -n "$MERGED_RUNS" ]; then
-              while IFS=$'\t' read -r RUN_ID WF_KIND RUN_CONCLUSION RUN_HEAD_SHA RUN_HEAD_BRANCH RUN_ENV; do
-                [ -z "$RUN_ID" ] && continue
-                JOBS_JSON=$(curl -fsSL \
-                  -H "Accept: application/vnd.github+json" \
-                  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-                  "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" 2>/dev/null || true)
-                [ -z "$JOBS_JSON" ] && continue
+              MERGED_RUNS=$(jq -rn \
+                --argjson d "${DEPLOY_RUNS_JSON:-null}" \
+                --argjson p "${PROVIDER_RUNS_JSON:-null}" \
+                '
+                  [
+                    (($d.workflow_runs // [])[]? | select(.event != "workflow_call") | . + {_wf: "deploy.yml"}),
+                    (($p.workflow_runs // [])[]? | select(.event != "workflow_call") | . + {_wf: "deploy-provider.yml"})
+                  ]
+                  | sort_by(.updated_at // .created_at // "")
+                  | reverse
+                  | .[]
+                  | [(.id | tostring), ._wf, (.conclusion // ""), (.head_sha // ""), (.head_branch // ""), (.environment // "")]
+                  | @tsv
+                ' 2>/dev/null || true)
 
-                RUN_MATCHED="false"
-                if [ "$WF_KIND" = "deploy.yml" ]; then
-                  RUN_MATCHED=$(printf '%s' "$JOBS_JSON" | jq -r \
-                    --arg p_prefix "$PROVIDER_JOB_PREFIX" \
-                    --arg v_name "$VERIFY_JOB_NAME" \
-                    '
-                      ([.jobs[]? | select(.name == $p_prefix or (.name | startswith($p_prefix + " / ")))] ) as $p_jobs |
-                      ([.jobs[]? | select(.name == $v_name)]) as $v_jobs |
-                      if ($p_jobs | length) > 0
-                         and ($p_jobs | all(.conclusion == "success"))
-                         and ($v_jobs | length) > 0
-                         and ($v_jobs | all(.conclusion == "success"))
-                         and ([ $p_jobs[]?.steps[]? | select(.name == "Dry-run Provider Adapter Validation" and .conclusion == "success") ] | length == 0)
-                      then "true" else "false" end
-                    ' 2>/dev/null || true)
-                elif [ "$WF_KIND" = "deploy-provider.yml" ] && [ "$RUN_CONCLUSION" = "success" ]; then
-                  HAS_DEPLOYMENTS="false"
-                  SHA_IN_DEPLOYMENTS="false"
-                  DEPLOYMENT_TAG_REF=""
-                  if [ -n "$DEPLOYMENTS_JSON" ]; then
-                    HAS_DEPLOYMENTS=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r 'if type == "array" and length > 0 then "true" else "false" end' 2>/dev/null || true)
-                    SHA_IN_DEPLOYMENTS=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg sha "$RUN_HEAD_SHA" 'if type == "array" and ([.[]? | select(.sha == $sha)] | length > 0) then "true" else "false" end' 2>/dev/null || true)
-                    DEPLOYMENT_TAG_REF=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg sha "$RUN_HEAD_SHA" 'if type == "array" then ([.[]? | select(.sha == $sha) | .ref // empty | select(test("^v[0-9]"))] | .[0] // empty) else "" end' 2>/dev/null || true)
+              if [ -n "$MERGED_RUNS" ]; then
+                while IFS=$'\t' read -r RUN_ID WF_KIND RUN_CONCLUSION RUN_HEAD_SHA RUN_HEAD_BRANCH RUN_ENV; do
+                  [ -z "$RUN_ID" ] && continue
+                  JOBS_JSON=$(curl -fsSL \
+                    -H "Accept: application/vnd.github+json" \
+                    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                    "${API_BASE}/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" 2>/dev/null || true)
+                  [ -z "$JOBS_JSON" ] && continue
+
+                  RUN_MATCHED="false"
+                  if [ "$WF_KIND" = "deploy.yml" ]; then
+                    RUN_MATCHED=$(printf '%s' "$JOBS_JSON" | jq -r \
+                      --arg p_prefix "$PROVIDER_JOB_PREFIX" \
+                      --arg v_name "$VERIFY_JOB_NAME" \
+                      '
+                        ([.jobs[]? | select(.name == $p_prefix or (.name | startswith($p_prefix + " / ")))] ) as $p_jobs |
+                        ([.jobs[]? | select(.name == $v_name)]) as $v_jobs |
+                        if ($p_jobs | length) > 0
+                           and ($p_jobs | all(.conclusion == "success"))
+                           and ($v_jobs | length) > 0
+                           and ($v_jobs | all(.conclusion == "success"))
+                           and ([ $p_jobs[]?.steps[]? | select(.name == "Dry-run Provider Adapter Validation" and .conclusion == "success") ] | length == 0)
+                        then "true" else "false" end
+                      ' 2>/dev/null || true)
+                  elif [ "$WF_KIND" = "deploy-provider.yml" ] && [ "$RUN_CONCLUSION" = "success" ]; then
+                    HAS_DEPLOYMENTS="false"
+                    SHA_IN_DEPLOYMENTS="false"
+                    DEPLOYMENT_TAG_REF=""
+                    if [ -n "$DEPLOYMENTS_JSON" ]; then
+                      HAS_DEPLOYMENTS=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r 'if type == "array" and length > 0 then "true" else "false" end' 2>/dev/null || true)
+                      SHA_IN_DEPLOYMENTS=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg sha "$RUN_HEAD_SHA" 'if type == "array" and ([.[]? | select((.sha // "" | ascii_downcase) == ($sha | ascii_downcase))] | length > 0) then "true" else "false" end' 2>/dev/null || true)
+                      DEPLOYMENT_TAG_REF=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg sha "$RUN_HEAD_SHA" 'if type == "array" then ([.[]? | select((.sha // "" | ascii_downcase) == ($sha | ascii_downcase)) | .ref // empty | select(test("^v[0-9]"))] | .[0] // empty) else "" end' 2>/dev/null || true)
+                    fi
+
+                    RUN_MATCHED=$(printf '%s' "$JOBS_JSON" | jq -r \
+                      --arg target_env "$EFFECTIVE_ENV" \
+                      --arg run_env "$RUN_ENV" \
+                      --arg has_deployments "${HAS_DEPLOYMENTS:-false}" \
+                      --arg sha_in_deployments "${SHA_IN_DEPLOYMENTS:-false}" \
+                      '
+                        ([.jobs[]? | select(.name == "Deploy Release Artifact to Provider" or (.name | endswith(" / Deploy Release Artifact to Provider")))]) as $d_jobs |
+                        ([ $d_jobs[]?.steps[]? | select(.name | startswith("Record Target Environment (")) ]) as $env_steps |
+                        if ($d_jobs | length) > 0
+                           and ($d_jobs | all(.conclusion == "success"))
+                           and ([ $d_jobs[]?.steps[]? | select(.name == "Dry-run Provider Adapter Validation" and .conclusion == "success") ] | length == 0)
+                           and (
+                             if ($env_steps | length) > 0 then
+                               ([ $env_steps[] | select(.name == ("Record Target Environment (" + $target_env + ")") and .conclusion == "success") ] | length > 0)
+                             elif ([ $d_jobs[]?.environment // empty | select(. != "") ] | length) > 0 then
+                               ([ $d_jobs[]?.environment // empty | select(. == $target_env or . == ($target_env + "-rollback")) ] | length > 0)
+                             elif ($run_env != "") then
+                               ($run_env == $target_env or $run_env == ($target_env + "-rollback"))
+                             elif ($has_deployments == "true") then
+                               ($sha_in_deployments == "true")
+                             else
+                               false
+                             end
+                           )
+                        then "true" else "false" end
+                      ' 2>/dev/null || true)
                   fi
 
-                  RUN_MATCHED=$(printf '%s' "$JOBS_JSON" | jq -r \
-                    --arg target_env "$EFFECTIVE_ENV" \
-                    --arg run_env "$RUN_ENV" \
-                    --arg has_deployments "${HAS_DEPLOYMENTS:-false}" \
-                    --arg sha_in_deployments "${SHA_IN_DEPLOYMENTS:-false}" \
-                    '
-                      ([.jobs[]? | select(.name == "Deploy Release Artifact to Provider" or (.name | endswith(" / Deploy Release Artifact to Provider")))]) as $d_jobs |
-                      ([ $d_jobs[]?.steps[]? | select(.name | startswith("Record Target Environment (")) ]) as $env_steps |
-                      if ($d_jobs | length) > 0
-                         and ($d_jobs | all(.conclusion == "success"))
-                         and ([ $d_jobs[]?.steps[]? | select(.name == "Dry-run Provider Adapter Validation" and .conclusion == "success") ] | length == 0)
-                         and (
-                           if ($env_steps | length) > 0 then
-                             ([ $env_steps[] | select(.name == ("Record Target Environment (" + $target_env + ")") and .conclusion == "success") ] | length > 0)
-                           elif ([ $d_jobs[]?.environment // empty | select(. != "") ] | length) > 0 then
-                             ([ $d_jobs[]?.environment // empty | select(. == $target_env or . == ($target_env + "-rollback")) ] | length > 0)
-                           elif ($run_env != "") then
-                             ($run_env == $target_env or $run_env == ($target_env + "-rollback"))
-                           elif ($has_deployments == "true") then
-                             ($sha_in_deployments == "true")
-                           else
-                             false
-                           end
-                         )
-                      then "true" else "false" end
-                    ' 2>/dev/null || true)
-                fi
+                  if [ "$RUN_MATCHED" = "true" ]; then
+                    for CANDIDATE_REF in "${DEPLOYMENT_TAG_REF:-}" "$RUN_HEAD_BRANCH" "$RUN_HEAD_SHA"; do
+                      [ -z "$CANDIDATE_REF" ] && continue
+                      if [ "$CANDIDATE_REF" = "$RUN_HEAD_BRANCH" ] && [[ ! "$CANDIDATE_REF" =~ ^v[0-9] ]]; then
+                        continue
+                      fi
+                      if verify_and_accept_candidate "$CANDIDATE_REF" "workflow-runs"; then
+                        break 2
+                      fi
+                    done
+                  fi
+                done <<< "$MERGED_RUNS"
+              fi
+            fi
 
-                if [ "$RUN_MATCHED" = "true" ]; then
-                  for CANDIDATE_REF in "${DEPLOYMENT_TAG_REF:-}" "$RUN_HEAD_BRANCH" "$RUN_HEAD_SHA"; do
-                    [ -z "$CANDIDATE_REF" ] && continue
-                    if [ "$CANDIDATE_REF" = "$RUN_HEAD_BRANCH" ] && [[ ! "$CANDIDATE_REF" =~ ^v[0-9] ]]; then
-                      continue
+            if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$DEPLOYMENTS_JSON" ]; then
+              CANDIDATE_DEPLOYMENTS=$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r --arg env "$EFFECTIVE_ENV" --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '
+                if type == "array" then
+                  .[]
+                  | select(
+                      ((.environment // $env) == $env) and
+                      (.id != null) and
+                      (.sha != null) and
+                      (.sha != "") and
+                      ((.sha | ascii_downcase) != ($sha | ascii_downcase)) and
+                      (.sha != $tag) and
+                      (.sha | test("^[a-fA-F0-9]{40}$"))
+                    )
+                  | "\(.id)\t\(.sha)"
+                else
+                  empty
+                end
+              ' 2>/dev/null || true)
+
+              if [ -n "$CANDIDATE_DEPLOYMENTS" ]; then
+                while IFS=$'\t' read -r DEPLOY_ID DEPLOY_SHA; do
+                  if [ -z "$DEPLOY_ID" ] || [ -z "$DEPLOY_SHA" ]; then
+                    continue
+                  fi
+                  if ! is_valid_previous_tag "$DEPLOY_SHA"; then
+                    continue
+                  fi
+                  STATUSES_JSON=$(curl -fsSL \
+                    -H "Accept: application/vnd.github+json" \
+                    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                    "${API_BASE}/repos/${GITHUB_REPOSITORY}/deployments/${DEPLOY_ID}/statuses?per_page=10" 2>/dev/null || true)
+                  if [ -n "$STATUSES_JSON" ]; then
+                    HAS_SUCCESS=$(printf '%s' "$STATUSES_JSON" | jq -r '
+                      if type == "array" then
+                        ([.[]? | select(.state != null and .state != "inactive") | .state] | .[0] // "") == "success"
+                      else
+                        false
+                      end
+                    ' 2>/dev/null || true)
+                    if [ "$HAS_SUCCESS" = "true" ] && verify_and_accept_candidate "$DEPLOY_SHA" "github-deployments"; then
+                      break
                     fi
-                    if verify_and_accept_candidate "$CANDIDATE_REF" "workflow-runs"; then
-                      break 2
-                    fi
-                  done
-                fi
-              done <<< "$MERGED_RUNS"
+                  fi
+                done <<< "$CANDIDATE_DEPLOYMENTS"
+              fi
             fi
           fi
 
-          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -z "$PREVIOUS_IMAGE_DIGEST" ]; then
-            GIT_PREV_SHA=$(git rev-parse --verify HEAD^1 2>/dev/null || true)
+          if [ -z "$PREVIOUS_IMAGE_TAG" ]; then
+            GIT_REF_TARGET="${CURRENT_SHA:-HEAD}"
+            GIT_PREV_SHA=$(git rev-parse --verify "${GIT_REF_TARGET}^1" 2>/dev/null || true)
             if [ -n "$GIT_PREV_SHA" ]; then
               verify_and_accept_candidate "$GIT_PREV_SHA" "git-parent-sha" || true
             fi
-            if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -z "$PREVIOUS_IMAGE_DIGEST" ]; then
+            if [ -z "$PREVIOUS_IMAGE_TAG" ]; then
               while IFS= read -r ANCESTOR_SHA; do
                 [ -z "$ANCESTOR_SHA" ] && continue
                 if verify_and_accept_candidate "$ANCESTOR_SHA" "git-parent-sha"; then
                   break
                 fi
-              done < <(git rev-list --first-parent --skip=2 --max-count=10 HEAD 2>/dev/null || true)
+              done < <(git rev-list --first-parent --skip=2 --max-count=10 "$GIT_REF_TARGET" 2>/dev/null || true)
             fi
           fi
 
-          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -z "$PREVIOUS_IMAGE_DIGEST" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+          if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${CURRENT_SHA:-}" ]; then
             API_BASE="${GITHUB_API_URL:-https://api.github.com}"
-            COMMITS_JSON=$(curl -fsSL \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${API_BASE}/repos/${GITHUB_REPOSITORY}/commits?sha=${CURRENT_SHA}&per_page=20" 2>/dev/null || true)
-            if [ -n "$COMMITS_JSON" ]; then
-              API_CANDIDATE_SHAS=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '.[]? | .sha // empty | select(. != "" and . != $sha and . != $tag and test("^[a-fA-F0-9]{40}$"))' 2>/dev/null || true)
-              if [ -n "$API_CANDIDATE_SHAS" ]; then
-                while IFS= read -r API_PREV_SHA; do
-                  [ -z "$API_PREV_SHA" ] && continue
-                  if verify_and_accept_candidate "$API_PREV_SHA" "github-commits-api"; then
-                    break
-                  fi
-                done <<< "$API_CANDIDATE_SHAS"
+            for COMMITS_PAGE_SIZE in 2 20; do
+              [ -n "$PREVIOUS_IMAGE_TAG" ] && break
+              COMMITS_JSON=$(curl -fsSL \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                "${API_BASE}/repos/${GITHUB_REPOSITORY}/commits?sha=${CURRENT_SHA}&per_page=${COMMITS_PAGE_SIZE}" 2>/dev/null || true)
+              if [ -n "$COMMITS_JSON" ]; then
+                API_CANDIDATE_SHAS=$(printf '%s' "$COMMITS_JSON" | jq -r --arg sha "$CURRENT_SHA" --arg tag "$INCOMING_TAG" '
+                  if type == "array" then
+                    reduce ([.[0]?.parents[0]?.sha, .[].sha] | .[]) as $item (
+                      [];
+                      if ($item != null and $item != "" and (($item | ascii_downcase) != ($sha | ascii_downcase)) and $item != $tag and ($item | test("^[a-fA-F0-9]{40}$")) and (map(ascii_downcase) | index($item | ascii_downcase) == null))
+                      then . + [$item]
+                      else .
+                      end
+                    ) | .[]
+                  else
+                    empty
+                  end
+                ' 2>/dev/null || true)
+                if [ -n "$API_CANDIDATE_SHAS" ]; then
+                  while IFS= read -r API_PREV_SHA; do
+                    [ -z "$API_PREV_SHA" ] && continue
+                    if verify_and_accept_candidate "$API_PREV_SHA" "github-commits-api"; then
+                      break 2
+                    fi
+                  done <<< "$API_CANDIDATE_SHAS"
+                fi
               fi
-            fi
+            done
           fi
 
           if [ -z "$PREVIOUS_IMAGE_TAG" ] && [ -z "$PREVIOUS_IMAGE_DIGEST" ] && [ -n "$GITHUB_TOKEN" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
