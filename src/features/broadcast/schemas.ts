@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const BroadcastTargetFiltersSchema = z.object({
+const BroadcastTargetFiltersSchema = z.object({
   partyTags: z.array(z.string()).optional(),
   householdName: z.string().optional(),
   attendanceStatus: z.enum(['attending', 'declined', 'pending', 'all']).optional(),

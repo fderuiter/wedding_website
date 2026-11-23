@@ -609,10 +609,6 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
       .map((rsvp) => {
         const guest = guestByCode.get(rsvp.guestCode.toUpperCase());
         if (!guest) return null;
-        if (rsvp.status === 'attending' || rsvp.status === 'declined') {
-          guest.used = true;
-          guest.usedAt = evtStamp;
-        }
         return {
           id: rsvp.id,
           subEventId: evt.id,
@@ -660,6 +656,200 @@ function createSeedDataForArchetype(archetypeId: ArchetypeId): ArchetypeSeedData
       updatedAt: evtStamp,
     };
   });
+
+  // Sync InvitationCode RSVP projection fields (attendanceStatus, meals, customAnswers, eventRsvps)
+  const rsvpsByGuestId = new Map<
+    string,
+    Array<{ subEvent: SeededSubEventRecord; rsvp: SeededSubEventRsvpRecord }>
+  >();
+  for (const evt of subEvents) {
+    for (const rsvp of evt.rsvps) {
+      const list = rsvpsByGuestId.get(rsvp.invitationCodeId) ?? [];
+      list.push({ subEvent: evt, rsvp });
+      rsvpsByGuestId.set(rsvp.invitationCodeId, list);
+    }
+  }
+
+  for (const guest of guests) {
+    const entries = rsvpsByGuestId.get(guest.id);
+    if (!entries || entries.length === 0) continue;
+
+    const hasAttending = entries.some((e) => e.rsvp.status === 'attending');
+    const hasPending = entries.some((e) => e.rsvp.status === 'pending');
+    const attendanceStatus: 'attending' | 'declined' | 'pending' = hasAttending
+      ? 'attending'
+      : hasPending
+        ? 'pending'
+        : 'declined';
+    const hasResponded = attendanceStatus === 'attending' || attendanceStatus === 'declined';
+    guest.used = hasResponded;
+    guest.usedAt = hasResponded
+      ? entries[entries.length - 1]!.rsvp.updatedAt
+      : null;
+
+    const maxAttendingPlusOnes = entries.reduce(
+      (max, e) =>
+        e.rsvp.status === 'attending'
+          ? Math.max(max, Math.max(0, e.rsvp.plusOneCount))
+          : max,
+      0
+    );
+
+    const collectedPlusOneNames: string[] = [];
+    for (const { rsvp } of entries) {
+      if (rsvp.status !== 'attending' || rsvp.plusOneCount <= 0) continue;
+      for (const rawName of rsvp.plusOneNames.slice(0, rsvp.plusOneCount)) {
+        const trimmed = rawName.trim();
+        if (trimmed && !collectedPlusOneNames.includes(trimmed)) {
+          collectedPlusOneNames.push(trimmed);
+        }
+      }
+    }
+
+    const existingExtra =
+      guest.extraFields && typeof guest.extraFields === 'object'
+        ? (guest.extraFields as Record<string, unknown>)
+        : {};
+    const fallbackPlusOneNames = Array.isArray(existingExtra.plusOneNames)
+      ? existingExtra.plusOneNames.filter(
+        (n): n is string => typeof n === 'string' && n.trim().length > 0
+      )
+      : [];
+    const syncedPlusOneNames =
+      maxAttendingPlusOnes === 0
+        ? []
+        : collectedPlusOneNames.length > 0
+          ? collectedPlusOneNames
+          : fallbackPlusOneNames;
+
+    const dietaryTagSet = new Set<string>();
+    const structuredMeals: Array<{
+      subEventId: string;
+      subEventTitle: string;
+      selections: Array<{
+        attendee: string;
+        optionId: string;
+        label: string;
+        dietaryTags: string[];
+      }>;
+    }> = [];
+    const structuredAnswers: Array<{
+      subEventId: string;
+      subEventTitle: string;
+      answers: Array<{
+        questionId: string;
+        prompt: string;
+        answer: string;
+      }>;
+    }> = [];
+    const eventRsvps: Array<{
+      subEventId: string;
+      subEventTitle: string;
+      status: 'attending' | 'declined' | 'pending';
+      plusOneCount: number;
+    }> = [];
+
+    for (const { subEvent: evt, rsvp } of entries) {
+      eventRsvps.push({
+        subEventId: evt.id,
+        subEventTitle: evt.title,
+        status: rsvp.status,
+        plusOneCount: rsvp.plusOneCount,
+      });
+
+      if (rsvp.status !== 'attending') continue;
+
+      if (rsvp.mealSelections.some(Boolean)) {
+        const optMap = new Map(evt.mealOptions.map((o) => [o.id, o]));
+        const selections: Array<{
+          attendee: string;
+          optionId: string;
+          label: string;
+          dietaryTags: string[];
+        }> = [];
+
+        rsvp.mealSelections.forEach((optId, idx) => {
+          if (!optId) return;
+          const opt = optMap.get(optId);
+          const label = opt?.label || optId;
+          const tags = opt?.dietaryTags ?? [];
+          tags.forEach((tag) => dietaryTagSet.add(tag));
+          const attendee =
+            idx === 0
+              ? guest.guestName
+              : rsvp.plusOneNames[idx - 1] ||
+                syncedPlusOneNames[idx - 1] ||
+                `Plus-One #${idx}`;
+          selections.push({
+            attendee,
+            optionId: optId,
+            label,
+            dietaryTags: [...tags],
+          });
+        });
+
+        if (selections.length > 0) {
+          structuredMeals.push({
+            subEventId: evt.id,
+            subEventTitle: evt.title,
+            selections,
+          });
+        }
+      }
+
+      const answerEntries = Object.entries(rsvp.customAnswers).filter(([, ans]) =>
+        Boolean(ans)
+      );
+      if (answerEntries.length > 0) {
+        const qMap = new Map(evt.customQuestions.map((q) => [q.id, q]));
+        const answers = answerEntries.map(([qId, ans]) => ({
+          questionId: qId,
+          prompt: qMap.get(qId)?.prompt || qId,
+          answer: ans,
+        }));
+        structuredAnswers.push({
+          subEventId: evt.id,
+          subEventTitle: evt.title,
+          answers,
+        });
+      }
+    }
+
+    const mealSummary = structuredMeals
+      .map((entry) => {
+        const inner = entry.selections
+          .map((sel) =>
+            sel.dietaryTags.length > 0
+              ? `${sel.attendee}: ${sel.label} (${sel.dietaryTags.join(', ')})`
+              : `${sel.attendee}: ${sel.label}`
+          )
+          .join('; ');
+        return structuredMeals.length > 1 ? `${entry.subEventTitle} — ${inner}` : inner;
+      })
+      .join(' | ');
+
+    const customAnswersSummary = structuredAnswers
+      .map((entry) => {
+        const inner = entry.answers
+          .map((ans) => `${ans.prompt}: ${ans.answer}`)
+          .join('; ');
+        return structuredAnswers.length > 1 ? `${entry.subEventTitle} — ${inner}` : inner;
+      })
+      .join(' | ');
+
+    guest.extraFields = {
+      ...existingExtra,
+      attendanceStatus,
+      plusOneCount: maxAttendingPlusOnes,
+      plusOneNames: syncedPlusOneNames,
+      dietaryTags: Array.from(dietaryTagSet),
+      mealSelections: structuredMeals,
+      mealSummary,
+      customAnswers: structuredAnswers,
+      customAnswersSummary,
+      eventRsvps,
+    };
+  }
 
   const scheduleNodes: Extract<ContentNodeDTO, { type: 'Schedule' }>[] = subEvents
     .filter((evt) => !evt.isPrivate)

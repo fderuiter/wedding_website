@@ -263,6 +263,29 @@ describe('Dual-mode static export mock adapter', () => {
     expect(accessMatrix.subEvents.length).toBe(
       ARCHETYPE_PRESETS.classic.subEvents.length
     );
+    const johnsonMatrixRow = accessMatrix.invitationCodes.find(
+      (row) => row.code === 'JOHNSON2026'
+    );
+    expect(johnsonMatrixRow?.eventRsvps?.['sample-subevent-classic-reception']).toMatchObject({
+      status: 'attending',
+      plusOneCount: 1,
+      plusOneNames: ['Daniel Kim'],
+    });
+    expect(
+      johnsonMatrixRow?.eventRsvps?.['sample-subevent-classic-reception']?.meals.length
+    ).toBe(2);
+
+    const classicSeedJohnson = buildArchetypeSeedData('classic').guests.find(
+      (g) => g.code === 'JOHNSON2026'
+    );
+    expect(classicSeedJohnson?.extraFields).toMatchObject({
+      attendanceStatus: 'attending',
+      plusOneCount: 1,
+      plusOneNames: ['Daniel Kim'],
+    });
+    expect(
+      typeof (classicSeedJohnson?.extraFields as Record<string, unknown> | null)?.mealSummary
+    ).toBe('string');
     expect(adminRsvpDetail.rsvps.length).toBeGreaterThan(0);
 
     expect(prisma.contentNode.findMany).not.toHaveBeenCalled();
