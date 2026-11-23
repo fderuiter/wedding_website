@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
-import { SeatingTableAdminService } from '@/features/seating';
-import { AutoAssignSchema } from '@/features/seating';
+import { SeatingTableAdminService, AutoAssignSchema, type AutoAssignOptions } from '@/features/seating';
 
 export const POST = withApiMiddleware(async (request: NextRequest) => {
   let author = 'Admin';
-  let includePending: boolean | undefined;
+  const options: AutoAssignOptions = {};
+
   try {
     const body = await request.json();
     const parsed = AutoAssignSchema.safeParse(body);
@@ -14,7 +14,16 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
         author = parsed.data.author.trim() || 'Admin';
       }
       if (parsed.data?.includePending !== undefined) {
-        includePending = parsed.data.includePending;
+        options.includePending = parsed.data.includePending;
+      }
+      if (parsed.data?.keepHouseholdsIntact !== undefined) {
+        options.keepHouseholdsIntact = parsed.data.keepHouseholdsIntact;
+      }
+      if (parsed.data?.partyGroup !== undefined) {
+        options.partyGroup = parsed.data.partyGroup;
+      }
+      if (parsed.data?.partyTags !== undefined) {
+        options.partyTags = parsed.data.partyTags;
       }
     }
   } catch {
@@ -22,9 +31,9 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   const seatingService = new SeatingTableAdminService();
-  const result =
-    includePending !== undefined
-      ? await seatingService.autoAssignSeats(author, { includePending })
-      : await seatingService.autoAssignSeats(author);
+  const hasOptions = Object.keys(options).length > 0;
+  const result = hasOptions
+    ? await seatingService.autoAssignSeats(author, options)
+    : await seatingService.autoAssignSeats(author);
   return NextResponse.json(result);
 });
