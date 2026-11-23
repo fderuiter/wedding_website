@@ -8,6 +8,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     '.nvmrc',
     '.npmrc',
     '.env.example',
+    '.env.ci',
     '.env.test',
     'prisma.config.ts',
     'package.json',
@@ -18,6 +19,8 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'eslint.config.mjs',
     'playwright.config.ts',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
+    'scripts/install-git-hooks.js',
     'scripts/check-quality.ts',
     'scripts/pretest.mjs',
     'scripts/a11y-report.mjs',
@@ -42,6 +45,17 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
   }
 
   const readmeDirs = [
+    '.githooks',
+    '.github',
+    '.storybook',
+    'assets',
+    'docs',
+    'docs-portal',
+    'e2e',
+    'eslint-rules',
+    'prisma',
+    'public',
+    'scripts',
     'src/app',
     'src/components',
     'src/core',
@@ -51,11 +65,6 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'src/mocks',
     'src/testing',
     'src/utils',
-    'prisma',
-    'public',
-    'e2e',
-    'scripts',
-    'docs',
   ];
   for (const relDir of readmeDirs) {
     fs.mkdirSync(path.join(destRoot, relDir), { recursive: true });
@@ -110,7 +119,7 @@ describe('verify-setup-guides contract check', () => {
       fs
         .readFileSync(prismaConfigPath, 'utf8')
         .replace(
-          'shadowDatabaseUrl: process.env.POSTGRES_URL_NON_POOLING || undefined,',
+          'shadowDatabaseUrl: resolvePrismaShadowDatabaseUrl(process.env.POSTGRES_URL_NON_POOLING, process.env.DATABASE_URL),',
           "shadowDatabaseUrl: process.env.POSTGRES_URL_NON_POOLING ?? 'postgresql://dummy:dummy@localhost:5432/dummy_shadow',"
         )
     );
@@ -163,7 +172,7 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects stale issue template names, /app/src/utils/ container paths, non-strict lint claims, and missing pre-commit scripts in CONTRIBUTING.md', () => {
+  it('rejects stale issue template names, /app/src/utils/ container paths, non-strict lint claims, and missing pre-push scripts in CONTRIBUTING.md', () => {
     const contributingPath = path.join(tempDir, '.github/CONTRIBUTING.md');
     const driftedContributing = fs
       .readFileSync(contributingPath, 'utf8')
@@ -180,7 +189,7 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('Contains stale issue template name "Docs Improvement"'),
         expect.stringContaining('Must use repository-relative "src/utils/"'),
         expect.stringContaining('Must not describe npm run lint as non-strict'),
-        expect.stringContaining('Missing .githooks/pre-commit check script "check:action-pins"'),
+        expect.stringContaining('Missing .githooks/pre-push check script "check:action-pins"'),
       ])
     );
   });
@@ -220,7 +229,7 @@ describe('verify-setup-guides contract check', () => {
     );
   });
 
-  it('rejects missing pretest* hooks, DEFAULT_DOC_FILES drift, and check:static / pre-commit parity gaps', () => {
+  it('rejects missing pretest* hooks, DEFAULT_DOC_FILES drift, and check:static / pre-push parity gaps', () => {
     const pkgPath = path.join(tempDir, 'package.json');
     fs.writeFileSync(
       pkgPath,
@@ -230,12 +239,12 @@ describe('verify-setup-guides contract check', () => {
         .replace('    "test:e2e:smoke": "playwright test --grep @smoke",\n', '')
     );
 
-    const preCommitPath = path.join(tempDir, '.githooks/pre-commit');
+    const prePushPath = path.join(tempDir, '.githooks/pre-push');
     fs.writeFileSync(
-      preCommitPath,
+      prePushPath,
       fs
-        .readFileSync(preCommitPath, 'utf8')
-        .replace("    { name: 'Deployment runbooks verification check', script: 'check:runbooks' },\n", '')
+        .readFileSync(prePushPath, 'utf8')
+        .replace("  { name: 'Deployment runbooks verification check', script: 'check:runbooks' },\n", '')
     );
 
     const verifyDocSyncPath = path.join(tempDir, 'scripts/verify-doc-sync.ts');
@@ -252,11 +261,55 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('Jest script "test:cov" requires lifecycle hook "pretest:cov"'),
         expect.stringContaining('Missing "pretest:cov" pretest hook for "test:cov"'),
         expect.stringContaining('package.json: "test:e2e:smoke" must invoke "playwright test --grep @smoke"'),
-        '.githooks/pre-commit: Must enforce check:static sub-script "check:runbooks"',
-        expect.stringContaining('Commit Your Changes claims "twelve" sequential workspace checks, expected "eleven"'),
+        '.githooks/pre-push: Must enforce check:static sub-script "check:runbooks"',
+        expect.stringContaining('Push to Your Fork claims "twelve" sequential workspace checks, expected "eleven"'),
         '.github/CONTRIBUTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
         '.github/TESTING.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
         'AGENTS.md: "npm run check:doc-sync" documentation is missing DEFAULT_DOC_FILES entry "GENERATED_SCHEMAS.md"',
+      ])
+    );
+  });
+
+  it('rejects destructive git stash/reset/checkout commands, workspace checks in pre-commit, heavy builds in hooks, and missing pre-push installer permissions', () => {
+    fs.writeFileSync(
+      path.join(tempDir, '.githooks/pre-commit'),
+      [
+        '#!/usr/bin/env node',
+        'function pushStash() { return "git stash push"; }',
+        "const checks = [{ name: 'Build portal', script: 'docs:build' }];",
+        'export { pushStash, checks };',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, '.githooks/pre-push'),
+      `${fs.readFileSync(path.join(tempDir, '.githooks/pre-push'), 'utf8')}\n// git checkout -- . && git reset --hard\nconst extra = { name: 'Storybook', script: 'build-storybook' };\nvoid extra;\n`
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'scripts/install-git-hooks.js'),
+      fs.readFileSync(path.join(tempDir, 'scripts/install-git-hooks.js'), 'utf8').replace(/pre-push/g, 'post-merge')
+    );
+
+    const testingPath = path.join(tempDir, '.github/TESTING.md');
+    fs.writeFileSync(
+      testingPath,
+      fs.readFileSync(testingPath, 'utf8').replace(/\.githooks\/pre-push/g, '.githooks/legacy')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        '.githooks/pre-commit: Must run "npx lint-staged" on staged files',
+        '.githooks/pre-commit: Must remove legacy stash helper "pushStash"',
+        '.githooks/pre-commit: Must run only "npx lint-staged" without sequential workspace checks',
+        '.githooks/pre-commit: Must not invoke destructive workspace command "git stash"',
+        '.githooks/pre-commit: Must exclude heavy build step "docs:build" so local commits stay fast',
+        '.githooks/pre-push: Must not invoke destructive workspace command "git reset"',
+        '.githooks/pre-push: Must not invoke destructive workspace command "git checkout -- ."',
+        '.githooks/pre-push: Must exclude heavy build step "build-storybook" so local pushes stay fast',
+        'scripts/install-git-hooks.js: Must configure executable 0o755 permissions on both .githooks/pre-commit and .githooks/pre-push',
+        '.github/TESTING.md: Must reference both ".githooks/pre-commit" and ".githooks/pre-push"',
       ])
     );
   });
@@ -334,7 +387,26 @@ describe('verify-setup-guides contract check', () => {
     const envExamplePath = path.join(tempDir, '.env.example');
     fs.writeFileSync(
       envExamplePath,
-      `${fs.readFileSync(envExamplePath, 'utf8')}\n# legacy scrypt:c2FsdA==:aGFzaA==\n`
+      `${fs
+        .readFileSync(envExamplePath, 'utf8')
+        .replace('# NODE_ENV=development', 'NODE_ENV=development')
+        .replace('DB_PASSWORD="wedding123"', '# DB_PASSWORD="wedding123"')}\n# legacy scrypt:c2FsdA==:aGFzaA==\n`
+    );
+
+    const playwrightPath = path.join(tempDir, 'playwright.config.ts');
+    fs.writeFileSync(
+      playwrightPath,
+      fs
+        .readFileSync(playwrightPath, 'utf8')
+        .replace("NODE_ENV: process.env.CI ? 'production' : 'development',", "NODE_ENV: 'production',")
+    );
+
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      fs
+        .readFileSync(readmePath, 'utf8')
+        .replace('    docker compose up -d db', '    DB_PASSWORD=wedding123 docker compose up -d db')
     );
 
     const errors = verifySetupGuides(tempDir);
@@ -342,7 +414,13 @@ describe('verify-setup-guides contract check', () => {
       expect.arrayContaining([
         expect.stringContaining('docker-compose.yml: Must not declare default fallback secret ${DB_PASSWORD:-...}'),
         expect.stringContaining('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432'),
-        expect.stringContaining('scripts/test-container.mjs: Must invoke isolated "docker-compose.ci.yml" override manifest'),
+        expect.stringContaining(
+          'scripts/test-container.mjs: Must pass "--env-file .env.ci" with isolated "docker-compose.ci.yml" override manifest'
+        ),
+        expect.stringContaining('.env.example: Must omit active NODE_ENV assignment'),
+        expect.stringContaining('.env.example: Must define active DB_PASSWORD="wedding123"'),
+        expect.stringContaining('playwright.config.ts: Must set webServer.env.NODE_ENV to "development" locally'),
+        expect.stringContaining('README.md: Must prescribe bare "docker compose up -d db"'),
         expect.stringContaining('.env.example: Must not contain invalid 4-byte placeholder hash'),
       ])
     );
@@ -383,6 +461,34 @@ describe('verify-setup-guides contract check', () => {
         'scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI',
         'README.md: Installation section must prescribe "npm ci" rather than "npm install"',
         'docs/versioning.md: Must cite "node:22-bookworm-slim" (not stale alpine or mismatched Node.js major)',
+      ])
+    );
+  });
+
+  it('rejects duplicate h1 headings, missing or broken Table of Contents entries, and undocumented root directories while ignoring build/cache folders', () => {
+    fs.mkdirSync(path.join(tempDir, 'node_modules'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, '.next'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, '.swc'), { recursive: true });
+    fs.mkdirSync(path.join(tempDir, 'coverage'), { recursive: true });
+    expect(verifySetupGuides(tempDir)).toEqual([]);
+
+    fs.mkdirSync(path.join(tempDir, 'packages'), { recursive: true });
+
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      `# NOTE CURRENTLY UNDER MAINTAINANCE\n\n${fs
+        .readFileSync(readmePath, 'utf8')
+        .replace('    *   [Linting & Testing](#linting--testing)\n', '    *   [Stale Section](#stale-section)\n')}`
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'README.md: Must contain exactly one top-level "#" (h1) heading, found 2',
+        'README.md: Table of Contents is missing entry for "Linting & Testing" (#linting--testing)',
+        'README.md: Table of Contents links to nonexistent heading "#stale-section"',
+        'README.md: Project Structure is missing root directory "packages"',
       ])
     );
   });

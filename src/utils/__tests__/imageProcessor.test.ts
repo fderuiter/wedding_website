@@ -1,5 +1,15 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import sharp from 'sharp';
-import { sanitizeImage } from '../imageProcessor';
+import { ApiError } from '../ApiError';
+import {
+  getImageWorkerPoolStats,
+  offloadSanitizeToWorker,
+  resetImageWorkerPool,
+  sanitizeImage,
+  type ImageWorkerPoolStats,
+} from '../imageProcessor';
 import { isHeicBuffer, processImageWorkerBuffer } from '../imageProcessorWorker';
 
 // Real 16x16 HEIC (ISOBMFF ftyp=heic, HEVC primary frame)
@@ -195,6 +205,188 @@ describe('imageProcessor - sanitizeImage', () => {
       const meta = await sharp(Buffer.from(resultUint8Array)).metadata();
       expect(meta.width).toBe(30);
       expect(meta.height).toBe(30);
+    });
+  });
+
+  describe('warm worker pool, lazy HEIC loading, and fault isolation', () => {
+    afterEach(async () => {
+      await resetImageWorkerPool();
+    });
+
+    it('reuses warm workers across sequential uploads and avoids loading heic-decode on raster formats', async () => {
+      await resetImageWorkerPool({ maxPoolSize: 2 });
+
+      const jpegBuf = await sharp({
+        create: { width: 24, height: 24, channels: 3, background: { r: 200, g: 50, b: 50 } },
+      }).jpeg().toBuffer();
+      const pngBuf = await sharp({
+        create: { width: 24, height: 24, channels: 4, background: { r: 50, g: 200, b: 50, alpha: 1 } },
+      }).png().toBuffer();
+      const webpBuf = await sharp({
+        create: { width: 24, height: 24, channels: 4, background: { r: 50, g: 50, b: 200, alpha: 1 } },
+      }).webp().toBuffer();
+
+      await sanitizeImage(createTestFile(new Uint8Array(jpegBuf), 'one.jpg', 'image/jpeg'));
+      const statsAfterFirst: ImageWorkerPoolStats = getImageWorkerPoolStats();
+      expect(statsAfterFirst.poolSize).toBe(1);
+      expect(statsAfterFirst.readyWorkers).toBe(1);
+      expect(statsAfterFirst.busyWorkers).toBe(0);
+      expect(statsAfterFirst.heicLoadedWorkerIds).toEqual([]);
+      const firstWorkerId = statsAfterFirst.workerIds[0];
+
+      await sanitizeImage(createTestFile(new Uint8Array(pngBuf), 'two.png', 'image/png'));
+      await sanitizeImage(createTestFile(new Uint8Array(webpBuf), 'three.webp', 'image/webp'));
+
+      // Spoofed HEIC header should fail before importing heic-decode
+      const spoofedHeader = createTestFile(
+        new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+        'spoof.heic',
+        'image/heic'
+      );
+      await expect(sanitizeImage(spoofedHeader)).rejects.toThrow('Image sanitization failed');
+
+      const statsAfterRaster = getImageWorkerPoolStats();
+      expect(statsAfterRaster.workerIds).toEqual([firstWorkerId]);
+      expect(statsAfterRaster.heicLoadedWorkerIds).toEqual([]);
+
+      // Valid HEIC upload lazily loads heic-decode in the warm worker isolate
+      const validHeic = createTestFile(new Uint8Array(VALID_HEIC_BUFFER), 'IMG_0001.HEIC', 'image/heic');
+      const transcoded = await sanitizeImage(validHeic);
+      expect(transcoded.name).toBe('IMG_0001.jpg');
+      expect(transcoded.type).toBe('image/jpeg');
+
+      const statsAfterHeic = getImageWorkerPoolStats();
+      expect(statsAfterHeic.workerIds).toEqual([firstWorkerId]);
+      expect(statsAfterHeic.heicLoadedWorkerIds).toEqual([firstWorkerId]);
+    });
+
+    it('bounds concurrent worker threads and queues excess tasks cleanly', async () => {
+      await resetImageWorkerPool({ maxPoolSize: 2 });
+
+      const pngBuf = await sharp({
+        create: { width: 32, height: 32, channels: 3, background: { r: 10, g: 20, b: 30 } },
+      }).png().toBuffer();
+
+      const files = Array.from({ length: 6 }, (_, idx) =>
+        createTestFile(new Uint8Array(pngBuf), `batch-${idx}.png`, 'image/png')
+      );
+
+      const sanitized = await Promise.all(files.map((file) => sanitizeImage(file)));
+      expect(sanitized).toHaveLength(6);
+
+      const stats = getImageWorkerPoolStats();
+      expect(stats.poolSize).toBeLessThanOrEqual(2);
+      expect(stats.busyWorkers).toBe(0);
+      expect(stats.queuedTasks).toBe(0);
+    });
+
+    it('verifies worker readiness before transferring ArrayBuffer so startup fallback retains intact bytes', async () => {
+      const missingWorkerPath = path.join(os.tmpdir(), `nonexistent-worker-${Date.now()}.mjs`);
+      await resetImageWorkerPool({ workerPathOverride: missingWorkerPath, maxPoolSize: 2 });
+
+      const pngBuf = await sharp({
+        create: { width: 28, height: 18, channels: 3, background: { r: 120, g: 80, b: 40 } },
+      }).png().toBuffer();
+
+      // Unshared ArrayBuffer view that would detach to byteLength 0 if transferred prematurely
+      const unsharedInput = new Uint8Array(pngBuf);
+      expect(unsharedInput.byteLength).toBeGreaterThan(0);
+
+      const sanitizedBytes = await offloadSanitizeToWorker(unsharedInput, 2000);
+      expect(unsharedInput.byteLength).toBe(pngBuf.byteLength);
+
+      const meta = await sharp(Buffer.from(sanitizedBytes)).metadata();
+      expect(meta.width).toBe(28);
+      expect(meta.height).toBe(18);
+    });
+
+    it('isolates timed-out and crashed tasks, evicts broken workers, and spawns clean replacements', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'img-worker-pool-test-'));
+      const tempWorkerPath = path.join(tempDir, 'mockPoolWorker.mjs');
+
+      await fs.writeFile(
+        tempWorkerPath,
+        [
+          "import { parentPort } from 'node:worker_threads';",
+          'parentPort.on("message", (task) => {',
+          '  const marker = task.buffer[0];',
+          '  if (marker === 0xde) {',
+          '    // Simulate stalled worker: never respond',
+          '    return;',
+          '  }',
+          '  if (marker === 0xcf) {',
+          '    // Simulate mid-task worker crash',
+          '    process.exit(1);',
+          '  }',
+          '  setTimeout(() => {',
+          '    const out = new Uint8Array([marker, task.buffer.byteLength]);',
+          '    parentPort.postMessage({ id: task.id, success: true, buffer: out }, [out.buffer]);',
+          '  }, 20);',
+          '});',
+          'parentPort.postMessage({ type: "ready" });',
+        ].join('\n'),
+        'utf8'
+      );
+
+      try {
+        await resetImageWorkerPool({ workerPathOverride: tempWorkerPath, maxPoolSize: 2 });
+
+        // Warm both pool slots first
+        await Promise.all([
+          offloadSanitizeToWorker(new Uint8Array([1, 2, 3]), 2000),
+          offloadSanitizeToWorker(new Uint8Array([4, 5, 6]), 2000),
+        ]);
+        const initialWorkerIds = [...getImageWorkerPoolStats().workerIds];
+        expect(initialWorkerIds).toHaveLength(2);
+
+        // Dispatch 1 stalled task (80ms timeout), 1 healthy sibling task, and 1 queued task
+        const stalledPromise = offloadSanitizeToWorker(new Uint8Array([0xde, 1]), 80);
+        const siblingPromise = offloadSanitizeToWorker(new Uint8Array([0x11, 2, 3]), 2000);
+        const queuedPromise = offloadSanitizeToWorker(new Uint8Array([0x22, 4, 5, 6]), 2000);
+
+        await expect(stalledPromise).rejects.toEqual(
+          expect.objectContaining({
+            statusCode: 400,
+            message: 'Image sanitization failed. Worker thread timed out.',
+          })
+        );
+        await expect(stalledPromise).rejects.toBeInstanceOf(ApiError);
+
+        const [siblingResult, queuedResult] = await Promise.all([siblingPromise, queuedPromise]);
+        expect(Array.from(siblingResult)).toEqual([0x11, 3]);
+        expect(Array.from(queuedResult)).toEqual([0x22, 4]);
+
+        // Stalled worker was evicted; sibling worker remained healthy
+        const afterTimeoutIds = getImageWorkerPoolStats().workerIds;
+        expect(afterTimeoutIds).not.toContain(initialWorkerIds[0]);
+        expect(afterTimeoutIds).toContain(initialWorkerIds[1]);
+
+        // Dispatch a mid-task crash, verify ApiError(400) and clean replacement worker spawn later
+        await expect(
+          offloadSanitizeToWorker(new Uint8Array([0xcf, 9]), 2000)
+        ).rejects.toEqual(
+          expect.objectContaining({
+            statusCode: 400,
+            message: 'Image sanitization failed. The file may be corrupt or invalid.',
+          })
+        );
+
+        // Now run two concurrent tasks to verify a clean replacement worker spawns up to maxPoolSize
+        const [repA, repB] = await Promise.all([
+          offloadSanitizeToWorker(new Uint8Array([0x33, 1]), 2000),
+          offloadSanitizeToWorker(new Uint8Array([0x44, 1, 2]), 2000),
+        ]);
+        expect(Array.from(repA)).toEqual([0x33, 2]);
+        expect(Array.from(repB)).toEqual([0x44, 3]);
+
+        const finalStats = getImageWorkerPoolStats();
+        expect(finalStats.poolSize).toBe(2);
+        expect(finalStats.readyWorkers).toBe(2);
+        expect(finalStats.busyWorkers).toBe(0);
+      } finally {
+        await resetImageWorkerPool();
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
     });
   });
 });

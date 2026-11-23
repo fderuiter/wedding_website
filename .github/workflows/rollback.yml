@@ -40,8 +40,18 @@ on:
         required: false
         default: false
         type: boolean
+      commit_sha:
+        description: 'Optional 40-character failing commit SHA to check out for migration linting and block self-rollback against (defaults to github.sha)'
+        required: false
+        default: ''
+        type: string
   workflow_call:
     inputs:
+      commit_sha:
+        description: 'Optional 40-character failing commit SHA to check out for migration linting and block self-rollback against (defaults to github.sha)'
+        required: false
+        default: ''
+        type: string
       previous_tag:
         description: 'Immutable container image tag or commit SHA to restore'
         required: false
@@ -107,9 +117,6 @@ jobs:
       db_compatibility_status: ${{ steps.db_safety_check.outputs.db_compatibility_status }}
       failed_stage: ${{ steps.record_failure.outputs.failed_stage }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Log Rollback Request Details
         id: validate
         env:
@@ -120,8 +127,19 @@ jobs:
           PROVIDER: ${{ inputs.provider || 'google-cloud-run' }}
           REASON: ${{ inputs.reason || 'Post-deployment verification failure' }}
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
-          CURRENT_SHA: ${{ github.sha }}
+          INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
         run: |
+          if [ -n "${INPUT_COMMIT_SHA:-}" ]; then
+            if [[ ! "$INPUT_COMMIT_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+              echo "::error::Invalid commit_sha '${INPUT_COMMIT_SHA}'. Must be a 40-character hexadecimal commit SHA."
+              exit 1
+            fi
+            CURRENT_SHA="$INPUT_COMMIT_SHA"
+          else
+            CURRENT_SHA="${CURRENT_SHA:-${GITHUB_SHA:-}}"
+          fi
+
           if [[ ! "$TARGET_ENV" =~ ^(production|staging|development)$ ]]; then
             echo "::error::Invalid target environment '${TARGET_ENV}'. Must be one of: production, staging, development."
             exit 1
@@ -148,7 +166,7 @@ jobs:
             if [ -z "$EFFECTIVE_TAG" ] && [ -z "$EFFECTIVE_DIGEST" ]; then
               EFFECTIVE_TAG="latest"
             fi
-            if [ "$EFFECTIVE_TAG" = "latest" ] || [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
+            if [ "$EFFECTIVE_TAG" = "latest" ] || { [ -n "$CURRENT_SHA" ] && [ "${EFFECTIVE_TAG,,}" = "${CURRENT_SHA,,}" ]; }; then
               echo "::warning::Explicit dry-run mode enabled: permitting rollback tag '${EFFECTIVE_TAG}' for dry-run validation only."
             fi
           else
@@ -160,7 +178,7 @@ jobs:
               echo "::error::Mutable image tag 'latest' is rejected outside explicit dry-run mode. Specify an immutable previous release tag or commit SHA."
               exit 1
             fi
-            if [ -n "$CURRENT_SHA" ] && [ "$EFFECTIVE_TAG" = "$CURRENT_SHA" ]; then
+            if [ -n "$CURRENT_SHA" ] && [ "${EFFECTIVE_TAG,,}" = "${CURRENT_SHA,,}" ]; then
               echo "::error::Rollback image tag '${EFFECTIVE_TAG}' matches the failing commit SHA '${CURRENT_SHA}'. Specify the previous healthy release tag."
               exit 1
             fi
@@ -196,6 +214,11 @@ jobs:
           echo "Rollback Trigger Reason: ${SAFE_REASON}"
           echo "Timestamp: ${NOW}"
           echo "=================================================="
+
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -243,11 +266,13 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
     needs: [preflight]
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: ${{ inputs.target_environment || 'production' }}
       rollback_environment: ${{ inputs.rollback_environment || '' }}
+      commit_sha: ${{ inputs.commit_sha || '' }}
       image_digest: ${{ needs.preflight.outputs.effective_digest || '' }}
       image_tag: ${{ needs.preflight.outputs.effective_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}

@@ -99,32 +99,61 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
     }
   }
 
+  private resolveEmailTimeoutMs(): number {
+    const raw =
+      this.config?.emailTimeoutMs ??
+      this.config?.providerTimeoutMs ??
+      this.config?.timeoutMs;
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    return 5_000;
+  }
+
+  private isAbortOrTimeoutError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') {
+      return false;
+    }
+    const name = 'name' in err ? (err as { name?: unknown }).name : undefined;
+    return name === 'TimeoutError' || name === 'AbortError';
+  }
+
   private async sendResendEmail(payload: EmailMessagePayload): Promise<DispatchResult> {
     const apiKey = this.config.resendApiKey;
     if (!apiKey) {
       return { success: false, error: 'Resend API Key is missing in settings' };
     }
 
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        from: payload.from,
-        to: payload.to,
-        subject: payload.subject,
-        html: formatEmailHtmlBody(payload.body),
-      }),
-    });
+    const timeoutMs = this.resolveEmailTimeoutMs();
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return { success: false, error: `Resend API error (${res.status}): ${errText}` };
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          from: payload.from,
+          to: payload.to,
+          subject: payload.subject,
+          html: formatEmailHtmlBody(payload.body),
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        return { success: false, error: `Resend API error (${res.status}): ${errText}` };
+      }
+
+      return { success: true };
+    } catch (err: unknown) {
+      if (this.isAbortOrTimeoutError(err)) {
+        return { success: false, error: `Resend API request timed out after ${timeoutMs}ms` };
+      }
+      throw err;
     }
-
-    return { success: true };
   }
 
   private async sendSendGridEmail(payload: EmailMessagePayload): Promise<DispatchResult> {
@@ -133,26 +162,36 @@ export class MultiChannelMessagingProvider implements MessagingProvider {
       return { success: false, error: 'SendGrid API Key is missing in settings' };
     }
 
-    const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: payload.to }] }],
-        from: { email: payload.from },
-        subject: payload.subject,
-        content: [{ type: 'text/html', value: formatEmailHtmlBody(payload.body) }],
-      }),
-    });
+    const timeoutMs = this.resolveEmailTimeoutMs();
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return { success: false, error: `SendGrid API error (${res.status}): ${errText}` };
+    try {
+      const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: payload.to }] }],
+          from: { email: payload.from },
+          subject: payload.subject,
+          content: [{ type: 'text/html', value: formatEmailHtmlBody(payload.body) }],
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        return { success: false, error: `SendGrid API error (${res.status}): ${errText}` };
+      }
+
+      return { success: true };
+    } catch (err: unknown) {
+      if (this.isAbortOrTimeoutError(err)) {
+        return { success: false, error: `SendGrid API request timed out after ${timeoutMs}ms` };
+      }
+      throw err;
     }
-
-    return { success: true };
   }
 
   private async sendSmtpEmail(_payload: EmailMessagePayload): Promise<DispatchResult> {
