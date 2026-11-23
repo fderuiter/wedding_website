@@ -51,20 +51,41 @@ jest.mock('@react-three/postprocessing', () => ({
 }));
 
 jest.mock('@react-three/rapier', () => {
-  const RigidBodyMock = React.forwardRef(
-    ({ children, onContactForce, userData }: { children: React.ReactNode; onContactForce?: (payload: any) => void; userData?: { id: string } }, ref: React.Ref<unknown>) => {
-      if (ref) {
-        if (userData?.id === 'main') (ref as any).current = mockMainBodyApi;
-        else if (userData?.id === 'left') (ref as any).current = mockLeftBodyApi;
-        else if (userData?.id === 'right') (ref as any).current = mockRightBodyApi;
+  function RigidBodyMock({
+    children,
+    onContactForce,
+    userData,
+    ref,
+  }: {
+    children: React.ReactNode;
+    onContactForce?: (payload: any) => void;
+    userData?: { id: string };
+    ref?: React.Ref<unknown>;
+  }) {
+    React.useEffect(() => {
+      const targetApi =
+        userData?.id === 'main'
+          ? mockMainBodyApi
+          : userData?.id === 'left'
+            ? mockLeftBodyApi
+            : userData?.id === 'right'
+              ? mockRightBodyApi
+              : undefined;
+
+      if (ref && targetApi) {
+        if (typeof ref === 'function') {
+          ref(targetApi);
+        } else {
+          ref.current = targetApi;
+        }
       }
       if (onContactForce && userData?.id === 'main') {
         mockMainBodyApi.__triggerContactForce = onContactForce;
       }
-      return <div data-testid="rigidbody">{children}</div>;
-    }
-  );
-  RigidBodyMock.displayName = 'RigidBody';
+    }, [ref, onContactForce, userData?.id]);
+
+    return <div data-testid="rigidbody">{children}</div>;
+  }
 
   return {
     Physics: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

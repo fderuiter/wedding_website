@@ -184,7 +184,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     }, 50);
   };
 
-  const handleScrape = async (e: React.FormEvent) => {
+  const handleScrape = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (isFund) return; // Bypass scraper for cash or experience funds
 
@@ -281,7 +281,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
 

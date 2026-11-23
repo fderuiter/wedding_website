@@ -36,7 +36,17 @@ moduleModule.createRequire = function (filename) {
   const explicitTestDbUrl = (process.env.TEST_DATABASE_URL || '').trim();
 
   // Clear parent shell database variables and other isolated test variables to ensure clean isolation
-  const pgVars = ['DATABASE_URL', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGHOST', 'PGPORT', 'PGDATASOURCE', 'ADMIN_PASSWORD'];
+  const pgVars = [
+    'DATABASE_URL',
+    'POSTGRES_URL_NON_POOLING',
+    'PGDATABASE',
+    'PGUSER',
+    'PGPASSWORD',
+    'PGHOST',
+    'PGPORT',
+    'PGDATASOURCE',
+    'ADMIN_PASSWORD',
+  ];
   for (const v of pgVars) {
     delete process.env[v];
   }
@@ -129,53 +139,6 @@ if (typeof self !== 'undefined') {
   }
 }
 
-jest.mock('msw', () => {
-  const actual = jest.requireActual('msw');
-  const createCtx = () => ({
-    status: (code) => ({ type: 'status', value: code }),
-    json: (body) => ({ type: 'json', value: body }),
-    body: (text) => ({ type: 'body', value: text }),
-    set: (name, val) => ({ type: 'header', name, value: val }),
-  });
-  const buildRes = (...args) => {
-    let status = 200;
-    let body = null;
-    const headers = new Headers();
-    for (const arg of args) {
-      if (!arg) continue;
-      if (arg.type === 'status') status = arg.value;
-      else if (arg.type === 'json') {
-        body = JSON.stringify(arg.value);
-        headers.set('Content-Type', 'application/json');
-      } else if (arg.type === 'body') {
-        body = arg.value;
-      } else if (arg.type === 'header') {
-        headers.set(arg.name, arg.value);
-      }
-    }
-    return new actual.HttpResponse(body, { status, headers });
-  };
-  buildRes.networkError = () => actual.HttpResponse.error();
-
-  const makeHandler = (method) => (url, resolver) => {
-    return actual.http[method](url, async (info) => {
-      const ctx = createCtx();
-      return resolver(info.request, buildRes, ctx);
-    });
-  };
-
-  return {
-    ...actual,
-    rest: {
-      get: makeHandler('get'),
-      post: makeHandler('post'),
-      put: makeHandler('put'),
-      delete: makeHandler('delete'),
-      patch: makeHandler('patch'),
-    },
-  };
-});
-
 jest.mock('jest-axe', () => {
   const actual = jest.requireActual('jest-axe');
   const nodeFs = jest.requireActual('node:fs');
@@ -241,6 +204,9 @@ beforeAll(() => {
 });
 afterEach(() => {
   globalFallbackStore.clear();
+  if (typeof globalThis.__resetNextAfterMock === 'function') {
+    globalThis.__resetNextAfterMock();
+  }
   if (process.env.LIVE_TESTS !== 'true') {
     server.resetHandlers();
   }
@@ -407,7 +373,45 @@ jest.mock('next/server', () => {
     }
   }
 
+  const { AsyncLocalStorage: NodeAsyncLocalStorage } = jest.requireActual('node:async_hooks');
+  const afterScopeStorage = new NodeAsyncLocalStorage();
+
+  const defaultAfterImplementation = (task) => {
+    const queue = afterScopeStorage.getStore();
+    if (!Array.isArray(queue)) {
+      throw new Error(
+        '`after` was called outside a request scope. Read more: https://nextjs.org/docs/messages/next-dynamic-api-wrong-context'
+      );
+    }
+    queue.push(task);
+  };
+
+  const mockAfter = jest.fn(defaultAfterImplementation);
+
+  globalThis.__resetNextAfterMock = () => {
+    mockAfter.mockImplementation(defaultAfterImplementation);
+  };
+
+  globalThis.__runWithAfterScope = async (callback) => {
+    const queue = [];
+    const result = await afterScopeStorage.run(queue, callback);
+    const flush = async () => {
+      while (queue.length > 0) {
+        const batch = queue.splice(0, queue.length);
+        await Promise.all(
+          batch.map((task) => (typeof task === 'function' ? task() : task))
+        );
+      }
+    };
+    return {
+      result,
+      flush,
+      pendingCount: () => queue.length,
+    };
+  };
+
   return {
+    after: mockAfter,
     NextResponse: MockNextResponse,
     NextRequest: jest.fn((input, init) => {
       const requestCookies = new Map();

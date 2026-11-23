@@ -193,6 +193,83 @@ describe('RootLayout Server Component Cookie Hydration', () => {
     expect(themeProviderEl!.props.hasServerStylesheet).toBe(true);
   });
 
+  describe('Self-Hosted Google Font Preload Configuration', () => {
+    it('configures preload: false across all eight next/font/google families and exposes font variables on html without duplicating on body', async () => {
+      const fontCalls: Record<string, Record<string, unknown>[]> = {};
+      const expectedFonts: Array<[string, string]> = [
+        ['Geist', '--font-geist-sans'],
+        ['Geist_Mono', '--font-geist-mono'],
+        ['Playfair_Display', '--font-playfair'],
+        ['Cormorant_Garamond', '--font-cormorant'],
+        ['Inter', '--font-inter'],
+        ['Lora', '--font-lora'],
+        ['Cinzel', '--font-cinzel'],
+        ['Lato', '--font-lato'],
+      ];
+
+      await jest.isolateModulesAsync(async () => {
+        jest.doMock('next/font/google', () => {
+          const mockModule: Record<string, jest.Mock> = {};
+          for (const [fontName] of expectedFonts) {
+            mockModule[fontName] = jest.fn((options: Record<string, unknown>) => {
+              fontCalls[fontName] = fontCalls[fontName] || [];
+              fontCalls[fontName].push(options);
+              const varSlug = String(options?.variable || fontName).replace(/^--/, '');
+              return {
+                className: `class-${varSlug}`,
+                variable: `var-class-${varSlug}`,
+                style: { fontFamily: fontName },
+              };
+            });
+          }
+          return mockModule;
+        });
+
+        const { cookies: isolatedCookies } = await import('next/headers');
+        (isolatedCookies as unknown as jest.Mock).mockResolvedValue({
+          get: () => undefined,
+        });
+
+        const { default: IsolatedRootLayout } = await import('../layout');
+        const jsx = await IsolatedRootLayout({ children: <div>Child Content</div> });
+
+        expect(jsx.type).toBe('html');
+        const htmlClassTokens = String(jsx.props.className).split(/\s+/).filter(Boolean);
+
+        const body = jsx.props.children[1];
+        expect(body.type).toBe('body');
+        const bodyClassTokens = String(body.props.className).split(/\s+/).filter(Boolean);
+
+        for (const [fontName, cssVar] of expectedFonts) {
+          expect(fontCalls[fontName]).toHaveLength(1);
+          const callOptions = fontCalls[fontName][0];
+          expect(callOptions).toMatchObject({
+            variable: cssVar,
+            subsets: ['latin'],
+            preload: false,
+          });
+          expect(callOptions.adjustFontFallback).not.toBe(false);
+          if (callOptions.display !== undefined) {
+            expect(callOptions.display).toBe('swap');
+          }
+
+          const expectedVarClass = `var-class-${cssVar.replace(/^--/, '')}`;
+          expect(htmlClassTokens).toContain(expectedVarClass);
+          expect(bodyClassTokens).not.toContain(expectedVarClass);
+        }
+
+        expect(fontCalls.Lato[0]).toMatchObject({
+          weight: ['400', '700'],
+          preload: false,
+        });
+
+        expect(body.props.className).toBe(
+          'bg-[var(--color-background)] text-[var(--color-foreground)] selection:bg-[var(--color-primary)]'
+        );
+      });
+    });
+  });
+
   describe('Revoked Guest Invitation SSR Guard', () => {
     const mockHeaders = headers as unknown as jest.Mock;
     const mockRedirect = redirect as unknown as jest.Mock;

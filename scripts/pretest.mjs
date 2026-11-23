@@ -17,12 +17,41 @@ const hashCachePath = path.join(hashCacheDir, '.package-lock-hash');
 const pretestCacheDir = path.join(hashCacheDir, '.cache');
 const pretestStatePath = path.join(pretestCacheDir, 'pretest-state.json');
 const prismaSchemaPath = path.join(rootDir, 'prisma', 'schema.prisma');
+const prismaMigrationsDir = path.join(rootDir, 'prisma', 'migrations');
 
 function computeFileSha256(filePath) {
   if (!fs.existsSync(filePath)) {
     return '';
   }
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function listCommittedMigrationNames() {
+  if (!fs.existsSync(prismaMigrationsDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(prismaMigrationsDir, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        fs.existsSync(path.join(prismaMigrationsDir, entry.name, 'migration.sql'))
+    )
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function computeMigrationsAndSchemaHash() {
+  if (!fs.existsSync(prismaSchemaPath)) {
+    return '';
+  }
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(prismaSchemaPath));
+  for (const migrationName of listCommittedMigrationNames()) {
+    hash.update(`\n--migration:${migrationName}--\n`);
+    hash.update(fs.readFileSync(path.join(prismaMigrationsDir, migrationName, 'migration.sql')));
+  }
+  return hash.digest('hex');
 }
 
 function readPretestState() {
@@ -95,7 +124,7 @@ function parseTargetSchemaName(connectionString) {
   }
 }
 
-async function probeDatabaseState(connectionString) {
+async function probeDatabaseState(connectionString, expectedMigrations) {
   let client;
   try {
     const pgModule = await import('pg');
@@ -106,13 +135,31 @@ async function probeDatabaseState(connectionString) {
     });
     await client.connect();
     const targetSchema = parseTargetSchemaName(connectionString);
-    const result = await client.query(
-      'SELECT 1 FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2 LIMIT 1',
-      [targetSchema, 'AppConfig']
+    const tablesRes = await client.query(
+      'SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name IN ($2, $3)',
+      [targetSchema, 'AppConfig', '_prisma_migrations']
     );
+    const tableNames = new Set((tablesRes?.rows || []).map((row) => row.table_name));
+    const hasAppConfigTable = tableNames.has('AppConfig');
+    let allMigrationsApplied = false;
+
+    if (
+      hasAppConfigTable &&
+      tableNames.has('_prisma_migrations') &&
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(targetSchema)
+    ) {
+      const escapedSchema = targetSchema.replace(/"/g, '""');
+      const migRes = await client.query(
+        `SELECT migration_name FROM "${escapedSchema}"."_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`
+      );
+      const appliedSet = new Set((migRes?.rows || []).map((row) => row.migration_name));
+      allMigrationsApplied = expectedMigrations.every((name) => appliedSet.has(name));
+    }
+
     return {
       serverReachable: true,
-      hasAppConfigTable: (result?.rowCount ?? 0) > 0,
+      hasAppConfigTable,
+      allMigrationsApplied,
     };
   } catch (err) {
     const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
@@ -121,6 +168,7 @@ async function probeDatabaseState(connectionString) {
     return {
       serverReachable,
       hasAppConfigTable: false,
+      allMigrationsApplied: false,
     };
   } finally {
     if (client) {
@@ -153,7 +201,15 @@ async function ensureLocalDockerPostgresReady() {
   }
 
   console.log('Ensuring local PostgreSQL database container is running...');
-  const ciComposeArgs = ['compose', '-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+  const ciComposeArgs = [
+    'compose',
+    '--env-file',
+    '.env.ci',
+    '-f',
+    'docker-compose.yml',
+    '-f',
+    'docker-compose.ci.yml',
+  ];
   const ciComposeEnv = {
     ...process.env,
     DB_USER: process.env.DB_USER || 'wedding',
@@ -204,6 +260,92 @@ async function ensureLocalDockerPostgresReady() {
   }
   if (!ready) {
     console.log('Database was not ready in time, proceeding anyway...');
+  }
+}
+
+async function applyTestDatabaseMigrations(testDbUrl) {
+  const parsedTestUrl = new URL(testDbUrl);
+  const targetDbName = decodeURIComponent(parsedTestUrl.pathname.replace(/^\//, ''));
+  const targetSchema = parsedTestUrl.searchParams.get('schema') || 'public';
+  const isIsolatedTestDb =
+    targetDbName === 'wedding_test' ||
+    targetDbName.endsWith('_test') ||
+    targetDbName.startsWith('wedding_test_');
+
+  if (isIsolatedTestDb && /^[A-Za-z0-9_-]+$/.test(targetDbName)) {
+    try {
+      const pgModule = await import('pg');
+      const Client = pgModule.default?.Client || pgModule.Client;
+      const adminUrl = new URL(testDbUrl);
+      adminUrl.pathname = '/postgres';
+      adminUrl.search = '';
+      const adminClient = new Client({ connectionString: adminUrl.toString() });
+      await adminClient.connect();
+      try {
+        const existsResult = await adminClient.query(
+          'SELECT 1 FROM pg_database WHERE datname = $1',
+          [targetDbName]
+        );
+        if (existsResult.rowCount === 0) {
+          const escapedDb = targetDbName.replace(/"/g, '""');
+          await adminClient.query(`CREATE DATABASE "${escapedDb}"`);
+        }
+      } finally {
+        await adminClient.end();
+      }
+    } catch {
+      // Database may be unreachable when running unit-only suites without Docker; let Prisma report if needed
+    }
+  }
+
+  console.log('Applying Prisma migrations to isolated test database (provider: postgresql)...');
+
+  const migrateEnv = { ...process.env, DATABASE_URL: testDbUrl };
+  delete migrateEnv.POSTGRES_URL_NON_POOLING;
+
+  const migrateResult = child_process.spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+    cwd: rootDir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: process.platform === 'win32',
+    env: migrateEnv,
+  });
+
+  const migrateStdout = migrateResult.stdout ? migrateResult.stdout.toString() : '';
+  const migrateStderr = migrateResult.stderr ? migrateResult.stderr.toString() : '';
+  if (migrateStdout) process.stdout.write(migrateStdout);
+  if (migrateStderr) process.stderr.write(migrateStderr);
+
+  if (migrateResult.status !== 0) {
+    const combinedMigrateOutput = `${migrateStdout}\n${migrateStderr}`;
+    if (
+      /\bP3005\b/.test(combinedMigrateOutput) &&
+      isIsolatedTestDb &&
+      /^[A-Za-z_][A-Za-z0-9_]*$/.test(targetSchema)
+    ) {
+      console.warn(
+        `Detected unbaselined schema "${targetSchema}" in "${targetDbName}" from prior local "prisma db push" state (P3005). Resetting "${targetSchema}" schema and retrying "npx prisma migrate deploy"...`
+      );
+      const pgModule = await import('pg');
+      const Client = pgModule.default?.Client || pgModule.Client;
+      const resetClient = new Client({ connectionString: testDbUrl });
+      await resetClient.connect();
+      try {
+        const escapedSchema = targetSchema.replace(/"/g, '""');
+        await resetClient.query(`DROP SCHEMA IF EXISTS "${escapedSchema}" CASCADE`);
+        await resetClient.query(`CREATE SCHEMA "${escapedSchema}"`);
+        await resetClient.query(`GRANT ALL ON SCHEMA "${escapedSchema}" TO CURRENT_USER`);
+        await resetClient.query(`GRANT ALL ON SCHEMA "${escapedSchema}" TO PUBLIC`);
+      } finally {
+        await resetClient.end();
+      }
+
+      runCommand('npx', ['prisma', 'migrate', 'deploy'], {
+        env: migrateEnv,
+      });
+    } else {
+      console.error('Command failed: npx prisma migrate deploy');
+      process.exit(migrateResult.status || 1);
+    }
   }
 }
 
@@ -259,6 +401,7 @@ async function main() {
 
   const pgVars = [
     'DATABASE_URL',
+    'POSTGRES_URL_NON_POOLING',
     'PGDATABASE',
     'PGUSER',
     'PGPASSWORD',
@@ -289,27 +432,27 @@ async function main() {
   }
 
   // 4. Probe external database readiness before starting local Docker container
-  const dbProbe = await probeDatabaseState(testDbUrl);
+  const expectedMigrations = listCommittedMigrationNames();
+  const dbProbe = await probeDatabaseState(testDbUrl, expectedMigrations);
   if (!dbProbe.serverReachable && !hasExplicitTestDbOverride) {
     await ensureLocalDockerPostgresReady();
   }
 
-  // 5. Synchronize Prisma schema and generate Prisma Client only when invalidated
+  // 5. Synchronize Prisma migrations and generate Prisma Client only when invalidated
   const schemaHash = computeFileSha256(prismaSchemaPath);
+  const migrationsHash = computeMigrationsAndSchemaHash();
   const state = readPretestState();
 
   const isDbSchemaCached =
     dbProbe.hasAppConfigTable &&
-    Boolean(schemaHash) &&
-    state.dbSync?.schemaHash === schemaHash &&
+    dbProbe.allMigrationsApplied &&
+    Boolean(migrationsHash) &&
+    state.dbSync?.schemaHash === migrationsHash &&
     state.dbSync?.testDbUrl === testDbUrl;
 
   if (!isDbSchemaCached) {
-    console.log('Synchronizing schema to isolated test database (provider: postgresql)...');
-    runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
-      env: { ...process.env, DATABASE_URL: testDbUrl },
-    });
-    state.dbSync = { schemaHash, testDbUrl };
+    await applyTestDatabaseMigrations(testDbUrl);
+    state.dbSync = { schemaHash: migrationsHash, testDbUrl };
     writePretestState(state);
   }
 
