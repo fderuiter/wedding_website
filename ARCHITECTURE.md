@@ -627,7 +627,7 @@ Total API route handlers: **83** across **14** route groups.
 
 | Route | Handler | Methods | Access Tier |
 |---|---|---|---|
-| `/api/uploads/[...path]` | `src/app/api/uploads/[...path]/route.ts` | `GET`, `HEAD` | `Public` |
+| `/api/uploads/[...path]` | `src/app/api/uploads/[...path]/route.ts` | `GET`, `HEAD` | `Guest / Admin` |
 
 #### Weather Routes (`/api/weather` — 1 handler)
 

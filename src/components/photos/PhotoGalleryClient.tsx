@@ -231,7 +231,8 @@ export function PhotoGalleryClient({
   };
 
   const handleUploadSuccess = (uploaded: UploadedPhoto) => {
-    if (uploaded.status !== 'APPROVED' || uploaded.isVisible === false) {
+    const uploadedUrl = uploaded.url;
+    if (uploaded.status !== 'APPROVED' || uploaded.isVisible === false || !uploadedUrl) {
       return;
     }
     const caption = uploaded.caption?.trim() || undefined;
@@ -244,7 +245,7 @@ export function PhotoGalleryClient({
     setPhotos((prev) => [
       {
         id: uploaded.nodeId || uploaded.id,
-        url: uploaded.url,
+        url: uploadedUrl,
         title: resolvedTitle,
         ...(caption ? { caption } : {}),
         ...(uploaderName ? { uploaderName } : {}),

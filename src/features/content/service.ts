@@ -222,21 +222,23 @@ export class ContentService {
         isVisible: false,
       };
 
-      if (data.url) {
+      let mediaDeletedWithStorageCleanup = false;
+      if (data.mediaId) {
+        try {
+          const { mediaRepository } = await import('@/features/media');
+          const deletedMedia = await mediaRepository.deleteMedia(data.mediaId, author);
+          mediaDeletedWithStorageCleanup = Boolean(deletedMedia);
+        } catch {
+          // Ignore media record cleanup failures and fall back to direct storage cleanup
+        }
+      }
+
+      if (data.url && !mediaDeletedWithStorageCleanup) {
         try {
           const { getStorageProvider } = await import('@/utils/storage');
           await getStorageProvider().delete(data.url);
         } catch {
           // Ignore storage cleanup failures
-        }
-      }
-
-      if (data.mediaId) {
-        try {
-          const { mediaRepository } = await import('@/features/media');
-          await mediaRepository.deleteMedia(data.mediaId);
-        } catch {
-          // Ignore media record cleanup failures
         }
       }
 
