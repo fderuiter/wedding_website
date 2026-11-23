@@ -85,6 +85,7 @@ export default function AddRegistryItemPage() {
           <RegistryItemForm
             mode="add"
             onSubmit={handleAddSingle}
+            onCancel={() => router.push('/admin/dashboard/registry')}
             isSubmitting={isSubmitting}
             submitLabel="Add Item"
           />
