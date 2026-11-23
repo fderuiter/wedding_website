@@ -1,4 +1,5 @@
 import { ApiError } from '../utils/ApiError';
+import { withBasePath } from './basePath';
 
 export { ApiError };
 
@@ -74,7 +75,7 @@ export class ApiClient {
       }
     }
 
-    const res = await fetch(url, fetchOptions);
+    const res = await fetch(withBasePath(url), fetchOptions);
 
     return this.handleResponse<T>(res);
   }

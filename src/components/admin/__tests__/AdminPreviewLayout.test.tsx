@@ -235,4 +235,49 @@ describe('AdminPreviewLayout studio draft preservation & accessibility', () => {
     const axeResults = await axe(container);
     expect(axeResults).toHaveNoViolations();
   });
+
+  it('prefixes Live Preview iframe URLs with NEXT_PUBLIC_BASE_PATH when deployed under a subpath', () => {
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+
+    try {
+      const { rerender } = render(
+        <ToastProvider>
+          <AdminPreviewLayout
+            previewUrl="/#schedule"
+            draftType="content"
+            draftData={[]}
+          >
+            <MockStudioEditor />
+          </AdminPreviewLayout>
+        </ToastProvider>
+      );
+
+      expect((screen.getByTitle('Live Preview') as HTMLIFrameElement).getAttribute('src')).toBe(
+        '/wedding_website/demo/?preview=true#schedule'
+      );
+
+      rerender(
+        <ToastProvider>
+          <AdminPreviewLayout
+            previewUrl="/photos"
+            draftType="content"
+            draftData={[]}
+          >
+            <MockStudioEditor />
+          </AdminPreviewLayout>
+        </ToastProvider>
+      );
+
+      expect((screen.getByTitle('Live Preview') as HTMLIFrameElement).getAttribute('src')).toBe(
+        '/wedding_website/demo/photos?preview=true'
+      );
+    } finally {
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
 });

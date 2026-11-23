@@ -193,6 +193,42 @@ describe('MediaImage Component', () => {
     });
   });
 
+  describe('Subpath Resolution (NEXT_PUBLIC_BASE_PATH)', () => {
+    const originalBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+
+    afterEach(() => {
+      if (originalBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = originalBasePath;
+      }
+    });
+
+    it('prefixes relative media URLs and fallback placeholder with NEXT_PUBLIC_BASE_PATH', () => {
+      process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+      const relativeMedia = createMockMedia({
+        url: '/images/sample-registry-mixer.jpg',
+        altText: null,
+        isDecorative: false,
+      });
+      const { getByRole, unmount } = render(<MediaImage media={relativeMedia} />);
+      const img = getByRole('img');
+      expect(img).toHaveAttribute(
+        'src',
+        '/wedding_website/demo/images/sample-registry-mixer.jpg'
+      );
+      expect(img).toHaveAttribute('alt', 'sample registry mixer');
+      unmount();
+
+      const unsafeMedia = createMockMedia({ url: 'javascript:alert(1)' });
+      const { getByRole: getFallbackImg } = render(<MediaImage media={unsafeMedia} />);
+      expect(getFallbackImg('img')).toHaveAttribute(
+        'src',
+        '/wedding_website/demo/images/placeholder.png'
+      );
+    });
+  });
+
   describe('Automated Accessibility Audits (jest-axe)', () => {
     it('passes accessibility evaluations for standard descriptive image state', async () => {
       const media = createMockMedia({

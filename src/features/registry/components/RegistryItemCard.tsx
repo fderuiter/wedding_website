@@ -31,6 +31,7 @@ import {
   getItemTotalTargetAmount,
   getItemUnitCounts,
 } from '../lib/registryStatusUtils';
+import { withBasePath } from '@/lib/basePath';
 import {
   CARD_PROCESSING_FEE_RATE,
   calculateContributionAmounts,
@@ -772,7 +773,7 @@ const RegistryItemCard: React.FC<RegistryItemCardProps> = ({
             },
             return_url:
               typeof window !== 'undefined'
-                ? `${window.location.origin}/registry`
+                ? `${window.location.origin}${withBasePath('/registry')}`
                 : 'https://example.com/registry',
           },
           redirect: 'if_required',

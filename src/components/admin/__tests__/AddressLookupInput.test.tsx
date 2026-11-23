@@ -134,4 +134,36 @@ describe('AddressLookupInput', () => {
     fireEvent.keyDown(combobox, { key: 'Escape' });
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
+
+  it('prefixes /api/admin/geocode requests when NEXT_PUBLIC_BASE_PATH is set', async () => {
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+
+    try {
+      render(
+        <AddressLookupInput
+          id="subpath-address-lookup"
+          label="Search Subpath Address"
+          debounceMs={10}
+          onSelect={jest.fn()}
+        />
+      );
+
+      const combobox = screen.getByRole('combobox', { name: 'Search Subpath Address' });
+      fireEvent.change(combobox, { target: { value: 'Glasshouse' } });
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/wedding_website/demo/api/admin/geocode?q=Glasshouse&limit=5',
+          expect.objectContaining({ method: 'GET' })
+        );
+      });
+    } finally {
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
 });
