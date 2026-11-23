@@ -108,6 +108,11 @@ async function resolveServerCookieGuestInviteSession(): Promise<GuestInviteSessi
 
 const getCachedServerCookieGuestInviteSession = cache(resolveServerCookieGuestInviteSession);
 
+const requestActiveSessionCache = new WeakMap<
+  object,
+  Map<string, Promise<GuestInviteSessionPayload | null>>
+>();
+
 /**
  * Retrieve verified guest invitation session from NextRequest or cookieStore,
  * confirming that the session code still matches an active, non-sample InvitationCode record.
@@ -124,6 +129,27 @@ export async function getGuestInviteSession(req?: NextRequest): Promise<GuestInv
   const signedPayload = await getSignedGuestInviteSession(req);
   if (!signedPayload) {
     return null;
+  }
+
+  if (typeof req === 'object') {
+    const cacheKey = `${signedPayload.code}:${signedPayload.guestName}:${signedPayload.exp ?? ''}`;
+    let bySessionKey = requestActiveSessionCache.get(req);
+    const cached = bySessionKey?.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const sessionPromise = resolveActiveInvitationSession(signedPayload).catch((err) => {
+      bySessionKey?.delete(cacheKey);
+      throw err;
+    });
+
+    if (!bySessionKey) {
+      bySessionKey = new Map();
+      requestActiveSessionCache.set(req, bySessionKey);
+    }
+    bySessionKey.set(cacheKey, sessionPromise);
+    return sessionPromise;
   }
 
   return resolveActiveInvitationSession(signedPayload);

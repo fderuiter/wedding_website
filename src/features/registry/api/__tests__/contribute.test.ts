@@ -3,8 +3,9 @@
 import { POST } from '../contribute';
 import { registryService } from '../../service';
 import { dispatchConfirmedContributionAlert } from '../../notifications';
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { getAppConfig } from '@/lib/config';
 import { MultiChannelMessagingProvider } from '@/features/broadcast';
 import { prisma } from '@/lib/prisma';
@@ -737,5 +738,238 @@ describe('POST /api/registry/contribute', () => {
         expect(serializedWarnings).not.toContain('Congrats!');
       }
     );
+
+    it('schedules notifications via after() in active Next.js request scope so HTTP 200 returns before slow emails complete', async () => {
+      const runWithAfterScope = (
+        globalThis as unknown as {
+          __runWithAfterScope: <T>(cb: () => Promise<T>) => Promise<{
+            result: T;
+            flush: () => Promise<void>;
+            pendingCount: () => number;
+          }>;
+        }
+      ).__runWithAfterScope;
+
+      (getAppConfig as jest.Mock).mockResolvedValue({
+        modules: ['registry', 'groupGifting'],
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.wedding.test',
+        contactEmail: 'couple@wedding.test',
+        baseUrl: 'https://couple.wedding.test',
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        id: 'fund-deferred-1',
+        name: 'Deferred Email Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        price: 1000,
+      });
+      mockPaymentIntentsRetrieve.mockResolvedValueOnce({
+        id: 'pi_deferred_after_1',
+        status: 'succeeded',
+        amount: 10000,
+        amount_received: 10000,
+        currency: 'usd',
+        latest_charge: 'ch_deferred_after_1',
+        created: 1731763200,
+        metadata: {
+          itemId: 'fund-deferred-1',
+          baseAmount: '100.00',
+          coverFee: 'false',
+        },
+      });
+      (registryService.contributeToItem as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        id: 'fund-deferred-1',
+        name: 'Deferred Email Honeymoon Fund',
+        itemType: 'CASH_FUND',
+        amountContributed: 100,
+        contributors: [
+          {
+            id: 'contrib-deferred-1',
+            name: 'Fast Modal Guest',
+            email: 'fast@example.com',
+            amount: 100,
+            coverFee: false,
+            feeAmount: 0,
+            stripePaymentIntentId: 'pi_deferred_after_1',
+          },
+        ],
+      });
+
+      sendEmailSpy.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return { success: true };
+      });
+
+      const request = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'fund-deferred-1',
+          name: 'Fast Modal Guest',
+          email: 'fast@example.com',
+          amount: 100,
+          coverFee: false,
+          paymentIntentId: 'pi_deferred_after_1',
+        }),
+      });
+
+      const checkoutStart = performance.now();
+      const { result: response, flush, pendingCount } = await runWithAfterScope(() => POST(request));
+      const checkoutElapsedMs = performance.now() - checkoutStart;
+
+      expect(response.status).toBe(200);
+      expect(checkoutElapsedMs).toBeLessThan(100);
+      expect(after).toHaveBeenCalledTimes(1);
+      expect(pendingCount()).toBe(1);
+      expect(sendEmailSpy).not.toHaveBeenCalled();
+
+      const body = await response.json();
+      expect(body.success).toBe(true);
+      expect(JSON.stringify(body)).not.toContain('fast@example.com');
+
+      const flushStart = performance.now();
+      await flush();
+      const flushElapsedMs = performance.now() - flushStart;
+
+      expect(sendEmailSpy).toHaveBeenCalledTimes(2);
+      // Both 120ms emails run concurrently via Promise.allSettled rather than serially (~240ms)
+      expect(flushElapsedMs).toBeLessThan(215);
+    });
+  });
+
+  describe('Parallel Pre-Checks & Validation Precedence', () => {
+    it('starts config/body/admin and item/session/Stripe lookups concurrently while preserving error precedence', async () => {
+      const callOrder: string[] = [];
+
+      (getAppConfig as jest.Mock).mockImplementation(async () => {
+        callOrder.push('getAppConfig:start');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return { modules: ['registry', 'groupGifting'] };
+      });
+      (isAdminRequest as jest.Mock).mockImplementation(async () => {
+        callOrder.push('isAdminRequest:start');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return false;
+      });
+      (registryService.getItemById as jest.Mock).mockImplementationOnce(async () => {
+        callOrder.push('getItemById:start');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return mockItem;
+      });
+      (getGuestInviteSession as jest.Mock).mockImplementationOnce(async () => {
+        callOrder.push('getGuestInviteSession:start');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return { code: 'INVITE77', guestName: 'Parallel Guest' };
+      });
+      mockPaymentIntentsRetrieve.mockImplementationOnce(async () => {
+        callOrder.push('stripeRetrieve:start');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return {
+          id: 'pi_parallel_1',
+          status: 'succeeded',
+          amount: 5000,
+          amount_received: 5000,
+          currency: 'usd',
+          metadata: {
+            itemId: 'item-123',
+            baseAmount: '50.00',
+            coverFee: 'false',
+          },
+          latest_charge: 'ch_parallel_1',
+          created: 1731763200,
+        };
+      });
+
+      const req = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemId: 'item-123',
+          name: 'Parallel Guest',
+          amount: 50,
+          coverFee: false,
+          paymentIntentId: 'pi_parallel_1',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(callOrder.slice(0, 2).sort()).toEqual(['getAppConfig:start', 'isAdminRequest:start']);
+      expect(callOrder.slice(2, 5).sort()).toEqual([
+        'getGuestInviteSession:start',
+        'getItemById:start',
+        'stripeRetrieve:start',
+      ]);
+      expect(registryService.contributeToItem).toHaveBeenCalledWith(
+        'item-123',
+        expect.objectContaining({
+          code: 'INVITE77',
+          stripePaymentIntentId: 'pi_parallel_1',
+        })
+      );
+    });
+
+    it('preserves 404 disabled feature over malformed JSON, and sample/groupGifting 400 errors over Stripe errors', async () => {
+      // 1. Disabled registry feature (404) takes precedence over malformed request.json()
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        modules: { registry: false, groupGifting: false },
+      });
+      const badJsonReq = new NextRequest('http://localhost:3000/api/registry/contribute', {
+        method: 'POST',
+        body: '{invalid-json',
+      });
+      const disabledRes = await POST(badJsonReq);
+      expect(disabledRes.status).toBe(404);
+
+      // 2. Sample item (400) takes precedence over failing Stripe retrieve
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        modules: { registry: true, groupGifting: true },
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        isSample: true,
+      });
+      mockPaymentIntentsRetrieve.mockRejectedValueOnce(new Error('Stripe upstream failure'));
+
+      const sampleWithPiRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Sample Tester',
+            amount: 50,
+            paymentIntentId: 'pi_broken_on_sample',
+          }),
+        })
+      );
+      expect(sampleWithPiRes.status).toBe(400);
+      expect((await sampleWithPiRes.json()).error).toContain(
+        'Sample registry items do not accept contributions'
+      );
+
+      // 3. Disabled groupGifting (400) takes precedence over failing Stripe retrieve
+      (getAppConfig as jest.Mock).mockResolvedValueOnce({
+        modules: { registry: true, groupGifting: false },
+      });
+      (registryService.getItemById as jest.Mock).mockResolvedValueOnce({
+        ...mockItem,
+        isGroupGift: true,
+      });
+      mockPaymentIntentsRetrieve.mockRejectedValueOnce(new Error('Stripe upstream failure'));
+
+      const groupDisabledRes = await POST(
+        new NextRequest('http://localhost:3000/api/registry/contribute', {
+          method: 'POST',
+          body: JSON.stringify({
+            itemId: 'item-123',
+            name: 'Group Disabled Tester',
+            amount: 50,
+            paymentIntentId: 'pi_broken_on_group',
+          }),
+        })
+      );
+      expect(groupDisabledRes.status).toBe(400);
+      expect((await groupDisabledRes.json()).error).toContain('Group gifting is currently disabled');
+    });
   });
 });
