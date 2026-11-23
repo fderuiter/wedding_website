@@ -120,6 +120,7 @@ staging-deploy-provider:
     packages: read
     attestations: read
     id-token: write
+    actions: read
   needs: [ci-gate, publish-artifact, staging-database-migration]
   if: |
     !cancelled() &&
@@ -183,6 +184,7 @@ production-deploy-provider:
     packages: read
     attestations: read
     id-token: write
+    actions: read
   needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
   if: |
     !cancelled() &&
@@ -311,7 +313,7 @@ Google Cloud Run provides free, automatically managed TLS certificates for custo
 ## 6. Build & Deploy Commands
 
 ### Automated Deployment via GitHub Actions
-The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch`); pushing a `v*` tag triggers `publish-artifact.yml` to publish `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` (e.g., `:v0.1.0`) alongside `ghcr.io/<owner>/<repo>:<sha>`, which can then be promoted via `deploy-provider.yml` (`image_tag: v0.1.0`), `deploy.yml` (`image_digest`), or manual CLI deployment below:
+The repository includes `.github/workflows/deploy.yml`, `.github/workflows/publish-artifact.yml`, `.github/workflows/db-migrate.yml`, `.github/workflows/deploy-provider.yml`, and `.github/workflows/rollback.yml`. Automated staging-to-production releases (`deploy.yml`) trigger via `workflow_run` after `CI` succeeds on `main` pushes (or via `workflow_dispatch`, where `inputs.image_digest` resolves `target_sha` from the artifact's signed source revision and aligns CI verification, `schema-compatibility`, and `db-migrate.yml` to that exact revision); pushing a `v*` tag triggers both `ci.yml` (skipping `deploy-docs` outside `main` pushes and published releases) and `publish-artifact.yml` (which polls active `ci.yml` runs and requires passing `CI` before publishing `ghcr.io/<owner>/<repo>:<GITHUB_REF_NAME>` such as `:v0.1.0` alongside `ghcr.io/<owner>/<repo>:<sha>`, recording `org.opencontainers.image.revision` in the multi-platform OCI index before signing provenance, and updating `:latest` only when a stable SemVer tag equals or exceeds every stable repository version tag while omitting `:latest` on manual dispatches, `main` commit builds, pre-release tags, and `N-1` maintenance patches) without automatically invoking `deploy.yml`. Tagged artifacts can then be promoted via `deploy-provider.yml` (`image_tag: v0.1.0`, which verifies OIDC provenance, reads the attested source revision with SLSA fallback, and confirms a passing `ci.yml` run), `deploy.yml` (`image_digest`), or manual CLI deployment below:
 *   **GitHub Environment Variables** (`staging`, `production`, and optional `production-rollback`):
     *   `SERVICE_URL`: Public base URL of the Cloud Run service for post-deploy and post-rollback `/api/health` verification (`vars.SERVICE_URL` primary so job outputs and deployment summaries remain unmasked; `secrets.SERVICE_URL` is supported as a legacy fallback during migration).
     *   `CLOUD_RUN_SERVICE`: Target Cloud Run service name for the environment (defaults to `wedding-website-staging` in `staging` and `wedding-website` in `production`, allowing isolated staging and production services within a single shared GCP project).

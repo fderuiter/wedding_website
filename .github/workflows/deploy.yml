@@ -101,18 +101,99 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      packages: read
+      attestations: read
     outputs:
       target_sha: ${{ steps.resolve-sha.outputs.target_sha }}
     steps:
       - name: Resolve Target Commit SHA
         id: resolve-sha
         env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR_LOGIN: ${{ github.actor }}
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CURRENT_SHA: ${{ github.sha }}
+          INPUT_IMAGE_DIGEST: ${{ inputs.image_digest }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             TARGET_SHA="$WORKFLOW_RUN_HEAD_SHA"
+          elif [ -n "${INPUT_IMAGE_DIGEST:-}" ]; then
+            if [[ ! "$INPUT_IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+              echo "::error::Invalid image_digest '${INPUT_IMAGE_DIGEST}'. Must match ^sha256:[a-f0-9]{64}$."
+              exit 1
+            fi
+
+            REPO_LOWER=$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+            IMAGE_URI="ghcr.io/${REPO_LOWER}@${INPUT_IMAGE_DIGEST}"
+
+            if [ -n "${GH_TOKEN:-}" ] && [ -n "${GITHUB_ACTOR_LOGIN:-}" ]; then
+              printf '%s\n' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR_LOGIN" --password-stdin
+            fi
+
+            echo "Verifying OIDC build provenance attestation for pinned digest oci://${IMAGE_URI}..."
+            if ! ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
+              --owner "$REPO_OWNER" \
+              --signer-workflow "$SIGNER_WORKFLOW" \
+              --format json); then
+              echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}' and signer workflow '${SIGNER_WORKFLOW}'). Release aborted."
+              exit 1
+            fi
+
+            RAW_INDEX_JSON=$(docker buildx imagetools inspect --raw "$IMAGE_URI" 2>/dev/null || true)
+            INDEX_REVISION=$(printf '%s' "$RAW_INDEX_JSON" | jq -r '
+              (
+                .annotations["org.opencontainers.image.revision"]
+                // ([.manifests[]?.annotations["org.opencontainers.image.revision"] | select(type == "string" and test("^[a-fA-F0-9]{40}$"))][0])
+                // empty
+              )
+            ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+            if [[ ! "$INDEX_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              INDEX_REVISION=""
+            fi
+
+            SLSA_INPUT_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+              [
+                (if type == "array" then .[] else . end)
+                | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                | .buildDefinition.externalParameters.inputs.commit_sha
+                | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+              ][0] // empty
+            ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+            if [[ ! "$SLSA_INPUT_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              SLSA_INPUT_REVISION=""
+            fi
+
+            if [ -n "$INDEX_REVISION" ] && [ -n "$SLSA_INPUT_REVISION" ] && [ "$INDEX_REVISION" != "$SLSA_INPUT_REVISION" ]; then
+              echo "::error::Attested OCI index revision '${INDEX_REVISION}' conflicts with SLSA input commit_sha '${SLSA_INPUT_REVISION}' for '${IMAGE_URI}'. Release aborted."
+              exit 1
+            fi
+
+            SLSA_REVISION=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+              [
+                (if type == "array" then .[] else . end)
+                | (.verificationResult.statement.predicate // .statement.predicate // .predicate // empty)
+                | (
+                    .buildDefinition.externalParameters.inputs.commit_sha,
+                    (.buildDefinition.resolvedDependencies[]? | (.digest.gitCommit, .digest.sha1)),
+                    .buildDefinition.internalParameters.github.sha,
+                    .invocation.configSource.digest.sha1,
+                    (.materials[]? | (.digest.gitCommit, .digest.sha1))
+                  )
+                | select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+              ][0] // empty
+            ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+            if [[ ! "$SLSA_REVISION" =~ ^[a-f0-9]{40}$ ]]; then
+              SLSA_REVISION=""
+            fi
+
+            TARGET_SHA="${INDEX_REVISION:-${SLSA_REVISION}}"
+            if [[ ! "$TARGET_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+              echo "::error::Unable to resolve signed 40-character source revision from OCI metadata or SLSA provenance for '${IMAGE_URI}'. Release aborted."
+              exit 1
+            fi
           else
             TARGET_SHA="$CURRENT_SHA"
           fi
@@ -133,7 +214,9 @@ jobs:
         with:
           script: |
             const targetSha = process.env.TARGET_SHA;
+            const normalizedTargetSha = (targetSha || '').toLowerCase();
             const fullRepo = `${context.repo.owner}/${context.repo.repo}`;
+            const normalizedFullRepo = fullRepo.toLowerCase();
             const runs = await github.paginate(
               github.rest.actions.listWorkflowRuns,
               {
@@ -149,8 +232,8 @@ jobs:
             const successfulRun = runs.find(
               (run) =>
                 run.conclusion === 'success' &&
-                run.head_sha === targetSha &&
-                (!run.head_repository || run.head_repository.full_name === fullRepo)
+                (run.head_sha || '').toLowerCase() === normalizedTargetSha &&
+                (!run.head_repository || (run.head_repository.full_name || '').toLowerCase() === normalizedFullRepo)
             );
 
             if (!successfulRun) {
@@ -195,14 +278,31 @@ jobs:
           fetch-depth: 0
 
       - name: Align Workspace to Verified Commit SHA
-        if: github.event_name == 'workflow_run'
+        if: github.event_name == 'workflow_run' || inputs.image_digest != ''
         env:
+          EVENT_NAME: ${{ github.event_name }}
           TARGET_SHA: ${{ needs.ci-gate.outputs.target_sha }}
         run: |
-          if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
-            echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
+          if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
+            echo "::error::Target commit '${TARGET_SHA}' is not a valid 40-character hexadecimal commit SHA."
             exit 1
           fi
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
+              echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
+              exit 1
+            fi
+          else
+            if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags origin "$TARGET_SHA" --depth=1 || true
+            fi
+            if ! git cat-file -e "${TARGET_SHA}^{commit}" 2>/dev/null; then
+              echo "::error::Signed source revision ${TARGET_SHA} does not exist in repository ${GITHUB_REPOSITORY}."
+              exit 1
+            fi
+          fi
+
           git checkout --detach "$TARGET_SHA"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -249,6 +349,7 @@ jobs:
       security-events: write
       id-token: write
       attestations: write
+      actions: read
     uses: ./.github/workflows/publish-artifact.yml
     with:
       commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
@@ -292,6 +393,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      actions: read
     needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
       !cancelled() &&
@@ -477,6 +579,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      actions: read
     needs: [publish-artifact, staging-deploy-provider, staging-verify-deployment]
     if: failure() && needs.staging-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
@@ -527,6 +630,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      actions: read
     needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
       !cancelled() &&
@@ -715,6 +819,7 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      actions: read
     needs: [publish-artifact, production-deploy-provider, production-verify-deployment]
     if: failure() && needs.production-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml

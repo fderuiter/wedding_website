@@ -72,7 +72,7 @@ npx tsc --noEmit -p tsconfig.scripts.json
 
 ## 5. Local Verification & Pre-Push Quality Gates
 
-Before opening a pull request or pushing changes, ensure your branch passes the same checks enforced by [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Before opening a pull request or pushing changes (or pushing `v*` release tags), ensure your branch passes the same checks enforced by [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Notice that `ci.yml` executes full verification on pull requests, pushes to `main`, `v*` version tag pushes (keeping `deploy-docs` restricted to `main` pushes and published releases), and published releases; [`.github/workflows/publish-artifact.yml`](.github/workflows/publish-artifact.yml), [`.github/workflows/deploy-provider.yml`](.github/workflows/deploy-provider.yml), and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) all require a completed passing `ci.yml` run for the verified 40-character source revision (`org.opencontainers.image.revision` with SLSA provenance fallback), and `publish-artifact.yml` updates `:latest` only when a pushed stable SemVer tag (`vMAJOR.MINOR.PATCH`) equals or exceeds all existing stable repository version tags (never on manual `workflow_dispatch` runs, default-branch non-tag builds, pre-release tags, or `N-1` maintenance patch tags).
 
 ### Full Local Quality Gate
 
@@ -109,7 +109,7 @@ npm run quality
 npm run build-storybook
 ```
 
-- **CI Parity:** Pull requests and pushes to `main` execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build`, backed by Webpack 5 filesystem caching (`node_modules/.cache/webpack` and `node_modules/.cache/storybook`).
+- **CI Parity:** Pull requests, pushes to `main`, and `v*` version tag pushes execute an isolated `storybook-build` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) in parallel with `unit-test` and `build`, backed by Webpack 5 filesystem caching (`node_modules/.cache/webpack` and `node_modules/.cache/storybook`).
 - **Interactive Development:** Run `npm run storybook` to launch the local Storybook server on port `6006`.
 - **Pre-Commit Hook Scope:** `npm run build-storybook` is intentionally kept out of [`.githooks/pre-commit`](.githooks/pre-commit) so local commits stay fast, and `/storybook-static` remains ignored via [`.gitignore`](.gitignore).
 
