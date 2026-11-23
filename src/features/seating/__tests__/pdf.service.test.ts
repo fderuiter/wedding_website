@@ -3,7 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import PDFDocument from 'pdfkit';
-import { generateSeatingChartPdf } from '../pdf.service';
+import { generateAveryCardsPdf, generateSeatingChartPdf } from '../pdf.service';
 import { computeSeatPosition, resolveSeatAssignments } from '../seatLayout';
 import { SeatingTableDTO } from '../schemas';
 import { InvitationCodeDTO } from '@/features/registry';
@@ -395,6 +395,105 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       expect(pageSrc).toContain('aria-label={`Unassign ${guest.guestName}`}');
     });
 
+    it('strips secret guest.code values, renders zero-capacity landmarks without seat circles, and includes per-table meal totals and Avery cards', async () => {
+      const tablesWithLandmarksAndMeals: SeatingTableDTO[] = [
+        {
+          id: 'tbl-meals',
+          name: 'Orchard Table',
+          shape: 'round',
+          capacity: 6,
+          x: 60,
+          y: 60,
+          width: 130,
+          height: 130,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [
+            {
+              id: 'g-orchard-1',
+              guestName: 'Elena Gilbert',
+              code: 'SECRET-ELENA-01',
+              seatNumber: 1,
+              plusOneSeatNumbers: [2],
+              plusOneAllocations: 1,
+              partyTags: [],
+              isSample: false,
+              dietaryNotes: 'Vegetarian',
+              used: true,
+              extraFields: {
+                attending: true,
+                plusOneNames: ['Damon Salvatore'],
+                mealSelections: [
+                  { attendeeName: 'Elena Gilbert', mealOptionLabel: 'Wild Mushroom Risotto', dietaryTags: ['vegetarian'] },
+                  { attendeeName: 'Damon Salvatore', mealOptionLabel: 'Braised Short Rib' },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          id: 'lm-cake',
+          name: 'Wedding Cake Display',
+          shape: 'cake',
+          capacity: 0,
+          x: 260,
+          y: 80,
+          width: 90,
+          height: 90,
+          rotation: 0,
+          isSample: false,
+          invitationCodes: [],
+        },
+      ];
+
+      const unassignedWithSecret: InvitationCodeDTO[] = [
+        {
+          id: 'g-unassigned-sec',
+          guestName: 'Bonnie Bennett',
+          code: 'SECRET-BONNIE-02',
+          dietaryNotes: 'Gluten-Free',
+        } as InvitationCodeDTO,
+      ];
+
+      const decodePdf = (buf: Buffer): string => {
+        const raw = buf.toString('latin1');
+        const hexDecoded = Array.from(raw.matchAll(/<([0-9a-fA-F]+)>/g))
+          .map((m) => Buffer.from(m[1], 'hex').toString('latin1'))
+          .join('');
+        return `${raw}\n${hexDecoded}`;
+      };
+
+      const chartPdf = await generateSeatingChartPdf(tablesWithLandmarksAndMeals, unassignedWithSecret, {
+        siteTitle: 'Orchard Reception',
+      });
+      const chartText = decodePdf(chartPdf);
+      expect(chartText).toContain('Elena Gilbert');
+      expect(chartText).toContain('Damon Salvatore');
+      expect(chartText).toContain('Wild Mushroom Risotto: 1');
+      expect(chartText).toContain('Braised Short Rib: 1');
+      expect(chartText).not.toContain('SECRET-ELENA-01');
+      expect(chartText).not.toContain('SECRET-BONNIE-02');
+
+      const placeCardsPdf = await generateAveryCardsPdf(tablesWithLandmarksAndMeals, 'place-cards', {
+        siteTitle: 'Orchard Reception',
+      });
+      const placeCardsText = decodePdf(placeCardsPdf);
+      expect(placeCardsText).toContain('Elena Gilbert');
+      expect(placeCardsText).toContain('Damon Salvatore');
+      expect(placeCardsText).toContain('Orchard Table');
+      expect(placeCardsText).toContain('Wild Mushroom Risotto');
+      expect(placeCardsText).not.toContain('SECRET-ELENA-01');
+
+      const escortCardsPdf = await generateAveryCardsPdf(tablesWithLandmarksAndMeals, 'escort-cards', {
+        siteTitle: 'Orchard Reception',
+      });
+      const escortCardsText = decodePdf(escortCardsPdf);
+      expect(escortCardsText).toContain('Damon Salvatore');
+      expect(escortCardsText).toContain('Elena Gilbert');
+      expect(escortCardsText).toContain('Orchard Table');
+      expect(escortCardsText).not.toContain('SECRET-ELENA-01');
+    });
+
     it('renders companion names, entrée selections, [KIDS] badge, and custom answers into PDF roster rows', async () => {
       const renderedTexts: string[] = [];
       const originalText = PDFDocument.prototype.text;
@@ -448,6 +547,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         expect(combinedText).toContain('[KIDS, DIET] No shellfish');
         expect(combinedText).toContain('Meals: Reception - Elena Gilbert: Herb Salmon');
         expect(combinedText).toContain('Responses: Reception - Shuttle?: Yes');
+        expect(combinedText).not.toContain('ELENA01');
       } finally {
         textSpy.mockRestore();
       }
@@ -461,7 +561,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
       const originalText = PDFDocument.prototype.text;
       let pendingCircle: { x: number; y: number; r: number; fill?: string } | null = null;
 
-      const circleSpy = jest.spyOn(PDFDocument.prototype, 'circle').mockImplementation(function (
+      jest.spyOn(PDFDocument.prototype, 'circle').mockImplementation(function (
         this: PDFKit.PDFDocument,
         ...args: unknown[]
       ) {
@@ -471,7 +571,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         return originalCircle.call(this, x, y, r);
       });
 
-      const fillSpy = jest.spyOn(PDFDocument.prototype, 'fillAndStroke').mockImplementation(function (
+      jest.spyOn(PDFDocument.prototype, 'fillAndStroke').mockImplementation(function (
         this: PDFKit.PDFDocument,
         ...args: unknown[]
       ) {
@@ -486,7 +586,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         return originalFillAndStroke.call(this, fillColor, strokeColor);
       });
 
-      const textSpy = jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
+      jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (
         this: PDFKit.PDFDocument,
         ...args: unknown[]
       ) {
@@ -555,9 +655,7 @@ describe('pdf.service - generateSeatingChartPdf', () => {
         expect(joined).toContain('Seat 2 | Morgan Taylor (Jordan Taylor +1)');
         expect(joined).toContain('Unassigned Guests (2)');
       } finally {
-        circleSpy.mockRestore();
-        fillSpy.mockRestore();
-        textSpy.mockRestore();
+        jest.restoreAllMocks();
       }
     });
   });
