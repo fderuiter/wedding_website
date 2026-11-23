@@ -8605,42 +8605,115 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "updatedCount": {
+                              "type": "number"
+                            },
+                            "records": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "updatedCount",
+                            "records"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "success",
+                        "data"
                       ]
                     },
-                    "data": {
-                      "nullable": true,
-                      "anyOf": [
-                        {
+                    {
+                      "type": "object",
+                      "properties": {
+                        "success": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "data": {
                           "type": "object",
-                          "additionalProperties": true
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "additionalProperties": true
-                          }
-                        },
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "boolean"
+                          "properties": {
+                            "invitationCode": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            },
+                            "rsvps": {
+                              "nullable": true,
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": true
+                                  }
+                                },
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "invitationCode",
+                            "rsvps"
+                          ]
                         }
+                      },
+                      "required": [
+                        "success",
+                        "data"
                       ]
                     }
-                  },
-                  "required": [
-                    "success",
-                    "data"
                   ]
                 }
               }
@@ -16679,54 +16752,18 @@
                       "type": "object",
                       "properties": {
                         "subEvents": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "additionalProperties": true
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                              }
-                            },
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
                         },
                         "invitationCodes": {
-                          "nullable": true,
-                          "anyOf": [
-                            {
-                              "type": "object",
-                              "additionalProperties": true
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "additionalProperties": true
-                              }
-                            },
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "number"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
                         },
                         "pagination": {
                           "type": "object",
@@ -20106,6 +20143,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
