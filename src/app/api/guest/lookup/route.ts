@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
+import { hasAddressCollectionTag } from '@/features/registry';
 import { prisma } from '@/lib/prisma';
 import { ApiError } from '@/utils/ApiError';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -44,15 +45,31 @@ export const POST = withApiMiddleware(async (req: NextRequest) => {
     }
   }
 
-  const invite = conditions.length > 0
+  const baseCondition = conditions.length === 1 ? conditions[0] : { OR: conditions };
+  let invite = conditions.length > 0
     ? await prisma.invitationCode.findFirst({
       where: {
         isSample: false,
-        ...(conditions.length === 1 ? conditions[0] : { OR: conditions }),
+        ...baseCondition,
       },
     })
     : null;
-  if (!invite || invite.isSample) {
+
+  if (invite && hasAddressCollectionTag(invite.partyTags)) {
+    invite = await prisma.invitationCode.findFirst({
+      where: {
+        isSample: false,
+        NOT: {
+          partyTags: {
+            has: 'address-collection',
+          },
+        },
+        ...baseCondition,
+      },
+    });
+  }
+
+  if (!invite || invite.isSample || hasAddressCollectionTag(invite.partyTags)) {
     throw new ApiError(404, 'No invitation found matching the provided details.');
   }
 

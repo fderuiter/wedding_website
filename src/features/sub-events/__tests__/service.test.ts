@@ -1953,5 +1953,77 @@ describe('SubEventService', () => {
         answers: [{ questionId: 'q-chair', prompt: 'High chair?', answer: 'Yes' }],
       });
     });
+
+    it('excludes unpromoted address-collection records from global and per-sub-event getRsvpSummary tallies', async () => {
+      mockPrisma.invitationCode.findMany.mockResolvedValue([
+        {
+          id: 'inv-invited',
+          guestName: 'Invited Household',
+          used: true,
+          isSample: false,
+          plusOneAllocations: 1,
+          plusOneFirstName: 'Alex',
+          plusOneLastName: 'Invited',
+          dietaryNotes: 'Gluten-free',
+          partyTags: ['Family'],
+          extraFields: { attendanceStatus: 'attending' },
+        },
+        {
+          id: 'inv-address-only',
+          guestName: 'Address Collector',
+          used: false,
+          isSample: false,
+          plusOneAllocations: 0,
+          plusOneFirstName: null,
+          plusOneLastName: null,
+          dietaryNotes: null,
+          partyTags: ['address-collection'],
+          extraFields: { householdNotes: 'Vegan household note in mailing form' },
+        },
+      ]);
+
+      mockPrisma.subEvent.findMany.mockResolvedValue([
+        {
+          id: 'se-main',
+          title: 'Ceremony & Dinner',
+          isPrivate: false,
+          startTime: null,
+          mealOptions: [{ id: 'm-1', label: 'Herb Chicken', dietaryTags: ['gluten-free'] }],
+          customQuestions: [],
+          accesses: [],
+          rsvps: [
+            {
+              invitationCodeId: 'inv-invited',
+              status: 'attending',
+              plusOneCount: 1,
+              dietaryNotes: 'Gluten-free',
+              mealSelections: ['m-1', 'm-1'],
+              customAnswers: {},
+              plusOneNames: ['Alex Invited'],
+            },
+            {
+              invitationCodeId: 'inv-address-only',
+              status: 'attending',
+              plusOneCount: 0,
+              dietaryNotes: 'Vegan',
+              mealSelections: ['m-1'],
+              customAnswers: {},
+              plusOneNames: [],
+            },
+          ],
+        },
+      ]);
+
+      const summary = await service.getRsvpSummary();
+      expect(summary.global.totalInvitations).toBe(1);
+      expect(summary.global.attendingHouseholds).toBe(1);
+      expect(summary.global.pendingHouseholds).toBe(0);
+      expect(summary.global.attendingHeadcount).toBe(2);
+      expect(summary.global.dietary.vegan).toBe(0);
+      expect(summary.subEvents[0].invitedCount).toBe(1);
+      expect(summary.subEvents[0].attendingCount).toBe(1);
+      expect(summary.subEvents[0].attendingHeadcount).toBe(2);
+      expect(summary.subEvents[0].pendingCount).toBe(0);
+    });
   });
 });

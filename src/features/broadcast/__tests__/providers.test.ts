@@ -1,8 +1,45 @@
 /** @jest-environment node */
 
+import * as dns from 'node:dns';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
+import { validateAndResolveHost } from '@/utils/ssrf';
+import { isAllowedSmtpPort } from '@/utils/validationPrimitives';
+import { UpdateAppConfigSchema } from '@/features/content';
 import { MultiChannelMessagingProvider, formatEmailHtmlBody } from '../providers';
+import { TestConnectionSchema } from '../schemas';
+
+jest.mock('@/utils/ssrf', () => {
+  const actual = jest.requireActual('@/utils/ssrf');
+  return {
+    ...actual,
+    validateAndResolveHost: jest.fn(actual.validateAndResolveHost),
+  };
+});
+
+jest.mock('@/utils/validationPrimitives', () => {
+  const actual = jest.requireActual('@/utils/validationPrimitives');
+  return {
+    ...actual,
+    isAllowedSmtpPort: jest.fn(actual.isAllowedSmtpPort),
+  };
+});
+
+const actualSsrf = jest.requireActual('@/utils/ssrf') as typeof import('@/utils/ssrf');
+const actualValidationPrimitives = jest.requireActual(
+  '@/utils/validationPrimitives'
+) as typeof import('@/utils/validationPrimitives');
+const mockValidateAndResolveHost = validateAndResolveHost as jest.MockedFunction<
+  typeof validateAndResolveHost
+>;
+const mockIsAllowedSmtpPort = isAllowedSmtpPort as jest.MockedFunction<typeof isAllowedSmtpPort>;
+
+function allowLoopbackTestTarget(ephemeralPort: number, resolvedIp = '127.0.0.1'): void {
+  mockValidateAndResolveHost.mockResolvedValue({ address: resolvedIp, family: 4 });
+  mockIsAllowedSmtpPort.mockImplementation(
+    (port: number) => actualValidationPrimitives.isAllowedSmtpPort(port) || port === ephemeralPort
+  );
+}
 
 const TEST_TLS_KEY = [
   '-----BEGIN PRIVATE KEY-----',
@@ -64,12 +101,21 @@ interface MockSmtpServerOptions {
   expectedUser?: string;
   expectedPass?: string;
   hangAfterConnect?: boolean;
+  greetingLine?: string;
+  ehloRejectLine?: string;
+  startTlsRejectLine?: string;
+  authLoginStep1Line?: string;
+  mailFromRejectLine?: string;
+  rcptToRejectLine?: string;
+  dataRejectLine?: string;
+  queuedRejectLine?: string;
 }
 
 interface RunningSmtpServer {
   port: number;
   commands: string[];
   receivedMessages: string[];
+  observedServernames: string[];
   upgradedToTls: () => boolean;
   close: () => Promise<void>;
 }
@@ -82,11 +128,21 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
     expectedUser = 'mailer@wedding.test',
     expectedPass = 's3cret-pass',
     hangAfterConnect = false,
+    greetingLine,
+    ehloRejectLine,
+    startTlsRejectLine,
+    authLoginStep1Line,
+    mailFromRejectLine,
+    rcptToRejectLine,
+    dataRejectLine,
+    queuedRejectLine,
   } = options;
 
   const commands: string[] = [];
   const receivedMessages: string[] = [];
+  const observedServernames: string[] = [];
   let didUpgradeTls = implicitTls;
+  const secureContext = tls.createSecureContext({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT });
 
   const attachProtocol = (sock: net.Socket | tls.TLSSocket, isTlsConn: boolean) => {
     let buffer = '';
@@ -100,7 +156,7 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
           receivedMessages.push(dataBuffer);
           dataBuffer = '';
           state = 'COMMAND';
-          sock.write('250 2.0.0 Queued\r\n');
+          sock.write(`${queuedRejectLine || '250 2.0.0 Queued'}\r\n`);
         } else {
           const unstuffed = line.startsWith('..') ? line.slice(1) : line;
           dataBuffer += `${unstuffed}\r\n`;
@@ -129,7 +185,11 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
       }
 
       const upper = line.toUpperCase();
-      if (upper.startsWith('EHLO ')) {
+      if (upper.startsWith('EHLO ') || upper.startsWith('HELO ')) {
+        if (ehloRejectLine) {
+          sock.write(`${ehloRejectLine}\r\n`);
+          return;
+        }
         const caps: string[] = ['250-127.0.0.1 Hello'];
         if (advertiseStartTls && !isTlsConn) {
           caps.push('250-STARTTLS');
@@ -145,12 +205,20 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
       }
 
       if (upper === 'STARTTLS' && advertiseStartTls && !isTlsConn) {
+        if (startTlsRejectLine) {
+          sock.write(`${startTlsRejectLine}\r\n`);
+          return;
+        }
         sock.removeAllListeners('data');
         sock.write('220 2.0.0 Ready to start TLS\r\n', () => {
           const tlsSock = new tls.TLSSocket(sock, {
             isServer: true,
             key: TEST_TLS_KEY,
             cert: TEST_TLS_CERT,
+            SNICallback: (servername, cb) => {
+              observedServernames.push(servername);
+              cb(null, secureContext);
+            },
           });
           didUpgradeTls = true;
           attachProtocol(tlsSock, true);
@@ -173,22 +241,30 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
       }
 
       if (upper === 'AUTH LOGIN') {
+        if (authLoginStep1Line) {
+          sock.write(`${authLoginStep1Line}\r\n`);
+          return;
+        }
         state = 'AUTH_LOGIN_USER';
         sock.write('334 VXNlcm5hbWU6\r\n');
         return;
       }
 
       if (upper.startsWith('MAIL FROM:')) {
-        sock.write('250 2.1.0 Sender OK\r\n');
+        sock.write(`${mailFromRejectLine || '250 2.1.0 Sender OK'}\r\n`);
         return;
       }
 
       if (upper.startsWith('RCPT TO:')) {
-        sock.write('250 2.1.5 Recipient OK\r\n');
+        sock.write(`${rcptToRejectLine || '250 2.1.5 Recipient OK'}\r\n`);
         return;
       }
 
       if (upper === 'DATA') {
+        if (dataRejectLine) {
+          sock.write(`${dataRejectLine}\r\n`);
+          return;
+        }
         state = 'DATA';
         sock.write('354 Start mail input; end with <CRLF>.<CRLF>\r\n');
         return;
@@ -219,19 +295,29 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
 
   const activeSockets = new Set<net.Socket>();
   const server = implicitTls
-    ? tls.createServer({ key: TEST_TLS_KEY, cert: TEST_TLS_CERT }, (tlsSock) => {
-      activeSockets.add(tlsSock);
-      tlsSock.on('close', () => activeSockets.delete(tlsSock));
-      if (!hangAfterConnect) {
-        tlsSock.write('220 127.0.0.1 ESMTP Implicit TLS Ready\r\n');
-        attachProtocol(tlsSock, true);
+    ? tls.createServer(
+      {
+        key: TEST_TLS_KEY,
+        cert: TEST_TLS_CERT,
+        SNICallback: (servername, cb) => {
+          observedServernames.push(servername);
+          cb(null, secureContext);
+        },
+      },
+      (tlsSock) => {
+        activeSockets.add(tlsSock);
+        tlsSock.on('close', () => activeSockets.delete(tlsSock));
+        if (!hangAfterConnect) {
+          tlsSock.write(`${greetingLine || '220 127.0.0.1 ESMTP Implicit TLS Ready'}\r\n`);
+          attachProtocol(tlsSock, true);
+        }
       }
-    })
+    )
     : net.createServer((sock) => {
       activeSockets.add(sock);
       sock.on('close', () => activeSockets.delete(sock));
       if (!hangAfterConnect) {
-        sock.write('220 127.0.0.1 ESMTP Ready\r\n');
+        sock.write(`${greetingLine || '220 127.0.0.1 ESMTP Ready'}\r\n`);
         attachProtocol(sock, false);
       }
     });
@@ -246,6 +332,7 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
     port: addr.port,
     commands,
     receivedMessages,
+    observedServernames,
     upgradedToTls: () => didUpgradeTls,
     close: () =>
       new Promise<void>((resolve) => {
@@ -258,6 +345,13 @@ async function startTestSmtpServer(options: MockSmtpServerOptions = {}): Promise
 }
 
 describe('MultiChannelMessagingProvider', () => {
+  afterEach(() => {
+    mockValidateAndResolveHost.mockClear();
+    mockIsAllowedSmtpPort.mockClear();
+    mockValidateAndResolveHost.mockImplementation(actualSsrf.validateAndResolveHost);
+    mockIsAllowedSmtpPort.mockImplementation(actualValidationPrimitives.isAllowedSmtpPort);
+  });
+
   it('returns failure when recipient email is missing', async () => {
     const provider = new MultiChannelMessagingProvider({ emailProvider: 'smtp' });
     const result = await provider.sendEmail({ to: '', subject: 'Test', body: 'Test' });
@@ -318,6 +412,7 @@ describe('MultiChannelMessagingProvider', () => {
       expectedUser: 'mailer@wedding.test',
       expectedPass: 's3cret-pass',
     });
+    allowLoopbackTestTarget(smtpServer.port);
 
     try {
       const provider = new MultiChannelMessagingProvider({
@@ -385,6 +480,7 @@ describe('MultiChannelMessagingProvider', () => {
       expectedUser: 'login-user@wedding.test',
       expectedPass: 'login-pass-465',
     });
+    allowLoopbackTestTarget(tlsServer.port);
 
     try {
       const provider = new MultiChannelMessagingProvider({
@@ -419,6 +515,7 @@ describe('MultiChannelMessagingProvider', () => {
       expectedUser: 'mailer@wedding.test',
       expectedPass: 'valid-secret',
     });
+    allowLoopbackTestTarget(smtpServer.port);
 
     try {
       const provider = new MultiChannelMessagingProvider({
@@ -453,6 +550,7 @@ describe('MultiChannelMessagingProvider', () => {
     }
 
     // Closed port -> connection refused -> testConnection fails
+    allowLoopbackTestTarget(smtpServer.port);
     const closedProvider = new MultiChannelMessagingProvider({
       emailProvider: 'smtp',
       smtpRejectUnauthorized: false,
@@ -462,13 +560,14 @@ describe('MultiChannelMessagingProvider', () => {
       type: 'email',
       provider: 'smtp',
       smtpHost: '127.0.0.1',
-      smtpPort: 1,
+      smtpPort: smtpServer.port,
     });
     expect(closedRes.success).toBe(false);
   });
 
   it('enforces socket timeout when an SMTP server hangs without greeting', async () => {
     const hangingServer = await startTestSmtpServer({ hangAfterConnect: true });
+    allowLoopbackTestTarget(hangingServer.port);
     try {
       const provider = new MultiChannelMessagingProvider({
         emailProvider: 'smtp',
@@ -524,6 +623,365 @@ describe('MultiChannelMessagingProvider', () => {
     expect(await twilioProvider.testConnection({ type: 'sms', twilioAuthToken: '' })).toEqual({
       success: true,
     });
+  });
+
+  it('blocks SSRF targets (loopback, link-local metadata, private DNS records) and pins sockets while preserving SNI servername', async () => {
+    const lookupSpy = jest.spyOn(dns.promises, 'lookup');
+    try {
+      const provider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpPort: 587,
+      });
+
+      for (const blockedHost of ['127.0.0.1', '169.254.169.254', '10.0.0.8', '[::1]']) {
+        const res = await provider.testConnection({
+          type: 'email',
+          provider: 'smtp',
+          smtpHost: blockedHost,
+          smtpPort: 587,
+        });
+        expect(res.success).toBe(false);
+        expect(res.error).toMatch(/private or restricted IP/i);
+      }
+
+      lookupSpy.mockResolvedValueOnce([{ address: '192.168.1.25', family: 4 }] as any);
+      const privateDnsRes = await provider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: 'internal-relay.wedding.example',
+        smtpPort: 587,
+      });
+      expect(privateDnsRes.success).toBe(false);
+      expect(privateDnsRes.error).toMatch(/private or restricted IP/i);
+    } finally {
+      lookupSpy.mockRestore();
+    }
+
+    // Verify socket connects to pinned IP while sending original domain in TLS SNI for both STARTTLS and implicit TLS
+    const startTlsServer = await startTestSmtpServer({
+      advertiseStartTls: true,
+      authMode: 'PLAIN',
+      expectedUser: 'mailer@wedding.test',
+      expectedPass: 'sni-secret',
+    });
+    try {
+      allowLoopbackTestTarget(startTlsServer.port, '127.0.0.1');
+      const provider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.mailgun.org',
+        smtpPort: startTlsServer.port,
+        smtpSecure: false,
+        smtpUser: 'mailer@wedding.test',
+        smtpPass: 'sni-secret',
+        smtpRejectUnauthorized: false,
+      });
+      const res = await provider.testConnection({ type: 'email', provider: 'smtp' });
+      expect(res).toEqual({ success: true });
+      expect(mockValidateAndResolveHost).toHaveBeenCalledWith('smtp.mailgun.org');
+      expect(startTlsServer.observedServernames).toContain('smtp.mailgun.org');
+    } finally {
+      await startTlsServer.close();
+    }
+
+    const implicitTlsServer = await startTestSmtpServer({
+      implicitTls: true,
+      authMode: 'PLAIN',
+      expectedUser: 'mailer@wedding.test',
+      expectedPass: 'sni-secret',
+    });
+    try {
+      allowLoopbackTestTarget(implicitTlsServer.port, '127.0.0.1');
+      const provider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.sendgrid.net',
+        smtpPort: implicitTlsServer.port,
+        smtpSecure: true,
+        smtpUser: 'mailer@wedding.test',
+        smtpPass: 'sni-secret',
+        smtpRejectUnauthorized: false,
+      });
+      const res = await provider.testConnection({ type: 'email', provider: 'smtp' });
+      expect(res).toEqual({ success: true });
+      expect(mockValidateAndResolveHost).toHaveBeenCalledWith('smtp.sendgrid.net');
+      expect(implicitTlsServer.observedServernames).toContain('smtp.sendgrid.net');
+    } finally {
+      await implicitTlsServer.close();
+    }
+  });
+
+  it('restricts smtpPort to standard submission ports (25, 465, 587, 2525) across schemas and provider methods', async () => {
+    for (const validPort of [25, 465, 587, 2525]) {
+      expect(
+        TestConnectionSchema.safeParse({ type: 'email', provider: 'smtp', smtpPort: validPort })
+          .success
+      ).toBe(true);
+    }
+
+    for (const disallowedPort of [0, 1, 22, 80, 443, 6379, 8080, 65535]) {
+      expect(
+        TestConnectionSchema.safeParse({
+          type: 'email',
+          provider: 'smtp',
+          smtpPort: disallowedPort,
+        }).success
+      ).toBe(false);
+
+      const badConfigParse = UpdateAppConfigSchema.safeParse({
+        partner1Name: 'A',
+        partner2Name: 'B',
+        weddingDate: '2026-06-20T00:00:00.000Z',
+        baseUrl: 'https://example.com',
+        venueName: 'Venue',
+        venueAddress: '123 St',
+        venueCity: 'City',
+        venueState: 'ST',
+        venueZip: '12345',
+        latitude: 40,
+        longitude: -70,
+        storyText: '',
+        venueDescription: '',
+        travelAdvice: '',
+        heroTitle: '',
+        heroSubtitle: '',
+        seoTitle: '',
+        seoDescription: '',
+        faviconUrl: '/favicon.ico',
+        ogImageUrl: '/og.jpg',
+        seoKeywords: '',
+        smtpPort: disallowedPort,
+      });
+      expect(badConfigParse.success).toBe(false);
+
+      const sendProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.mailgun.org',
+        smtpPort: disallowedPort,
+      });
+      const sendRes = await sendProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Port Limit',
+        body: 'Blocked port',
+      });
+      expect(sendRes.success).toBe(false);
+      expect(sendRes.error).toMatch(/25, 465, 587, or 2525/);
+
+      const testRes = await sendProvider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: 'smtp.mailgun.org',
+        smtpPort: disallowedPort,
+      });
+      expect(testRes.success).toBe(false);
+      expect(testRes.error).toMatch(/25, 465, 587, or 2525/);
+      expect(mockValidateAndResolveHost).not.toHaveBeenCalled();
+    }
+  });
+
+  it('strips raw server banners and response text from SMTP error messages', async () => {
+    // 1. Non-SMTP protocol banner (e.g., SSH banner) -> must not leak raw line
+    const sshBannerServer = await startTestSmtpServer({
+      greetingLine: 'SSH-2.0-OpenSSH_9.6p1 SecretInternalBanner',
+    });
+    try {
+      allowLoopbackTestTarget(sshBannerServer.port);
+      const provider = new MultiChannelMessagingProvider({ emailProvider: 'smtp' });
+      const res = await provider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: 'smtp.example.org',
+        smtpPort: sshBannerServer.port,
+      });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('Invalid SMTP server response');
+      expect(res.error).not.toContain('OpenSSH');
+      expect(res.error).not.toContain('SecretInternalBanner');
+    } finally {
+      await sshBannerServer.close();
+    }
+
+    // 2. Non-220 SMTP greeting -> returns status code only without banner text
+    const greetingErrServer = await startTestSmtpServer({
+      greetingLine: '554 InternalHost-Banner-Secret Service unavailable',
+    });
+    try {
+      allowLoopbackTestTarget(greetingErrServer.port);
+      const provider = new MultiChannelMessagingProvider({ emailProvider: 'smtp' });
+      const res = await provider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: 'smtp.example.org',
+        smtpPort: greetingErrServer.port,
+      });
+      expect(res).toEqual({
+        success: false,
+        error: 'Unexpected SMTP greeting (554)',
+      });
+    } finally {
+      await greetingErrServer.close();
+    }
+
+    // 3. AUTH LOGIN & MAIL FROM rejections -> status code only without server message text
+    const authRejectServer = await startTestSmtpServer({
+      implicitTls: true,
+      authMode: 'LOGIN',
+      authLoginStep1Line: '503 InternalAuthBannerLeak bad sequence',
+    });
+    try {
+      allowLoopbackTestTarget(authRejectServer.port);
+      const provider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.example.org',
+        smtpPort: authRejectServer.port,
+        smtpSecure: true,
+        smtpUser: 'mailer@wedding.test',
+        smtpPass: 'secret',
+        smtpRejectUnauthorized: false,
+      });
+      const res = await provider.testConnection({ type: 'email', provider: 'smtp' });
+      expect(res).toEqual({
+        success: false,
+        error: 'SMTP AUTH LOGIN rejected (503)',
+      });
+      expect(res.error).not.toContain('InternalAuthBannerLeak');
+    } finally {
+      await authRejectServer.close();
+    }
+
+    const mailRejectServer = await startTestSmtpServer({
+      implicitTls: true,
+      mailFromRejectLine: '550 5.7.1 InternalPolicySecret sender blocked',
+    });
+    try {
+      allowLoopbackTestTarget(mailRejectServer.port);
+      const provider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.example.org',
+        smtpPort: mailRejectServer.port,
+        smtpSecure: true,
+        smtpRejectUnauthorized: false,
+      });
+      const res = await provider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Banner Check',
+        body: 'Hello',
+      });
+      expect(res).toEqual({
+        success: false,
+        error: 'SMTP MAIL FROM rejected (550)',
+      });
+      expect(res.error).not.toContain('InternalPolicySecret');
+    } finally {
+      await mailRejectServer.close();
+    }
+  });
+
+  it('binds stored smtpPass fallback in testConnection to a blank or matching normalized smtpHost', async () => {
+    const smtpServer = await startTestSmtpServer({
+      advertiseStartTls: true,
+      authMode: 'PLAIN',
+      expectedUser: 'mailer@wedding.test',
+      expectedPass: 'bound-stored-secret',
+    });
+
+    try {
+      allowLoopbackTestTarget(smtpServer.port);
+      const provider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.mailgun.org',
+        smtpPort: smtpServer.port,
+        smtpUser: 'mailer@wedding.test',
+        smtpPass: 'bound-stored-secret',
+        smtpRejectUnauthorized: false,
+      });
+
+      // Different smtpHost with blank smtpPass must NOT reuse stored smtpPass or connect
+      const mismatchRes = await provider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: 'evil-collector.example.net',
+        smtpPort: smtpServer.port,
+        smtpPass: '',
+      });
+      expect(mismatchRes).toEqual({
+        success: false,
+        error: 'SMTP Password required',
+      });
+      expect(smtpServer.commands).toHaveLength(0);
+
+      // Matching normalized smtpHost (case/whitespace differences) reuses stored smtpPass
+      const matchingHostRes = await provider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+        smtpHost: '  SMTP.MAILGUN.ORG  ',
+        smtpPort: smtpServer.port,
+        smtpPass: '   ',
+      });
+      expect(matchingHostRes).toEqual({ success: true });
+    } finally {
+      await smtpServer.close();
+    }
+  });
+
+  it('requires implicit TLS or STARTTLS before sending AUTH PLAIN / AUTH LOGIN while allowing unauthenticated relays', async () => {
+    const cleartextServer = await startTestSmtpServer({
+      implicitTls: false,
+      advertiseStartTls: false,
+      authMode: 'PLAIN',
+      expectedUser: 'mailer@wedding.test',
+      expectedPass: 'never-send-in-cleartext',
+    });
+
+    try {
+      allowLoopbackTestTarget(cleartextServer.port);
+
+      // Authenticated session on cleartext server without STARTTLS must abort before AUTH
+      const authedProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'relay.example.org',
+        smtpPort: cleartextServer.port,
+        smtpSecure: false,
+        smtpUser: 'mailer@wedding.test',
+        smtpPass: 'never-send-in-cleartext',
+      });
+
+      const testRes = await authedProvider.testConnection({
+        type: 'email',
+        provider: 'smtp',
+      });
+      expect(testRes.success).toBe(false);
+      expect(testRes.error).toMatch(/TLS or STARTTLS is required before authentication/i);
+      expect(cleartextServer.commands.some((cmd) => cmd.toUpperCase().startsWith('AUTH'))).toBe(
+        false
+      );
+
+      const sendRes = await authedProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'No Cleartext Auth',
+        body: 'Must fail before AUTH',
+      });
+      expect(sendRes.success).toBe(false);
+      expect(sendRes.error).toMatch(/TLS or STARTTLS is required before authentication/i);
+      expect(cleartextServer.commands.some((cmd) => cmd.toUpperCase().startsWith('AUTH'))).toBe(
+        false
+      );
+
+      // Unauthenticated relay (no user/pass) can still send without AUTH
+      const unauthRelayProvider = new MultiChannelMessagingProvider({
+        emailProvider: 'smtp',
+        smtpHost: 'relay.example.org',
+        smtpPort: cleartextServer.port,
+        smtpSecure: false,
+      });
+      const relayRes = await unauthRelayProvider.sendEmail({
+        to: 'guest@example.com',
+        subject: 'Unauthenticated Relay',
+        body: 'Allowed without credentials',
+      });
+      expect(relayRes).toEqual({ success: true });
+      expect(cleartextServer.receivedMessages).toHaveLength(1);
+    } finally {
+      await cleartextServer.close();
+    }
   });
 
   describe('HTML email escaping, paragraph formatting, and stationery cards', () => {

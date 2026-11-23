@@ -25,7 +25,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
 ## Key Features
 
 *   **Invitation Codes & Multi-Event Responses (RSVPs):**
-    *   Household **invitation codes** (`InvitationCode`), CSV guest imports, cohort-scoped **sub-events** (`SubEvent`, `SubEventAccess`), and per-event **event responses** (`SubEventRsvp`) with meal choices, dietary notes, plus-one rules, and venue-timezone RSVP deadline cutoffs.
+    *   Household **invitation codes** (`InvitationCode`) with bounded 1,000-household catalog fetches (`X-Total-Count` pagination headers), CSV guest imports, public `/guest/collect` postal address collection (`address-collection` tag isolation with `extraFields.householdNotes` and **Promote to Invited** promotion), private-only **sub-events** (`SubEvent`, `SubEventAccess`) access toggles, portaled Avery 5160/5163 QR label sheet printing (`AppConfig.baseUrl`), and per-event **event responses** (`SubEventRsvp`) with meal choices, dietary notes, plus-one rules, and venue-timezone RSVP deadline cutoffs.
 *   **Interactive Seating Charts:**
     *   Drag-and-drop **seating charts** (`SeatingTable`) with inline party/plus-one seat assignment, venue landmarks, table capacity tracking, household cohort grouping, printable floorplans, caterer exports, and guest table lookup.
 *   **Guest Photo Uploads & Moderation:**
