@@ -94,7 +94,7 @@
     "@react-three/rapier": "^2.2.0",
     "@stripe/react-stripe-js": "^7.1.0",
     "@stripe/stripe-js": "^10.3.0",
-    "@tanstack/react-query": "^5.108.1",
+    "@tanstack/react-query": "^5.108.2",
     "archiver": "^8.0.0",
     "dotenv-cli": "^11.1.0",
     "framer-motion": "^14.14.0",
