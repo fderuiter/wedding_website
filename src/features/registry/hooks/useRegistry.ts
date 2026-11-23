@@ -12,7 +12,7 @@ import { apiClient } from '@/lib/apiClient';
 import { useEntityOrchestration } from '@/hooks/useEntityOrchestration';
 
 import { useFilter } from '@/hooks/useFilter';
-import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe';
+import { CARD_PROCESSING_FEE_RATE } from '@/lib/stripe.client';
 import {
   REGISTRY_INITIAL_VISIBLE_ITEMS,
   REGISTRY_MAX_CATALOG_LIMIT,
