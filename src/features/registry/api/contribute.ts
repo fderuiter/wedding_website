@@ -1,4 +1,4 @@
-import { NextResponse, NextRequest } from 'next/server';
+import { NextResponse, NextRequest, after } from 'next/server';
 import { registryService } from '../service';
 import { ContributionSchema } from '../schemas';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
@@ -14,13 +14,30 @@ import { signContributorActionToken } from '../lib/contributorToken';
 import type { GuestClaimActions } from '../types';
 import { resolveEffectivePaymentHandle } from '../utils/paymentUrls';
 
+function settle<T>(operation: () => Promise<T> | T): Promise<PromiseSettledResult<T>> {
+  return Promise.allSettled([Promise.resolve().then(operation)]).then(([result]) => result);
+}
+
 export const POST = withApiMiddleware(async (request: NextRequest) => {
-  const config = await getAppConfig();
+  const configSettledPromise = settle(() => getAppConfig());
+  const bodySettledPromise = settle(() => request.json());
+  const isAdminSettledPromise = settle(() => isAdminRequest(request));
+
+  const configSettled = await configSettledPromise;
+  if (configSettled.status === 'rejected') {
+    throw configSettled.reason;
+  }
+  const config = configSettled.value;
+
   if (!isFeatureEnabled('registry', config.modules)) {
     throw new ApiError(404, "Feature 'registry' is disabled");
   }
 
-  const data = await request.json();
+  const bodySettled = await bodySettledPromise;
+  if (bodySettled.status === 'rejected') {
+    throw bodySettled.reason;
+  }
+  const data = bodySettled.value;
   const parseResult = ContributionSchema.safeParse(data);
   
   if (!parseResult.success) {
@@ -41,7 +58,37 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
     trackingNumber,
   } = parseResult.data;
 
-  const targetItem = await registryService.getItemById(itemId);
+  const targetItemSettledPromise = settle(() => registryService.getItemById(itemId));
+  const guestSessionSettledPromise = !code
+    ? settle(() => getGuestInviteSession(request))
+    : null;
+
+  let hasStripeConfigError = false;
+  let stripeConfigError: unknown = null;
+  let paymentIntentSettledPromise: Promise<
+    PromiseSettledResult<
+      Awaited<ReturnType<ReturnType<typeof getStripeInstance>['paymentIntents']['retrieve']>>
+    >
+  > | null = null;
+
+  if (paymentIntentId) {
+    try {
+      const stripe = getStripeInstance();
+      paymentIntentSettledPromise = settle(() =>
+        stripe.paymentIntents.retrieve(paymentIntentId)
+      );
+    } catch (err: unknown) {
+      hasStripeConfigError = true;
+      stripeConfigError = err;
+    }
+  }
+
+  const targetItemSettled = await targetItemSettledPromise;
+  if (targetItemSettled.status === 'rejected') {
+    throw targetItemSettled.reason;
+  }
+  const targetItem = targetItemSettled.value;
+
   if (targetItem && targetItem.isSample) {
     throw new ApiError(400, 'Sample registry items do not accept contributions or payments.');
   }
@@ -67,10 +114,13 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   }
 
   let finalCode = code;
-  if (!finalCode) {
-    const session = await getGuestInviteSession(request);
-    if (session?.code) {
-      finalCode = session.code;
+  if (!finalCode && guestSessionSettledPromise) {
+    const sessionSettled = await guestSessionSettledPromise;
+    if (sessionSettled.status === 'rejected') {
+      throw sessionSettled.reason;
+    }
+    if (sessionSettled.value?.code) {
+      finalCode = sessionSettled.value.code;
     }
   }
 
@@ -81,10 +131,8 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
   let transactionTimestamp: Date | null = null;
 
   if (paymentIntentId) {
-    let stripe;
-    try {
-      stripe = getStripeInstance();
-    } catch (err: any) {
+    if (hasStripeConfigError) {
+      const err = stripeConfigError as { message?: string } | null;
       return NextResponse.json(
         {
           success: false,
@@ -94,12 +142,12 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       );
     }
 
-    let paymentIntent;
-    try {
-      paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    } catch (err: any) {
-      throw new ApiError(400, `Invalid or unresolved Stripe PaymentIntent: ${err.message}`);
+    const paymentIntentSettled = await paymentIntentSettledPromise!;
+    if (paymentIntentSettled.status === 'rejected') {
+      const err = paymentIntentSettled.reason as { message?: string } | null;
+      throw new ApiError(400, `Invalid or unresolved Stripe PaymentIntent: ${err?.message}`);
     }
+    const paymentIntent = paymentIntentSettled.value;
 
     const invariantCheck = validatePaymentIntentInvariants(paymentIntent, {
       itemId,
@@ -132,28 +180,52 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       : {}),
   });
 
-  await dispatchContributionNotifications({
-    itemId,
-    targetItem,
-    updatedItem,
-    contribution: {
-      name,
-      email,
-      amount,
-      message,
-      coverFee: effectiveCoverFee,
-      stripePaymentIntentId,
-      transactionTimestamp,
-      ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
-      ...(carrier ? { carrier } : {}),
-      ...(trackingNumber ? { trackingNumber } : {}),
-    },
-    config,
-    requestUrl: request.url,
-    isReservation: !stripePaymentIntentId,
-  });
+  const requestUrl = request.url;
+  const isReservation = !stripePaymentIntentId;
+  let notificationDispatchPromise: Promise<void> | undefined;
+  const runNotifications = () => {
+    notificationDispatchPromise ??= dispatchContributionNotifications({
+      itemId,
+      targetItem,
+      updatedItem,
+      contribution: {
+        name,
+        email,
+        amount,
+        message,
+        coverFee: effectiveCoverFee,
+        stripePaymentIntentId,
+        transactionTimestamp,
+        ...(retailerOrderNumber ? { retailerOrderNumber } : {}),
+        ...(carrier ? { carrier } : {}),
+        ...(trackingNumber ? { trackingNumber } : {}),
+      },
+      config,
+      requestUrl,
+      isReservation,
+    });
+    return notificationDispatchPromise;
+  };
 
-  const isAdmin = await isAdminRequest(request);
+  let scheduledPostResponse = false;
+  if (typeof after === 'function') {
+    try {
+      after(runNotifications);
+      scheduledPostResponse = true;
+    } catch {
+      scheduledPostResponse = false;
+    }
+  }
+
+  if (!scheduledPostResponse) {
+    await runNotifications();
+  }
+
+  const isAdminSettled = await isAdminSettledPromise;
+  if (isAdminSettled.status === 'rejected') {
+    throw isAdminSettled.reason;
+  }
+  const isAdmin = isAdminSettled.value;
   if (!isAdmin) {
     let claimActions: GuestClaimActions | undefined;
     if (!stripePaymentIntentId) {
@@ -192,7 +264,10 @@ export const POST = withApiMiddleware(async (request: NextRequest) => {
       }
     }
 
-    const maskedItem = maskRegistryItem(updatedItem);
+    const maskedItem = maskRegistryItem({
+      ...updatedItem,
+      contributors: [],
+    });
     return NextResponse.json(
       claimActions ? { ...maskedItem, claimActions } : maskedItem
     );

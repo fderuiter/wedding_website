@@ -3,7 +3,6 @@ import { seedAdminAndGuestAuthCookies } from './helpers/auth';
 
 test(
   'seating chart admin dashboard has Export Visual PDF button',
-  { tag: '@smoke' },
   async ({ context, page }, testInfo) => {
     await seedAdminAndGuestAuthCookies(context);
 

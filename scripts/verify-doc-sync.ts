@@ -74,7 +74,7 @@ export function runDocGeneration(cwd: string = process.cwd()): void {
     cwd,
     stdio: 'inherit',
   });
-  execSync('npx tsx scripts/generate-docs.ts', {
+  execSync('npx tsx scripts/generate-docs.ts --skip-openapi', {
     cwd,
     stdio: 'inherit',
   });

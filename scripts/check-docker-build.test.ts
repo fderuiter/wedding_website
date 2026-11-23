@@ -720,4 +720,87 @@ describe('check-docker-build', () => {
       ])
     );
   });
+
+  it('allows pull_policy: never services sharing a local build image across docker-compose.yml and docker-compose.rollout.yml', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  migration:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.rollout.yml'),
+      [
+        'services:',
+        '  app-standby:',
+        '    image: wedding-website:latest',
+        '    pull_policy: never',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual([]);
+  });
+
+  it('rejects Compose services without build when pull_policy: never is omitted or image is not locally built, and rejects merge keys in docker-compose.rollout.yml', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.yml'),
+      [
+        'services:',
+        '  db:',
+        `    image: postgres:15-alpine@${POSTGRES_DIGEST}`,
+        '  migration:',
+        '    image: wedding-website:latest',
+        '  app:',
+        '    image: wedding-website:latest',
+        '    build:',
+        '      context: .',
+        '',
+      ].join('\n')
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'docker-compose.rollout.yml'),
+      [
+        'x-defaults: &defaults',
+        '  read_only: true',
+        'services:',
+        '  app-standby:',
+        '    <<: *defaults',
+        '    image: unpinned-external-image:latest',
+        '    pull_policy: never',
+        '',
+      ].join('\n')
+    );
+
+    const { violations } = checkDockerBuild(tempDir);
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'docker-compose.yml',
+          imageRef: 'wedding-website:latest',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.rollout.yml',
+          imageRef: 'unpinned-external-image:latest',
+        }),
+        expect.objectContaining({
+          filePath: 'docker-compose.rollout.yml',
+          reason: expect.stringContaining('<<'),
+        }),
+      ])
+    );
+  });
 });
