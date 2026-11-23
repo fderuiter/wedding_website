@@ -1,15 +1,30 @@
 import { parentPort, workerData } from 'node:worker_threads';
-import heicDecodeModule from 'heic-decode';
 import sharp from 'sharp';
 
+type HeicDecodeFn = typeof import('heic-decode');
+
 interface WorkerSuccessResult {
+  id?: number;
   success: true;
   buffer: Uint8Array;
+  heicDecoderLoaded?: boolean;
 }
 
 interface WorkerErrorResult {
+  id?: number;
   success: false;
   error: string;
+}
+
+export interface WorkerReadyMessage {
+  type: 'ready';
+}
+
+export interface WorkerTaskMessage {
+  id: number;
+  buffer: Uint8Array;
+  expectHeic?: boolean;
+  maxBytes?: number;
 }
 
 export type WorkerResult = WorkerSuccessResult | WorkerErrorResult;
@@ -30,10 +45,24 @@ export const MAX_WORKER_INPUT_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 64000000;
 export const MAX_IMAGE_DIMENSION = 12000;
 
-const decodeHeic: typeof heicDecodeModule =
-  typeof heicDecodeModule === 'function'
-    ? heicDecodeModule
-    : (heicDecodeModule as { default: typeof heicDecodeModule }).default;
+let cachedHeicDecoderPromise: Promise<HeicDecodeFn> | null = null;
+let heicDecoderLoaded = false;
+
+function getHeicDecoder(): Promise<HeicDecodeFn> {
+  if (!cachedHeicDecoderPromise) {
+    cachedHeicDecoderPromise = import('heic-decode')
+      .then((heicDecodeModule) => {
+        heicDecoderLoaded = true;
+        const candidate = heicDecodeModule as unknown as HeicDecodeFn | { default: HeicDecodeFn };
+        return typeof candidate === 'function' ? candidate : candidate.default;
+      })
+      .catch((err) => {
+        cachedHeicDecoderPromise = null;
+        throw err;
+      });
+  }
+  return cachedHeicDecoderPromise;
+}
 
 const EXPLICIT_HEIC_BRANDS = new Set([
   'heic',
@@ -251,6 +280,7 @@ export async function processImageWorkerBuffer(
       assertWithinImageDimensionLimits(extent.width, extent.height, 'HEIC image');
     }
 
+    const decodeHeic = await getHeicDecoder();
     const decoded = await decodeHeic({ buffer: uint8View });
     if (
       !decoded ||
@@ -294,18 +324,80 @@ export async function processImageWorkerBuffer(
   return new Uint8Array(sanitizedBuffer);
 }
 
-// When executed inside a Node.js worker thread
-if (parentPort && workerData) {
-  (async () => {
+function getTransferList(buffer: Uint8Array): ArrayBuffer[] {
+  if (
+    !Buffer.isBuffer(buffer) &&
+    buffer.buffer instanceof ArrayBuffer &&
+    buffer.byteOffset === 0 &&
+    buffer.byteLength === buffer.buffer.byteLength
+  ) {
+    return [buffer.buffer];
+  }
+  return [];
+}
+
+const isPoolWorker =
+  Boolean(parentPort) &&
+  typeof workerData === 'object' &&
+  workerData !== null &&
+  (workerData as { isImageProcessorPoolWorker?: boolean }).isImageProcessorPoolWorker === true;
+
+// Persistent pooled worker loop with correlation IDs
+if (parentPort && isPoolWorker) {
+  const port = parentPort;
+
+  port.on('message', async (task: WorkerTaskMessage) => {
+    const taskId = task?.id;
     try {
-      const sanitized = await processImageWorkerBuffer(workerData.buffer, {
-        expectHeic: Boolean(workerData.expectHeic),
-        maxBytes: typeof workerData.maxBytes === 'number' ? workerData.maxBytes : undefined,
+      const sanitized = await processImageWorkerBuffer(task.buffer, {
+        expectHeic: Boolean(task.expectHeic),
+        maxBytes: typeof task.maxBytes === 'number' ? task.maxBytes : undefined,
       });
-      parentPort?.postMessage({ success: true, buffer: sanitized } as WorkerSuccessResult);
+      const response: WorkerSuccessResult = {
+        id: taskId,
+        success: true,
+        buffer: sanitized,
+        heicDecoderLoaded,
+      };
+      port.postMessage(response, getTransferList(sanitized));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      parentPort?.postMessage({ success: false, error: errorMessage } as WorkerErrorResult);
+      const response: WorkerErrorResult = {
+        id: taskId,
+        success: false,
+        error: errorMessage,
+      };
+      port.postMessage(response);
+    }
+  });
+
+  const readyMessage: WorkerReadyMessage = { type: 'ready' };
+  port.postMessage(readyMessage);
+} else if (
+  parentPort &&
+  typeof workerData === 'object' &&
+  workerData !== null &&
+  'buffer' in workerData
+) {
+  // Legacy single-shot workerData fallback
+  (async () => {
+    try {
+      const legacyData = workerData as {
+        buffer: Uint8Array;
+        expectHeic?: boolean;
+        maxBytes?: number;
+      };
+      const sanitized = await processImageWorkerBuffer(legacyData.buffer, {
+        expectHeic: Boolean(legacyData.expectHeic),
+        maxBytes: typeof legacyData.maxBytes === 'number' ? legacyData.maxBytes : undefined,
+      });
+      parentPort?.postMessage(
+        { success: true, buffer: sanitized, heicDecoderLoaded } satisfies WorkerSuccessResult,
+        getTransferList(sanitized)
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      parentPort?.postMessage({ success: false, error: errorMessage } satisfies WorkerErrorResult);
     }
   })();
 }

@@ -11,7 +11,7 @@ const rootDir = path.resolve(__dirname, '..');
 
 const PORT = process.env.TEST_PORT || '3000';
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+const COMPOSE_ARGS = ['--env-file', '.env.ci', '-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 

@@ -11,7 +11,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     openssl \
     ca-certificates \
     tini && \
-    printf 'update-notifier=false\n' > /etc/npmrc
+    mkdir -p /usr/local/etc && \
+    printf 'update-notifier=false\n' | tee /usr/local/etc/npmrc > /etc/npmrc
 
 # Isolated Prisma CLI stage (excludes Studio, @prisma/dev, and builder devDependencies)
 FROM base AS prisma-cli
