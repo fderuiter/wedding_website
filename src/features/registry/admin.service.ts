@@ -3,9 +3,6 @@ import { BaseRepository } from '@/core/infrastructure/repository';
 import { createBatchAuditSnapshots } from '@/lib/audit';
 import { RegistryItemInputSchema, RegistryItemDTO } from './schemas';
 import { handleMediaFields } from '@/features/admin';
-import { z } from 'zod';
-
-export type RegistryItemInput = z.infer<typeof RegistryItemInputSchema>;
 
 function hasMediaFields(data: Record<string, unknown>): boolean {
   return (
