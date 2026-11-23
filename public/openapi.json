@@ -1639,6 +1639,15 @@
                         "exclusiveMinimum": true,
                         "maximum": 9007199254740991
                       },
+                      "plusOneSeatNumbers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        }
+                      },
                       "isSample": {
                         "default": false,
                         "type": "boolean"
@@ -1661,13 +1670,18 @@
                           "rectangular",
                           "square",
                           "head",
-                          "sweetheart"
+                          "sweetheart",
+                          "dance-floor",
+                          "bar",
+                          "dj",
+                          "buffet",
+                          "cake"
                         ]
                       },
                       "capacity": {
                         "default": 8,
                         "type": "integer",
-                        "minimum": 1,
+                        "minimum": 0,
                         "maximum": 50
                       },
                       "x": {
@@ -4282,6 +4296,15 @@
                         "exclusiveMinimum": true,
                         "maximum": 9007199254740991
                       },
+                      "plusOneSeatNumbers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        }
+                      },
                       "isSample": {
                         "default": false,
                         "type": "boolean"
@@ -4307,13 +4330,18 @@
                           "rectangular",
                           "square",
                           "head",
-                          "sweetheart"
+                          "sweetheart",
+                          "dance-floor",
+                          "bar",
+                          "dj",
+                          "buffet",
+                          "cake"
                         ]
                       },
                       "capacity": {
                         "default": 8,
                         "type": "integer",
-                        "minimum": 1,
+                        "minimum": 0,
                         "maximum": 50
                       },
                       "x": {
@@ -10737,7 +10765,7 @@
                           },
                           "capacity": {
                             "type": "integer",
-                            "minimum": 1,
+                            "minimum": 0,
                             "maximum": 9007199254740991
                           },
                           "x": {
@@ -10889,6 +10917,14 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
+                          },
+                          "plusOneSeatNumbers": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
                           },
                           "isSample": {
                             "type": "boolean"
@@ -12382,7 +12418,7 @@
                         },
                         "capacity": {
                           "type": "integer",
-                          "minimum": 1,
+                          "minimum": 0,
                           "maximum": 9007199254740991
                         },
                         "x": {
@@ -12534,6 +12570,14 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "plusOneSeatNumbers": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
                         },
                         "isSample": {
                           "type": "boolean"
@@ -15317,6 +15361,15 @@
                         "minimum": 0,
                         "exclusiveMinimum": true,
                         "maximum": 9007199254740991
+                      },
+                      "plusOneSeatNumbers": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        }
                       }
                     },
                     "required": [
@@ -15376,6 +15429,15 @@
                               "minimum": 0,
                               "exclusiveMinimum": true,
                               "maximum": 9007199254740991
+                            },
+                            "plusOneSeatNumbers": {
+                              "type": "array",
+                              "items": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "exclusiveMinimum": true,
+                                "maximum": 9007199254740991
+                              }
                             }
                           },
                           "required": [
@@ -15574,6 +15636,20 @@
                   },
                   "includePending": {
                     "type": "boolean"
+                  },
+                  "keepHouseholdsIntact": {
+                    "type": "boolean"
+                  },
+                  "partyGroup": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "partyTags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
                   }
                 }
               }
