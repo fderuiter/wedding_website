@@ -948,8 +948,8 @@ describe('CsvImportWizardModal Component', () => {
     expect(invalidGuestInput.className).toContain('h-7 px-2 py-1 text-xs');
 
     // Theme design tokens: valid row uses default input border token, invalid row uses error border token
-    expect(validGuestInput.className).toContain('border-[var(--input-border,var(--color-surface-border,#d1d5db))]');
-    expect(invalidGuestInput.className).toContain('border-[var(--input-error-border,var(--color-error-text,#ef4444))]');
+    expect(validGuestInput.className).toContain('border-[var(--input-border,var(--color-surface-border,#6b7280))]');
+    expect(invalidGuestInput.className).toContain('border-[var(--input-error-border,var(--color-error-text,#dc2626))]');
     expect(invalidGuestInput).toHaveAttribute('aria-invalid', 'true');
   });
 

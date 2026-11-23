@@ -225,7 +225,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
         )}
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold text-secondary uppercase tracking-wider">
-            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-600 dark:text-red-400">{item.code}</code>
+            Code: <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-red-700 dark:text-red-200">{item.code}</code>
           </div>
           <Button
             size="sm"
@@ -265,21 +265,21 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
               Incomplete: {[item.addressLine1, item.addressLine2, item.city, item.state, item.zipCode, item.country].filter(Boolean).join(', ')}
             </span>
           ) : (
-            <span className="text-gray-400 dark:text-gray-500 italic">No address provided</span>
+            <span className="text-muted-text italic">No address provided</span>
           )}
         </div>
 
-        <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap gap-x-4 pt-1">
-          <span>Status: <span className={item.used ? 'text-red-500 font-semibold' : 'text-green-500 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
+        <div className="text-xs text-muted-text flex flex-wrap gap-x-4 pt-1">
+          <span>Status: <span className={item.used ? 'text-red-700 dark:text-red-300 font-semibold' : 'text-green-700 dark:text-green-400 font-semibold'}>{item.used ? 'Redeemed/Used' : 'Active/Unused'}</span></span>
           <span>
             RSVP:{' '}
             <span
               className={
                 attendanceStatus === 'attending'
-                  ? 'text-green-600 font-semibold'
+                  ? 'text-green-700 dark:text-green-400 font-semibold'
                   : attendanceStatus === 'declined'
-                    ? 'text-red-600 font-semibold'
-                    : 'text-amber-600 font-semibold'
+                    ? 'text-red-700 dark:text-red-300 font-semibold'
+                    : 'text-amber-700 dark:text-amber-400 font-semibold'
               }
             >
               {attendanceStatus.charAt(0).toUpperCase() + attendanceStatus.slice(1)}
@@ -349,9 +349,9 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
           </span>
           <div className="flex flex-wrap gap-2">
             {subEvents.length === 0 ? (
-              <span className="text-xs text-gray-400 italic">No sub-events created yet</span>
+              <span className="text-xs text-muted-text italic">No sub-events created yet</span>
             ) : privateSubEvents.length === 0 ? (
-              <span className="text-xs text-gray-500 dark:text-gray-400 italic">
+              <span className="text-xs text-muted-text italic">
                 No private sub-events configured. Public sub-events are accessible to all invited guests.
               </span>
             ) : (
@@ -1645,7 +1645,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex items-center gap-2 flex-wrap bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
               <span
                 id="party-tags-filter-label"
-                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
               >
                 Party Tags:
               </span>
@@ -1686,7 +1686,7 @@ export default function InvitationCodesDashboardPage() {
           <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-200 dark:border-gray-700">
             {/* Redemption Status Tab Group */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Redemption:</span>
+              <span className="text-xs font-semibold text-muted-text uppercase tracking-wider">Redemption:</span>
               <SegmentedTabs
                 idPrefix="redemption-status"
                 panelId="invitation-codes-results-panel"
@@ -1710,7 +1710,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span
                 id="address-filter-label"
-                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
               >
                 Address:
               </span>
@@ -1735,7 +1735,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
               <span
                 id="attendance-filter-label"
-                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+                className="text-xs font-semibold text-muted-text uppercase tracking-wider"
               >
                 Attendance:
               </span>

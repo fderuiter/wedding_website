@@ -123,7 +123,7 @@ export const InvitationQRPreviewModal: React.FC<InvitationQRPreviewModalProps> =
             </p>
           )}
           <div className="pt-1">
-            <span className="text-xs uppercase tracking-wider text-gray-500 font-semibold mr-1.5">
+            <span className="text-xs uppercase tracking-wider text-muted-text font-semibold mr-1.5">
               Code:
             </span>
             <code className="bg-gray-100 dark:bg-gray-800 text-red-600 dark:text-red-400 px-2 py-0.5 rounded font-mono font-bold text-sm">
