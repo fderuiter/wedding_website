@@ -20,7 +20,7 @@ type TablistAccessibleLabel =
   | { 'aria-labelledby': string; 'aria-label'?: string };
 
 export type SegmentedTabsProps<T extends string = string> = Omit<
-  React.HTMLAttributes<HTMLDivElement>,
+  React.ComponentPropsWithRef<'div'>,
   'onChange' | 'aria-label' | 'aria-labelledby' | 'role'
 > &
   TablistAccessibleLabel & {
@@ -33,7 +33,7 @@ export type SegmentedTabsProps<T extends string = string> = Omit<
     panelClassName?: string;
   };
 
-export interface SegmentedTabPanelProps extends React.HTMLAttributes<HTMLDivElement> {
+export interface SegmentedTabPanelProps extends React.ComponentPropsWithRef<'div'> {
   id: string;
   tabId: string;
 }
@@ -62,8 +62,16 @@ function findNextEnabledTabIndex<T extends string>(
   return -1;
 }
 
-export const SegmentedTabPanel = React.forwardRef<HTMLDivElement, SegmentedTabPanelProps>(
-  ({ id, tabId, className, tabIndex = 0, children, ...props }, ref) => (
+export function SegmentedTabPanel({
+  id,
+  tabId,
+  className,
+  tabIndex = 0,
+  children,
+  ref,
+  ...props
+}: SegmentedTabPanelProps) {
+  return (
     <div
       ref={ref}
       id={id}
@@ -75,14 +83,10 @@ export const SegmentedTabPanel = React.forwardRef<HTMLDivElement, SegmentedTabPa
     >
       {children}
     </div>
-  )
-);
-SegmentedTabPanel.displayName = 'SegmentedTabPanel';
+  );
+}
 
-function SegmentedTabsInner<T extends string = string>(
-  props: SegmentedTabsProps<T>,
-  ref: React.ForwardedRef<HTMLDivElement>
-) {
+export function SegmentedTabs<T extends string = string>(props: SegmentedTabsProps<T>) {
   const {
     tabs,
     value,
@@ -94,6 +98,7 @@ function SegmentedTabsInner<T extends string = string>(
     panelClassName,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledBy,
+    ref,
     ...rest
   } = props;
 
@@ -228,11 +233,3 @@ function SegmentedTabsInner<T extends string = string>(
     </div>
   );
 }
-
-export const SegmentedTabs = React.forwardRef(SegmentedTabsInner) as (<
-  T extends string = string,
->(
-  _props: SegmentedTabsProps<T> & { ref?: React.ForwardedRef<HTMLDivElement> }
-) => React.ReactElement) & { displayName?: string };
-
-SegmentedTabs.displayName = 'SegmentedTabs';

@@ -7,7 +7,7 @@ import { optimizeContrast, hexToRgb, getContrastRatio } from '@/lib/theme/styles
 import { getPresetTokens } from '@/lib/theme/presets';
 
 export interface ThemedQRCodeProps
-  extends Omit<React.ComponentPropsWithoutRef<typeof QRCodeCanvas>, 'fgColor' | 'bgColor'> {
+  extends Omit<React.ComponentPropsWithRef<typeof QRCodeCanvas>, 'fgColor' | 'bgColor'> {
   fgColor?: string;
   bgColor?: string;
   bgToken?: '--card-bg' | '--container-bg' | string;
@@ -41,13 +41,14 @@ function extractHexColor(val: string | undefined | null): string | null {
  * @description A theme-aware QR code component that automatically computes module
  * and background colors using central theme tokens and enforces WCAG AA contrast standards.
  */
-export const ThemedQRCode = React.forwardRef<HTMLCanvasElement, ThemedQRCodeProps>(({
+export function ThemedQRCode({
   fgColor: explicitFgColor,
   bgColor: explicitBgColor,
   bgToken = '--card-bg',
   minContrastRatio = 4.5,
+  ref,
   ...props
-}, ref) => {
+}: ThemedQRCodeProps) {
   const { themePrimary, themePreset, resolvedTheme } = useTheme();
 
   const { fgColor, bgColor } = useMemo(() => {
@@ -123,6 +124,4 @@ export const ThemedQRCode = React.forwardRef<HTMLCanvasElement, ThemedQRCodeProp
       {...props}
     />
   );
-});
-
-ThemedQRCode.displayName = 'ThemedQRCode';
+}

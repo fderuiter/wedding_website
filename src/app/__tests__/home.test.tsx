@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, react/display-name */
+/* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
@@ -38,46 +38,55 @@ jest.mock('framer-motion', () => {
     motion: new Proxy(
       {
         create: (tag: string) =>
-          React.forwardRef(
-            (
-              { children, style, ...props }: Record<string, unknown> & { children?: React.ReactNode; style?: Record<string, unknown> },
-              ref: React.Ref<unknown>
-            ) => {
-              const filteredProps = Object.keys(props).reduce((acc, key) => {
-                if (!framerMotionProps.includes(key)) {
-                  acc[key] = props[key];
-                }
-                return acc;
-              }, {} as Record<string, unknown>);
-              if (style) {
-                const {
-                  transformPerspective: _tp,
-                  rotateX: _rx,
-                  rotateY: _ry,
-                  ...restStyle
-                } = style;
-                filteredProps.style = restStyle;
+          function MotionCreateMock({
+            children,
+            style,
+            ref,
+            ...props
+          }: Record<string, unknown> & {
+            children?: React.ReactNode;
+            style?: Record<string, unknown>;
+            ref?: React.Ref<unknown>;
+          }) {
+            const filteredProps = Object.keys(props).reduce((acc, key) => {
+              if (!framerMotionProps.includes(key)) {
+                acc[key] = props[key];
               }
-              return React.createElement(tag, { ref, ...filteredProps }, children);
+              return acc;
+            }, {} as Record<string, unknown>);
+            if (style) {
+              const {
+                transformPerspective: _tp,
+                rotateX: _rx,
+                rotateY: _ry,
+                ...restStyle
+              } = style;
+              filteredProps.style = restStyle;
             }
-          ),
+            return React.createElement(tag, { ref, ...filteredProps }, children);
+          },
       },
       {
         get: (target, tag) => {
           if (tag in target) {
             return target[tag as keyof typeof target];
           }
-          return React.forwardRef(
-            ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }, ref: React.Ref<unknown>) => {
-              const filteredProps = Object.keys(props).reduce((acc, key) => {
-                if (!framerMotionProps.includes(key)) {
-                  acc[key] = props[key];
-                }
-                return acc;
-              }, {} as Record<string, unknown>);
-              return React.createElement(tag as string, { ref, ...filteredProps }, children);
-            }
-          );
+          return function MotionProxyMock({
+            children,
+            ref,
+            ...props
+          }: Record<string, unknown> & {
+            children?: React.ReactNode;
+            ref?: React.Ref<unknown>;
+          }) {
+            const filteredProps = Object.keys(props).reduce((acc, key) => {
+              if (!framerMotionProps.includes(key)) {
+                acc[key] = props[key];
+              }
+              return acc;
+            }, {} as Record<string, unknown>);
+            return React.createElement(tag as string, { ref, ...filteredProps }, children);
+          };
         },
       }
     ),

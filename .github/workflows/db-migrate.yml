@@ -166,6 +166,7 @@ jobs:
 
       - name: Pre-flight schema migration check and summary
         id: status_check
+        if: steps.confirm_gate.outcome == 'success'
         timeout-minutes: 5
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -174,7 +175,7 @@ jobs:
         run: |
           unset POSTGRES_URL_NON_POOLING
           echo "Executing pre-flight Prisma migration status audit & SQL DDL summary..."
-          env -u POSTGRES_URL_NON_POOLING npx tsx scripts/preflight-migration-summary.ts
+          env -u POSTGRES_URL_NON_POOLING npx tsx scripts/preflight-migration-summary.ts --require-db
 
       - name: Run Prisma Migrate Deploy
         id: migrate
