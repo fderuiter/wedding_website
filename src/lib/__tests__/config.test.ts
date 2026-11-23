@@ -5,6 +5,7 @@ import {
   toAdminAppConfig,
   isMultisiteEnabled,
   isSiteInitialized,
+  isSetupCompleted,
   APP_DEFAULTS,
   getAppConfig,
 } from '../config';
@@ -251,6 +252,26 @@ describe('Configuration DTO Architecture', () => {
     expect('resendApiKey' in adminConfig).toBe(false);
     expect('sendgridApiKey' in adminConfig).toBe(false);
     expect('twilioAuthToken' in adminConfig).toBe(false);
+    expect(adminConfig.setupCompleted).toBe(true);
+  });
+
+  it('tracks setupCompleted accurately across DTO projections and isSetupCompleted helper', () => {
+    const inProgressConfig = {
+      ...baseConfig,
+      setupCompleted: false,
+    };
+
+    const publicProjected = toPublicAppConfig(inProgressConfig) as Record<string, unknown>;
+    expect(publicProjected.setupCompleted).toBeUndefined();
+
+    const adminProjected = toAdminAppConfig(inProgressConfig);
+    expect(adminProjected.setupCompleted).toBe(false);
+
+    expect(isSetupCompleted(null)).toBe(false);
+    expect(isSetupCompleted({ ...baseConfig, partner1Name: '', brideName: '', setupCompleted: true })).toBe(false);
+    expect(isSetupCompleted(inProgressConfig)).toBe(false);
+    expect(isSetupCompleted({ ...baseConfig, setupCompleted: true })).toBe(true);
+    expect(isSetupCompleted(baseConfig)).toBe(true);
   });
 });
 

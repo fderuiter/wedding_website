@@ -40,5 +40,23 @@ describe('WeddingPartyRepository', () => {
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Jane Doe');
     });
+
+    it('skips Prisma queries and returns validated mock members during STATIC_EXPORT builds', async () => {
+      const prevStaticExport = process.env.STATIC_EXPORT;
+      process.env.STATIC_EXPORT = 'true';
+
+      try {
+        const result = await repo.getMembers();
+        expect(mockClient.weddingPartyMember.findMany).not.toHaveBeenCalled();
+        expect(result.length).toBeGreaterThan(0);
+        expect(result[0].name).toBe('Jordan Rivera');
+      } finally {
+        if (prevStaticExport === undefined) {
+          delete process.env.STATIC_EXPORT;
+        } else {
+          process.env.STATIC_EXPORT = prevStaticExport;
+        }
+      }
+    });
   });
 });

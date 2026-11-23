@@ -50,6 +50,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     '.github',
     '.storybook',
     'assets',
+    'docker',
     'docs',
     'docs-portal',
     'e2e',

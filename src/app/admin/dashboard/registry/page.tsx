@@ -14,9 +14,11 @@ import { useAdminRegistry } from '@/hooks/admin/useAdminRegistry';
 import {
   ContributorLifecycleBadge,
   useRegistryCapabilities,
+  type ContributorStatus,
   type RegistryItem,
 } from '@/features/registry';
 import { Button } from '@/components/ui/Button';
+import { Input, Label, Textarea, FormGroup } from '@/components/ui/forms';
 import { Icon } from '@/components/ui/Icon';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table';
 import { useFocusSuccessor } from '@/hooks/useFocusSuccessor';
@@ -48,28 +50,23 @@ function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallba
   };
 }
 
+type AdminContributorEntry = RegistryItem['contributors'][number];
+
 const ContributionsList = ({
   contributors,
   onContributorAction,
+  onEditContributor,
+  onDeleteContributor,
   pendingContributorId,
 }: {
-  contributors?: {
-    id?: string;
-    name: string;
-    amount: number;
-    refundedAmount?: number;
-    status?: string;
-    date: string;
-    stripeChargeId?: string | null;
-    stripePaymentIntentId?: string | null;
-    transactionTimestamp?: string | null;
-    reminderEmailSentAt?: string | null;
-  }[];
+  contributors?: AdminContributorEntry[];
   onContributorAction?: (
     contributorId: string,
     contributorName: string,
     action: 'confirm' | 'remind' | 'void'
   ) => Promise<void>;
+  onEditContributor?: (contributor: AdminContributorEntry) => void;
+  onDeleteContributor?: (contributor: AdminContributorEntry) => Promise<void>;
   pendingContributorId?: string | null;
 }) => {
   if (!contributors || contributors.length === 0) {
@@ -105,45 +102,75 @@ const ContributionsList = ({
                 Verified Ref: {transactionRef}
               </span>
             )}
-            {c.id && onContributorAction && !isInactive && (
+            {c.id && (
               <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                {normalizedStatus === 'RESERVED' && (
+                {onContributorAction && !isInactive && (
                   <>
+                    {normalizedStatus === 'RESERVED' && (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="primary"
+                          disabled={isRowBusy}
+                          aria-label={`Confirm contribution from ${c.name}`}
+                          onClick={() => void onContributorAction(c.id!, c.name, 'confirm')}
+                          className="px-2 py-0.5 text-[11px] h-auto"
+                        >
+                          Confirm
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isRowBusy}
+                          aria-label={`Send polite reminder to ${c.name}`}
+                          onClick={() => void onContributorAction(c.id!, c.name, 'remind')}
+                          className="px-2 py-0.5 text-[11px] h-auto"
+                        >
+                          Polite Reminder
+                        </Button>
+                      </>
+                    )}
                     <Button
                       type="button"
                       size="sm"
-                      variant="primary"
+                      variant="danger"
                       disabled={isRowBusy}
-                      aria-label={`Confirm contribution from ${c.name}`}
-                      onClick={() => void onContributorAction(c.id!, c.name, 'confirm')}
+                      aria-label={`Void contribution from ${c.name}`}
+                      onClick={() => void onContributorAction(c.id!, c.name, 'void')}
                       className="px-2 py-0.5 text-[11px] h-auto"
                     >
-                      Confirm
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={isRowBusy}
-                      aria-label={`Send polite reminder to ${c.name}`}
-                      onClick={() => void onContributorAction(c.id!, c.name, 'remind')}
-                      className="px-2 py-0.5 text-[11px] h-auto"
-                    >
-                      Polite Reminder
+                      Void
                     </Button>
                   </>
                 )}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="danger"
-                  disabled={isRowBusy}
-                  aria-label={`Void contribution from ${c.name}`}
-                  onClick={() => void onContributorAction(c.id!, c.name, 'void')}
-                  className="px-2 py-0.5 text-[11px] h-auto"
-                >
-                  Void
-                </Button>
+                {onEditContributor && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={isRowBusy}
+                    aria-label={`Edit contribution from ${c.name}`}
+                    onClick={() => onEditContributor(c)}
+                    className="px-2 py-0.5 text-[11px] h-auto"
+                  >
+                    Edit
+                  </Button>
+                )}
+                {onDeleteContributor && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    disabled={isRowBusy}
+                    aria-label={`Delete contribution from ${c.name}`}
+                    onClick={() => void onDeleteContributor(c)}
+                    className="px-2 py-0.5 text-[11px] h-auto"
+                  >
+                    Delete
+                  </Button>
+                )}
               </div>
             )}
           </li>
@@ -283,11 +310,17 @@ const RegistryItemBadges = ({
 const RegistryItemActions = ({
   itemName,
   variant,
+  isPurchased,
+  isUnclaimPending,
+  onUnclaim,
   onEdit,
   onDelete,
 }: {
   itemName: string;
   variant: RegistryLayoutVariant;
+  isPurchased?: boolean;
+  isUnclaimPending?: boolean;
+  onUnclaim?: () => void;
   onEdit: () => void;
   onDelete: (_event: React.MouseEvent<HTMLButtonElement>) => void;
 }) => {
@@ -295,6 +328,18 @@ const RegistryItemActions = ({
 
   return (
     <>
+      {isPurchased && onUnclaim && (
+        <Button
+          className={buttonClassName}
+          variant="outline"
+          size="sm"
+          disabled={isUnclaimPending}
+          aria-label={itemName ? 'Unclaim registry item: ' + itemName : 'Unclaim unnamed item'}
+          onClick={onUnclaim}
+        >
+          Unclaim
+        </Button>
+      )}
       <Button
         className={buttonClassName}
         variant="secondary"
@@ -332,10 +377,163 @@ export default function AdminRegistryPage() {
     reorderItems,
     toggleMostWanted,
     performContributorAction,
+    unclaimItem,
+    updateContributor,
+    deleteContributor,
   } = useAdminRegistry();
   const { addToast, confirm } = useToast();
   const [announcement, setAnnouncement] = useState<string>('');
   const [pendingContributorId, setPendingContributorId] = useState<string | null>(null);
+  const [pendingUnclaimItemId, setPendingUnclaimItemId] = useState<string | null>(null);
+
+  const [editingContributor, setEditingContributor] = useState<AdminContributorEntry | null>(null);
+  const [editContributorName, setEditContributorName] = useState<string>('');
+  const [editContributorEmail, setEditContributorEmail] = useState<string>('');
+  const [editContributorAmount, setEditContributorAmount] = useState<string>('');
+  const [editContributorStatus, setEditContributorStatus] =
+    useState<ContributorStatus>('CONFIRMED');
+  const [editContributorMessage, setEditContributorMessage] = useState<string>('');
+  const [isSavingContributorEdit, setIsSavingContributorEdit] = useState<boolean>(false);
+
+  const openEditContributor = (contributor: AdminContributorEntry) => {
+    setEditingContributor(contributor);
+    setEditContributorName(contributor.name || '');
+    setEditContributorEmail(contributor.email || '');
+    setEditContributorAmount(String(contributor.amount ?? ''));
+    const normalized = (contributor.status || 'CONFIRMED').toUpperCase();
+    setEditContributorStatus(
+      normalized === 'RESERVED' ||
+        normalized === 'CONFIRMED' ||
+        normalized === 'CANCELLED' ||
+        normalized === 'REFUNDED'
+        ? (normalized as ContributorStatus)
+        : 'CONFIRMED'
+    );
+    setEditContributorMessage(contributor.message || '');
+  };
+
+  const closeEditContributor = () => {
+    setEditingContributor(null);
+  };
+
+  const handleSaveContributorEdit = async (e: React.SubmitEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingContributor?.id) return;
+
+    const trimmedName = editContributorName.trim();
+    const parsedAmount = Number(editContributorAmount);
+    if (!trimmedName) {
+      addToast('Contributor name is required.', 'error');
+      return;
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      addToast('Contribution amount must be a positive number.', 'error');
+      return;
+    }
+
+    const verifiedRef =
+      editingContributor.stripeChargeId || editingContributor.stripePaymentIntentId;
+    const hasVerifiedPayment = Boolean(verifiedRef);
+
+    if (hasVerifiedPayment) {
+      const confirmed = await confirm(
+        `Warning: ${editingContributor.name} has a verified Stripe payment (${verifiedRef}). Editing this claim will NOT automatically refund or adjust the Stripe payment. Proceed with saving changes?`
+      );
+      if (!confirmed) return;
+    }
+
+    setIsSavingContributorEdit(true);
+    setPendingContributorId(editingContributor.id);
+    try {
+      await updateContributor(editingContributor.id, {
+        name: trimmedName,
+        email: editContributorEmail.trim() || null,
+        amount: parsedAmount,
+        status: editContributorStatus,
+        message: editContributorMessage.trim() || null,
+        confirmVerifiedPayment: hasVerifiedPayment,
+      });
+      const feedback = `Updated contribution from ${trimmedName}.`;
+      setAnnouncement(feedback);
+      addToast(feedback, 'success');
+      closeEditContributor();
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to update contributor record.',
+        'error'
+      );
+    } finally {
+      setIsSavingContributorEdit(false);
+      setPendingContributorId(null);
+    }
+  };
+
+  const handleDeleteContributor = async (contributor: AdminContributorEntry) => {
+    if (!contributor.id) return;
+    const verifiedRef = contributor.stripeChargeId || contributor.stripePaymentIntentId;
+    const hasVerifiedPayment = Boolean(verifiedRef);
+
+    const promptMessage = hasVerifiedPayment
+      ? `Warning: ${contributor.name} has a verified Stripe payment (${verifiedRef}). Deleting this contribution will permanently remove the claim record without issuing a Stripe refund. Are you sure you want to delete it?`
+      : `Delete the contribution from ${contributor.name}? This will permanently remove the claim record and recalculate the item balance.`;
+
+    const confirmed = await confirm(promptMessage);
+    if (!confirmed) return;
+
+    setPendingContributorId(contributor.id);
+    try {
+      await deleteContributor(contributor.id, hasVerifiedPayment);
+      const feedback = `Deleted contribution from ${contributor.name}.`;
+      setAnnouncement(feedback);
+      addToast(feedback, 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to delete contributor record.',
+        'error'
+      );
+    } finally {
+      setPendingContributorId(null);
+    }
+  };
+
+  const handleUnclaimItem = async (item: RegistryItem) => {
+    const itemLabel = item.name || item.id;
+    const activeContributors = (item.contributors || []).filter((c) => {
+      const st = (c.status || 'CONFIRMED').toUpperCase();
+      return st === 'RESERVED' || st === 'CONFIRMED';
+    });
+    const hasVerifiedPayment = activeContributors.some((c) =>
+      Boolean(c.stripePaymentIntentId || c.stripeChargeId)
+    );
+
+    const promptMessage = hasVerifiedPayment
+      ? `Warning: "${itemLabel}" has a verified Stripe payment on file. Releasing this claim will NOT automatically refund the Stripe payment. Are you sure you want to unclaim this gift?`
+      : `Release the claim on "${itemLabel}" and reopen it for guests?`;
+
+    const confirmed = await confirm(promptMessage);
+    if (!confirmed) return;
+
+    setPendingUnclaimItemId(item.id);
+    try {
+      await unclaimItem(item.id, hasVerifiedPayment);
+      const feedback = `Released claim on ${itemLabel}.`;
+      setAnnouncement(feedback);
+      addToast(feedback, 'success');
+    } catch (err: unknown) {
+      addToast(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to release claim on registry item.',
+        'error'
+      );
+    } finally {
+      setPendingUnclaimItemId(null);
+    }
+  };
 
   const handleContributorAction = async (
     contributorId: string,
@@ -664,6 +862,8 @@ export default function AdminRegistryPage() {
                                   <ContributionsList
                                     contributors={item.contributors}
                                     onContributorAction={handleContributorAction}
+                                    onEditContributor={openEditContributor}
+                                    onDeleteContributor={handleDeleteContributor}
                                     pendingContributorId={pendingContributorId}
                                   />
                                 </TableCell>
@@ -671,6 +871,9 @@ export default function AdminRegistryPage() {
                                   <RegistryItemActions
                                     itemName={item.name}
                                     variant="desktop"
+                                    isPurchased={item.purchased}
+                                    isUnclaimPending={pendingUnclaimItemId === item.id}
+                                    onUnclaim={() => void handleUnclaimItem(item)}
                                     onEdit={() => router.push(`/registry/edit-item/${item.id}`)}
                                     onDelete={(e) => void handleDeleteItem(e, item.id, 'desktop')}
                                   />
@@ -759,6 +962,8 @@ export default function AdminRegistryPage() {
                               <ContributionsList
                                 contributors={item.contributors}
                                 onContributorAction={handleContributorAction}
+                                onEditContributor={openEditContributor}
+                                onDeleteContributor={handleDeleteContributor}
                                 pendingContributorId={pendingContributorId}
                               />
                             </div>
@@ -767,6 +972,9 @@ export default function AdminRegistryPage() {
                             <RegistryItemActions
                               itemName={item.name}
                               variant="mobile"
+                              isPurchased={item.purchased}
+                              isUnclaimPending={pendingUnclaimItemId === item.id}
+                              onUnclaim={() => void handleUnclaimItem(item)}
                               onEdit={() => router.push(`/registry/edit-item/${item.id}`)}
                               onDelete={(e) => void handleDeleteItem(e, item.id, 'mobile')}
                             />
@@ -781,6 +989,105 @@ export default function AdminRegistryPage() {
             )}
           </Droppable>
         </DragDropContext>
+
+        {editingContributor && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-contributor-dialog-title"
+          >
+            <div className="w-full max-w-md rounded-xl bg-white dark:bg-gray-800 p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
+              <h2
+                id="edit-contributor-dialog-title"
+                className="text-xl font-bold text-gray-900 dark:text-white"
+              >
+                Edit Contribution
+              </h2>
+              {(editingContributor.stripeChargeId || editingContributor.stripePaymentIntentId) && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-xs"
+                >
+                  Verified Stripe payment ({editingContributor.stripeChargeId || editingContributor.stripePaymentIntentId}) is linked to this record. Saving changes updates the registry ledger only and will require confirmation.
+                </div>
+              )}
+              <form onSubmit={handleSaveContributorEdit} className="space-y-3">
+                <FormGroup>
+                  <Label htmlFor="edit-contributor-name">Contributor Name</Label>
+                  <Input
+                    id="edit-contributor-name"
+                    type="text"
+                    value={editContributorName}
+                    onChange={(e) => setEditContributorName(e.target.value)}
+                    required
+                  />
+                </FormGroup>
+                <FormGroup>
+                  <Label htmlFor="edit-contributor-amount">Contribution Amount ($)</Label>
+                  <Input
+                    id="edit-contributor-amount"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={editContributorAmount}
+                    onChange={(e) => setEditContributorAmount(e.target.value)}
+                    required
+                  />
+                </FormGroup>
+                <FormGroup>
+                  <Label htmlFor="edit-contributor-email">Contributor Email (Optional)</Label>
+                  <Input
+                    id="edit-contributor-email"
+                    type="email"
+                    value={editContributorEmail}
+                    onChange={(e) => setEditContributorEmail(e.target.value)}
+                  />
+                </FormGroup>
+                <FormGroup>
+                  <Label htmlFor="edit-contributor-status">Claim Status</Label>
+                  <select
+                    id="edit-contributor-status"
+                    value={editContributorStatus}
+                    onChange={(e) => setEditContributorStatus(e.target.value as ContributorStatus)}
+                    className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                  >
+                    <option value="RESERVED">RESERVED</option>
+                    <option value="CONFIRMED">CONFIRMED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                    <option value="REFUNDED">REFUNDED</option>
+                  </select>
+                </FormGroup>
+                <FormGroup>
+                  <Label htmlFor="edit-contributor-message">Personal Message (Optional)</Label>
+                  <Textarea
+                    id="edit-contributor-message"
+                    rows={2}
+                    value={editContributorMessage}
+                    onChange={(e) => setEditContributorMessage(e.target.value)}
+                  />
+                </FormGroup>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={isSavingContributorEdit}
+                    onClick={closeEditContributor}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={isSavingContributorEdit}
+                  >
+                    {isSavingContributorEdit ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

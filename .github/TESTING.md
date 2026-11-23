@@ -159,13 +159,19 @@ A variety of verification scripts in [package.json](../package.json) support com
   ```
   Compiles component stories (`src/**/*.stories.tsx`), Storybook configuration ([.storybook/main.ts](../.storybook/main.ts), [.storybook/preview.tsx](../.storybook/preview.tsx)), and MSW mock handlers ([src/mocks/handlers.ts](../src/mocks/handlers.ts)) via Webpack 5, matching the parallel `storybook-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml) and manual [.github/workflows/storybook.yml](workflows/storybook.yml) workflow (both installing dependencies with `npm ci --ignore-scripts`). Use `npm run storybook` for interactive component development.
 
+- **Static HTML Showcase Build:**
+  ```bash
+  npm run build:export
+  ```
+  Compiles the database-free static HTML showcase (`output: 'export'`) inside an isolated staged workspace without `src/app/api` ([scripts/build-export.mjs](../scripts/build-export.mjs)), isolating export build caches in `.next-export` ([next.config.ts](../next.config.ts)) while preserving `src/app/api` and `.next/standalone` in the repository root, matching the parallel `static-export-build` CI job in [.github/workflows/ci.yml](workflows/ci.yml).
+
 - **Complete Quality Gate:**
   ```bash
   npm run quality
   # or
   npm run check:all
   ```
-  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal and Storybook static builds (`npm run docs:build`, `npm run build-storybook`), and full-coverage unit/integration tests (`npm run test:cov`) — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
+  Runs the full sequential suite in [scripts/check-quality.ts](../scripts/check-quality.ts) — including static verifications, TypeScript and linter passes, documentation portal, Storybook, and static HTML showcase builds (`npm run docs:build`, `npm run build-storybook`, `npm run build:export`), and full-coverage unit/integration tests (`npm run test:cov`) — prior to pushing (see also [AGENTS.md](../AGENTS.md)).
 
 ## Writing New Tests
 

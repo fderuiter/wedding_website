@@ -18,7 +18,7 @@ Both endpoints require an authenticated administrator session (`isProtectedRoute
 | Property | Single Scrape (`POST /api/registry/scrape`) | Batch Scrape (`POST /api/registry/scrape/batch`) |
 | --- | --- | --- |
 | **Handler** | [src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L306-L318) | [src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L46-L137) |
-| **Request Schema** | `ScrapeUrlSchema` (`{ url: string }`) in [src/utils/validation.ts](src/utils/validation.ts#L340-L345) | `BatchScrapeUrlsSchema` (`{ urls: string[] }`, **min `1` / max `20` URLs**, max `2,000` chars each) in [src/features/registry/schemas.ts](src/features/registry/schemas.ts#L972-L977) |
+| **Request Schema** | `ScrapeUrlSchema` (`{ url: string }`) in [src/utils/validation.ts](src/utils/validation.ts#L348-L353) | `BatchScrapeUrlsSchema` (`{ urls: string[] }`, **min `1` / max `20` URLs**, max `2,000` chars each) in [src/features/registry/schemas.ts](src/features/registry/schemas.ts#L1055-L1060) |
 | **Concurrency** | `1` URL per request | Worker pool of **`5` concurrent scrapes** (`limit = 5` in `runWithConcurrency`) |
 | **Timeouts** | **`4,500 ms`** `AbortController` timeout (`timeoutMs = 4500`) | **`10,000 ms`** per-URL timeout (`10000`) bounded by a **`15,000 ms`** master batch `AbortController` (`15000`) |
 | **Success Response** | HTTP `200` `ScrapedProductData` JSON object | HTTP `200` `{ success: true, results, total, successful, failed }` |
@@ -28,9 +28,9 @@ Both endpoints require an authenticated administrator session (`isProtectedRoute
 
 ## SSRF Protection & Redirect Validation
 
-All outbound requests execute through `safeFetch` ([src/utils/safeFetch.ts](src/utils/safeFetch.ts#L37-L110)) with browser-like `User-Agent` and `Accept` headers:
+All outbound requests execute through `safeFetch` ([src/utils/safeFetch.ts](src/utils/safeFetch.ts#L52-L125)) with browser-like `User-Agent` and `Accept` headers:
 
-1. **Protocol Allowlist**: Only `http:` and `https:` URLs are permitted ([src/utils/validation.ts](src/utils/validation.ts#L340-L345) and [src/utils/safeFetch.ts](src/utils/safeFetch.ts#L51-L54)).
+1. **Protocol Allowlist**: Only `http:` and `https:` URLs are permitted ([src/utils/validation.ts](src/utils/validation.ts#L348-L353) and [src/utils/safeFetch.ts](src/utils/safeFetch.ts#L67-L69)).
 2. **DNS Resolution & Private Range Blocking**: Before opening a socket, `validateAndResolveHost` resolves the target hostname and blocks loopback (`127.0.0.0/8`, `::1`), private RFC 1918 ranges, link-local / cloud metadata addresses (`169.254.0.0/16`, `fe80::/10`), CGNAT (`100.64.0.0/10`), multicast, and unspecified IPs.
 3. **DNS-Rebinding Pinning**: `safeFetch` attaches a per-request `undici` `Agent` dispatcher (`createPinnedDispatcher`) whose custom `lookup` callback pins the TCP/TLS connection to the exact validated IP address so an attacker cannot rebind DNS between validation and socket connection.
 4. **Validated Redirect Hops**: Redirects are followed manually (`redirect: 'manual'`) for up to **`5` hops** (`maxRedirects = 5`), re-running full URL and SSRF IP validation on every `Location` target before following the hop.

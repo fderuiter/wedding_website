@@ -78,7 +78,15 @@ const config = {
     '^@/hooks/(.*)$': '<rootDir>/src/hooks/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/e2e/', '.skip.tsx$'],
+  modulePathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/.next-export/', '<rootDir>/out/'],
+  testPathIgnorePatterns: [
+    '<rootDir>/node_modules/',
+    '<rootDir>/.next/',
+    '<rootDir>/.next-export/',
+    '<rootDir>/out/',
+    '<rootDir>/e2e/',
+    '.skip.tsx$',
+  ],
 };
 
 // createJestConfig is exported this way to ensure that next/jest can load the Next.js config which is async

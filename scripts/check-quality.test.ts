@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { main, steps } from './check-quality';
+import { cleanupStaticExportOutDir, main, steps } from './check-quality';
 
 describe('check-quality', () => {
   let tempDir: string;
@@ -25,11 +25,12 @@ describe('check-quality', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('orders Build Static Storybook Showcase immediately after docs:build and before npm run test:cov', () => {
+  it('orders Build Static Storybook Showcase and Build Static HTML Showcase after docs:build and before npm run test:cov', () => {
     const runbooksIdx = steps.findIndex((s) => s.command === 'npx tsx scripts/verify-deployment-runbooks.ts');
     const setupGuidesIdx = steps.findIndex((s) => s.command === 'npm run check:setup-guides');
     const docsIdx = steps.findIndex((s) => s.command === 'npm run docs:build');
     const storybookIdx = steps.findIndex((s) => s.command === 'npm run build-storybook');
+    const exportIdx = steps.findIndex((s) => s.command === 'npm run build:export');
     const testIdx = steps.findIndex((s) => s.command === 'npm run test:cov');
 
     expect(runbooksIdx).toBeGreaterThanOrEqual(0);
@@ -38,8 +39,10 @@ describe('check-quality', () => {
     expect(setupGuidesIdx).toBeLessThan(docsIdx);
     expect(docsIdx).toBeGreaterThanOrEqual(0);
     expect(storybookIdx).toBe(docsIdx + 1);
-    expect(testIdx).toBe(storybookIdx + 1);
+    expect(exportIdx).toBe(storybookIdx + 1);
+    expect(testIdx).toBe(exportIdx + 1);
     expect(steps[storybookIdx].remediation).toContain('npm run build-storybook');
+    expect(steps[exportIdx].remediation).toContain('npm run build:export');
 
     const docSyncStep = steps.find((s) => s.name === 'Verify Documentation Synchronization');
     expect(docSyncStep).toBeDefined();
@@ -76,6 +79,40 @@ describe('check-quality', () => {
     expect(errorOutput).toContain('Storybook static showcase compilation failed.');
   });
 
+  it('prints remediation text, deletes partial out directory, and exits 1 when build:export fails', () => {
+    const partialOutDir = path.join(tempDir, 'out');
+    fs.mkdirSync(partialOutDir, { recursive: true });
+    fs.writeFileSync(path.join(partialOutDir, 'index.html'), '<html>partial export</html>');
+
+    const executedCommands: string[] = [];
+
+    expect(() => {
+      main({
+        cwd: tempDir,
+        execCommand: (command) => {
+          executedCommands.push(command);
+          if (command === 'npm run build:export') {
+            throw new Error('Static export failed');
+          }
+        },
+      });
+    }).toThrow('process.exit: 1');
+
+    expect(fs.existsSync(partialOutDir)).toBe(false);
+    expect(executedCommands).toContain('npm run build-storybook');
+    expect(executedCommands).toContain('npm run build:export');
+    expect(executedCommands).not.toContain('npm run test:cov');
+
+    const errorOutput = mockConsoleError.mock.calls.map((args) => args.join(' ')).join('\n');
+    expect(errorOutput).toContain('Build Static HTML Showcase FAILED!');
+    expect(errorOutput).toContain('ACTIONABLE REMEDIATION:');
+    expect(errorOutput).toContain('Static HTML showcase export failed.');
+
+    // Direct helper invocation stays safe when out/ is already absent
+    cleanupStaticExportOutDir(tempDir);
+    expect(fs.existsSync(partialOutDir)).toBe(false);
+  });
+
   it('exits 0 when all quality check steps succeed', () => {
     expect(() => {
       main({
@@ -97,5 +134,10 @@ describe('check-quality', () => {
     expect(ciWorkflow).toContain('node_modules/.cache/storybook');
     expect(ciWorkflow).toContain('run: npm run build-storybook');
     expect(storybookMain).toContain('fsCache: true');
+
+    expect(ciWorkflow).toContain('  static-export-build:\n    needs: verify');
+    expect(ciWorkflow).toContain('path: .next-export/cache');
+    expect(ciWorkflow).toContain('npm run build:export');
+    expect(ciWorkflow).toContain('out/index.html');
   });
 });
