@@ -155,4 +155,129 @@ describe('AdminPreviewLayout studio draft preservation & accessibility', () => {
       expect(onRestore).toHaveBeenCalledTimes(1);
     });
   });
+
+  it('inserts ?preview=true before hash fragments, scopes postMessage to window.location.origin, and switches mobile Editor / Live Preview tabs cleanly', async () => {
+    const postMessageSpy = jest.fn();
+
+    const { container, rerender } = render(
+      <ToastProvider>
+        <AdminPreviewLayout
+          previewUrl="/#schedule"
+          draftType="content"
+          draftData={[{ id: 's1', type: 'Schedule', data: { title: 'Ceremony' } }]}
+          entityId="s1"
+        >
+          <MockStudioEditor />
+        </AdminPreviewLayout>
+      </ToastProvider>
+    );
+
+    const iframe = screen.getByTitle('Live Preview') as HTMLIFrameElement;
+    expect(iframe.getAttribute('src')).toBe('/?preview=true#schedule');
+
+    const originalContentWindowDesc = Object.getOwnPropertyDescriptor(iframe, 'contentWindow');
+    Object.defineProperty(iframe, 'contentWindow', {
+      configurable: true,
+      value: { postMessage: postMessageSpy },
+    });
+
+    fireEvent.load(iframe);
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      {
+        type: 'DRAFT_UPDATE',
+        draftType: 'content',
+        draftData: [{ id: 's1', type: 'Schedule', data: { title: 'Ceremony' } }],
+      },
+      window.location.origin
+    );
+    expect(postMessageSpy).not.toHaveBeenCalledWith(expect.anything(), '*');
+
+    if (originalContentWindowDesc) {
+      Object.defineProperty(iframe, 'contentWindow', originalContentWindowDesc);
+    } else {
+      delete (iframe as { contentWindow?: unknown }).contentWindow;
+    }
+
+    // Mobile tab controls switch between Editor and Live Preview panes
+    const mobileTabs = screen.getByTestId('studio-mobile-tabs');
+    const editorTab = within(mobileTabs).getByTestId('studio-mobile-tab-editor');
+    const previewTab = within(mobileTabs).getByTestId('studio-mobile-tab-preview');
+    const leftPane = screen.getByTestId('studio-left-pane');
+    const rightPane = screen.getByTestId('studio-right-pane');
+
+    expect(editorTab).toHaveAttribute('aria-selected', 'true');
+    expect(previewTab).toHaveAttribute('aria-selected', 'false');
+    expect(leftPane).toHaveClass('w-full', 'md:w-1/2');
+    expect(rightPane).toHaveClass('hidden', 'md:flex');
+
+    fireEvent.click(previewTab);
+    expect(previewTab).toHaveAttribute('aria-selected', 'true');
+    expect(editorTab).toHaveAttribute('aria-selected', 'false');
+    expect(leftPane).toHaveClass('hidden', 'md:flex');
+    expect(rightPane).toHaveClass('flex', 'w-full', 'md:w-1/2');
+
+    // Also verify /photos preview URL without hash
+    rerender(
+      <ToastProvider>
+        <AdminPreviewLayout
+          previewUrl="/photos"
+          draftType="content"
+          draftData={[]}
+        >
+          <MockStudioEditor />
+        </AdminPreviewLayout>
+      </ToastProvider>
+    );
+    expect((screen.getByTitle('Live Preview') as HTMLIFrameElement).getAttribute('src')).toBe(
+      '/photos?preview=true'
+    );
+
+    const axeResults = await axe(container);
+    expect(axeResults).toHaveNoViolations();
+  });
+
+  it('prefixes Live Preview iframe URLs with NEXT_PUBLIC_BASE_PATH when deployed under a subpath', () => {
+    const previousBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+    process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo';
+
+    try {
+      const { rerender } = render(
+        <ToastProvider>
+          <AdminPreviewLayout
+            previewUrl="/#schedule"
+            draftType="content"
+            draftData={[]}
+          >
+            <MockStudioEditor />
+          </AdminPreviewLayout>
+        </ToastProvider>
+      );
+
+      expect((screen.getByTitle('Live Preview') as HTMLIFrameElement).getAttribute('src')).toBe(
+        '/wedding_website/demo/?preview=true#schedule'
+      );
+
+      rerender(
+        <ToastProvider>
+          <AdminPreviewLayout
+            previewUrl="/photos"
+            draftType="content"
+            draftData={[]}
+          >
+            <MockStudioEditor />
+          </AdminPreviewLayout>
+        </ToastProvider>
+      );
+
+      expect((screen.getByTitle('Live Preview') as HTMLIFrameElement).getAttribute('src')).toBe(
+        '/wedding_website/demo/photos?preview=true'
+      );
+    } finally {
+      if (previousBasePath === undefined) {
+        delete process.env.NEXT_PUBLIC_BASE_PATH;
+      } else {
+        process.env.NEXT_PUBLIC_BASE_PATH = previousBasePath;
+      }
+    }
+  });
 });

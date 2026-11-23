@@ -98,12 +98,14 @@ export async function handlePublicRoutes(
   const { method, pathname, searchParams, request } = req;
 
   if (pathname === '/api/health' && method === 'GET') {
-    return wrapMiddlewareJson({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: 3600,
-      checks: { database: 'ok' },
-    });
+    return wrapMiddlewareJson(
+      {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        database: 'connected',
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 
   if (pathname === '/api/live' && method === 'GET') {
@@ -452,7 +454,7 @@ export async function handlePublicRoutes(
     method === 'POST'
   ) {
     const contentType = request.headers.get('content-type') || '';
-    let uploaderName = 'Guest';
+    let uploaderName = store.getSnapshot().guestSession?.guestName || 'Guest';
     let caption = '';
     const files: Array<Blob | { name?: string }> = [];
     const filenames: string[] = [];
@@ -574,7 +576,11 @@ export async function handlePublicRoutes(
   if (pathname === '/api/guest/login' && method === 'POST') {
     const body = await readJsonBody(request);
     const passcode =
-      typeof body.passcode === 'string' ? body.passcode.trim() : '';
+      typeof body.passcode === 'string' && body.passcode.trim()
+        ? body.passcode.trim()
+        : typeof body.code === 'string'
+          ? body.code.trim()
+          : '';
     if (!passcode) {
       return errorJson(400, 'Passcode or invitation code is required.');
     }
@@ -586,11 +592,18 @@ export async function handlePublicRoutes(
 
     if (matchedInvite) {
       store.mutate((draft) => {
+        const nowIso = new Date().toISOString();
         draft.guestSession = {
           code: matchedInvite.code,
           guestName: matchedInvite.guestName,
           sessionType: 'invite',
         };
+        for (const rec of draft.broadcastRecipient) {
+          if (rec.invitationCodeId === matchedInvite.id && rec.status === 'SENT') {
+            rec.status = 'VIEWED';
+            rec.updatedAt = nowIso;
+          }
+        }
       });
       return wrapMiddlewareJson({
         success: true,
@@ -759,12 +772,111 @@ export async function handlePublicRoutes(
       });
     }
 
-    const created = store.mutate((draft) => {
+    const rawPhone =
+      typeof body.phone === 'string' && body.phone.trim()
+        ? body.phone.trim()
+        : typeof body.mobile === 'string' && body.mobile.trim()
+          ? body.mobile.trim()
+          : typeof body.phoneNumber === 'string' && body.phoneNumber.trim()
+            ? body.phoneNumber.trim()
+            : '';
+    const rawNotes =
+      typeof body.notes === 'string' && body.notes.trim()
+        ? body.notes.trim()
+        : typeof body.householdNotes === 'string' && body.householdNotes.trim()
+          ? body.householdNotes.trim()
+          : '';
+
+    const outcome = store.mutate((draft) => {
+      const nowIso = new Date().toISOString();
+      const matchedRecord = draft.invitationCode.find((inv) => {
+        if (inv.isSample) return false;
+        if (rawEmail && inv.email && inv.email.toLowerCase() === rawEmail.toLowerCase()) {
+          return true;
+        }
+        return inv.guestName.trim().toLowerCase() === guestName.toLowerCase();
+      });
+
+      const existingAddressLine1 = matchedRecord?.addressLine1?.trim() ?? '';
+      const hasAddressConflict = Boolean(
+        matchedRecord &&
+          existingAddressLine1 &&
+          addressLine1 &&
+          existingAddressLine1.toLowerCase() !== addressLine1.toLowerCase(),
+      );
+
+      if (matchedRecord && !hasAddressConflict) {
+        if (!matchedRecord.email?.trim() && rawEmail) {
+          matchedRecord.email = rawEmail;
+        }
+        if (
+          !matchedRecord.householdName?.trim() &&
+          typeof body.householdName === 'string' &&
+          body.householdName.trim()
+        ) {
+          matchedRecord.householdName = body.householdName.trim();
+        }
+        if (!existingAddressLine1 && addressLine1) {
+          matchedRecord.addressLine1 = addressLine1;
+        }
+        if (
+          !matchedRecord.addressLine2?.trim() &&
+          typeof body.addressLine2 === 'string' &&
+          body.addressLine2.trim()
+        ) {
+          matchedRecord.addressLine2 = body.addressLine2.trim();
+        }
+        if (!matchedRecord.city?.trim() && city) {
+          matchedRecord.city = city;
+        }
+        if (!matchedRecord.state?.trim() && state) {
+          matchedRecord.state = state;
+        }
+        if (!matchedRecord.zipCode?.trim() && zipCode) {
+          matchedRecord.zipCode = zipCode;
+        }
+        if (
+          !matchedRecord.country?.trim() &&
+          typeof body.country === 'string' &&
+          body.country.trim()
+        ) {
+          matchedRecord.country = body.country.trim();
+        }
+        if (rawPhone || rawNotes) {
+          const nextExtra: Record<string, unknown> =
+            matchedRecord.extraFields && typeof matchedRecord.extraFields === 'object'
+              ? { ...matchedRecord.extraFields }
+              : {};
+          if (rawPhone) {
+            if (!nextExtra.phone) nextExtra.phone = rawPhone;
+            if (!nextExtra.mobile) nextExtra.mobile = rawPhone;
+          }
+          if (rawNotes) {
+            nextExtra.householdNotes = nextExtra.householdNotes
+              ? `${String(nextExtra.householdNotes)}; ${rawNotes}`
+              : rawNotes;
+          }
+          matchedRecord.extraFields = nextExtra;
+        }
+        matchedRecord.updatedAt = nowIso;
+        pushAuditVersion(draft, 'InvitationCode', matchedRecord.id, matchedRecord, guestName);
+        return { record: matchedRecord, status: 200 as const };
+      }
+
       const existingCodes = new Set(
         draft.invitationCode.map((i) => i.code.toUpperCase()),
       );
       const code = generateRandomInviteCode(existingCodes);
-      const nowIso = new Date().toISOString();
+      const extraFields: Record<string, unknown> = {};
+      if (rawPhone) {
+        extraFields.phone = rawPhone;
+        extraFields.mobile = rawPhone;
+      }
+      if (rawNotes) {
+        extraFields.notes = rawNotes;
+        extraFields.householdNotes = rawNotes;
+      }
+
       const newInvite: DemoInvitationCodeRecord = {
         id: generateDemoId('inv'),
         code,
@@ -773,7 +885,7 @@ export async function handlePublicRoutes(
           typeof body.householdName === 'string' && body.householdName.trim()
             ? body.householdName.trim()
             : guestName,
-        email: typeof body.email === 'string' ? body.email.trim() : null,
+        email: rawEmail || null,
         addressLine1,
         addressLine2:
           typeof body.addressLine2 === 'string' ? body.addressLine2.trim() : null,
@@ -789,11 +901,8 @@ export async function handlePublicRoutes(
         plusOneFirstName: null,
         plusOneLastName: null,
         partyGroup: 'Address Book',
-        partyTags: ['Submitted Address'],
-        extraFields:
-          typeof body.notes === 'string' && body.notes.trim()
-            ? { notes: body.notes.trim() }
-            : null,
+        partyTags: ['Submitted Address', 'address-collection'],
+        extraFields: Object.keys(extraFields).length > 0 ? extraFields : null,
         used: false,
         usedAt: null,
         tableId: null,
@@ -805,21 +914,21 @@ export async function handlePublicRoutes(
       };
       draft.invitationCode.unshift(newInvite);
       pushAuditVersion(draft, 'InvitationCode', newInvite.id, newInvite, guestName);
-      return newInvite;
+      return { record: newInvite, status: 201 as const };
     });
 
     return wrapMiddlewareJson(
       {
         success: true,
         message: 'Address submitted successfully.',
-        code: created.code,
+        code: outcome.record.code,
         data: {
-          id: created.id,
-          code: created.code,
-          guestName: created.guestName,
+          id: outcome.record.id,
+          code: outcome.record.code,
+          guestName: outcome.record.guestName,
         },
       },
-      { status: 201 },
+      { status: outcome.status },
     );
   }
 

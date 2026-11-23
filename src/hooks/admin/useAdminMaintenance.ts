@@ -10,6 +10,7 @@ import {
   PathDiagnostic,
 } from '@/utils/backupValidation';
 import { formatBackupDiagnosticPath } from '@/utils/adminLabels';
+import { withBasePath } from '@/lib/basePath';
 
 export type PreflightState = 'idle' | 'reading_file' | 'validating_schema' | 'valid' | 'invalid';
 
@@ -73,7 +74,7 @@ export function useAdminMaintenance() {
   const [importError, setImportError] = useState<string | null>(null);
 
   const exportData = () => {
-    window.open('/api/admin/maintenance/export', '_blank');
+    window.open(withBasePath('/api/admin/maintenance/export'), '_blank');
   };
 
   const resetPreflight = useCallback(() => {

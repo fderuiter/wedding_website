@@ -100,6 +100,12 @@ class RegistryService {
       retailerOrderNumber?: string | null;
       carrier?: string | null;
       trackingNumber?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string | null;
     }
   ) {
     if (!contribution || typeof contribution.amount !== 'number' || contribution.amount <= 0) {
@@ -123,6 +129,22 @@ class RegistryService {
       return registryRepository.claimContributorEmailSend(contributorId, kind);
     }
     return false;
+  }
+
+  /**
+   * Clears a claimed contributor confirmation or couple alert timestamp after a failed send.
+   */
+  async releaseContributorEmailSend(
+    contributorId: string,
+    kind: 'confirmation' | 'alert'
+  ): Promise<void> {
+    if (typeof this.repository.releaseContributorEmailSend === 'function') {
+      await this.repository.releaseContributorEmailSend(contributorId, kind);
+      return;
+    }
+    if (typeof registryRepository.releaseContributorEmailSend === 'function') {
+      await registryRepository.releaseContributorEmailSend(contributorId, kind);
+    }
   }
 
   /**

@@ -134,6 +134,7 @@ export function toContributorDto(
         id: inv.id,
         code: inv.code,
         guestName: inv.guestName,
+        email: inv.email,
         householdName: inv.householdName,
         addressLine1: inv.addressLine1,
         addressLine2: inv.addressLine2,
@@ -356,14 +357,15 @@ export function toPhotoDto(
       : media?.url ??
         createDemoSvgDataUrl('Wedding Photo', 'Gallery', snapshot.activeArchetype);
   const caption = typeof data.caption === 'string' ? data.caption : '';
+  const explicitAltText =
+    typeof data.altText === 'string' && data.altText.trim().length > 0
+      ? data.altText.trim()
+      : '';
   const title =
     typeof data.title === 'string' && data.title.trim().length > 0
       ? data.title
-      : caption || 'Wedding Photo';
-  const altText =
-    typeof data.altText === 'string' && data.altText.trim().length > 0
-      ? data.altText
-      : media?.altText ?? title;
+      : caption || explicitAltText || 'Wedding Photo';
+  const altText = explicitAltText || (media?.altText ?? title);
   const category = typeof data.category === 'string' ? data.category : 'Curated';
   const status =
     typeof data.status === 'string' ? data.status.toUpperCase() : 'APPROVED';

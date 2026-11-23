@@ -1,0 +1,92 @@
+/**
+ * Normalizes a configured base path string (e.g. `NEXT_PUBLIC_BASE_PATH`).
+ * Returns `''` when unset, blank, `'/'`, or composed exclusively of slashes;
+ * otherwise returns a single-leading-slash path with no trailing slashes (e.g. `'/wedding_website/demo'`).
+ */
+export function normalizeBasePath(rawBasePath?: string | null): string {
+  const trimmed = rawBasePath?.trim();
+  if (!trimmed || trimmed === '/') {
+    return '';
+  }
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlashes = withLeadingSlash.replace(/\/+$/, '');
+  return withoutTrailingSlashes === '' ? '' : withoutTrailingSlashes;
+}
+
+/**
+ * Reads and normalizes `process.env.NEXT_PUBLIC_BASE_PATH`.
+ */
+export function getBasePath(): string {
+  return normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH);
+}
+
+function isSafeRootRelativePath(url: string): boolean {
+  return url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\');
+}
+
+function hasBasePathPrefix(url: string, basePath: string): boolean {
+  return (
+    url === basePath ||
+    url.startsWith(`${basePath}/`) ||
+    url.startsWith(`${basePath}?`) ||
+    url.startsWith(`${basePath}#`)
+  );
+}
+
+/**
+ * Prefixes a root-relative application URL (`/api/...`, `/images/...`, `/admin/...`)
+ * with the active showcase base path without modifying external, inline-data,
+ * protocol-relative, or hash-anchor URLs, and without double-prefixing.
+ */
+export function withBasePath(url: string, basePathOverride?: string): string {
+  if (!url) {
+    return url;
+  }
+
+  const trimmed = url.trim();
+  if (!isSafeRootRelativePath(trimmed)) {
+    return url;
+  }
+
+  const basePath =
+    basePathOverride !== undefined
+      ? normalizeBasePath(basePathOverride)
+      : getBasePath();
+
+  if (!basePath || hasBasePathPrefix(trimmed, basePath)) {
+    return url;
+  }
+
+  return `${basePath}${trimmed}`;
+}
+
+/**
+ * Strips an active showcase base path prefix from a pre-prefixed root-relative path
+ * so server-side filesystem helpers (`getLocalImageDimensions`) and filename extractors
+ * resolve canonical `/...` paths cleanly.
+ */
+export function stripBasePath(url: string, basePathOverride?: string): string {
+  if (!url) {
+    return url;
+  }
+
+  const trimmed = url.trim();
+  if (!isSafeRootRelativePath(trimmed)) {
+    return url;
+  }
+
+  const basePath =
+    basePathOverride !== undefined
+      ? normalizeBasePath(basePathOverride)
+      : getBasePath();
+
+  if (!basePath || !hasBasePathPrefix(trimmed, basePath)) {
+    return url;
+  }
+
+  const remainder = trimmed.slice(basePath.length);
+  if (!remainder) {
+    return '/';
+  }
+  return remainder.startsWith('/') ? remainder : `/${remainder}`;
+}

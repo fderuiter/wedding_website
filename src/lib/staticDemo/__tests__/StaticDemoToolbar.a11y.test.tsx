@@ -75,7 +75,7 @@ describe('StaticDemoToolbar accessibility and interactive controls', () => {
       );
       expect(response.status).toBe(200);
       const payload = await response.json();
-      expect(payload.status ?? payload.data?.status).toBe('healthy');
+      expect(payload.status ?? payload.data?.status).toBe('ok');
     } finally {
       window.__STATIC_DEMO_INSTALLED__?.uninstall();
     }

@@ -3,10 +3,17 @@ import { getAppConfig } from '@/lib/config';
 import { getPresetTokens } from '@/lib/theme/presets';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { executeInTransaction } from '@/lib/transaction';
-import { ContributorSchema } from './schemas';
+import { ContributorSchema, type SendThankYouEmailDTO, type UpdateThankYouNoteDTO } from './schemas';
+import { substituteThankYouTemplateTokens, type ContributorRecord } from './types';
 import { ApiError } from '@/utils/ApiError';
 import { escapeCsvCell } from '@/utils/csv';
-import { generatePdfLabelSheetStream, LabelTemplate, LabelThemeOptions, AddressContributorInput } from '@/utils/pdfLabelGenerator';
+import {
+  generatePdfLabelSheetStream,
+  resolveContributorPostalAddress,
+  type LabelTemplate,
+  type LabelThemeOptions,
+  type AddressContributorInput,
+} from '@/utils/pdfLabelGenerator';
 
 export interface ThankYouNotesFilterOptions {
   status?: string;
@@ -29,6 +36,57 @@ export interface PaginationMeta {
   pageSize: number;
   totalItems: number;
   totalPages: number;
+}
+
+export interface SendThankYouEmailResult {
+  mode: 'preview' | 'test' | 'send';
+  to: string | null;
+  testRecipient?: string | null;
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+  contributor?: ContributorRecord;
+}
+
+const INVITATION_CODE_SELECT = {
+  id: true,
+  code: true,
+  guestName: true,
+  email: true,
+  householdName: true,
+  addressLine1: true,
+  addressLine2: true,
+  city: true,
+  state: true,
+  zipCode: true,
+  country: true,
+} as const;
+
+const POSTAL_ADDRESS_KEYS = [
+  'addressLine1',
+  'addressLine2',
+  'city',
+  'state',
+  'zipCode',
+  'country',
+] as const;
+
+function normalizeNullablePostalValue(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildDefaultThankYouSubject(config: Record<string, any> | null | undefined): string {
+  const partner1 = String(config?.partner1Name || config?.brideName || '').trim();
+  const partner2 = String(config?.partner2Name || config?.groomName || '').trim();
+  if (partner1 && partner2) {
+    return `Thank you so much from ${partner1} & ${partner2}!`;
+  }
+  if (partner1 || partner2) {
+    return `Thank you so much from ${partner1 || partner2}!`;
+  }
+  return 'Thank you so much for your wedding gift!';
 }
 
 export class ThankYouService {
@@ -97,18 +155,7 @@ export class ThankYouService {
             },
           },
           invitationCode: {
-            select: {
-              id: true,
-              code: true,
-              guestName: true,
-              householdName: true,
-              addressLine1: true,
-              addressLine2: true,
-              city: true,
-              state: true,
-              zipCode: true,
-              country: true,
-            },
+            select: INVITATION_CODE_SELECT,
           },
         },
         orderBy: {
@@ -243,18 +290,7 @@ export class ThankYouService {
             },
           },
           invitationCode: {
-            select: {
-              id: true,
-              code: true,
-              guestName: true,
-              householdName: true,
-              addressLine1: true,
-              addressLine2: true,
-              city: true,
-              state: true,
-              zipCode: true,
-              country: true,
-            },
+            select: INVITATION_CODE_SELECT,
           },
         },
       });
@@ -341,15 +377,14 @@ export class ThankYouService {
   }
 
   /**
-   * Updates an individual contributor's thank-you status, sent timestamp, note draft, or household link.
+   * Updates an individual contributor's thank-you status, sent timestamp, note draft,
+   * linked guest household (`invitationCodeId`), postal fields, and optional household address sync.
    */
   async updateThankYouNote(
     id: string,
-    data: {
+    data: UpdateThankYouNoteDTO & {
       thankYouStatus?: string;
       thankYouSentAt?: Date | string | null;
-      thankYouNote?: string | null;
-      invitationCodeId?: string | null;
     },
     author: string = 'Admin'
   ) {
@@ -364,18 +399,7 @@ export class ThankYouService {
           },
         },
         invitationCode: {
-          select: {
-            id: true,
-            code: true,
-            guestName: true,
-            householdName: true,
-            addressLine1: true,
-            addressLine2: true,
-            city: true,
-            state: true,
-            zipCode: true,
-            country: true,
-          },
+          select: INVITATION_CODE_SELECT,
         },
       },
     });
@@ -384,7 +408,7 @@ export class ThankYouService {
       throw new ApiError(404, 'Contributor record not found');
     }
 
-    const updateData: any = {};
+    const updateData: Record<string, any> = {};
 
     if (data.thankYouStatus !== undefined) {
       updateData.thankYouStatus = data.thankYouStatus;
@@ -406,18 +430,88 @@ export class ThankYouService {
 
     if (data.invitationCodeId !== undefined) {
       const targetInviteId =
-        data.invitationCodeId && data.invitationCodeId.trim()
+        typeof data.invitationCodeId === 'string' && data.invitationCodeId.trim()
           ? data.invitationCodeId.trim()
           : null;
-      if (targetInviteId) {
-        const invite = await this.client.invitationCode.findUnique({
+      if (!targetInviteId) {
+        updateData.invitationCodeId = null;
+      } else {
+        const inviteRecord = await this.client.invitationCode.findUnique({
           where: { id: targetInviteId },
+          select: { id: true },
         });
-        if (!invite) {
+        if (!inviteRecord) {
           throw new ApiError(404, 'Invitation code not found');
         }
+        updateData.invitationCodeId = inviteRecord.id;
       }
-      updateData.invitationCodeId = targetInviteId;
+    }
+
+    for (const key of POSTAL_ADDRESS_KEYS) {
+      if (data[key] !== undefined) {
+        updateData[key] = normalizeNullablePostalValue(data[key]);
+      }
+    }
+
+    const targetInvitationCodeId =
+      data.invitationCodeId !== undefined
+        ? updateData.invitationCodeId
+        : (existing.invitationCodeId ?? existing.invitationCode?.id ?? null);
+
+    if (data.syncAddressToGuest && targetInvitationCodeId) {
+      return executeInTransaction(this.client, async (txClient: any) => {
+        const syncedPostalData: Record<string, string | null> = {};
+        for (const key of POSTAL_ADDRESS_KEYS) {
+          const nextVal =
+            key in updateData
+              ? updateData[key]
+              : normalizeNullablePostalValue(existing[key]);
+          if (nextVal !== null) {
+            syncedPostalData[key] = nextVal;
+          }
+        }
+
+        if (Object.keys(syncedPostalData).length > 0) {
+          const updatedInvite = await txClient.invitationCode.update({
+            where: { id: targetInvitationCodeId },
+            data: syncedPostalData,
+          });
+          await createAuditSnapshot(
+            'InvitationCode',
+            updatedInvite.id,
+            updatedInvite,
+            author,
+            txClient
+          );
+        }
+
+        const updatedContributor = await txClient.contributor.update({
+          where: { id },
+          data: updateData,
+          include: {
+            registryItem: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+              },
+            },
+            invitationCode: {
+              select: INVITATION_CODE_SELECT,
+            },
+          },
+        });
+
+        await createAuditSnapshot(
+          'Contributor',
+          updatedContributor.id,
+          updatedContributor,
+          author,
+          txClient
+        );
+
+        return ContributorSchema.parse(updatedContributor);
+      });
     }
 
     const updated = await this.client.contributor.update({
@@ -432,18 +526,7 @@ export class ThankYouService {
           },
         },
         invitationCode: {
-          select: {
-            id: true,
-            code: true,
-            guestName: true,
-            householdName: true,
-            addressLine1: true,
-            addressLine2: true,
-            city: true,
-            state: true,
-            zipCode: true,
-            country: true,
-          },
+          select: INVITATION_CODE_SELECT,
         },
       },
     });
@@ -499,18 +582,7 @@ export class ThankYouService {
             },
           },
           invitationCode: {
-            select: {
-              id: true,
-              code: true,
-              guestName: true,
-              householdName: true,
-              addressLine1: true,
-              addressLine2: true,
-              city: true,
-              state: true,
-              zipCode: true,
-              country: true,
-            },
+            select: INVITATION_CODE_SELECT,
           },
         },
       });
@@ -549,6 +621,7 @@ export class ThankYouService {
             'Retailer Order Number',
             'Carrier',
             'Tracking Number',
+            'Linked Guest',
             'Address Line 1',
             'Address Line 2',
             'City',
@@ -571,6 +644,12 @@ export class ThankYouService {
                 id: true,
                 name: true,
                 email: true,
+                addressLine1: true,
+                addressLine2: true,
+                city: true,
+                state: true,
+                zipCode: true,
+                country: true,
                 message: true,
                 amount: true,
                 date: true,
@@ -588,6 +667,9 @@ export class ThankYouService {
                 },
                 invitationCode: {
                   select: {
+                    guestName: true,
+                    householdName: true,
+                    code: true,
                     addressLine1: true,
                     addressLine2: true,
                     city: true,
@@ -611,6 +693,9 @@ export class ThankYouService {
               const formattedSentAt = item.thankYouSentAt
                 ? (item.thankYouSentAt instanceof Date ? item.thankYouSentAt.toISOString() : String(item.thankYouSentAt))
                 : '';
+              const linkedGuest =
+                item.invitationCode?.guestName || item.invitationCode?.householdName || '';
+              const resolvedPostal = resolveContributorPostalAddress(item);
 
               const row = [
                 escapeCsvCell(item.name || ''),
@@ -626,12 +711,13 @@ export class ThankYouService {
                 escapeCsvCell(item.retailerOrderNumber || ''),
                 escapeCsvCell(item.carrier || ''),
                 escapeCsvCell(item.trackingNumber || ''),
-                escapeCsvCell(item.invitationCode?.addressLine1 || ''),
-                escapeCsvCell(item.invitationCode?.addressLine2 || ''),
-                escapeCsvCell(item.invitationCode?.city || ''),
-                escapeCsvCell(item.invitationCode?.state || ''),
-                escapeCsvCell(item.invitationCode?.zipCode || ''),
-                escapeCsvCell(item.invitationCode?.country || ''),
+                escapeCsvCell(linkedGuest),
+                escapeCsvCell(resolvedPostal.addressLine1),
+                escapeCsvCell(resolvedPostal.addressLine2),
+                escapeCsvCell(resolvedPostal.city),
+                escapeCsvCell(resolvedPostal.state),
+                escapeCsvCell(resolvedPostal.zipCode),
+                escapeCsvCell(resolvedPostal.country),
               ].join(',') + '\n';
 
               chunkCsv += row;
@@ -662,13 +748,22 @@ export class ThankYouService {
    * Exports thank-you note contributor addresses matching filter criteria as a printable Avery PDF label sheet Web ReadableStream.
    */
   exportThankYouNotesPdf(
-    options: ThankYouNotesFilterOptions & { template?: LabelTemplate; themeOptions?: LabelThemeOptions } = {}
+    options: ThankYouNotesFilterOptions & {
+      template?: LabelTemplate;
+      themeOptions?: LabelThemeOptions;
+      skipUnaddressed?: boolean;
+    } = {}
   ): ReadableStream<Uint8Array> {
     const where = this.buildWhereClause(options);
     const client = this.client;
     const batchSize = 1000;
     const template = options.template || 'avery_5160';
-    let resolvedThemeOptions: LabelThemeOptions | undefined = options.themeOptions;
+    const skipUnaddressed = Boolean(
+      options.skipUnaddressed ?? options.themeOptions?.skipUnaddressed
+    );
+    let resolvedThemeOptions: LabelThemeOptions | undefined = options.themeOptions
+      ? { ...options.themeOptions, skipUnaddressed }
+      : undefined;
 
     const chunkFetcher = async (cursor?: string) => {
       const records: (AddressContributorInput & { id: string })[] = await client.contributor.findMany({
@@ -679,6 +774,12 @@ export class ThankYouService {
         select: {
           id: true,
           name: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          state: true,
+          zipCode: true,
+          country: true,
           invitationCode: {
             select: {
               guestName: true,
@@ -720,9 +821,10 @@ export class ThankYouService {
               textColor: effectiveThemeTokens['--print-text'],
               primaryColor: appConfig.colorPrimary || effectiveThemeTokens['--heading-color'],
               themeTokens: effectiveThemeTokens,
+              skipUnaddressed,
             };
           } catch {
-            resolvedThemeOptions = {};
+            resolvedThemeOptions = { skipUnaddressed };
           }
 
           const pdfStream = generatePdfLabelSheetStream(chunkFetcher, template, resolvedThemeOptions);
@@ -738,6 +840,152 @@ export class ThankYouService {
     }
 
     return generatePdfLabelSheetStream(chunkFetcher, template, resolvedThemeOptions);
+  }
+
+  /**
+   * Renders, previews, test-sends, or dispatches a thank-you email for an individual contributor.
+   */
+  async sendThankYouEmail(
+    id: string,
+    payload: SendThankYouEmailDTO,
+    author: string = 'Admin'
+  ): Promise<SendThankYouEmailResult> {
+    const existing = await this.client.contributor.findUnique({
+      where: { id },
+      include: {
+        registryItem: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+          },
+        },
+        invitationCode: {
+          select: INVITATION_CODE_SELECT,
+        },
+      },
+    });
+
+    if (!existing) {
+      throw new ApiError(404, 'Contributor record not found');
+    }
+
+    const config = await getAppConfig();
+    const {
+      MultiChannelMessagingProvider,
+      escapeHtmlEntities,
+      formatEmailHtmlBody,
+      sanitizeEmailSubject,
+    } = await import('@/features/broadcast');
+    const renderedText = substituteThankYouTemplateTokens(payload.body, {
+      guestName: existing.name || existing.invitationCode?.guestName,
+      giftName: existing.registryItem?.name || 'wedding gift',
+      amount: existing.amount,
+    });
+
+    const rawSubject =
+      payload.subject && payload.subject.trim().length > 0
+        ? payload.subject.trim()
+        : buildDefaultThankYouSubject(config);
+    const safeSubject = sanitizeEmailSubject(rawSubject) || 'Thank you so much for your wedding gift!';
+    const htmlBody = formatEmailHtmlBody(escapeHtmlEntities(renderedText));
+
+    const resolvedContributorEmail = (
+      payload.recipientEmail?.trim() ||
+      existing.email?.trim() ||
+      existing.invitationCode?.email?.trim() ||
+      ''
+    );
+    const testRecipient = config?.contactEmail?.trim() || '';
+
+    if (payload.mode === 'preview') {
+      return {
+        mode: 'preview',
+        to: resolvedContributorEmail || null,
+        testRecipient: testRecipient || null,
+        subject: safeSubject,
+        textBody: renderedText,
+        htmlBody,
+      };
+    }
+
+    const provider = new MultiChannelMessagingProvider(config);
+
+    if (payload.mode === 'test') {
+      if (!testRecipient) {
+        throw new ApiError(
+          400,
+          'Configure a couple contact email in Settings before sending a test email.'
+        );
+      }
+      const testSubject = sanitizeEmailSubject(`[TEST] ${safeSubject}`);
+      const dispatchResult = await provider.sendEmail({
+        to: testRecipient,
+        subject: testSubject,
+        body: renderedText,
+      });
+      if (!dispatchResult.success) {
+        throw new ApiError(502, dispatchResult.error || 'Failed to send test thank-you email.');
+      }
+
+      return {
+        mode: 'test',
+        to: testRecipient,
+        testRecipient,
+        subject: testSubject,
+        textBody: renderedText,
+        htmlBody,
+      };
+    }
+
+    if (!resolvedContributorEmail) {
+      throw new ApiError(400, 'Contributor has no email address on file.');
+    }
+
+    const dispatchResult = await provider.sendEmail({
+      to: resolvedContributorEmail,
+      subject: safeSubject,
+      body: renderedText,
+    });
+    if (!dispatchResult.success) {
+      throw new ApiError(502, dispatchResult.error || 'Failed to send thank-you email.');
+    }
+
+    const now = new Date();
+    const updated = await this.client.contributor.update({
+      where: { id },
+      data: {
+        thankYouNote: renderedText,
+        thankYouStatus: 'Sent',
+        thankYouSentAt: existing.thankYouSentAt ?? now,
+        thankYouEmailSentAt: now,
+        ...(existing.email ? {} : { email: resolvedContributorEmail }),
+      },
+      include: {
+        registryItem: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+          },
+        },
+        invitationCode: {
+          select: INVITATION_CODE_SELECT,
+        },
+      },
+    });
+
+    await createAuditSnapshot('Contributor', updated.id, updated, author, this.client);
+
+    return {
+      mode: 'send',
+      to: resolvedContributorEmail,
+      testRecipient: testRecipient || null,
+      subject: safeSubject,
+      textBody: renderedText,
+      htmlBody,
+      contributor: ContributorSchema.parse(updated),
+    };
   }
 }
 

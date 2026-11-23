@@ -146,10 +146,10 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     expect(detailsLink).not.toHaveAttribute('aria-current');
   });
 
-  it('sets aria-current="page" on section link when hash matches section id', () => {
+  it('sets aria-current="location" on section link when hash matches section id and passes axe', async () => {
     window.location.hash = '#details';
 
-    render(
+    const { container } = render(
       <Navbar
         isAdmin={false}
         handleLogout={jest.fn()}
@@ -163,10 +163,11 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     const detailsLink = screen.getByRole('menuitem', { name: 'Wedding Day Details' });
 
     expect(homeLink).not.toHaveAttribute('aria-current');
-    expect(detailsLink).toHaveAttribute('aria-current', 'page');
+    expect(detailsLink).toHaveAttribute('aria-current', 'location');
+    expect(await axe(container)).toHaveNoViolations();
   });
 
-  it('updates aria-current="page" on section link when clicked', () => {
+  it('updates aria-current="location" on section link when clicked', () => {
     render(
       <Navbar
         isAdmin={false}
@@ -194,7 +195,7 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     fireEvent.click(guideTrigger);
     expect(screen.getByRole('menuitem', { name: 'Wedding Day Details' })).toHaveAttribute(
       'aria-current',
-      'page'
+      'location'
     );
   });
 
@@ -351,10 +352,10 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     expect(reopenedItems[reopenedItems.length - 1]).toHaveFocus();
   });
 
-  it('correctly manages aria-current and vertical scrolling classes on mobile menu links', () => {
+  it('exposes labeled modal dialog, internal close button in focus order, aria-current="location" on hash links, and toggle click dismissal on #mobile-menu', async () => {
     window.location.hash = '#accommodations';
 
-    render(
+    const { container } = render(
       <Navbar
         isAdmin={false}
         handleLogout={jest.fn()}
@@ -364,10 +365,21 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     );
 
     const toggleButton = screen.getByRole('button', { name: /open main menu/i });
+    toggleButton.focus();
     fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
 
-    const mobileOverlay = document.getElementById('mobile-menu');
+    const mobileOverlay = document.getElementById('mobile-menu')!;
     expect(mobileOverlay).toHaveClass('bottom-0');
+    expect(mobileOverlay).toHaveAttribute('role', 'dialog');
+    expect(mobileOverlay).toHaveAttribute('aria-modal', 'true');
+    expect(mobileOverlay).toHaveAttribute('aria-label', 'Mobile navigation menu');
+
+    // Internal close button is first in dialog focus order
+    const internalCloseButton = within(mobileOverlay).getByRole('button', {
+      name: 'Close navigation menu',
+    });
+    expect(internalCloseButton).toHaveFocus();
 
     const mobileNav = screen.getByRole('navigation', { name: 'Mobile Navigation' });
     const mobilePanel = mobileNav.parentElement;
@@ -377,7 +389,31 @@ describe('Navbar Component - Active aria-current Accessibility & Theme Tokens', 
     const accommodationsMobileLink = within(mobileNav).getByRole('link', {
       name: 'Accommodations',
     });
-    expect(accommodationsMobileLink).toHaveAttribute('aria-current', 'page');
+    expect(accommodationsMobileLink).toHaveAttribute('aria-current', 'location');
+
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Clicking the internal close button closes the dialog and restores focus to toggleButton
+    fireEvent.click(internalCloseButton);
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    expect(toggleButton).toHaveFocus();
+
+    // Reopen and click the external toggle button (mousedown + mouseup + click) -> closes cleanly on first click
+    fireEvent.click(toggleButton);
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('dialog', { name: 'Mobile navigation menu' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(toggleButton);
+    fireEvent.mouseUp(toggleButton);
+    fireEvent.click(toggleButton);
+
+    expect(toggleButton).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 
   it('renders persistent Help button in navigation bar, opens contextual dietary help on schedule view, and restores focus on Escape', async () => {

@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import HomePageClient from '@/components/home/HomePageClient';
+import { withBasePath } from '@/lib/basePath';
 import { getAppConfig, toPublicAppConfig } from '@/lib/config';
 import { attractionsRepository, type AttractionDTO } from '@/features/attractions';
 import { logisticsService } from '@/features/logistics';
@@ -45,7 +46,8 @@ export async function generateMetadata(): Promise<Metadata> {
   );
   const baseUrl = config.baseUrl || 'http://localhost:3000';
   const ogImageUrl = config.ogImageUrl || '/images/placeholder.png';
-  const imageUrl = ogImageUrl.startsWith('http') ? ogImageUrl : `${baseUrl}${ogImageUrl}`;
+  const prefixedOgImageUrl = withBasePath(ogImageUrl);
+  const imageUrl = ogImageUrl.startsWith('http') ? ogImageUrl : `${baseUrl}${prefixedOgImageUrl}`;
 
   const addressFields: Record<string, string> = {};
   if (cleanStreetAddress) addressFields.streetAddress = cleanStreetAddress;

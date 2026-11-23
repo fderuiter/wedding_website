@@ -198,6 +198,11 @@ function buildOpenApiRequestInit(
     body = { urls: ['https://shop.example.org/espresso-cup'] };
   } else if (resolvedPath === '/api/registry/items/batch') {
     body = { action: 'update', ids: [firstItem?.id ?? '1'], data: { category: 'Kitchen' } };
+  } else if (resolvedPath.endsWith('/send-email') && method === 'POST') {
+    body = {
+      mode: 'preview',
+      body: 'Dear {{guestName}}, thank you so much for {{giftName}}!',
+    };
   } else if (resolvedPath === '/api/admin/thank-you-notes' && method === 'POST') {
     body = {
       name: 'Offline Gift Donor',
@@ -965,5 +970,172 @@ describe('Static Demo Fetch Router & Versioned Store', () => {
     const updatedCross = await crossArchPut!.json();
     expect((updatedCross.data ?? updatedCross).name).toBe('Updated Stand Mixer');
     expect((updatedCross.data ?? updatedCross).price).toBe(425);
+  });
+
+  it('supports contributor postal addresses, thank-you email composer, photo moderation overrides, and broadcast open tracking (#1232, #1237, #1239, #1240)', async () => {
+    const store = createDemoStore({ storage: null, initialArchetype: 'classic' });
+    const router = createStaticDemoRouter({ store, mode: 'browser' });
+
+    // 1. Health probe returns status: 'ok' and database: 'connected' (#1240)
+    const healthRes = await router('http://localhost:3000/api/health');
+    expect(healthRes?.status).toBe(200);
+    const healthJson = await healthRes!.json();
+    expect(healthJson.data ?? healthJson).toMatchObject({
+      status: 'ok',
+      database: 'connected',
+    });
+
+    // 2. Broadcast send -> guest code login marks recipient VIEWED & photo upload inherits guestName (#1232, #1237)
+    const firstInvite = store.getSnapshot().invitationCode[0]!;
+    await router('http://localhost:3000/api/admin/broadcast/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel: 'EMAIL',
+        subject: 'Save the Date',
+        body: 'Hello {{guestName}}!',
+      }),
+    });
+    expect(
+      store
+        .getSnapshot()
+        .broadcastRecipient.some(
+          (r) => r.invitationCodeId === firstInvite.id && r.status === 'SENT',
+        ),
+    ).toBe(true);
+
+    const loginRes = await router('http://localhost:3000/api/guest/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: firstInvite.code }),
+    });
+    expect(loginRes?.status).toBe(200);
+    expect(
+      store
+        .getSnapshot()
+        .broadcastRecipient.some(
+          (r) => r.invitationCodeId === firstInvite.id && r.status === 'VIEWED',
+        ),
+    ).toBe(true);
+
+    // Upload guest photo without explicit uploaderName -> inherits session guestName
+    const uploadRes = await router('http://localhost:3000/api/guest/photos/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: 'Reception Toast' }),
+    });
+    expect(uploadRes?.status).toBe(201);
+    const uploadedNodeId = (await uploadRes!.json()).data[0].nodeId as string;
+    const uploadedNode = store
+      .getSnapshot()
+      .contentNode.find((n) => n.id === uploadedNodeId)!;
+    expect(uploadedNode.data.uploaderName).toBe(firstInvite.guestName);
+
+    // Moderate photo with inline caption & uploaderName overrides (#1232)
+    const modRes = await router('http://localhost:3000/api/admin/photos/moderation', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: uploadedNodeId,
+        action: 'approve',
+        caption: 'Curated Reception Toast',
+        uploaderName: 'The Newlyweds',
+      }),
+    });
+    expect(modRes?.status).toBe(200);
+    const moderatedNode = store
+      .getSnapshot()
+      .contentNode.find((n) => n.id === uploadedNodeId)!;
+    expect(moderatedNode.data.status).toBe('APPROVED');
+    expect(moderatedNode.data.caption).toBe('Curated Reception Toast');
+    expect(moderatedNode.data.uploaderName).toBe('The Newlyweds');
+
+    // 3. Contributor postal addresses, syncAddressToGuest, skipUnaddressed labels, & thank-you email composer (#1239)
+    const targetItem = store.getSnapshot().registryItem[0]!;
+    await router('http://localhost:3000/api/registry/contribute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itemId: targetItem.id,
+        name: 'Postal Donor',
+        email: 'postal@example.org',
+        amount: 80,
+        code: firstInvite.code,
+        addressLine1: '900 Summit Ave',
+        city: 'St. Paul',
+        state: 'MN',
+        zipCode: '55105',
+        country: 'US',
+      }),
+    });
+    const postalContrib = store
+      .getSnapshot()
+      .contributor.find((c) => c.name === 'Postal Donor')!;
+    expect(postalContrib.addressLine1).toBe('900 Summit Ave');
+
+    // PATCH thank-you note with syncAddressToGuest updates linked invitationCode
+    const syncPatchRes = await router(
+      `http://localhost:3000/api/admin/thank-you-notes/${postalContrib.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          addressLine1: '901 Grand Ave',
+          city: 'St. Paul',
+          state: 'MN',
+          zipCode: '55105',
+          country: 'US',
+          syncAddressToGuest: true,
+        }),
+      },
+    );
+    expect(syncPatchRes?.status).toBe(200);
+    expect(
+      store.getSnapshot().invitationCode.find((i) => i.id === firstInvite.id)
+        ?.addressLine1,
+    ).toBe('901 Grand Ave');
+
+    // Preview & send thank-you email via /send-email
+    const previewEmailRes = await router(
+      `http://localhost:3000/api/admin/thank-you-notes/${postalContrib.id}/send-email`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'preview',
+          body: 'Dear {{guestName}}, thank you for {{amount}} towards {{giftName}}!',
+        }),
+      },
+    );
+    expect(previewEmailRes?.status).toBe(200);
+    const previewData = (await previewEmailRes!.json()).data;
+    expect(previewData.textBody).toContain('Dear Postal Donor');
+    expect(previewData.textBody).toContain(targetItem.name);
+
+    const sendEmailRes = await router(
+      `http://localhost:3000/api/admin/thank-you-notes/${postalContrib.id}/send-email`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'send',
+          subject: 'With Gratitude',
+          body: 'Dear {{guestName}}, thank you so much!',
+        }),
+      },
+    );
+    expect(sendEmailRes?.status).toBe(200);
+    const updatedPostal = store
+      .getSnapshot()
+      .contributor.find((c) => c.id === postalContrib.id)!;
+    expect(updatedPostal.thankYouStatus).toBe('Sent');
+    expect(updatedPostal.thankYouEmailSentAt).toBeTruthy();
+
+    // Mailing labels with skipUnaddressed=true succeeds
+    const labelsRes = await router(
+      'http://localhost:3000/api/admin/thank-you-notes/export-labels?skipUnaddressed=true',
+    );
+    expect(labelsRes?.status).toBe(200);
+    expect(labelsRes?.headers.get('content-type')).toBe('application/pdf');
   });
 });

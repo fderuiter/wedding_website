@@ -121,11 +121,3 @@ export function normalizeDemoRequest(
     origin: parsedUrl.origin,
   };
 }
-
-export function prefixWithBasePath(pathname: string, explicitBasePath?: string): string {
-  const basePath = getConfiguredBasePath(explicitBasePath);
-  if (!basePath) return pathname;
-  if (!pathname.startsWith('/')) return `${basePath}/${pathname}`;
-  if (pathname === basePath || pathname.startsWith(`${basePath}/`)) return pathname;
-  return `${basePath}${pathname}`;
-}

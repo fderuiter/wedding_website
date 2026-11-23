@@ -21,21 +21,38 @@ jest.mock('@/components/ui/ToastProvider', () => ({
 
 const mockRetryBroadcast = jest.fn();
 const mockCancelScheduledBroadcast = jest.fn();
+const defaultBroadcastHistory: BroadcastHistoryItem[] = [
+  {
+    id: 'bc-1',
+    channel: 'EMAIL' as const,
+    subject: 'Schedule Update',
+    body: 'Shuttle departs at 4:30 PM',
+    sentCount: 2,
+    viewedCount: 1,
+    totalRecipients: 2,
+    failedCount: 0,
+    status: 'SENT' as const,
+    createdAt: '2026-06-02T15:00:00.000Z',
+    recipients: [
+      {
+        id: 'rec-viewed-1',
+        guestName: 'Alice Viewed',
+        destination: 'alice@example.com',
+        status: 'VIEWED',
+        sentAt: '2026-06-02T15:01:00.000Z',
+      },
+      {
+        id: 'rec-sent-2',
+        guestName: 'Bob Sent',
+        destination: 'bob@example.com',
+        status: 'SENT',
+        sentAt: '2026-06-02T15:01:05.000Z',
+      },
+    ],
+  },
+];
 const mockUseAdminBroadcast = jest.fn((_options?: { fetchHistory?: boolean }) => ({
-  history: [
-    {
-      id: 'bc-1',
-      channel: 'EMAIL' as const,
-      subject: 'Schedule Update',
-      body: 'Shuttle departs at 4:30 PM',
-      sentCount: 24,
-      totalRecipients: 24,
-      failedCount: 0,
-      status: 'SENT' as const,
-      createdAt: '2026-06-02T15:00:00.000Z',
-      recipients: [],
-    },
-  ] as BroadcastHistoryItem[],
+  history: defaultBroadcastHistory,
   loadingHistory: false,
   retryBroadcast: mockRetryBroadcast,
   retrying: false,
@@ -137,6 +154,24 @@ describe('HistoryTimelinePage SegmentedTabs accessibility', () => {
       expect(broadcastsTab).toHaveAttribute('aria-selected', 'true');
       expect(snapshotsTab).toHaveAttribute('aria-selected', 'false');
       expect(screen.getByText('Schedule Update')).toBeInTheDocument();
+      expect(screen.getByText('(1 viewed)')).toBeInTheDocument();
+
+      // Open Broadcast Details modal and verify VIEWED count, VIEWED badge, and per-recipient Resend
+      fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+      expect(screen.getByText(/Viewed Count:/i).parentElement).toHaveTextContent('Viewed Count: 1');
+      expect(screen.getByText('VIEWED')).toBeInTheDocument();
+
+      mockRetryBroadcast.mockResolvedValueOnce({});
+      const resendBobBtn = screen.getByRole('button', { name: 'Resend to Bob Sent' });
+      fireEvent.click(resendBobBtn);
+
+      await waitFor(() => {
+        expect(mockRetryBroadcast).toHaveBeenCalledWith({
+          broadcastId: 'bc-1',
+          recipientIds: ['rec-sent-2'],
+        });
+      });
+
       expect(await axe(container)).toHaveNoViolations();
     } finally {
       window.history.pushState({}, '', '/');
@@ -169,6 +204,7 @@ describe('HistoryTimelinePage SegmentedTabs accessibility', () => {
           subject: 'Reception Reminder',
           body: 'Snippet body',
           sentCount: 1,
+          viewedCount: 1,
           totalRecipients: 2,
           failedCount: 1,
           status: 'PARTIALLY_SENT' as const,
@@ -243,6 +279,7 @@ describe('HistoryTimelinePage SegmentedTabs accessibility', () => {
         expect(screen.getByText('Reception Reminder')).toBeInTheDocument();
       });
 
+      expect(screen.getByText('(1 viewed)')).toBeInTheDocument();
       expect(mockGet).not.toHaveBeenCalledWith('/api/admin/broadcast/bc-lazy-1');
 
       fireEvent.click(screen.getByRole('button', { name: 'Details' }));
@@ -297,20 +334,7 @@ describe('HistoryTimelinePage SegmentedTabs accessibility', () => {
     } finally {
       mockUseAdminBroadcast.mockReset();
       mockUseAdminBroadcast.mockImplementation(() => ({
-        history: [
-          {
-            id: 'bc-1',
-            channel: 'EMAIL',
-            subject: 'Schedule Update',
-            body: 'Shuttle departs at 4:30 PM',
-            sentCount: 24,
-            totalRecipients: 24,
-            failedCount: 0,
-            status: 'SENT',
-            createdAt: '2026-06-02T15:00:00.000Z',
-            recipients: [],
-          },
-        ],
+        history: defaultBroadcastHistory,
         loadingHistory: false,
         retryBroadcast: mockRetryBroadcast,
         retrying: false,

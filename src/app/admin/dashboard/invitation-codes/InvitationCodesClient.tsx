@@ -37,6 +37,7 @@ import {
 import type { RsvpSummaryResponse, SubEventDTO } from '@/features/sub-events';
 import { computeMergedInvitationPreview } from '@/utils/invitationValidation';
 import { INVITATION_DEFAULT_PAGE_SIZE } from '@/utils/invitationPagination';
+import { withBasePath } from '@/lib/basePath';
 
 const EMPTY_SUB_EVENT_IDS: string[] = [];
 const RSVP_SUMMARY_QUERY_KEY = ['admin-rsvp-summary'] as const;
@@ -46,6 +47,14 @@ interface GuestEventRsvpPill {
   title: string;
   status: 'attending' | 'declined' | 'pending';
   plusOneCount: number;
+}
+
+function getGuestHouseholdNotes(item: InvitationCodeDTO): string {
+  const extra =
+    item.extraFields && typeof item.extraFields === 'object' && !Array.isArray(item.extraFields)
+      ? (item.extraFields as Record<string, unknown>)
+      : null;
+  return extra && typeof extra.householdNotes === 'string' ? extra.householdNotes.trim() : '';
 }
 
 function getGuestAttendingPlusOneCount(item: InvitationCodeDTO): number {
@@ -171,6 +180,7 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
     const attendingPlusOneCount = getGuestAttendingPlusOneCount(item);
     const mealSelectionsDisplay = formatGuestMealSelections(item);
     const customAnswersDisplay = formatGuestCustomAnswers(item);
+    const householdNotesDisplay = getGuestHouseholdNotes(item);
     const eventRsvpPills = getGuestEventRsvpPills(item, subEvents);
 
     return (
@@ -278,6 +288,14 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
             </span>
           </span>
         </div>
+        {householdNotesDisplay && (
+          <div
+            className="mt-2 mr-1.5 inline-flex items-center gap-1.5 bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-200 border border-purple-200 dark:border-purple-800/60 text-xs px-2.5 py-1 rounded-full font-medium"
+            data-testid="household-notes-badge"
+          >
+            <span className="font-semibold">Household Note:</span> {householdNotesDisplay}
+          </div>
+        )}
         {item.dietaryNotes && item.dietaryNotes.trim() && (
           <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700/50 text-xs px-2.5 py-1 rounded-full font-medium" data-testid="dietary-badge">
             <span className="font-semibold">Dietary:</span> {item.dietaryNotes.trim()}
@@ -369,14 +387,23 @@ const InvitationCodeRowInfo = React.memo<InvitationCodeRowInfoProps>(
 
 interface InvitationCodeRowActionsProps {
   item: InvitationCodeDTO;
+  onSendInvite: (_item: InvitationCodeDTO) => void;
   onEdit: (_item: InvitationCodeDTO) => void;
   onDelete: (_id: string, _e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const InvitationCodeRowActions = React.memo<InvitationCodeRowActionsProps>(
-  function InvitationCodeRowActions({ item, onEdit, onDelete }) {
+  function InvitationCodeRowActions({ item, onSendInvite, onEdit, onDelete }) {
     return (
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label={`Send invite to ${item.guestName}`}
+          onClick={() => onSendInvite(item)}
+        >
+          Send Invite
+        </Button>
         <Button
           variant="secondary"
           size="sm"
@@ -411,6 +438,7 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
   onToggleSelect,
   onPreviewQr,
   onToggleSubEventAccess,
+  onSendInvite,
   onEdit,
   onDelete,
 }) {
@@ -432,7 +460,12 @@ const InvitationCodeRow = React.memo<InvitationCodeRowProps>(function Invitation
           onToggleSubEventAccess={onToggleSubEventAccess}
         />
       </div>
-      <InvitationCodeRowActions item={item} onEdit={onEdit} onDelete={onDelete} />
+      <InvitationCodeRowActions
+        item={item}
+        onSendInvite={onSendInvite}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
     </div>
   );
 });
@@ -463,7 +496,7 @@ export default function InvitationCodesDashboardPage() {
     queryFn: async () => {
       if (typeof fetch !== 'function') return null;
       try {
-        const res = await fetch('/api/admin/sub-events/rsvp-summary');
+        const res = await fetch(withBasePath('/api/admin/sub-events/rsvp-summary'));
         if (!res || !res.ok) return null;
         const json = await res.json();
         return (json?.data ?? json ?? null) as RsvpSummaryResponse | null;
@@ -511,6 +544,9 @@ export default function InvitationCodesDashboardPage() {
   const [bulkSubEventModalOpen, setBulkSubEventModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastModalFilters, setBroadcastModalFilters] = useState<any>(undefined);
+  const [broadcastInitialTemplateId, setBroadcastInitialTemplateId] = useState<
+    'save-the-date' | 'formal-invitation' | undefined
+  >(undefined);
   const [qrPreviewGuest, setQrPreviewGuest] = useState<InvitationQRPreviewGuest | null>(null);
   const [isPrintLabelsModalOpen, setIsPrintLabelsModalOpen] = useState(false);
   const [printLabelsList, setPrintLabelsList] = useState<PrintableInvitationCode[]>([]);
@@ -527,7 +563,7 @@ export default function InvitationCodesDashboardPage() {
     }
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -553,7 +589,7 @@ export default function InvitationCodesDashboardPage() {
 
   const fetchSubEventsAndMatrix = async () => {
     try {
-      const res = await fetch('/api/admin/sub-events/access');
+      const res = await fetch(withBasePath('/api/admin/sub-events/access'));
       if (res.ok) {
         const json = await res.json();
         const data = json.data || json;
@@ -613,7 +649,7 @@ export default function InvitationCodesDashboardPage() {
     setAccessMatrix((prev) => ({ ...prev, [invitationCodeId]: updated }));
 
     try {
-      const res = await fetch('/api/admin/sub-events/access/batch', {
+      const res = await fetch(withBasePath('/api/admin/sub-events/access/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -932,6 +968,7 @@ export default function InvitationCodesDashboardPage() {
         .toLowerCase()
         .includes(query);
       const matchesDietary = item.dietaryNotes ? item.dietaryNotes.toLowerCase().includes(query) : false;
+      const matchesHouseholdNotes = getGuestHouseholdNotes(item).toLowerCase().includes(query);
       const matchesHousehold = item.householdName ? item.householdName.toLowerCase().includes(query) : false;
       const matchesPartyGroup = item.partyGroup ? item.partyGroup.toLowerCase().includes(query) : false;
       const matchesTags = item.partyTags ? item.partyTags.some((t) => t.toLowerCase().includes(query)) : false;
@@ -947,6 +984,7 @@ export default function InvitationCodesDashboardPage() {
         matchesCustomAnswers ||
         matchesAddress ||
         matchesDietary ||
+        matchesHouseholdNotes ||
         matchesHousehold ||
         matchesPartyGroup ||
         matchesTags
@@ -994,6 +1032,12 @@ export default function InvitationCodesDashboardPage() {
     );
   }, []);
 
+  const handleSendInviteToGuest = useCallback((item: InvitationCodeDTO) => {
+    setBroadcastModalFilters({ selectedIds: [item.id] });
+    setBroadcastInitialTemplateId('formal-invitation');
+    setIsBroadcastModalOpen(true);
+  }, []);
+
   const handleBatchMarkRedeemed = async () => {
     if (selectedIds.length === 0) return;
     try {
@@ -1023,7 +1067,7 @@ export default function InvitationCodesDashboardPage() {
       if (typeof batchUpdateAttendance === 'function') {
         await batchUpdateAttendance(selectedIds, status);
       } else {
-        const res = await fetch('/api/admin/invitation-codes/rsvps', {
+        const res = await fetch(withBasePath('/api/admin/invitation-codes/rsvps'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1062,7 +1106,7 @@ export default function InvitationCodesDashboardPage() {
     params.set('ids', selectedIds.join(','));
 
     const link = document.createElement('a');
-    link.href = `/api/admin/invitation-codes/export?${params.toString()}`;
+    link.href = withBasePath(`/api/admin/invitation-codes/export?${params.toString()}`);
     link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
@@ -1257,7 +1301,7 @@ export default function InvitationCodesDashboardPage() {
     const exportUrl = `/api/admin/invitation-codes/export${queryString ? `?${queryString}` : ''}`;
 
     const link = document.createElement('a');
-    link.href = exportUrl;
+    link.href = withBasePath(exportUrl);
     link.setAttribute('download', '');
     document.body.appendChild(link);
     link.click();
@@ -1266,7 +1310,7 @@ export default function InvitationCodesDashboardPage() {
   };
 
   const handleCopyShareableLink = () => {
-    const url = `${window.location.origin}/guest/collect`;
+    const url = `${window.location.origin}${withBasePath('/guest/collect')}`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(url);
     }
@@ -1306,6 +1350,7 @@ export default function InvitationCodesDashboardPage() {
               setBroadcastModalFilters(
                 Object.keys(nextFilters).length > 0 ? nextFilters : undefined
               );
+              setBroadcastInitialTemplateId(undefined);
               setIsBroadcastModalOpen(true);
             }}>Send Broadcast</Button>
             <Link
@@ -1691,6 +1736,7 @@ export default function InvitationCodesDashboardPage() {
                 onToggleSelect={handleToggleSelectRow}
                 onPreviewQr={setQrPreviewGuest}
                 onToggleSubEventAccess={handleToggleSubEventAccess}
+                onSendInvite={handleSendInviteToGuest}
                 onEdit={setEditingGuest}
                 onDelete={handleDelete}
               />
@@ -1801,6 +1847,7 @@ export default function InvitationCodesDashboardPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="secondary" onClick={() => {
                 setBroadcastModalFilters({ selectedIds });
+                setBroadcastInitialTemplateId(undefined);
                 setIsBroadcastModalOpen(true);
               }}>
                 Send Broadcast ({selectedIds.length})
@@ -2215,6 +2262,13 @@ export default function InvitationCodesDashboardPage() {
                       .join(', ') || 'No address provided'}
                   </div>
                   <div className="sm:col-span-2">
+                    <span className="font-semibold">Household Notes:</span>{' '}
+                    {typeof mergePreview.extraFields?.householdNotes === 'string' &&
+                    mergePreview.extraFields.householdNotes.trim()
+                      ? mergePreview.extraFields.householdNotes
+                      : 'None'}
+                  </div>
+                  <div className="sm:col-span-2">
                     <span className="font-semibold">Dietary Notes:</span>{' '}
                     {mergePreview.dietaryNotes || 'None'}
                   </div>
@@ -2286,7 +2340,11 @@ export default function InvitationCodesDashboardPage() {
 
         <BroadcastModal
           isOpen={isBroadcastModalOpen}
-          onClose={() => setIsBroadcastModalOpen(false)}
+          onClose={() => {
+            setIsBroadcastModalOpen(false);
+            setBroadcastInitialTemplateId(undefined);
+          }}
+          initialTemplateId={broadcastInitialTemplateId}
           targetFilters={broadcastModalFilters}
           selectedCount={broadcastModalFilters?.selectedIds?.length}
           guests={codes}

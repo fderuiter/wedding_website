@@ -556,6 +556,9 @@ export async function handleRegistryRoutes(
         )
         : null;
 
+      const readOptString = (val: unknown): string | null =>
+        typeof val === 'string' && val.trim() ? val.trim() : null;
+
       const contributorId = generateDemoId('contrib');
       const newContributor: DemoContributorRecord = {
         id: contributorId,
@@ -564,6 +567,12 @@ export async function handleRegistryRoutes(
           typeof body.email === 'string' && body.email.trim()
             ? body.email.trim()
             : matchedInvite?.email ?? null,
+        addressLine1: readOptString(body.addressLine1),
+        addressLine2: readOptString(body.addressLine2),
+        city: readOptString(body.city),
+        state: readOptString(body.state),
+        zipCode: readOptString(body.zipCode),
+        country: readOptString(body.country),
         isPlusOne: false,
         amount: Math.round(amount * 100) / 100,
         refundedAmount: 0,
@@ -576,6 +585,7 @@ export async function handleRegistryRoutes(
         message: typeof body.message === 'string' ? body.message : null,
         thankYouStatus: 'Unsent',
         thankYouSentAt: null,
+        thankYouEmailSentAt: null,
         thankYouNote: null,
         stripePaymentIntentId: paymentIntentId,
         stripeChargeId: paymentIntentId ? `ch_demo_${contributorId}` : null,
@@ -745,11 +755,18 @@ export async function handleRegistryRoutes(
       return errorJson(404, 'Invalid invitation code.');
     }
     store.mutate((draft) => {
+      const nowIso = new Date().toISOString();
       draft.guestSession = {
         code: invite.code,
         guestName: invite.guestName,
         sessionType: 'invite',
       };
+      for (const rec of draft.broadcastRecipient) {
+        if (rec.invitationCodeId === invite.id && rec.status === 'SENT') {
+          rec.status = 'VIEWED';
+          rec.updatedAt = nowIso;
+        }
+      }
     });
     return wrapMiddlewareJson({
       valid: true,

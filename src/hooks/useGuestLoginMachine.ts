@@ -3,6 +3,7 @@
 import { useReducer, useEffect, useRef, useCallback, type SubmitEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getSafeCallbackUrl } from '@/utils/safeCallbackUrl';
+import { withBasePath } from '@/lib/basePath';
 
 type GuestLoginMachineStatus =
   | 'idle'
@@ -244,7 +245,7 @@ export function useGuestLoginMachine(options?: UseGuestLoginMachineOptions) {
       dispatch({ type: 'LOGIN_START' });
 
       try {
-        const res = await fetch('/api/guest/login', {
+        const res = await fetch(withBasePath('/api/guest/login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ passcode: passcodeValue }),

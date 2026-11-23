@@ -143,10 +143,11 @@ describe('Content Domain Database Integration', () => {
     expect(photoNodes[0].id).toBe('photo-node-1');
   });
 
-  test('getNodesByType executes Prisma query filtering createdAt with cursor and bounding by limit', async () => {
+  test('getNodesByType executes Prisma query filtering updatedAt with cursor (including out-of-order approvals) and bounding by limit', async () => {
     const t1 = new Date('2026-06-20T10:00:00.000Z');
     const t2 = new Date('2026-06-20T11:00:00.000Z');
     const t3 = new Date('2026-06-20T12:00:00.000Z');
+    const t4 = new Date('2026-06-20T13:00:00.000Z');
 
     await realPrisma.contentNode.createMany({
       data: [
@@ -156,6 +157,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery'],
           data: { url: 'https://example.com/p1.jpg', isVisible: true, status: 'APPROVED' },
           createdAt: t1,
+          updatedAt: t1,
         },
         {
           id: 'photo-mid',
@@ -163,6 +165,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery'],
           data: { url: 'https://example.com/p2.jpg', isVisible: true, status: 'APPROVED' },
           createdAt: t2,
+          updatedAt: t2,
         },
         {
           id: 'photo-new',
@@ -170,15 +173,27 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery'],
           data: { url: 'https://example.com/p3.jpg', isVisible: true, status: 'APPROVED' },
           createdAt: t3,
+          updatedAt: t3,
         },
       ],
     });
 
-    // Query since t1 -> should return photo-new and photo-mid (createdAt > t1)
+    // Query since t1 -> should return photo-new and photo-mid (updatedAt > t1)
     const afterT1 = await contentRepo.getNodesByType('Photo', { since: t1 });
     expect(afterT1).toHaveLength(2);
     expect(afterT1[0].id).toBe('photo-new');
     expect(afterT1[1].id).toBe('photo-mid');
+
+    // Out-of-order moderation: photo-old (createdAt = t1) is approved/edited at t4 (> t3)
+    await realPrisma.contentNode.update({
+      where: { id: 'photo-old' },
+      data: {
+        data: { url: 'https://example.com/p1.jpg', isVisible: true, status: 'APPROVED', caption: 'Late Approval' },
+        updatedAt: t4,
+      },
+    });
+    const afterT3 = await contentRepo.getNodesByType('Photo', { since: t3 });
+    expect(afterT3.map((n) => n.id)).toEqual(['photo-old']);
 
     // Query with limit 1
     const bounded = await contentRepo.getNodesByType('Photo', { limit: 1 });
@@ -237,6 +252,7 @@ describe('Content Domain Database Integration', () => {
     const t4 = new Date('2026-06-20T13:00:00.000Z');
     const t5 = new Date('2026-06-20T14:00:00.000Z');
     const t6 = new Date('2026-06-20T15:00:00.000Z');
+    const t7 = new Date('2026-06-20T16:00:00.000Z');
 
     await realPrisma.contentNode.createMany({
       data: [
@@ -246,6 +262,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery'],
           data: { url: '/../legacy-stored-ceremony.jpg', status: 'APPROVED', isVisible: true },
           createdAt: t1,
+          updatedAt: t1,
         },
         {
           id: 'pub-approved-1',
@@ -253,6 +270,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery'],
           data: { url: '/uploads/photos/approved-1.jpg', status: 'APPROVED', isVisible: true },
           createdAt: t2,
+          updatedAt: t2,
         },
         {
           id: 'pub-approved-2',
@@ -260,6 +278,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery', 'guest-upload'],
           data: { url: '/uploads/photos/approved-2.jpg', status: 'APPROVED', isVisible: true },
           createdAt: t3,
+          updatedAt: t3,
         },
         {
           id: 'hidden-approved',
@@ -267,6 +286,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery'],
           data: { url: '/uploads/photos/hidden.jpg', status: 'APPROVED', isVisible: false },
           createdAt: t4,
+          updatedAt: t4,
         },
         {
           id: 'pending-newer',
@@ -274,6 +294,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery', 'guest-upload'],
           data: { url: '/uploads/photos/pending.jpg', status: 'PENDING', isVisible: false },
           createdAt: t5,
+          updatedAt: t5,
         },
         {
           id: 'rejected-newest',
@@ -281,6 +302,7 @@ describe('Content Domain Database Integration', () => {
           tags: ['gallery', 'guest-upload'],
           data: { url: '/uploads/photos/rejected.jpg', status: 'REJECTED', isVisible: false },
           createdAt: t6,
+          updatedAt: t6,
         },
       ],
     });
@@ -298,6 +320,22 @@ describe('Content Domain Database Integration', () => {
 
     const sinceT3 = await contentSvc.getPublicPhotos({ since: t3 });
     expect(sinceT3).toEqual([]);
+
+    // Out-of-order approval/metadata edit of an older photo surfaces via updatedAt > t3
+    await realPrisma.contentNode.update({
+      where: { id: 'pub-approved-1' },
+      data: {
+        data: {
+          url: '/uploads/photos/approved-1.jpg',
+          status: 'APPROVED',
+          isVisible: true,
+          caption: 'Updated Reception Caption',
+        },
+        updatedAt: t7,
+      },
+    });
+    const sinceT3AfterEdit = await contentSvc.getPublicPhotos({ since: t3 });
+    expect(sinceT3AfterEdit.map((n) => n.id)).toEqual(['pub-approved-1']);
   });
 
   test('getPublicPhotos excludes entity-bound media before applying row limits unless publishToGallery is true', async () => {

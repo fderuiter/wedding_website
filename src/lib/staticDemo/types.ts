@@ -239,6 +239,12 @@ export interface DemoContributorRecord {
   id: string;
   name: string;
   email: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  zipCode: string | null;
+  country: string | null;
   isPlusOne: boolean;
   amount: number;
   refundedAmount: number;
@@ -249,6 +255,7 @@ export interface DemoContributorRecord {
   message: string | null;
   thankYouStatus: string;
   thankYouSentAt: string | null;
+  thankYouEmailSentAt: string | null;
   thankYouNote: string | null;
   stripePaymentIntentId: string | null;
   stripeChargeId: string | null;

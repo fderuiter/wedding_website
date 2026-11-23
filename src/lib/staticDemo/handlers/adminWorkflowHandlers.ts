@@ -1,3 +1,4 @@
+import { formatCurrency } from '@/utils/intl';
 import { isValidArchetypeId, buildArchetypeSeedSnapshot } from '../seeds';
 import type {
   DemoBroadcastMessageRecord,
@@ -44,6 +45,43 @@ import {
   isDemoLandmarkShape,
 } from '../exporters';
 import { createCompactUploadThumbnail } from '../svgAssets';
+
+function substituteThankYouTemplateTokens(
+  template: string,
+  tokens: { guestName?: string; giftName?: string; amount?: number | string },
+): string {
+  const guestName = tokens.guestName?.trim() || 'Friend';
+  const giftName = tokens.giftName?.trim() || 'wedding gift';
+  const formattedAmount =
+    typeof tokens.amount === 'number'
+      ? formatCurrency(tokens.amount)
+      : tokens.amount?.trim() || '$0.00';
+
+  return template
+    .replace(/\{\{\s*guestName\s*\}\}/g, guestName)
+    .replace(/\{\{\s*giftName\s*\}\}/g, giftName)
+    .replace(/\{\{\s*amount\s*\}\}/g, formattedAmount);
+}
+
+function escapeThankYouHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatThankYouEmailHtml(text: string): string {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map(
+      (p) =>
+        `<p style="margin:0 0 16px;">${escapeThankYouHtml(p).replace(/\n/g, '<br />')}</p>`,
+    )
+    .join('');
+  return `<div style="font-family:Georgia,serif;color:#1f2937;line-height:1.6;">${paragraphs}</div>`;
+}
 
 function maskEmail(email: string): string {
   if (!email.includes('@')) return '[REDACTED]';
@@ -980,6 +1018,12 @@ export async function handleAdminWorkflowRoutes(
 
       const rawAction = String(body.action ?? body.status ?? 'approve').toLowerCase();
       const isApprove = rawAction === 'approve' || rawAction === 'approved';
+      const captionOverride =
+        typeof body.caption === 'string' ? body.caption.trim() : undefined;
+      const uploaderOverride =
+        typeof body.uploaderName === 'string' && body.uploaderName.trim()
+          ? body.uploaderName.trim()
+          : undefined;
 
       const moderated = store.mutate((draft) => {
         const updated: Array<Record<string, unknown>> = [];
@@ -991,10 +1035,33 @@ export async function handleAdminWorkflowRoutes(
               (n.id === targetId || n.data?.mediaId === targetId),
           );
           if (!node) continue;
+          const nextUploader =
+            uploaderOverride ??
+            (typeof node.data?.uploaderName === 'string'
+              ? node.data.uploaderName
+              : undefined);
+          const nextCaption =
+            captionOverride !== undefined
+              ? captionOverride
+              : typeof node.data?.caption === 'string'
+                ? node.data.caption
+                : undefined;
           node.data = {
             ...node.data,
             status: isApprove ? 'APPROVED' : 'REJECTED',
             isVisible: isApprove,
+            ...(captionOverride !== undefined
+              ? {
+                caption: captionOverride,
+                title:
+                  captionOverride ||
+                  (nextUploader ? `Photo by ${nextUploader}` : 'Wedding Photo'),
+              }
+              : {}),
+            ...(uploaderOverride !== undefined ? { uploaderName: uploaderOverride } : {}),
+            ...(nextCaption === '' && uploaderOverride !== undefined
+              ? { title: `Photo by ${uploaderOverride}` }
+              : {}),
           };
           node.updatedAt = nowIso;
           pushAuditVersion(draft, 'ContentNode', node.id, node);
@@ -1031,6 +1098,9 @@ export async function handleAdminWorkflowRoutes(
           ...(typeof body.altText === 'string' ? { altText: body.altText } : {}),
           ...(typeof body.title === 'string' ? { title: body.title } : {}),
           ...(typeof body.category === 'string' ? { category: body.category } : {}),
+          ...(typeof body.uploaderName === 'string' && body.uploaderName.trim()
+            ? { uploaderName: body.uploaderName.trim() }
+            : {}),
           ...(typeof body.isVisible === 'boolean' ? { isVisible: body.isVisible } : {}),
         };
         node.updatedAt = new Date().toISOString();
@@ -2386,6 +2456,9 @@ export async function handleAdminWorkflowRoutes(
           ? body.invitationCodeId.trim()
           : null;
 
+      const readOptAddr = (val: unknown): string | null =>
+        typeof val === 'string' && val.trim() ? val.trim() : null;
+
       const created: DemoContributorRecord = {
         id: generateDemoId('contrib'),
         name: donorName,
@@ -2393,6 +2466,12 @@ export async function handleAdminWorkflowRoutes(
           typeof body.email === 'string' && body.email.trim()
             ? body.email.trim()
             : null,
+        addressLine1: readOptAddr(body.addressLine1),
+        addressLine2: readOptAddr(body.addressLine2),
+        city: readOptAddr(body.city),
+        state: readOptAddr(body.state),
+        zipCode: readOptAddr(body.zipCode),
+        country: readOptAddr(body.country),
         isPlusOne: false,
         amount: Math.round(rawAmount * 100) / 100,
         refundedAmount: 0,
@@ -2406,6 +2485,7 @@ export async function handleAdminWorkflowRoutes(
             : null,
         thankYouStatus: normalizedStatus,
         thankYouSentAt: normalizedStatus === 'Sent' ? nowIso : null,
+        thankYouEmailSentAt: null,
         thankYouNote:
           typeof body.thankYouNote === 'string' && body.thankYouNote.trim()
             ? body.thankYouNote.trim()
@@ -2532,18 +2612,31 @@ export async function handleAdminWorkflowRoutes(
     pathname === '/api/admin/thank-you-notes/export-labels' &&
     (method === 'GET' || method === 'POST')
   ) {
+    const body = method === 'POST' ? await readJsonBody(request) : {};
+    const skipUnaddressed =
+      searchParams.get('skipUnaddressed') === 'true' ||
+      searchParams.get('skipUnaddressed') === '1' ||
+      body.skipUnaddressed === true;
     const snapshot = store.getSnapshot();
-    const lines = snapshot.contributor.map((c) => {
+    const lines: string[] = [];
+    for (const c of snapshot.contributor) {
       const inv = c.invitationCodeId
         ? snapshot.invitationCode.find((i) => i.id === c.invitationCodeId)
         : null;
-      const addr = inv
-        ? [inv.addressLine1, inv.city, inv.state, inv.zipCode]
-          .filter(Boolean)
-          .join(', ')
-        : 'Address pending';
-      return `${c.name} — ${addr}`;
-    });
+      const hasOwnAddress = Boolean(c.addressLine1 && c.addressLine1.trim());
+      const resolvedParts = hasOwnAddress
+        ? [c.addressLine1, c.addressLine2, c.city, c.state, c.zipCode].filter(Boolean)
+        : inv && inv.addressLine1 && inv.addressLine1.trim()
+          ? [inv.addressLine1, inv.addressLine2, inv.city, inv.state, inv.zipCode].filter(
+            Boolean,
+          )
+          : [];
+      if (resolvedParts.length === 0 && skipUnaddressed) {
+        continue;
+      }
+      const addr = resolvedParts.length > 0 ? resolvedParts.join(', ') : 'Address pending';
+      lines.push(`${c.name} — ${addr}`);
+    }
     const pdf = buildSimplePdfBytes('Thank-You Mailing Labels', lines);
     return binaryResponse(pdf, 'application/pdf', {
       'Content-Disposition': 'attachment; filename="thank-you-labels.pdf"',
@@ -2592,6 +2685,122 @@ export async function handleAdminWorkflowRoutes(
     });
   }
 
+  const thankYouSendEmailMatch = pathname.match(
+    /^\/api\/admin\/thank-you-notes\/([^/]+)\/send-email$/,
+  );
+  if (thankYouSendEmailMatch && method === 'POST') {
+    const id = decodeURIComponent(thankYouSendEmailMatch[1]).trim();
+    if (!id) {
+      return errorJson(400, 'Contributor ID is required');
+    }
+    const body = await readJsonBody(request);
+    const mode =
+      body.mode === 'test' || body.mode === 'send' ? body.mode : 'preview';
+    const rawBody = typeof body.body === 'string' ? body.body.trim() : '';
+    if (!rawBody) {
+      return errorJson(400, 'Email message body is required.');
+    }
+
+    const snapshot = store.getSnapshot();
+    const foundContributor = snapshot.contributor.find((c) => c.id === id);
+    if (!foundContributor) {
+      return errorJson(404, 'Contributor record not found');
+    }
+
+    const foundItem = foundContributor.registryItemId
+      ? snapshot.registryItem.find((r) => r.id === foundContributor.registryItemId) ??
+        null
+      : null;
+    const linkedGuest = foundContributor.invitationCodeId
+      ? snapshot.invitationCode.find(
+        (inv) => inv.id === foundContributor.invitationCodeId,
+      ) ?? null
+      : null;
+    const config = getActiveAppConfig(snapshot);
+    const p1 = config.partner1Name || config.brideName || 'Alex';
+    const p2 = config.partner2Name || config.groomName || 'Taylor';
+
+    const renderedText = substituteThankYouTemplateTokens(rawBody, {
+      guestName: foundContributor.name,
+      giftName: foundItem?.name || 'Wedding Gift',
+      amount: foundContributor.amount,
+    });
+    const rawSubject =
+      typeof body.subject === 'string' && body.subject.trim()
+        ? body.subject.trim()
+        : `Thank you from ${p1} & ${p2}!`;
+    const safeSubject = rawSubject.replace(/[\r\n]+/g, ' ').trim();
+    const overrideEmail =
+      typeof body.recipientEmail === 'string' && body.recipientEmail.trim()
+        ? body.recipientEmail.trim()
+        : null;
+    if (overrideEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(overrideEmail)) {
+      return errorJson(400, 'Invalid recipient email address.');
+    }
+    const resolvedRecipient =
+      overrideEmail || foundContributor.email || linkedGuest?.email || null;
+
+    if (mode === 'preview') {
+      return wrapMiddlewareJson({
+        mode: 'preview',
+        to: resolvedRecipient,
+        testRecipient: config.contactEmail || null,
+        subject: safeSubject,
+        textBody: renderedText,
+        htmlBody: formatThankYouEmailHtml(renderedText),
+      });
+    }
+
+    if (mode === 'test') {
+      const targetTestEmail =
+        overrideEmail || config.contactEmail || 'couple-demo@example.org';
+      return wrapMiddlewareJson({
+        mode: 'test',
+        to: targetTestEmail,
+        subject: `[TEST] ${safeSubject}`,
+        messageId: generateDemoId('demo-ty-test'),
+      });
+    }
+
+    if (!resolvedRecipient) {
+      return errorJson(
+        400,
+        'Contributor has no email address on file. Please provide a recipient email.',
+      );
+    }
+
+    const sentResult = store.mutate((draft) => {
+      const target = draft.contributor.find((c) => c.id === id);
+      if (!target) return null;
+      const nowIso = new Date().toISOString();
+      if (overrideEmail && !target.email) {
+        target.email = overrideEmail;
+      }
+      target.thankYouStatus = 'Sent';
+      if (!target.thankYouSentAt) {
+        target.thankYouSentAt = nowIso;
+      }
+      target.thankYouEmailSentAt = nowIso;
+      target.thankYouNote = renderedText;
+      target.updatedAt = nowIso;
+      pushAuditVersion(draft, 'Contributor', target.id, target);
+      return {
+        mode: 'send' as const,
+        to: resolvedRecipient,
+        subject: safeSubject,
+        messageId: generateDemoId('demo-ty-send'),
+        thankYouStatus: target.thankYouStatus,
+        thankYouSentAt: target.thankYouSentAt,
+        thankYouEmailSentAt: target.thankYouEmailSentAt,
+      };
+    });
+
+    if (!sentResult) {
+      return errorJson(404, 'Contributor record not found');
+    }
+    return wrapMiddlewareJson(sentResult);
+  }
+
   const thankYouIdMatch = pathname.match(/^\/api\/admin\/thank-you-notes\/([^/]+)$/);
   if (thankYouIdMatch && (method === 'PUT' || method === 'PATCH')) {
     const id = decodeURIComponent(thankYouIdMatch[1]);
@@ -2624,6 +2833,37 @@ export async function handleAdminWorkflowRoutes(
           typeof body.invitationCodeId === 'string' && body.invitationCodeId.trim()
             ? body.invitationCodeId.trim()
             : null;
+      }
+      const addressKeys = [
+        'addressLine1',
+        'addressLine2',
+        'city',
+        'state',
+        'zipCode',
+        'country',
+      ] as const;
+      for (const key of addressKeys) {
+        if (body[key] !== undefined) {
+          c[key] =
+            typeof body[key] === 'string' && body[key].trim()
+              ? body[key].trim()
+              : null;
+        }
+      }
+      if (body.syncAddressToGuest === true && c.invitationCodeId) {
+        const linkedGuest = draft.invitationCode.find(
+          (inv) => inv.id === c.invitationCodeId,
+        );
+        if (linkedGuest) {
+          linkedGuest.addressLine1 = c.addressLine1;
+          linkedGuest.addressLine2 = c.addressLine2;
+          linkedGuest.city = c.city;
+          linkedGuest.state = c.state;
+          linkedGuest.zipCode = c.zipCode;
+          linkedGuest.country = c.country;
+          linkedGuest.updatedAt = nowIso;
+          pushAuditVersion(draft, 'InvitationCode', linkedGuest.id, linkedGuest);
+        }
       }
       c.updatedAt = nowIso;
       pushAuditVersion(draft, 'Contributor', c.id, c);
@@ -3347,7 +3587,11 @@ export async function handleAdminWorkflowRoutes(
       parsedBackup =
         body.data && typeof body.data === 'object' && !Array.isArray(body.data)
           ? (body.data as Record<string, unknown>)
-          : body;
+          : body.tables &&
+              typeof body.tables === 'object' &&
+              !Array.isArray(body.tables)
+            ? (body.tables as Record<string, unknown>)
+            : body;
     }
 
     if (
@@ -3420,7 +3664,16 @@ export async function handleAdminWorkflowRoutes(
         ? (parsedBackup.registryItem as StaticDemoSnapshot['registryItem'])
         : current.registryItem,
       contributor: Array.isArray(parsedBackup.contributor)
-        ? (parsedBackup.contributor as StaticDemoSnapshot['contributor'])
+        ? (parsedBackup.contributor as StaticDemoSnapshot['contributor']).map((c) => ({
+          ...c,
+          addressLine1: c.addressLine1 ?? null,
+          addressLine2: c.addressLine2 ?? null,
+          city: c.city ?? null,
+          state: c.state ?? null,
+          zipCode: c.zipCode ?? null,
+          country: c.country ?? null,
+          thankYouEmailSentAt: c.thankYouEmailSentAt ?? null,
+        }))
         : current.contributor,
       subEvent: Array.isArray(parsedBackup.subEvent)
         ? (parsedBackup.subEvent as StaticDemoSnapshot['subEvent'])

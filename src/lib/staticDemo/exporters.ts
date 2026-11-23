@@ -394,9 +394,12 @@ export function buildThankYouNotesCsv(
     ],
     contributors.map((c) => {
       const inv = c.invitationCodeId ? inviteById.get(c.invitationCodeId) : undefined;
-      const address = inv
-        ? [inv.addressLine1, inv.city, inv.state, inv.zipCode].filter(Boolean).join(', ')
-        : '';
+      const hasOwnAddress = Boolean(c.addressLine1 && c.addressLine1.trim());
+      const address = hasOwnAddress
+        ? [c.addressLine1, c.city, c.state, c.zipCode].filter(Boolean).join(', ')
+        : inv
+          ? [inv.addressLine1, inv.city, inv.state, inv.zipCode].filter(Boolean).join(', ')
+          : '';
       return [
         c.name,
         c.email ?? '',

@@ -184,6 +184,12 @@ model Contributor {
   id             String        @id @default(uuid())
   name           String
   email          String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  zipCode        String?
+  country        String?
   isPlusOne      Boolean       @default(false)
   amount         Float         @default(0)
   refundedAmount Float         @default(0)
@@ -194,6 +200,7 @@ model Contributor {
   date           DateTime      @default(now())
   thankYouStatus String        @default("Unsent")
   thankYouSentAt DateTime?
+  thankYouEmailSentAt DateTime?
   thankYouNote   String?
   stripePaymentIntentId String? @unique
   stripeChargeId        String?
