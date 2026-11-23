@@ -82,25 +82,32 @@ export async function verifyGuestInviteSessionToken(token: string): Promise<Gues
   }
 }
 
-const signedInviteRequestCache = new WeakMap<object, Promise<GuestInviteSessionPayload | null>>();
+const requestSignedSessionCache = new WeakMap<
+  object,
+  Map<string, Promise<GuestInviteSessionPayload | null>>
+>();
 
 /**
  * Reads and verifies the HMAC signature and expiration of the guest_invite_session cookie
  * without performing database lookups (Edge-compatible).
  */
 export async function getSignedGuestInviteSession(req?: NextRequest): Promise<GuestInviteSessionPayload | null> {
+  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
+  if (!cookieValue) return null;
+
   if (req && typeof req === 'object') {
-    let cached = signedInviteRequestCache.get(req);
+    let byCookie = requestSignedSessionCache.get(req);
+    let cached = byCookie?.get(cookieValue);
     if (!cached) {
-      cached = (async () => {
-        const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, req, { suppressErrors: true });
-        if (!cookieValue) return null;
-        return verifyGuestInviteSessionToken(cookieValue);
-      })().catch(() => {
-        signedInviteRequestCache.delete(req);
-        return null;
+      cached = verifyGuestInviteSessionToken(cookieValue).catch((err) => {
+        byCookie?.delete(cookieValue);
+        throw err;
       });
-      signedInviteRequestCache.set(req, cached);
+      if (!byCookie) {
+        byCookie = new Map();
+        requestSignedSessionCache.set(req, byCookie);
+      }
+      byCookie.set(cookieValue, cached);
     }
 
     const payload = await cached;
@@ -110,9 +117,6 @@ export async function getSignedGuestInviteSession(req?: NextRequest): Promise<Gu
     }
     return payload;
   }
-
-  const cookieValue = await readRequestCookie(GUEST_INVITE_COOKIE, undefined, { suppressErrors: true });
-  if (!cookieValue) return null;
 
   return verifyGuestInviteSessionToken(cookieValue);
 }

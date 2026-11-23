@@ -26,6 +26,16 @@ on:
         description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
         required: false
         type: string
+      image_tag:
+        description: 'Optional release tag (v*) or commit SHA to promote (resolved to git commit and OCI digest)'
+        required: false
+        default: ''
+        type: string
+      release_ref:
+        description: 'Optional immutable release tag (v*) or 40-character commit SHA to promote'
+        required: false
+        default: ''
+        type: string
       previous_tag:
         description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
         required: false
@@ -56,6 +66,16 @@ on:
       image_digest:
         description: 'Optional immutable OCI image digest (sha256:<64-hex>) to pin for manual deployment'
         required: false
+        type: string
+      image_tag:
+        description: 'Optional release tag (v*) or commit SHA to promote (resolved to git commit and OCI digest)'
+        required: false
+        default: ''
+        type: string
+      release_ref:
+        description: 'Optional immutable release tag (v*) or 40-character commit SHA to promote'
+        required: false
+        default: ''
         type: string
       previous_tag:
         description: 'Optional immutable container image tag override to restore on failure (defaults to active pre-deploy tag)'
@@ -101,20 +121,149 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: read
+      packages: read
+      attestations: read
     outputs:
       target_sha: ${{ steps.resolve-sha.outputs.target_sha }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: "(github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.image_tag != ''"
+        with:
+          fetch-depth: 0
+
       - name: Resolve Target Commit SHA
         id: resolve-sha
         env:
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CURRENT_SHA: ${{ github.sha }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          RELEASE_REF: ${{ inputs.release_ref }}
+          IMAGE_DIGEST: ${{ inputs.image_digest }}
+          GH_TOKEN: ${{ github.token }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SIGNER_WORKFLOW: ${{ github.repository }}/.github/workflows/publish-artifact.yml
         run: |
+          TARGET_SHA=""
+          IMAGE_TAG_SHA=""
+          REF_RESOLVED_SHA=""
+          ATTESTED_SHA=""
+
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             TARGET_SHA="$WORKFLOW_RUN_HEAD_SHA"
           else
-            TARGET_SHA="$CURRENT_SHA"
+            if [ -n "${INPUT_IMAGE_TAG:-}" ]; then
+              if [[ "${INPUT_IMAGE_TAG,,}" == "latest" ]]; then
+                echo "::error::Unpinned 'latest' image_tag is forbidden. Provide an immutable v* release tag or 40-character commit SHA."
+                exit 1
+              fi
+              if [[ ! "$INPUT_IMAGE_TAG" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+                echo "::error::Invalid image_tag '${INPUT_IMAGE_TAG}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+                exit 1
+              fi
+              if git remote get-url origin >/dev/null 2>&1; then
+                git fetch --tags origin +refs/heads/main:refs/remotes/origin/main
+              fi
+              if [[ "$INPUT_IMAGE_TAG" =~ ^[a-fA-F0-9]{40}$ ]]; then
+                IMAGE_TAG_SHA=$(printf '%s' "$INPUT_IMAGE_TAG" | tr '[:upper:]' '[:lower:]')
+              elif ! IMAGE_TAG_SHA=$(git rev-parse --verify "${INPUT_IMAGE_TAG}^{commit}" 2>/dev/null | tr '[:upper:]' '[:lower:]'); then
+                echo "::error::Failed to resolve image_tag '${INPUT_IMAGE_TAG}' to a repository commit SHA."
+                exit 1
+              fi
+              if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+                echo "::error::Missing refs/remotes/origin/main reference required to verify main branch ancestry."
+                exit 1
+              fi
+              if ! git merge-base --is-ancestor "$IMAGE_TAG_SHA" refs/remotes/origin/main; then
+                echo "::error::Target commit '${IMAGE_TAG_SHA}' (resolved from '${INPUT_IMAGE_TAG}') is not an ancestor of origin/main."
+                exit 1
+              fi
+            fi
+
+            if [ -n "${RELEASE_REF:-}" ]; then
+              if [[ "${RELEASE_REF,,}" == "latest" ]]; then
+                echo "::error::Unpinned 'latest' release_ref is forbidden. Provide an immutable v* tag or 40-character commit SHA."
+                exit 1
+              fi
+              if [[ ! "$RELEASE_REF" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+                echo "::error::Invalid release_ref '${RELEASE_REF}'. Must only contain alphanumeric characters, underscores, periods, and hyphens."
+                exit 1
+              fi
+              if [ -z "${GH_TOKEN:-}" ] || [ -z "${GITHUB_REPOSITORY:-}" ]; then
+                echo "::error::Missing GITHUB_TOKEN or GITHUB_REPOSITORY required to resolve release_ref '${RELEASE_REF}'."
+                exit 1
+              fi
+              API_BASE="${GITHUB_API_URL:-https://api.github.com}"
+              COMMIT_JSON=$(curl -fsSL \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                "${API_BASE}/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_REF}" || true)
+              REF_RESOLVED_SHA=$(printf '%s' "$COMMIT_JSON" | jq -r '.sha // empty' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+              if [[ ! "$REF_RESOLVED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+                echo "::error::Failed to resolve release_ref '${RELEASE_REF}' to a 40-character commit SHA in ${GITHUB_REPOSITORY}."
+                exit 1
+              fi
+            fi
+
+            if [ -n "${IMAGE_DIGEST:-}" ]; then
+              if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                echo "::error::Invalid image_digest '${IMAGE_DIGEST}'. Must match ^sha256:[a-f0-9]{64}$."
+                exit 1
+              fi
+              if [ -z "${GH_TOKEN:-}" ] || [ -z "${GITHUB_REPOSITORY:-}" ]; then
+                echo "::error::Missing GITHUB_TOKEN or GITHUB_REPOSITORY required to inspect build provenance for '${IMAGE_DIGEST}'."
+                exit 1
+              fi
+              REPO_LOWER=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+              IMAGE_URI="ghcr.io/${REPO_LOWER}@${IMAGE_DIGEST}"
+              if ! ATTESTATION_JSON=$(gh attestation verify "oci://${IMAGE_URI}" \
+                --owner "$REPO_OWNER" \
+                --signer-workflow "$SIGNER_WORKFLOW" \
+                --format json); then
+                echo "::error::OIDC build provenance verification failed for oci://${IMAGE_URI} (expected owner '${REPO_OWNER}' and signer workflow '${SIGNER_WORKFLOW}')."
+                exit 1
+              fi
+              ATTESTED_SHA=$(printf '%s' "$ATTESTATION_JSON" | jq -r '
+                [
+                  (if type == "array" then .[] else . end) |
+                  (
+                    .verificationResult.statement.predicate.buildDefinition.resolvedDependencies[]?.digest.gitCommit,
+                    .verificationResult.statement.predicate.buildDefinition.resolvedDependencies[]?.digest.sha1,
+                    .verificationResult.signature.certificate.sourceRepositoryDigest,
+                    .verificationResult.statement.predicate.invocation.configSource.digest.sha1
+                  ) |
+                  select(type == "string" and test("^[a-fA-F0-9]{40}$"))
+                ] | .[0] // empty
+              ' 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+              if [[ ! "$ATTESTED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+                echo "::error::Failed to extract 40-character source commit SHA from OIDC provenance attestation for oci://${IMAGE_URI}."
+                exit 1
+              fi
+            fi
+
+            if [ -n "$IMAGE_TAG_SHA" ] && [ -n "$REF_RESOLVED_SHA" ] && [ "$IMAGE_TAG_SHA" != "$REF_RESOLVED_SHA" ]; then
+              echo "::error::Commit mismatch: image_tag '${INPUT_IMAGE_TAG}' resolved to ${IMAGE_TAG_SHA}, whereas release_ref '${RELEASE_REF}' resolved to ${REF_RESOLVED_SHA}."
+              exit 1
+            fi
+            if [ -n "$IMAGE_TAG_SHA" ] && [ -n "$ATTESTED_SHA" ] && [ "$IMAGE_TAG_SHA" != "$ATTESTED_SHA" ]; then
+              echo "::error::Commit mismatch: image_tag '${INPUT_IMAGE_TAG}' resolved to ${IMAGE_TAG_SHA}, whereas image_digest '${IMAGE_DIGEST}' provenance attested ${ATTESTED_SHA}."
+              exit 1
+            fi
+            if [ -n "$REF_RESOLVED_SHA" ] && [ -n "$ATTESTED_SHA" ] && [ "$REF_RESOLVED_SHA" != "$ATTESTED_SHA" ]; then
+              echo "::error::Commit mismatch: release_ref '${RELEASE_REF}' resolved to ${REF_RESOLVED_SHA}, whereas image_digest '${IMAGE_DIGEST}' provenance attested ${ATTESTED_SHA}."
+              exit 1
+            fi
+
+            if [ -n "$ATTESTED_SHA" ]; then
+              TARGET_SHA="$ATTESTED_SHA"
+            elif [ -n "$IMAGE_TAG_SHA" ]; then
+              TARGET_SHA="$IMAGE_TAG_SHA"
+            elif [ -n "$REF_RESOLVED_SHA" ]; then
+              TARGET_SHA="$REF_RESOLVED_SHA"
+            else
+              TARGET_SHA="$CURRENT_SHA"
+            fi
           fi
 
           if [[ ! "$TARGET_SHA" =~ ^[a-fA-F0-9]{40}$ ]]; then
@@ -195,13 +344,23 @@ jobs:
           fetch-depth: 0
 
       - name: Align Workspace to Verified Commit SHA
-        if: github.event_name == 'workflow_run'
+        if: github.event_name == 'workflow_run' || inputs.image_tag != '' || inputs.release_ref != '' || inputs.image_digest != ''
         env:
+          EVENT_NAME: ${{ github.event_name }}
           TARGET_SHA: ${{ needs.ci-gate.outputs.target_sha }}
         run: |
-          if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
-            echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
-            exit 1
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
+              echo "::error::Target commit ${TARGET_SHA} is not an ancestor of ${GITHUB_REF}."
+              exit 1
+            fi
+          elif ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
+            git fetch --no-tags origin "+refs/tags/v*:refs/tags/v*" 2>/dev/null || true
+            MATCHING_TAG=$(git tag --list 'v*' --points-at "$TARGET_SHA" | head -n 1 || true)
+            if [ -z "$MATCHING_TAG" ]; then
+              echo "::error::Target commit ${TARGET_SHA} is neither an ancestor of ${GITHUB_REF} nor pointed to by a v* release tag."
+              exit 1
+            fi
           fi
           git checkout --detach "$TARGET_SHA"
 
@@ -225,9 +384,16 @@ jobs:
           echo "- **N-1 Container Compatibility:** \`VERIFIED\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Generate Pre-Flight Schema Migration & SQL DDL Summary
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
         run: |
           echo "Generating pre-flight schema migration and SQL DDL summary for release review..."
-          npx tsx scripts/preflight-migration-summary.ts
+          if [[ "${BEFORE_SHA:-}" =~ ^[a-fA-F0-9]{40}$ ]] && [[ ! "${BEFORE_SHA}" =~ ^0+$ ]] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            npx tsx scripts/preflight-migration-summary.ts --offline --base-ref "$BEFORE_SHA"
+          else
+            npx tsx scripts/preflight-migration-summary.ts --offline
+          fi
 
   publish-artifact:
     name: Publish Release Artifact
@@ -241,10 +407,13 @@ jobs:
       ) ||
       (
         (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') &&
-        inputs.image_digest == ''
+        inputs.image_digest == '' &&
+        inputs.image_tag == '' &&
+        inputs.release_ref == ''
       )
     permissions:
       contents: read
+      actions: read
       packages: write
       security-events: write
       id-token: write
@@ -277,7 +446,7 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/db-migrate.yml
     with:
       environment: 'staging'
@@ -292,6 +461,8 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
+      actions: read
     needs: [ci-gate, publish-artifact, staging-database-migration]
     if: |
       !cancelled() &&
@@ -309,12 +480,13 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.staging-database-migration.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped'))
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped'))
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'staging'
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+      image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
@@ -477,12 +649,15 @@ jobs:
       packages: read
       attestations: read
       id-token: write
-    needs: [publish-artifact, staging-deploy-provider, staging-verify-deployment]
+      deployments: read
+      actions: read
+    needs: [ci-gate, publish-artifact, staging-deploy-provider, staging-verify-deployment]
     if: failure() && needs.staging-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'staging'
       rollback_environment: ${{ inputs.rollback_environment || vars.STAGING_ROLLBACK_ENVIRONMENT || '' }}
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       previous_digest: ${{ inputs.previous_tag == '' && needs.staging-deploy-provider.outputs.previous_image_digest || '' }}
       previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.staging-deploy-provider.outputs.previous_image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
@@ -511,7 +686,7 @@ jobs:
       ) &&
       (needs.ci-gate.result == 'success') &&
       (needs.schema-compatibility.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped')) &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/db-migrate.yml
     with:
@@ -527,6 +702,8 @@ jobs:
       packages: read
       attestations: read
       id-token: write
+      deployments: read
+      actions: read
     needs: [ci-gate, publish-artifact, staging-verify-deployment, production-database-migration]
     if: |
       !cancelled() &&
@@ -543,14 +720,15 @@ jobs:
         )
       ) &&
       (needs.ci-gate.result == 'success') &&
-      (needs.publish-artifact.result == 'success' || (inputs.image_digest != '' && needs.publish-artifact.result == 'skipped')) &&
+      (needs.publish-artifact.result == 'success' || ((inputs.image_digest != '' || inputs.image_tag != '' || inputs.release_ref != '') && needs.publish-artifact.result == 'skipped')) &&
       (needs.production-database-migration.result == 'success') &&
       (inputs.environment == 'production' || needs.staging-verify-deployment.result == 'success')
     uses: ./.github/workflows/deploy-provider.yml
     with:
       environment: 'production'
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       image_digest: ${{ inputs.image_digest || needs.publish-artifact.outputs.image_digest }}
-      image_tag: ${{ needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
+      image_tag: ${{ inputs.image_tag || needs.publish-artifact.outputs.image_tag || needs.ci-gate.outputs.target_sha }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
       dry_run: ${{ inputs.dry_run || false }}
     secrets: inherit
@@ -715,12 +893,15 @@ jobs:
       packages: read
       attestations: read
       id-token: write
-    needs: [publish-artifact, production-deploy-provider, production-verify-deployment]
+      deployments: read
+      actions: read
+    needs: [ci-gate, publish-artifact, production-deploy-provider, production-verify-deployment]
     if: failure() && needs.production-verify-deployment.result == 'failure'
     uses: ./.github/workflows/rollback.yml
     with:
       target_environment: 'production'
       rollback_environment: ${{ inputs.rollback_environment || vars.PRODUCTION_ROLLBACK_ENVIRONMENT || '' }}
+      commit_sha: ${{ needs.ci-gate.outputs.target_sha }}
       previous_digest: ${{ inputs.previous_tag == '' && needs.production-deploy-provider.outputs.previous_image_digest || '' }}
       previous_tag: ${{ (inputs.previous_tag != '' && inputs.previous_tag != 'latest' && inputs.previous_tag) || needs.production-deploy-provider.outputs.previous_image_tag }}
       provider: ${{ inputs.provider || 'google-cloud-run' }}
