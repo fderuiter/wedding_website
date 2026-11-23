@@ -227,11 +227,12 @@ describe('ContentRepository.getNodesByType', () => {
       expect(strictRepo.client.media.findMany).not.toHaveBeenCalled();
 
       const pending = await strictRepo.getPendingPhotos();
-      expect(pending.photos).toEqual([]);
+      expect(pending.photos.length).toBeGreaterThan(0);
+      expect(pending.photos.every((p) => p.type === 'Photo')).toBe(true);
       expect(strictRepo.client.contentNode.count).not.toHaveBeenCalled();
 
       const features = await strictRepo.getFeatures();
-      expect(features).toEqual([]);
+      expect(features.length).toBeGreaterThan(0);
       expect(strictRepo.client.appConfig.findUnique).not.toHaveBeenCalled();
     } finally {
       if (prevStaticExport === undefined) {

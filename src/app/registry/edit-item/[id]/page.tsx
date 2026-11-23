@@ -4,6 +4,7 @@ import { createPageMetadata } from '@/app/metadata';
 import { EditItemPage } from '@/features/registry';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
+import { getRegistryEditStaticParams } from '@/lib/sampleData/builder';
 
 export const metadata: Metadata = createPageMetadata({
   title: 'Edit Registry Item',
@@ -12,7 +13,7 @@ export const metadata: Metadata = createPageMetadata({
 });
 
 export function generateStaticParams() {
-  return [{ id: '1' }];
+  return getRegistryEditStaticParams();
 }
 
 export default async function Page() {
