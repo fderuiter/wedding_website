@@ -14,7 +14,7 @@ This specification documents the architecture, provider adapters, audience resol
 
 ## Architecture & API Endpoints
 
-The broadcast domain (`src/features/broadcast/`, public barrel [src/features/broadcast/index.ts](../src/features/broadcast/index.ts#L1-L6)) exposes `BroadcastService` ([src/features/broadcast/service.ts](../src/features/broadcast/service.ts#L73-L911)), Zod request schemas ([src/features/broadcast/schemas.ts](../src/features/broadcast/schemas.ts#L3-L99)), audience filtering helpers ([src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L8-L240)), and template rendering utilities ([src/features/broadcast/template.ts](../src/features/broadcast/template.ts#L14-L150)).
+The broadcast domain (`src/features/broadcast/`, public barrel [src/features/broadcast/index.ts](../src/features/broadcast/index.ts#L1-L6)) exposes `BroadcastService` ([src/features/broadcast/service.ts](../src/features/broadcast/service.ts#L73-L911)), Zod request schemas ([src/features/broadcast/schemas.ts](../src/features/broadcast/schemas.ts#L3-L99)), audience filtering helpers ([src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L8-L248)), and template rendering utilities ([src/features/broadcast/template.ts](../src/features/broadcast/template.ts#L14-L150)).
 
 | Endpoint | Method | Access Tier | Responsibility |
 | --- | --- | --- | --- |
@@ -31,7 +31,7 @@ The broadcast domain (`src/features/broadcast/`, public barrel [src/features/bro
 
 ## Provider Adapters (`MultiChannelMessagingProvider`)
 
-`MultiChannelMessagingProvider` ([src/features/broadcast/providers/index.ts](../src/features/broadcast/providers/index.ts#L51-L277)) resolves provider credentials from `AppConfig` (stored in PostgreSQL and masked in `/api/admin/settings` via `toAdminAppConfig` in [src/lib/config.ts](../src/lib/config.ts#L497-L553)):
+`MultiChannelMessagingProvider` ([src/features/broadcast/providers/index.ts](../src/features/broadcast/providers/index.ts#L51-L277)) resolves provider credentials from `AppConfig` (stored in PostgreSQL and masked in `/api/admin/settings` via `toAdminAppConfig` in [src/lib/config.ts](../src/lib/config.ts#L577-L634)):
 
 | Channel | `AppConfig` Provider Value | Implementation | Network Behavior |
 | --- | --- | --- | --- |
@@ -45,14 +45,14 @@ The broadcast domain (`src/features/broadcast/`, public barrel [src/features/bro
 
 ## Audience Resolution & `address-collection` Filtering
 
-Target recipient resolution runs through `BroadcastService.resolveTargetGuests` ([src/features/broadcast/service.ts](../src/features/broadcast/service.ts#L299-L406)) and shares core predicate logic with the admin composer via `filterTargetGuestsInMemory` and `summarizeBroadcastAudience` in [src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L8-L240):
+Target recipient resolution runs through `BroadcastService.resolveTargetGuests` ([src/features/broadcast/service.ts](../src/features/broadcast/service.ts#L299-L406)) and shares core predicate logic with the admin composer via `filterTargetGuestsInMemory` and `summarizeBroadcastAudience` in [src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L8-L248):
 
 1. **Sample Data Exclusion (`isSample: false`)**: Demo/sample `InvitationCode` rows generated during onboarding are unconditionally excluded from every broadcast query.
-2. **Self-Submitted `address-collection` Exclusion by Default**: Guests who submit their mailing address through the unauthenticated public form (`POST /api/guest/address/public` in [src/app/api/guest/address/public/route.ts](../src/app/api/guest/address/public/route.ts#L91-L130)) are created with `tags: "address-collection"` (`ADDRESS_COLLECTION_TAG` in [src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L8-L17)). Both `filterTargetGuestsInMemory` ([src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L136-L143)) and `BroadcastService.resolveTargetGuests` ([src/features/broadcast/service.ts](../src/features/broadcast/service.ts#L299-L406)) **exclude** any guest carrying the `address-collection` tag unless `targetFilters.includeAddressCollection === true` (or `'address-collection'` is explicitly included in `targetFilters.tags`). This prevents unverified public form submissions from receiving private event announcements, invitation codes, or RSVP links by accident.
+2. **Self-Submitted `address-collection` Exclusion by Default**: Guests who submit their mailing address through the unauthenticated public form (`POST /api/guest/address/public` in [src/app/api/guest/address/public/route.ts](../src/app/api/guest/address/public/route.ts#L91-L130)) are created with `tags: "address-collection"` (`ADDRESS_COLLECTION_TAG` in [src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L8-L17)). Both `filterTargetGuestsInMemory` ([src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L136-L152)) and `BroadcastService.resolveTargetGuests` ([src/features/broadcast/service.ts](../src/features/broadcast/service.ts#L299-L406)) **exclude** any guest carrying the `address-collection` tag unless `targetFilters.includeAddressCollection === true` (or `'address-collection'` is explicitly included in `targetFilters.tags`). This prevents unverified public form submissions from receiving private event announcements, invitation codes, or RSVP links by accident.
 3. **Composable Audience Filters (`BroadcastTargetFiltersSchema`)**:
    - `subEventIds` & `rsvpStatuses` (`ATTENDING`, `DECLINED`, `MAYBE`, `NO_RESPONSE`): Filters guests granted access to specific sub-events (public `SubEvent` rows or explicit `SubEventAccess` grants) and matches their `SubEventRsvp` status (`NO_RESPONSE` matches invited guests with no submitted RSVP record).
    - `tags`, `tableIds`, `hasAddress`, `search`, `selectedGuestIds`, and `excludedGuestIds`: Supports comma-separated tag matching, seating table targeting (`'unassigned'` or specific `SeatingTable` IDs), mailing-address completeness checks, free-text search, and per-guest manual overrides.
-4. **Channel Contact Eligibility**: `hasBroadcastChannelContact` ([src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L45-L54)) requires a non-empty `email` for `EMAIL` broadcasts and resolves `phone` from `InvitationCode.extraFields` JSON (`phone` or `phoneNumber` via `getGuestPhone`) for `SMS` broadcasts.
+4. **Channel Contact Eligibility**: `hasBroadcastChannelContact` ([src/features/broadcast/audience.ts](../src/features/broadcast/audience.ts#L53-L62)) requires a non-empty `email` for `EMAIL` broadcasts and resolves `phone` from `InvitationCode.extraFields` JSON (`phone` or `phoneNumber` via `getGuestPhone`) for `SMS` broadcasts.
 
 ---
 

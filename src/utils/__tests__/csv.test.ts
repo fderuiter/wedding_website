@@ -9,6 +9,8 @@ import {
   consolidateHouseholdCsvRows,
   generateFailedRowsCsv,
 } from '../csv';
+import { formatGuestPlusOneNames, isAddressComplete } from '@/features/registry';
+import { getGuestPhone } from '@/features/broadcast';
 
 describe('CSV Parser Utility', () => {
   it('parses standard CSV lines with quotes and commas', () => {
@@ -535,8 +537,9 @@ describe('CSV Parser Utility', () => {
         partyTags: 'VIP, Bride Side, College, Kids',
         addressLine1: '100 Main St',
         city: 'Boston',
-        extraFields: { additionalGuests: 'Tommy Doe' },
+        extraFields: { plusOneNames: ['John Doe', 'Tommy Doe'] },
       });
+      expect(formatGuestPlusOneNames(consolidated[0])).toBe('John Doe, Tommy Doe');
 
       expect(consolidated[1]).toMatchObject({
         guestName: 'Solo Traveler',
@@ -612,6 +615,102 @@ describe('CSV Parser Utility', () => {
       expect(csv).toContain(
         'Invalid email format.; Plus-one allocation must be a non-negative integer.'
       );
+    });
+  });
+
+  describe('phoneCol, plusOneNameCol, and Meal Selections header contracts', () => {
+    it('detects Phone Number and Plus-One Name while excluding Meal Selections from suggestedDietaryNotesCol', () => {
+      const exportedHeaders = [
+        'Guest Name',
+        'Invitation Code',
+        'RSVP Link',
+        'Email',
+        'Phone Number',
+        'Plus-One Name',
+        'Household Name',
+        'Party Group',
+        'Party Tags',
+        'Address Line 1',
+        'Address Line 2',
+        'City',
+        'State',
+        'ZIP Code',
+        'Country',
+        'Meal Selections',
+        'Custom Answers',
+      ];
+      const detected = detectCsvHeaders(exportedHeaders);
+
+      expect(detected.suggestedPhoneCol).toBe('Phone Number');
+      expect(detected.suggestedPlusOneNameCol).toBe('Plus-One Name');
+      expect(detected.suggestedDietaryNotesCol).toBe('');
+      expect(detected.suggestedAddressLine1Col).toBe('Address Line 1');
+      expect(detected.suggestedAddressLine2Col).toBe('Address Line 2');
+      expect(detected.suggestedCityCol).toBe('City');
+      expect(detected.suggestedStateCol).toBe('State');
+      expect(detected.suggestedZipCodeCol).toBe('ZIP Code');
+      expect(detected.suggestedCountryCol).toBe('Country');
+    });
+
+    it('validates and normalizes phoneCol (including formula-escaped E.164) into extraFields.phone and splits Plus-One Name', () => {
+      const validRow = validateSingleCsvRow(
+        {
+          'Guest Name': 'Clara Oswald',
+          'Invitation Code': 'CLARA26',
+          'Phone Number': "'+1 (555) 234-5678",
+          'Plus-One Name': 'Danny Pink, Rupert Pink',
+          'Address Line 1': '123 Clara Ln',
+          City: 'London',
+          State: 'LDN',
+          'ZIP Code': 'SW1A',
+          Country: 'UK',
+        },
+        0,
+        {
+          guestNameCol: 'Guest Name',
+          codeCol: 'Invitation Code',
+          phoneCol: 'Phone Number',
+          plusOneNameCol: 'Plus-One Name',
+          addressLine1Col: 'Address Line 1',
+          cityCol: 'City',
+          stateCol: 'State',
+          zipCodeCol: 'ZIP Code',
+          countryCol: 'Country',
+          extraCols: [],
+        },
+        new Map([['CLARA26', 1]]),
+        new Set()
+      );
+
+      expect(validRow.isValid).toBe(true);
+      expect(validRow.extraFields).toEqual({
+        phone: '+15552345678',
+        plusOneNames: ['Danny Pink', 'Rupert Pink'],
+      });
+      expect(validRow.plusOneFirstName).toBe('Danny');
+      expect(validRow.plusOneLastName).toBe('Pink');
+      expect(validRow.plusOneAllocations).toBeUndefined();
+      expect(getGuestPhone(validRow)).toBe('+15552345678');
+      expect(isAddressComplete(validRow)).toBe(true);
+      expect(formatGuestPlusOneNames(validRow)).toBe('Danny Pink, Rupert Pink');
+
+      const invalidPhoneRow = validateSingleCsvRow(
+        {
+          'Guest Name': 'Bad Phone Guest',
+          'Phone Number': 'not-a-phone',
+        },
+        0,
+        {
+          guestNameCol: 'Guest Name',
+          phoneCol: 'Phone Number',
+          extraCols: [],
+        },
+        new Map(),
+        new Set()
+      );
+
+      expect(invalidPhoneRow.isValid).toBe(false);
+      expect(invalidPhoneRow.fieldErrors?.phone).toContain('Invalid phone number format.');
     });
   });
 });
