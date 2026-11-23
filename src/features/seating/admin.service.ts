@@ -3,14 +3,21 @@ import { BaseRepository } from '@/core/infrastructure/repository';
 import { SeatingTableDTO, AutoAssignResultDTO } from './schemas';
 import { createAuditSnapshot, createBatchAuditSnapshots } from '@/lib/audit';
 import { Prisma } from '@prisma/client';
+import { InvitationCodeDTO } from '@/features/registry';
+import {
+  repackTableSeatNumbers,
+  resolveDetailedSeatAssignments,
+} from './seatLayout';
 import {
   getGuestAttendanceStatus,
+  getGuestPartySize,
+  getGuestsHeadcount,
   isGuestEligibleForSeating,
 } from './utils/seatingHelpers';
 
 const VALID_TABLE_SHAPES = ['round', 'rectangular', 'square', 'head', 'sweetheart'] as const;
 
-type BatchSeatAuditAction = 'assignBatch' | 'clearTable' | 'undo' | 'autoAssign';
+type BatchSeatAuditAction = 'assignBatch' | 'clearTable' | 'undo' | 'autoAssign' | 'repackSeats';
 
 interface PlannedSeatUpdate {
   guestId: string;
@@ -21,11 +28,19 @@ interface PlannedSeatUpdate {
 interface SeatTracker {
   usedSeats: Set<number>;
   nextSeat: () => number | null;
+  takePartySeats: (partySize: number, preferredStartSeat?: number | null) => number | null;
 }
 
 interface TableOccupantRecord {
   id: string;
+  guestName?: string | null;
   seatNumber?: number | null;
+  used?: boolean | null;
+  extraFields?: unknown;
+  partyTags?: unknown;
+  plusOneAllocations?: number | null;
+  plusOneFirstName?: string | null;
+  plusOneLastName?: string | null;
   [key: string]: unknown;
 }
 
@@ -59,6 +74,20 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
     return { targetGuests, guestById };
   }
 
+  private async loadOptionalGuestById(client: any, guestId: string): Promise<any | null> {
+    if (typeof client?.invitationCode?.findUnique === 'function') {
+      const found = await client.invitationCode.findUnique({ where: { id: guestId } });
+      if (found) return found;
+    }
+    if (typeof client?.invitationCode?.findMany === 'function') {
+      const rows = await client.invitationCode.findMany({ where: { id: { in: [guestId] } } });
+      if (Array.isArray(rows) && rows.length > 0) {
+        return rows[0];
+      }
+    }
+    return null;
+  }
+
   private async findTableWithOccupants(client: any, tableId: string): Promise<any> {
     const table = await client.seatingTable.findUnique({
       where: { id: tableId },
@@ -78,7 +107,7 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       | null
       | undefined,
     excludedGuestIds: Set<string>,
-    incomingCount: number
+    incomingHeadcount: number
   ): TableOccupantRecord[] {
     if (!table) {
       throw new Error('Validation Error: Table not found.');
@@ -87,7 +116,8 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
     const otherOccupants = (table.invitationCodes || []).filter(
       (ic) => !excludedGuestIds.has(ic.id)
     );
-    if (otherOccupants.length + incomingCount > table.capacity) {
+    const existingHeadcount = getGuestsHeadcount(otherOccupants);
+    if (existingHeadcount + incomingHeadcount > table.capacity) {
       throw new Error(
         `Validation Error: Table "${table.name}" has reached its maximum capacity of ${table.capacity}.`
       );
@@ -97,26 +127,106 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
   }
 
   private createSeatTracker(
-    occupants: Array<{ seatNumber?: unknown }>,
+    occupants: TableOccupantRecord[],
     capacity: number
   ): SeatTracker {
-    const usedSeats = new Set<number>(
-      (occupants || [])
-        .map((ic) => ic.seatNumber)
-        .filter((s): s is number => typeof s === 'number' && s > 0)
-    );
+    const usedSeats = new Set<number>();
+    const safeCap = Math.max(1, Number(capacity) || 1);
 
-    const nextSeat = (): number | null => {
-      for (let i = 1; i <= capacity; i++) {
-        if (!usedSeats.has(i)) {
-          usedSeats.add(i);
-          return i;
+    if (occupants && occupants.length > 0) {
+      const resolved = resolveDetailedSeatAssignments(
+        occupants as unknown as InvitationCodeDTO[],
+        safeCap
+      );
+      resolved.forEach((_entry, seatNum) => {
+        if (seatNum >= 1 && seatNum <= safeCap) {
+          usedSeats.add(seatNum);
+        }
+      });
+    }
+
+    const takePartySeats = (
+      rawPartySize: number,
+      preferredStartSeat?: number | null
+    ): number | null => {
+      const partySize = Math.max(1, Math.floor(rawPartySize || 1));
+
+      // 1. Honor preferredStartSeat if all contiguous chairs fit in 1..safeCap and are open
+      if (
+        typeof preferredStartSeat === 'number' &&
+        Number.isInteger(preferredStartSeat) &&
+        preferredStartSeat >= 1 &&
+        preferredStartSeat <= safeCap
+      ) {
+        if (preferredStartSeat + partySize - 1 <= safeCap) {
+          let allFree = true;
+          for (let offset = 0; offset < partySize; offset++) {
+            if (usedSeats.has(preferredStartSeat + offset)) {
+              allFree = false;
+              break;
+            }
+          }
+          if (allFree) {
+            for (let offset = 0; offset < partySize; offset++) {
+              usedSeats.add(preferredStartSeat + offset);
+            }
+            return preferredStartSeat;
+          }
+        }
+        // If preferred primary seat itself is open, claim it and fill remaining companions from open seats
+        if (!usedSeats.has(preferredStartSeat)) {
+          const openSeats: number[] = [];
+          for (let s = 1; s <= safeCap && openSeats.length < partySize - 1; s++) {
+            if (s !== preferredStartSeat && !usedSeats.has(s)) {
+              openSeats.push(s);
+            }
+          }
+          if (openSeats.length === partySize - 1) {
+            usedSeats.add(preferredStartSeat);
+            for (const s of openSeats) usedSeats.add(s);
+            return preferredStartSeat;
+          }
         }
       }
-      return null;
+
+      // 2. Prefer a contiguous block of `partySize` open seats within 1..safeCap
+      if (partySize <= safeCap) {
+        for (let start = 1; start <= safeCap - partySize + 1; start++) {
+          let fits = true;
+          for (let offset = 0; offset < partySize; offset++) {
+            if (usedSeats.has(start + offset)) {
+              fits = false;
+              break;
+            }
+          }
+          if (fits) {
+            for (let offset = 0; offset < partySize; offset++) {
+              usedSeats.add(start + offset);
+            }
+            return start;
+          }
+        }
+      }
+
+      // 3. Fallback: reserve the lowest `partySize` open seats in 1..safeCap
+      const chosen: number[] = [];
+      for (let i = 1; i <= safeCap && chosen.length < partySize; i++) {
+        if (!usedSeats.has(i)) {
+          chosen.push(i);
+        }
+      }
+      if (chosen.length === 0) {
+        return null;
+      }
+      for (const s of chosen) {
+        usedSeats.add(s);
+      }
+      return chosen[0];
     };
 
-    return { usedSeats, nextSeat };
+    const nextSeat = (): number | null => takePartySeats(1);
+
+    return { usedSeats, nextSeat, takePartySeats };
   }
 
   private async applyBatchSeatUpdates(
@@ -211,6 +321,78 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
     return processed;
   }
 
+  async update(id: string, data: any, author: string = 'Admin'): Promise<SeatingTableDTO> {
+    return this.repo.transaction(async (txRepo) => {
+      const client = txRepo.client;
+      await this.validate(data);
+      const processedData = await this.preSave(data, client, author);
+      const updatedRecord = await txRepo.update(id, processedData);
+
+      let repackedInvitationCodes: any[] | undefined = (updatedRecord as any)?.invitationCodes;
+
+      if (
+        processedData.capacity !== undefined &&
+        typeof client?.invitationCode?.findMany === 'function'
+      ) {
+        const newCapacity = Number(processedData.capacity);
+        const occupants = await client.invitationCode.findMany({
+          where: { tableId: id },
+          orderBy: { seatNumber: 'asc' },
+        });
+
+        if (Array.isArray(occupants) && occupants.length > 0) {
+          const repackedSeats = repackTableSeatNumbers(
+            occupants as InvitationCodeDTO[],
+            newCapacity
+          );
+          const guestById = new Map<string, any>(occupants.map((g: any) => [g.id, g]));
+          const updates: PlannedSeatUpdate[] = [];
+
+          for (const occ of occupants) {
+            const nextSeat = repackedSeats.get(occ.id) ?? occ.seatNumber ?? null;
+            if (
+              typeof nextSeat === 'number' &&
+              nextSeat <= newCapacity &&
+              occ.seatNumber !== nextSeat
+            ) {
+              updates.push({
+                guestId: occ.id,
+                tableId: id,
+                seatNumber: nextSeat,
+              });
+            }
+          }
+
+          if (updates.length > 0) {
+            await this.applyBatchSeatUpdates(
+              client,
+              updates,
+              guestById,
+              'repackSeats',
+              author
+            );
+          }
+
+          const updateLookup = new Map(updates.map((u) => [u.guestId, u.seatNumber]));
+          repackedInvitationCodes = occupants
+            .map((occ: any) => ({
+              ...occ,
+              seatNumber: updateLookup.has(occ.id) ? updateLookup.get(occ.id) : occ.seatNumber,
+            }))
+            .sort((a: any, b: any) => (a.seatNumber ?? 999) - (b.seatNumber ?? 999));
+        }
+      }
+
+      const finalRecord: SeatingTableDTO =
+        repackedInvitationCodes !== undefined
+          ? ({ ...updatedRecord, invitationCodes: repackedInvitationCodes } as SeatingTableDTO)
+          : updatedRecord;
+
+      await this.createSnapshot((finalRecord as any).id || id, finalRecord, author, client);
+      return finalRecord;
+    });
+  }
+
   async delete(id: string, author: string = 'Admin'): Promise<SeatingTableDTO> {
     return this.repo.transaction(async (txRepo) => {
       // Clear associated invitation code tableId and seatNumber
@@ -236,23 +418,44 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
 
     return this.repo.transaction(async (txRepo) => {
       const client = txRepo.client;
+      let resolvedSeatNumber: number | null = tableId ? (seatNumber ?? null) : null;
 
       if (tableId) {
         const table = await this.findTableWithOccupants(client, tableId);
-        // Check table capacity, excluding the target guest if already assigned to this table
-        this.filterOtherOccupantsAndAssertCapacity(table, new Set([invitationCodeId]), 1);
+        const existingAtTable = (table.invitationCodes || []).find(
+          (ic: any) => ic.id === invitationCodeId
+        );
+        const targetGuest =
+          existingAtTable || (await this.loadOptionalGuestById(client, invitationCodeId));
+
+        const incomingHeadcount = targetGuest ? getGuestPartySize(targetGuest) : 1;
+
+        // Check table capacity using party headcount, excluding the target guest if already assigned to this table
+        const otherOccupants = this.filterOtherOccupantsAndAssertCapacity(
+          table,
+          new Set([invitationCodeId]),
+          incomingHeadcount
+        );
+
+        if (resolvedSeatNumber && resolvedSeatNumber > table.capacity) {
+          const tracker = this.createSeatTracker(otherOccupants, table.capacity);
+          resolvedSeatNumber = tracker.takePartySeats(incomingHeadcount);
+        } else if (resolvedSeatNumber === null && incomingHeadcount > 1) {
+          const tracker = this.createSeatTracker(otherOccupants, table.capacity);
+          resolvedSeatNumber = tracker.takePartySeats(incomingHeadcount);
+        }
 
         // If seatNumber is specified, check if that seat is already taken by another guest
-        if (seatNumber) {
+        if (resolvedSeatNumber) {
           const occupant = await client.invitationCode.findFirst({
             where: {
               tableId,
-              seatNumber,
+              seatNumber: resolvedSeatNumber,
               NOT: { id: invitationCodeId },
             },
           });
           if (occupant) {
-            // Unassign occupant or swap seat
+            // Unassign occupant's explicit seat so seatLayout resolves both parties cleanly
             await client.invitationCode.update({
               where: { id: occupant.id },
               data: { seatNumber: null },
@@ -265,14 +468,14 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         where: { id: invitationCodeId },
         data: {
           tableId: tableId || null,
-          seatNumber: tableId ? (seatNumber ?? null) : null,
+          seatNumber: tableId ? resolvedSeatNumber : null,
         },
       });
 
       await createAuditSnapshot(
         'InvitationCode',
         invitationCodeId,
-        { tableId, seatNumber, action: 'assignSeat' },
+        { tableId, seatNumber: resolvedSeatNumber, action: 'assignSeat' },
         author,
         client
       );
@@ -315,32 +518,30 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
           }
         }
 
+        const incomingHeadcount = getGuestsHeadcount(targetGuests);
         const table = await this.findTableWithOccupants(client, tableId);
         const existingOtherOccupants = this.filterOtherOccupantsAndAssertCapacity(
           table,
           targetIdSet,
-          uniqueIds.length
+          incomingHeadcount
         );
-        const { usedSeats, nextSeat } = this.createSeatTracker(
+        const { takePartySeats } = this.createSeatTracker(
           existingOtherOccupants,
           table.capacity
         );
 
         for (const guestId of uniqueIds) {
           const existing = guestById.get(guestId);
-          let assignedSeat: number | null = null;
-          if (
+          const partySize = existing ? getGuestPartySize(existing) : 1;
+          const preferredSeat =
             existing?.tableId === tableId &&
             typeof existing.seatNumber === 'number' &&
             existing.seatNumber >= 1 &&
-            existing.seatNumber <= table.capacity &&
-            !usedSeats.has(existing.seatNumber)
-          ) {
-            usedSeats.add(existing.seatNumber);
-            assignedSeat = existing.seatNumber;
-          } else {
-            assignedSeat = nextSeat();
-          }
+            existing.seatNumber <= table.capacity
+              ? existing.seatNumber
+              : null;
+
+          const assignedSeat = takePartySeats(partySize, preferredSeat);
 
           plannedUpdates.push({
             guestId,
@@ -426,6 +627,7 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
       );
 
       const displacedSeatUpdates: PlannedSeatUpdate[] = [];
+      const clampedEntrySeatMap = new Map<string, number | null>();
 
       if (targetTableIds.length > 0) {
         const tables = await client.seatingTable.findMany({
@@ -438,18 +640,31 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         for (const tid of targetTableIds) {
           const table = tableMap.get(tid);
           const incomingForTable = normalizedEntries.filter((e) => e.tableId === tid);
+          const incomingHeadcount = incomingForTable.reduce((sum, entry) => {
+            const guest = guestById.get(entry.invitationCodeId);
+            return sum + (guest ? getGuestPartySize(guest) : 1);
+          }, 0);
+
           const otherOccupants = this.filterOtherOccupantsAndAssertCapacity(
             table,
             batchIdSet,
-            incomingForTable.length
+            incomingHeadcount
           );
 
-          const incomingSeats = new Set<number>(
-            incomingForTable
-              .map((e) => e.seatNumber)
-              .filter((s): s is number => typeof s === 'number' && s > 0)
-          );
+          const incomingSeats = new Set<number>();
+          for (const e of incomingForTable) {
+            const guest = guestById.get(e.invitationCodeId);
+            const partySize = guest ? getGuestPartySize(guest) : 1;
+            if (typeof e.seatNumber === 'number' && e.seatNumber >= 1 && e.seatNumber <= table.capacity) {
+              for (let offset = 0; offset < partySize; offset++) {
+                if (e.seatNumber + offset <= table.capacity) {
+                  incomingSeats.add(e.seatNumber + offset);
+                }
+              }
+            }
+          }
 
+          const remainingOccupants: TableOccupantRecord[] = [];
           for (const occ of otherOccupants) {
             if (typeof occ.seatNumber === 'number' && incomingSeats.has(occ.seatNumber)) {
               displacedSeatUpdates.push({
@@ -458,6 +673,24 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
                 seatNumber: null,
               });
               guestById.set(occ.id, occ);
+              remainingOccupants.push({ ...occ, seatNumber: null });
+            } else {
+              remainingOccupants.push(occ);
+            }
+          }
+
+          const tracker = this.createSeatTracker(remainingOccupants, table.capacity);
+          for (const e of incomingForTable) {
+            const guest = guestById.get(e.invitationCodeId);
+            const partySize = guest ? getGuestPartySize(guest) : 1;
+            if (typeof e.seatNumber === 'number' && e.seatNumber >= 1 && e.seatNumber <= table.capacity) {
+              const reserved = tracker.takePartySeats(partySize, e.seatNumber);
+              clampedEntrySeatMap.set(e.invitationCodeId, reserved);
+            } else if (typeof e.seatNumber === 'number' && e.seatNumber > table.capacity) {
+              const reserved = tracker.takePartySeats(partySize);
+              clampedEntrySeatMap.set(e.invitationCodeId, reserved);
+            } else {
+              clampedEntrySeatMap.set(e.invitationCodeId, e.seatNumber);
             }
           }
         }
@@ -468,7 +701,9 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         ...normalizedEntries.map((e) => ({
           guestId: e.invitationCodeId,
           tableId: e.tableId,
-          seatNumber: e.seatNumber,
+          seatNumber: clampedEntrySeatMap.has(e.invitationCodeId)
+            ? clampedEntrySeatMap.get(e.invitationCodeId)!
+            : e.seatNumber,
         })),
       ];
 
@@ -532,125 +767,156 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         };
       }
 
-      // Initialize table tracking state
+      // Precompute party headcount per InvitationCode in O(G)
+      const partySizeById = new Map<string, number>();
+      for (const guest of unassignedGuests) {
+        partySizeById.set(guest.id, getGuestPartySize(guest));
+      }
+
+      // Initialize table tracking state accounting for existing party headcounts
       interface TableState {
         id: string;
         name: string;
         capacity: number;
         remainingCapacity: number;
-        usedSeats: Set<number>;
-        nextSeat: () => number | null;
+        takePartySeats: (partySize: number) => number | null;
       }
 
       const tableStates: TableState[] = (tables || []).map((t: any) => {
         const occupants = t.invitationCodes || [];
         const capacity = Number(t.capacity) || 0;
-        const { usedSeats, nextSeat } = this.createSeatTracker(occupants, capacity);
-        const remainingCapacity = Math.max(0, capacity - occupants.length);
+        const { takePartySeats } = this.createSeatTracker(occupants, capacity);
+        const occupiedHeadcount = getGuestsHeadcount(occupants);
+        const remainingCapacity = Math.max(0, capacity - occupiedHeadcount);
 
         return {
           id: t.id,
           name: t.name,
           capacity,
           remainingCapacity,
-          usedSeats,
-          nextSeat,
+          takePartySeats,
         };
       });
 
+      interface HouseholdBucket {
+        members: any[];
+        headcount: number;
+        sortLabel: string;
+      }
+
       // Group unassigned guests by householdName
-      // If householdName is absent or empty, the guest forms their own individual group of size 1
-      const householdMap = new Map<string, any[]>();
+      const householdMap = new Map<string, HouseholdBucket>();
       let soloCounter = 0;
 
       for (const guest of unassignedGuests) {
-        const household = guest.householdName && typeof guest.householdName === 'string'
-          ? guest.householdName.trim()
-          : '';
+        const guestHeadcount = partySizeById.get(guest.id) || 1;
+        const household =
+          guest.householdName && typeof guest.householdName === 'string'
+            ? guest.householdName.trim()
+            : '';
 
         if (household) {
-          if (!householdMap.has(household)) {
-            householdMap.set(household, []);
+          const existing = householdMap.get(household);
+          if (existing) {
+            existing.members.push(guest);
+            existing.headcount += guestHeadcount;
+          } else {
+            householdMap.set(household, {
+              members: [guest],
+              headcount: guestHeadcount,
+              sortLabel: household,
+            });
           }
-          householdMap.get(household)!.push(guest);
         } else {
           soloCounter++;
-          householdMap.set(`__solo_${guest.id || soloCounter}__`, [guest]);
+          householdMap.set(`__solo_${guest.id || soloCounter}__`, {
+            members: [guest],
+            headcount: guestHeadcount,
+            sortLabel: guest.guestName || '',
+          });
         }
       }
 
-      // Sort household groups in descending order of size for greedy bin packing
+      // Sort household groups in descending order of total attendee headcount for Best-Fit Decreasing
       const sortedGroups = Array.from(householdMap.values()).sort((a, b) => {
-        if (b.length !== a.length) {
-          return b.length - a.length;
+        if (b.headcount !== a.headcount) {
+          return b.headcount - a.headcount;
         }
-        const nameA = a[0]?.householdName || a[0]?.guestName || '';
-        const nameB = b[0]?.householdName || b[0]?.guestName || '';
-        return nameA.localeCompare(nameB);
+        return a.sortLabel.localeCompare(b.sortLabel);
       });
 
       const plannedAssignments: PlannedSeatUpdate[] = [];
-      const unplacedGroups: any[][] = [];
+      const unplacedGroups: HouseholdBucket[] = [];
 
-      // Phase 1: Intact Household Placement (Best-Fit Decreasing)
-      for (const group of sortedGroups) {
-        const groupSize = group.length;
+      // Phase 1: Intact Household Placement (Best-Fit Decreasing by total party headcount)
+      for (const bucket of sortedGroups) {
+        const groupHeadcount = bucket.headcount;
 
-        // Find tables that can fit the entire group
-        const eligibleTables = tableStates.filter((t) => t.remainingCapacity >= groupSize);
-
-        if (eligibleTables.length > 0) {
-          // Best-Fit: minimize leftover capacity (remainingCapacity - groupSize)
-          eligibleTables.sort((a, b) => {
-            const diffA = a.remainingCapacity - groupSize;
-            const diffB = b.remainingCapacity - groupSize;
-            if (diffA !== diffB) {
-              return diffA - diffB;
+        let bestTable: TableState | null = null;
+        let bestDiff = Infinity;
+        for (let i = 0; i < tableStates.length; i++) {
+          const candidate = tableStates[i];
+          if (candidate.remainingCapacity >= groupHeadcount) {
+            const diff = candidate.remainingCapacity - groupHeadcount;
+            if (
+              diff < bestDiff ||
+              (diff === bestDiff &&
+                bestTable !== null &&
+                candidate.name.localeCompare(bestTable.name) < 0)
+            ) {
+              bestDiff = diff;
+              bestTable = candidate;
             }
-            return a.name.localeCompare(b.name);
-          });
+          }
+        }
 
-          const chosenTable = eligibleTables[0];
-          for (const guest of group) {
-            const seatNumber = chosenTable.nextSeat();
-            chosenTable.remainingCapacity -= 1;
+        if (bestTable) {
+          for (const guest of bucket.members) {
+            const guestHeadcount = partySizeById.get(guest.id) || 1;
+            const seatNumber = bestTable.takePartySeats(guestHeadcount);
+            bestTable.remainingCapacity -= guestHeadcount;
             plannedAssignments.push({
               guestId: guest.id,
-              tableId: chosenTable.id,
+              tableId: bestTable.id,
               seatNumber,
             });
           }
         } else {
-          // Cannot fit intact into any single table
-          unplacedGroups.push(group);
+          unplacedGroups.push(bucket);
         }
       }
 
-      // Phase 2: Split Remaining Household Groups Across Open Table Seats
+      // Phase 2: Split multi-invitation household groups across open tables,
+      // NEVER splitting an individual InvitationCode party across separate tables.
       if (unplacedGroups.length > 0) {
-        for (const group of unplacedGroups) {
-          for (const guest of group) {
-            // Find tables with remaining capacity > 0
-            const availableTables = tableStates.filter((t) => t.remainingCapacity > 0);
-            if (availableTables.length === 0) {
-              // No capacity left in any table, guest remains unassigned
-              break;
+        for (const bucket of unplacedGroups) {
+          for (const guest of bucket.members) {
+            const guestHeadcount = partySizeById.get(guest.id) || 1;
+
+            let bestTable: TableState | null = null;
+            for (let i = 0; i < tableStates.length; i++) {
+              const candidate = tableStates[i];
+              if (candidate.remainingCapacity >= guestHeadcount) {
+                if (
+                  bestTable === null ||
+                  candidate.remainingCapacity > bestTable.remainingCapacity ||
+                  (candidate.remainingCapacity === bestTable.remainingCapacity &&
+                    candidate.name.localeCompare(bestTable.name) < 0)
+                ) {
+                  bestTable = candidate;
+                }
+              }
             }
 
-            // Choose table with largest remaining capacity
-            availableTables.sort((a, b) => {
-              if (b.remainingCapacity !== a.remainingCapacity) {
-                return b.remainingCapacity - a.remainingCapacity;
-              }
-              return a.name.localeCompare(b.name);
-            });
+            if (!bestTable) {
+              continue;
+            }
 
-            const chosenTable = availableTables[0];
-            const seatNumber = chosenTable.nextSeat();
-            chosenTable.remainingCapacity -= 1;
+            const seatNumber = bestTable.takePartySeats(guestHeadcount);
+            bestTable.remainingCapacity -= guestHeadcount;
             plannedAssignments.push({
               guestId: guest.id,
-              tableId: chosenTable.id,
+              tableId: bestTable.id,
               seatNumber,
             });
           }
@@ -667,8 +933,12 @@ export class SeatingTableAdminService extends BaseService<SeatingTableDTO> {
         author
       );
 
-      const assignedCount = updatedGuests.length;
-      const unassignedCount = unassignedGuests.length - assignedCount;
+      const totalPoolHeadcount = getGuestsHeadcount(unassignedGuests);
+      const assignedCount = updatedGuests.reduce(
+        (sum: number, g: any) => sum + (partySizeById.get(g.id) || getGuestPartySize(g)),
+        0
+      );
+      const unassignedCount = Math.max(0, totalPoolHeadcount - assignedCount);
 
       return {
         assignedCount,

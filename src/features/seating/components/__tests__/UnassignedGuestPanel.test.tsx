@@ -633,5 +633,56 @@ describe('UnassignedGuestPanel quick-assign modal component', () => {
       expect(screen.getByRole('option', { name: 'Seat 1 (Seated Unnumbered)' })).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Seat 2 (Empty)' })).toBeInTheDocument();
     });
+
+    test('displays party headcount badge (+1 (2 seats)) and disables tables lacking enough open seats in quick-assign modal', () => {
+      const coupleGuest = createMockInvitationCode({
+        id: 'u-couple',
+        code: 'CPL77',
+        guestName: 'Jordan Taylor',
+        used: true,
+        plusOneAllocations: 1,
+        extraFields: {
+          attending: true,
+          plusOneCount: 1,
+          plusOneNames: ['Morgan Taylor'],
+        },
+      });
+
+      const tightAndOpenTables: SeatingTableDTO[] = [
+        {
+          ...mockTables[0],
+          id: 'tbl-1-open',
+          name: 'Nearly Full Table',
+          capacity: 2,
+          invitationCodes: [
+            createMockInvitationCode({ id: 'occ-1', guestName: 'Solo Seated', seatNumber: 1 }),
+          ],
+        },
+        {
+          ...mockTables[1],
+          id: 'tbl-4-open',
+          name: 'Spacious Table',
+          capacity: 4,
+          invitationCodes: [],
+        },
+      ];
+
+      render(
+        <UnassignedGuestPanel
+          {...defaultProps}
+          tables={tightAndOpenTables}
+          unassignedGuests={[coupleGuest]}
+        />
+      );
+
+      expect(screen.getByText('2 unassigned')).toBeInTheDocument();
+      expect(screen.getByTestId('guest-party-size-badge')).toHaveTextContent('+1 (2 seats)');
+
+      fireEvent.click(screen.getByRole('button', { name: /Assign Jordan Taylor/i }));
+      const tightOption = screen.getByRole('option', { name: /Nearly Full Table/i });
+      const spaciousOption = screen.getByRole('option', { name: /Spacious Table/i });
+      expect(tightOption).toBeDisabled();
+      expect(spaciousOption).not.toBeDisabled();
+    });
   });
 });

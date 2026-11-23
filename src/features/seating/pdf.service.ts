@@ -1,8 +1,16 @@
 import PDFDocument from 'pdfkit';
 import { SeatingTableDTO } from './schemas';
 import { InvitationCodeDTO } from '@/features/registry';
-import { computeSeatPosition, resolveSeatAssignments } from './seatLayout';
-import { getDietaryBadges } from './utils/seatingHelpers';
+import {
+  computeSeatPosition,
+  resolveDetailedSeatAssignments,
+  resolveSeatAssignments,
+} from './seatLayout';
+import {
+  getDietaryBadges,
+  getGuestCompanionNames,
+  getGuestsHeadcount,
+} from './utils/seatingHelpers';
 
 interface GeneratePdfOptions {
   siteTitle?: string;
@@ -48,14 +56,14 @@ export async function generateSeatingChartPdf(
         day: 'numeric',
       });
 
-      // Calculate total stats
+      // Calculate total stats using party headcounts
       let totalCapacity = 0;
       let totalSeated = 0;
       tables.forEach((t) => {
         totalCapacity += t.capacity;
-        totalSeated += t.invitationCodes?.length || 0;
+        totalSeated += getGuestsHeadcount(t.invitationCodes || []);
       });
-      const unassignedCount = unassignedGuests.length;
+      const unassignedCount = getGuestsHeadcount(unassignedGuests);
 
       // ==========================================
       // PAGE 1: VISUAL FLOORPLAN SCHEMATIC
@@ -142,13 +150,13 @@ export async function generateSeatingChartPdf(
 
           const shapeLower = (table.shape || 'round').toLowerCase();
           const isRound = shapeLower === 'round';
-          const assignedCount = table.invitationCodes?.length || 0;
+          const assignedCount = getGuestsHeadcount(table.invitationCodes || []);
           const isOverCapacity = assignedCount > table.capacity;
 
           const fillColor = isOverCapacity ? '#fef2f2' : '#ffffff';
           const strokeColor = isOverCapacity ? '#ef4444' : '#475569';
 
-          // Resolve explicit and unnumbered seat assignments without array-index duplication
+          // Resolve explicit, clamped, and companion seat assignments
           const seatMap = resolveSeatAssignments(table.invitationCodes, table.capacity);
 
           if (isRound) {
@@ -310,7 +318,11 @@ export async function generateSeatingChartPdf(
 
         for (const table of tables) {
           const guests = table.invitationCodes || [];
-          const rowCount = Math.max(1, guests.length);
+          const seatedHeadcount = getGuestsHeadcount(guests);
+          const detailedSeatEntries = Array.from(
+            resolveDetailedSeatAssignments(guests, table.capacity).values()
+          ).sort((a, b) => a.seatNumber - b.seatNumber);
+          const rowCount = Math.max(1, detailedSeatEntries.length);
           const tableBlockHeight = 24 + 18 + rowCount * 18 + 10; // Header + Col Header + Rows + Margin
 
           checkPageBreak(Math.min(tableBlockHeight, 150));
@@ -318,7 +330,7 @@ export async function generateSeatingChartPdf(
           // Table Banner Header
           doc.rect(margin, currentY, contentWidth, 22).fillAndStroke('#0f172a', '#0f172a');
           const shapeLabel = (table.shape || 'round').toUpperCase();
-          const tableHeaderText = `${table.name}   (${shapeLabel}  |  Capacity: ${table.capacity}  |  Seated: ${guests.length})`;
+          const tableHeaderText = `${table.name}   (${shapeLabel}  |  Capacity: ${table.capacity}  |  Seated: ${seatedHeadcount})`;
           doc.fontSize(10).font('Helvetica-Bold').fillColor('#ffffff').text(tableHeaderText, margin + 8, currentY + 6);
           currentY += 22;
 
@@ -331,39 +343,35 @@ export async function generateSeatingChartPdf(
           doc.text('Dietary / Special Notes', margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
           currentY += 18;
 
-          // Guest Rows
-          if (guests.length === 0) {
+          // Guest & Companion Seat Rows
+          if (detailedSeatEntries.length === 0) {
             doc.rect(margin, currentY, contentWidth, 18).fillAndStroke('#ffffff', '#e2e8f0');
             doc.fontSize(8).font('Helvetica-Oblique').fillColor('#94a3b8');
             doc.text('(No guests assigned to this table)', margin + 6, currentY + 5);
             currentY += 18;
           } else {
-            const resolvedRosterSeats = resolveSeatAssignments(guests, table.capacity);
-            const resolvedSeatByGuestId = new Map<string, number>();
-            resolvedRosterSeats.forEach((g, seatNum) => {
-              if (g.id) {
-                resolvedSeatByGuestId.set(g.id, seatNum);
-              }
-            });
-
-            for (let idx = 0; idx < guests.length; idx++) {
-              const guest = guests[idx];
+            for (let idx = 0; idx < detailedSeatEntries.length; idx++) {
+              const entry = detailedSeatEntries[idx];
+              const { guest, seatNumber, isCompanion, displayName } = entry;
               checkPageBreak(20);
 
               const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
               doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
 
               doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-              const resolvedSeat = guest.seatNumber || resolvedSeatByGuestId.get(guest.id) || idx + 1;
-              const seatDisplay = `Seat ${resolvedSeat}`;
+              const seatDisplay = `Seat ${seatNumber}`;
               doc.text(seatDisplay, margin + 6, currentY + 5, { width: colSeatW });
-              doc.text(guest.guestName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
+              doc.text(displayName, margin + colSeatW + 6, currentY + 5, { width: colNameW });
               doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
-              const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
-              const dietaryPrefix = dietaryBadges.length > 0 ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}]` : '';
-              const dietaryText = guest.dietaryNotes
-                ? `${dietaryPrefix ? `${dietaryPrefix} ` : ''}${guest.dietaryNotes}`
-                : dietaryPrefix || '—';
+
+              let dietaryText = '—';
+              if (!isCompanion) {
+                const dietaryBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
+                const dietaryPrefix = dietaryBadges.length > 0 ? `[${dietaryBadges.map((b) => b.shortLabel).join(', ')}]` : '';
+                dietaryText = guest.dietaryNotes
+                  ? `${dietaryPrefix ? `${dietaryPrefix} ` : ''}${guest.dietaryNotes}`
+                  : dietaryPrefix || '—';
+              }
               doc.font('Helvetica').text(dietaryText, margin + colSeatW + colNameW + colCodeW + 6, currentY + 5, { width: colDietW });
 
               currentY += 18;
@@ -378,7 +386,7 @@ export async function generateSeatingChartPdf(
           checkPageBreak(60);
 
           doc.rect(margin, currentY, contentWidth, 22).fillAndStroke('#475569', '#475569');
-          doc.fontSize(10).font('Helvetica-Bold').fillColor('#ffffff').text(`Unassigned Guests (${unassignedGuests.length})`, margin + 8, currentY + 6);
+          doc.fontSize(10).font('Helvetica-Bold').fillColor('#ffffff').text(`Unassigned Guests (${unassignedCount})`, margin + 8, currentY + 6);
           currentY += 22;
 
           doc.rect(margin, currentY, contentWidth, 18).fillAndStroke('#e2e8f0', '#cbd5e1');
@@ -390,13 +398,18 @@ export async function generateSeatingChartPdf(
 
           for (let idx = 0; idx < unassignedGuests.length; idx++) {
             const guest = unassignedGuests[idx];
+            const companions = getGuestCompanionNames(guest);
+            const guestDisplay =
+              companions.length > 0
+                ? `${guest.guestName} (+${companions.length}: ${companions.join(', ')})`
+                : guest.guestName;
             checkPageBreak(20);
 
             const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
             doc.rect(margin, currentY, contentWidth, 18).fillAndStroke(bg, '#e2e8f0');
 
             doc.fontSize(8).font('Helvetica').fillColor('#1e293b');
-            doc.text(guest.guestName, margin + 6, currentY + 5, { width: colNameW + colSeatW });
+            doc.text(guestDisplay, margin + 6, currentY + 5, { width: colNameW + colSeatW });
             doc.font('Courier').text(guest.code, margin + colSeatW + colNameW + 6, currentY + 5, { width: colCodeW });
             const unassignedBadges = getDietaryBadges(guest.dietaryNotes, guest.extraFields);
             const unassignedPrefix = unassignedBadges.length > 0 ? `[${unassignedBadges.map((b) => b.shortLabel).join(', ')}]` : '';
