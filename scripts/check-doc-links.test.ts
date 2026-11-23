@@ -400,6 +400,152 @@ describe('check-doc-links', () => {
     expect(proc.stderr).toContain('Dead documentation link(s) detected');
   });
 
+  it('verifies #L and (L...) slice contents against cited symbols, constants, and login/route blocks', async () => {
+    fs.mkdirSync(path.join(tempDir, 'src/hooks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'src/middleware.ts'),
+      [
+        'export async function middleware(req: Request) {',
+        '  if (req.url.includes("/admin")) {',
+        "    return Response.redirect('https://example.com/admin/login');",
+        '  }',
+        '  if (!req.headers.get("cookie")) {',
+        "    return Response.redirect('https://example.com/guest/login');",
+        '  }',
+        '  return null;',
+        '}',
+      ].join('\n'),
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'src/hooks/useRegistry.ts'),
+      [
+        'export const REGISTRY_INITIAL_VISIBLE_ITEMS = 12;',
+        'export async function loadCatalog() {',
+        "  return fetch('/api/registry/items?page=1&limit=500');",
+        '}',
+        'export async function resolveTargetItem(id: string) {',
+        '  return fetch(`/api/registry/items/${id}`);',
+        '}',
+      ].join('\n'),
+      'utf8'
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'SLICE_CHECKS.md'),
+      [
+        '# Slice Content Checks',
+        '',
+        '- Valid guest gate: [src/middleware.ts](./src/middleware.ts#L5-L7) enforces guest login redirects.',
+        '- Valid deep link: `resolveTargetItem` in [src/hooks/useRegistry.ts](./src/hooks/useRegistry.ts#L5-L7) fetches `GET /api/registry/items/[id]`.',
+        '- Valid paired slices with prose echoes: Reads `loadCatalog()` via `resolveTargetItem` ([`src/hooks/useRegistry.ts`](./src/hooks/useRegistry.ts#L2-L4) (L2-L4) and [`src/hooks/useRegistry.ts`](./src/hooks/useRegistry.ts#L5-L7) (L5-L7)).',
+        '- Swapped login block: [src/middleware.ts](./src/middleware.ts#L2-L4) enforces guest passcode login redirects.',
+        '- Missing constant in slice: Renders `REGISTRY_LOAD_MORE_INCREMENT = 8` items ([src/hooks/useRegistry.ts](./src/hooks/useRegistry.ts#L1-L4)).',
+        '- Drifted route slice: Deep link fetches `GET /api/registry/items/[id]` ([src/hooks/useRegistry.ts](./src/hooks/useRegistry.ts#L2-L4)).',
+        '- Drifted link-label symbol: [`resolveTargetItem`](./src/hooks/useRegistry.ts#L1-L3).',
+        '- Drifted prose slice: `resolveTargetItem` in `src/hooks/useRegistry.ts` (L1-L3).',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const res = await checkDocLinks(tempDir);
+    expect(res.passed).toBe(false);
+    expect(res.errors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'SLICE_CHECKS.md',
+        line: 6,
+        targetPath: './src/middleware.ts#L2-L4',
+        resolvedPath: expect.stringContaining('"/admin/login" redirect block'),
+      }),
+      expect.objectContaining({
+        sourceFile: 'SLICE_CHECKS.md',
+        line: 7,
+        targetPath: './src/hooks/useRegistry.ts#L1-L4',
+        resolvedPath: expect.stringContaining('REGISTRY_LOAD_MORE_INCREMENT'),
+      }),
+      expect.objectContaining({
+        sourceFile: 'SLICE_CHECKS.md',
+        line: 8,
+        targetPath: './src/hooks/useRegistry.ts#L2-L4',
+        resolvedPath: expect.stringContaining('/api/registry/items/'),
+      }),
+      expect.objectContaining({
+        sourceFile: 'SLICE_CHECKS.md',
+        line: 9,
+        targetPath: './src/hooks/useRegistry.ts#L1-L3',
+        resolvedPath: expect.stringContaining('resolveTargetItem'),
+      }),
+      expect.objectContaining({
+        sourceFile: 'SLICE_CHECKS.md',
+        line: 10,
+        targetPath: 'src/hooks/useRegistry.ts (L1-L3)',
+        resolvedPath: expect.stringContaining('resolveTargetItem'),
+      }),
+    ]);
+  });
+
+  it('validates fenced code block language tags against Shiki bundledLanguages and VitePress languageAlias', async () => {
+    fs.mkdirSync(path.join(tempDir, 'docs-portal/.vitepress'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tempDir, 'docs-portal/.vitepress/config.mts'),
+      [
+        "import { defineConfig } from 'vitepress';",
+        'export default defineConfig({',
+        '  markdown: {',
+        '    languageAlias: {',
+        "      cron: 'shellscript',",
+        "      badalias: 'not-a-shiki-grammar',",
+        '    },',
+        '  },',
+        '});',
+      ].join('\n'),
+      'utf8'
+    );
+
+    fs.writeFileSync(
+      path.join(tempDir, 'FENCES.md'),
+      [
+        '# Fence Languages',
+        '',
+        '```ts',
+        'const x: number = 1;',
+        '```',
+        '',
+        '```cron',
+        '* * * * * curl -fsS http://127.0.0.1:3000/api/cron/broadcasts',
+        '```',
+        '',
+        '```',
+        'plain text block',
+        '```',
+        '',
+        '```unknownfencelang',
+        'unsupported grammar',
+        '```',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const res = await checkDocLinks(tempDir);
+    expect(res.passed).toBe(false);
+    expect(res.errors).toEqual([
+      expect.objectContaining({
+        sourceFile: 'FENCES.md',
+        line: 15,
+        linkText: 'code fence "unknownfencelang"',
+        targetPath: '```unknownfencelang',
+        resolvedPath: 'Unsupported Shiki fence language "unknownfencelang"',
+      }),
+      expect.objectContaining({
+        sourceFile: 'docs-portal/.vitepress/config.mts',
+        line: 6,
+        linkText: 'languageAlias.badalias',
+        targetPath: 'not-a-shiki-grammar',
+        resolvedPath: 'Unsupported Shiki target grammar "not-a-shiki-grammar"',
+      }),
+    ]);
+  });
+
   it('enforces explicit queryTargetMode, portalRouteMode, and intraFileAnchorMode flags in validateLinkTarget', async () => {
     fs.mkdirSync(path.join(tempDir, 'docs-portal/.vitepress'), { recursive: true });
     fs.writeFileSync(

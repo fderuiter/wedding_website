@@ -18,7 +18,7 @@ Both endpoints require an authenticated administrator session (`isProtectedRoute
 | Property | Single Scrape (`POST /api/registry/scrape`) | Batch Scrape (`POST /api/registry/scrape/batch`) |
 | --- | --- | --- |
 | **Handler** | [src/features/registry/api/scrape.ts](src/features/registry/api/scrape.ts#L306-L318) | [src/features/registry/api/batch-scrape.ts](src/features/registry/api/batch-scrape.ts#L46-L137) |
-| **Request Schema** | `ScrapeUrlSchema` (`{ url: string }`) in [src/utils/validation.ts](src/utils/validation.ts#L348-L353) | `BatchScrapeUrlsSchema` (`{ urls: string[] }`, **min `1` / max `20` URLs**, max `2,000` chars each) in [src/features/registry/schemas.ts](src/features/registry/schemas.ts#L972-L977) |
+| **Request Schema** | `ScrapeUrlSchema` (`{ url: string }`) in [src/utils/validation.ts](src/utils/validation.ts#L348-L353) | `BatchScrapeUrlsSchema` (`{ urls: string[] }`, **min `1` / max `20` URLs**, max `2,000` chars each) in [src/features/registry/schemas.ts](src/features/registry/schemas.ts#L1056-L1061) |
 | **Concurrency** | `1` URL per request | Worker pool of **`5` concurrent scrapes** (`limit = 5` in `runWithConcurrency`) |
 | **Timeouts** | **`4,500 ms`** `AbortController` timeout (`timeoutMs = 4500`) | **`10,000 ms`** per-URL timeout (`10000`) bounded by a **`15,000 ms`** master batch `AbortController` (`15000`) |
 | **Success Response** | HTTP `200` `ScrapedProductData` JSON object | HTTP `200` `{ success: true, results, total, successful, failed }` |

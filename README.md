@@ -27,7 +27,7 @@ The primary goal of this project is to provide a personal, customizable, and cos
 *   **Invitation Codes & Multi-Event Responses (RSVPs):**
     *   Household **invitation codes** (`InvitationCode`), CSV guest imports, cohort-scoped **sub-events** (`SubEvent`, `SubEventAccess`), and per-event **event responses** (`SubEventRsvp`) with meal choices, dietary notes, plus-one rules, and venue-timezone RSVP deadline cutoffs.
 *   **Interactive Seating Charts:**
-    *   Drag-and-drop **seating charts** (`SeatingTable`) with table capacity tracking, household cohort grouping, printable floorplans, and guest table lookup.
+    *   Drag-and-drop **seating charts** (`SeatingTable`) with inline party/plus-one seat assignment, venue landmarks, table capacity tracking, household cohort grouping, printable floorplans, caterer exports, and guest table lookup.
 *   **Guest Photo Uploads & Moderation:**
     *   Mobile-friendly guest photo gallery uploads (`Media`) with worker-offloaded `HEIC`/`HEIF` transcoding, backed by local disk or S3/R2 object storage and administrative **moderation** queues.
 *   **Scheduled Broadcasts & Communications:**
