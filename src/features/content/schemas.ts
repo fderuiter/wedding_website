@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   FeatureSchema,
   coordinateSchema,
+  isAllowedSmtpPort,
   isSafeConfigAssetUrl,
   isSafeMediaOrPhotoUrl,
 } from '@/utils/validationPrimitives';
@@ -277,7 +278,18 @@ const rawUpdateAppConfigBaseSchema = z.object({
   emailProvider: z.string().optional().default('smtp'),
   smtpHost: z.string().nullable().optional().default(''),
   smtpPort: z
-    .union([z.number(), z.string().transform((v) => parseInt(v, 10))])
+    .union([
+      z.number(),
+      z
+        .string()
+        .refine((v) => /^\d+$/.test(v.trim()), {
+          message: 'SMTP port must be 25, 465, 587, or 2525.',
+        })
+        .transform((v) => parseInt(v.trim(), 10)),
+    ])
+    .refine((val) => isAllowedSmtpPort(val), {
+      message: 'SMTP port must be 25, 465, 587, or 2525.',
+    })
     .nullable()
     .optional()
     .default(587),
