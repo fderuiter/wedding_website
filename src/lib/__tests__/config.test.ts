@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import {
   toPublicAppConfig,
+  toUnauthenticatedAppConfig,
   toAdminAppConfig,
   isMultisiteEnabled,
   isSiteInitialized,
@@ -908,5 +909,216 @@ describe('Request-Level Configuration Memoization (React cache)', () => {
     const admin = toAdminAppConfig(rawWithGrace);
     expect(admin.rsvpGracePeriodHours).toBe(48);
     expect(admin.rsvpOpen).toBe(true);
+  });
+
+  describe('hidden section redaction and unauthenticated layout gating', () => {
+    it('redacts title and content on hidden features in toPublicAppConfig while preserving visible features and raw admin features', () => {
+      const configWithHiddenFeatures = {
+        ...baseConfig,
+        features: [
+          {
+            id: 'story',
+            type: 'story',
+            title: 'Our Story',
+            content: 'Public story intro',
+            visible: true,
+          },
+          {
+            id: 'custom-secret',
+            type: 'custom',
+            title: 'Secret Afterparty Draft',
+            content: 'Private speakeasy code 9942',
+            visible: false,
+          },
+        ],
+      };
+
+      const pub = toPublicAppConfig(configWithHiddenFeatures);
+      expect(pub.features).toEqual([
+        {
+          id: 'story',
+          type: 'story',
+          title: 'Our Story',
+          content: 'Public story intro',
+          visible: true,
+        },
+        {
+          id: 'custom-secret',
+          type: 'custom',
+          title: '',
+          content: '',
+          visible: false,
+        },
+      ]);
+
+      const admin = toAdminAppConfig(configWithHiddenFeatures);
+      expect(admin.features).toEqual([
+        {
+          id: 'story',
+          type: 'story',
+          title: 'Our Story',
+          content: 'Public story intro',
+          visible: true,
+        },
+        {
+          id: 'custom-secret',
+          type: 'custom',
+          title: 'Secret Afterparty Draft',
+          content: 'Private speakeasy code 9942',
+          visible: false,
+        },
+      ]);
+    });
+
+    it('retains redacted hidden placeholder entries when all features are hidden so empty-array fallbacks do not trigger', () => {
+      const allHiddenConfig = {
+        ...baseConfig,
+        features: JSON.stringify([
+          {
+            id: 'details',
+            type: 'details',
+            title: 'Unpublished Details',
+            content: 'Hidden ceremony schedule',
+            visible: false,
+          },
+          {
+            id: 'venue',
+            type: 'venue',
+            title: 'Unpublished Venue',
+            content: 'Hidden venue gate code',
+            visible: false,
+          },
+        ]),
+      };
+
+      const pub = toPublicAppConfig(allHiddenConfig);
+      expect(pub.features).toHaveLength(2);
+      expect(pub.features).toEqual([
+        {
+          id: 'details',
+          type: 'details',
+          title: '',
+          content: '',
+          visible: false,
+        },
+        {
+          id: 'venue',
+          type: 'venue',
+          title: '',
+          content: '',
+          visible: false,
+        },
+      ]);
+    });
+
+    it('clears gated event details in toUnauthenticatedAppConfig while preserving branding, theme tokens, modules, contactEmail, timezone, and RSVP fields', () => {
+      const richConfig = {
+        ...baseConfig,
+        partner1Name: 'Taylor',
+        partner2Name: 'Morgan',
+        brideName: 'Taylor',
+        groomName: 'Morgan',
+        brandMonogram: 'T & M',
+        brandLogoUrl: '/uploads/logo.png',
+        brandLogoAlt: 'Couple monogram',
+        heroImageUrl: '/uploads/hero.jpg',
+        heroImageAlt: 'Sunset portrait',
+        brandWatermarkUrl: '/uploads/watermark.png',
+        brandWatermarkAlt: 'Floral crest',
+        badgeGraphicUrl: '/uploads/badge.png',
+        badgeGraphicAlt: 'Wax seal',
+        photoAlbumUrl: 'https://photos.example.invalid/private-album',
+        venueName: 'Secret Estate',
+        venueAddress: '742 Hidden Lane',
+        venueCity: 'Asheville',
+        venueState: 'NC',
+        venueZip: '28801',
+        latitude: 35.5951,
+        longitude: -82.5515,
+        venueDescription: 'Gate code 4815 at north entrance',
+        storyText: 'Private couple story narrative',
+        travelAdvice: 'Private shuttle pickup instructions',
+        heroTitle: 'Secret Garden Weekend',
+        heroSubtitle: 'Private estate celebration',
+        colorPrimary: '#1E3A8A',
+        colorSecondary: '#D97706',
+        themePreset: 'editorial',
+        themeTokens: { '--color-accent': '#0F766E' },
+        contactEmail: 'hosts@wedding.example',
+        timezone: 'America/New_York',
+        rsvpOpen: true,
+        rsvpDeadlineDate: '2099-09-01',
+        rsvpClosedMessage: 'Please email hosts for late RSVP updates.',
+        modules: {
+          registry: true,
+          groupGifting: false,
+          weather: true,
+          weddingParty: true,
+          attractions: false,
+          gallery: true,
+          countdown: true,
+          addToCalendar: false,
+          interactive3D: false,
+        },
+        features: [
+          {
+            id: 'story',
+            type: 'story',
+            title: 'Private Story Heading',
+            content: 'Private story section body',
+            visible: true,
+          },
+          {
+            id: 'hidden-draft',
+            type: 'custom',
+            title: 'Hidden Draft Title',
+            content: 'Hidden draft body',
+            visible: false,
+          },
+        ],
+      };
+
+      const unauth = toUnauthenticatedAppConfig(richConfig);
+
+      // Gated fields are cleared
+      expect(unauth.photoAlbumUrl).toBe('');
+      expect(unauth.venueName).toBe('');
+      expect(unauth.venueAddress).toBe('');
+      expect(unauth.venueCity).toBe('');
+      expect(unauth.venueState).toBe('');
+      expect(unauth.venueZip).toBe('');
+      expect(unauth.latitude).toBe(0);
+      expect(unauth.longitude).toBe(0);
+      expect(unauth.venueDescription).toBe('');
+      expect(unauth.storyText).toBe('');
+      expect(unauth.travelAdvice).toBe('');
+      expect(unauth.heroTitle).toBe('');
+      expect(unauth.heroSubtitle).toBe('');
+      expect(unauth.features).toEqual([]);
+
+      // Branding, theme, modules, contactEmail, timezone, and RSVP fields are preserved
+      expect(unauth.partner1Name).toBe('Taylor');
+      expect(unauth.partner2Name).toBe('Morgan');
+      expect(unauth.brideName).toBe('Taylor');
+      expect(unauth.groomName).toBe('Morgan');
+      expect(unauth.brandMonogram).toBe('T & M');
+      expect(unauth.brandLogoUrl).toBe('/uploads/logo.png');
+      expect(unauth.brandLogoAlt).toBe('Couple monogram');
+      expect(unauth.heroImageUrl).toBe('/uploads/hero.jpg');
+      expect(unauth.brandWatermarkUrl).toBe('/uploads/watermark.png');
+      expect(unauth.badgeGraphicUrl).toBe('/uploads/badge.png');
+      expect(unauth.colorPrimary).toBe('#1E3A8A');
+      expect(unauth.colorSecondary).toBe('#D97706');
+      expect(unauth.themePreset).toBe('editorial');
+      expect(unauth.themeTokens).toEqual({ '--color-accent': '#0F766E' });
+      expect(unauth.contactEmail).toBe('hosts@wedding.example');
+      expect(unauth.timezone).toBe('America/New_York');
+      expect(unauth.rsvpOpen).toBe(true);
+      expect(unauth.isRsvpOpen).toBe(true);
+      expect(unauth.rsvpDeadlineDate).toBe('2099-09-01');
+      expect(unauth.rsvpClosedMessage).toBe('Please email hosts for late RSVP updates.');
+      expect(unauth.modules.registry).toBe(true);
+      expect(unauth.modules.attractions).toBe(false);
+    });
   });
 });

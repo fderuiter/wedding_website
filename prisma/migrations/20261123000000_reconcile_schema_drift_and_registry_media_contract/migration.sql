@@ -133,9 +133,8 @@ WHERE a."imageId" IS NOT NULL
 
 UPDATE "Contributor" c
 SET "registryItemId" = NULL
-WHERE c."registryItemId" = ''
-   OR (c."registryItemId" IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM "RegistryItem" r WHERE r."id" = c."registryItemId"));
+WHERE c."registryItemId" IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM "RegistryItem" r WHERE r."id" = c."registryItemId");
 
 UPDATE "Contributor" c
 SET "invitationCodeId" = NULL
@@ -176,7 +175,7 @@ ALTER TABLE "WeddingPartyMember" ALTER COLUMN "updatedAt" DROP DEFAULT;
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "SnapshotVersion_entityType_entityId_createdAt_idx" ON "SnapshotVersion"("entityType", "entityId", "createdAt" DESC);
 
--- AddForeignKey (idempotent when 20261122010000_reconcile_schema_migration_drift already added constraints)
+-- AddForeignKey
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -185,9 +184,7 @@ BEGIN
     WHERE conname = 'WeddingPartyMember_photoId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "WeddingPartyMember"
-      ADD CONSTRAINT "WeddingPartyMember_photoId_fkey"
-      FOREIGN KEY ("photoId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    ALTER TABLE "WeddingPartyMember" ADD CONSTRAINT "WeddingPartyMember_photoId_fkey" FOREIGN KEY ("photoId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -196,9 +193,7 @@ BEGIN
     WHERE conname = 'Attraction_imageId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "Attraction"
-      ADD CONSTRAINT "Attraction_imageId_fkey"
-      FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    ALTER TABLE "Attraction" ADD CONSTRAINT "Attraction_imageId_fkey" FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -207,9 +202,7 @@ BEGIN
     WHERE conname = 'RegistryItem_imageId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "RegistryItem"
-      ADD CONSTRAINT "RegistryItem_imageId_fkey"
-      FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    ALTER TABLE "RegistryItem" ADD CONSTRAINT "RegistryItem_imageId_fkey" FOREIGN KEY ("imageId") REFERENCES "Media"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -218,9 +211,7 @@ BEGIN
     WHERE conname = 'Contributor_registryItemId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "Contributor"
-      ADD CONSTRAINT "Contributor_registryItemId_fkey"
-      FOREIGN KEY ("registryItemId") REFERENCES "RegistryItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    ALTER TABLE "Contributor" ADD CONSTRAINT "Contributor_registryItemId_fkey" FOREIGN KEY ("registryItemId") REFERENCES "RegistryItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 
   IF NOT EXISTS (
@@ -229,8 +220,6 @@ BEGIN
     WHERE conname = 'Contributor_invitationCodeId_fkey'
       AND connamespace = CURRENT_SCHEMA()::regnamespace
   ) THEN
-    ALTER TABLE "Contributor"
-      ADD CONSTRAINT "Contributor_invitationCodeId_fkey"
-      FOREIGN KEY ("invitationCodeId") REFERENCES "InvitationCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    ALTER TABLE "Contributor" ADD CONSTRAINT "Contributor_invitationCodeId_fkey" FOREIGN KEY ("invitationCodeId") REFERENCES "InvitationCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
   END IF;
 END $$;
