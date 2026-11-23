@@ -102,6 +102,9 @@ jest.mock('@/core/auth/auth.server', () => ({
 import { GET } from '../route';
 import { prisma } from '@/lib/prisma';
 import { isAdminRequest } from '@/core/auth/auth.server';
+import { parseCsvContent, validateSingleCsvRow } from '@/utils/csv';
+import { formatGuestPlusOneNames, isAddressComplete } from '@/features/registry';
+import { getGuestPhone } from '@/features/broadcast';
 
 const mockPrisma = prisma as unknown as {
   invitationCode: {
@@ -182,9 +185,9 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status,Attendance,Meal Selections,Custom Answers');
-    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,\'+15551234567,John Doe,Doe Family,Bride,"VIP, Rehearsal","123 Main St, Apt 4B, San Francisco, CA, 94102, USA",Vegetarian,1,Unused,Pending,,');
-    expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,http://localhost:3000/guest?code=BOB2026,bob@example.com,,,Smiths,Groom,Local,"456 Oak Rd, Austin, TX, 78701, USA","Gluten-Free, Dairy-Free",0,Redeemed,Attending,,');
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address Line 1,Address Line 2,City,State,ZIP Code,Country,Dietary Notes,Plus Ones,Status,Attendance,Meal Selections,Custom Answers');
+    expect(lines[1]).toBe('Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,\'+15551234567,John Doe,Doe Family,Bride,"VIP, Rehearsal",123 Main St,Apt 4B,San Francisco,CA,94102,USA,Vegetarian,1,Unused,Pending,,');
+    expect(lines[2]).toBe('"Bob ""The Builder"" Smith",BOB2026,http://localhost:3000/guest?code=BOB2026,bob@example.com,,,Smiths,Groom,Local,456 Oak Rd,,Austin,TX,78701,USA,"Gluten-Free, Dairy-Free",0,Redeemed,Attending,,');
   });
 
   it('correctly parses phone numbers from stringified JSON, mobile/phoneNumber aliases, and handles malformed extraFields', async () => {
@@ -314,7 +317,7 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
     const csvText = await res.text();
     const lines = csvText.trim().split('\n');
 
-    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address,Dietary Notes,Plus Ones,Status,Attendance,Meal Selections,Custom Answers');
+    expect(lines[0]).toBe('Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Household Name,Party Group,Party Tags,Address Line 1,Address Line 2,City,State,ZIP Code,Country,Dietary Notes,Plus Ones,Status,Attendance,Meal Selections,Custom Answers');
     expect(lines[1]).toContain('"\'=HYPERLINK(""http://attacker.com"")"');
     expect(lines[1]).toContain('\'+INVITE1');
     expect(lines[1]).toContain('\'-admin@example.com');
@@ -372,5 +375,95 @@ describe('Invitation Codes Export API Route (GET /api/admin/invitation-codes/exp
       'Clara Oswald: Truffle Gnocchi (vegan); Danny Pink: Herb Salmon (gluten-free)'
     );
     expect(lines[1]).toContain('"Hotel shuttle?: Yes, round-trip"');
+  });
+
+  it('round-trips exported CSV through parseCsvContent and validateSingleCsvRow preserving getGuestPhone, isAddressComplete, Plus-One Name, and dietaryNotes without matching Meal Selections', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    mockPrisma.invitationCode.findMany.mockResolvedValue([
+      {
+        id: 'ic-roundtrip',
+        guestName: 'Jane Doe',
+        code: 'JANE2026',
+        email: 'jane@example.com',
+        plusOneFirstName: 'John',
+        plusOneLastName: 'Doe',
+        householdName: 'Doe Family',
+        partyGroup: 'Bride',
+        partyTags: ['VIP', 'Rehearsal'],
+        addressLine1: '123 Main St',
+        addressLine2: 'Apt 4B',
+        city: 'San Francisco',
+        state: 'CA',
+        zipCode: '94102',
+        country: 'USA',
+        dietaryNotes: 'No peanuts',
+        plusOneAllocations: 2,
+        used: true,
+        extraFields: {
+          phone: '+15551234567',
+          attendanceStatus: 'attending',
+          plusOneNames: ['John Doe', 'Tommy Doe'],
+          mealSummary: 'Jane Doe: Salmon; John Doe: Steak',
+          customAnswersSummary: 'Shuttle?: Yes',
+        },
+      },
+    ] as any);
+
+    const req = new NextRequest('http://localhost:3000/api/admin/invitation-codes/export');
+    const res = await GET(req);
+    const csvText = await res.text();
+
+    const parsed = parseCsvContent(csvText);
+    expect(parsed.suggestedPhoneCol).toBe('Phone Number');
+    expect(parsed.suggestedPlusOneNameCol).toBe('Plus-One Name');
+    expect(parsed.suggestedDietaryNotesCol).toBe('Dietary Notes');
+    expect(parsed.suggestedAddressLine1Col).toBe('Address Line 1');
+    expect(parsed.suggestedAddressLine2Col).toBe('Address Line 2');
+    expect(parsed.suggestedCityCol).toBe('City');
+    expect(parsed.suggestedStateCol).toBe('State');
+    expect(parsed.suggestedZipCodeCol).toBe('ZIP Code');
+    expect(parsed.suggestedCountryCol).toBe('Country');
+
+    const revalidated = validateSingleCsvRow(
+      parsed.rows[0],
+      0,
+      {
+        guestNameCol: parsed.suggestedGuestNameCol,
+        codeCol: parsed.suggestedCodeCol,
+        emailCol: parsed.suggestedEmailCol,
+        phoneCol: parsed.suggestedPhoneCol,
+        plusOneNameCol: parsed.suggestedPlusOneNameCol,
+        plusOneCol: parsed.suggestedPlusOneCol,
+        householdNameCol: parsed.suggestedHouseholdNameCol,
+        partyGroupCol: parsed.suggestedPartyGroupCol,
+        partyTagsCol: parsed.suggestedPartyTagsCol,
+        addressLine1Col: parsed.suggestedAddressLine1Col,
+        addressLine2Col: parsed.suggestedAddressLine2Col,
+        cityCol: parsed.suggestedCityCol,
+        stateCol: parsed.suggestedStateCol,
+        zipCodeCol: parsed.suggestedZipCodeCol,
+        countryCol: parsed.suggestedCountryCol,
+        dietaryNotesCol: parsed.suggestedDietaryNotesCol,
+        extraCols: [],
+      },
+      new Map([['JANE2026', 1]]),
+      new Set(['JANE2026'])
+    );
+
+    expect(revalidated.isValid).toBe(true);
+    expect(getGuestPhone(revalidated)).toBe('+15551234567');
+    expect(isAddressComplete(revalidated)).toBe(true);
+    expect(revalidated.addressLine1).toBe('123 Main St');
+    expect(revalidated.addressLine2).toBe('Apt 4B');
+    expect(revalidated.city).toBe('San Francisco');
+    expect(revalidated.state).toBe('CA');
+    expect(revalidated.zipCode).toBe('94102');
+    expect(revalidated.country).toBe('USA');
+    expect(revalidated.dietaryNotes).toBe('No peanuts');
+    expect(formatGuestPlusOneNames(revalidated)).toBe('John Doe, Tommy Doe');
+    expect(revalidated.extraFields).toEqual({
+      phone: '+15551234567',
+      plusOneNames: ['John Doe', 'Tommy Doe'],
+    });
   });
 });

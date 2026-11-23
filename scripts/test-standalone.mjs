@@ -1,10 +1,16 @@
 import child_process from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  httpRequest as smokeHttpRequest,
+  runCheckedCommand,
+  runSmokeRouteProbes,
+  waitForPostgresReady,
+  waitForServerReady,
+} from './smoke-runner.mjs';
 
 const SCRIPT_DIR = typeof __dirname !== 'undefined'
   ? __dirname
@@ -99,71 +105,15 @@ function createEphemeralScryptHash() {
   return `scrypt:${salt.toString('base64')}:${key.toString('base64')}`;
 }
 
-function httpRequest(urlPath, baseUrl, port, options = {}) {
-  const { method = 'GET', headers = {}, body = null, timeoutMs = 5000 } = options;
-  return new Promise((resolve, reject) => {
-    const fullUrl = new URL(urlPath, baseUrl);
-    const req = http.request(fullUrl, {
-      method,
-      headers: {
-        Host: `127.0.0.1:${port}`,
-        ...headers,
-      },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        resolve({ statusCode: res.statusCode, headers: res.headers, body: data });
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(timeoutMs, () => {
-      req.destroy();
-      reject(new Error(`Timeout fetching ${urlPath}`));
-    });
-    if (body) {
-      req.write(body);
-    }
-    req.end();
-  });
-}
-
-function request(urlPath, baseUrl, port) {
-  return httpRequest(urlPath, baseUrl, port);
-}
-
 function buildHeicMultipartPayload(boundary) {
   const preamble = Buffer.from(
     `--${boundary}\r\n` +
-    'Content-Disposition: form-data; name="file"; filename="smoke-test.HEIC"\r\n' +
-    'Content-Type: image/heic\r\n\r\n',
+      'Content-Disposition: form-data; name="file"; filename="smoke-test.HEIC"\r\n' +
+      'Content-Type: image/heic\r\n\r\n',
     'utf8'
   );
   const epilogue = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
   return Buffer.concat([preamble, VALID_HEIC_BUFFER, epilogue]);
-}
-
-async function waitForTcpPort(port, host = '127.0.0.1', retries = 30) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      await new Promise((resolve, reject) => {
-        const socket = net.createConnection({ port, host, timeout: 1000 });
-        socket.on('connect', () => {
-          socket.end();
-          resolve();
-        });
-        socket.on('error', reject);
-        socket.on('timeout', () => {
-          socket.destroy();
-          reject(new Error('Timeout'));
-        });
-      });
-      return true;
-    } catch {
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-  }
-  return false;
 }
 
 async function main() {
@@ -182,74 +132,111 @@ async function main() {
 
   for (const v of providerVars) {
     if (process.env[v]) {
-      console.warn(`⚠️ Provider-specific variable ${v} was set. Unsetting for provider-neutral test.`);
+      console.warn(
+        `⚠️ Provider-specific variable ${v} was set. Unsetting for provider-neutral test.`
+      );
       delete process.env[v];
     }
   }
 
-  // Check that standalone server entrypoint exists
-  const standaloneServerPath = path.join(rootDir, '.next', 'standalone', 'server.js');
+  // 2. Verify standalone server entrypoint and staged static/public assets exist without masking missing copies
+  const standaloneDir = path.join(rootDir, '.next', 'standalone');
+  const standaloneServerPath = path.join(standaloneDir, 'server.js');
+  const standaloneStaticDir = path.join(standaloneDir, '.next', 'static');
+  const standalonePublicDir = path.join(standaloneDir, 'public');
+
   if (!fs.existsSync(standaloneServerPath)) {
-    console.error(`❌ Standalone server build not found at ${standaloneServerPath}. Run 'npm run build' first.`);
+    console.error(
+      `❌ Standalone server build not found at ${standaloneServerPath}. Run 'npm run build' first.`
+    );
     process.exit(1);
   }
-
-  // Ensure public and static assets are synced to standalone folder if needed
-  const standaloneNextDir = path.join(rootDir, '.next', 'standalone', '.next');
-  const standaloneStaticDir = path.join(standaloneNextDir, 'static');
-  const srcStaticDir = path.join(rootDir, '.next', 'static');
-
-  if (fs.existsSync(srcStaticDir) && !fs.existsSync(standaloneStaticDir)) {
-    fs.mkdirSync(standaloneNextDir, { recursive: true });
-    fs.cpSync(srcStaticDir, standaloneStaticDir, { recursive: true });
+  if (!fs.existsSync(standaloneStaticDir)) {
+    console.error(
+      `❌ Standalone static assets not found at ${standaloneStaticDir}. Run 'npm run build' first.`
+    );
+    process.exit(1);
   }
-
-  const standalonePublicDir = path.join(rootDir, '.next', 'standalone', 'public');
-  const srcPublicDir = path.join(rootDir, 'public');
-
-  if (fs.existsSync(srcPublicDir) && !fs.existsSync(standalonePublicDir)) {
-    fs.cpSync(srcPublicDir, standalonePublicDir, { recursive: true });
+  if (!fs.existsSync(standalonePublicDir)) {
+    console.error(
+      `❌ Standalone public assets not found at ${standalonePublicDir}. Run 'npm run build' first.`
+    );
+    process.exit(1);
   }
 
   const portNum = await getAvailableLoopbackPort(process.env.TEST_PORT);
   const PORT = String(portNum);
-  const BASE_URL = `http://127.0.0.1:${PORT}`;
+  const HOST_HEADER = `127.0.0.1:${PORT}`;
+  const BASE_URL = `http://${HOST_HEADER}`;
+  const httpRequest = (urlPath, options = {}) =>
+    smokeHttpRequest(BASE_URL, urlPath, {
+      hostHeader: HOST_HEADER,
+      ...options,
+    });
+
   const dbTarget = await resolveStandaloneDatabaseTarget(process.env, [portNum]);
   const standaloneUploadsDir = path.join(standalonePublicDir, 'uploads');
   const uploadedStandaloneFiles = [];
 
-  // Prepare environment for standalone server execution
+  // 3. Prepare environment for standalone server execution
   const ephemeralAdminPassword = process.env.ADMIN_PASSWORD || createEphemeralScryptHash();
   const ephemeralGuestPasscode =
     process.env.GUEST_PASSCODE || `standalone-passcode-${crypto.randomBytes(8).toString('hex')}`;
   const ephemeralGuestSessionSecret =
     process.env.GUEST_SESSION_SECRET ||
     `standalone-session-secret-${crypto.randomBytes(24).toString('hex')}`;
+
+  const configuredDbUrl = dbTarget.databaseUrl;
+  let targetDbHost = '127.0.0.1';
+  let targetDbPort = dbTarget.dbPort ?? 5432;
+  let dbUser = process.env.DB_USER || 'wedding';
+  let dbName = process.env.DB_NAME || 'wedding';
+
+  try {
+    const parsedDb = new URL(configuredDbUrl);
+    if (parsedDb.hostname) {
+      targetDbHost = parsedDb.hostname === 'localhost' ? '127.0.0.1' : parsedDb.hostname;
+    }
+    if (parsedDb.port) {
+      targetDbPort = Number.parseInt(parsedDb.port, 10);
+    }
+    if (parsedDb.username) {
+      dbUser = decodeURIComponent(parsedDb.username);
+    }
+    const pathDbName = parsedDb.pathname.replace(/^\/+/, '');
+    if (pathDbName) {
+      dbName = decodeURIComponent(pathDbName);
+    }
+  } catch {
+    // Keep defaults if URL is invalid (prisma migrate deploy will report a clear validation error)
+  }
+
   const composeEnv = {
     ...process.env,
     PORT,
-    ...(dbTarget.dbPort !== null ? { DB_PORT: String(dbTarget.dbPort) } : {}),
-    DB_USER: process.env.DB_USER || 'wedding',
+    DB_USER: dbUser,
     DB_PASSWORD: process.env.DB_PASSWORD || 'wedding123',
-    DB_NAME: process.env.DB_NAME || 'wedding',
+    DB_NAME: dbName,
+    DB_PORT: String(targetDbPort),
     ADMIN_PASSWORD: ephemeralAdminPassword,
     GUEST_PASSCODE: ephemeralGuestPasscode,
     GUEST_SESSION_SECRET: ephemeralGuestSessionSecret,
   };
+  delete composeEnv.POSTGRES_URL_NON_POOLING;
 
   const env = {
     ...process.env,
     NODE_ENV: 'production',
     PORT,
     HOSTNAME: '127.0.0.1',
-    ALLOWED_HOSTS: `127.0.0.1,localhost,127.0.0.1:${PORT}`,
-    DATABASE_URL: dbTarget.databaseUrl,
+    ALLOWED_HOSTS: `127.0.0.1,localhost,${HOST_HEADER}`,
+    DATABASE_URL: configuredDbUrl,
     ADMIN_PASSWORD: ephemeralAdminPassword,
     GUEST_PASSCODE: ephemeralGuestPasscode,
     GUEST_SESSION_SECRET: ephemeralGuestSessionSecret,
   };
+  delete env.POSTGRES_URL_NON_POOLING;
 
-  // Remove any remaining provider flags from env
   for (const v of providerVars) {
     delete env[v];
   }
@@ -258,6 +245,7 @@ async function main() {
   let serverProcess = null;
   let serverLogs = '';
   let killed = false;
+  let passed = false;
 
   const cleanup = () => {
     if (!killed && serverProcess && !serverProcess.killed) {
@@ -271,53 +259,58 @@ async function main() {
   process.on('SIGTERM', cleanup);
 
   try {
+    // 4. Ensure clean PostgreSQL container is running over TCP and migrations succeed
+    const dbUrl = env.DATABASE_URL || '';
     if (dbTarget.useComposeDb) {
-      console.log(`Ensuring isolated database is ready on 127.0.0.1:${dbTarget.dbPort} for standalone execution...`);
-      try {
-        child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
-          stdio: 'ignore',
-          shell: true,
-          cwd: rootDir,
-          env: composeEnv,
-        });
-        managedComposeDb = true;
-        child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
-          stdio: 'inherit',
-          shell: true,
-          cwd: rootDir,
-          env: composeEnv,
-        });
-        let dbReady = false;
-        for (let i = 0; i < 30; i++) {
-          const check = child_process.spawnSync(
-            'docker',
-            ['compose', ...COMPOSE_ARGS, 'exec', '-T', 'db', 'pg_isready', '-U', composeEnv.DB_USER, '-d', composeEnv.DB_NAME],
-            { stdio: 'ignore', shell: true, cwd: rootDir, env: composeEnv }
-          );
-          if (check.status === 0) {
-            dbReady = true;
-            break;
-          }
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-        if (dbReady && (await waitForTcpPort(dbTarget.dbPort))) {
-          child_process.spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
-            stdio: 'inherit',
-            shell: true,
-            cwd: rootDir,
-            env: { ...process.env, DATABASE_URL: env.DATABASE_URL },
-          });
-        }
-      } catch (dbErr) {
-        console.warn('⚠️ Database setup check warning:', dbErr.message);
-      }
+      console.log(
+        `Resetting and starting isolated PostgreSQL container on 127.0.0.1:${targetDbPort} for standalone smoke test...`
+      );
+      child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
+        stdio: 'ignore',
+        shell: process.platform === 'win32',
+        cwd: rootDir,
+        env: composeEnv,
+      });
+      managedComposeDb = true;
+
+      runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
+        cwd: rootDir,
+        env: composeEnv,
+      });
+
+      console.log('Waiting for PostgreSQL TCP readiness (pg_isready -h localhost + host socket)...');
+      await waitForPostgresReady({
+        composeArgs: COMPOSE_ARGS,
+        composeEnv,
+        rootDir,
+        host: targetDbHost,
+        port: targetDbPort,
+        dbUser,
+        dbName,
+        maxAttempts: 30,
+      });
     } else {
       console.log('Using caller-supplied DATABASE_URL; skipping isolated database container startup.');
     }
 
+    if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+      console.log('Applying Prisma migrations against PostgreSQL database...');
+      const migrateEnv = {
+        ...process.env,
+        DATABASE_URL: env.DATABASE_URL,
+      };
+      delete migrateEnv.POSTGRES_URL_NON_POOLING;
+
+      runCheckedCommand('npx', ['prisma', 'migrate', 'deploy'], {
+        cwd: rootDir,
+        env: migrateEnv,
+      });
+    }
+
+    // 5. Start standalone server and execute shared smoke route probes
     console.log(`Starting standalone server on port ${PORT}...`);
     serverProcess = child_process.spawn('node', [standaloneServerPath], {
-      cwd: path.join(rootDir, '.next', 'standalone'),
+      cwd: standaloneDir,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -333,85 +326,27 @@ async function main() {
       process.stderr.write(`[standalone err] ${text}`);
     });
 
-    // Wait for server readiness
-    console.log('Waiting for standalone server to accept requests...');
-    let ready = false;
-    for (let i = 0; i < 30; i++) {
-      try {
-        const res = await request('/api/health', BASE_URL, PORT);
-        if (res.statusCode === 200) {
-          ready = true;
-          break;
-        }
-      } catch {
-        // Retry
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-    }
+    console.log('Waiting for standalone server readiness on GET /api/ready...');
+    await waitForServerReady({
+      baseUrl: BASE_URL,
+      hostHeader: HOST_HEADER,
+      maxAttempts: 30,
+      intervalMs: 1000,
+      label: 'Standalone server',
+    });
+    console.log('✅ Standalone server reported ready!');
 
-    if (!ready) {
-      throw new Error('Standalone server failed to respond on /api/health within 30 seconds.');
-    }
-
-    console.log('✅ Standalone server is listening!');
-
-    // Test 0: Verify Liveness (/api/live)
-    console.log('Testing GET /api/live...');
-    const liveRes = await request('/api/live', BASE_URL, PORT);
-    if (liveRes.statusCode !== 200) {
-      throw new Error(`Liveness check returned status ${liveRes.statusCode}: ${liveRes.body}`);
-    }
-    const liveJson = JSON.parse(liveRes.body);
-    if (liveJson.status !== 'alive' || typeof liveJson.timestamp !== 'string') {
-      throw new Error(`Liveness check body invalid: ${liveRes.body}`);
-    }
-    console.log('✅ /api/live OK');
-
-    // Test 1: Verify Health (Startup / Rollout Readiness)
-    console.log('Testing GET /api/health...');
-    const healthRes = await request('/api/health', BASE_URL, PORT);
-    if (healthRes.statusCode !== 200) {
-      throw new Error(`Health check returned status ${healthRes.statusCode}: ${healthRes.body}`);
-    }
-    const healthJson = JSON.parse(healthRes.body);
-    const healthStatus = healthJson.status || healthJson.data?.status;
-    if (healthStatus !== 'ok') {
-      throw new Error(`Health check body invalid: ${healthRes.body}`);
-    }
-    console.log('✅ /api/health OK');
-
-    // Test 2: Verify Readiness
-    console.log('Testing GET /api/ready...');
-    const readyRes = await request('/api/ready', BASE_URL, PORT);
-    if (readyRes.statusCode !== 200) {
-      throw new Error(`Readiness check returned status ${readyRes.statusCode}: ${readyRes.body}`);
-    }
-    const readyJson = JSON.parse(readyRes.body);
-    if (readyJson.status !== 'ready') {
-      throw new Error(`Readiness check body invalid: ${readyRes.body}`);
-    }
-    console.log('✅ /api/ready OK');
-
-    // Test 3: Verify Representative Public Routes
-    const routesToTest = [
-      { path: '/guest/login', expectedStatus: 200, name: 'Guest Login page' },
-      { path: '/', expectedStatus: 303, name: 'Home page (redirects to guest login when unauthenticated)' },
-      { path: '/api/registry/items', expectedStatus: 401, name: 'Registry items API (requires auth)' },
-    ];
-
-    for (const route of routesToTest) {
-      console.log(`Testing route ${route.name} (${route.path})...`);
-      const res = await request(route.path, BASE_URL, PORT);
-      if (res.statusCode !== route.expectedStatus) {
-        throw new Error(`Route ${route.path} returned status ${res.statusCode}, expected ${route.expectedStatus}`);
-      }
-      console.log(`✅ ${route.name} (${route.path}) returned ${res.statusCode}`);
-    }
+    await runSmokeRouteProbes({
+      baseUrl: BASE_URL,
+      hostHeader: HOST_HEADER,
+      guestPasscode: ephemeralGuestPasscode,
+      label: 'standalone',
+    });
 
     // Test 4: Verify Guest Login, Standalone Worker HEIC Upload, /api/live Responsiveness, and Zero Worker Errors
     console.log('Testing POST /api/guest/login and HEIC worker upload to /api/guest/photos/upload...');
     const loginPayload = JSON.stringify({ passcode: ephemeralGuestPasscode });
-    const loginRes = await httpRequest('/api/guest/login', BASE_URL, PORT, {
+    const loginRes = await httpRequest('/api/guest/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -434,7 +369,7 @@ async function main() {
     const boundary = `----StandaloneHeicSmokeBoundary${crypto.randomBytes(8).toString('hex')}`;
     const multipartBody = buildHeicMultipartPayload(boundary);
     const [uploadRes, duringUploadLiveRes] = await Promise.all([
-      httpRequest('/api/guest/photos/upload', BASE_URL, PORT, {
+      httpRequest('/api/guest/photos/upload', {
         method: 'POST',
         headers: {
           Cookie: guestCookie,
@@ -444,7 +379,7 @@ async function main() {
         body: multipartBody,
         timeoutMs: 15000,
       }),
-      httpRequest('/api/live', BASE_URL, PORT, { timeoutMs: 1000 }),
+      httpRequest('/api/live', { timeoutMs: 1000 }),
     ]);
 
     if (uploadRes.statusCode !== 201) {
@@ -452,35 +387,50 @@ async function main() {
     }
     const uploadJson = JSON.parse(uploadRes.body);
     const uploadedUrl = uploadJson?.data?.[0]?.url;
-    if (uploadJson.success !== true || typeof uploadedUrl !== 'string' || !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)) {
+    if (
+      uploadJson.success !== true ||
+      typeof uploadedUrl !== 'string' ||
+      !/^\/uploads\/photos\/[a-f0-9]+\.jpg$/.test(uploadedUrl)
+    ) {
       throw new Error(`Unexpected HEIC upload response payload: ${uploadRes.body}`);
     }
     uploadedStandaloneFiles.push(path.join(standalonePublicDir, uploadedUrl.replace(/^\/+/, '')));
 
     if (duringUploadLiveRes.statusCode !== 200) {
-      throw new Error(`Concurrent /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`);
+      throw new Error(
+        `Concurrent /api/live during HEIC upload returned status ${duringUploadLiveRes.statusCode}`
+      );
     }
-    const postUploadLiveRes = await httpRequest('/api/live', BASE_URL, PORT, { timeoutMs: 1000 });
+    const postUploadLiveRes = await httpRequest('/api/live', { timeoutMs: 1000 });
     if (postUploadLiveRes.statusCode !== 200 || JSON.parse(postUploadLiveRes.body).status !== 'alive') {
-      throw new Error(`Post-upload /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`);
+      throw new Error(
+        `Post-upload /api/live check failed (${postUploadLiveRes.statusCode}): ${postUploadLiveRes.body}`
+      );
     }
 
     // Allow stdout/stderr pipe flush before inspecting logs
     await new Promise((r) => setTimeout(r, 100));
     if (WORKER_ERROR_LOG_PATTERN.test(serverLogs)) {
-      throw new Error(`Standalone server logged worker or sanitization errors during HEIC upload:\n${serverLogs}`);
+      throw new Error(
+        `Standalone server logged worker or sanitization errors during HEIC upload:\n${serverLogs}`
+      );
     }
     if (!serverLogs.includes('Successfully transcoded and sanitized HEIC/HEIF image to image/jpeg')) {
-      throw new Error(`Expected standalone worker HEIC transcoding confirmation in logs, observed:\n${serverLogs}`);
+      throw new Error(
+        `Expected standalone worker HEIC transcoding confirmation in logs, observed:\n${serverLogs}`
+      );
     }
-    console.log(`✅ Standalone HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`);
+    console.log(
+      `✅ Standalone HEIC upload transcoded via worker (${uploadedUrl}), /api/live responsive, 0 worker errors`
+    );
 
     console.log('=============================================');
     console.log('🎉 Standalone server smoke tests PASSED successfully!');
     console.log('=============================================');
+    passed = true;
   } catch (err) {
     console.error('\n❌ Standalone Smoke Test FAILED!');
-    console.error(err.message || err);
+    console.error(err instanceof Error ? err.message : err);
     console.error('\n=== Actionable Application / Standalone Server Logs ===');
     console.error(serverLogs || '(No server logs captured)');
     process.exitCode = 1;
@@ -502,15 +452,14 @@ async function main() {
     if (managedComposeDb) {
       child_process.spawnSync('docker', ['compose', ...COMPOSE_ARGS, 'down', '-v'], {
         stdio: 'ignore',
-        shell: true,
+        shell: process.platform === 'win32',
         cwd: rootDir,
         env: composeEnv,
       });
     }
-    // Allow process exit
     setTimeout(() => {
-      process.exit(process.exitCode || 0);
-    }, 500);
+      process.exit(passed ? 0 : 1);
+    }, 300);
   }
 }
 
