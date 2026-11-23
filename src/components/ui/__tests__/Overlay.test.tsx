@@ -38,14 +38,14 @@ describe('Overlay', () => {
 
   test('correctly forwards optional role and aria-modal props when provided', () => {
     const { getByRole } = render(
-      <Overlay isOpen={true} onClose={() => {}} role="region" aria-modal="true">
+      <Overlay isOpen={true} onClose={() => {}} role="alertdialog" aria-modal="true">
         <div>Content</div>
       </Overlay>
     );
 
-    const region = getByRole('region');
-    expect(region).toBeInTheDocument();
-    expect(region).toHaveAttribute('aria-modal', 'true');
+    const alertDialog = getByRole('alertdialog');
+    expect(alertDialog).toBeInTheDocument();
+    expect(alertDialog).toHaveAttribute('aria-modal', 'true');
   });
 
   test('renders standalone dialog role without duplicate dialog roles', () => {

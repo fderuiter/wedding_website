@@ -764,4 +764,107 @@ describe('SubEventsMatrixPage', () => {
     const axeResults = await axe(container);
     expect(axeResults).toHaveNoViolations();
   });
+
+  test('keeps Edit and Delete column headers mounted when 0 invitation codes match and passes existingSubEvents to modal', async () => {
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/admin/sub-events/access')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                subEvents: mockMatrixData.subEvents,
+                invitationCodes: [],
+                pagination: { total: 0, page: 1, limit: 25, totalPages: 1 },
+                filterOptions: { partyTags: [], partyGroups: [], householdNames: [] },
+              },
+            }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    }) as any;
+
+    render(<SubEventsMatrixPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('No invitation codes match your filter criteria.')
+      ).toBeInTheDocument();
+    });
+
+    // Sub-event column headers with Edit and Delete controls remain mounted even with 0 guest rows
+    expect(
+      screen.getByRole('button', { name: 'Edit sub-event Rehearsal Dinner' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Delete sub-event Rehearsal Dinner' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Edit sub-event Main Ceremony' })
+    ).toBeInTheDocument();
+
+    // Opening "+ Create New Sub-Event" renders Existing Sub-Events switcher inside modal
+    fireEvent.click(screen.getByRole('button', { name: /\+ Create New Sub-Event/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Create New Sub-Event' });
+    expect(within(dialog).getByText(/Existing Sub-Events/i)).toBeInTheDocument();
+  });
+
+  test('renders per-guest eventRsvps status, companions, meals, answers, and dietary notes inside matrix cells', async () => {
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/admin/sub-events/access')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              success: true,
+              data: {
+                subEvents: mockMatrixData.subEvents,
+                invitationCodes: [
+                  {
+                    ...mockMatrixData.invitationCodes[0],
+                    eventRsvps: {
+                      'se-rehearsal': {
+                        status: 'attending',
+                        plusOneCount: 1,
+                        plusOneNames: ['Jordan Smith'],
+                        dietaryNotes: 'No peanuts',
+                        meals: [
+                          {
+                            attendee: 'Alice Smith',
+                            optionId: 'm-salmon',
+                            label: 'Herb Salmon',
+                            dietaryTags: ['gluten-free'],
+                          },
+                          {
+                            attendee: 'Jordan Smith',
+                            optionId: 'm-kids',
+                            label: 'Kids Pasta',
+                            dietaryTags: ['kids'],
+                          },
+                        ],
+                        answers: [{ prompt: 'Need shuttle?', answer: 'Yes' }],
+                      },
+                    },
+                  },
+                ],
+                pagination: { total: 1, page: 1, limit: 25, totalPages: 1 },
+                filterOptions: { partyTags: [], partyGroups: [], householdNames: [] },
+              },
+            }),
+        });
+      }
+      return Promise.resolve({ ok: false });
+    }) as any;
+
+    render(<SubEventsMatrixPage />);
+
+    const cellRsvp = await screen.findByTestId('matrix-cell-rsvp-inv-1-se-rehearsal');
+    expect(cellRsvp).toHaveTextContent('Attending (+1)');
+    expect(cellRsvp).toHaveTextContent('+1: Jordan Smith');
+    expect(cellRsvp).toHaveTextContent('Alice Smith: Herb Salmon (gluten-free)');
+    expect(cellRsvp).toHaveTextContent('Jordan Smith: Kids Pasta (kids)');
+    expect(cellRsvp).toHaveTextContent('Need shuttle?: Yes');
+    expect(cellRsvp).toHaveTextContent('Dietary: No peanuts');
+  });
 });

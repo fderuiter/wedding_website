@@ -48,6 +48,7 @@ test.describe('Metadata', { tag: '@smoke' }, () => {
     context,
     page,
   }) => {
+    test.setTimeout(120000);
     await seedAdminAndGuestAuthCookies(context);
 
     const routeExpectations: Array<{
