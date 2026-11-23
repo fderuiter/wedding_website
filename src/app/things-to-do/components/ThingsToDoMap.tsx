@@ -3,7 +3,11 @@
 import React, { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import type { AttractionDTO } from '@/features/attractions';
-import { resolveDirectionsUrl } from '@/utils/maps';
+import {
+  resolveDirectionsUrl,
+  hasValidCoordinates,
+  isNonPlaceholderVenueText,
+} from '@/utils/maps';
 import { useTheme } from '@/components/ThemeProvider';
 import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
 import 'leaflet/dist/leaflet.css';
@@ -15,6 +19,15 @@ declare module 'react-leaflet' {
     'aria-label'?: string;
   }
 }
+
+export interface VenueMapPin {
+  name?: string | null;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+const TEMPERATE_FALLBACK_CENTER: [number, number] = [40.7128, -74.006];
 
 function escapeHtml(str: string) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -31,33 +44,56 @@ export function createMapMarkerIcon(title: string) {
   });
 }
 
+export function createVenueMarkerIcon(title: string) {
+  const safeTitle = escapeHtml(title);
+  return L.divIcon({
+    className: 'custom-venue-map-pin',
+    html: `<div class="map-marker-wrapper" role="img" aria-label="${safeTitle}" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="34" height="44" viewBox="0 0 34 44" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 5px var(--map-marker-shadow-color, rgba(0, 0, 0, 0.35)));"><path d="M17 1C8.716 1 2 7.716 2 16c0 11.5 15 26 15 26s15-14.5 15-26C32 7.716 25.284 1 17 1z" fill="var(--color-secondary, #B45309)" stroke="var(--map-marker-border-color, #ffffff)" stroke-width="2.5"/><path d="M17 9.5l2.12 4.3 4.74.69-3.43 3.34.81 4.72L17 20.32l-4.24 2.23.81-4.72-3.43-3.34 4.74-.69L17 9.5z" fill="var(--map-marker-border-color, #ffffff)"/></svg></div>`,
+    iconSize: [44, 44],
+    iconAnchor: [22, 44],
+    popupAnchor: [0, -42],
+  });
+}
+
 /**
- * Calculates geographic bounds and centroid from valid attraction coordinates.
+ * Calculates geographic bounds and centroid from valid non-zero attraction and venue coordinates.
  */
 export function calculateBoundsAndCentroid(
   attractions: AttractionDTO[],
-  defaultCenter: [number, number] = [0.0, 0.0]
+  defaultCenter: [number, number] = [0.0, 0.0],
+  venue?: VenueMapPin | null
 ) {
-  const validAttractions = attractions.filter(
-    (a) =>
-      typeof a.latitude === 'number' &&
-      typeof a.longitude === 'number' &&
-      !isNaN(a.latitude) &&
-      !isNaN(a.longitude)
+  const validAttractions = attractions.filter((a) =>
+    hasValidCoordinates(a.latitude, a.longitude)
   );
 
-  if (validAttractions.length === 0) {
+  const points: Array<[number, number]> = validAttractions.map((a) => [
+    a.latitude,
+    a.longitude,
+  ]);
+
+  if (venue && hasValidCoordinates(venue.latitude, venue.longitude)) {
+    points.push([venue.latitude as number, venue.longitude as number]);
+  }
+
+  const safeFallbackCenter: [number, number] = hasValidCoordinates(
+    defaultCenter?.[0],
+    defaultCenter?.[1]
+  )
+    ? [defaultCenter[0], defaultCenter[1]]
+    : TEMPERATE_FALLBACK_CENTER;
+
+  if (points.length === 0) {
     return {
       bounds: null,
-      centroid: defaultCenter,
+      centroid: safeFallbackCenter,
       count: 0,
       validAttractions,
     };
   }
 
-  if (validAttractions.length === 1) {
-    const single = validAttractions[0];
-    const point: [number, number] = [single.latitude, single.longitude];
+  if (points.length === 1) {
+    const point = points[0];
     return {
       bounds: [point, point] as [[number, number], [number, number]],
       centroid: point,
@@ -71,11 +107,11 @@ export function calculateBoundsAndCentroid(
   let minLng = Infinity;
   let maxLng = -Infinity;
 
-  for (const a of validAttractions) {
-    if (a.latitude < minLat) minLat = a.latitude;
-    if (a.latitude > maxLat) maxLat = a.latitude;
-    if (a.longitude < minLng) minLng = a.longitude;
-    if (a.longitude > maxLng) maxLng = a.longitude;
+  for (const [lat, lng] of points) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
   }
 
   const bounds: [[number, number], [number, number]] = [
@@ -87,7 +123,7 @@ export function calculateBoundsAndCentroid(
   return {
     bounds,
     centroid,
-    count: validAttractions.length,
+    count: points.length,
     validAttractions,
   };
 }
@@ -95,26 +131,39 @@ export function calculateBoundsAndCentroid(
 interface MapControllerProps {
   attractions: AttractionDTO[];
   defaultCenter: [number, number];
+  venue?: VenueMapPin | null;
 }
 
-const MapController: React.FC<MapControllerProps> = ({ attractions, defaultCenter }) => {
+const MapController: React.FC<MapControllerProps> = ({ attractions, defaultCenter, venue }) => {
   const map = useMap();
   const defaultLat = defaultCenter[0];
   const defaultLng = defaultCenter[1];
+  const venueLat = venue?.latitude;
+  const venueLng = venue?.longitude;
 
   useEffect(() => {
     if (!map) return;
     const center: [number, number] = [defaultLat, defaultLng];
-    const { bounds, centroid, count } = calculateBoundsAndCentroid(attractions, center);
+    const venuePin =
+      hasValidCoordinates(venueLat, venueLng)
+        ? { latitude: venueLat, longitude: venueLng }
+        : null;
+    const { bounds, centroid, count } = calculateBoundsAndCentroid(attractions, center, venuePin);
 
     if (count === 0) {
-      map.setView(center, 13);
+      map.setView(centroid, 13);
     } else if (count === 1 && centroid) {
       map.setView(centroid, 14);
     } else if (bounds) {
-      map.fitBounds(bounds, { padding: [50, 50] });
+      const isSingleIdenticalLocation =
+        bounds[0][0] === bounds[1][0] && bounds[0][1] === bounds[1][1];
+      if (isSingleIdenticalLocation && centroid) {
+        map.setView(centroid, 14);
+      } else {
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
     }
-  }, [map, attractions, defaultLat, defaultLng]);
+  }, [map, attractions, defaultLat, defaultLng, venueLat, venueLng]);
 
   return null;
 };
@@ -124,27 +173,59 @@ const MapController: React.FC<MapControllerProps> = ({ attractions, defaultCente
  * @description Defines the props for the ThingsToDoMap component.
  * @property {AttractionDTO[]} attractions - An array of attraction objects to be displayed as markers on the map.
  * @property {[number, number]} [defaultCenter] - Default center coordinates [latitude, longitude] fallback.
+ * @property {VenueMapPin | null} [venue] - Optional primary wedding venue marker details.
  */
 interface ThingsToDoMapProps {
   attractions: AttractionDTO[];
   defaultCenter?: [number, number];
+  venue?: VenueMapPin | null;
 }
 
 /**
  * @function ThingsToDoMap
- * @description A React component that displays a Leaflet map with markers for attractions.
- * This component is client-side only and will not render on the server.
- * @param {ThingsToDoMapProps} props - The props for the component.
- * @returns {JSX.Element | null} The rendered ThingsToDoMap component, or null if on the server.
+ * @description A React component that displays a Leaflet map with markers for the wedding venue and attractions.
+ * Filters out invalid (0, 0) coordinates and renders an empty placeholder when no valid coordinates exist.
  */
-const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCenter = [0.0, 0.0] }) => {
+const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({
+  attractions,
+  defaultCenter = [0.0, 0.0],
+  venue,
+}) => {
   const { resolvedTheme } = useTheme();
 
   if (typeof window === 'undefined') {
     return null;
   }
 
-  const { validAttractions } = calculateBoundsAndCentroid(attractions, defaultCenter);
+  const hasValidDefaultCenter = hasValidCoordinates(defaultCenter?.[0], defaultCenter?.[1]);
+  const hasValidVenue = Boolean(venue && hasValidCoordinates(venue.latitude, venue.longitude));
+  const { validAttractions, centroid } = calculateBoundsAndCentroid(
+    attractions,
+    defaultCenter,
+    venue
+  );
+
+  if (validAttractions.length === 0 && !hasValidVenue && !hasValidDefaultCenter) {
+    return (
+      <div
+        role="region"
+        aria-label="Things to do map"
+        data-testid="map-empty-placeholder"
+        className="h-full w-full min-h-[24rem] flex flex-col items-center justify-center p-6 text-center bg-gray-100 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg"
+      >
+        <p className="text-base font-semibold text-gray-800 dark:text-gray-100">
+          Map locations coming soon
+        </p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-sm">
+          Interactive pins will appear here once venue or local attraction coordinates are configured.
+        </p>
+      </div>
+    );
+  }
+
+  const initialCenter: [number, number] = hasValidDefaultCenter
+    ? [defaultCenter[0], defaultCenter[1]]
+    : centroid;
 
   const tileUrl = resolvedTheme === 'dark'
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -152,25 +233,68 @@ const ThingsToDoMap: React.FC<ThingsToDoMapProps> = ({ attractions, defaultCente
 
   const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
+  const venueTitle =
+    venue && isNonPlaceholderVenueText(venue.name) ? venue.name!.trim() : 'Wedding Venue';
+  const venueDirectionsUrl = hasValidVenue
+    ? resolveDirectionsUrl({
+      latitude: venue!.latitude,
+      longitude: venue!.longitude,
+      directions: venue?.address || venueTitle,
+    })
+    : undefined;
+
   return (
     <MapContainer
-      center={defaultCenter}
+      center={initialCenter}
       zoom={13}
       style={{ height: '100%', width: '100%' }}
       role="region"
       aria-label="Things to do map"
     >
-      <MapController attractions={attractions} defaultCenter={defaultCenter} />
+      <MapController attractions={attractions} defaultCenter={initialCenter} venue={venue} />
       <TileLayer
         url={tileUrl}
         attribution={tileAttribution}
       />
+      {hasValidVenue && (
+        <Marker
+          key="__wedding_venue_pin__"
+          position={[venue!.latitude as number, venue!.longitude as number]}
+          icon={createVenueMarkerIcon(`Wedding Venue: ${venueTitle}`)}
+        >
+          <Popup>
+            <div className="space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-secondary">
+                Wedding Venue
+              </div>
+              <b>{venueTitle}</b>
+              {venue?.address && isNonPlaceholderVenueText(venue.address) && (
+                <div>{venue.address}</div>
+              )}
+              {venueDirectionsUrl && (
+                <div>
+                  <AccessibleExternalLink
+                    href={venueDirectionsUrl}
+                    srContext={`to ${venueTitle}`}
+                  >
+                    Directions
+                  </AccessibleExternalLink>
+                </div>
+              )}
+            </div>
+          </Popup>
+        </Marker>
+      )}
       {validAttractions.map((attraction) => {
         const directionsUrl = resolveDirectionsUrl(attraction);
         const icon = createMapMarkerIcon(attraction.name);
 
         return (
-          <Marker key={attraction.name} position={[attraction.latitude, attraction.longitude]} icon={icon}>
+          <Marker
+            key={attraction.id || attraction.name}
+            position={[attraction.latitude, attraction.longitude]}
+            icon={icon}
+          >
             <Popup>
               <b>{attraction.name}</b>
               {directionsUrl && (

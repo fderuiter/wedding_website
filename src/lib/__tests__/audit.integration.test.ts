@@ -189,6 +189,7 @@ describe('Snapshot Pruning PostgreSQL Window Delete Integration', () => {
     if (buffer.length > 0) {
       await prisma.snapshotVersion.createMany({ data: buffer });
     }
+    await prisma.$executeRawUnsafe('ANALYZE "SnapshotVersion"');
 
     const globalState = globalThis as unknown as { pgPool?: any };
     const pool = globalState.pgPool;

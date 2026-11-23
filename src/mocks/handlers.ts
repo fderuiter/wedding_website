@@ -382,7 +382,6 @@ export const handlers = [
     });
   }),
 
-  // Mock Leaflet tiles for ThingsToDoMap (CartoDB / OpenStreetMap)
   http.get('*/api/admin/photos/qr', () => {
     return HttpResponse.json({
       success: true,
@@ -405,6 +404,32 @@ export const handlers = [
         typeof body.autoApproveGuestPhotos === 'boolean' ? body.autoApproveGuestPhotos : false,
     });
   }),
+
+  http.get('*/api/admin/geocode', ({ request }) => {
+    const url = new URL(request.url);
+    const q = (url.searchParams.get('q') || '').trim();
+    if (q.length < 2) {
+      return HttpResponse.json({ success: false, error: 'Search query is required.' }, { status: 400 });
+    }
+    return HttpResponse.json({
+      success: true,
+      data: [
+        {
+          displayName: `${q}, 123 Oak Ave, Chicago, IL 60601, United States`,
+          name: q,
+          streetAddress: '123 Oak Ave',
+          city: 'Chicago',
+          state: 'IL',
+          zip: '60601',
+          country: 'United States',
+          latitude: 41.8842,
+          longitude: -87.6324,
+        },
+      ],
+    });
+  }),
+
+  // Mock Leaflet tiles for ThingsToDoMap (CartoDB / OpenStreetMap)
 
   http.get('https://*.basemaps.cartocdn.com/*', () => {
     return new HttpResponse(TRANSPARENT_PNG, {
