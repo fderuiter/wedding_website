@@ -175,7 +175,7 @@ ALTER TABLE "WeddingPartyMember" ALTER COLUMN "updatedAt" DROP DEFAULT;
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "SnapshotVersion_entityType_entityId_createdAt_idx" ON "SnapshotVersion"("entityType", "entityId", "createdAt" DESC);
 
--- AddForeignKey (idempotent across reconciled schemas)
+-- AddForeignKey
 DO $$
 BEGIN
   IF NOT EXISTS (

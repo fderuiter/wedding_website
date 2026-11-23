@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import SeatingChartAdminPage from '@/app/admin/dashboard/seating-chart/page';
 import { ToastProvider } from '@/components/ui/ToastProvider';
 import { SeatingTableDTO } from '../../schemas';
@@ -314,8 +314,10 @@ describe('Optimistic Seating Chart State Updates', () => {
 
     fetchMock.mockClear();
 
-    // Click Delete Table
+    // Click Delete Table on occupied Table 1 and confirm via alertdialog
     fireEvent.click(screen.getByRole('button', { name: 'Delete Table' }));
+    const confirmDialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => {
       // Table 1 should be gone from canvas and printable view
