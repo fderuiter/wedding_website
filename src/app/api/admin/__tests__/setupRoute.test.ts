@@ -10,7 +10,12 @@ import {
   APP_CONFIG_SECRET_KEYS,
 } from '@/lib/backupPersistence';
 import { AppConfigSchema } from '@/features/content';
+import { geocodeBestMatch } from '@/lib/geocoding';
 import { resetRateLimitsForTesting } from '@/utils/rateLimit';
+
+jest.mock('@/lib/geocoding', () => ({
+  geocodeBestMatch: jest.fn().mockResolvedValue(null),
+}));
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -952,6 +957,68 @@ describe('Setup API Route (/api/admin/setup)', () => {
       });
       const res6 = await POST(req6);
       expect(res6.status).toBe(429);
+    });
+
+    test('auto-geocodes non-placeholder venue address during setup save when coordinates are (0, 0)', async () => {
+      resetRateLimitsForTesting();
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(uninitializedConfig);
+      (mockPrisma.appConfig.upsert as jest.Mock).mockImplementation(async ({ create }) => ({
+        ...uninitializedConfig,
+        ...create,
+        features: '[]',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      const mockGeocode = geocodeBestMatch as jest.MockedFunction<typeof geocodeBestMatch>;
+      mockGeocode.mockClear();
+      mockGeocode.mockResolvedValueOnce({
+        displayName: 'The Glasshouse, 660 12th Ave, New York, NY 10019, USA',
+        name: 'The Glasshouse',
+        streetAddress: '660 12th Ave',
+        city: 'New York',
+        state: 'NY',
+        zip: '10019',
+        country: 'USA',
+        latitude: 40.7654,
+        longitude: -73.9965,
+      });
+
+      const req = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          partner1Name: 'Alice',
+          partner2Name: 'Bob',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://ourwedding.com',
+          venueName: 'The Glasshouse',
+          venueAddress: '660 12th Ave',
+          venueCity: 'New York',
+          venueState: 'NY',
+          venueZip: '10019',
+          latitude: 0,
+          longitude: 0,
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+      expect(mockGeocode).toHaveBeenCalledWith([
+        'The Glasshouse',
+        '660 12th Ave',
+        'New York',
+        'NY',
+        '10019',
+      ]);
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            latitude: 40.7654,
+            longitude: -73.9965,
+          }),
+        })
+      );
     });
   });
 });

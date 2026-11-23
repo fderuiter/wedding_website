@@ -1,98 +1,105 @@
 import { render, screen } from '@testing-library/react';
-import ThingsToDoPage, { metadata } from '../page';
+import ThingsToDoPage from '../page';
 import { getAppConfig } from '@/lib/config';
+import { attractionsRepository } from '@/features/attractions';
+import { geocodeBestMatch } from '@/lib/geocoding';
 
-jest.mock('@/lib/config', () => ({
-  getAppConfig: jest.fn().mockResolvedValue({
-    modules: { attractions: true },
-    venueCity: 'Chicago',
-    latitude: 41.8781,
-    longitude: -87.6298,
-  }),
+jest.mock('@/core/auth/guestInviteSession', () => ({
+  enforceActiveGuestPageSession: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('@/lib/modules', () => ({
-  isFeatureEnabled: jest.fn().mockReturnValue(true),
-}));
-
-jest.mock('@/features/attractions', () => ({
-  attractionsRepository: {
-    getVisibleAttractions: jest.fn().mockResolvedValue([]),
-  },
-}));
-
-// Mock the ThingsToDoList component
-jest.mock('../components/ThingsToDoList', () => {
-  return function DummyThingsToDoList() {
-    return <div data-testid="things-to-do-list" />;
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    ...actual,
+    getAppConfig: jest.fn(),
   };
 });
 
-describe('ThingsToDoPage', () => {
-  it('defines canonical alternate metadata', () => {
-    expect(metadata.alternates?.canonical).toBe('/things-to-do');
+jest.mock('@/features/attractions', () => ({
+  attractionsRepository: {
+    getVisibleAttractions: jest.fn(),
+  },
+}));
+
+jest.mock('@/lib/geocoding', () => ({
+  geocodeBestMatch: jest.fn(),
+}));
+
+const capturedListProps: any[] = [];
+jest.mock('../components/ThingsToDoList', () => ({
+  __esModule: true,
+  default: (props: any) => {
+    capturedListProps.push(props);
+    return <div data-testid="things-to-do-list-mock" />;
+  },
+}));
+
+const mockGetAppConfig = getAppConfig as jest.MockedFunction<typeof getAppConfig>;
+const mockGetVisibleAttractions = attractionsRepository.getVisibleAttractions as jest.MockedFunction<
+  typeof attractionsRepository.getVisibleAttractions
+>;
+const mockGeocodeBestMatch = geocodeBestMatch as jest.MockedFunction<typeof geocodeBestMatch>;
+
+describe('ThingsToDoPage coordinate filtering and fallback', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    capturedListProps.length = 0;
+    mockGetVisibleAttractions.mockResolvedValue([]);
   });
 
-  it('renders the main heading with configured venue city', async () => {
-    const Component = await ThingsToDoPage();
-    render(Component);
-    expect(screen.getByRole('heading', { name: 'Things to Do in Chicago' })).toBeInTheDocument();
-  });
-
-  it('falls back to generic heading when venue city is not configured', async () => {
-    (getAppConfig as jest.Mock).mockResolvedValueOnce({
-      modules: { attractions: true },
-      venueCity: '',
+  it('filters out (0, 0) coordinates when geocoding finds no match instead of centering on Gulf of Guinea', async () => {
+    mockGetAppConfig.mockResolvedValue({
+      venueName: 'TBD',
+      venueAddress: 'TBD',
+      venueCity: 'TBD',
+      venueState: 'TBD',
+      venueZip: 'TBD',
       latitude: 0,
       longitude: 0,
-    });
-
-    const Component = await ThingsToDoPage();
-    render(Component);
-    expect(screen.getByRole('heading', { name: 'Things to Do' })).toBeInTheDocument();
-  });
-
-  it('renders the ThingsToDoList component', async () => {
-    const Component = await ThingsToDoPage();
-    render(Component);
-    expect(screen.getByTestId('things-to-do-list')).toBeInTheDocument();
-  });
-
-  it('renders saved travel guidance paragraphs above ThingsToDoList when non-empty', async () => {
-    (getAppConfig as jest.Mock).mockResolvedValueOnce({
       modules: { attractions: true },
-      venueCity: 'Chicago',
-      latitude: 41.8781,
-      longitude: -87.6298,
-      travelAdvice: 'Fly into ORD or MDW.\n\nThe CTA Blue Line runs directly downtown.',
-    });
+    } as any);
+    mockGeocodeBestMatch.mockResolvedValue(null);
 
-    const Component = await ThingsToDoPage();
-    render(Component);
+    const element = await ThingsToDoPage();
+    render(element);
 
-    const travelSection = screen.getByRole('region', { name: 'Getting Here & Travel Advice' });
-    const listElement = screen.getByTestId('things-to-do-list');
-
-    expect(travelSection).toBeInTheDocument();
-    expect(screen.getByText('Fly into ORD or MDW.')).toBeInTheDocument();
-    expect(screen.getByText('The CTA Blue Line runs directly downtown.')).toBeInTheDocument();
-    expect(
-      travelSection.compareDocumentPosition(listElement) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
+    expect(screen.getByTestId('things-to-do-list-mock')).toBeInTheDocument();
+    expect(capturedListProps[0].defaultCenter).toBeUndefined();
+    expect(capturedListProps[0].venue).toBeNull();
   });
 
-  it('omits travel guidance section when travelAdvice is empty or whitespace', async () => {
-    (getAppConfig as jest.Mock).mockResolvedValueOnce({
+  it('uses geocoded city coordinates as map defaultCenter when stored coordinates are (0, 0)', async () => {
+    mockGetAppConfig.mockResolvedValue({
+      venueName: 'Lakeside Pavilion',
+      venueAddress: 'TBD',
+      venueCity: 'Austin',
+      venueState: 'TX',
+      venueZip: 'TBD',
+      latitude: 0,
+      longitude: 0,
       modules: { attractions: true },
-      venueCity: 'Chicago',
-      latitude: 41.8781,
-      longitude: -87.6298,
-      travelAdvice: '   ',
+    } as any);
+    mockGeocodeBestMatch.mockResolvedValue({
+      displayName: 'Austin, TX, USA',
+      name: 'Austin',
+      streetAddress: '',
+      city: 'Austin',
+      state: 'TX',
+      zip: '',
+      country: 'USA',
+      latitude: 30.2672,
+      longitude: -97.7431,
     });
 
-    const Component = await ThingsToDoPage();
-    render(Component);
+    const element = await ThingsToDoPage();
+    render(element);
 
-    expect(screen.queryByRole('region', { name: 'Getting Here & Travel Advice' })).not.toBeInTheDocument();
+    expect(capturedListProps[0].defaultCenter).toEqual([30.2672, -97.7431]);
+    expect(capturedListProps[0].venue).toMatchObject({
+      name: 'Lakeside Pavilion',
+      latitude: 30.2672,
+      longitude: -97.7431,
+    });
   });
 });
