@@ -242,7 +242,7 @@ function SetupWizardContent() {
         siteUrlInputRef.current?.focus();
         return;
       }
-    } catch (err) {
+    } catch {
       // If it's not a valid URL, it will fail backend validation anyway.
       // But we can also set an error here.
       setStep2ErrorField('siteUrl');

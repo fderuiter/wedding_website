@@ -172,7 +172,7 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
           const tagName = item.name.trim();
           if (tagName) {
             categoryTags.push(tagName);
-            const { name, ...colorAttrs } = item;
+            const { name: _name, ...colorAttrs } = item;
             eventCategoryColors[tagName] = {
               ...eventCategoryColors[tagName],
               ...colorAttrs,

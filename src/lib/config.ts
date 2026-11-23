@@ -420,7 +420,7 @@ async function getSubdomainFromHeaders(): Promise<string | null> {
     }
     
     return null;
-  } catch (e) {
+  } catch {
     return null;
   }
 }

@@ -221,7 +221,7 @@ class RegistryRepository implements IRegistryRepository {
   }
 
   async updateItem(id: string, data: Partial<RegistryItemDTO> & { imageUrl?: string; imageAlt?: string | null; imageDecorative?: boolean }) {
-    const { contributors, image, imageId, imageUrl, imageAlt, imageDecorative, ...updateData } = data;
+    const { contributors: _contributors, image: _image, imageId, imageUrl, imageAlt, imageDecorative, ...updateData } = data;
     
     let updateMediaId = imageId;
     if (imageUrl || imageAlt !== undefined || imageDecorative !== undefined) {
