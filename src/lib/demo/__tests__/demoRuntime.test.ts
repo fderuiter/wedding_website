@@ -242,11 +242,13 @@ describe('demoSeed, demoStore, and demoApiHandler runtime', () => {
         expect((await window.fetch(reqObj)).status).toBe(200);
       }
 
-      // Base-path stripping and malformed JSON body handling
+      // Base-path stripping, trailing-slash normalization, and malformed JSON body handling
       const prevBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
-      process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website';
+      process.env.NEXT_PUBLIC_BASE_PATH = '/wedding_website/demo/';
       try {
-        expect((await window.fetch('/wedding_website/api/admin/me')).status).toBe(200);
+        expect((await window.fetch('/wedding_website/demo/api/admin/me')).status).toBe(200);
+        expect((await window.fetch('/wedding_website/demo/api/admin/me/')).status).toBe(200);
+        expect((await window.fetch('/api/admin/me/')).status).toBe(200);
       } finally {
         if (prevBasePath === undefined) {
           delete process.env.NEXT_PUBLIC_BASE_PATH;

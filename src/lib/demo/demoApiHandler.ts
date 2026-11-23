@@ -66,12 +66,21 @@ function resolveApiPathname(input: RequestInfo | URL): URL | null {
   try {
     const url = new URL(rawUrl, window.location.origin);
     if (url.origin !== window.location.origin) return null;
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    const rawBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').trim().replace(/\/+$/, '');
+    const basePath =
+      rawBasePath && rawBasePath !== '/'
+        ? rawBasePath.startsWith('/')
+          ? rawBasePath
+          : `/${rawBasePath}`
+        : '';
     let path = url.pathname;
-    if (basePath && path.startsWith(basePath)) {
+    if (basePath && (path === basePath || path.startsWith(`${basePath}/`))) {
       path = path.slice(basePath.length) || '/';
     }
     if (!path.startsWith('/api/')) return null;
+    if (path.length > 1 && path.endsWith('/')) {
+      path = path.replace(/\/+$/, '');
+    }
     const normalized = new URL(url.toString());
     normalized.pathname = path;
     return normalized;

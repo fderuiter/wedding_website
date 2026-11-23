@@ -98,12 +98,15 @@ function RootLayoutInner({
     return () => resizeObserver.disconnect();
   }, [pathname, isSetupPersona]);
 
-  const isHeartPage = pathname === '/heart';
-  const isSlideshowPage = pathname === '/photos/slideshow';
-  const isSetupPage = pathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
+  const normalizedPathname =
+    pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const isHeartPage = normalizedPathname === '/heart';
+  const isSlideshowPage = normalizedPathname === '/photos/slideshow';
+  const isSetupPage =
+    normalizedPathname === '/admin/setup' || pathname?.startsWith('/admin/setup/');
   const isStandalonePage = isHeartPage || isSlideshowPage || isSetupPage;
   const isAdminDashboardPage =
-    pathname === '/admin/dashboard' ||
+    normalizedPathname === '/admin/dashboard' ||
     pathname?.startsWith('/admin/dashboard/') ||
     isSetupPage;
 
