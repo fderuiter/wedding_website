@@ -23,6 +23,8 @@ export interface RuntimeContractRow {
   classification: EnvClassification;
   hasDefaultColumn: boolean;
   defaultValue: string | null;
+  targetFieldCell?: string;
+  descriptionCell?: string;
 }
 
 function unwrapExpression(node: ts.Expression): ts.Expression {
@@ -988,6 +990,8 @@ export function parseRuntimeContractTables(docContent: string): RuntimeContractR
       /^(?:requirement|required|status)$/i.test(h.trim())
     );
     const defaultColIdx = tableHeaders.findIndex((h) => /\bdefault\b/i.test(h.trim()));
+    const targetColIdx = tableHeaders.findIndex((h) => /\btarget\b/i.test(h.trim()));
+    const descColIdx = tableHeaders.findIndex((h) => /\bdescription\b/i.test(h.trim()));
 
     const classification =
       reqColIdx !== -1 && cells[reqColIdx] !== undefined
@@ -999,6 +1003,12 @@ export function parseRuntimeContractTables(docContent: string): RuntimeContractR
       hasDefaultColumn && cells[defaultColIdx] !== undefined
         ? parseDefaultCell(cells[defaultColIdx])
         : null;
+    const targetFieldCell =
+      targetColIdx !== -1 && cells[targetColIdx] !== undefined ? cells[targetColIdx] : undefined;
+    const descriptionCell =
+      descColIdx !== -1 && cells[descColIdx] !== undefined
+        ? cells[descColIdx]
+        : cells[cells.length - 1];
 
     rows.push({
       key,
@@ -1006,6 +1016,8 @@ export function parseRuntimeContractTables(docContent: string): RuntimeContractR
       classification,
       hasDefaultColumn,
       defaultValue,
+      targetFieldCell,
+      descriptionCell,
     });
   }
 
@@ -1191,6 +1203,133 @@ export function validateRuntimeContract(
     }
   }
 
+  if (operatorSet.has('RUN_MIGRATIONS')) {
+    const runMigrationsRow = rowsByKey.get('RUN_MIGRATIONS');
+    const desc = runMigrationsRow?.descriptionCell ?? '';
+    if (
+      runMigrationsRow &&
+      (!/\btrue\b/.test(desc) || !/(?:`1`|RUN_MIGRATIONS=1|\bor\s+1\b)/.test(desc))
+    ) {
+      errors.push(
+        `Incomplete RUN_MIGRATIONS contract in ${docName}: must document that both "true" and "1" (RUN_MIGRATIONS=1) are accepted`
+      );
+    }
+  }
+
+  if (operatorSet.has('E2E_TEST')) {
+    const e2eRow = rowsByKey.get('E2E_TEST');
+    const e2eDesc = e2eRow?.descriptionCell ?? '';
+    const mentionsFallbackBypass =
+      /E2E_FALLBACK_/i.test(docContent) &&
+      /E2E_FALLBACK_|fallback[- ]secret|blocklist/i.test(e2eDesc) &&
+      /\bsrc\/env\.ts\b/.test(e2eDesc);
+    if (e2eRow && !mentionsFallbackBypass) {
+      errors.push(
+        `Incomplete E2E_TEST security warning in ${docName}: must document that E2E_TEST=true disables NODE_ENV=production E2E_FALLBACK_* secret blocklists in src/env.ts`
+      );
+    }
+  }
+
+  const syncedPartnerTargets: Array<{ key: string; expectedTargets: string[] }> = [
+    { key: 'SITE_PARTNER1_NAME', expectedTargets: ['partner1Name', 'brideName'] },
+    { key: 'SITE_PARTNER2_NAME', expectedTargets: ['partner2Name', 'groomName'] },
+  ];
+  for (const { key, expectedTargets } of syncedPartnerTargets) {
+    if (!operatorSet.has(key)) continue;
+    const row = rowsByKey.get(key);
+    if (!row) continue;
+    const targetText = row.targetFieldCell ?? '';
+    const missingTargets = expectedTargets.filter(
+      (field) => !new RegExp(`\\b${escapeRegex(field)}\\b`).test(targetText)
+    );
+    if (missingTargets.length > 0) {
+      errors.push(
+        `Target AppConfig field mismatch for ${key} in ${docName}: expected [${expectedTargets.join(', ')}], missing [${missingTargets.join(', ')}]`
+      );
+    }
+  }
+
+  const parsedSiteKeys = ['SITE_WEDDING_DATE', 'SITE_LATITUDE', 'SITE_LONGITUDE'] as const;
+  for (const siteKey of parsedSiteKeys) {
+    if (!operatorSet.has(siteKey)) continue;
+    const row = rowsByKey.get(siteKey);
+    if (!row) continue;
+    const desc = row.descriptionCell ?? '';
+    const documentsBlankIgnore =
+      /\b(?:blank|whitespace|readNonEmptySiteEnv|trim(?:med)?)\b/i.test(desc) &&
+      !/empty strings?\s*(?:\(`""`\))?\s*(?:or\s+[\w-]+\s+values\s+)?fail/i.test(desc);
+    const documentsMalformedFailure = /\bfail\b/i.test(desc);
+    if (!documentsBlankIgnore || !documentsMalformedFailure) {
+      errors.push(
+        `Outdated validation contract for ${siteKey} in ${docName}: must document that blank/whitespace values are ignored via readNonEmptySiteEnv while non-empty malformed values fail schema validation`
+      );
+    }
+  }
+
+  return errors;
+}
+
+export function validateConfigSiteOverrideParity(
+  configTsContent: string,
+  runtimeContractContent: string
+): string[] {
+  const errors: string[] = [];
+  const rows = parseRuntimeContractTables(runtimeContractContent);
+  const rowsByKey = new Map<string, RuntimeContractRow>();
+  for (const row of rows) {
+    if (!rowsByKey.has(row.key)) {
+      rowsByKey.set(row.key, row);
+    }
+  }
+
+  if (
+    /SITE_PARTNER1_NAME[\s\S]{0,240}overrides\.brideName\s*=/.test(configTsContent) &&
+    !/\bbrideName\b/.test(rowsByKey.get('SITE_PARTNER1_NAME')?.targetFieldCell ?? '')
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: SITE_PARTNER1_NAME must list synced `brideName` target field from src/lib/config.ts'
+    );
+  }
+  if (
+    /SITE_PARTNER2_NAME[\s\S]{0,240}overrides\.groomName\s*=/.test(configTsContent) &&
+    !/\bgroomName\b/.test(rowsByKey.get('SITE_PARTNER2_NAME')?.targetFieldCell ?? '')
+  ) {
+    errors.push(
+      'docs/runtime-contract.md: SITE_PARTNER2_NAME must list synced `groomName` target field from src/lib/config.ts'
+    );
+  }
+
+  const blankSafeOverrideRegex =
+    /readNonEmptySiteEnv\(\s*process\.env\.(SITE_(?:WEDDING_DATE|LATITUDE|LONGITUDE))\s*\)/g;
+  let blankMatch: RegExpExecArray | null;
+  while ((blankMatch = blankSafeOverrideRegex.exec(configTsContent)) !== null) {
+    const siteKey = blankMatch[1];
+    const row = rowsByKey.get(siteKey);
+    const desc = row?.descriptionCell ?? '';
+    const documentsBlankIgnore =
+      /\b(?:blank|whitespace|readNonEmptySiteEnv|trim(?:med)?)\b/i.test(desc) &&
+      !/empty strings?\s*(?:\(`""`\))?\s*(?:or\s+[\w-]+\s+values\s+)?fail/i.test(desc);
+    if (!row || !documentsBlankIgnore) {
+      errors.push(
+        `docs/runtime-contract.md: ${siteKey} uses readNonEmptySiteEnv in src/lib/config.ts and must document blank/whitespace ignoring without claiming empty strings fail validation`
+      );
+    }
+  }
+
+  const strictParseOverrideRegex =
+    /if\s*\(\s*process\.env\.(SITE_[A-Z0-9_]+)\s*!==\s*undefined\s*\)\s*\{[\s\S]{0,160}?(?:new\s+Date|parseFloat)\(\s*process\.env\.\1\s*\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = strictParseOverrideRegex.exec(configTsContent)) !== null) {
+    const siteKey = match[1];
+    const row = rowsByKey.get(siteKey);
+    const desc = row?.descriptionCell ?? '';
+    if (!row || !/(?:empty string|""|!==\s*undefined)/i.test(desc)) {
+      errors.push(
+        `docs/runtime-contract.md: ${siteKey} checks \`!== undefined\` in src/lib/config.ts and must warn against empty-string ("") values`
+      );
+    }
+  }
+
   return errors;
 }
 
@@ -1267,6 +1406,19 @@ export function verifyEnvDocs(cwd: string = process.cwd()): void {
     for (const err of docErrors) {
       console.error(`❌ ${err}`);
       failed = true;
+    }
+
+    if (doc.name === 'docs/runtime-contract.md') {
+      const configPath = path.join(cwd, 'src/lib/config.ts');
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        for (const configErr of validateConfigSiteOverrideParity(configContent, docContent)) {
+          if (!docErrors.includes(configErr)) {
+            console.error(`❌ ${configErr}`);
+            failed = true;
+          }
+        }
+      }
     }
   }
 

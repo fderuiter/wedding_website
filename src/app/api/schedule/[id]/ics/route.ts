@@ -4,6 +4,7 @@ import { getGuestInviteSession } from '@/core/auth/guestInviteSession';
 import { subEventService } from '@/features/sub-events';
 import { getAppConfig } from '@/lib/config';
 import { formatScheduleEventToCalendarEvent, createIcsFile } from '@/utils/calendar';
+import { joinEventLocations } from '@/utils/maps';
 import { ApiError } from '@/utils/ApiError';
 
 export const GET = withApiMiddleware(
@@ -22,6 +23,7 @@ export const GET = withApiMiddleware(
     ]);
     const timezone = config?.timezone || 'UTC';
 
+    const combinedLocation = joinEventLocations(event.locationName, event.location);
     const calendarEvent = formatScheduleEventToCalendarEvent(
       {
         id: event.id,
@@ -29,7 +31,7 @@ export const GET = withApiMiddleware(
         startTime: event.startTime ? String(event.startTime) : undefined,
         endTime: event.endTime ? String(event.endTime) : undefined,
         locationName: event.locationName || undefined,
-        location: event.location || undefined,
+        location: event.location || combinedLocation || undefined,
         attireRules: event.attireRules || undefined,
         description: event.description || undefined,
       },
