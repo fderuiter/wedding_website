@@ -26,6 +26,7 @@ function copyRepoFixture(srcRoot: string, destRoot: string): void {
     'src/app/api/uploads/[...path]/route.ts',
     'src/app/api/admin/maintenance/export/route.ts',
     'scripts/preflight-env.ts',
+    'scripts/verify-migration-compatibility.ts',
     'ARCHITECTURE.md',
     'CHANGELOG.md',
     'DEPLOYMENT.md',
@@ -1107,6 +1108,116 @@ describe('verify-deployment-runbooks', () => {
         expect.stringContaining('docs/upgrading.md: Rollback `docker run` command lacks host port mapping'),
         expect.stringContaining('docs/upgrading.md: Rollback `docker run` command lacks Compose network attachment'),
         expect.stringContaining('docs/upgrading.md: Rollback `docker run` command must not deploy mutable :latest tag'),
+      ])
+    );
+  });
+
+  it('rejects conflating local npm run migrate:deploy (dotenv -c development) with production npx prisma migrate deploy or referencing DIRECT_URL', () => {
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace('dotenv -e .env -- npx prisma migrate deploy', 'npm run migrate:deploy')
+        .replace(/dotenv -c development/g, 'dotenv-cli')
+    );
+
+    const versioningPath = path.join(tempDir, 'docs/versioning.md');
+    fs.writeFileSync(
+      versioningPath,
+      `${fs
+        .readFileSync(versioningPath, 'utf8')
+        .replace(
+          'DATABASE_URL="${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy',
+          'DATABASE_URL="$POSTGRES_URL_NON_POOLING" npx prisma migrate deploy'
+        )}\nDownstream adopters execute \`npm run migrate:deploy\` (\`npx prisma migrate deploy\`) against \`DIRECT_URL\`.\n`
+    );
+
+    const architecturePath = path.join(tempDir, 'ARCHITECTURE.md');
+    fs.writeFileSync(
+      architecturePath,
+      fs
+        .readFileSync(architecturePath, 'utf8')
+        .replace(/\.env\.development/g, '.env.local')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/upgrading.md: Track C (Host Node.js Runtime) fenced production commands must not invoke `npm run migrate:deploy`'
+        ),
+        expect.stringContaining(
+          'docs/upgrading.md: Must clarify that `npm run migrate:deploy` wraps `dotenv -c development` and cascades local `.env.development` files'
+        ),
+        expect.stringContaining(
+          'docs/versioning.md: `DATABASE_URL="$POSTGRES_URL_NON_POOLING" npx prisma migrate deploy` overrides DATABASE_URL from POSTGRES_URL_NON_POOLING without `env -u POSTGRES_URL_NON_POOLING`'
+        ),
+        expect.stringContaining(
+          'docs/versioning.md: Conflates local `npm run migrate:deploy` (`dotenv -c development`) as an unqualified alias for `prisma migrate deploy`'
+        ),
+        expect.stringContaining(
+          'docs/versioning.md: References unsupported "DIRECT_URL" environment variable instead of "DATABASE_URL" / "POSTGRES_URL_NON_POOLING"'
+        ),
+        expect.stringContaining(
+          'ARCHITECTURE.md: Must clarify that `npm run migrate:deploy` wraps `dotenv -c development` and cascades local `.env.development` files'
+        ),
+      ])
+    );
+  });
+
+  it('rejects stale two-phase database breaking-change policy, missing Expand-Migrate-Contract alignment, or drifted lint:migrations references', () => {
+    const versioningPath = path.join(tempDir, 'docs/versioning.md');
+    fs.writeFileSync(
+      versioningPath,
+      fs
+        .readFileSync(versioningPath, 'utf8')
+        .replace(/Expand-Migrate-Contract/g, 'two-phase release process')
+        .replace('Phase 3: Contract', 'Phase 2: Cleanup')
+        .replace(/scripts\/verify-migration-compatibility\.ts/g, 'scripts/lint-migrations.ts')
+    );
+
+    const architecturePath = path.join(tempDir, 'ARCHITECTURE.md');
+    fs.writeFileSync(
+      architecturePath,
+      fs
+        .readFileSync(architecturePath, 'utf8')
+        .replace(/Expand-Migrate-Contract/g, 'Forward-Only Schema')
+        .replace(/allow-destructive:/g, 'skip-linter:')
+    );
+
+    const upgradingPath = path.join(tempDir, 'docs/upgrading.md');
+    fs.writeFileSync(
+      upgradingPath,
+      fs
+        .readFileSync(upgradingPath, 'utf8')
+        .replace(/npm run lint:migrations/g, 'npm run check:prisma')
+    );
+
+    const errors = verifyDeploymentRunbooks(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'docs/versioning.md: Missing three-phase "Expand-Migrate-Contract" database migration policy alignment'
+        ),
+        expect.stringContaining(
+          'docs/versioning.md: Contains stale "two-phase release process" database migration policy instead of three-phase "Expand-Migrate-Contract"'
+        ),
+        expect.stringContaining(
+          'docs/versioning.md: Must explicitly define "Phase 1: Expand", "Phase 2: Migrate", and "Phase 3: Contract"'
+        ),
+        expect.stringContaining(
+          'docs/versioning.md: References non-existent "scripts/lint-migrations.ts" instead of "scripts/verify-migration-compatibility.ts"'
+        ),
+        expect.stringContaining(
+          'ARCHITECTURE.md: Missing three-phase "Expand-Migrate-Contract" database migration policy alignment'
+        ),
+        expect.stringContaining(
+          'ARCHITECTURE.md: Missing migration compatibility linter contract (`npm run lint:migrations`, `scripts/verify-migration-compatibility.ts`, and `-- allow-destructive: <reason>`)'
+        ),
+        expect.stringContaining(
+          'docs/upgrading.md: Missing migration compatibility linter contract (`npm run lint:migrations`, `scripts/verify-migration-compatibility.ts`, and `-- allow-destructive: <reason>`)'
+        ),
       ])
     );
   });

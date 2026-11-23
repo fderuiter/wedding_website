@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 import { useToast } from '@/components/ui/ToastProvider';
+import { Icon } from '@/components/ui/Icon';
 import { formatDate } from '@/utils/intl';
 import { apiClient } from '@/features/admin';
 import { withBasePath } from '@/lib/basePath';
@@ -34,8 +35,33 @@ export default function AdminPreviewLayout({
 }: AdminPreviewLayoutProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [viewState, setViewState] = useState<'Live' | 'Draft' | 'Historical'>('Live');
+  const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
   const [mobilePane, setMobilePane] = useState<'editor' | 'preview'>('editor');
+  const desktopBtnRef = useRef<HTMLButtonElement>(null);
+  const mobileBtnRef = useRef<HTMLButtonElement>(null);
   const [versions, setVersions] = useState<any[]>([]);
+
+  const handleViewportKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    current: 'desktop' | 'mobile',
+  ) => {
+    let next: 'desktop' | 'mobile' | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      next = current === 'desktop' ? 'mobile' : 'desktop';
+    } else if (e.key === 'Home') {
+      next = 'desktop';
+    } else if (e.key === 'End') {
+      next = 'mobile';
+    }
+    if (!next) return;
+    e.preventDefault();
+    setViewport(next);
+    if (next === 'desktop') {
+      desktopBtnRef.current?.focus();
+    } else {
+      mobileBtnRef.current?.focus();
+    }
+  };
   const [showVersions, setShowVersions] = useState(false);
   const { confirm, addToast } = useToast();
 
@@ -222,25 +248,84 @@ export default function AdminPreviewLayout({
         data-testid="studio-right-pane"
         className={`${
           mobilePane === 'preview' ? 'flex' : 'hidden'
-        } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full relative bg-gray-50 dark:bg-black`}
+        } md:flex flex-col w-full md:w-1/2 flex-1 min-h-0 md:h-full bg-gray-100 dark:bg-gray-950`}
       >
-        {/* Visual Indicator */}
-        <div className="absolute top-4 right-4 z-20 pointer-events-none">
-          <span className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg ${
-            viewState === 'Draft' ? 'bg-secondary' : 
-              viewState === 'Historical' ? 'bg-purple-600' : 'bg-green-700'
-          }`}>
+        {/* Viewport Toggle & Status Toolbar */}
+        <div
+          role="toolbar"
+          aria-label="Preview controls"
+          className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0"
+        >
+          <div
+            role="group"
+            aria-label="Preview viewport"
+            className="inline-flex items-center rounded-lg bg-gray-100 dark:bg-gray-800 p-1 border border-gray-200 dark:border-gray-700"
+          >
+            <button
+              ref={desktopBtnRef}
+              type="button"
+              aria-pressed={viewport === 'desktop'}
+              onClick={() => setViewport('desktop')}
+              onKeyDown={(e) => handleViewportKeyDown(e, 'desktop')}
+              className={`inline-flex min-h-[30px] items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                viewport === 'desktop'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <Icon name="Monitor" size={14} />
+              <span>Desktop</span>
+            </button>
+            <button
+              ref={mobileBtnRef}
+              type="button"
+              aria-pressed={viewport === 'mobile'}
+              onClick={() => setViewport('mobile')}
+              onKeyDown={(e) => handleViewportKeyDown(e, 'mobile')}
+              className={`inline-flex min-h-[30px] items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                viewport === 'mobile'
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              <Icon name="Smartphone" size={14} />
+              <span>Mobile (375px)</span>
+            </button>
+          </div>
+
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-bold text-white shadow ${
+              viewState === 'Draft'
+                ? 'bg-amber-800'
+                : viewState === 'Historical'
+                  ? 'bg-purple-700'
+                  : 'bg-emerald-700'
+            }`}
+          >
             {viewState} Preview
           </span>
         </div>
-        
-        <iframe 
-          ref={iframeRef}
-          src={iframeSrc}
-          onLoad={() => postDraftToIframe(draftData)}
-          className="w-full h-full flex-1 border-none"
-          title="Live Preview"
-        />
+
+        <div className="flex-1 w-full overflow-auto flex justify-center bg-gray-100 dark:bg-black">
+          <div
+            data-testid="admin-preview-viewport"
+            data-viewport={viewport}
+            style={viewport === 'mobile' ? { width: '375px', maxWidth: '100%' } : undefined}
+            className={
+              viewport === 'mobile'
+                ? 'h-full bg-white dark:bg-gray-900 border-x border-gray-300 dark:border-gray-700 shadow-2xl transition-all'
+                : 'w-full h-full'
+            }
+          >
+            <iframe
+              ref={iframeRef}
+              src={iframeSrc}
+              onLoad={() => postDraftToIframe(draftData)}
+              className="w-full h-full border-none"
+              title="Live Preview"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

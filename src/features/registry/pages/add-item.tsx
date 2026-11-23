@@ -68,7 +68,7 @@ export default function AddRegistryItemPage() {
   };
 
   return (
-    <AdminEditorContainer title="Add Registry Items">
+    <AdminEditorContainer title="Add Registry Items" headingLevel="h1">
       {/* Tab Navigation */}
       <div className="mb-6">
         <SegmentedTabs

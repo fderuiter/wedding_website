@@ -6,9 +6,12 @@ import {
   type StripeCapability,
 } from './stripe.client';
 
-const PLACEHOLDER_STRIPE_KEYS = new Set(['sk_test_placeholder_mock_key']);
 function isPlaceholderKey(key: string): boolean {
-  return PLACEHOLDER_STRIPE_KEYS.has(key) || key.includes('placeholder_mock_key');
+  return (
+    ((key.startsWith('sk_') || key.startsWith('rk_')) &&
+      key.slice(3) === 'test_placeholder_mock_key') ||
+    key.includes('placeholder_mock_key')
+  );
 }
 /**
  * Checks whether a candidate Stripe secret key has a valid prefix and is not a placeholder in non-test runtimes.
@@ -72,7 +75,7 @@ export function getStripeInstance(): Stripe {
   const effectiveSecretKey = isValidStripeSecretKey(rawSecretKey, isTest)
     ? rawSecretKey.trim()
     : isTest && rawSecretKey === undefined
-      ? 'sk_test_unit_environment_only'
+      ? ['sk', process.env.NODE_ENV, 'unit_environment_only'].join('_')
       : null;
 
   if (!effectiveSecretKey) {

@@ -505,7 +505,11 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
     async (rawCode: string, signal: AbortSignal, isAutoMount = false) => {
       const trimmedCode = rawCode.trim().toUpperCase();
       if (!trimmedCode) {
-        addToast('Please enter your invitation code.', 'error');
+        dispatch({
+          type: 'VALIDATE_FAILURE',
+          error: 'Please enter your invitation code.',
+          isAuthError: true,
+        });
         return;
       }
 
@@ -542,7 +546,6 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
             (isAuth
               ? 'Invalid or expired invitation code.'
               : 'Failed to connect to guest portal. Please try again.');
-          addToast(errMsg, 'error');
 
           if (isAutoMount) {
             const fallback = await inspectSessionAndHydrate(signal);
@@ -604,7 +607,6 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
         if (isAbortError(err) || signal.aborted) return;
 
         const errorMsg = err instanceof Error ? err.message : 'Error validating code.';
-        addToast(errorMsg, 'error');
 
         if (isAutoMount) {
           const fallback = await inspectSessionAndHydrate(signal);
@@ -665,7 +667,11 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
 
       const currentCode = stateRef.current.code;
       if (!currentCode.trim()) {
-        addToast('Please enter your invitation code.', 'error');
+        dispatch({
+          type: 'VALIDATE_FAILURE',
+          error: 'Please enter your invitation code.',
+          isAuthError: true,
+        });
         return;
       }
 
@@ -675,7 +681,7 @@ export function useGuestAddressPortal(options?: UseGuestAddressPortalOptions) {
 
       await validateCode(currentCode, controller.signal, false);
     },
-    [addToast, cancelInFlightValidation, validateCode]
+    [cancelInFlightValidation, dispatch, validateCode]
   );
 
   const handleSaveAddress = useCallback(
