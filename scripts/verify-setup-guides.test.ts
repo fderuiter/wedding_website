@@ -5,6 +5,8 @@ import { parseEnvAssignments, verifySetupGuides } from './verify-setup-guides';
 
 function copyFixtureFiles(srcRoot: string, destRoot: string): void {
   const filesToCopy = [
+    '.nvmrc',
+    '.npmrc',
     '.env.example',
     '.env.test',
     'prisma.config.ts',
@@ -25,6 +27,7 @@ function copyFixtureFiles(srcRoot: string, destRoot: string): void {
     'scripts/test-container.mjs',
     'README.md',
     'docs/developer-setup.md',
+    'docs/versioning.md',
     '.github/CONTRIBUTING.md',
     '.github/TESTING.md',
     'AGENTS.md',
@@ -341,6 +344,45 @@ describe('verify-setup-guides contract check', () => {
         expect.stringContaining('docker-compose.yml: Must bind PostgreSQL strictly to 127.0.0.1:${DB_PORT:-5432}:5432'),
         expect.stringContaining('scripts/test-container.mjs: Must invoke isolated "docker-compose.ci.yml" override manifest'),
         expect.stringContaining('.env.example: Must not contain invalid 4-byte placeholder hash'),
+      ])
+    );
+  });
+
+  it('rejects Node.js/npm engine drift, --legacy-peer-deps pretest regressions, npm install bootstrap drift, and stale alpine versioning docs', () => {
+    fs.writeFileSync(path.join(tempDir, '.npmrc'), '# missing engine-strict\n');
+
+    const pkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      pkgPath,
+      fs.readFileSync(pkgPath, 'utf8').replace('"@types/node": "^22.12.0"', '"@types/node": "^26.6.5"')
+    );
+
+    const pretestPath = path.join(tempDir, 'scripts/pretest.mjs');
+    fs.writeFileSync(
+      pretestPath,
+      fs.readFileSync(pretestPath, 'utf8').replace("['ci']", "['ci', '--legacy-peer-deps']")
+    );
+
+    const readmePath = path.join(tempDir, 'README.md');
+    fs.writeFileSync(
+      readmePath,
+      fs.readFileSync(readmePath, 'utf8').replace('    npm ci', '    npm install')
+    );
+
+    const versioningPath = path.join(tempDir, 'docs/versioning.md');
+    fs.writeFileSync(
+      versioningPath,
+      fs.readFileSync(versioningPath, 'utf8').replace('node:22-bookworm-slim', 'node:22-alpine')
+    );
+
+    const errors = verifySetupGuides(tempDir);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        '.npmrc: Must set "engine-strict=true" at the repository root',
+        expect.stringContaining('package.json: "@types/node" ("^26.6.5") must target Node.js 22 matching .nvmrc'),
+        'scripts/pretest.mjs: Must run "npm ci" without "--legacy-peer-deps" to match CI',
+        'README.md: Installation section must prescribe "npm ci" rather than "npm install"',
+        'docs/versioning.md: Must cite "node:22-bookworm-slim" (not stale alpine or mismatched Node.js major)',
       ])
     );
   });

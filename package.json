@@ -4,6 +4,22 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": "^22.12.0",
+    "npm": "^10.9.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^22.12.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "^10.9.0",
+      "onFail": "error"
+    }
+  },
   "sideEffects": [
     "*.css",
     "**/*.css"
@@ -118,7 +134,7 @@
     "@types/jest": "^30.0.0",
     "@types/jest-axe": "^3.5.9",
     "@types/leaflet": "^1.9.22",
-    "@types/node": "^26.6.5",
+    "@types/node": "^22.12.0",
     "@types/pdfkit": "^0.17.7",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
