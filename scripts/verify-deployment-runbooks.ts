@@ -1840,14 +1840,12 @@ export function verifyDeploymentRunbooks(repoRoot: string = process.cwd()): stri
       `docker-compose.yml: \`db\` service must pin \`postgres:${expectedPostgresMajor}-alpine@sha256:<64-hex>\` to preserve \`db_data\` volume compatibility`
     );
   }
-  const delegatesCiDbImageToCompose =
-    ciWorkflowRaw.includes('db_image: ${{ steps.resolve-db-image.outputs.db_image }}') &&
+  const ciDelegatesPostgresImageToCompose =
     ciWorkflowRaw.includes('docker-compose.yml') &&
-    !/^\s*image:\s*(?!\$\{\{\s*needs\.verify\.outputs\.db_image\s*\}\})\S*postgres/m.test(
-      ciWorkflowRaw
-    );
+    ciWorkflowRaw.includes('["services", "db", "image"]') &&
+    ciWorkflowRaw.includes('${{ needs.verify.outputs.db_image }}');
   if (
-    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !delegatesCiDbImageToCompose) ||
+    (!ciWorkflowRaw.includes(expectedPostgresImagePrefix) && !ciDelegatesPostgresImageToCompose) ||
     mismatchedPostgresImageRegex.test(ciWorkflowRaw)
   ) {
     errors.push(
