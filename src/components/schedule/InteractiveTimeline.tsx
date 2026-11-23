@@ -16,7 +16,10 @@ import type {
 } from '@/features/sub-events';
 import { useScheduleRsvpManager } from '@/hooks/useScheduleRsvpManager';
 import { ToggleButtonGroup } from '@/components/ui/ToggleButtonGroup';
+import { AccessibleExternalLink } from '@/components/ui/AccessibleExternalLink';
+import { Icon } from '@/components/ui/Icon';
 import { useGuestHelp } from '@/components/guest/GuestHelpModal';
+import { joinEventLocations, resolveDirectionsUrl } from '@/utils/maps';
 import {
   DEFAULT_RSVP_CLOSED_MESSAGE,
   sanitizeRsvpClosedMessage,
@@ -38,6 +41,7 @@ interface ScheduleEventItem {
   categoryTags: string[];
   categoryColors?: Record<string, CategoryColorStyle>;
   locationName?: string;
+  location?: string;
   attireRules?: string;
   description?: string;
   isPrivate?: boolean;
@@ -188,7 +192,8 @@ function normalizeEvents(nodes: ContentNodeDTO[]): ScheduleEventItem[] {
         endTime: data?.endTime || '',
         categoryTags: categoryTags.length > 0 ? categoryTags : ['General'],
         categoryColors: Object.keys(eventCategoryColors).length > 0 ? eventCategoryColors : undefined,
-        locationName: data?.locationName || data?.location || '',
+        locationName: data?.locationName || '',
+        location: data?.location || '',
         attireRules: data?.attireRules || data?.attire || data?.receptionAttire || '',
         description: data?.description || data?.receptionDetails || '',
         isPrivate: Boolean(data?.isPrivate),
@@ -394,7 +399,8 @@ export default function InteractiveTimeline({
             startTime: item.startTime || '',
             endTime: item.endTime || '',
             categoryTags: item.category ? [item.category] : ['Events'],
-            locationName: item.locationName || item.location || '',
+            locationName: item.locationName || '',
+            location: item.location || '',
             attireRules: item.attireRules || '',
             description: item.description || '',
             isPrivate: Boolean(item.isPrivate),
@@ -729,12 +735,18 @@ export default function InteractiveTimeline({
                   startTime: event.startTime,
                   endTime: event.endTime,
                   locationName: event.locationName,
+                  location: event.location,
                   attireRules: event.attireRules,
                   description: event.description,
                 },
                 undefined,
                 timezone
               );
+
+              const fullEventLocation = joinEventLocations(event.locationName, event.location);
+              const eventDirectionsUrl = fullEventLocation
+                ? resolveDirectionsUrl({ directions: fullEventLocation })
+                : undefined;
 
               const timeSlotStr = formatTimeSlot(event.startTime, event.endTime, effectiveTimezone);
               const dateHeaderStr = formatDateHeader(event.startTime, effectiveTimezone);
@@ -819,10 +831,22 @@ export default function InteractiveTimeline({
 
                     {/* Event Details */}
                     <div className="space-y-2 text-sm opacity-90 mb-6">
-                      {event.locationName && (
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">Location:</span>
-                          <span>{event.locationName}</span>
+                      {fullEventLocation && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">Location:</span>
+                            <span>{fullEventLocation}</span>
+                          </div>
+                          {eventDirectionsUrl && (
+                            <AccessibleExternalLink
+                              href={eventDirectionsUrl}
+                              srContext={`to ${fullEventLocation}`}
+                              className="inline-flex items-center gap-1.5 min-h-11 min-w-11 px-2.5 py-1 rounded-md font-semibold text-[var(--color-primary-text)] dark:text-red-300 underline underline-offset-2 hover:opacity-80 transition-opacity"
+                            >
+                              <Icon name="MapPin" size={16} />
+                              <span>Get Directions</span>
+                            </AccessibleExternalLink>
+                          )}
                         </div>
                       )}
 

@@ -1,4 +1,5 @@
 import { createEvent, EventAttributes } from 'ics';
+import { joinEventLocations } from './maps';
 
 /**
  * @interface CalendarEvent
@@ -235,7 +236,7 @@ export function formatScheduleEventToCalendarEvent(
 ): CalendarEvent {
   const resolvedTimeZone = resolveTimeZone(timeZone);
   const name = scheduleItem.title || scheduleItem.ceremonyTitle || scheduleItem.receptionTitle || 'Wedding Event';
-  const location = scheduleItem.locationName || scheduleItem.location || '';
+  const location = joinEventLocations(scheduleItem.locationName, scheduleItem.location);
   const attire = scheduleItem.attireRules || scheduleItem.attire || '';
   const rawDesc = scheduleItem.description || '';
   const description = attire ? `${rawDesc}${rawDesc ? ' | ' : ''}Attire: ${attire}` : rawDesc;

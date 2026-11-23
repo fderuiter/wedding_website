@@ -2,11 +2,26 @@ import { validateAndResolveHost } from './ssrf';
 import { Agent, Dispatcher1Wrapper, type Dispatcher } from 'undici';
 
 /**
+ * Custom undici Agent that bridges Node's built-in fetch (Dispatcher v1 handler contract)
+ * with undici v8's Dispatcher v2 handler contract while preserving `instanceof Agent`.
+ */
+class PinnedAgent extends Agent {
+  private readonly legacyWrapper = new Dispatcher1Wrapper(this);
+
+  override dispatch(options: Agent.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+    if (handler && typeof handler === 'object' && typeof handler.onRequestStart !== 'function') {
+      return this.legacyWrapper.dispatch(options, handler);
+    }
+    return super.dispatch(options, handler);
+  }
+}
+
+/**
  * Creates an undici Agent that pins the socket connection to a specific resolved IP.
  * Standard HTTP headers (e.g. Host) and TLS SNI continue to use the original hostname.
  */
 export function createPinnedDispatcher(address: string, family: number): Agent {
-  return new NodeCompatiblePinnedAgent({
+  return new PinnedAgent({
     connect: {
       lookup: (_hostname, opts, cb) => {
         let callback = cb;
@@ -106,33 +121,5 @@ export async function safeFetch(url: string, options: RequestInit = {}): Promise
       // Return the final successful non-redirect response
       return res;
     }
-  }
-}
-
-type Dispatcher1WrapperStatic = typeof Dispatcher1Wrapper & {
-  wrapHandler(_handler: Dispatcher.DispatchHandler): Dispatcher.DispatchHandler;
-};
-
-type LegacyCompatibleDispatchOptions = Dispatcher.DispatchOptions & {
-  allowH2?: boolean;
-};
-
-/**
- * Undici v8 Agent subclass that wraps legacy v1 dispatch handlers (used by Node 22's
- * built-in `globalThis.fetch` / `undici@6`) via `Dispatcher1Wrapper.wrapHandler`.
- */
-class NodeCompatiblePinnedAgent extends Agent {
-  override dispatch(
-    options: LegacyCompatibleDispatchOptions,
-    handler: Dispatcher.DispatchHandler,
-  ): boolean {
-    const isV2Handler =
-      typeof (handler as { onRequestStart?: unknown })?.onRequestStart === 'function';
-    const normalizedOptions: LegacyCompatibleDispatchOptions =
-      isV2Handler || options.allowH2 === false ? options : { ...options, allowH2: false };
-    const wrappedHandler = isV2Handler
-      ? handler
-      : (Dispatcher1Wrapper as Dispatcher1WrapperStatic).wrapHandler(handler);
-    return super.dispatch(normalizedOptions, wrappedHandler);
   }
 }

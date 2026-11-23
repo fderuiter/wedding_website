@@ -7,7 +7,7 @@
 
 ## Overview
 
-The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) orchestrated by `docker-compose.yml` across three services—`db` (`postgres:15-alpine` with `shm_size: "256mb"` and `no-new-privileges:true`), a dedicated one-shot `migration` job (`./node_modules/.bin/prisma migrate deploy` reusing `wedding-website:latest` via `pull_policy: never`), and `app` (the sole `build:` owner, running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/live` container healthcheck)—with bounded `json-file` log rotation (`max-size: "10m"`, `max-file: "3"`), `pids_limit`, `mem_limit`, and explicit `stop_grace_period` across every service. Zero-downtime updates layer `docker-compose.rollout.yml` (`app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`) via `./scripts/rollout-vps.sh` behind a dual-upstream host reverse proxy. Standalone `docker run` deployments without Compose can opt into offline entrypoint migrations by setting `RUN_MIGRATIONS=true` in `docker-entrypoint.sh`.
+The generic Docker/VPS deployment path serves as the **canonical portable baseline** for the application. It packages the application into a self-contained, multi-platform Docker container (`linux/amd64` and `linux/arm64`) with `/opt/prisma-cli` installed outside `/app` and `/app/scripts/generate-password-hash.mjs` copied for scrypt hash generation, orchestrated by `docker-compose.yml` across three services—`db` (`postgres:15-alpine` with `shm_size: "256mb"` and `no-new-privileges:true`), a dedicated one-shot `migration` job (`./node_modules/.bin/prisma migrate deploy` reusing `wedding-website:latest` via `pull_policy: never`), and `app` (the sole `build:` owner, running with `HOSTNAME="0.0.0.0"`, `RUN_MIGRATIONS="false"`, `init: true`, `stop_grace_period: 15s`, `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges:true`, `tmpfs` mounts at `/tmp` and `/app/.next/cache`, persistent `uploads_data:/app/public/uploads` volume storage, and a built-in `/api/live` container healthcheck)—with bounded `json-file` log rotation (`max-size: "10m"`, `max-file: "3"`), `pids_limit`, `mem_limit`, and explicit `stop_grace_period` across every service. Zero-downtime updates layer `docker-compose.rollout.yml` (`app-standby` on `127.0.0.1:${STANDBY_PORT:-3001}:3000`) via `./scripts/rollout-vps.sh` behind a dual-upstream host reverse proxy. Standalone `docker run` deployments without Compose can opt into offline entrypoint migrations by setting `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` in `docker-entrypoint.sh` (and passing `--init --stop-timeout 15`). When running host CLI scripts or building from source outside Docker, install **Node.js v22.x LTS** (`>=22.22.1 <23.0.0` across `engines.node` and `devEngines.runtime`) and **`npm` `^10.9.0`** (enforced via `engines` and `devEngines` in `package.json`).
 
 ---
 
@@ -43,7 +43,7 @@ The application validates the following runtime environment variables via `src/e
 | `ADMIN_PASSWORD` | Yes | — | Cryptographic hash of administrative password in `scrypt:[16-byte saltBase64]:[64-byte keyBase64]` format. Generate via `node scripts/generate-password-hash.mjs "password"`. |
 | `ALLOWED_HOSTS` | Yes | `localhost,127.0.0.1,*.localhost` | Comma-separated list of trusted host domains (e.g., `wedding.mydomain.com,localhost,127.0.0.1`). |
 | `MULTISITE_ENABLED` | No | `false` | Enable subdomain-based `AppConfig` branding/profile routing (`X-Forwarded-Host` checked before `Host`). Switches `AppConfig` rows only; `prisma/schema.prisma` shares the other 14 tables across subdomains without tenant row isolation. |
-| `RUN_MIGRATIONS` | No | `false` | Set to `true` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
+| `RUN_MIGRATIONS` | No | `false` | Set to `true` or `1` to automatically execute `prisma migrate deploy` on container startup in `docker-entrypoint.sh`. |
 | `TRUST_PROXY` | No | `false` | Set to `true` (or a positive hop count) when behind Caddy/Nginx so rate limiting trusts `X-Forwarded-For` / `X-Real-IP`. |
 | `GUEST_PASSCODE` | Yes | — | Unique passcode required for guest website access (default `wedding2026` is rejected in production). |
 | `GUEST_SESSION_SECRET` | Yes | — | Dedicated server secret for guest invitation session signing (min 32 characters, distinct from `GUEST_PASSCODE`). |
@@ -108,7 +108,7 @@ The application validates the following runtime environment variables via `src/e
 *   If any secret in `.env` contains a literal `$`, escape it as `$$` for Docker Compose interpolation.
 
 ### Production Onboarding & `E2E_TEST=false`
-`docker-compose.yml` defaults `E2E_TEST` to `false` (`E2E_TEST: ${E2E_TEST:-false}`) so fresh VPS deployments render the `<SetupWizard />` onboarding flow until couple names and `baseUrl` are saved (`docker-compose.ci.yml` isolates `E2E_TEST=true` strictly to automated CI smoke tests). Keep `E2E_TEST=false` (or unset) in `.env` for production onboarding.
+`docker-compose.yml` defaults `E2E_TEST` to `false` (`E2E_TEST: ${E2E_TEST:-false}`) so fresh VPS deployments render the `<SetupWizard />` onboarding flow until couple names and `baseUrl` are saved (`docker-compose.ci.yml` isolates `E2E_TEST=true` strictly to automated CI smoke tests). Keep `E2E_TEST=false` (or unset) in `.env` for production deployments—setting `E2E_TEST=true` also disables `NODE_ENV=production` blocklists for committed `E2E_FALLBACK_*` secrets in `src/env.ts`.
 
 ---
 
@@ -133,7 +133,7 @@ env -u POSTGRES_URL_NON_POOLING docker compose run --rm \
 ```
 
 ### Standalone Container Path (`docker-entrypoint.sh`)
-When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` so `docker-entrypoint.sh` validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and executes `./node_modules/.bin/prisma migrate deploy` locally (with npm update checks disabled) prior to `node server.js`.
+When running the image directly via `docker run` without Docker Compose's `migration` service, set `RUN_MIGRATIONS=true` or `RUN_MIGRATIONS=1` so `docker-entrypoint.sh` validates `DATABASE_URL`, unsets `POSTGRES_URL_NON_POOLING`, and executes `./node_modules/.bin/prisma migrate deploy` (symlinked to `/usr/local/bin/prisma` and backed by `/opt/prisma-cli`, with npm update checks disabled) prior to `node server.js`.
 
 ---
 
@@ -259,12 +259,14 @@ Instead of building on the VPS, operators can pull attested multi-arch `ghcr.io`
 
 ---
 
-## 7. Health Checks
+## 7. Health Checks & Graceful Shutdown
 
-`docker-compose.yml` already configures built-in `healthcheck` probes on both `db` (`pg_isready`) and `app` (`/api/live`)—no manual edits to `docker-compose.yml` are required:
+`docker-compose.yml` already configures built-in `healthcheck` probes on both `db` (`pg_isready`) and `app` (`/api/live`), along with `init: true` and `stop_grace_period: 15s` so Next.js finishes active HTTP requests and `src/lib/prisma.ts` drains `pg.Pool` within its `5000ms` shutdown safety timer—no manual edits to `docker-compose.yml` are required:
 
 ```yaml
   app:
+    init: true
+    stop_grace_period: 15s
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     healthcheck:
@@ -275,7 +277,7 @@ Instead of building on the VPS, operators can pull attested multi-arch `ghcr.io`
       start_period: 20s
 ```
 
-Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so loopback `127.0.0.1` probes succeed without `Host` header overrides even when `ALLOWED_HOSTS` lists only public domains. Continuous container liveness checks hit `/api/live` (`{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout and readiness checks query `/api/health` (returning HTTP `200 OK` when PostgreSQL is connected, or `/api/ready` for unwrapped readiness status):
+Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD` probes to `/api/live`, `/api/health`, and `/api/ready` enforce syntactic `Host` validation only, so loopback `127.0.0.1` probes succeed without `Host` header overrides even when `ALLOWED_HOSTS` lists only public domains. Continuous container liveness checks hit `/api/live` (`HTTP 200` `{ "status": "alive", "timestamp": "..." }`) so brief PostgreSQL blips do not restart warm containers, while deployment rollout checks query `/api/health` (`HTTP 200 OK` with `Cache-Control: no-store` when PostgreSQL is connected):
 ```json
 {
   "success": true,
@@ -286,6 +288,7 @@ Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD
   }
 }
 ```
+When PostgreSQL is unreachable (`HTTP 503 Service Unavailable`), `withApiMiddleware` (`isHealthProbe: true` in `src/utils/withApiMiddleware.ts`) preserves diagnostic probe fields `{ "success": false, "status": "degraded", "database": "disconnected", "timestamp": "2026-09-30T14:30:00.000Z", "error": "Database connection failed" }` on `/api/health` while sanitizing error text in `NODE_ENV=production` so internal driver details never leak. Unwrapped readiness monitors can query `/api/ready`, which verifies core schema tables and applied `_prisma_migrations` without requiring seeded `AppConfig` rows and returns `HTTP 200` `{ "status": "ready", "database": "connected", "timestamp": "..." }` or `HTTP 503` with `status: "unhealthy"` (`database: "connected"` and `error: "Database schema is not ready"` when schema/migrations are incomplete, or `database: "disconnected"` and `error: "Database connection failed"` when PostgreSQL is unreachable).
 
 ---
 
@@ -296,15 +299,17 @@ Verify live container status with `docker compose ps`. Stateless `GET` and `HEAD
    docker tag wedding-website:latest wedding-website:previous
    ```
 2. **Networked & Port-Mapped Container Rollback**:
-   *   **Via Docker Compose (Recommended — preserves Compose `db` network, `127.0.0.1:${PORT:-3000}:3000` port binding, and healthcheck)**:
+   *   **Via Docker Compose (Recommended — preserves Compose `db` network, `127.0.0.1:${PORT:-3000}:3000` port binding, `stop_grace_period: 15s`, and healthcheck)**:
        ```bash
        docker tag wedding-website:previous wedding-website:latest
        docker compose up -d --no-deps app
        ```
-   *   **Via Standalone `docker run` (Must attach Compose network, publish loopback port, and load `DATABASE_URL` directly from `--env-file .env`)**:
+   *   **Via Standalone `docker run` (Must attach Compose network, publish loopback port, allow `15s` stop timeout, and load `DATABASE_URL` directly from `--env-file .env`)**:
        ```bash
        docker compose stop app
        docker run -d --name app-rollback \
+           --init \
+           --stop-timeout 15 \
            --network wedding_website_default \
            -p 127.0.0.1:3000:3000 \
            --read-only \

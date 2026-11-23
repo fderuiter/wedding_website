@@ -31,7 +31,7 @@ Before installing the application, verify that your machine meets the minimum sy
    npm ci
    ```
 
-   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client.
+   The `postinstall` lifecycle hook automatically runs `prisma generate` to compile the Prisma Client and records `node_modules/.package-lock-hash` so the first test run skips redundant dependency installation.
 
 ---
 
@@ -165,10 +165,14 @@ Before committing code or submitting pull requests, run local quality checks to 
 - **Unit & Integration Test Suite:**
   ```bash
   npm test
-  # or in watch mode
+  # targeted single-file run
+  npm test -- src/utils/__tests__/ApiError.test.ts
+  # interactive watch mode
   npm run test:watch
+  # full suite with coverage threshold enforcement
+  npm run test:cov
   ```
-  The test runner automatically isolates database state by orchestrating an isolated PostgreSQL container (`wedding_test`) via pretest hooks, ensuring your local development data is never modified.
+  The test runner automatically isolates database state against an isolated PostgreSQL database (`wedding_test`, or an explicit `TEST_DATABASE_URL` override) via cached pretest hooks without modifying local development data.
 
 - **Full Quality Gate:**
   ```bash

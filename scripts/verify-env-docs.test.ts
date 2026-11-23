@@ -248,9 +248,10 @@ describe('verify-env-docs section-aware validation', () => {
       .replace(/RUN_MIGRATIONS=1/g, 'RUN_MIGRATIONS=true')
       .replace(/E2E_TEST=true/g, 'LEGACY_FLAG')
       .replace('`partner1Name`, `brideName`', '`partner1Name`')
-      .replace('(blank/whitespace-only strings are ignored)', '')
-      .replace('"status": "degraded"', '"status": "removed"')
-      .replace('5000ms', 'removed-timer');
+      .replace(/trimmed via `readNonEmptySiteEnv`/g, 'evaluated directly')
+      .replace(/blank\/whitespace values are ignored/g, 'empty strings (`""`) fail')
+      .replace(/"status": "degraded"/g, '"status": "removed"')
+      .replace(/5000ms/g, 'removed-timer');
 
     const errors = validateRuntimeContract(driftedContract, operatorKeys, envSpecs, sources);
     expect(errors).toEqual(
@@ -259,8 +260,8 @@ describe('verify-env-docs section-aware validation', () => {
         expect.stringContaining('Must document /opt/prisma-cli outside /app'),
         expect.stringContaining('Must document both RUN_MIGRATIONS=true and RUN_MIGRATIONS=1'),
         expect.stringContaining('Must disclose the E2E_TEST=true production credential blocklist bypass'),
-        expect.stringContaining('Must document that SITE_PARTNER1_NAME updates brideName'),
-        expect.stringContaining('SITE_WEDDING_DATE table entry must document that blank/empty strings are ignored'),
+        expect.stringContaining('Target AppConfig field mismatch for SITE_PARTNER1_NAME in docs/runtime-contract.md'),
+        expect.stringContaining('Outdated validation contract for SITE_WEDDING_DATE in docs/runtime-contract.md'),
         expect.stringContaining('Must document preserved status, database, timestamp'),
         expect.stringContaining('Must document src/lib/prisma.ts globalForPrisma caching and 5000ms shutdown drain safety timer'),
       ])
