@@ -1,6 +1,9 @@
+import fs from 'fs';
+import path from 'path';
 import React from 'react';
 import { render, screen, act } from '@testing-library/react';
-import HeartClient from '../HeartClient';
+import HeartClient, { isWebGLAvailable } from '../HeartClient';
+import { HEART_FONT_URL, resolveHeartFontUrl } from '../constants';
 
 const mockCreateRigidBodyApi = () => ({
   setBodyType: jest.fn(),
@@ -25,9 +28,14 @@ const mockLeftBodyApi = mockCreateRigidBodyApi();
 const mockRightBodyApi = mockCreateRigidBodyApi();
 
 const frameCallbacks: ((state: any, delta: number) => void)[] = [];
+let canvasRenderCount = 0;
+let pendingPhysicsPromise: Promise<void> | null = null;
 
 jest.mock('@react-three/fiber', () => ({
-  Canvas: ({ children }: { children: React.ReactNode }) => <div data-testid="canvas">{children}</div>,
+  Canvas: ({ children }: { children: React.ReactNode }) => {
+    canvasRenderCount += 1;
+    return <div data-testid="canvas">{children}</div>;
+  },
   useFrame: (cb: (state: any, delta: number) => void) => {
     frameCallbacks.push(cb);
   },
@@ -38,9 +46,48 @@ jest.mock('@react-three/fiber', () => ({
 }));
 
 jest.mock('@react-three/drei', () => ({
-  Environment: () => null,
+  Environment: ({
+    children,
+    frames,
+    resolution,
+    preset,
+  }: {
+    children?: React.ReactNode;
+    frames?: number;
+    resolution?: number;
+    preset?: string;
+  }) => (
+    <div
+      data-testid="environment"
+      data-frames={frames}
+      data-resolution={resolution}
+      data-preset={preset}
+    >
+      {children}
+    </div>
+  ),
+  Lightformer: ({
+    form,
+    color,
+    intensity,
+  }: {
+    form?: string;
+    color?: string;
+    intensity?: number;
+  }) => (
+    <div
+      data-testid="lightformer"
+      data-form={form}
+      data-color={color}
+      data-intensity={intensity}
+    />
+  ),
   Html: ({ children }: { children: React.ReactNode }) => <div data-testid="html-overlay">{children}</div>,
-  Text: ({ children }: { children: React.ReactNode }) => <div data-testid="webgl-text">{children}</div>,
+  Text: ({ children, font }: { children: React.ReactNode; font?: string }) => (
+    <div data-testid="webgl-text" data-font={font}>
+      {children}
+    </div>
+  ),
   Points: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   PointMaterial: () => null,
 }));
@@ -88,7 +135,12 @@ jest.mock('@react-three/rapier', () => {
   }
 
   return {
-    Physics: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    Physics: ({ children }: { children: React.ReactNode }) => {
+      if (pendingPhysicsPromise) {
+        throw pendingPhysicsPromise;
+      }
+      return <div>{children}</div>;
+    },
     RigidBody: RigidBodyMock,
     CuboidCollider: () => <div data-testid="cuboid-collider" />,
     RapierRigidBody: jest.fn(),
@@ -105,7 +157,19 @@ jest.mock('@react-three/rapier', () => {
 });
 
 jest.mock('next/link', () => {
-  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>;
+  const MockLink = ({
+    children,
+    href,
+    className,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    className?: string;
+  }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  );
   MockLink.displayName = 'MockLink';
   return MockLink;
 });
@@ -160,6 +224,10 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    canvasRenderCount = 0;
+    pendingPhysicsPromise = null;
+    delete (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport;
+    delete (window as Window & { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext;
     frameCallbacks.length = 0;
     mockMainBodyApi.__triggerContactForce = null;
     mockMainBodyApi.translation.mockReturnValue({ x: 0, y: 0, z: 0 });
@@ -272,22 +340,147 @@ describe('HeartClient Easter Egg Accessibility and Live Region', () => {
     expect(liveRegion).toHaveTextContent('Heart is broken.');
   });
 
-  it('does not mount a drei Html portal inside the Canvas Suspense fallback and isolates Environment errors', () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const drei = jest.requireMock('@react-three/drei') as { Environment: () => React.ReactNode };
-    const originalEnvironment = drei.Environment;
-    drei.Environment = () => {
-      throw new Error('Could not load venice_sunset_1k.hdr: Failed to fetch');
-    };
+  it('passes local bundled WOFF font URL to partner and easter egg Text meshes and normalizes NEXT_PUBLIC_BASE_PATH', () => {
+    render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
 
+    expect(HEART_FONT_URL).toMatch(/\.woff$/);
+    expect(HEART_FONT_URL).not.toMatch(/https?:\/\//);
+
+    const fontDiskPath = path.join(
+      process.cwd(),
+      'public',
+      HEART_FONT_URL.replace(/^\/+/, ''),
+    );
+    expect(fs.existsSync(fontDiskPath)).toBe(true);
+    const header = fs.readFileSync(fontDiskPath).subarray(0, 4).toString('ascii');
+    expect(header).toBe('wOFF');
+
+    const partnerTexts = screen.getAllByTestId('webgl-text');
+    expect(partnerTexts.length).toBeGreaterThanOrEqual(2);
+    for (const node of partnerTexts) {
+      expect(node).toHaveAttribute('data-font', HEART_FONT_URL);
+    }
+
+    // Reveal easter egg and check its Text font prop
+    mockMainBodyApi.translation.mockReturnValue({ x: 4, y: 2.5, z: 0 });
+    advancePhysicsFrame();
+
+    const easterEggMesh = screen
+      .getAllByTestId('webgl-text')
+      .find((node) => node.textContent?.includes('I love you!'));
+    expect(easterEggMesh).toBeDefined();
+    expect(easterEggMesh).toHaveAttribute('data-font', HEART_FONT_URL);
+
+    // Verify subpath normalization parity with next.config.ts
+    expect(resolveHeartFontUrl(undefined)).toBe('/fonts/noto-sans-latin-400-normal.woff');
+    expect(resolveHeartFontUrl('')).toBe('/fonts/noto-sans-latin-400-normal.woff');
+    expect(resolveHeartFontUrl('/')).toBe('/fonts/noto-sans-latin-400-normal.woff');
+    expect(resolveHeartFontUrl('/wedding_website/demo')).toBe(
+      '/wedding_website/demo/fonts/noto-sans-latin-400-normal.woff',
+    );
+    expect(resolveHeartFontUrl('wedding_website/demo/')).toBe(
+      '/wedding_website/demo/fonts/noto-sans-latin-400-normal.woff',
+    );
+  });
+
+  it('uses procedural Lightformer Environment without remote HDRI preset', () => {
+    render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    const env = screen.getByTestId('environment');
+    expect(env).toHaveAttribute('data-frames', '1');
+    expect(env).toHaveAttribute('data-resolution', '256');
+    expect(env).not.toHaveAttribute('data-preset');
+
+    const lightformers = screen.getAllByTestId('lightformer');
+    expect(lightformers.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('renders plain DOM Loading… overlay outside Canvas without role="status" while Suspense is pending', async () => {
+    let resolvePhysics!: () => void;
+    pendingPhysicsPromise = new Promise<void>((resolve) => {
+      resolvePhysics = () => {
+        pendingPhysicsPromise = null;
+        resolve();
+      };
+    });
+
+    await act(async () => {
+      render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+    });
+
+    const loader = screen.getByTestId('heart-loading-overlay');
+    const canvas = screen.getByTestId('canvas');
+    expect(loader).toHaveTextContent('Loading…');
+    expect(canvas.contains(loader)).toBe(false);
+    expect(loader).not.toHaveAttribute('role');
+    expect(screen.queryAllByRole('status')).toHaveLength(0);
+
+    await act(async () => {
+      resolvePhysics();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId('heart-loading-overlay')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+  });
+
+  it('gates Canvas mounting synchronously on WebGL 2 and falls back when only WebGL 1 is available', () => {
+    const getContextSpy = jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockImplementation(((contextId: string) => {
+        if (contextId === 'webgl') {
+          return {} as WebGLRenderingContext;
+        }
+        return null;
+      }) as typeof HTMLCanvasElement.prototype.getContext);
+
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: class MockWebGL2RenderingContext {},
+      configurable: true,
+      writable: true,
+    });
+
+    expect(isWebGLAvailable()).toBe(false);
+
+    render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+
+    expect(canvasRenderCount).toBe(0);
+    expect(screen.queryByTestId('canvas')).not.toBeInTheDocument();
+    expect(screen.getByTestId('webgl-fallback-container')).toBeInTheDocument();
+
+    const loseContext = jest.fn();
+    getContextSpy.mockImplementation(((contextId: string) => {
+      if (contextId === 'webgl2') {
+        return {
+          getExtension: (name: string) =>
+            name === 'WEBGL_lose_context' ? { loseContext } : null,
+        } as unknown as WebGL2RenderingContext;
+      }
+      return null;
+    }) as typeof HTMLCanvasElement.prototype.getContext);
+
+    expect(isWebGLAvailable()).toBe(true);
+    expect(loseContext).toHaveBeenCalledTimes(1);
+
+    getContextSpy.mockRestore();
+    delete (window as Window & { WebGL2RenderingContext?: unknown }).WebGL2RenderingContext;
+  });
+
+  it('renders accessible level-1 heading and explicit dark-mode-safe button contrast in both WebGL and fallback modes', () => {
+    const { unmount } = render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Interactive Heart' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reset heart' }).className).toContain('text-gray-900');
+    expect(screen.getByRole('link', { name: 'Back Home' }).className).toContain('text-gray-900');
+    unmount();
+
+    (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport = false;
     try {
       render(<HeartClient partner1Name="Abbi" partner2Name="Fred" />);
       expect(screen.getByRole('heading', { level: 1, name: 'Interactive Heart' })).toBeInTheDocument();
-      expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Reset heart' }).className).toContain('text-gray-900');
+      expect(screen.getByRole('link', { name: 'Back Home' }).className).toContain('text-gray-900');
     } finally {
-      drei.Environment = originalEnvironment;
-      consoleErrorSpy.mockRestore();
+      delete (window as Window & { __mockWebGLSupport?: boolean }).__mockWebGLSupport;
     }
   });
 });
