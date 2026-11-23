@@ -23,6 +23,8 @@ interface RegistryItemFormProps {
   isSubmitting?: boolean;
   /** Optional custom label for the submit button. */
   submitLabel?: string;
+  /** Optional callback invoked when the user cancels editing or adding an item. */
+  onCancel?: () => void;
   /** Optional runtime flag indicating whether Stripe card processing is configured. */
   cardCheckoutEnabled?: boolean;
   /** Optional site-wide default payment handle type fallback. */
@@ -66,6 +68,7 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
   onSubmit,
   isSubmitting = false,
   submitLabel,
+  onCancel,
   cardCheckoutEnabled,
   defaultPaymentHandleType,
   defaultPaymentHandle,
@@ -311,6 +314,28 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
     clearPersistedFormState();
   };
 
+  const handleResetDraft = () => {
+    setFormState({
+      values: { ...defaultValues, ...initialValues },
+      scrapeUrl: '',
+    });
+    setFormError(null);
+    setScrapeError(null);
+    setScrapeErrorDomain(null);
+    setScrapeWarning(null);
+    setScrapedFaviconUrl(null);
+    clearPersistedFormState();
+  };
+
+  const handleCancel = () => {
+    clearPersistedFormState();
+    if (onCancel) {
+      onCancel();
+    } else if (typeof window !== 'undefined') {
+      window.location.assign('/admin/dashboard/registry');
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="form">
       <FormGroup className="col-span-1 md:col-span-2">
@@ -554,10 +579,34 @@ const RegistryItemForm: React.FC<RegistryItemFormProps> = ({
 
       <div className="col-span-1 md:col-span-2 mt-4">
         {formError && <FormGroup state="error"><FormMessage>{formError}</FormMessage></FormGroup>}
-        <Button type="submit" variant="primary" className="w-full mt-2 flex items-center justify-center" disabled={isSubmitting} aria-busy={isSubmitting}>
-          {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
-          {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
-        </Button>
+        <div className="mt-2 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleCancel}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleResetDraft}
+            disabled={isSubmitting}
+          >
+            Reset Draft
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            className="flex-1 sm:flex-initial flex items-center justify-center"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
+          >
+            {isSubmitting && <Icon name="Loader2" className="animate-spin mr-2 h-4 w-4" />}
+            {submitLabel || (mode === 'add' ? 'Add Item' : 'Save Changes')}
+          </Button>
+        </div>
       </div>
     </form>
   );

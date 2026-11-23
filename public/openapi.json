@@ -1208,6 +1208,10 @@
                                 "guestName": {
                                   "type": "string"
                                 },
+                                "householdName": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
                                 "addressLine1": {
                                   "nullable": true,
                                   "type": "string"
@@ -4083,6 +4087,140 @@
                 "required": [
                   "action"
                 ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/admin/contributors/{id}": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "PATCH /api/admin/contributors/[id]",
+        "description": "Endpoint for /api/admin/contributors/[id]",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "email": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "RESERVED",
+                      "CONFIRMED",
+                      "CANCELLED",
+                      "REFUNDED"
+                    ]
+                  },
+                  "message": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "confirmVerifiedPayment": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "DELETE /api/admin/contributors/[id]",
+        "description": "Endpoint for /api/admin/contributors/[id]",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirmVerifiedPayment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmVerifiedPayment": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
               }
             }
           }
@@ -7649,6 +7787,51 @@
         }
       }
     },
+    "/api/admin/registry/items/{id}/unclaim": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/registry/items/[id]/unclaim",
+        "description": "Endpoint for /api/admin/registry/items/[id]/unclaim",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirmVerifiedPayment": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/admin/sample-data": {
       "get": {
         "tags": [
@@ -9467,6 +9650,10 @@
                     "nullable": true,
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "invitationCodeId": {
+                    "nullable": true,
+                    "type": "string"
                   }
                 }
               }
@@ -9694,6 +9881,101 @@
         "responses": {
           "200": {
             "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "POST /api/admin/thank-you-notes",
+        "description": "Endpoint for /api/admin/thank-you-notes",
+        "security": [
+          {
+            "adminCookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "email": {
+                    "nullable": true,
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0,
+                    "exclusiveMinimum": true
+                  },
+                  "date": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    ]
+                  },
+                  "message": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "registryItemId": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "invitationCodeId": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "thankYouStatus": {
+                    "default": "Unsent",
+                    "type": "string",
+                    "enum": [
+                      "Unsent",
+                      "Sent",
+                      "Not Needed"
+                    ]
+                  },
+                  "thankYouNote": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "name",
+                  "amount"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
           }
         }
       }

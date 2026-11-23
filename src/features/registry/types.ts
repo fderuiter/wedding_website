@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { ContributorSchema, ContributorStatus, RegistryItemDTO } from './schemas';
+import {
+  AdminUpdateContributorInput,
+  ContributorSchema,
+  ContributorStatus,
+  RegistryItemDTO,
+} from './schemas';
 import { formatCurrency } from '@/utils/intl';
 
 export type RegistryItem = RegistryItemDTO;
@@ -16,6 +21,11 @@ export interface ContributorLifecycleResult {
   item: RegistryItemDTO | null;
   previousStatus: ContributorStatus;
   changed: boolean;
+}
+
+export interface ContributorDeleteResult {
+  deletedId: string;
+  item: RegistryItemDTO | null;
 }
 
 export interface StripeLedgerReconciliationResult {
@@ -175,5 +185,20 @@ export interface IRegistryRepository {
     refundedCents: number;
     forceFullReversal?: boolean;
   }): Promise<StripeLedgerReconciliationResult>;
+  unclaimItem?(
+    itemId: string,
+    options?: { confirmVerifiedPayment?: boolean },
+    author?: string
+  ): Promise<RegistryItemDTO>;
+  updateContributor?(
+    contributorId: string,
+    data: Partial<AdminUpdateContributorInput>,
+    author?: string
+  ): Promise<{ contributor: ContributorRecord; item: RegistryItemDTO | null }>;
+  deleteContributor?(
+    contributorId: string,
+    options?: { confirmVerifiedPayment?: boolean },
+    author?: string
+  ): Promise<ContributorDeleteResult>;
 }
 

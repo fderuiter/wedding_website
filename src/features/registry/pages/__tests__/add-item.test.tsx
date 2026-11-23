@@ -164,4 +164,18 @@ describe('AddRegistryItemPage Tabbed Navigation', () => {
       expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
     });
   });
+
+  it('clears persisted draft state and navigates to /admin/dashboard/registry when Cancel is clicked', () => {
+    render(<AddRegistryItemPage />);
+
+    fireEvent.change(screen.getByLabelText(/Item Name/i), {
+      target: { value: 'Abandoned Gift Draft' },
+    });
+    expect(window.sessionStorage.getItem('registry_item_form_add')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(window.sessionStorage.getItem('registry_item_form_add')).toBeNull();
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
+  });
 });

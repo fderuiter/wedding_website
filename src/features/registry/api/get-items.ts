@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { registryService } from '../service';
 import { withApiMiddleware } from '@/utils/withApiMiddleware';
 import { isAdminRequest } from '@/core/auth/auth.server';
-import { sanitizeRegistryItems } from '../lib/masking';
+import { maskRegistryItem, sanitizeRegistryItems } from '../lib/masking';
 import { RegistryQuerySchema, type RegistryQueryParams } from '../schemas';
 import { getAppConfig } from '@/lib/config';
 import { isFeatureEnabled } from '@/lib/modules';
@@ -64,6 +64,8 @@ export const GET = withApiMiddleware(async (req?: NextRequest) => {
 
   if (isAdmin) {
     result.items = sanitizeRegistryItems(result.items);
+  } else {
+    result.items = result.items.map(maskRegistryItem);
   }
 
   return NextResponse.json(result);
