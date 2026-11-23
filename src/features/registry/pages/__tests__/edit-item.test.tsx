@@ -214,4 +214,35 @@ describe('EditRegistryItemPage', () => {
       expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
     });
   });
+
+  it('clears item-scoped sessionStorage draft and navigates to /admin/dashboard/registry when Cancel is clicked', async () => {
+    mockParamId = 'gift-35';
+    (global.fetch as jest.Mock) = jest.fn((url: RequestInfo) => {
+      const urlStr = String(url);
+      if (urlStr === '/api/registry/items/gift-35') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: { ...mockItem, id: 'gift-35', name: 'Espresso Machine' } }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${urlStr}`));
+    }) as jest.Mock;
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ToastProvider>
+          <EditRegistryItemPage />
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+
+    const nameInput = await screen.findByLabelText(/item name/i);
+    fireEvent.change(nameInput, { target: { value: 'Temporary Unsaved Edit' } });
+    expect(window.sessionStorage.getItem('registry_item_form_edit_gift-35')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(window.sessionStorage.getItem('registry_item_form_edit_gift-35')).toBeNull();
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard/registry');
+  });
 });
