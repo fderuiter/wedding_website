@@ -12,6 +12,7 @@ import { parseDocument } from 'yaml';
 const ROOT_DIR = process.cwd();
 const WORKFLOWS_DIR = path.join(ROOT_DIR, '.github', 'workflows');
 const DEPLOY_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy.yml');
+const DEPLOY_STAGE_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-stage.yml');
 const DEPLOY_PROVIDER_YML_PATH = path.join(WORKFLOWS_DIR, 'deploy-provider.yml');
 const ROLLBACK_YML_PATH = path.join(WORKFLOWS_DIR, 'rollback.yml');
 
@@ -177,6 +178,7 @@ async function runBashStepAsync(
 
 describe('Rollback & Provider Deployment Workflows', () => {
   const deployYml = fs.readFileSync(DEPLOY_YML_PATH, 'utf8');
+  const deployStageYml = fs.readFileSync(DEPLOY_STAGE_YML_PATH, 'utf8');
   const deployProviderYml = fs.readFileSync(DEPLOY_PROVIDER_YML_PATH, 'utf8');
   const rollbackYml = fs.readFileSync(ROLLBACK_YML_PATH, 'utf8');
 
@@ -217,11 +219,13 @@ describe('Rollback & Provider Deployment Workflows', () => {
       );
     });
 
-    it('keeps permissions: contents: read at the root of rollback.yml and avoids direct template interpolation in run blocks', () => {
+    it('keeps permissions: contents: read at the root of rollback.yml and deploy-stage.yml and avoids direct template interpolation in run blocks', () => {
       expect(rollbackYml).toMatch(/^permissions:\n\s+contents:\s*read/m);
+      expect(deployStageYml).toMatch(/^permissions:\n\s+contents:\s*read/m);
 
       for (const [name, content] of [
         ['rollback.yml', rollbackYml],
+        ['deploy-stage.yml', deployStageYml],
         ['deploy-provider.yml', deployProviderYml],
       ] as const) {
         const lines = content.split(/\r?\n/);
@@ -298,12 +302,14 @@ describe('Rollback & Provider Deployment Workflows', () => {
       }
     });
 
-    it('passes previous_image_tag, previous_image_digest, commit_sha, and provider from deploy.yml to rollback.yml without defaulting to latest', () => {
-      expect(deployYml).toContain('needs.staging-deploy-provider.outputs.previous_image_tag');
-      expect(deployYml).toContain('needs.production-deploy-provider.outputs.previous_image_tag');
-      expect(deployYml).toContain('needs.staging-deploy-provider.outputs.previous_image_digest');
-      expect(deployYml).toContain('needs.production-deploy-provider.outputs.previous_image_digest');
+    it('passes previous_image_tag, previous_image_digest, commit_sha, and provider from deploy.yml and deploy-stage.yml to rollback.yml without defaulting to latest', () => {
+      expect(deployYml).toContain('uses: ./.github/workflows/deploy-stage.yml');
+      expect(deployYml).toContain("previous_tag: ${{ inputs.previous_tag || '' }}");
       expect(deployYml).not.toContain("previous_tag: ${{ inputs.previous_tag || 'latest' }}");
+      expect(deployStageYml).toContain('needs.deploy-provider.outputs.previous_image_tag');
+      expect(deployStageYml).toContain('needs.deploy-provider.outputs.previous_image_digest');
+      expect(deployStageYml).toContain('commit_sha: ${{ inputs.commit_sha }}');
+      expect(deployStageYml).toContain('caller_holds_lock: true');
       expect(deployProviderYml).toContain('previous_image_tag:');
       expect(deployProviderYml).toContain('previous_image_digest:');
       expect(deployProviderYml).toContain('--fail-with-body');
@@ -314,24 +320,52 @@ describe('Rollback & Provider Deployment Workflows', () => {
         '  redeploy:\n    name: Redeploy Previous Validated Container Image\n    permissions:\n      actions: read\n      contents: read\n      packages: read\n      attestations: read\n      deployments: write\n      id-token: write'
       );
 
-      // Cloud Run service & region overrides forwarded across deploy.yml, deploy-provider.yml, and rollback.yml
+      // Cloud Run service & region overrides forwarded across deploy.yml, deploy-stage.yml, deploy-provider.yml, and rollback.yml
       expect(deployYml).toContain("cloud_run_service: ${{ inputs.cloud_run_service || '' }}");
       expect(deployYml).toContain("cloud_run_region: ${{ inputs.cloud_run_region || '' }}");
-      expect(deployYml).toContain(
-        "cloud_run_service: ${{ inputs.cloud_run_service || needs.production-deploy-provider.outputs.cloud_run_service || '' }}"
+      expect(deployStageYml).toContain(
+        "cloud_run_service: ${{ inputs.cloud_run_service || needs.deploy-provider.outputs.cloud_run_service || '' }}"
       );
-      expect(deployYml).toContain(
-        "cloud_run_region: ${{ inputs.cloud_run_region || needs.production-deploy-provider.outputs.cloud_run_region || '' }}"
+      expect(deployStageYml).toContain(
+        "cloud_run_region: ${{ inputs.cloud_run_region || needs.deploy-provider.outputs.cloud_run_region || '' }}"
       );
       expect(rollbackYml).toContain("cloud_run_service: ${{ inputs.cloud_run_service || '' }}");
       expect(rollbackYml).toContain("cloud_run_region: ${{ inputs.cloud_run_region || '' }}");
 
       // rollback.yml must never pause twice on production gates (verify job has no environment gate)
       const rollbackDoc = parseDocument(rollbackYml, { version: '1.2', strict: true }).toJS() as {
-        jobs?: Record<string, { environment?: unknown; timeout_minutes?: number; 'timeout-minutes'?: number }>;
+        on?: {
+          workflow_call?: {
+            inputs?: Record<string, { type?: string; default?: unknown; required?: boolean }>;
+          };
+        };
+        concurrency?: {
+          group?: string;
+          'cancel-in-progress'?: boolean;
+          queue?: string;
+        };
+        jobs?: Record<
+          string,
+          {
+            environment?: unknown;
+            timeout_minutes?: number;
+            'timeout-minutes'?: number;
+            with?: Record<string, unknown>;
+          }
+        >;
       };
       expect(rollbackDoc.jobs?.verify?.environment).toBeUndefined();
       expect(rollbackDoc.jobs?.verify?.['timeout-minutes']).toBe(5);
+      expect(rollbackDoc.on?.workflow_call?.inputs?.caller_holds_lock).toMatchObject({
+        type: 'boolean',
+        default: false,
+      });
+      expect(rollbackDoc.concurrency?.['cancel-in-progress']).toBe(false);
+      expect(rollbackDoc.concurrency?.queue).toBe('max');
+      expect(rollbackDoc.concurrency?.group).toContain("format('deploy-env-{0}', inputs.target_environment || 'production')");
+      expect(rollbackDoc.concurrency?.group).toContain('caller-rollback-');
+      expect(rollbackDoc.concurrency?.group).not.toContain('rollback_environment');
+      expect(rollbackDoc.jobs?.redeploy?.with?.caller_holds_lock).toBe(true);
     });
   });
 
