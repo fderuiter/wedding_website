@@ -4,16 +4,19 @@ import { useMemo } from 'react';
 import { SeatingTableDTO } from '../schemas';
 import {
   InvitationCodeDTO,
-  formatGuestMealSelections,
   formatGuestCustomAnswers,
+  formatGuestMealSelections,
 } from '@/features/registry';
 import { ServerExportTokens, ThemePreset } from '@/lib/theme/presets';
 import { resolveDetailedSeatAssignments } from '../seatLayout';
 import {
+  computeTableMealCounts,
   getDietaryBadges,
   getGuestCompanionNames,
   getGuestsHeadcount,
+  getSeatingShapeLabel,
   isGuestEligibleForSeating,
+  isLandmarkTable,
 } from '../utils/seatingHelpers';
 
 interface PrintableFloorplanProps {
@@ -24,14 +27,16 @@ interface PrintableFloorplanProps {
 }
 
 export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorplanProps) {
-  const printableTables = useMemo(
-    () =>
-      tables.map((t) => ({
-        ...t,
-        invitationCodes: (t.invitationCodes || []).filter((g) => isGuestEligibleForSeating(g)),
-      })),
-    [tables]
-  );
+  const { guestTables, landmarkTables } = useMemo(() => {
+    const normalized = tables.map((t) => ({
+      ...t,
+      invitationCodes: (t.invitationCodes || []).filter((g) => isGuestEligibleForSeating(g)),
+    }));
+    return {
+      guestTables: normalized.filter((t) => !isLandmarkTable(t)),
+      landmarkTables: normalized.filter((t) => isLandmarkTable(t)),
+    };
+  }, [tables]);
 
   const printableUnassignedGuests = useMemo(
     () => unassignedGuests.filter((g) => isGuestEligibleForSeating(g)),
@@ -67,6 +72,31 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
         </div>
       </div>
 
+      {landmarkTables.length > 0 && (
+        <div
+          data-testid="printable-landmarks-summary"
+          className="mb-5 p-2.5 border rounded text-xs flex flex-wrap items-center gap-2"
+          style={{
+            borderColor: 'var(--print-border)',
+            backgroundColor: 'var(--print-badge-bg)',
+          }}
+        >
+          <span className="font-bold uppercase tracking-wide">Room Landmarks:</span>
+          {landmarkTables.map((landmark) => (
+            <span
+              key={landmark.id}
+              className="px-2 py-0.5 rounded border font-medium"
+              style={{
+                borderColor: 'var(--print-border)',
+                backgroundColor: 'var(--print-bg)',
+              }}
+            >
+              {landmark.name} ({getSeatingShapeLabel(landmark.shape)})
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Table Breakdown Grid */}
       <section aria-labelledby="tables-section-heading">
         <h2
@@ -77,13 +107,14 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
           Seating Table Assignments
         </h2>
         <div className="grid grid-cols-2 gap-6 mb-8">
-          {printableTables.map((table) => {
+          {guestTables.map((table) => {
             const seatedHeadcount = getGuestsHeadcount(table.invitationCodes || []);
+            const mealSummary = computeTableMealCounts(table.invitationCodes);
             const detailedSeatMap = resolveDetailedSeatAssignments(
               table.invitationCodes,
               table.capacity
             );
-            const sortedSeatEntries = Array.from(detailedSeatMap.values()).sort(
+            const orderedEntries = Array.from(detailedSeatMap.values()).sort(
               (a, b) => a.seatNumber - b.seatNumber
             );
 
@@ -99,7 +130,7 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                 }}
               >
                 <div
-                  className="flex justify-between items-center border-b pb-2 mb-3"
+                  className="flex justify-between items-center border-b pb-2 mb-2"
                   style={{ borderColor: 'var(--print-header-border)' }}
                 >
                   <h3 id={`table-heading-${table.id}`} className="font-bold text-base">
@@ -117,28 +148,44 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                   </span>
                 </div>
 
-                {sortedSeatEntries.length > 0 ? (
+                {seatedHeadcount > 0 && (
+                  <div
+                    data-testid="printable-table-meal-summary"
+                    className="text-[11px] mb-2.5 px-2 py-1 rounded border"
+                    style={{
+                      backgroundColor: 'var(--print-badge-bg)',
+                      borderColor: 'var(--print-border)',
+                    }}
+                  >
+                    <span className="font-semibold">Entrées:</span> {mealSummary.formattedMeals}
+                    {mealSummary.dietaryCounts.length > 0 && (
+                      <span> · <span className="font-semibold">Dietary:</span> {mealSummary.formattedDietary}</span>
+                    )}
+                  </div>
+                )}
+
+                {orderedEntries.length > 0 ? (
                   <ol className="list-decimal list-inside space-y-1 text-xs">
-                    {sortedSeatEntries.map((entry) => {
-                      const { guest, seatNumber, isCompanion, companionIndex, displayName } = entry;
-                      const dietaryBadges = !isCompanion
-                        ? getDietaryBadges(guest.dietaryNotes, guest.extraFields, guest.partyTags)
-                        : [];
-                      const mealSelections = !isCompanion ? formatGuestMealSelections(guest) : '';
-                      const customAnswers = !isCompanion ? formatGuestCustomAnswers(guest) : '';
+                    {orderedEntries.map((entry) => {
+                      const mealSelections = !entry.isCompanion
+                        ? formatGuestMealSelections(entry.guest)
+                        : '';
+                      const customAnswers = !entry.isCompanion
+                        ? formatGuestCustomAnswers(entry.guest)
+                        : '';
 
                       return (
                         <li
-                          key={isCompanion ? `${guest.id}-companion-${companionIndex}` : guest.id}
+                          key={`${entry.guest.id}-seat-${entry.seatNumber}`}
                           className="border-b border-dashed py-1 space-y-0.5"
                           style={{ borderColor: 'var(--print-border)' }}
                         >
                           <div className="flex justify-between items-center gap-2">
                             <span className="font-medium flex items-center flex-wrap gap-1">
                               <span>
-                                Seat {seatNumber}: {displayName}
+                                Seat {entry.seatNumber}: {entry.displayName}
                               </span>
-                              {dietaryBadges.map((badge) => (
+                              {entry.dietaryBadges.map((badge) => (
                                 <span
                                   key={badge.category}
                                   data-testid="printable-dietary-badge"
@@ -153,7 +200,11 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                                 </span>
                               ))}
                             </span>
-                            <span className="font-mono text-[10px] opacity-75">{guest.code}</span>
+                            {entry.mealChoice && (
+                              <span className="text-[10px] font-medium opacity-85">
+                                {entry.mealChoice}
+                              </span>
+                            )}
                           </div>
                           {mealSelections && (
                             <div
@@ -242,7 +293,6 @@ export function PrintableFloorplan({ tables, unassignedGuests }: PrintableFloorp
                         </span>
                       ))}
                     </span>
-                    <span className="font-mono text-[10px] opacity-75">{guest.code}</span>
                   </div>
                   {mealSelections && (
                     <div data-testid="printable-meal-selections" className="text-[10px] opacity-85">
