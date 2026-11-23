@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   getAvailableDbPort,
   httpRequest,
-  runCheckedCommand,
+  runCheckedCommand as runCommand,
   runSmokeRouteProbes,
   waitForPostgresReady,
   waitForServerReady,
@@ -18,7 +18,14 @@ const rootDir = path.resolve(__dirname, '..');
 const PORT = process.env.TEST_PORT || '3000';
 const HOST_HEADER = `127.0.0.1:${PORT}`;
 const BASE_URL = `http://${HOST_HEADER}`;
-const COMPOSE_ARGS = ['-f', 'docker-compose.yml', '-f', 'docker-compose.ci.yml'];
+const COMPOSE_ARGS = [
+  '--env-file',
+  '.env.ci',
+  '-f',
+  'docker-compose.yml',
+  '-f',
+  'docker-compose.ci.yml',
+];
 const CI_ADMIN_PASSWORD =
   'scrypt:d2VkZGluZy1lMmUtc2FsdA==:q++ok9TyDBa8bSKUlVR+j/tjiVTGj95CWT5HK8KkpIHzWRnv2t2hAhDz2PkdPUDsMO+ulGpXGCFQAqDKwK7Lxw==';
 
@@ -132,7 +139,7 @@ async function main() {
 
     // 2. Start PostgreSQL from scratch
     console.log('Starting clean PostgreSQL database container...');
-    runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
+    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', 'db'], {
       cwd: rootDir,
       env: composeEnv,
     });
@@ -162,7 +169,7 @@ async function main() {
       process.argv.includes('--host-migration') && fs.existsSync(hostPrismaBin);
 
     if (skipImageBuild) {
-      runCheckedCommand('docker', ['image', 'inspect', 'wedding-website:latest'], {
+      runCommand('docker', ['image', 'inspect', 'wedding-website:latest'], {
         cwd: rootDir,
         stdio: 'ignore',
         env: composeEnv,
@@ -171,7 +178,7 @@ async function main() {
       console.log(
         'Building OCI image via Docker Compose ahead of container-based migration smoke test...'
       );
-      runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
+      runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
         cwd: rootDir,
         env: composeEnv,
       });
@@ -186,12 +193,12 @@ async function main() {
         DB_PORT: dbPort.toString(),
       };
       delete migrateEnv.POSTGRES_URL_NON_POOLING;
-      runCheckedCommand('npx', ['prisma', 'migrate', 'deploy'], {
+      runCommand('npx', ['prisma', 'migrate', 'deploy'], {
         cwd: rootDir,
         env: migrateEnv,
       });
     } else {
-      runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration'], {
+      runCommand('docker', ['compose', ...COMPOSE_ARGS, 'run', '--rm', 'migration'], {
         cwd: rootDir,
         env: composeEnv,
       });
@@ -205,14 +212,14 @@ async function main() {
       );
     } else if (useHostPrisma) {
       console.log('Building OCI image and starting app container via Docker Compose...');
-      runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
+      runCommand('docker', ['compose', ...COMPOSE_ARGS, 'build', 'app'], {
         cwd: rootDir,
         env: composeEnv,
       });
     } else {
       console.log('Starting newly built OCI app container via Docker Compose...');
     }
-    runCheckedCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', '--no-build', 'app'], {
+    runCommand('docker', ['compose', ...COMPOSE_ARGS, 'up', '-d', '--no-build', 'app'], {
       cwd: rootDir,
       env: composeEnv,
     });
