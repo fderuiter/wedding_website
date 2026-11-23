@@ -27,17 +27,18 @@ describe('CsvImportWizardModal Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    window.sessionStorage.clear();
     global.fetch = jest.fn();
   });
 
-  const renderModal = (isOpen = true) => {
+  const renderModal = (isOpen = true, existingCodes = ['EXISTING1']) => {
     return render(
       <ToastProvider>
         <CsvImportWizardModal
           isOpen={isOpen}
           onClose={mockOnClose}
           onImportComplete={mockOnImportComplete}
-          existingCodes={['EXISTING1']}
+          existingCodes={existingCodes}
         />
       </ToastProvider>
     );
@@ -134,7 +135,7 @@ describe('CsvImportWizardModal Component', () => {
     const input = screen.getByLabelText(/Click to select CSV file/i) as HTMLInputElement;
     fireEvent.change(input, { target: { files: [file] } });
 
-    // Step 2: Column Remapping
+    // Step 2: Column Remapping (unmapped extra columns default to unchecked and require opt-in)
     await waitFor(() => {
       expect(screen.getByText(/2. Map Columns/i)).toBeInTheDocument();
       expect(screen.getByDisplayValue('Guest Name')).toBeInTheDocument();
@@ -143,6 +144,11 @@ describe('CsvImportWizardModal Component', () => {
       expect(screen.getByDisplayValue('Dietary Allergies')).toBeInTheDocument();
       expect(screen.getByDisplayValue('Plus Ones')).toBeInTheDocument();
     });
+
+    const customGroupCheckbox = screen.getByLabelText('Custom Group') as HTMLInputElement;
+    expect(customGroupCheckbox).not.toBeChecked();
+    fireEvent.click(customGroupCheckbox);
+    expect(customGroupCheckbox).toBeChecked();
 
     const continueBtn = screen.getByText(/Continue to Review/i);
     fireEvent.click(continueBtn);
@@ -1336,7 +1342,7 @@ describe('CsvImportWizardModal Component', () => {
     });
 
     const toggle = screen.getByLabelText(
-      /Consolidate rows sharing a Household or Party onto one invitation/i
+      /Consolidate rows sharing a Household Name onto one invitation/i
     );
     fireEvent.click(toggle);
 
@@ -1350,6 +1356,7 @@ describe('CsvImportWizardModal Component', () => {
     expect(screen.getByDisplayValue('Jane Doe')).toBeInTheDocument();
     expect(screen.getByDisplayValue('John')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Doe')).toBeInTheDocument();
+    expect(screen.getByText('Companions: John Doe, Tommy Doe')).toBeInTheDocument();
     expect(screen.getByLabelText('Plus-One Allocation for row 1')).toHaveValue(2);
     expect(screen.getByLabelText('Dietary Notes for row 1')).toHaveValue(
       'Vegetarian; Nut Allergy; Dairy Free'
@@ -1593,4 +1600,255 @@ describe('CsvImportWizardModal Component', () => {
       URL.revokeObjectURL = originalRevokeObjectURL;
     }
   }, 15000);
+
+  test('omits plusOneAllocations when plusOneCol is unmapped, maps phoneCol and plusOneNameCol, and leaves RSVP summary columns unchecked', async () => {
+    window.sessionStorage.clear();
+    let capturedBatchBody: any = null;
+    (global.fetch as jest.Mock).mockImplementation(async (url: string, init?: RequestInit) => {
+      const parsedBody = init?.body ? JSON.parse(init.body as string) : {};
+      if (url.includes('/api/admin/invitation-codes/validate')) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: {
+              total: 1,
+              validCount: 1,
+              invalidCount: 0,
+              duplicateCount: 1,
+              updatedCount: 1,
+              skippedCount: 0,
+              createdCount: 0,
+            },
+            rows: [
+              {
+                rowIndex: 1,
+                guestName: 'Jane Doe',
+                code: 'JANE2026',
+                isValid: true,
+                errors: [],
+                warnings: [],
+                actionOutcome: 'update',
+              },
+            ],
+          }),
+        };
+      }
+      if (url.includes('/api/admin/invitation-codes/batch')) {
+        capturedBatchBody = parsedBody;
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            count: 1,
+            imported: 0,
+            skipped: 0,
+            updated: 1,
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    renderModal(true, ['JANE2026']);
+
+    const csvData = [
+      'Guest Name,Invitation Code,RSVP Link,Email,Phone Number,Plus-One Name,Address Line 1,City,State,ZIP Code,Country,Meal Selections,Custom Answers,Attendance',
+      'Jane Doe,JANE2026,http://localhost:3000/guest?code=JANE2026,jane@example.com,"\'+1 (555) 234-5678","John Doe, Tommy Doe",123 Main St,Boston,MA,02101,USA,"Jane: Salmon","Song: Hey Ya",Attending',
+    ].join('\n');
+    const file = new File([csvData], 'roundtrip-partial.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    fireEvent.change(screen.getByLabelText(/Click to select CSV file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Phone Number Column/i)).toHaveValue('Phone Number');
+    });
+
+    expect(screen.getByLabelText(/^Plus-One Name Column/i)).toHaveValue('Plus-One Name');
+    expect(screen.getByLabelText(/^Dietary Notes \/ Allergies/i)).toHaveValue('');
+    expect(screen.getByLabelText(/^Plus-One Allocations Column/i)).toHaveValue('');
+    expect(screen.getByLabelText('Meal Selections')).not.toBeChecked();
+    expect(screen.getByLabelText('Custom Answers')).not.toBeChecked();
+    expect(screen.getByLabelText('Attendance')).not.toBeChecked();
+    expect(screen.getByLabelText('RSVP Link')).not.toBeChecked();
+
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Duplicate Action/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Duplicate Action/i), {
+      target: { value: 'update' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Commit Import \(1 rows\)/i })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Commit Import \(1 rows\)/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+    });
+
+    expect(capturedBatchBody).not.toBeNull();
+    expect(capturedBatchBody.collisionStrategy).toBe('update');
+    expect(capturedBatchBody.records).toHaveLength(1);
+    expect('plusOneAllocations' in capturedBatchBody.records[0]).toBe(false);
+    expect(capturedBatchBody.records[0]).toEqual({
+      guestName: 'Jane Doe',
+      code: 'JANE2026',
+      email: 'jane@example.com',
+      addressLine1: '123 Main St',
+      city: 'Boston',
+      state: 'MA',
+      zipCode: '02101',
+      country: 'USA',
+      plusOneFirstName: 'John',
+      plusOneLastName: 'Doe',
+      extraFields: {
+        plusOneNames: ['John Doe', 'Tommy Doe'],
+        phone: '+15552345678',
+      },
+    });
+  });
+
+  test('enabling consolidation without householdNameCol never groups rows by Party Group (Bride / Groom)', async () => {
+    window.sessionStorage.clear();
+    (global.fetch as jest.Mock).mockRejectedValue(new Error('offline'));
+
+    renderModal(true);
+
+    const csvData = [
+      'Guest Name,Party Group,Email',
+      'Alice BrideSide,Bride,alice@example.com',
+      'Beth BrideSide,Bride,beth@example.com',
+      'Carl GroomSide,Groom,carl@example.com',
+    ].join('\n');
+    const file = new File([csvData], 'sides.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    fireEvent.change(screen.getByLabelText(/Click to select CSV file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Party Side \/ Group Column/i)).toHaveValue('Party Group');
+      expect(screen.getByLabelText(/^Household Name Column/i)).toHaveValue('');
+    });
+
+    fireEvent.click(
+      screen.getByLabelText(/Consolidate rows sharing a Household Name onto one invitation/i)
+    );
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Total: 3/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue('Alice BrideSide')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Beth BrideSide')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Carl GroomSide')).toBeInTheDocument();
+  });
+
+  test('guards unsaved drafts and failedRows on Escape or backdrop click via useDirtyConfirmClose while closing cleanly when Step 4 failedRows is empty', async () => {
+    window.sessionStorage.clear();
+    (global.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (url.includes('/api/admin/invitation-codes/validate')) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            summary: {
+              total: 2,
+              validCount: 1,
+              invalidCount: 1,
+              duplicateCount: 0,
+              updatedCount: 0,
+              skippedCount: 0,
+              createdCount: 1,
+            },
+            rows: [
+              { rowIndex: 1, guestName: 'Valid Guest', code: 'VAL01', isValid: true, errors: [], warnings: [] },
+              { rowIndex: 2, guestName: '', code: 'BAD01', isValid: false, errors: ['Guest name is required.'], warnings: [] },
+            ],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          count: 1,
+          imported: 1,
+          skipped: 0,
+          updated: 0,
+        }),
+      };
+    });
+
+    render(
+      <ToastProvider>
+        <CsvImportWizardModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onImportComplete={mockOnImportComplete}
+        />
+      </ToastProvider>
+    );
+
+    const csvData = 'Guest Name,Invitation Code\nValid Guest,VAL01\n,BAD01';
+    const file = new File([csvData], 'dirty-guard.csv', { type: 'text/csv' });
+    (file as any)._content = csvData;
+
+    fireEvent.change(screen.getByLabelText(/Click to select CSV file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Continue to Review/i)).toBeInTheDocument();
+      expect(window.sessionStorage.getItem('csv_import_wizard_draft')).not.toBeNull();
+    });
+
+    // Pressing Escape on Step 2 prompts confirmation instead of clearing draft immediately
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    const alertDialog = await screen.findByRole('alertdialog');
+    expect(alertDialog).toHaveTextContent(/unsaved changes/i);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('csv_import_wizard_draft')).not.toBeNull();
+
+    // Advance to Step 3 and commit valid row while leaving 1 failedRow on Step 4
+    fireEvent.click(screen.getByText(/Continue to Review/i));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Import Valid Rows (1)' })).not.toBeDisabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Import Valid Rows (1)' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Import Execution Complete')).toBeInTheDocument();
+      expect(screen.getByText(/1 invalid row was skipped/i)).toBeInTheDocument();
+    });
+
+    // Escape on Step 4 when failedRows is non-empty also prompts confirmation
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await screen.findByRole('alertdialog');
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    // Confirming discard clears draft and invokes onClose
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+    });
+    expect(window.sessionStorage.getItem('csv_import_wizard_draft')).toBeNull();
+  });
 });

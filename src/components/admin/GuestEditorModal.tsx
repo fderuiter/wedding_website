@@ -65,6 +65,17 @@ interface GuestFormState {
 
 function getInitialExtraFieldsObject(extraFields: unknown): Record<string, unknown> {
   if (!extraFields) return {};
+  if (typeof extraFields === 'string') {
+    try {
+      const parsed = JSON.parse(extraFields);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ...(parsed as Record<string, unknown>) };
+      }
+      return {};
+    } catch {
+      return {};
+    }
+  }
   if (typeof extraFields === 'object' && !Array.isArray(extraFields)) {
     return { ...(extraFields as Record<string, unknown>) };
   }
@@ -73,8 +84,16 @@ function getInitialExtraFieldsObject(extraFields: unknown): Record<string, unkno
 
 function getInitialGuestPhone(guest: InvitationCodeDTO): string {
   const extra = getInitialExtraFieldsObject(guest.extraFields);
-  const rawPhone = extra.phone ?? extra.mobile;
-  return typeof rawPhone === 'string' ? rawPhone : '';
+  const candidates = [extra.phone, extra.mobile, extra.phoneNumber, extra['Phone Number']];
+  for (const rawPhone of candidates) {
+    if (typeof rawPhone === 'string' && rawPhone.trim()) {
+      return rawPhone.trim().replace(/^'(?=[+\d(])/, '').trim();
+    }
+    if (typeof rawPhone === 'number' && Number.isFinite(rawPhone)) {
+      return String(rawPhone);
+    }
+  }
+  return '';
 }
 
 function createInitialGuestFormState(guest?: InvitationCodeDTO | null): GuestFormState {
@@ -254,9 +273,13 @@ const GuestEditorFormInner = React.forwardRef<HTMLFormElement, GuestEditorFormPr
           const nextExtraFields = getInitialExtraFieldsObject(guest.extraFields);
           if (normalizedPhone) {
             nextExtraFields.phone = normalizedPhone;
+            delete nextExtraFields.phoneNumber;
+            delete nextExtraFields['Phone Number'];
           } else {
             delete nextExtraFields.phone;
             delete nextExtraFields.mobile;
+            delete nextExtraFields.phoneNumber;
+            delete nextExtraFields['Phone Number'];
           }
           payload.extraFields = nextExtraFields;
         }
