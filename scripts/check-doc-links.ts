@@ -259,6 +259,149 @@ interface MermaidRuntime {
 }
 
 let cachedMermaidRuntimePromise: Promise<MermaidRuntime> | null = null;
+let cachedShikiLanguages: Set<string> | null = null;
+const vitePressAliasCache = new Map<
+  string,
+  { mtimeMs: number; aliases: Array<{ alias: string; target: string; line: number }> }
+>();
+
+function createNativeNodeRequire(): NodeRequire {
+  const scriptFile =
+    typeof __filename !== 'undefined' ? __filename : fileURLToPath(import.meta.url);
+  const createHostRequire = vm.runInThisContext(
+    "(filename) => process.getBuiltinModule('node:module').createRequire(filename)"
+  ) as (_filename: string) => NodeRequire;
+  return createHostRequire(scriptFile);
+}
+
+function getShikiSupportedLanguages(): Set<string> {
+  if (cachedShikiLanguages) {
+    return cachedShikiLanguages;
+  }
+  const langs = new Set<string>(['txt', 'text', 'plain', 'ansi']);
+  const hostReq = createNativeNodeRequire();
+  const vpPkgPath = hostReq.resolve('vitepress/package.json');
+  const createHostRequire = vm.runInThisContext(
+    "(filename) => process.getBuiltinModule('node:module').createRequire(filename)"
+  ) as (_filename: string) => NodeRequire;
+  const vpReq = createHostRequire(vpPkgPath);
+  const shikiMod = vpReq('shiki') as {
+    bundledLanguages?: Record<string, unknown>;
+  };
+  if (shikiMod.bundledLanguages) {
+    for (const key of Object.keys(shikiMod.bundledLanguages)) {
+      langs.add(key.toLowerCase());
+    }
+  }
+  cachedShikiLanguages = langs;
+  return langs;
+}
+
+function getVitePressLanguageAliases(
+  rootDir: string
+): Array<{ alias: string; target: string; line: number }> {
+  const configAbs = path.join(rootDir, 'docs-portal/.vitepress/config.mts');
+  if (!fs.existsSync(configAbs)) {
+    return [];
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(configAbs);
+    if (!stat.isFile()) return [];
+  } catch {
+    return [];
+  }
+
+  const cached = vitePressAliasCache.get(configAbs);
+  if (cached && cached.mtimeMs === stat.mtimeMs) {
+    return cached.aliases;
+  }
+
+  let content: string;
+  try {
+    content = fs.readFileSync(configAbs, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const sf = ts.createSourceFile(
+    configAbs,
+    content,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  );
+  const lineStarts = sf.getLineStarts();
+  const offsetToLine = (pos: number): number => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      if (lineStarts[mid] <= pos) low = mid + 1;
+      else high = mid - 1;
+    }
+    return high + 1;
+  };
+
+  const getKeyName = (nameNode: ts.PropertyName): string | null => {
+    if (
+      ts.isIdentifier(nameNode) ||
+      ts.isStringLiteral(nameNode) ||
+      ts.isNoSubstitutionTemplateLiteral(nameNode)
+    ) {
+      return nameNode.text;
+    }
+    return null;
+  };
+
+  const aliases: Array<{ alias: string; target: string; line: number }> = [];
+
+  function visit(node: ts.Node) {
+    if (
+      ts.isPropertyAssignment(node) &&
+      getKeyName(node.name) === 'languageAlias' &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      for (const prop of node.initializer.properties) {
+        if (!ts.isPropertyAssignment(prop)) continue;
+        const aliasKey = getKeyName(prop.name);
+        if (!aliasKey) continue;
+        if (
+          ts.isStringLiteral(prop.initializer) ||
+          ts.isNoSubstitutionTemplateLiteral(prop.initializer)
+        ) {
+          aliases.push({
+            alias: aliasKey,
+            target: prop.initializer.text,
+            line: offsetToLine(prop.initializer.pos + 1),
+          });
+        }
+      }
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sf);
+  vitePressAliasCache.set(configAbs, { mtimeMs: stat.mtimeMs, aliases });
+  return aliases;
+}
+
+function isSupportedShikiFenceLanguage(lang: string, rootDir: string): boolean {
+  const normalized = lang.trim().toLowerCase();
+  if (!normalized) return true;
+  const supported = getShikiSupportedLanguages();
+  if (supported.has(normalized)) {
+    return true;
+  }
+  const aliases = getVitePressLanguageAliases(rootDir);
+  for (const entry of aliases) {
+    if (entry.alias.toLowerCase() === normalized) {
+      return supported.has(entry.target.trim().toLowerCase());
+    }
+  }
+  return false;
+}
 
 async function withMermaidDomGlobals<T>(
   hostGlobal: Record<string, unknown>,
@@ -720,6 +863,7 @@ export interface MarkdownScanOptions {
   frontmatterMode?: FrontmatterScanMode;
   htmlCommentMode?: HtmlCommentScanMode;
   onFrontmatter?: (_lines: string[]) => void;
+  onFenceOpen?: (_infoString: string, _marker: string, _lineNumber: number) => void;
   onFenceBoundary?: () => void;
   onMermaidBlock?: (_block: ScannedMermaidBlock) => void;
 }
@@ -765,8 +909,11 @@ export function scanMarkdownDocument(
 
     const fenceStep = stepMarkdownFence(rawLine, fenceState);
     if (fenceStep.kind === 'open') {
+      const markerMatch = rawLine.match(COMMONMARK_FENCE_RE);
+      const marker = markerMatch ? markerMatch[1] : '```';
+      options.onFenceOpen?.(fenceStep.infoString, marker, lineNum);
       if (options.onMermaidBlock) {
-        const infoLang = fenceStep.infoString.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+        const infoLang = fenceStep.infoString.trim().split(/[\s{[:]/)[0]?.toLowerCase() ?? '';
         if (infoLang === 'mermaid' || infoLang === 'mmd') {
           inMermaidFence = true;
           mermaidFenceStartLine = lineNum;
@@ -949,10 +1096,661 @@ export function resolveVitePressHeadingSlug(
   return rawHash;
 }
 
-function getFileLineCount(filePath: string, cache: Map<string, number>): number {
+interface SourceSliceCacheEntry {
+  content: string;
+  lines: string[];
+  declRanges?: Map<string, Array<{ start: number; end: number }>>;
+}
+
+const GENERIC_SLICE_STOP_TOKENS = new Set([
+  'true',
+  'false',
+  'null',
+  'undefined',
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'any',
+  'unknown',
+  'void',
+  'never',
+  'async',
+  'await',
+  'const',
+  'let',
+  'var',
+  'function',
+  'return',
+  'export',
+  'import',
+  'default',
+  'new',
+  'if',
+  'else',
+  'id',
+  'ids',
+  'url',
+  'urls',
+  'config',
+  'data',
+  'error',
+  'errors',
+  'result',
+  'results',
+  'options',
+  'params',
+  'item',
+  'items',
+  'value',
+  'values',
+  'type',
+  'name',
+  'status',
+  'code',
+  'email',
+  'message',
+  'body',
+  'request',
+  'response',
+  'req',
+  'res',
+  'page',
+  'limit',
+  'total',
+  'button',
+  'div',
+  'article',
+  'main',
+  'span',
+  'Prisma',
+  'Stripe',
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+]);
+
+const PROSE_LINK_WORDS = new Set([
+  'details',
+  'docs',
+  'example',
+  'file',
+  'handler',
+  'here',
+  'implementation',
+  'link',
+  'module',
+  'more',
+  'repo',
+  'route',
+  'sample',
+  'schema',
+  'service',
+  'source',
+  'target',
+]);
+
+const HTTP_METHOD_NAMES = new Set([
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+]);
+
+function getSourceSliceData(
+  filePath: string,
+  sliceCache: Map<string, SourceSliceCacheEntry>,
+  lineCountCache: Map<string, number>
+): SourceSliceCacheEntry {
+  const cached = sliceCache.get(filePath);
+  if (cached) {
+    return cached;
+  }
+  const content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.length === 0 ? [] : content.replace(/\r?\n$/, '').split(/\r?\n/);
+  lineCountCache.set(filePath, lines.length);
+  const entry: SourceSliceCacheEntry = { content, lines };
+  sliceCache.set(filePath, entry);
+  return entry;
+}
+
+function getTsDeclRanges(
+  filePath: string,
+  entry: SourceSliceCacheEntry
+): Map<string, Array<{ start: number; end: number }>> {
+  if (entry.declRanges) {
+    return entry.declRanges;
+  }
+  const declRanges = new Map<string, Array<{ start: number; end: number }>>();
+  if (!/\.[cm]?[jt]sx?$/.test(filePath)) {
+    entry.declRanges = declRanges;
+    return declRanges;
+  }
+
+  const sf = ts.createSourceFile(
+    filePath,
+    entry.content,
+    ts.ScriptTarget.Latest,
+    false,
+    filePath.endsWith('.tsx') || filePath.endsWith('.jsx')
+      ? ts.ScriptKind.TSX
+      : ts.ScriptKind.TS
+  );
+  const lineStarts = sf.getLineStarts();
+  const offsetToLine = (pos: number): number => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      if (lineStarts[mid] <= pos) low = mid + 1;
+      else high = mid - 1;
+    }
+    return high + 1;
+  };
+  const skipTrivia = (pos: number, end: number): number => {
+    let p = pos;
+    while (p < end) {
+      const ch = entry.content.charCodeAt(p);
+      if (ch === 32 || ch === 9 || ch === 10 || ch === 13) p++;
+      else if (ch === 47 && entry.content.charCodeAt(p + 1) === 47) {
+        p += 2;
+        while (p < end && entry.content.charCodeAt(p) !== 10) p++;
+      } else if (ch === 47 && entry.content.charCodeAt(p + 1) === 42) {
+        p += 2;
+        while (
+          p + 1 < end &&
+          !(entry.content.charCodeAt(p) === 42 && entry.content.charCodeAt(p + 1) === 47)
+        ) {
+          p++;
+        }
+        p += 2;
+      } else {
+        break;
+      }
+    }
+    return p;
+  };
+  const addRange = (name: string, node: ts.Node) => {
+    const s = offsetToLine(skipTrivia(node.pos, node.end));
+    const e = offsetToLine(Math.max(node.pos, node.end - 1));
+    const arr = declRanges.get(name) ?? [];
+    arr.push({ start: s, end: e });
+    declRanges.set(name, arr);
+  };
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node) ||
+        ts.isEnumDeclaration(node)) &&
+      node.name
+    ) {
+      addRange(node.name.text, node);
+    } else if (ts.isVariableStatement(node)) {
+      for (const decl of node.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name)) addRange(decl.name.text, node);
+      }
+    } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      addRange(node.name.text, node);
+    } else if (
+      (ts.isMethodDeclaration(node) ||
+        ts.isPropertyDeclaration(node) ||
+        ts.isGetAccessorDeclaration(node) ||
+        ts.isSetAccessorDeclaration(node) ||
+        ts.isPropertyAssignment(node)) &&
+      node.name &&
+      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
+    ) {
+      addRange(node.name.text, node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  entry.declRanges = declRanges;
+  return declRanges;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function textContainsCueToken(haystack: string, cue: string): boolean {
+  if (!cue) return false;
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cue)) {
+    return new RegExp(`\\b${escapeRegExp(cue)}\\b`).test(haystack);
+  }
+  return haystack.includes(cue);
+}
+
+interface SliceLineContext {
+  lineText: string;
+  links: ParsedMarkdownLink[];
+  codeSpans: InlineCodeSpan[];
+  citeStart: number;
+  citeEnd: number;
+  linkText?: string;
+  fileDir: string;
+  rootDir: string;
+}
+
+function validateSliceContentAgainstContext(
+  resolvedPath: string,
+  start: number,
+  end: number,
+  ctx: SliceLineContext,
+  sliceCache: Map<string, SourceSliceCacheEntry>,
+  lineCountCache: Map<string, number>
+): string | null {
+  if (resolvedPath.endsWith('.md')) {
+    return null;
+  }
+
+  const fileData = getSourceSliceData(resolvedPath, sliceCache, lineCountCache);
+  const sliceRaw = fileData.lines.slice(start - 1, end).join('\n');
+  if (!sliceRaw.trim()) {
+    return `Empty slice L${start}-L${end}`;
+  }
+
+  const relTarget = path.relative(ctx.rootDir, resolvedPath).replace(/\\/g, '/');
+  const isRouteOrApiHandler =
+    /(?:^|\/)route\.[cm]?[jt]sx?$/.test(relTarget) || /\/api\/[^/]+\.[cm]?[jt]sx?$/.test(relTarget);
+
+  const matchesSliceOrEnclosing = (token: string, targetSliceText: string = sliceRaw): boolean => {
+    if (textContainsCueToken(targetSliceText, token)) {
+      return true;
+    }
+    const decls = getTsDeclRanges(resolvedPath, fileData).get(token);
+    if (decls && decls.some(r => r.start <= start && end <= r.end)) {
+      return true;
+    }
+    return false;
+  };
+
+  // 1. Explicit symbol link label: [Symbol](src/...#L...) or [`Symbol`](src/...#L...)
+  if (ctx.linkText !== undefined) {
+    const rawLabel = ctx.linkText.trim();
+    const isBackticked = /^`[^`]+`$/.test(rawLabel);
+    let inner = isBackticked ? rawLabel.slice(1, -1).trim() : rawLabel;
+    if (!inner.includes('/') && !/\.[A-Za-z0-9]{1,6}$/.test(inner)) {
+      const jsxMatch = inner.match(/^<\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\/?\s*>$/);
+      if (jsxMatch) inner = jsxMatch[1];
+      const hasParens = inner.endsWith('()');
+      if (hasParens) inner = inner.slice(0, -2);
+      if (
+        /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?$/.test(inner) &&
+        (isBackticked || hasParens || /[A-Z_$.]/.test(inner)) &&
+        !PROSE_LINK_WORDS.has(inner)
+      ) {
+        const checkSym = inner.includes('.') ? inner.split('.')[1] : inner;
+        if (!matchesSliceOrEnclosing(checkSym)) {
+          return `Slice L${start}-L${end} does not contain cited link symbol "${inner}"`;
+        }
+      }
+    }
+  }
+
+  // Scope to table cell if inside a Markdown table row
+  let scopeStart = 0;
+  let scopeEnd = ctx.lineText.length;
+  if (ctx.lineText.trim().startsWith('|') && ctx.lineText.trim().endsWith('|')) {
+    const pipePositions: number[] = [];
+    for (let p = 0; p < ctx.lineText.length; p++) {
+      if (ctx.lineText[p] === '|' && (p === 0 || ctx.lineText[p - 1] !== '\\')) {
+        pipePositions.push(p);
+      }
+    }
+    for (let idx = 0; idx + 1 < pipePositions.length; idx++) {
+      if (pipePositions[idx] <= ctx.citeStart && ctx.citeStart <= pipePositions[idx + 1]) {
+        scopeStart = pipePositions[idx] + 1;
+        scopeEnd = pipePositions[idx + 1];
+        break;
+      }
+    }
+  }
+
+  // Further narrow to the sentence containing the citation (splitting on `. ` or `; ` outside links/code)
+  const maskedLine = ctx.lineText.split('');
+  for (const sp of ctx.codeSpans) {
+    for (let c = sp.startIndex; c < sp.endIndex && c < maskedLine.length; c++) maskedLine[c] = 'X';
+  }
+  for (const lk of ctx.links) {
+    for (let c = lk.startIndex; c < lk.endIndex && c < maskedLine.length; c++) maskedLine[c] = 'L';
+  }
+  const maskedStr = maskedLine.join('');
+  for (let p = scopeStart; p < scopeEnd - 1; p++) {
+    if ((maskedStr[p] === '.' || maskedStr[p] === ';') && /\s/.test(maskedStr[p + 1])) {
+      if (p + 1 <= ctx.citeStart) {
+        scopeStart = p + 2;
+      } else if (p >= ctx.citeEnd) {
+        scopeEnd = p + 1;
+        break;
+      }
+    }
+  }
+
+  // Identify all resolved file links in [scopeStart, scopeEnd]
+  const scopedLinks = ctx.links
+    .filter(lk => lk.startIndex >= scopeStart && lk.endIndex <= scopeEnd)
+    .map(lk => {
+      const targetAbs = extractFilePathFromLinkTarget(lk.rawTarget, ctx.fileDir, ctx.rootDir);
+      const hashIdx = lk.rawTarget.indexOf('#');
+      const frag = hashIdx === -1 ? '' : lk.rawTarget.slice(hashIdx + 1);
+      const lm = frag.match(LINE_FRAGMENT_RE);
+      return {
+        link: lk,
+        targetAbs,
+        lineRange: lm
+          ? { start: parseInt(lm[1], 10), end: lm[2] !== undefined ? parseInt(lm[2], 10) : parseInt(lm[1], 10) }
+          : null,
+      };
+    })
+    .filter(item => item.targetAbs !== null);
+
+  // Determine the local sub-clause start (after any preceding file link unless joined by `and` / `&` inside shared parens)
+  let attachedClauseStart = scopeStart;
+  let sentenceClauseStart = scopeStart;
+  const jointSliceTexts: string[] = [sliceRaw];
+  for (const sl of scopedLinks) {
+    if (sl.link.endIndex <= ctx.citeStart) {
+      // If ctx is a prose (L...) immediately following its own [file](file#L...) link, don't advance past that link!
+      if (
+        sl.targetAbs === resolvedPath &&
+        /^\s*$/.test(ctx.lineText.slice(sl.link.endIndex, ctx.citeStart))
+      ) {
+        continue;
+      }
+      const between = ctx.lineText.slice(sl.link.endIndex, ctx.citeStart);
+      if ((sl.targetAbs === resolvedPath ? /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i : /^\s*(?:,|\/|\band\b|\bor\b|&)\s*(?:mapped in\s+|in\s+|at\s+)?$/i).test(between)) {
+        if (sl.targetAbs && sl.lineRange && fs.existsSync(sl.targetAbs) && fs.statSync(sl.targetAbs).isFile()) {
+          const otherData = getSourceSliceData(sl.targetAbs, sliceCache, lineCountCache);
+          if (isValidLineRange(sl.lineRange.start, sl.lineRange.end, otherData.lines.length)) {
+            jointSliceTexts.push(
+              otherData.lines.slice(sl.lineRange.start - 1, sl.lineRange.end).join('\n')
+            );
+          }
+        }
+      } else {
+        attachedClauseStart = sl.link.endIndex;
+        if (sl.targetAbs !== resolvedPath) {
+          sentenceClauseStart = sl.link.endIndex;
+        }
+      }
+    } else if (sl.link.startIndex >= ctx.citeEnd) {
+      const between = ctx.lineText.slice(ctx.citeEnd, sl.link.startIndex);
+      if ((sl.targetAbs === resolvedPath ? /^(?:\s*\(L\d+(?:-L?\d+)?\))?\s*(?:,|\/|\band\b|\bor\b|&)\s*$/i : /^\s*(?:,|\/|\band\b|\bor\b|&)\s*$/i).test(between)) {
+        if (sl.targetAbs && sl.lineRange && fs.existsSync(sl.targetAbs) && fs.statSync(sl.targetAbs).isFile()) {
+          const otherData = getSourceSliceData(sl.targetAbs, sliceCache, lineCountCache);
+          if (isValidLineRange(sl.lineRange.start, sl.lineRange.end, otherData.lines.length)) {
+            jointSliceTexts.push(
+              otherData.lines.slice(sl.lineRange.start - 1, sl.lineRange.end).join('\n')
+            );
+          }
+        }
+      }
+    }
+  }
+  const unionSliceRaw = jointSliceTexts.join('\n');
+
+  // 2. Immediately attached symbol / Container.member right before this citation
+  const effectiveAnchorStart = (() => {
+    for (const sl of scopedLinks) {
+      if (
+        sl.targetAbs === resolvedPath &&
+        sl.link.endIndex <= ctx.citeStart &&
+        /^\s*$/.test(ctx.lineText.slice(sl.link.endIndex, ctx.citeStart))
+      ) {
+        return sl.link.startIndex;
+      }
+    }
+    return ctx.citeStart;
+  })();
+
+  const beforeAnchor = ctx.lineText.slice(attachedClauseStart, effectiveAnchorStart);
+  const attachedMatch = beforeAnchor.match(
+    /`([^`]+)`(?:\s*\([^()]*\))?(?:\s+[a-z]+)?(?:\s*,)?\s*(?:(?:in|at|from|via|defined in|declared in|implemented in)\s+|\(\s*(?:see\s+|in\s+|at\s+|via\s+)?|,\s*)$/i
+  );
+  if (attachedMatch) {
+    const rawSpan = attachedMatch[1].trim();
+    const memberCallMatch = rawSpan.match(
+      /^([A-Za-z_$][A-Za-z0-9_$]*)(?:\.([A-Za-z_$][A-Za-z0-9_$]*)|\['([A-Za-z_$][A-Za-z0-9_$]*)'\])(?:\(.*\))?$/
+    );
+    if (memberCallMatch) {
+      const memberName = memberCallMatch[2] ?? memberCallMatch[3];
+      if (memberName && !matchesSliceOrEnclosing(memberName, unionSliceRaw)) {
+        return `Slice L${start}-L${end} does not contain cited member "${memberName}"`;
+      }
+    } else {
+      const assignM = rawSpan.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*[^=]/);
+      const plainSymM = rawSpan.match(/^([A-Za-z_$][A-Za-z0-9_$]*)(?:\(.*\))?$/);
+      const sym = assignM?.[1] ?? plainSymM?.[1];
+      if (sym && !GENERIC_SLICE_STOP_TOKENS.has(sym) && !FILE_TOKEN_RE.test(rawSpan)) {
+        if (!matchesSliceOrEnclosing(sym, unionSliceRaw)) {
+          return `Slice L${start}-L${end} does not contain cited symbol "${sym}"`;
+        }
+      }
+    }
+  }
+
+  // Helper: check that any (...) group in [scopeStart, scopeEnd] enclosing [spanStart, spanEnd] also encloses [citeStart, citeEnd]
+  const parenPairs: Array<{ open: number; close: number }> = [];
+  const openStack: number[] = [];
+  for (let p = scopeStart; p < scopeEnd; p++) {
+    if (maskedStr[p] === '(') {
+      openStack.push(p);
+    } else if (maskedStr[p] === ')' && openStack.length > 0) {
+      const open = openStack.pop()!;
+      parenPairs.push({ open, close: p });
+    }
+  }
+  const isSpanInCitationScope = (spanStart: number, spanEnd: number): boolean => {
+    for (const pair of parenPairs) {
+      const enclosesSpan = pair.open < spanStart && spanEnd <= pair.close;
+      if (!enclosesSpan) continue;
+      const enclosesCite = pair.open <= effectiveAnchorStart && ctx.citeEnd <= pair.close + 1;
+      if (!enclosesCite) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // 3. Assigned SCREAMING_SNAKE_CASE constants in the local clause (e.g. `REGISTRY_LOAD_MORE_INCREMENT = 8`)
+  const clauseSpans = ctx.codeSpans.filter(
+    sp =>
+      sp.startIndex >= sentenceClauseStart &&
+      sp.endIndex <= scopeEnd &&
+      !(sp.startIndex >= ctx.citeStart && sp.endIndex <= ctx.citeEnd) &&
+      isSpanInCitationScope(sp.startIndex, sp.endIndex)
+  );
+  for (const sp of clauseSpans) {
+    const trimmed = sp.text.trim();
+    const constMatch = trimmed.match(/^([A-Z][A-Z0-9_]*_[A-Z0-9_]*)\s+=\s+[^=]/);
+    if (constMatch) {
+      const constName = constMatch[1];
+      if (!textContainsCueToken(unionSliceRaw, constName)) {
+        return `Slice L${start}-L${end} does not contain cited constant "${constName}"`;
+      }
+    }
+  }
+
+  // 4. Route path cues & login redirect block swap guard
+  const proseSentenceLower = maskedStr.slice(scopeStart, scopeEnd).toLowerCase();
+  const hasAdminLoginInSlice = /['"`][^'"`\n]*\/admin\/login['"`]/.test(sliceRaw);
+  const hasGuestLoginInSlice = /['"`][^'"`\n]*\/guest\/login['"`]/.test(sliceRaw);
+  if (hasAdminLoginInSlice && !hasGuestLoginInSlice) {
+    const mentionsGuestLogin =
+      /\bguest\s+(?:passcode\s+|session\s+)?login\b/.test(proseSentenceLower) ||
+      ctx.codeSpans.some(
+        sp =>
+          sp.startIndex >= scopeStart &&
+          sp.endIndex <= scopeEnd &&
+          (sp.text.includes('/guest/login') || sp.text.includes('/api/guest/login'))
+      );
+    const mentionsAdminLogin =
+      /\badmin\s+login\b/.test(proseSentenceLower) ||
+      ctx.codeSpans.some(
+        sp => sp.startIndex >= scopeStart && sp.endIndex <= scopeEnd && sp.text.includes('/admin/login')
+      );
+    if (mentionsGuestLogin && !mentionsAdminLogin) {
+      return `Slice L${start}-L${end} contains "/admin/login" redirect block instead of guest login gatekeeping`;
+    }
+  }
+  if (hasGuestLoginInSlice && !hasAdminLoginInSlice) {
+    const mentionsAdminLogin =
+      /\badmin\s+login\b/.test(proseSentenceLower) ||
+      ctx.codeSpans.some(
+        sp => sp.startIndex >= scopeStart && sp.endIndex <= scopeEnd && sp.text.includes('/admin/login')
+      );
+    const mentionsGuestLogin =
+      /\bguest\s+(?:passcode\s+|session\s+)?login\b/.test(proseSentenceLower) ||
+      ctx.codeSpans.some(
+        sp =>
+          sp.startIndex >= scopeStart &&
+          sp.endIndex <= scopeEnd &&
+          (sp.text.includes('/guest/login') || sp.text.includes('/api/guest/login'))
+      );
+    if (mentionsAdminLogin && !mentionsGuestLogin) {
+      return `Slice L${start}-L${end} contains "/guest/login" redirect block instead of admin login gatekeeping`;
+    }
+  }
+
+  // Unpaired route code spans in the local clause (e.g. `GET /api/registry/items/[id]` on useRegistry.ts)
+  for (const sp of clauseSpans) {
+    const routeM = sp.text
+      .trim()
+      .match(/^(?:(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+)?(\/(?:api|guest|admin)\/[^\s`]+)$/);
+    if (!routeM) continue;
+    const httpMethod = routeM[1];
+    const rawRoute = routeM[2].split('?')[0];
+    // Skip if another file link in scope points directly to this route's handler file
+    const routeStaticNoApi = rawRoute.replace(/^\/api\//, '/').replace(/\/(?:\[[^\]]+\]|<[^>]+>)$/, '');
+    const handledByOtherLink = scopedLinks.some(sl => {
+      if (!sl.targetAbs || sl.targetAbs === resolvedPath) return false;
+      const otherRel = path.relative(ctx.rootDir, sl.targetAbs).replace(/\\/g, '/');
+      return routeStaticNoApi.length > 1 && otherRel.includes(routeStaticNoApi);
+    });
+    if (handledByOtherLink) continue;
+
+    if (isRouteOrApiHandler && httpMethod && textContainsCueToken(unionSliceRaw, httpMethod)) {
+      continue;
+    }
+    if (isRouteOrApiHandler && relTarget.includes(rawRoute.replace(/^\/+/, ''))) {
+      continue;
+    }
+
+    const hadTrailingDynamic = /\/(?:\[[^\]]+\]|<[^>]+>)$/.test(rawRoute);
+    const staticStem =
+      rawRoute.replace(/(?:\/(?:\[[^\]]+\]|<[^>]+>))+$/, '') + (hadTrailingDynamic ? '/' : '');
+    const uiCounterpart = staticStem.startsWith('/api/') ? staticStem.slice(4) : null;
+    const fileHasRouteLiteral =
+      (staticStem.length > 1 && fileData.content.includes(staticStem)) ||
+      (uiCounterpart !== null && uiCounterpart.length > 1 && fileData.content.includes(uiCounterpart));
+    if (fileHasRouteLiteral) {
+      const sliceHasRouteLiteral =
+        (staticStem.length > 1 && unionSliceRaw.includes(staticStem)) ||
+        (uiCounterpart !== null && uiCounterpart.length > 1 && unionSliceRaw.includes(uiCounterpart));
+      if (!sliceHasRouteLiteral) {
+        return `Slice L${start}-L${end} does not contain cited route path "${staticStem}"`;
+      }
+    }
+  }
+
+  // 5. In-file code-span cue check: if the sentence/cell cites specific symbols/literals that DO exist in resolvedPath, at least one must appear in the target slice (or its enclosing declaration)
+  const inFileSpecificCues: string[] = [];
+  for (const sp of clauseSpans) {
+    const raw = sp.text.trim();
+    if (!raw || FILE_TOKEN_RE.test(raw) || raw.startsWith('/')) continue;
+
+    const methodRouteM = raw.match(
+      /^((?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)(?:\/(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS))*)\s+\/\S+$/
+    );
+    if (methodRouteM) {
+      if (isRouteOrApiHandler) {
+        for (const method of methodRouteM[1].split('/')) {
+          if (textContainsCueToken(fileData.content, method)) {
+            inFileSpecificCues.push(method);
+          }
+        }
+      }
+      continue;
+    }
+
+    // Extract string literals inside quotes
+    const quoteRe = /'([^']{3,})'|"([^"]{3,})"/g;
+    let qm: RegExpExecArray | null;
+    while ((qm = quoteRe.exec(raw)) !== null) {
+      const lit = qm[1] ?? qm[2];
+      if (lit && fileData.content.includes(lit)) {
+        inFileSpecificCues.push(lit);
+      }
+    }
+
+    // CSS custom property prefixes like `--motion-*` or `--glow-filter`
+    if (raw.startsWith('--')) {
+      const cssPrefix = raw.replace(/\*+$/, '');
+      if (cssPrefix.length > 3 && fileData.content.includes(cssPrefix)) {
+        inFileSpecificCues.push(cssPrefix);
+      }
+      continue;
+    }
+
+    // Extract non-generic identifiers
+    const idRe = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+    let im: RegExpExecArray | null;
+    while ((im = idRe.exec(raw)) !== null) {
+      const id = im[0];
+      if (id.length < 3 || GENERIC_SLICE_STOP_TOKENS.has(id) || HTTP_METHOD_NAMES.has(id)) {
+        continue;
+      }
+      if (textContainsCueToken(fileData.content, id)) {
+        inFileSpecificCues.push(id);
+      }
+    }
+  }
+
+  if (inFileSpecificCues.length > 0) {
+    // Prefer direct slice token matches; only allow enclosing declaration match if the declaration isn't a whole-file wrapper when more specific cues exist
+    const directHit = inFileSpecificCues.some(cue => textContainsCueToken(unionSliceRaw, cue));
+    if (!directHit) {
+      const declMap = getTsDeclRanges(resolvedPath, fileData);
+      const nonWrapperEnclosingHit = inFileSpecificCues.some(cue => {
+        const ranges = declMap.get(cue);
+        if (!ranges) return false;
+        return ranges.some(r => {
+          if (!(r.start <= start && end <= r.end)) return false;
+          // If there are other cues in the file that aren't this outer wrapper, don't let a 200+ line outer wrapper mask a shifted inner slice
+          const spanLen = r.end - r.start + 1;
+          return inFileSpecificCues.length === 1 || spanLen <= 120;
+        });
+      });
+      if (!nonWrapperEnclosingHit) {
+        return `Slice L${start}-L${end} does not contain cited symbol/token (${inFileSpecificCues.slice(0, 3).join(', ')})`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getFileLineCount(
+  filePath: string,
+  cache: Map<string, number>,
+  sliceCache?: Map<string, SourceSliceCacheEntry>
+): number {
   const cached = cache.get(filePath);
   if (cached !== undefined) {
     return cached;
+  }
+  if (sliceCache) {
+    return getSourceSliceData(filePath, sliceCache, cache).lines.length;
   }
   const content = fs.readFileSync(filePath, 'utf8');
   const count =
@@ -1000,28 +1798,46 @@ function validateFragmentOnFile(
   resolvedPath: string,
   fragment: string,
   lineCountCache: Map<string, number>,
-  headingSlugCache: Map<string, Set<string>>
-): boolean {
+  headingSlugCache: Map<string, Set<string>>,
+  sliceContext?: SliceLineContext,
+  sliceCache?: Map<string, SourceSliceCacheEntry>
+): { valid: boolean; reason?: string } {
   const lineMatch = fragment.match(LINE_FRAGMENT_RE);
   if (lineMatch) {
     const start = parseInt(lineMatch[1], 10);
     const end = lineMatch[2] !== undefined ? parseInt(lineMatch[2], 10) : start;
-    const totalLines = getFileLineCount(resolvedPath, lineCountCache);
-    return isValidLineRange(start, end, totalLines);
+    const totalLines = getFileLineCount(resolvedPath, lineCountCache, sliceCache);
+    if (!isValidLineRange(start, end, totalLines)) {
+      return { valid: false, reason: `file has ${totalLines} lines` };
+    }
+    if (sliceContext && sliceCache) {
+      const mismatch = validateSliceContentAgainstContext(
+        resolvedPath,
+        start,
+        end,
+        sliceContext,
+        sliceCache,
+        lineCountCache
+      );
+      if (mismatch) {
+        return { valid: false, reason: mismatch };
+      }
+    }
+    return { valid: true };
   }
 
   if (/^L\d/i.test(fragment) && !resolvedPath.endsWith('.md')) {
-    return false;
+    return { valid: false };
   }
 
   if (resolvedPath.endsWith('.md')) {
     const decodedAnchor = safeDecodeURIComponent(fragment);
     const slugs = getHeadingSlugSet(resolvedPath, headingSlugCache);
-    return slugs.has(decodedAnchor);
+    return { valid: slugs.has(decodedAnchor) };
   }
 
   // Non-Markdown files only support valid #L<start>[-L<end>] fragments
-  return false;
+  return { valid: false };
 }
 
 function extractFilePathFromLinkTarget(
@@ -1164,7 +1980,9 @@ export function validateLinkTarget(
   errors: LinkError[],
   rootDir: string = ROOT_DIR,
   lineCountCache: Map<string, number> = new Map(),
-  headingSlugCache: Map<string, Set<string>> = new Map()
+  headingSlugCache: Map<string, Set<string>> = new Map(),
+  sliceContext?: SliceLineContext,
+  sliceCache?: Map<string, SourceSliceCacheEntry>
 ): void {
   const trimmed = rawTarget.trim();
   if (!trimmed) {
@@ -1185,17 +2003,26 @@ export function validateLinkTarget(
   if (trimmed.startsWith('#')) {
     const fragment = trimmed.slice(1);
     const requiresMdSource = options.intraFileAnchorMode === 'markdown-only';
-    if (
-      !fragment ||
-      (requiresMdSource && !sourceAbsPath.endsWith('.md')) ||
-      !validateFragmentOnFile(sourceAbsPath, fragment, lineCountCache, headingSlugCache)
-    ) {
+    const fragRes =
+      !fragment || (requiresMdSource && !sourceAbsPath.endsWith('.md'))
+        ? { valid: false }
+        : validateFragmentOnFile(
+          sourceAbsPath,
+          fragment,
+          lineCountCache,
+          headingSlugCache,
+          sliceContext,
+          sliceCache
+        );
+    if (!fragRes.valid) {
       errors.push({
         sourceFile: relSource,
         line: lineNum,
         linkText,
         targetPath: trimmed,
-        resolvedPath: `${relSource}${trimmed}`,
+        resolvedPath: fragRes.reason
+          ? `${relSource}${trimmed} (${fragRes.reason})`
+          : `${relSource}${trimmed}`,
       });
     }
     return;
@@ -1246,17 +2073,26 @@ export function validateLinkTarget(
       return;
     }
 
-    if (
-      fragment &&
-      !validateFragmentOnFile(resolvedRepoPath, fragment, lineCountCache, headingSlugCache)
-    ) {
-      errors.push({
-        sourceFile: relSource,
-        line: lineNum,
-        linkText,
-        targetPath: trimmed,
-        resolvedPath: `${relResolved}#${fragment}`,
-      });
+    if (fragment) {
+      const fragRes = validateFragmentOnFile(
+        resolvedRepoPath,
+        fragment,
+        lineCountCache,
+        headingSlugCache,
+        sliceContext,
+        sliceCache
+      );
+      if (!fragRes.valid) {
+        errors.push({
+          sourceFile: relSource,
+          line: lineNum,
+          linkText,
+          targetPath: trimmed,
+          resolvedPath: fragRes.reason
+            ? `${relResolved}#${fragment} (${fragRes.reason})`
+            : `${relResolved}#${fragment}`,
+        });
+      }
     }
     return;
   }
@@ -1294,16 +2130,25 @@ export function validateLinkTarget(
     if (fs.existsSync(resolvedPath)) {
       if (fragment) {
         const stat = fs.statSync(resolvedPath);
-        if (
-          !stat.isFile() ||
-          !validateFragmentOnFile(resolvedPath, fragment, lineCountCache, headingSlugCache)
-        ) {
+        const fragRes = stat.isFile()
+          ? validateFragmentOnFile(
+            resolvedPath,
+            fragment,
+            lineCountCache,
+            headingSlugCache,
+            sliceContext,
+            sliceCache
+          )
+          : { valid: false };
+        if (!fragRes.valid) {
           errors.push({
             sourceFile: relSource,
             line: lineNum,
             linkText,
             targetPath: trimmed,
-            resolvedPath: `${relResolved}#${fragment}`,
+            resolvedPath: fragRes.reason
+              ? `${relResolved}#${fragment} (${fragRes.reason})`
+              : `${relResolved}#${fragment}`,
           });
         }
       }
@@ -1347,18 +2192,27 @@ export function validateLinkTarget(
     return;
   }
 
-  if (
-    fragment &&
-    !validateFragmentOnFile(resolvedPortalFile, fragment, lineCountCache, headingSlugCache)
-  ) {
-    const relPortalFile = path.relative(rootDir, resolvedPortalFile).replace(/\\/g, '/');
-    errors.push({
-      sourceFile: relSource,
-      line: lineNum,
-      linkText,
-      targetPath: trimmed,
-      resolvedPath: `${relPortalFile}#${fragment}`,
-    });
+  if (fragment) {
+    const fragRes = validateFragmentOnFile(
+      resolvedPortalFile,
+      fragment,
+      lineCountCache,
+      headingSlugCache,
+      sliceContext,
+      sliceCache
+    );
+    if (!fragRes.valid) {
+      const relPortalFile = path.relative(rootDir, resolvedPortalFile).replace(/\\/g, '/');
+      errors.push({
+        sourceFile: relSource,
+        line: lineNum,
+        linkText,
+        targetPath: trimmed,
+        resolvedPath: fragRes.reason
+          ? `${relPortalFile}#${fragment} (${fragRes.reason})`
+          : `${relPortalFile}#${fragment}`,
+      });
+    }
   }
 }
 
@@ -1537,6 +2391,35 @@ export function checkVitePressConfigLinks(
         scanNavOrSidebarSubtree(node.initializer, propName);
         return;
       }
+      if (
+        propName === 'languageAlias' &&
+        ts.isObjectLiteralExpression(node.initializer)
+      ) {
+        const supported = getShikiSupportedLanguages();
+        for (const aliasProp of node.initializer.properties) {
+          if (!ts.isPropertyAssignment(aliasProp)) continue;
+          const aliasKey = getPropertyKeyName(aliasProp.name);
+          if (!aliasKey) continue;
+          const lineNum =
+            sf.getLineAndCharacterOfPosition(aliasProp.initializer.getStart(sf)).line + 1;
+          if (
+            ts.isStringLiteral(aliasProp.initializer) ||
+            ts.isNoSubstitutionTemplateLiteral(aliasProp.initializer)
+          ) {
+            const targetLang = aliasProp.initializer.text.trim().toLowerCase();
+            if (!supported.has(targetLang)) {
+              errors.push({
+                sourceFile: configRel,
+                line: lineNum,
+                linkText: `languageAlias.${aliasKey}`,
+                targetPath: aliasProp.initializer.text,
+                resolvedPath: `Unsupported Shiki target grammar "${aliasProp.initializer.text}"`,
+              });
+            }
+          }
+        }
+        return;
+      }
     }
     ts.forEachChild(node, visitRoot);
   }
@@ -1609,7 +2492,8 @@ export function checkLinksInFile(
   rootDir: string = ROOT_DIR,
   lineCountCache: Map<string, number> = new Map(),
   headingSlugCache: Map<string, Set<string>> = new Map(),
-  mermaidBlocks: ExtractedMermaidBlock[] = []
+  mermaidBlocks: ExtractedMermaidBlock[] = [],
+  sliceCache: Map<string, SourceSliceCacheEntry> = new Map()
 ) {
   const relSource = path.relative(rootDir, filePath).replace(/\\/g, '/');
   let content: string;
@@ -1649,7 +2533,18 @@ export function checkLinksInFile(
           errors,
           rootDir,
           lineCountCache,
-          headingSlugCache
+          headingSlugCache,
+          {
+            lineText,
+            links,
+            codeSpans,
+            citeStart: link.startIndex,
+            citeEnd: link.endIndex,
+            linkText: link.linkText,
+            fileDir,
+            rootDir,
+          },
+          sliceCache
         );
       }
 
@@ -1725,7 +2620,7 @@ export function checkLinksInFile(
           continue;
         }
 
-        const totalLines = getFileLineCount(resolvedTarget, lineCountCache);
+        const totalLines = getFileLineCount(resolvedTarget, lineCountCache, sliceCache);
         if (!isValidLineRange(startLine, endLine, totalLines)) {
           errors.push({
             sourceFile: relSource,
@@ -1733,6 +2628,33 @@ export function checkLinksInFile(
             linkText: chosenCandidate.rawPath,
             targetPath: `${chosenCandidate.rawPath} ${citationText}`,
             resolvedPath: `${relResolved} ${citationText} (file has ${totalLines} lines)`,
+          });
+          continue;
+        }
+
+        const sliceMismatch = validateSliceContentAgainstContext(
+          resolvedTarget,
+          startLine,
+          endLine,
+          {
+            lineText,
+            links,
+            codeSpans,
+            citeStart: matchPos,
+            citeEnd: matchPos + citationText.length,
+            fileDir,
+            rootDir,
+          },
+          sliceCache,
+          lineCountCache
+        );
+        if (sliceMismatch) {
+          errors.push({
+            sourceFile: relSource,
+            line: lineNum,
+            linkText: chosenCandidate.rawPath,
+            targetPath: `${chosenCandidate.rawPath} ${citationText}`,
+            resolvedPath: `${relResolved} ${citationText} (${sliceMismatch})`,
           });
         }
       }
@@ -1755,6 +2677,19 @@ export function checkLinksInFile(
           headingSlugCache
         );
       },
+      onFenceOpen: (infoString, marker, lineNum) => {
+        const rawFenceInfo = infoString.trim();
+        const infoLang = rawFenceInfo.split(/[\s{[:]/)[0]?.toLowerCase() ?? '';
+        if (infoLang && !isSupportedShikiFenceLanguage(infoLang, rootDir)) {
+          errors.push({
+            sourceFile: relSource,
+            line: lineNum,
+            linkText: `code fence "${infoLang}"`,
+            targetPath: `${marker}${rawFenceInfo}`,
+            resolvedPath: `Unsupported Shiki fence language "${infoLang}"`,
+          });
+        }
+      },
       onFenceBoundary: () => {
         paragraphCandidates = [];
       },
@@ -1776,6 +2711,7 @@ export async function checkDocLinks(
   const errors: LinkError[] = [];
   const lineCountCache = new Map<string, number>();
   const headingSlugCache = new Map<string, Set<string>>();
+  const sliceCache = new Map<string, SourceSliceCacheEntry>();
   const mermaidBlocks: ExtractedMermaidBlock[] = [];
 
   for (const file of mdFiles) {
@@ -1785,7 +2721,8 @@ export async function checkDocLinks(
       rootDir,
       lineCountCache,
       headingSlugCache,
-      mermaidBlocks
+      mermaidBlocks,
+      sliceCache
     );
   }
 

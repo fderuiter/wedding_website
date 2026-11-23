@@ -135,6 +135,7 @@ describe('Portal Documentation Generator & Development Section', () => {
     expect(configContent).toContain('ignoreDeadLinks: [/^\\/demo(?:\\/|$)/, /^\\/storybook(?:\\/|$)/]');
     expect(configContent).toContain("env: 'dotenv'");
     expect(configContent).toContain("caddy: 'nginx'");
+    expect(configContent).toContain("cron: 'shellscript'");
     expect(configContent).toContain("attrSet('v-pre', '')");
   });
 
