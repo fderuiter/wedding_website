@@ -4,6 +4,7 @@ import React from 'react';
 import type { AttractionDTO } from '@/features/attractions';
 import { Button } from '@/components/ui/Button';
 import { FormGroup, Label, Input, Textarea, Select, Checkbox } from '@/components/ui/forms';
+import { AddressLookupInput } from '@/components/admin/AddressLookupInput';
 import { cn } from '@/utils/cn';
 
 interface AttractionEditorFormProps {
@@ -66,6 +67,39 @@ export function AttractionEditorForm({
         </h3>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2">
+          <AddressLookupInput
+            id={bindFieldIds ? 'attractionAddressLookup' : undefined}
+            label="Search Address"
+            placeholder="Search hotel, restaurant, or street address..."
+            helperText="Select a place to populate verified map coordinates automatically."
+            verifiedCoordinates={{
+              latitude: resolvedLatitude,
+              longitude: resolvedLongitude,
+            }}
+            onSelect={(match) => {
+              const nextPatch: Partial<AttractionDTO> = {
+                latitude: match.latitude,
+                longitude: match.longitude,
+              };
+              if (!(values.name ?? '').trim() && match.name) {
+                nextPatch.name = match.name;
+              }
+              const formattedAddr =
+                [
+                  match.streetAddress,
+                  match.city,
+                  [match.state, match.zip].filter(Boolean).join(' '),
+                ]
+                  .filter(Boolean)
+                  .join(', ') || match.displayName;
+              if (!(values.directions ?? '').trim() && formattedAddr) {
+                nextPatch.directions = formattedAddr;
+              }
+              onChange(nextPatch);
+            }}
+          />
+        </div>
         <FormGroup>
           <Label {...labelIdProps('attractionName')}>Name</Label>
           <Input
@@ -162,26 +196,36 @@ export function AttractionEditorForm({
             </Label>
           </div>
         </FormGroup>
-        <FormGroup>
-          <Label {...labelIdProps('attractionLatitude')}>Latitude</Label>
-          <Input
-            {...inputIdProps('attractionLatitude')}
-            type="number"
-            step="any"
-            value={resolvedLatitude}
-            onChange={(e) => onChange({ latitude: parseCoordinateInput(e.target.value) })}
-          />
-        </FormGroup>
-        <FormGroup>
-          <Label {...labelIdProps('attractionLongitude')}>Longitude</Label>
-          <Input
-            {...inputIdProps('attractionLongitude')}
-            type="number"
-            step="any"
-            value={resolvedLongitude}
-            onChange={(e) => onChange({ longitude: parseCoordinateInput(e.target.value) })}
-          />
-        </FormGroup>
+        <details className="md:col-span-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50/60 dark:bg-zinc-900/40 p-3">
+          <summary className="cursor-pointer select-none font-medium text-sm text-gray-700 dark:text-gray-200 min-h-11 flex items-center justify-between gap-2">
+            <span>Manual Coordinates (Optional)</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Override decimal latitude &amp; longitude
+            </span>
+          </summary>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3">
+            <FormGroup>
+              <Label {...labelIdProps('attractionLatitude')}>Latitude</Label>
+              <Input
+                {...inputIdProps('attractionLatitude')}
+                type="number"
+                step="any"
+                value={resolvedLatitude}
+                onChange={(e) => onChange({ latitude: parseCoordinateInput(e.target.value) })}
+              />
+            </FormGroup>
+            <FormGroup>
+              <Label {...labelIdProps('attractionLongitude')}>Longitude</Label>
+              <Input
+                {...inputIdProps('attractionLongitude')}
+                type="number"
+                step="any"
+                value={resolvedLongitude}
+                onChange={(e) => onChange({ longitude: parseCoordinateInput(e.target.value) })}
+              />
+            </FormGroup>
+          </div>
+        </details>
 
         {values.category === 'hotel' && (
           <div className="md:col-span-2 border-t border-gray-200 dark:border-zinc-700 pt-4 mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">

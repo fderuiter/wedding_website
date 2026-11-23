@@ -690,6 +690,220 @@ function toOpenApiSchema(schemaObj: any, isMultipart: boolean): any {
   return cloned;
 }
 
+interface ResolvedStatusBranch {
+  status: number;
+  condVar?: string;
+  condTruth?: boolean;
+}
+
+function extractLocalStatusBranches(allNodes: Node[]): {
+  statusBranchesByVar: Map<string, ResolvedStatusBranch[]>;
+  equalityCondByVar: Map<string, { targetVar: string; trueValue: string; falseValue?: string }>;
+} {
+  const mutableStringFallbacks = new Map<string, string>();
+  const equalityCondByVar = new Map<
+    string,
+    { targetVar: string; trueValue: string; falseValue?: string }
+  >();
+  const statusBranchesByVar = new Map<string, ResolvedStatusBranch[]>();
+
+  for (const n of allNodes) {
+    if (!Node.isVariableDeclaration(n) || !Node.isIdentifier(n.getNameNode())) continue;
+    const varName = n.getName();
+    const init = n.getInitializer();
+    if (!init) continue;
+
+    if (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init)) {
+      mutableStringFallbacks.set(varName, init.getLiteralValue());
+    }
+  }
+
+  for (const n of allNodes) {
+    if (!Node.isVariableDeclaration(n) || !Node.isIdentifier(n.getNameNode())) continue;
+    const varName = n.getName();
+    const init = n.getInitializer();
+    if (!init) continue;
+
+    if (
+      Node.isBinaryExpression(init) &&
+      (init.getOperatorToken().getKind() === SyntaxKind.EqualsEqualsEqualsToken ||
+        init.getOperatorToken().getKind() === SyntaxKind.EqualsEqualsToken)
+    ) {
+      const left = init.getLeft();
+      const right = init.getRight();
+      if (
+        Node.isIdentifier(left) &&
+        (Node.isStringLiteral(right) || Node.isNoSubstitutionTemplateLiteral(right))
+      ) {
+        const targetVar = left.getText();
+        equalityCondByVar.set(varName, {
+          targetVar,
+          trueValue: right.getLiteralValue(),
+          falseValue: mutableStringFallbacks.get(targetVar),
+        });
+      }
+    } else if (Node.isNumericLiteral(init)) {
+      statusBranchesByVar.set(varName, [{ status: Number(init.getLiteralValue()) }]);
+    } else if (Node.isConditionalExpression(init)) {
+      const condExpr = init.getCondition();
+      const whenTrue = init.getWhenTrue();
+      const whenFalse = init.getWhenFalse();
+      if (Node.isNumericLiteral(whenTrue) && Node.isNumericLiteral(whenFalse)) {
+        const condVar = Node.isIdentifier(condExpr) ? condExpr.getText() : undefined;
+        statusBranchesByVar.set(varName, [
+          { status: Number(whenTrue.getLiteralValue()), condVar, condTruth: true },
+          { status: Number(whenFalse.getLiteralValue()), condVar, condTruth: false },
+        ]);
+      }
+    }
+  }
+
+  return { statusBranchesByVar, equalityCondByVar };
+}
+
+function extractProbeStatusBranchesFromInitObject(
+  initArg: Node | undefined,
+  statusBranchesByVar: Map<string, ResolvedStatusBranch[]>
+): ResolvedStatusBranch[] {
+  const initObj = resolveObjectLiteral(initArg);
+  if (!initObj || !Node.isObjectLiteralExpression(initObj)) return [{ status: 200 }];
+  const statusProp = initObj.getProperty('status');
+  if (statusProp && Node.isPropertyAssignment(statusProp)) {
+    const statusInit = statusProp.getInitializer();
+    if (statusInit && Node.isNumericLiteral(statusInit)) {
+      return [{ status: Number(statusInit.getLiteralValue()) }];
+    }
+    if (statusInit && Node.isIdentifier(statusInit)) {
+      const resolved = statusBranchesByVar.get(statusInit.getText());
+      if (resolved && resolved.length > 0) {
+        return resolved;
+      }
+    }
+    if (statusInit && Node.isConditionalExpression(statusInit)) {
+      const condExpr = statusInit.getCondition();
+      const whenTrue = statusInit.getWhenTrue();
+      const whenFalse = statusInit.getWhenFalse();
+      if (Node.isNumericLiteral(whenTrue) && Node.isNumericLiteral(whenFalse)) {
+        const condVar = Node.isIdentifier(condExpr) ? condExpr.getText() : undefined;
+        return [
+          { status: Number(whenTrue.getLiteralValue()), condVar, condTruth: true },
+          { status: Number(whenFalse.getLiteralValue()), condVar, condTruth: false },
+        ];
+      }
+    }
+  }
+  return [{ status: 200 }];
+}
+
+function inferProbePropertySchema(
+  valueNode: Node,
+  propName: string,
+  branch: ResolvedStatusBranch,
+  equalityCondByVar: Map<string, { targetVar: string; trueValue: string; falseValue?: string }>
+): Record<string, any> | null {
+  if (Node.isStringLiteral(valueNode) || Node.isNoSubstitutionTemplateLiteral(valueNode)) {
+    return { type: 'string', enum: [valueNode.getLiteralValue()] };
+  }
+  if (valueNode.getKind() === SyntaxKind.TrueKeyword) {
+    return { type: 'boolean', enum: [true] };
+  }
+  if (valueNode.getKind() === SyntaxKind.FalseKeyword) {
+    return { type: 'boolean', enum: [false] };
+  }
+  if (Node.isNumericLiteral(valueNode)) {
+    return { type: 'number', enum: [Number(valueNode.getLiteralValue())] };
+  }
+  if (Node.isCallExpression(valueNode) && valueNode.getText().endsWith('.toISOString()')) {
+    return { type: 'string', format: 'date-time' };
+  }
+  if (Node.isConditionalExpression(valueNode)) {
+    const cond = valueNode.getCondition();
+    if (Node.isIdentifier(cond) && branch.condVar === cond.getText() && branch.condTruth !== undefined) {
+      const chosen = branch.condTruth ? valueNode.getWhenTrue() : valueNode.getWhenFalse();
+      return inferProbePropertySchema(chosen, propName, branch, equalityCondByVar);
+    }
+  }
+  if (Node.isIdentifier(valueNode)) {
+    const identName = valueNode.getText();
+    if (branch.condVar && branch.condTruth !== undefined) {
+      const eqInfo = equalityCondByVar.get(branch.condVar);
+      if (eqInfo && eqInfo.targetVar === identName) {
+        const resolvedVal = branch.condTruth ? eqInfo.trueValue : eqInfo.falseValue;
+        if (resolvedVal) {
+          return { type: 'string', enum: [resolvedVal] };
+        }
+      }
+    }
+    if (propName === 'error' || identName.toLowerCase().includes('error')) {
+      return { type: 'string' };
+    }
+  }
+  return null;
+}
+
+function extractProbeObjectSchema(
+  bodyArg: Node | undefined,
+  branch: ResolvedStatusBranch,
+  equalityCondByVar: Map<string, { targetVar: string; trueValue: string; falseValue?: string }>
+): Record<string, any> | null {
+  if (!bodyArg || !Node.isObjectLiteralExpression(bodyArg)) return null;
+
+  const hasStatusProp = Boolean(bodyArg.getProperty('status'));
+  const hasIsoTimestamp = bodyArg
+    .getProperties()
+    .some((p) => Node.isPropertyAssignment(p) && (p.getInitializer()?.getText() ?? '').endsWith('.toISOString()'));
+  if (!hasStatusProp || !hasIsoTimestamp) {
+    return null;
+  }
+
+  const properties: Record<string, any> = {};
+  const required: string[] = [];
+
+  for (const prop of bodyArg.getProperties()) {
+    if (Node.isPropertyAssignment(prop)) {
+      const propName = prop.getName().replace(/^['"]|['"]$/g, '');
+      const init = prop.getInitializer();
+      if (!init) return null;
+      const propSchema = inferProbePropertySchema(init, propName, branch, equalityCondByVar);
+      if (!propSchema) return null;
+      properties[propName] = propSchema;
+      required.push(propName);
+    } else if (Node.isSpreadAssignment(prop)) {
+      const expr = prop.getExpression();
+      const unwrapped = Node.isParenthesizedExpression(expr) ? expr.getExpression() : expr;
+      if (Node.isConditionalExpression(unwrapped)) {
+        const cond = unwrapped.getCondition();
+        if (Node.isIdentifier(cond) && branch.condVar === cond.getText() && branch.condTruth !== undefined) {
+          const chosen = branch.condTruth ? unwrapped.getWhenTrue() : unwrapped.getWhenFalse();
+          if (Node.isObjectLiteralExpression(chosen)) {
+            for (const subProp of chosen.getProperties()) {
+              if (!Node.isPropertyAssignment(subProp)) continue;
+              const subName = subProp.getName().replace(/^['"]|['"]$/g, '');
+              const subInit = subProp.getInitializer();
+              if (!subInit) continue;
+              const subSchema = inferProbePropertySchema(subInit, subName, branch, equalityCondByVar);
+              if (subSchema) {
+                properties[subName] = subSchema;
+                if (!required.includes(subName)) {
+                  required.push(subName);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (Object.keys(properties).length === 0) return null;
+
+  return {
+    type: 'object',
+    required,
+    properties,
+  };
+}
+
 function resolveSymbolDeclarations(sym: any): Node[] {
   if (!sym) return [];
   const targetSym = sym.getAliasedSymbol?.() ?? sym;
@@ -1143,6 +1357,87 @@ function detectMiddlewareWrapped(directNodes: Node[], allNodes: Node[]): boolean
   return false;
 }
 
+function tryMergeCompatibleObjectEnumSchemas(
+  schemas: Array<Record<string, any>>
+): Record<string, any> | null {
+  if (schemas.length < 2) return null;
+
+  const isPlainEnumMergeableObject = (s: Record<string, any>): boolean =>
+    Boolean(
+      s &&
+        s.type === 'object' &&
+        !s.anyOf &&
+        !s.oneOf &&
+        !s.allOf &&
+        !s.$ref &&
+        s.additionalProperties === undefined &&
+        s.properties &&
+        typeof s.properties === 'object' &&
+        !Array.isArray(s.properties)
+    );
+
+  if (!schemas.every(isPlainEnumMergeableObject)) {
+    return null;
+  }
+
+  const base = schemas[0];
+  const basePropKeys = Object.keys(base.properties);
+  const baseReqSorted = JSON.stringify([...(base.required ?? [])].sort());
+
+  for (const candidate of schemas.slice(1)) {
+    if (JSON.stringify([...(candidate.required ?? [])].sort()) !== baseReqSorted) {
+      return null;
+    }
+    const candKeys = Object.keys(candidate.properties);
+    if (candKeys.length !== basePropKeys.length || !basePropKeys.every((k) => k in candidate.properties)) {
+      return null;
+    }
+  }
+
+  const mergedProperties: Record<string, any> = {};
+  for (const propKey of basePropKeys) {
+    const propVariants = schemas.map((s) => s.properties[propKey]);
+    const firstVariant = propVariants[0];
+    const firstJson = JSON.stringify(firstVariant);
+
+    if (propVariants.every((v) => JSON.stringify(v) === firstJson)) {
+      mergedProperties[propKey] = JSON.parse(firstJson);
+      continue;
+    }
+
+    const canMergeEnum = propVariants.every(
+      (v) =>
+        v &&
+        typeof v === 'object' &&
+        !Array.isArray(v) &&
+        typeof v.type === 'string' &&
+        v.type === firstVariant.type &&
+        v.format === firstVariant.format &&
+        v.nullable === firstVariant.nullable &&
+        Array.isArray(v.enum) &&
+        Object.keys(v).every((k) => ['type', 'enum', 'format', 'nullable', 'description'].includes(k))
+    );
+
+    if (!canMergeEnum) {
+      return null;
+    }
+
+    const combinedEnum = Array.from(new Set(propVariants.flatMap((v) => v.enum)));
+    const mergedProp: Record<string, any> = {
+      ...JSON.parse(firstJson),
+      enum: combinedEnum,
+    };
+    mergedProperties[propKey] = mergedProp;
+  }
+
+  const mergedObj: Record<string, any> = {
+    type: 'object',
+    ...(Array.isArray(base.required) ? { required: [...base.required] } : {}),
+    properties: mergedProperties,
+  };
+  return mergedObj;
+}
+
 function mergeDistinctSchemas(schemas: Array<Record<string, any>>): Record<string, any> {
   const unique: Array<Record<string, any>> = [];
   const seen = new Set<string>();
@@ -1161,6 +1456,10 @@ function mergeDistinctSchemas(schemas: Array<Record<string, any>>): Record<strin
   }
   if (unique.length === 1) {
     return unique[0];
+  }
+  const mergedObjectEnumSchema = tryMergeCompatibleObjectEnumSchemas(unique);
+  if (mergedObjectEnumSchema) {
+    return mergedObjectEnumSchema;
   }
   return unique.every(isObjectJsonSchema)
     ? { type: 'object', anyOf: unique }
@@ -1191,6 +1490,7 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
   } = opts;
 
   const usesMiddleware = detectMiddlewareWrapped(directNodes, allNodes);
+  const { statusBranchesByVar, equalityCondByVar } = extractLocalStatusBranches(allNodes);
   const exportMediaByStatus = new Map<number, string[]>();
   const jsonSchemasByStatus = new Map<number, Array<Record<string, any>>>();
   const textErrorStatuses = new Set<number>();
@@ -1228,10 +1528,21 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
         const payloadArg = n.getArguments()[0];
         const initArg = n.getArguments()[1];
         const statuses = extractStatusesFromInitObject(initArg, allNodes);
+        const probeBranches = extractProbeStatusBranchesFromInitObject(initArg, statusBranchesByVar);
 
         for (const status of statuses) {
+          const branch = probeBranches.find((b) => b.status === status) ?? { status };
+          const rawProbeSchema = extractProbeObjectSchema(payloadArg, branch, equalityCondByVar);
+
           if (status >= 200 && status < 300) {
-            const { schema, hasTopLevelSuccess } = inferSchemaFromExpression(payloadArg);
+            const { schema, hasTopLevelSuccess } = rawProbeSchema
+              ? {
+                schema: rawProbeSchema,
+                hasTopLevelSuccess: Boolean(
+                  rawProbeSchema.properties && 'success' in rawProbeSchema.properties
+                ),
+              }
+              : inferSchemaFromExpression(payloadArg);
             if (usesMiddleware && !hasTopLevelSuccess) {
               recordJsonSchema(status, {
                 type: 'object',
@@ -1247,7 +1558,7 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
           } else if (status >= 400) {
             explicitErrorStatuses.add(status);
             if (!usesMiddleware) {
-              const { schema } = inferSchemaFromExpression(payloadArg);
+              const schema = rawProbeSchema ?? inferSchemaFromExpression(payloadArg).schema;
               recordJsonSchema(status, schema);
             }
           }
@@ -1385,7 +1696,9 @@ function extractOperationResponses(opts: ExtractOperationResponsesOptions): Reco
     explicitErrorStatuses.add(404);
   }
   if (usesMiddleware) {
-    explicitErrorStatuses.add(429);
+    if (routePath !== '/api/health') {
+      explicitErrorStatuses.add(429);
+    }
     explicitErrorStatuses.add(500);
   } else if (explicitErrorStatuses.size === 0) {
     explicitErrorStatuses.add(500);

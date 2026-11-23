@@ -93,7 +93,7 @@ export const steps: Step[] = [
     command: 'npm run build:export',
     remediation: 'Static HTML showcase export failed.\nRun "npm run build:export" locally to inspect Next.js static prerender errors. Ensure public/showcase routes do not import "@/app/api/*", guard dynamic server APIs ("cookies()", "headers()") and Prisma queries when "STATIC_EXPORT" is enabled, and define "generateStaticParams()" on dynamic App Router segments.',
   },
-  { name: 'Unit & Integration Tests', command: 'npm test' },
+  { name: 'Unit & Integration Tests', command: 'npm run test:cov' },
 ];
 
 export function main(options: QualityRunOptions = {}): void {
