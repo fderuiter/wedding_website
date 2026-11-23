@@ -624,7 +624,11 @@ describe('rateLimit', () => {
       expect(normalizeApiPathname('/api/admin/broadcast/bc-123')).toBe('/api/admin/broadcast/:id');
       expect(normalizeApiPathname('/api/admin/broadcast/schedule/bc-123')).toBe('/api/admin/broadcast/schedule/:id');
       expect(normalizeApiPathname('/api/admin/invitation-codes/merge')).toBe('/api/admin/invitation-codes/merge');
+      expect(normalizeApiPathname('/api/admin/contributors/c-99')).toBe('/api/admin/:entity/:id');
       expect(normalizeApiPathname('/api/admin/contributors/c-99/action')).toBe('/api/admin/contributors/:id/action');
+      expect(normalizeApiPathname('/api/admin/registry/items/item-123/unclaim')).toBe(
+        '/api/admin/registry/items/:id/unclaim'
+      );
       expect(normalizeApiPathname('/api/registry/claim')).toBe('/api/registry/claim');
       expect(normalizeApiPathname('/api/uploads/photos/hero.webp')).toBe('/api/uploads/:path');
     });

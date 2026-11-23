@@ -150,6 +150,9 @@ export function normalizeApiPathname(pathname: string): string {
   if (/^\/api\/admin\/photos\/(?!moderation$)[^/]+$/.test(cleaned)) {
     return '/api/admin/photos/:id';
   }
+  if (/^\/api\/admin\/registry\/items\/[^/]+\/unclaim$/.test(cleaned)) {
+    return '/api/admin/registry/items/:id/unclaim';
+  }
   if (/^\/api\/admin\/thank-you-notes\/(?!(?:batch|export|export-labels)$)[^/]+$/.test(cleaned)) {
     return '/api/admin/thank-you-notes/:id';
   }

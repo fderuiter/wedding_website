@@ -201,8 +201,9 @@ describe('RegistryPage', () => {
 
     render(<RegistryPage />);
 
-    const clearFiltersBtn = screen.getByRole('button', { name: /clear filters/i });
-    fireEvent.click(clearFiltersBtn);
+    const clearFiltersBtns = screen.getAllByRole('button', { name: /clear filters/i });
+    expect(clearFiltersBtns).toHaveLength(2);
+    fireEvent.click(clearFiltersBtns[1]);
 
     expect(mockHandleClearFilters).toHaveBeenCalledTimes(1);
     expect(mockSetSearchQuery).toHaveBeenCalledWith('');
