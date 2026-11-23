@@ -96,8 +96,14 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
   const partner1 = (config?.partner1Name || config?.brideName || '').trim();
   const partner2 = (config?.partner2Name || config?.groomName || '').trim();
   const baseUrl = (config?.baseUrl || '').trim();
+  const hasWeddingDate =
+    config?.weddingDate !== null &&
+    config?.weddingDate !== undefined &&
+    String(config.weddingDate).trim() !== '' &&
+    !Number.isNaN(new Date(config.weddingDate).getTime());
   const weddingDetailsCompleted =
     Boolean(partner1 && partner2 && baseUrl) &&
+    hasWeddingDate &&
     isSiteInitialized(config) &&
     hasNonPlaceholderVenueDetails(config);
   const storyAndScheduleCompleted = customStoryConfigured && hasPublicScheduleEvent;
@@ -111,7 +117,7 @@ export const GET = withApiMiddleware(async (req: NextRequest) => {
     {
       id: 'wedding-details',
       title: 'Wedding Details',
-      description: 'Verify partner names, wedding venue details, and your public website URL.',
+      description: 'Verify partner names, wedding date, venue details, and your public website URL.',
       completed: weddingDetailsCompleted,
       href: '/admin/dashboard/settings',
       actionLabel: weddingDetailsCompleted ? 'Edit Wedding Details' : 'Configure Wedding Details',

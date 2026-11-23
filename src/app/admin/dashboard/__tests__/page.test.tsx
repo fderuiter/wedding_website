@@ -182,4 +182,47 @@ describe('AdminDashboardPage (Decoupled Overview)', () => {
     expect(screen.getByTestId('overview-card-seating')).toBeInTheDocument();
     expect(screen.getByTestId('overview-card-settings')).toBeInTheDocument();
   });
+
+  it('renders Resume Setup Wizard link pointing to /admin/setup when setupCompleted is false', async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url === '/api/admin/settings') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            setupCompleted: false,
+            modules: { registry: true, gallery: true },
+          }),
+        });
+      }
+      if (url === '/api/admin/onboarding-milestones') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            completedCount: 0,
+            pendingCount: 1,
+            totalCount: 1,
+            allComplete: false,
+            milestones: [
+              {
+                id: 'wedding-details',
+                title: 'Wedding Details',
+                description: 'Verify partner names, wedding date, venue name, and your public website URL.',
+                completed: false,
+                href: '/admin/dashboard/settings',
+                actionLabel: 'Add Wedding Details',
+              },
+            ],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
+
+    render(<AdminDashboardPage />);
+
+    const resumeLink = await screen.findByTestId('resume-setup-wizard-link');
+    expect(resumeLink).toHaveAttribute('href', '/admin/setup');
+    expect(resumeLink).toHaveTextContent('Resume Setup Wizard');
+  });
 });

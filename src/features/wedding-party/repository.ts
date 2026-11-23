@@ -1,15 +1,15 @@
 import { prisma } from '@/lib/prisma';
 import { WeddingPartyMemberSchema, WeddingPartyMemberDTO } from './schemas';
 
-const STATIC_MOCK_WEDDING_PARTY_RAW = [
+const STATIC_MOCK_WEDDING_PARTY_MEMBERS_RAW = [
   {
-    id: 'mock-party-1',
-    name: 'Jordan Avery',
-    role: 'Honor Attendant',
-    bio: 'Lifelong friend and travel companion since college.',
+    id: 'mock-party-maid-of-honor',
+    name: 'Jordan Rivera',
+    role: 'Maid of Honor',
+    bio: 'College roommate and lifelong travel companion.',
     side: 'BRIDE' as const,
-    link: '',
-    order: 1,
+    link: 'https://example.com/party/jordan',
+    order: 0,
     isSample: false,
     photoId: null,
     photo: null,
@@ -17,13 +17,13 @@ const STATIC_MOCK_WEDDING_PARTY_RAW = [
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   },
   {
-    id: 'mock-party-2',
-    name: 'Casey Quinn',
+    id: 'mock-party-best-person',
+    name: 'Cameron Brooks',
     role: 'Best Person',
-    bio: 'Always ready with a great story and playlists for every road trip.',
+    bio: 'Childhood friend and weekend hiking partner.',
     side: 'GROOM' as const,
-    link: '',
-    order: 2,
+    link: 'https://example.com/party/cameron',
+    order: 1,
     isSample: false,
     photoId: null,
     photo: null,
@@ -32,17 +32,20 @@ const STATIC_MOCK_WEDDING_PARTY_RAW = [
   },
 ];
 
+function isStaticExportBuild(): boolean {
+  return (
+    process.env.STATIC_EXPORT === 'true' ||
+    process.env.STATIC_EXPORT === '1' ||
+    process.env.npm_lifecycle_event === 'build:export'
+  );
+}
+
 export class WeddingPartyRepository {
   constructor(public client: any = prisma) {}
 
   async getMembers(): Promise<WeddingPartyMemberDTO[]> {
-    const isStaticExport =
-      process.env.STATIC_EXPORT === 'true' ||
-      process.env.STATIC_EXPORT === '1' ||
-      process.env.npm_lifecycle_event === 'build:export';
-
-    if (isStaticExport) {
-      return STATIC_MOCK_WEDDING_PARTY_RAW.map((m) => WeddingPartyMemberSchema.parse(m));
+    if (isStaticExportBuild()) {
+      return STATIC_MOCK_WEDDING_PARTY_MEMBERS_RAW.map((m) => WeddingPartyMemberSchema.parse(m));
     }
 
     const members = await this.client.weddingPartyMember.findMany({

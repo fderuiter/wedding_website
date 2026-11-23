@@ -8,25 +8,9 @@ export class WeddingPartyAdminService extends BaseService<any> {
   static ENTITY_KEY = 'wedding-party';
   
   protected defaultQueryArgs = {
-    orderBy: [{ order: 'asc' as const }],
+    orderBy: [{ order: 'asc' }],
     include: { photo: true }
   };
-
-  override async findMany(args?: any): Promise<any[]> {
-    if (
-      args?.orderBy &&
-      !Array.isArray(args.orderBy) &&
-      typeof args.orderBy === 'object' &&
-      Object.keys(args.orderBy).length === 1 &&
-      args.orderBy.createdAt === 'desc'
-    ) {
-      return super.findMany({
-        ...args,
-        orderBy: [{ order: 'asc' }, { createdAt: 'desc' }],
-      });
-    }
-    return super.findMany(args);
-  }
     
   constructor() {
     super(new BaseRepository('weddingPartyMember'), 'WeddingPartyMember', WeddingPartyInputSchema);

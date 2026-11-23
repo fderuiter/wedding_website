@@ -48,6 +48,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     window.localStorage.clear();
+    window.history.replaceState(null, '', '/');
     jest.clearAllMocks();
   });
 
@@ -706,7 +707,7 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     });
   });
 
-  test('allows completing Step 2 with empty or whitespace venue fields using clean empty strings, date-aware copy, and live client preview', async () => {
+  test('allows completing Step 2 with empty or whitespace venue fields using clean empty strings, date-aware copy, live client preview, and setupCompleted false', async () => {
     let savedPayload: Record<string, unknown> | null = null;
     let callCount = 0;
     global.fetch = jest.fn((_url: string | URL | Request, init?: RequestInit) => {
@@ -727,6 +728,8 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
       }
     }) as jest.Mock;
 
+    const replaceStateSpy = jest.spyOn(window.history, 'replaceState');
+
     renderWithProviders(<SetupWizard />);
 
     // Step 1: Login
@@ -744,6 +747,9 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(venueCityInput).not.toHaveAttribute('required');
     expect(venueStateInput).not.toHaveAttribute('required');
 
+    expect(venueNameInput).toHaveAttribute('placeholder', 'Optional');
+    expect(venueCityInput).toHaveAttribute('placeholder', 'Optional');
+    expect(venueStateInput).toHaveAttribute('placeholder', 'Optional');
     fireEvent.change(screen.getByLabelText(/Partner 1/i), { target: { value: 'Alex' } });
     fireEvent.change(screen.getByLabelText(/Partner 2/i), { target: { value: 'Sam' } });
     fireEvent.change(screen.getByLabelText(/Wedding Date/i), { target: { value: '2028-12-31' } });
@@ -780,7 +786,11 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     expect(payload.venueZip).toBe('');
     expect(payload.heroTitle).toBe('Alex & Sam');
     expect(String(payload.heroSubtitle)).not.toContain('Tied the Knot');
+    expect(String(payload.heroSubtitle)).toContain('December 31, 2028');
     expect(payload.storyText).not.toBe('Our story...');
+    expect(payload.setupCompleted).toBe(false);
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/admin/setup');
+    replaceStateSpy.mockRestore();
   });
 
   test('navigates backwards from Step 3 to Step 2 and preserves form values', async () => {
@@ -1263,6 +1273,135 @@ describe('SetupWizard focus shifting and ARIA error linking', () => {
     } finally {
       headStyle.remove();
       document.documentElement.className = '';
+    }
+  });
+
+  test('invalidates QueryClient caches when Step 3 seeds sample data and excludes sample guests from Step 4/5 guest counts', async () => {
+    const invitationCodesModule = jest.requireMock('@/hooks/admin/useAdminInvitationCodes') as {
+      useAdminInvitationCodes: () => {
+        data: unknown[];
+        isLoading: boolean;
+        error: null;
+        fetchAll: jest.Mock;
+      };
+    };
+    const originalUseAdminInvitationCodes = invitationCodesModule.useAdminInvitationCodes;
+    invitationCodesModule.useAdminInvitationCodes = () => ({
+      data: [
+        { id: 'sample-1', code: 'DEMO1', guestName: 'Sample Guest', isSample: true },
+        { id: 'sample-2', code: 'DEMO2', guestName: 'Sample Guest 2', isSample: true },
+        { id: 'real-1', code: 'REAL1', guestName: 'Real Guest', isSample: false },
+      ],
+      isLoading: false,
+      error: null,
+      fetchAll: jest.fn(() =>
+        Promise.resolve([
+          { id: 'sample-1', code: 'DEMO1', guestName: 'Sample Guest', isSample: true },
+          { id: 'real-1', code: 'REAL1', guestName: 'Real Guest', isSample: false },
+        ])
+      ),
+    });
+
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      } as Response)
+    ) as jest.Mock;
+
+    try {
+      render(
+        <QueryClientProvider client={queryClient}>
+          <SetupWizard
+            initialSavedConfig={{
+              partner1Name: 'Alex',
+              partner2Name: 'Sam',
+              weddingDate: '2027-06-20',
+              timezone: 'America/Chicago',
+              baseUrl: 'https://alexandsam.com',
+              venueName: '',
+              venueCity: '',
+              venueState: '',
+            }}
+          />
+        </QueryClientProvider>
+      );
+
+      // Resumes at Step 3 from initialSavedConfig when sessionStorage is empty
+      await waitFor(() => expect(screen.getByText('Step 3: Sample Data Selection')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Skip to Admin Dashboard' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Populate Sample Data & Continue/i }));
+
+      await waitFor(() => expect(screen.getByText('Step 4: Guest List Import')).toBeInTheDocument());
+
+      const invalidatedKeys = invalidateSpy.mock.calls.map((call) => call[0]?.queryKey);
+      expect(invalidatedKeys).toEqual(
+        expect.arrayContaining([
+          ['admin-wedding-party'],
+          ['admin-attractions'],
+          ['admin-invitation-codes'],
+          ['admin-registry'],
+          ['admin-content-nodes'],
+        ])
+      );
+
+      // Only the 1 non-sample guest is counted
+      expect(screen.getByText(/1 guest record\(s\) imported/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Skip to Admin Dashboard' })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Skip for Now' }));
+      await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+      expect(screen.getByText('Guest List: 1 invitation code(s) active')).toBeInTheDocument();
+    } finally {
+      invitationCodesModule.useAdminInvitationCodes = originalUseAdminInvitationCodes;
+    }
+  });
+
+  test('marks setupCompleted true and clears setup_wizard_draft when finishing Step 5', async () => {
+    (checkAdminClient as jest.Mock).mockResolvedValue(true);
+    window.sessionStorage.setItem(
+      'setup_wizard_draft',
+      JSON.stringify({
+        step: 5,
+        partner1Name: 'Alex',
+        partner2Name: 'Sam',
+      })
+    );
+
+    let completionBody: Record<string, unknown> | null = null;
+    global.fetch = jest.fn((url: string | URL | Request, init?: RequestInit) => {
+      if (url.toString().includes('/api/admin/setup') && init?.body) {
+        completionBody = JSON.parse(init.body as string);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, setupCompleted: true }),
+      } as Response);
+    }) as jest.Mock;
+
+    renderWithProviders(<SetupWizard />);
+
+    await waitFor(() => expect(screen.getByText('Step 5: Complete Setup')).toBeInTheDocument());
+
+    // Suppress JSDOM navigation Not implemented console error during window.location.assign
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /Go to Admin Dashboard/i }));
+
+      await waitFor(() => {
+        expect(completionBody).toEqual({ setupCompleted: true });
+      });
+      expect(window.sessionStorage.getItem('setup_wizard_draft')).toBeNull();
+    } finally {
+      consoleErrorSpy.mockRestore();
     }
   });
 });

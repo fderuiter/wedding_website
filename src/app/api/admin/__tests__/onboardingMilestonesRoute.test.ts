@@ -243,11 +243,12 @@ describe('GET /api/admin/onboarding-milestones', () => {
       partner2Name: 'Jordan',
       brideName: 'Taylor',
       groomName: 'Jordan',
-      venueName: 'Rosewood Estate',
+      venueName: 'The Botanical Conservatory',
       venueCity: 'Austin',
       venueState: 'TX',
       storyText: 'We met at a neighborhood coffee shop in 2020 and got engaged under the oaks.',
       baseUrl: 'https://taylorandjordan.example.org',
+      weddingDate: new Date('2027-06-20T16:00:00.000Z'),
     } as unknown as AppConfigDTO);
     (prisma.invitationCode.count as jest.Mock).mockResolvedValue(12);
     (prisma.registryItem.count as jest.Mock).mockResolvedValue(8);
@@ -284,11 +285,12 @@ describe('GET /api/admin/onboarding-milestones', () => {
       partner2Name: 'Jordan',
       brideName: 'Taylor',
       groomName: 'Jordan',
-      venueName: 'Rosewood Estate',
+      venueName: 'The Botanical Conservatory',
       venueCity: 'Austin',
       venueState: 'TX',
       storyText: 'Custom wedding story written by Taylor and Jordan.',
       baseUrl: 'https://taylorandjordan.example.org',
+      weddingDate: new Date('2027-06-20T16:00:00.000Z'),
       modules: { registry: false },
     } as unknown as AppConfigDTO);
     (prisma.invitationCode.count as jest.Mock).mockResolvedValue(12);
@@ -331,5 +333,36 @@ describe('GET /api/admin/onboarding-milestones', () => {
       'seating-layout',
       'faq-setup',
     ]);
+  });
+
+  it('keeps wedding-details incomplete when venueName is blank or TBD or weddingDate is missing', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    (prisma.invitationCode.count as jest.Mock).mockResolvedValue(0);
+    (prisma.registryItem.count as jest.Mock).mockResolvedValue(0);
+    (prisma.seatingTable.count as jest.Mock).mockResolvedValue(0);
+    (prisma.contentNode.findMany as jest.Mock).mockResolvedValue([]);
+
+    for (const incompleteFields of [
+      { weddingDate: new Date('2027-06-20T16:00:00.000Z'), venueName: '', venueCity: 'Seattle', venueState: 'WA' },
+      { weddingDate: new Date('2027-06-20T16:00:00.000Z'), venueName: '  tbd  ', venueCity: 'Seattle', venueState: 'WA' },
+      { weddingDate: null, venueName: 'The Botanical Conservatory', venueCity: 'Seattle', venueState: 'WA' },
+    ]) {
+      mockGetAppConfig.mockResolvedValue({
+        id: 'global',
+        partner1Name: 'Taylor',
+        partner2Name: 'Jordan',
+        brideName: 'Taylor',
+        groomName: 'Jordan',
+        baseUrl: 'https://taylorandjordan.example.org',
+        ...incompleteFields,
+      } as unknown as AppConfigDTO);
+
+      const res = await GET(makeRequest(true), {});
+      const body = await res.json();
+      const weddingDetails = body.milestones.find(
+        (m: OnboardingMilestone) => m.id === 'wedding-details'
+      );
+      expect(weddingDetails?.completed).toBe(false);
+    }
   });
 });

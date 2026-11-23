@@ -128,7 +128,22 @@ describe('Setup API Route (/api/admin/setup)', () => {
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.initialized).toBe(true);
+      expect(json.setupCompleted).toBe(true);
       expect(json.requiresSetup).toBe(false);
+    });
+
+    test('returns requiresSetup true when Step 2 initialized site has setupCompleted false', async () => {
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue({
+        ...initializedConfig,
+        setupCompleted: false,
+      });
+
+      const res = await GET();
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.initialized).toBe(true);
+      expect(json.setupCompleted).toBe(false);
+      expect(json.requiresSetup).toBe(true);
     });
   });
 
@@ -772,6 +787,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
         venueCity: '',
         venueState: '',
         venueZip: '',
+        setupCompleted: false,
       };
 
       (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue(
@@ -791,6 +807,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
           // venueCity omitted
           venueState: '  ',
           // venueZip omitted
+          setupCompleted: false,
         }),
       });
 
@@ -809,6 +826,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
           travelAdvice: '',
           heroTitle: 'Alice & Bob',
           heroSubtitle: 'Join us to celebrate our wedding on June 20, 2028.',
+          setupCompleted: false,
         }),
         create: expect.objectContaining({
           id: 'global',
@@ -821,6 +839,7 @@ describe('Setup API Route (/api/admin/setup)', () => {
           travelAdvice: '',
           heroTitle: 'Alice & Bob',
           heroSubtitle: 'Join us to celebrate our wedding on June 20, 2028.',
+          setupCompleted: false,
         }),
       });
     });
@@ -852,6 +871,57 @@ describe('Setup API Route (/api/admin/setup)', () => {
             heroTitle: 'We Tied the Knot!',
             heroSubtitle: expect.stringContaining('Thank you for celebrating with us on June 20, 2024.'),
           }),
+        }),
+      );
+    });
+
+    test('preserves 403 replay protection for unauthenticated callers after Step 2 saves setupCompleted false, while allowing authenticated Step 5 completion', async () => {
+      const inProgressConfig = {
+        ...initializedConfig,
+        setupCompleted: false,
+      };
+      (mockPrisma.appConfig.findUnique as jest.Mock).mockResolvedValue(inProgressConfig);
+
+      const unauthenticatedReplay = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        body: JSON.stringify({
+          password: 'secret',
+          brideName: 'Mallory',
+          groomName: 'Eve',
+          baseUrl: 'https://attacker.example',
+        }),
+      });
+
+      const blockedRes = await POST(unauthenticatedReplay);
+      expect(blockedRes.status).toBe(403);
+      expect(mockPrisma.appConfig.upsert).not.toHaveBeenCalled();
+
+      (mockPrisma.appConfig.upsert as jest.Mock).mockResolvedValue({
+        ...inProgressConfig,
+        setupCompleted: true,
+      });
+
+      const token = await signAdminToken({ isAdmin: true, iat: Date.now() });
+      const completeReq = new NextRequest('http://localhost/api/admin/setup', {
+        method: 'POST',
+        headers: {
+          cookie: `admin_auth=${token}`,
+        },
+        body: JSON.stringify({
+          setupCompleted: true,
+        }),
+      });
+
+      const completeRes = await POST(completeReq);
+      expect(completeRes.status).toBe(200);
+      const completeJson = await completeRes.json();
+      expect(completeJson.success).toBe(true);
+      expect(completeJson.setupCompleted).toBe(true);
+      expect(completeJson.requiresSetup).toBe(false);
+      expect(mockPrisma.appConfig.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'global' },
+          update: { setupCompleted: true },
         })
       );
     });

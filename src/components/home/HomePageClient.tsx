@@ -216,12 +216,29 @@ export default function HomePageClient({
     venueState: cleanVenue.venueState,
   });
 
-  const resolvedHeroTitle = config.heroTitle?.trim() || starterCopy.heroTitle;
+  const defaultHeroTitle =
+    partner1Display && partner2Display
+      ? `${partner1Display} & ${partner2Display}`
+      : 'Celebrate With Us';
+  const defaultHeroSubtitle = cleanVenue.cityState
+    ? `Join us as we celebrate our wedding on ${formattedDate} in ${cleanVenue.cityState}.`
+    : `Join us as we celebrate our wedding on ${formattedDate}.`;
+
+  const rawHeroTitle = config.heroTitle?.trim() || '';
+  const isLegacyPastHeroTitle = rawHeroTitle.toLowerCase() === 'we tied the knot!';
+  const resolvedHeroTitle =
+    rawHeroTitle && !(isLegacyPastHeroTitle && starterCopy.isUpcoming)
+      ? rawHeroTitle
+      : starterCopy.isUpcoming
+        ? starterCopy.heroTitle
+        : defaultHeroTitle;
   const resolvedHeroSubtitle =
     config.heroSubtitle?.trim() ||
-    (starterCopy.isUpcoming
-      ? starterCopy.heroSubtitle
-      : `Thank you for celebrating with us on ${formattedDate}${cleanVenue.cityState ? `, in ${cleanVenue.cityState}` : ''}. We're so grateful for all the love and support from our family and friends.`);
+    (!starterCopy.isUpcoming && isLegacyPastHeroTitle
+      ? `Thank you for celebrating with us on ${formattedDate}${cleanVenue.cityState ? `, in ${cleanVenue.cityState}` : ''}. We're so grateful for all the love and support from our family and friends.`
+      : starterCopy.isUpcoming
+        ? starterCopy.heroSubtitle
+        : defaultHeroSubtitle);
 
   const logisticsNodes = contentNodes
     .filter((n): n is Extract<ContentNodeDTO, { type: 'Logistics' }> => n.type === 'Logistics')
@@ -521,8 +538,11 @@ export default function HomePageClient({
           {features.map((feature, index) => renderSection(feature, index + 3))}
 
           <footer className="flex flex-col items-center gap-4 px-4 pb-10 text-sm text-gray-600 dark:text-gray-400">
-            <p>© {new Date().getFullYear()} {partner1Display} & {partner2Display} • Designed with ❤️{cleanVenue.venueState ? ` in ${cleanVenue.venueState}` : ''}</p>
-            <p>Stay tuned for more updates from our lives together!</p>
+            <p>
+              © {new Date().getFullYear()} {partner1Display} &amp; {partner2Display}
+              {cleanVenue.venueState ? ` • Designed with ❤️ in ${cleanVenue.venueState}` : ''}
+            </p>
+            <p>We look forward to celebrating with you!</p>
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
               <a href="/project-info" className="text-gray-600 hover:text-black dark:text-gray-300 dark:hover:text-white hover:underline focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-900 rounded">About this site</a>
               <span aria-hidden="true" className="text-gray-400 dark:text-gray-600">•</span>

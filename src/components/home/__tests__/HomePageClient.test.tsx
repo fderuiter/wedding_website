@@ -464,12 +464,12 @@ describe('HomePageClient', () => {
       venueState: '',
       venueDescription: '',
       travelAdvice: '',
-      weddingDate: '2028-09-18T18:00:00.000Z',
+      weddingDate: new Date('2028-09-18T18:00:00.000Z'),
       partner1Name: 'Clara',
       partner2Name: 'Devon',
       brideName: 'Clara',
       groomName: 'Devon',
-    } as any;
+    };
 
     const { container } = render(<HomePageClient config={blankOptionalConfig} />);
 
@@ -488,23 +488,37 @@ describe('HomePageClient', () => {
     expect(results).toHaveNoViolations();
   });
 
-  test('preserves past-wedding fallback copy when weddingDate is in the past and hero fields are blank', () => {
-    const pastConfig: PublicAppConfig = {
+  test('preserves configured past-wedding copy when weddingDate is in the past while upgrading legacy We Tied the Knot! for upcoming dates', () => {
+    const pastSavedConfig: PublicAppConfig = {
       ...mockConfig,
-      heroTitle: '',
+      heroTitle: 'We Tied the Knot!',
       heroSubtitle: '',
       storyText: '',
-      weddingDate: '2024-05-12T18:00:00.000Z',
+      weddingDate: new Date('2024-05-12T18:00:00.000Z'),
       partner1Name: 'Clara',
       partner2Name: 'Devon',
       brideName: 'Clara',
       groomName: 'Devon',
-    } as any;
+    };
 
-    render(<HomePageClient config={pastConfig} />);
+    const { unmount } = render(<HomePageClient config={pastSavedConfig} />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'We Tied the Knot!' })).toBeInTheDocument();
     expect(screen.getByText(/Thank you for celebrating with us on May 12, 2024/i)).toBeInTheDocument();
+
+    unmount();
+
+    render(
+      <HomePageClient
+        config={{
+          ...pastSavedConfig,
+          weddingDate: new Date('2028-05-12T18:00:00.000Z'),
+        }}
+      />
+    );
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Clara & Devon' })).toBeInTheDocument();
+    expect(screen.queryByText(/We Tied the Knot!/i)).not.toBeInTheDocument();
   });
 });
 
