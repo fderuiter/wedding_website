@@ -10,17 +10,12 @@ import {
   MAX_UPLOAD_SIZE,
   MIME_TO_EXTENSIONS,
   coordinateSchema,
-  createLaxUrlSchema,
   decodeUrlPathSafely,
-  deriveAdminInputSchema,
   formatZodError,
   getFileExtension,
   getNormalizedExtension,
   isHeicExtension,
-  isSafeConfigAssetUrl,
-  isSafeLocalPathUrl,
   isSafeMediaOrPhotoUrl,
-  safeImageUrlSchema,
   safeUrlSchema,
   sanitizeUrl,
 } from './validationPrimitives';
@@ -33,19 +28,13 @@ export {
   HEIC_EXTENSIONS,
   MAX_GUEST_PHOTO_SIZE,
   MAX_UPLOAD_SIZE,
-  MIME_TO_EXTENSIONS,
   coordinateSchema,
-  createLaxUrlSchema,
   decodeUrlPathSafely,
-  deriveAdminInputSchema,
   formatZodError,
   getFileExtension,
   getNormalizedExtension,
   isHeicExtension,
-  isSafeConfigAssetUrl,
-  isSafeLocalPathUrl,
   isSafeMediaOrPhotoUrl,
-  safeImageUrlSchema,
   safeUrlSchema,
   sanitizeUrl,
 };
@@ -120,7 +109,7 @@ export const GuestLookupSchema = z.object({
   }
 });
 
-export const SingleGuestPhotoSchema = z.any()
+const SingleGuestPhotoSchema = z.any()
   .refine((val) => val !== null && val !== undefined, { message: 'No file provided' })
   .refine((file) => typeof file === 'object' && typeof file?.size === 'number' && file?.size <= MAX_GUEST_PHOTO_SIZE, { message: 'File size exceeds 10MB limit' })
   .refine((file) => {

@@ -42,7 +42,7 @@ export interface SmsMessagePayload {
   body: string;
 }
 
-export interface MessagingProvider {
+interface MessagingProvider {
   sendEmail(payload: EmailMessagePayload): Promise<DispatchResult>;
   sendSms(payload: SmsMessagePayload): Promise<DispatchResult>;
   testConnection(input: TestConnectionInput): Promise<DispatchResult>;

@@ -44,7 +44,6 @@ export type {
 } from './types';
 export {
   THANK_YOU_TEMPLATES,
-  DEFAULT_THANK_YOU_TEMPLATES,
   substituteThankYouTemplateTokens,
 } from './types';
 export type {
