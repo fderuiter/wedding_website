@@ -315,4 +315,43 @@ describe('Media Repository & Rollback Database Integration', () => {
     expect(published).toHaveLength(1);
     expect((published[0].data as any).mediaId).toBe(registryMedia.id);
   });
+
+  test('persists, surfaces, and clears caption and uploaderName on linked Photo ContentNode without failing Prisma Media writes', async () => {
+    const created = await realRepository.createMedia(
+      {
+        url: '/uploads/photos/guest-toast.jpg',
+        altText: 'Champagne Toast',
+        isDecorative: false,
+        publishToGallery: true,
+        caption: 'To the happy couple!',
+        uploaderName: 'Aunt Clara',
+      },
+      'Admin'
+    );
+
+    expect(created.caption).toBe('To the happy couple!');
+    expect(created.uploaderName).toBe('Aunt Clara');
+
+    const listed = await realRepository.getAllMedia();
+    const matched = listed.data.find((item) => item.id === created.id);
+    expect(matched?.caption).toBe('To the happy couple!');
+    expect(matched?.uploaderName).toBe('Aunt Clara');
+
+    // Update caption and clear uploaderName
+    const updated = await realRepository.updateMedia(
+      created.id,
+      {
+        caption: 'Polished Toast Caption',
+        uploaderName: '   ',
+      },
+      'Admin'
+    );
+    expect(updated.caption).toBe('Polished Toast Caption');
+    expect(updated.uploaderName).toBeUndefined();
+
+    const publicPhotos = await realContentService.getPublicPhotos();
+    expect(publicPhotos).toHaveLength(1);
+    expect((publicPhotos[0].data as any).caption).toBe('Polished Toast Caption');
+    expect((publicPhotos[0].data as any).uploaderName).toBeUndefined();
+  });
 });

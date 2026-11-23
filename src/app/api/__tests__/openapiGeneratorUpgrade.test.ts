@@ -789,24 +789,33 @@ describe('Upgraded OpenAPI 3.0.3 AST Generator', () => {
       },
     });
 
-    const rawHealth503Schema = healthGet.responses['503']?.content?.['application/json']?.schema as {
+    const rawHealth500Schema = healthGet.responses['500']?.content?.['application/json']?.schema as {
       $ref?: string;
     };
-    expect(rawHealth503Schema).toEqual({ $ref: '#/components/schemas/ApiErrorEnvelope' });
+    expect(rawHealth500Schema).toEqual({ $ref: '#/components/schemas/ApiErrorEnvelope' });
 
-    const resolvedHealth503Schema = resolveJsonPointer(rootDoc, rawHealth503Schema.$ref!) as {
+    const resolvedHealth500Schema = resolveJsonPointer(rootDoc, rawHealth500Schema.$ref!) as {
       type?: string;
       required?: string[];
       properties?: Record<string, unknown>;
     };
-    expect(resolvedHealth503Schema.type).toBe('object');
-    expect(resolvedHealth503Schema.required).toEqual(['success', 'error']);
-    expect(resolvedHealth503Schema.properties?.success).toEqual({ type: 'boolean', enum: [false] });
-    expect(resolvedHealth503Schema.properties?.error).toEqual({ type: 'string' });
-    expect(resolvedHealth503Schema.properties?.referenceId).toEqual({ type: 'string' });
-    expect(resolvedHealth503Schema.properties?.status).toBeUndefined();
-    expect(resolvedHealth503Schema.properties?.database).toBeUndefined();
-    expect(resolvedHealth503Schema.properties?.timestamp).toBeUndefined();
+    expect(resolvedHealth500Schema.type).toBe('object');
+    expect(resolvedHealth500Schema.required).toEqual(['success', 'error']);
+    expect(resolvedHealth500Schema.properties?.success).toEqual({ type: 'boolean', enum: [false] });
+    expect(resolvedHealth500Schema.properties?.error).toEqual({ type: 'string' });
+    expect(resolvedHealth500Schema.properties?.referenceId).toEqual({ type: 'string' });
+
+    expect(healthGet.responses['503']?.content?.['application/json']?.schema).toEqual({
+      type: 'object',
+      required: ['success', 'status', 'timestamp', 'database', 'error'],
+      properties: {
+        success: { type: 'boolean', enum: [false] },
+        status: { type: 'string', enum: ['degraded'] },
+        database: { type: 'string', enum: ['disconnected'] },
+        timestamp: { type: 'string', format: 'date-time' },
+        error: { type: 'string', enum: ['Database connection failed'] },
+      },
+    });
 
     const readyGet = openapi.paths['/api/ready']?.get as OpenApiOperation;
     expect(Object.keys(readyGet.responses).sort()).toEqual(['200', '503']);

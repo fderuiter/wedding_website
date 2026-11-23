@@ -113,6 +113,8 @@ interface ContentFormState {
   // Photo
   photoUrl: string;
   photoTitle: string;
+  photoCaption: string;
+  photoUploaderName: string;
   photoDescription: string;
   altText: string;
   isVisible: boolean;
@@ -140,6 +142,8 @@ const EMPTY_FORM_STATE: ContentFormState = {
   receptionAttire: '',
   photoUrl: '',
   photoTitle: '',
+  photoCaption: '',
+  photoUploaderName: '',
   photoDescription: '',
   altText: '',
   isVisible: true,
@@ -178,7 +182,17 @@ const KNOWN_DATA_KEYS: Record<StandardContentType, string[]> = {
     'startTime',
     'endTime',
   ],
-  Photo: ['url', 'title', 'description', 'altText', 'isVisible', 'status'],
+  Photo: [
+    'url',
+    'imageUrl',
+    'title',
+    'caption',
+    'uploaderName',
+    'description',
+    'altText',
+    'isVisible',
+    'status',
+  ],
 };
 
 function isStandardContentType(type: string | undefined): type is StandardContentType {
@@ -310,8 +324,15 @@ function buildFormStateFromNode(node: ContentNodeDTO): {
     receptionTime: typeof rawData.receptionTime === 'string' ? rawData.receptionTime : '',
     receptionDetails: typeof rawData.receptionDetails === 'string' ? rawData.receptionDetails : '',
     receptionAttire: typeof rawData.receptionAttire === 'string' ? rawData.receptionAttire : '',
-    photoUrl: typeof rawData.url === 'string' ? rawData.url : '',
+    photoUrl:
+      typeof rawData.url === 'string'
+        ? rawData.url
+        : typeof rawData.imageUrl === 'string'
+          ? rawData.imageUrl
+          : '',
     photoTitle: typeof rawData.title === 'string' ? rawData.title : '',
+    photoCaption: typeof rawData.caption === 'string' ? rawData.caption : '',
+    photoUploaderName: typeof rawData.uploaderName === 'string' ? rawData.uploaderName : '',
     photoDescription: typeof rawData.description === 'string' ? rawData.description : '',
     altText: typeof rawData.altText === 'string' ? rawData.altText : '',
     isVisible: parsedVisible,
@@ -386,14 +407,29 @@ function buildTypedNodeData(
 
   if (nodeType === 'Photo') {
     const trimmedUrl = form.photoUrl.trim();
+    const trimmedTitle = form.photoTitle.trim();
+    const trimmedCaption = form.photoCaption.trim();
+    const trimmedUploaderName = form.photoUploaderName.trim();
     const resolvedStatus =
       isNewNode || form.isVisible ? 'APPROVED' : form.photoStatus || 'APPROVED';
+    const {
+      caption: _staleCaption,
+      uploaderName: _staleUploader,
+      imageUrl: _staleImageUrl,
+      ...preservedPhotoExtra
+    } = extraData;
+    const fallbackAlt =
+      trimmedTitle ||
+      trimmedCaption ||
+      (trimmedUploaderName ? `Photo by ${trimmedUploaderName}` : '');
     return {
-      ...extraData,
+      ...preservedPhotoExtra,
       ...(trimmedUrl ? { url: trimmedUrl } : {}),
-      title: form.photoTitle.trim(),
+      title: trimmedTitle,
       description: form.photoDescription.trim(),
-      altText: form.altText.trim() || form.photoTitle.trim(),
+      altText: form.altText.trim() || fallbackAlt,
+      ...(trimmedCaption ? { caption: trimmedCaption } : {}),
+      ...(trimmedUploaderName ? { uploaderName: trimmedUploaderName } : {}),
       isVisible: Boolean(form.isVisible),
       status: resolvedStatus,
     };
@@ -479,11 +515,22 @@ function summarizeNodePreview(node: ContentNodeDTO): {
   }
 
   if (node.type === 'Photo') {
+    const caption = typeof d.caption === 'string' && d.caption.trim() ? d.caption.trim() : '';
+    const uploaderName =
+      typeof d.uploaderName === 'string' && d.uploaderName.trim() ? d.uploaderName.trim() : '';
     const title =
       (typeof d.title === 'string' && d.title.trim()) ||
+      caption ||
       (typeof d.altText === 'string' && d.altText.trim()) ||
+      (uploaderName ? `Photo by ${uploaderName}` : '') ||
       'Gallery Photo';
-    const desc = typeof d.description === 'string' && d.description.trim() ? d.description.trim() : '';
+    const desc = [
+      caption && caption !== title ? caption : '',
+      uploaderName ? `Uploaded by ${uploaderName}` : '',
+      typeof d.description === 'string' && d.description.trim() ? d.description.trim() : '',
+    ]
+      .filter(Boolean)
+      .join(' • ');
     const url = typeof d.url === 'string' && d.url.trim() ? d.url.trim() : '';
     const status = typeof d.status === 'string' ? d.status : 'APPROVED';
     const visible = d.isVisible !== false && status === 'APPROVED';
@@ -976,7 +1023,7 @@ function ContentDashboardContent({
 
   return (
     <AdminPreviewLayout
-      previewUrl={selectedType === 'Photo' ? '/photos' : selectedType === 'Schedule' ? '/schedule' : '/'}
+      previewUrl={selectedType === 'Photo' ? '/photos' : selectedType === 'Schedule' ? '/#schedule' : '/'}
       draftType="content"
       draftData={currentNodesWithDraft}
       entityId={currentNode.id}
@@ -1450,6 +1497,33 @@ function ContentDashboardContent({
                         placeholder="e.g. Couple smiling by the lake at sunset"
                         value={formState.altText}
                         onChange={(e) => setFormState((prev) => ({ ...prev, altText: e.target.value }))}
+                      />
+                    </FormGroup>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <FormGroup>
+                      <Label htmlFor="photo-caption-input">Caption</Label>
+                      <Input
+                        id="photo-caption-input"
+                        type="text"
+                        placeholder="e.g. Sparkler exit!"
+                        value={formState.photoCaption}
+                        onChange={(e) =>
+                          setFormState((prev) => ({ ...prev, photoCaption: e.target.value }))
+                        }
+                      />
+                    </FormGroup>
+                    <FormGroup>
+                      <Label htmlFor="photo-uploader-input">Uploader Name</Label>
+                      <Input
+                        id="photo-uploader-input"
+                        type="text"
+                        placeholder="e.g. Aunt Clara"
+                        value={formState.photoUploaderName}
+                        onChange={(e) =>
+                          setFormState((prev) => ({ ...prev, photoUploaderName: e.target.value }))
+                        }
                       />
                     </FormGroup>
                   </div>

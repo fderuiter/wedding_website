@@ -163,7 +163,9 @@ export class ContentRepository implements IContentRepository {
       if (options?.since) {
         const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
         if (!isNaN(sinceDate.getTime())) {
-          filtered = filtered.filter((node) => node.createdAt.getTime() > sinceDate.getTime());
+          filtered = filtered.filter(
+            (node) => (node.updatedAt ?? node.createdAt).getTime() > sinceDate.getTime()
+          );
         }
       }
 
@@ -181,7 +183,7 @@ export class ContentRepository implements IContentRepository {
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
       if (!isNaN(sinceDate.getTime())) {
-        where.createdAt = { gt: sinceDate };
+        where.updatedAt = { gt: sinceDate };
       }
     }
 
@@ -217,7 +219,9 @@ export class ContentRepository implements IContentRepository {
       if (options?.since) {
         const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
         if (!isNaN(sinceDate.getTime())) {
-          photos = photos.filter((node) => node.createdAt.getTime() > sinceDate.getTime());
+          photos = photos.filter(
+            (node) => (node.updatedAt ?? node.createdAt).getTime() > sinceDate.getTime()
+          );
         }
       }
       if (take !== undefined) {
@@ -271,7 +275,7 @@ export class ContentRepository implements IContentRepository {
     if (options?.since) {
       const sinceDate = options.since instanceof Date ? options.since : new Date(options.since);
       if (!isNaN(sinceDate.getTime())) {
-        where.createdAt = { gt: sinceDate };
+        where.updatedAt = { gt: sinceDate };
       }
     }
 

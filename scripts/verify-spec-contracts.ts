@@ -2340,7 +2340,32 @@ function verifyOpenApiProbeContracts(rootDir: string): string[] {
 
   const health503 = getJsonSchema('/api/health', '503');
   const health503Props = (health503?.properties ?? {}) as Record<string, Record<string, unknown>>;
-  if (
+  const healthRouteAbsPath = path.join(rootDir, 'src/app/api/health/route.ts');
+  const healthPreservesProbeFields =
+    fs.existsSync(healthRouteAbsPath) &&
+    fs.readFileSync(healthRouteAbsPath, 'utf8').includes('isHealthProbe');
+
+  if (healthPreservesProbeFields) {
+    if (
+      !health503 ||
+      !Array.isArray(health503Props.success?.enum) ||
+      !health503Props.success.enum.includes(false) ||
+      !Array.isArray(health503Props.status?.enum) ||
+      !health503Props.status.enum.includes('degraded') ||
+      !Array.isArray(health503Props.database?.enum) ||
+      !health503Props.database.enum.includes('disconnected') ||
+      health503Props.timestamp?.type !== 'string' ||
+      health503Props.error?.type !== 'string'
+    ) {
+      errors.push(
+        'public/openapi.json: GET /api/health must document HTTP "503" isHealthProbe schema with success=false, status="degraded", database="disconnected", timestamp, and error'
+      );
+    } else if (Object.prototype.hasOwnProperty.call(health503Props, 'referenceId')) {
+      errors.push(
+        'public/openapi.json: GET /api/health HTTP "503" isHealthProbe schema must omit "referenceId"'
+      );
+    }
+  } else if (
     !health503 ||
     !Array.isArray(health503Props.success?.enum) ||
     !health503Props.success.enum.includes(false) ||

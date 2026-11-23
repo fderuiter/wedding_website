@@ -114,6 +114,7 @@ export default function HomePageClient({
   const [draftConfig, setConfig] = useState<PublicAppConfig>(initialConfig);
   const [draftContentNodes, setContentNodes] = useState<ContentNodeDTO[]>(initialContentNodes);
   const [draftAttractions, setAttractions] = useState<AttractionDTO[]>(initialAttractions);
+  const [hasDraftContent, setHasDraftContent] = useState(false);
 
   const isDemoMode = Boolean(demo?.isDemoMode);
   const demoConfigOverrides = demo?.configOverrides;
@@ -126,10 +127,10 @@ export default function HomePageClient({
   );
   const contentNodes = useMemo<ContentNodeDTO[]>(
     () =>
-      isDemoMode && demoLogisticsNodes && demoFaqs
+      isDemoMode && !hasDraftContent && demoLogisticsNodes && demoFaqs
         ? [...demoLogisticsNodes, ...demoFaqs]
         : draftContentNodes,
-    [demoFaqs, demoLogisticsNodes, draftContentNodes, isDemoMode]
+    [demoFaqs, demoLogisticsNodes, draftContentNodes, hasDraftContent, isDemoMode]
   );
   const attractions = isDemoMode && demo ? demo.activeDataset.attractions : draftAttractions;
   const isAdminPreview = useSyncExternalStore(
@@ -158,23 +159,35 @@ export default function HomePageClient({
   };
 
   useEffect(() => {
-    // Only listen for messages if inside an iframe
-    if (typeof window !== 'undefined' && window !== window.parent) {
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data?.type === 'DRAFT_UPDATE') {
-          if (event.data.draftType === 'config' && event.data.draftData) {
-            setConfig((prev) => ({ ...prev, ...event.data.draftData }));
-          } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
-            setContentNodes(event.data.draftData);
-          } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
-            setAttractions(event.data.draftData);
-          }
+    if (typeof window === 'undefined') return;
+    const isIframe = window !== window.parent;
+    const isPreviewQuery = new URLSearchParams(window.location.search).get('preview') === 'true';
+    if (!isIframe && !isPreviewQuery) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'DRAFT_UPDATE') {
+        if (event.data.draftType === 'config' && event.data.draftData) {
+          setConfig((prev) => ({ ...prev, ...event.data.draftData }));
+        } else if (event.data.draftType === 'content' && Array.isArray(event.data.draftData)) {
+          setHasDraftContent(true);
+          setContentNodes(event.data.draftData);
+        } else if (event.data.draftType === 'attractions' && Array.isArray(event.data.draftData)) {
+          setAttractions(event.data.draftData);
         }
-      };
-      window.addEventListener('message', handleMessage);
-      return () => window.removeEventListener('message', handleMessage);
-    }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.location.hash !== '#schedule') return;
+    const scheduleEl = document.getElementById('schedule');
+    if (scheduleEl && typeof scheduleEl.scrollIntoView === 'function') {
+      scheduleEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }
+  }, [contentNodes.length, isAdminPreview]);
 
   let formattedDate: string;
   try {
@@ -278,44 +291,56 @@ export default function HomePageClient({
         const hasStructuredSchedule = contentNodes.some(
           n => n.type === 'Schedule' || (n.type === 'Logistics' && (n.data as any)?.startTime) || (n.data as any)?.startTime
         );
+        const innerSectionId = feature.id === 'schedule' ? undefined : feature.id;
 
         if (hasStructuredSchedule) {
           return (
-            <motion.div key={feature.id} id={feature.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-              <InteractiveTimeline events={contentNodes} timezone={config.timezone} title={feature.title || 'Wedding Day Details'} />
-            </motion.div>
+            <div key={feature.id} id="schedule" className="scroll-mt-24">
+              <motion.div id={innerSectionId} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+                <InteractiveTimeline
+                  events={contentNodes}
+                  timezone={config.timezone}
+                  title={feature.title || 'Wedding Day Details'}
+                  isPreview={hasDraftContent}
+                />
+              </motion.div>
+            </div>
           );
         }
 
         const detailsNode = logisticsNodes.find(n => n.ceremonyTitle);
         if (!detailsNode) return (
-          <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
-            <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
-          </motion.section>
+          <div key={feature.id} id="schedule" className="scroll-mt-24">
+            <motion.section id={innerSectionId} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+              <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+              <div className="text-center text-gray-500 dark:text-gray-400">Details coming soon...</div>
+            </motion.section>
+          </div>
         );
         return (
-          <motion.section key={feature.id} id={feature.id} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
-            <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
-            <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
-              <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
-                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>{detailsNode.ceremonyTime}</li>
-                  {ceremonyVenueLine && <li>{ceremonyVenueLine}</li>}
-                  {locationSummary && <li>{locationSummary}</li>}
-                </ul>
+          <div key={feature.id} id="schedule" className="scroll-mt-24">
+            <motion.section id={innerSectionId} className="px-4 py-20 sm:px-6 lg:px-8" initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} custom={index * 0.1}>
+              <h2 className="text-center type-h2 text-primary mb-10">{feature.title || 'Wedding Day Details'}</h2>
+              <div className="mx-auto grid max-w-5xl gap-10 md:grid-cols-2">
+                <div className="rounded-2xl border border-primary dark:border-primary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
+                  <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.ceremonyTitle}</h3>
+                  <ul className="space-y-2 text-gray-800 dark:text-gray-100">
+                    <li>{detailsNode.ceremonyTime}</li>
+                    {ceremonyVenueLine && <li>{ceremonyVenueLine}</li>}
+                    {locationSummary && <li>{locationSummary}</li>}
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
+                  <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
+                  <ul className="space-y-2 text-gray-800 dark:text-gray-100">
+                    <li>{detailsNode.receptionTime}</li>
+                    <li>{detailsNode.receptionDetails}</li>
+                    <li>{detailsNode.receptionAttire}</li>
+                  </ul>
+                </div>
               </div>
-              <div className="rounded-2xl border border-secondary dark:border-secondary bg-white dark:bg-gray-800 p-8 shadow-[var(--shadow-lg)] transition-transform hover:scale-[1.02]" style={{ boxShadow: 'var(--shadow-lg)' }}>
-                <h3 className="mb-4 type-h3 text-gray-800 dark:text-gray-100">{detailsNode.receptionTitle}</h3>
-                <ul className="space-y-2 text-gray-800 dark:text-gray-100">
-                  <li>{detailsNode.receptionTime}</li>
-                  <li>{detailsNode.receptionDetails}</li>
-                  <li>{detailsNode.receptionAttire}</li>
-                </ul>
-              </div>
-            </div>
-          </motion.section>
+            </motion.section>
+          </div>
         );
       }
       case 'accommodations': {

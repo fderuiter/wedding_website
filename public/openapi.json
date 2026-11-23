@@ -758,6 +758,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -927,6 +935,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -1112,6 +1128,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -3565,6 +3589,14 @@
                           "publishToGallery": {
                             "type": "boolean"
                           },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
                           "createdAt": {
                             "anyOf": [
                               {
@@ -3740,6 +3772,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -3974,6 +4014,14 @@
                           },
                           "publishToGallery": {
                             "type": "boolean"
+                          },
+                          "caption": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "uploaderName": {
+                            "type": "string",
+                            "maxLength": 100
                           },
                           "createdAt": {
                             "anyOf": [
@@ -4799,6 +4847,10 @@
                         "sentCount": {
                           "type": "number"
                         },
+                        "viewedCount": {
+                          "type": "number",
+                          "nullable": true
+                        },
                         "failedCount": {
                           "type": "number"
                         },
@@ -5037,6 +5089,10 @@
                           },
                           "sentCount": {
                             "type": "number"
+                          },
+                          "viewedCount": {
+                            "type": "number",
+                            "nullable": true
                           },
                           "failedCount": {
                             "type": "number"
@@ -13788,6 +13844,14 @@
                       "APPROVED",
                       "REJECTED"
                     ]
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "description": "Single-photo moderation decision when the target photo ID is supplied in the URL path. Requires either action ('approve' | 'reject') or status ('APPROVED' | 'REJECTED').",
@@ -14656,6 +14720,14 @@
                           "APPROVED",
                           "REJECTED"
                         ]
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       }
                     },
                     "description": "Single-photo moderation payload for the moderation queue endpoint. Requires a target photo identifier (id, nodeId, or photoId) and a moderation decision (action or status).",
@@ -20109,66 +20181,20 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "message"
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
                       ]
                     },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "success": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "guestName": {
-                              "type": "string"
-                            },
-                            "partyTags": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "guestName",
-                            "partyTags"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "success",
-                        "message",
-                        "data"
-                      ]
+                    "message": {
+                      "type": "string"
                     }
+                  },
+                  "required": [
+                    "success",
+                    "message"
                   ]
                 }
               }
@@ -21060,7 +21086,44 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiErrorEnvelope"
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "status",
+                    "timestamp",
+                    "database",
+                    "error"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "degraded"
+                      ]
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected"
+                      ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "Database connection failed"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -21167,6 +21230,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 }
               }
@@ -21212,6 +21283,14 @@
                         },
                         "publishToGallery": {
                           "type": "boolean",
+                          "nullable": true
+                        },
+                        "caption": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "uploaderName": {
+                          "type": "string",
                           "nullable": true
                         },
                         "createdAt": {
@@ -21833,6 +21912,14 @@
                   },
                   "publishToGallery": {
                     "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "uploaderName": {
+                    "type": "string",
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -21882,6 +21969,14 @@
                         },
                         "publishToGallery": {
                           "type": "boolean",
+                          "nullable": true
+                        },
+                        "caption": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "uploaderName": {
+                          "type": "string",
                           "nullable": true
                         },
                         "createdAt": {
@@ -23420,6 +23515,14 @@
                       "publishToGallery": {
                         "type": "boolean"
                       },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
                       "createdAt": {
                         "anyOf": [
                           {
@@ -23969,6 +24072,14 @@
                             },
                             "publishToGallery": {
                               "type": "boolean"
+                            },
+                            "caption": {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "uploaderName": {
+                              "type": "string",
+                              "maxLength": 100
                             },
                             "createdAt": {
                               "anyOf": [
@@ -24628,6 +24739,14 @@
                       },
                       "publishToGallery": {
                         "type": "boolean"
+                      },
+                      "caption": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "uploaderName": {
+                        "type": "string",
+                        "maxLength": 100
                       },
                       "createdAt": {
                         "anyOf": [

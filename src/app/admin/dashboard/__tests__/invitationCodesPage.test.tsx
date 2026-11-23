@@ -2348,5 +2348,58 @@ describe('InvitationCodesDashboardPage', () => {
       expect(screen.getByText('Caroline Forbes')).toBeInTheDocument();
     });
   });
+
+  describe('Household Notes separation & per-guest Send Invite action', () => {
+    it('renders Household Note badge outside Dietary badges, excludes householdNotes from catering dietary counts, and opens BroadcastModal preselected to formal-invitation on Send Invite', async () => {
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: [
+          {
+            id: 'code-hh-1',
+            guestName: 'Clara Oswald',
+            code: 'CLARA2026',
+            email: 'clara@example.com',
+            dietaryNotes: null,
+            used: true,
+            extraFields: {
+              attendanceStatus: 'attending',
+              householdNotes: 'Staying at Grand Hotel Room 402',
+            },
+          },
+        ],
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      renderComponent();
+
+      const hhBadge = screen.getByTestId('household-notes-badge');
+      expect(hhBadge).toHaveTextContent('Household Note: Staying at Grand Hotel Room 402');
+      expect(screen.queryByText(/Dietary:/i)).not.toBeInTheDocument();
+
+      // Catering widget must NOT count householdNotes as Dietary Notes
+      const cateringWidget = screen.getByTestId('catering-summary-widget');
+      expect(within(cateringWidget).getByText('0 Guests with Dietary Notes')).toBeInTheDocument();
+
+      // Per-row Send Invite opens BroadcastModal targeted to Clara Oswald with Formal Invitation preselected
+      const sendInviteBtn = screen.getByRole('button', { name: 'Send invite to Clara Oswald' });
+      fireEvent.click(sendInviteBtn);
+
+      const broadcastDialog = await screen.findByRole('dialog');
+      expect(within(broadcastDialog).getByTestId('broadcast-recipient-count')).toHaveTextContent(
+        '1 matching recipient'
+      );
+      expect(
+        (within(broadcastDialog).getByLabelText('Message Body') as HTMLTextAreaElement).value
+      ).toContain('[CARD:formal-invitation]');
+    });
+  });
 });
 

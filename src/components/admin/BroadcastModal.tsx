@@ -16,6 +16,8 @@ import {
   BroadcastStarterTemplate,
   AVAILABLE_TEMPLATE_PLACEHOLDERS,
   BROADCAST_STARTER_TEMPLATES,
+  parseStationeryCardDirective,
+  renderStationeryCardHtml,
   summarizeBroadcastAudience,
 } from '@/features/broadcast';
 
@@ -28,6 +30,7 @@ interface BroadcastSubEventOption {
 interface BroadcastPreviewData {
   subject?: string;
   body?: string;
+  htmlBody?: string;
   sampleGuestName?: string;
   destination?: string;
   recipientCount?: number;
@@ -74,6 +77,7 @@ export interface BroadcastModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialChannel?: BroadcastChannel;
+  initialTemplateId?: BroadcastStarterTemplate['id'];
   targetFilters?: BroadcastTargetFilters;
   selectedCount?: number;
   initialRecipientCount?: number;
@@ -132,6 +136,7 @@ function buildEffectiveTargetFilters(
 const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   onClose,
   initialChannel = 'EMAIL',
+  initialTemplateId,
   targetFilters,
   selectedCount,
   initialRecipientCount,
@@ -143,8 +148,15 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 }) => {
   const router = useSafeRouter();
   const { addToast } = useToast();
-  const { contactEmail } = useTheme();
+  const { contactEmail, themePrimary, themeSecondary } = useTheme();
   const defaultAdminEmail = adminEmail || contactEmail || '';
+  const initialTemplate = useMemo(
+    () =>
+      initialTemplateId
+        ? BROADCAST_STARTER_TEMPLATES.find((tpl) => tpl.id === initialTemplateId)
+        : undefined,
+    [initialTemplateId]
+  );
   const {
     sendBroadcast,
     previewBroadcast,
@@ -168,9 +180,17 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const [localFilters, setLocalFilters] = useState<BroadcastTargetFilters>(
     () => targetFilters ?? {}
   );
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
+    () => initialTemplate?.id ?? ''
+  );
+  const [subject, setSubject] = useState(() => initialTemplate?.subject ?? '');
+  const [body, setBody] = useState(() =>
+    initialTemplate
+      ? initialChannel === 'EMAIL'
+        ? initialTemplate.emailBody
+        : initialTemplate.smsBody
+      : ''
+  );
   const [testDestination, setTestDestination] = useState('');
   const [activeTab, setActiveTab] = useState<'compose' | 'preview'>('compose');
   const [previewResult, setPreviewResult] = useState<BroadcastPreviewData | null>(null);
@@ -573,6 +593,22 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
   const activeWarning = previewResult?.baseUrlWarning || baseUrlWarning;
   const showBaseUrlWarning = Boolean(activeWarning && (usesRsvpUrl || activeTab === 'preview'));
   const missingContactLabel = channel === 'EMAIL' ? 'email' : 'phone';
+  const renderedCardHtml = useMemo(() => {
+    if (channel !== 'EMAIL' || !previewResult) return null;
+    if (typeof previewResult.htmlBody === 'string' && previewResult.htmlBody.trim()) {
+      return previewResult.htmlBody;
+    }
+    if (typeof previewResult.body === 'string') {
+      const directive = parseStationeryCardDirective(previewResult.body);
+      if (directive) {
+        return renderStationeryCardHtml(directive.variant, directive.content, {
+          themePrimary,
+          themeSecondary,
+        });
+      }
+    }
+    return null;
+  }, [channel, previewResult, themePrimary, themeSecondary]);
 
   return (
     <div className="space-y-4">
@@ -960,10 +996,20 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
               )}
 
               <div>
-                <span className="text-xs text-gray-600 dark:text-zinc-300 uppercase tracking-wider block font-semibold mb-1">Body Preview:</span>
-                <div className="bg-white dark:bg-zinc-800 p-3 rounded border border-gray-200 dark:border-zinc-700 whitespace-pre-wrap text-sm text-gray-800 dark:text-zinc-200">
-                  {previewResult.body}
-                </div>
+                <span className="text-xs text-gray-600 dark:text-zinc-300 uppercase tracking-wider block font-semibold mb-1">
+                  {renderedCardHtml ? 'Digital Stationery Card Preview:' : 'Body Preview:'}
+                </span>
+                {renderedCardHtml ? (
+                  <div
+                    data-testid="broadcast-stationery-card-preview"
+                    className="rounded border border-gray-200 dark:border-zinc-700 overflow-hidden bg-[#FAF8F5]"
+                    dangerouslySetInnerHTML={{ __html: renderedCardHtml }}
+                  />
+                ) : (
+                  <div className="bg-white dark:bg-zinc-800 p-3 rounded border border-gray-200 dark:border-zinc-700 whitespace-pre-wrap text-sm text-gray-800 dark:text-zinc-200">
+                    {previewResult.body}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -1014,7 +1060,7 @@ const BroadcastModalForm: React.FC<BroadcastModalProps> = ({
 };
 
 export const BroadcastModal: React.FC<BroadcastModalProps> = (props) => {
-  const { isOpen, onClose, initialChannel = 'EMAIL', targetFilters } = props;
+  const { isOpen, onClose, initialChannel = 'EMAIL', initialTemplateId, targetFilters } = props;
   const serializedInitialFilters = JSON.stringify(targetFilters ?? null);
 
   return (
@@ -1026,7 +1072,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = (props) => {
       contentClassName="px-6 py-4 max-h-[82vh] overflow-y-auto"
     >
       <BroadcastModalForm
-        key={`${isOpen ? 'open' : 'closed'}-${initialChannel}-${serializedInitialFilters}`}
+        key={`${isOpen ? 'open' : 'closed'}-${initialChannel}-${initialTemplateId ?? 'default'}-${serializedInitialFilters}`}
         {...props}
         initialChannel={initialChannel}
       />
