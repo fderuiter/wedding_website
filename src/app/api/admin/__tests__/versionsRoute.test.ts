@@ -203,6 +203,76 @@ describe('GET /api/admin/versions', () => {
     expect(itemData.twilioAuthToken).toBeUndefined();
   });
 
+  it('preserves hidden section title and content on AppConfig version snapshots while stripping secrets', async () => {
+    mockIsAdminRequest.mockResolvedValue(true);
+    const actualConfig = jest.requireActual('@/lib/config');
+    mockToPublicAppConfig.mockImplementationOnce((cfg: any) => actualConfig.toPublicAppConfig(cfg));
+
+    const hiddenFeatures = [
+      {
+        id: 'story',
+        type: 'story',
+        title: 'Visible Story',
+        content: 'Visible content',
+        visible: true,
+      },
+      {
+        id: 'custom-draft',
+        type: 'custom',
+        title: 'Hidden Draft Heading',
+        content: 'Hidden draft body copy',
+        visible: false,
+      },
+    ];
+
+    (mockPrisma.snapshotVersion.count as jest.Mock).mockResolvedValue(1);
+    (mockPrisma.snapshotVersion.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 'v-hidden-features',
+        entityType: 'AppConfig',
+        entityId: 'global',
+        data: {
+          id: 'global',
+          partner1Name: 'Casey',
+          partner2Name: 'Jordan',
+          weddingDate: '2026-06-20T16:00:00.000Z',
+          baseUrl: 'https://wedding.example',
+          venueName: 'Venue',
+          venueAddress: '123 Main',
+          venueCity: 'Austin',
+          venueState: 'TX',
+          venueZip: '78701',
+          latitude: 30.2672,
+          longitude: -97.7431,
+          storyText: 'Story',
+          venueDescription: 'Venue desc',
+          travelAdvice: 'Travel',
+          heroTitle: 'Hero',
+          heroSubtitle: 'Sub',
+          seoTitle: 'SEO',
+          seoDescription: 'SEO desc',
+          seoKeywords: 'wedding',
+          faviconUrl: '/assets/favicon.png',
+          ogImageUrl: '/images/placeholder.png',
+          smtpPass: 'secret-smtp-pass',
+          features: hiddenFeatures,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        createdAt: new Date(),
+      },
+    ]);
+
+    const req = new NextRequest('http://localhost/api/admin/versions?entityType=AppConfig&entityId=global', { method: 'GET' });
+    const res = await getVersions(req, {});
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const itemData = json.data.items[0].data;
+    expect(itemData.smtpPass).toBeUndefined();
+    expect(itemData.features).toEqual(hiddenFeatures);
+  });
+
   it('masks contributor email addresses in Contributor and RegistryItem version history payloads', async () => {
     mockIsAdminRequest.mockResolvedValue(true);
     const mockVersions = [

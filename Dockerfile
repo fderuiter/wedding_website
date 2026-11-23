@@ -162,7 +162,7 @@ COPY --from=builder /app/scripts/generate-password-hash.mjs ./scripts/generate-p
 # Link ./node_modules/.bin/prisma (root:root), pre-create runtime cache/upload mountpoints, and strip setuid/setgid bits
 RUN mkdir -p /app/node_modules/.bin /app/.next/cache /app/public/uploads && \
     ln -sf /usr/local/bin/prisma /app/node_modules/.bin/prisma && \
-    chown nextjs:nodejs /app/.next/cache /app/public/uploads && \
+    chown -R nextjs:nodejs /app/.next/cache /app/public/uploads && \
     find / -xdev -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
 
 USER nextjs

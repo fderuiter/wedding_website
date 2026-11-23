@@ -4,6 +4,7 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { GUEST_INVITE_COOKIE, signGuestInviteSessionToken } from '@/core/auth/guestInviteSession';
 import { GUEST_COOKIE, signGuestToken } from '@/core/auth/guest.server';
+import { ADMIN_COOKIE, signAdminToken } from '@/core/auth/auth.server';
 import { prisma } from '@/lib/prisma';
 
 jest.mock('next/headers', () => ({
@@ -19,15 +20,29 @@ jest.mock('next/navigation', () => ({
   }),
 }));
 
-jest.mock('@/lib/config', () => ({
-  getAppConfig: jest.fn().mockResolvedValue({ partner1Name: 'Alice', partner2Name: 'Bob' }),
-  toPublicAppConfig: jest.fn().mockReturnValue({ partner1Name: 'Alice', partner2Name: 'Bob' }),
-  isSiteInitialized: jest.fn().mockReturnValue(true),
-}));
+jest.mock('@/lib/config', () => {
+  const actual = jest.requireActual('@/lib/config');
+  return {
+    getAppConfig: jest.fn().mockResolvedValue({ partner1Name: 'Alice', partner2Name: 'Bob' }),
+    toPublicAppConfig: jest.fn((cfg) => actual.toPublicAppConfig(cfg)),
+    toUnauthenticatedAppConfig: jest.fn((cfg) => actual.toUnauthenticatedAppConfig(cfg)),
+    isSiteInitialized: jest.fn().mockReturnValue(true),
+  };
+});
 
 jest.mock('@/components/layout/RootLayoutClient', () => {
-  return function MockRootLayoutClient({ children }: { children: React.ReactNode }) {
-    return <div data-testid="root-layout-client">{children}</div>;
+  return function MockRootLayoutClient({
+    children,
+    config,
+  }: {
+    children: React.ReactNode;
+    config?: unknown;
+  }) {
+    return (
+      <div data-testid="root-layout-client" data-config={JSON.stringify(config)}>
+        {children}
+      </div>
+    );
   };
 });
 
@@ -370,6 +385,234 @@ describe('RootLayout Server Component Cookie Hydration', () => {
       const jsx = await RootLayout({ children: <div>Login Form</div> });
       expect(jsx.type).toBe('html');
       expect(mockRedirect).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Layout Config Authentication Gating', () => {
+    const mockHeaders = headers as unknown as jest.Mock;
+    const prismaWithInvite = prisma as unknown as {
+      invitationCode?: {
+        findUnique?: jest.Mock;
+      };
+    };
+    let originalInvitationCode: typeof prismaWithInvite.invitationCode;
+    let mockFindUnique: jest.Mock;
+
+    const fullRawConfig = {
+      id: 'global',
+      partner1Name: 'Alice',
+      partner2Name: 'Bob',
+      brideName: 'Alice',
+      groomName: 'Bob',
+      weddingDate: new Date('2026-06-20T16:00:00.000Z'),
+      baseUrl: 'https://wedding.example',
+      venueName: 'Private Estate',
+      venueAddress: '99 Secret Garden Way',
+      venueCity: 'Napa',
+      venueState: 'CA',
+      venueZip: '94558',
+      latitude: 38.2975,
+      longitude: -122.2869,
+      venueDescription: 'Enter via private west gate',
+      storyText: 'Private love story details',
+      travelAdvice: 'Shuttle departs from private terminal',
+      heroTitle: 'Welcome to Napa',
+      heroSubtitle: 'Private Estate Weekend',
+      photoAlbumUrl: 'https://photos.example.invalid/album-secret',
+      seoTitle: 'Alice & Bob',
+      seoDescription: 'Wedding celebration',
+      seoKeywords: 'wedding',
+      faviconUrl: '/assets/favicon.png',
+      ogImageUrl: '/images/placeholder.png',
+      contactEmail: 'hosts@wedding.example',
+      timezone: 'America/Los_Angeles',
+      rsvpOpen: true,
+      rsvpDeadlineDate: '2099-05-01',
+      rsvpClosedMessage: 'RSVPs are closed.',
+      colorPrimary: '#991B1B',
+      colorSecondary: '#B45309',
+      features: [
+        {
+          id: 'venue',
+          type: 'venue',
+          title: 'Estate Directions',
+          content: 'Gate code 1234',
+          visible: true,
+        },
+        {
+          id: 'hidden-draft',
+          type: 'custom',
+          title: 'Hidden Section Title',
+          content: 'Hidden Section Secret Copy',
+          visible: false,
+        },
+      ],
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    };
+
+    function extractThemeProviderConfig(jsx: Awaited<ReturnType<typeof RootLayout>>) {
+      const body = jsx.props.children[1] as React.ReactElement<{ children?: React.ReactNode }>;
+      const themeProviderEl = React.Children.toArray(body.props.children).find(
+        (child): child is React.ReactElement<{ config: Record<string, any>; hasServerStylesheet?: boolean }> =>
+          React.isValidElement(child) &&
+          (child.props as { hasServerStylesheet?: boolean }).hasServerStylesheet === true
+      );
+      expect(themeProviderEl).toBeDefined();
+      return themeProviderEl!.props.config;
+    }
+
+    beforeEach(async () => {
+      originalInvitationCode = prismaWithInvite.invitationCode;
+      mockFindUnique = jest.fn();
+      prismaWithInvite.invitationCode = {
+        findUnique: mockFindUnique,
+      };
+      const configMod = await import('@/lib/config');
+      (configMod.getAppConfig as jest.Mock).mockResolvedValue(fullRawConfig);
+      mockHeaders.mockResolvedValue({
+        get: (name: string) => {
+          if (name === 'x-guest-gated-page') return '0';
+          if (name === 'x-guest-callback-url') return '/guest/login';
+          return null;
+        },
+      });
+    });
+
+    afterEach(() => {
+      prismaWithInvite.invitationCode = originalInvitationCode;
+    });
+
+    it('passes redacted toUnauthenticatedAppConfig to layout client components for unauthenticated requests', async () => {
+      const configMod = await import('@/lib/config');
+      mockCookies.mockResolvedValue({
+        get: () => undefined,
+      });
+
+      const jsx = await RootLayout({ children: <div>Login</div> });
+      const passedConfig = extractThemeProviderConfig(jsx);
+
+      expect(configMod.toUnauthenticatedAppConfig).toHaveBeenCalledWith(fullRawConfig);
+      expect(passedConfig.photoAlbumUrl).toBe('');
+      expect(passedConfig.venueName).toBe('');
+      expect(passedConfig.venueAddress).toBe('');
+      expect(passedConfig.travelAdvice).toBe('');
+      expect(passedConfig.storyText).toBe('');
+      expect(passedConfig.heroTitle).toBe('');
+      expect(passedConfig.heroSubtitle).toBe('');
+      expect(passedConfig.features).toEqual([]);
+      expect(passedConfig.partner1Name).toBe('Alice');
+      expect(passedConfig.contactEmail).toBe('hosts@wedding.example');
+      expect(passedConfig.colorPrimary).toBe('#991B1B');
+    });
+
+    it('withholds gated config on /guest/login when caller holds a revoked or sample guest_invite_session cookie', async () => {
+      const revokedToken = await signGuestInviteSessionToken({
+        code: 'REVOKED99',
+        guestName: 'Revoked Guest',
+      });
+      mockFindUnique.mockResolvedValueOnce(null);
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: revokedToken } : undefined),
+      });
+
+      const revokedJsx = await RootLayout({ children: <div>Login</div> });
+      const revokedConfig = extractThemeProviderConfig(revokedJsx);
+      expect(revokedConfig.photoAlbumUrl).toBe('');
+      expect(revokedConfig.venueAddress).toBe('');
+      expect(revokedConfig.features).toEqual([]);
+
+      const sampleToken = await signGuestInviteSessionToken({
+        code: 'SAMPLE99',
+        guestName: 'Sample Guest',
+      });
+      mockFindUnique.mockResolvedValueOnce({
+        id: 'sample-id',
+        code: 'SAMPLE99',
+        isSample: true,
+      });
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: sampleToken } : undefined),
+      });
+
+      const sampleJsx = await RootLayout({ children: <div>Login</div> });
+      const sampleConfig = extractThemeProviderConfig(sampleJsx);
+      expect(sampleConfig.photoAlbumUrl).toBe('');
+      expect(sampleConfig.venueAddress).toBe('');
+      expect(sampleConfig.features).toEqual([]);
+    });
+
+    it('passes toPublicAppConfig (with hidden sections still redacted) when authenticated via active guest_invite_session, guest_auth, or admin_auth', async () => {
+      // 1. Active non-sample guest_invite_session
+      const activeInviteToken = await signGuestInviteSessionToken({
+        code: 'ACTIVE2026',
+        guestName: 'Invited Guest',
+      });
+      mockFindUnique.mockResolvedValueOnce({
+        id: 'inv-active',
+        code: 'ACTIVE2026',
+        isSample: false,
+      });
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_INVITE_COOKIE ? { value: activeInviteToken } : undefined),
+      });
+
+      const inviteJsx = await RootLayout({ children: <div>Home</div> });
+      const inviteConfig = extractThemeProviderConfig(inviteJsx);
+      expect(inviteConfig.photoAlbumUrl).toBe('https://photos.example.invalid/album-secret');
+      expect(inviteConfig.venueAddress).toBe('99 Secret Garden Way');
+      expect(inviteConfig.travelAdvice).toBe('Shuttle departs from private terminal');
+      expect(inviteConfig.features).toEqual([
+        {
+          id: 'venue',
+          type: 'venue',
+          title: 'Estate Directions',
+          content: 'Gate code 1234',
+          visible: true,
+        },
+        {
+          id: 'hidden-draft',
+          type: 'custom',
+          title: '',
+          content: '',
+          visible: false,
+        },
+      ]);
+
+      // 2. Valid guest_auth token
+      const guestToken = await signGuestToken({
+        guest: true,
+        exp: Date.now() + 60_000,
+      });
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === GUEST_COOKIE ? { value: guestToken } : undefined),
+      });
+
+      const guestJsx = await RootLayout({ children: <div>Home</div> });
+      const guestConfig = extractThemeProviderConfig(guestJsx);
+      expect(guestConfig.venueAddress).toBe('99 Secret Garden Way');
+      expect(guestConfig.features[1]).toEqual({
+        id: 'hidden-draft',
+        type: 'custom',
+        title: '',
+        content: '',
+        visible: false,
+      });
+
+      // 3. Valid admin_auth token
+      const adminToken = await signAdminToken({
+        isAdmin: true,
+        iat: Date.now(),
+        exp: Date.now() + 60_000,
+      });
+      mockCookies.mockResolvedValue({
+        get: (name: string) => (name === ADMIN_COOKIE ? { value: adminToken } : undefined),
+      });
+
+      const adminJsx = await RootLayout({ children: <div>Dashboard</div> });
+      const adminConfig = extractThemeProviderConfig(adminJsx);
+      expect(adminConfig.venueAddress).toBe('99 Secret Garden Way');
+      expect(adminConfig.photoAlbumUrl).toBe('https://photos.example.invalid/album-secret');
     });
   });
 });
