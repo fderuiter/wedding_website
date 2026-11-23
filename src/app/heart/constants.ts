@@ -1,3 +1,17 @@
+const HEART_FONT_PATH = '/fonts/noto-sans-latin-400-normal.woff';
+
+export function resolveHeartFontUrl(
+  rawBasePath: string | undefined = process.env.NEXT_PUBLIC_BASE_PATH,
+): string {
+  const trimmed = rawBasePath?.trim();
+  const normalizedBasePath = trimmed
+    ? (trimmed.startsWith('/') ? trimmed : `/${trimmed}`).replace(/\/+$/, '')
+    : '';
+  return `${normalizedBasePath}${HEART_FONT_PATH}`;
+}
+
+export const HEART_FONT_URL = resolveHeartFontUrl();
+
 export const PHYSICS_CONSTANTS = {
   ACCESSIBILITY_IMPULSE: 20,
   DRAG_VELOCITY_MULTIPLIER: 20,

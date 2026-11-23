@@ -14,6 +14,7 @@ jest.mock('@/lib/prisma', () => ({
       update: jest.fn(),
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      count: jest.fn(),
     },
     broadcastRecipient: {
       create: jest.fn(),
@@ -1896,6 +1897,185 @@ describe('BroadcastService', () => {
       expect(prisma.broadcastRecipient.count).toHaveBeenCalledWith({
         where: { broadcastId: 'bm-resend-single', status: { in: ['SENT', 'VIEWED'] } },
       });
+    });
+  });
+
+  describe('getBroadcastHistory, countBroadcastHistory, and getBroadcastById', () => {
+    it('queries BroadcastMessage summary rows without recipients join and defaults to limit=50, page=1', async () => {
+      const mockRows = [
+        {
+          id: 'bc-1',
+          channel: 'EMAIL',
+          subject: 'Welcome Update',
+          body: 'See you soon!',
+          status: 'SENT',
+          totalRecipients: 400,
+          sentCount: 398,
+          failedCount: 2,
+          createdAt: new Date('2026-06-01T12:00:00Z'),
+        },
+      ];
+      (prisma.broadcastMessage.findMany as jest.Mock).mockResolvedValueOnce(mockRows);
+
+      const history = await BroadcastService.getBroadcastHistory();
+
+      expect(prisma.broadcastMessage.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.broadcastMessage.findMany).toHaveBeenCalledWith({
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        skip: 0,
+      });
+      expect(prisma.broadcastRecipient.findMany).not.toHaveBeenCalled();
+      expect(history).toEqual(mockRows);
+      expect(history[0].recipients).toBeUndefined();
+    });
+
+    it('caps getBroadcastHistory limit at 100 and computes page offset accurately', async () => {
+      (prisma.broadcastMessage.findMany as jest.Mock).mockResolvedValueOnce([]);
+
+      await BroadcastService.getBroadcastHistory({ page: 2, limit: 250 });
+
+      expect(prisma.broadcastMessage.findMany).toHaveBeenCalledWith({
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        skip: 100,
+      });
+    });
+
+    it('counts total BroadcastMessage rows via countBroadcastHistory', async () => {
+      (prisma.broadcastMessage.count as jest.Mock).mockResolvedValueOnce(42);
+
+      const total = await BroadcastService.countBroadcastHistory();
+
+      expect(prisma.broadcastMessage.count).toHaveBeenCalledTimes(1);
+      expect(total).toBe(42);
+    });
+
+    it('fetches full broadcast details and ordered recipients via getBroadcastById', async () => {
+      const detailRecord = {
+        id: 'bc-detail-1',
+        channel: 'EMAIL',
+        subject: 'Shuttle Departure',
+        body: 'Full body text',
+        status: 'PARTIALLY_SENT',
+        totalRecipients: 2,
+        sentCount: 1,
+        failedCount: 1,
+        createdAt: new Date('2026-06-01T12:00:00Z'),
+        recipients: [
+          {
+            id: 'r-fail',
+            guestName: 'Aaron',
+            destination: 'aaron@example.com',
+            status: 'FAILED',
+            error: 'Mailbox unavailable',
+          },
+          {
+            id: 'r-sent',
+            guestName: 'Zoe',
+            destination: 'zoe@example.com',
+            status: 'SENT',
+            error: null,
+          },
+        ],
+      };
+      (prisma.broadcastMessage.findUnique as jest.Mock).mockResolvedValueOnce(detailRecord);
+
+      const result = await BroadcastService.getBroadcastById('bc-detail-1');
+
+      expect(prisma.broadcastMessage.findUnique).toHaveBeenCalledWith({
+        where: { id: 'bc-detail-1' },
+        include: {
+          recipients: {
+            orderBy: [
+              { status: 'asc' },
+              { guestName: 'asc' },
+              { createdAt: 'asc' },
+            ],
+          },
+        },
+      });
+      expect(result).toEqual(detailRecord);
+    });
+
+    it('keeps serialized summary payload for 25 broadcasts of 400 guests well under 90 KB', async () => {
+      const summaryRows = Array.from({ length: 25 }, (_, i) => ({
+        id: `bc-bench-${i}`,
+        channel: i % 2 === 0 ? 'EMAIL' : 'SMS',
+        subject: `Wedding Announcement #${i + 1}: Shuttle & Welcome Reception Details`,
+        body: 'Dear {{guestName}}, our shuttle leaves the Grand Hotel lobby promptly at 4:15 PM. Please confirm your seat at {{rsvpUrl}}.',
+        targetFilters: { attendanceStatus: 'attending', partyTags: ['Out of Town'] },
+        status: 'PARTIALLY_SENT',
+        totalRecipients: 400,
+        sentCount: 396,
+        failedCount: 4,
+        scheduledFor: null,
+        sentAt: '2026-06-01T18:00:00.000Z',
+        createdAt: '2026-06-01T17:59:00.000Z',
+        updatedAt: '2026-06-01T18:00:00.000Z',
+      }));
+
+      (prisma.broadcastMessage.findMany as jest.Mock).mockResolvedValueOnce(summaryRows);
+
+      const history = await BroadcastService.getBroadcastHistory({ page: 1, limit: 50 });
+      const payloadBytes = Buffer.byteLength(
+        JSON.stringify({ success: true, data: history }),
+        'utf8'
+      );
+
+      expect(payloadBytes).toBeLessThan(90 * 1024);
+    });
+
+    it('attaches aggregated viewedCount via broadcastRecipient.groupBy when VIEWED recipients exist without joining recipient rows', async () => {
+      const mockRows = [
+        {
+          id: 'bc-viewed-1',
+          channel: 'EMAIL',
+          subject: 'Formal Invitation',
+          body: 'You are invited!',
+          status: 'SENT',
+          totalRecipients: 10,
+          sentCount: 10,
+          failedCount: 0,
+          createdAt: new Date('2026-06-01T12:00:00Z'),
+        },
+        {
+          id: 'bc-viewed-2',
+          channel: 'EMAIL',
+          subject: 'Shuttle Update',
+          body: 'Bus leaves at 4 PM',
+          status: 'SENT',
+          totalRecipients: 5,
+          sentCount: 5,
+          failedCount: 0,
+          createdAt: new Date('2026-06-01T11:00:00Z'),
+        },
+      ];
+      (prisma.broadcastMessage.findMany as jest.Mock).mockResolvedValueOnce(mockRows);
+      const groupByMock = jest
+        .fn()
+        .mockResolvedValueOnce([{ broadcastId: 'bc-viewed-1', _count: { _all: 4 } }]);
+      (prisma.broadcastRecipient as unknown as { groupBy?: jest.Mock }).groupBy = groupByMock;
+
+      try {
+        const history = await BroadcastService.getBroadcastHistory();
+
+        expect(groupByMock).toHaveBeenCalledWith({
+          by: ['broadcastId'],
+          where: {
+            broadcastId: { in: ['bc-viewed-1', 'bc-viewed-2'] },
+            status: 'VIEWED',
+          },
+          _count: { _all: true },
+        });
+        expect(prisma.broadcastRecipient.findMany).not.toHaveBeenCalled();
+        expect(history).toEqual([
+          { ...mockRows[0], viewedCount: 4 },
+          mockRows[1],
+        ]);
+      } finally {
+        delete (prisma.broadcastRecipient as unknown as { groupBy?: jest.Mock }).groupBy;
+      }
     });
   });
 });

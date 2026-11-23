@@ -727,20 +727,20 @@ async function executeSmtpTransaction(params: {
   }
 }
 
-export interface EmailMessagePayload {
+interface EmailMessagePayload {
   to: string;
   from?: string;
   subject: string;
   body: string;
 }
 
-export interface SmsMessagePayload {
+interface SmsMessagePayload {
   to: string;
   from?: string;
   body: string;
 }
 
-export interface MessagingProvider {
+interface MessagingProvider {
   sendEmail(payload: EmailMessagePayload): Promise<DispatchResult>;
   sendSms(payload: SmsMessagePayload): Promise<DispatchResult>;
   testConnection(input: TestConnectionInput): Promise<DispatchResult>;

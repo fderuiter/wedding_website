@@ -46,6 +46,7 @@ import {
   SendTestBroadcastInput,
   BroadcastTargetFilters,
   BroadcastHistoryItem,
+  BroadcastHistoryQueryOptions,
   DispatchResult,
   BroadcastChannel,
   BroadcastTemplateContext,
@@ -870,13 +871,87 @@ export class BroadcastService {
   }
 
   /**
-   * Retrieves broadcast history records.
+   * Retrieves bounded broadcast history summary records without recipient rows.
    */
-  static async getBroadcastHistory(): Promise<BroadcastHistoryItem[]> {
-    return prisma.broadcastMessage.findMany({
+  static async getBroadcastHistory(
+    options: BroadcastHistoryQueryOptions = {}
+  ): Promise<BroadcastHistoryItem[]> {
+    const rawLimit = options.limit ?? 50;
+    const take = Math.min(Math.max(1, Math.trunc(rawLimit)), 100);
+    const rawPage = options.page ?? 1;
+    const page = Math.max(1, Math.trunc(rawPage));
+    const skip =
+      options.skip !== undefined
+        ? Math.max(0, Math.trunc(options.skip))
+        : (page - 1) * take;
+
+    const rows = (await prisma.broadcastMessage.findMany({
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
+    })) as unknown as BroadcastHistoryItem[];
+
+    if (
+      Array.isArray(rows) &&
+      rows.length > 0 &&
+      typeof (prisma.broadcastRecipient as { groupBy?: unknown })?.groupBy === 'function'
+    ) {
+      const broadcastIds = rows.map((row) => row.id).filter(Boolean);
+      if (broadcastIds.length > 0) {
+        const groupedViewed = await prisma.broadcastRecipient.groupBy({
+          by: ['broadcastId'],
+          where: {
+            broadcastId: { in: broadcastIds },
+            status: 'VIEWED',
+          },
+          _count: { _all: true },
+        });
+        if (Array.isArray(groupedViewed) && groupedViewed.length > 0) {
+          const viewedByBroadcast = new Map<string, number>();
+          for (const entry of groupedViewed) {
+            const count = entry._count?._all ?? 0;
+            if (entry.broadcastId && count > 0) {
+              viewedByBroadcast.set(entry.broadcastId, count);
+            }
+          }
+          if (viewedByBroadcast.size > 0) {
+            return rows.map((row) => {
+              const viewedCount = viewedByBroadcast.get(row.id);
+              return viewedCount ? { ...row, viewedCount } : row;
+            });
+          }
+        }
+      }
+    }
+
+    return rows;
+  }
+
+  /**
+   * Counts total broadcast history records for pagination metadata.
+   */
+  static async countBroadcastHistory(): Promise<number> {
+    if (typeof prisma.broadcastMessage.count === 'function') {
+      return prisma.broadcastMessage.count();
+    }
+    const rows = await prisma.broadcastMessage.findMany({ select: { id: true } });
+    return rows.length;
+  }
+
+  /**
+   * Retrieves a single broadcast message with its full body and ordered recipient delivery logs.
+   */
+  static async getBroadcastById(id: string): Promise<BroadcastHistoryItem | null> {
+    return prisma.broadcastMessage.findUnique({
+      where: { id },
       include: {
-        recipients: true,
+        recipients: {
+          orderBy: [
+            { status: 'asc' },
+            { guestName: 'asc' },
+            { createdAt: 'asc' },
+          ],
+        },
       },
     }) as any;
   }

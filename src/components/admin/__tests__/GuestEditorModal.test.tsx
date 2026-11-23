@@ -352,6 +352,146 @@ describe('GuestEditorModal', () => {
       global.fetch = originalFetch;
     }
   });
+
+  it('syncs profile Plus-One names into RSVP drafts, shares companion names across events, and keeps removed meal/choice selections visible', async () => {
+    const originalFetch = global.fetch;
+
+    const mockRsvpDetail = {
+      invitationCode: sampleGuest,
+      subEvents: [
+        {
+          id: 'se-welcome',
+          title: 'Welcome Drinks',
+          isPrivate: false,
+          hasAccess: true,
+          mealOptions: [],
+          customQuestions: [
+            {
+              id: 'q-drink',
+              prompt: 'Signature cocktail',
+              type: 'choice',
+              required: false,
+              options: ['Spritz', 'Negroni'],
+            },
+          ],
+        },
+        {
+          id: 'se-dinner',
+          title: 'Reception Dinner',
+          isPrivate: false,
+          hasAccess: true,
+          mealOptions: [
+            { id: 'meal-halibut', label: 'Halibut', dietaryTags: [] },
+          ],
+          customQuestions: [],
+        },
+      ],
+      rsvps: [
+        {
+          id: 'rsvp-welcome',
+          subEventId: 'se-welcome',
+          status: 'attending',
+          plusOneCount: 1,
+          plusOneNames: ['Danny Pink'],
+          mealSelections: [],
+          dietaryNotes: null,
+          customAnswers: { 'q-drink': 'Old Fashioned' },
+        },
+        {
+          id: 'rsvp-dinner',
+          subEventId: 'se-dinner',
+          status: 'attending',
+          plusOneCount: 1,
+          plusOneNames: ['Danny Pink'],
+          mealSelections: ['meal-removed-lobster', 'meal-halibut'],
+          dietaryNotes: null,
+          customAnswers: {},
+        },
+      ],
+    };
+
+    global.fetch = jest.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.startsWith('/api/admin/invitation-codes/rsvps') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockRsvpDetail }),
+        } as Response);
+      }
+      if (url === '/api/admin/invitation-codes/rsvps' && init?.method === 'PUT') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockRsvpDetail }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: false } as Response);
+    }) as any;
+
+    try {
+      render(
+        <GuestEditorModal
+          isOpen={true}
+          onClose={jest.fn()}
+          guest={sampleGuest}
+          onSave={jest.fn().mockResolvedValue({})}
+        />
+      );
+
+      // Wait for RSVP override panel to finish loading
+      const welcomePoInput = (await screen.findByLabelText(
+        'Plus-one 1 name for Welcome Drinks'
+      )) as HTMLInputElement;
+      const dinnerPoInput = screen.getByLabelText(
+        'Plus-one 1 name for Reception Dinner'
+      ) as HTMLInputElement;
+      expect(welcomePoInput.value).toBe('Danny Pink');
+      expect(dinnerPoInput.value).toBe('Danny Pink');
+
+      // Removed meal & choice selections stay visible in dropdowns
+      const primaryMealSelect = screen.getByLabelText(
+        'Meal selection for primary guest (Reception Dinner)'
+      ) as HTMLSelectElement;
+      expect(primaryMealSelect.value).toBe('meal-removed-lobster');
+      expect(
+        screen.getByRole('option', {
+          name: 'meal-removed-lobster (Unavailable — previously selected)',
+        })
+      ).toBeInTheDocument();
+
+      const drinkSelect = screen.getByLabelText(
+        'Signature cocktail (Welcome Drinks)'
+      ) as HTMLSelectElement;
+      expect(drinkSelect.value).toBe('Old Fashioned');
+      expect(
+        screen.getByRole('option', {
+          name: 'Old Fashioned (Unavailable — previously selected)',
+        })
+      ).toBeInTheDocument();
+
+      // Editing profile Plus-One First Name syncs untouched RSVP slot 0 across sub-events
+      fireEvent.change(screen.getByLabelText('Plus-One First Name'), {
+        target: { value: 'Rupert' },
+      });
+      expect(welcomePoInput.value).toBe('Rupert Pink');
+      expect(dinnerPoInput.value).toBe('Rupert Pink');
+
+      // Increasing plus-ones to 2 on both events and typing companion #2 on Welcome Drinks shares to Reception Dinner
+      fireEvent.change(screen.getByLabelText('Attending plus-ones for Welcome Drinks'), {
+        target: { value: '2' },
+      });
+      fireEvent.change(screen.getByLabelText('Attending plus-ones for Reception Dinner'), {
+        target: { value: '2' },
+      });
+
+      const welcomePo2 = screen.getByLabelText('Plus-one 2 name for Welcome Drinks');
+      const dinnerPo2 = screen.getByLabelText(
+        'Plus-one 2 name for Reception Dinner'
+      ) as HTMLInputElement;
+      fireEvent.change(welcomePo2, { target: { value: 'Orson Pink' } });
+      expect(dinnerPo2.value).toBe('Orson Pink');
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 
 describe('GuestEditorForm', () => {

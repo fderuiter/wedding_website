@@ -2,9 +2,6 @@ import { BaseService } from '@/core/infrastructure/service';
 import { BaseRepository } from '@/core/infrastructure/repository';
 import { handleMediaFields } from '@/features/admin';
 import { AttractionInputSchema, AttractionDTO } from './schemas';
-import { z } from 'zod';
-
-export type AttractionInput = z.infer<typeof AttractionInputSchema>;
 
 async function mapAttractionData(data: any, client?: any, author?: string): Promise<any> {
   // Since validation ensures coordinates are numbers, we don't need manual parsing here anymore

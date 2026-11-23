@@ -2207,6 +2207,146 @@ describe('InvitationCodesDashboardPage', () => {
       const axeResults = await axe(container);
       expect(axeResults).toHaveNoViolations();
     }, 20000);
+
+    it('matches meals, custom answers, and extra companions in search and excludes sample/declined rows while counting per-plate kids meals in client fallback', () => {
+      const fallbackCodes = [
+        {
+          id: 'g-real-1',
+          guestName: 'Caroline Forbes',
+          code: 'CAROLINE01',
+          used: true,
+          isSample: false,
+          extraFields: {
+            attendanceStatus: 'attending',
+            attendingPlusOneCount: 2,
+            plusOneNames: ['Klaus Mikaelson', 'Lizzie Saltzman'],
+            mealSelections: [
+              {
+                subEventId: 'se-rec',
+                subEventTitle: 'Reception',
+                attendeeIndex: 0,
+                attendee: 'Caroline Forbes',
+                optionId: 'meal-herb-chicken',
+                label: 'Roasted Herb Chicken',
+                dietaryTags: ['gluten-free'],
+              },
+              {
+                subEventId: 'se-rec',
+                subEventTitle: 'Reception',
+                attendeeIndex: 1,
+                attendee: 'Klaus Mikaelson',
+                optionId: 'meal-kids',
+                label: 'Mac & Cheese',
+                dietaryTags: ['kids'],
+              },
+              {
+                subEventId: 'se-rec',
+                subEventTitle: 'Reception',
+                attendeeIndex: 2,
+                attendee: 'Lizzie Saltzman',
+                optionId: 'meal-kids',
+                label: 'Mac & Cheese',
+                dietaryTags: ['kids'],
+              },
+            ],
+            customAnswers: [
+              {
+                subEventId: 'se-rec',
+                subEventTitle: 'Reception',
+                questionId: 'q-song',
+                prompt: 'Song request',
+                answer: 'Dancing Queen',
+              },
+            ],
+          },
+        },
+        {
+          id: 'g-sample-1',
+          guestName: 'Sample Guest',
+          code: 'SAMPLE99',
+          used: true,
+          isSample: true,
+          dietaryNotes: 'Vegan, Halal',
+          extraFields: {
+            attendanceStatus: 'attending',
+            attendingPlusOneCount: 3,
+            dietaryTags: ['vegan', 'halal', 'kids'],
+            mealSelections: [
+              {
+                subEventId: 'se-rec',
+                subEventTitle: 'Reception',
+                attendeeIndex: 0,
+                attendee: 'Sample Guest',
+                optionId: 'meal-vegan',
+                label: 'Sample Vegan Bowl',
+                dietaryTags: ['vegan'],
+              },
+            ],
+          },
+        },
+        {
+          id: 'g-declined-2',
+          guestName: 'Tyler Lockwood',
+          code: 'TYLER02',
+          used: true,
+          isSample: false,
+          dietaryNotes: 'Kosher',
+          extraFields: {
+            attendanceStatus: 'declined',
+            dietaryTags: ['kosher'],
+          },
+        },
+      ];
+
+      (useAdminInvitationCodes as jest.Mock).mockReturnValue({
+        data: fallbackCodes,
+        isLoading: false,
+        error: null,
+        create: mockCreate,
+        update: mockUpdate,
+        remove: mockRemove,
+        removeBatch: mockRemoveBatch,
+        updateBatch: mockUpdateBatch,
+        batchUpdateTags: mockBatchUpdateTags,
+        mergeDuplicates: mockMergeDuplicates,
+        fetchAll: mockFetchAll,
+      });
+
+      // Force client fallback by returning ok: false for rsvp-summary
+      global.fetch = jest.fn().mockResolvedValue({ ok: false });
+
+      renderComponent();
+
+      // Sample guest excluded from attendanceCounts -> Attending (1) household, 3 headcount (+2 plus-ones)
+      expect(screen.getByTestId('rsvp-headcount-summary')).toHaveTextContent(
+        'Attending: 3 Guests (1 Household, +2 Plus-Ones)'
+      );
+
+      // Client fallback catering summary counts 2 kids meals from per-plate selections and excludes sample/declined rows
+      const cateringWidget = screen.getByTestId('catering-summary-widget');
+      expect(within(cateringWidget).getByTestId('catering-kids-tile')).toHaveTextContent('2');
+      expect(within(cateringWidget).getByTestId('catering-meal-totals')).toHaveTextContent(
+        'Mac & Cheese:'
+      );
+      expect(within(cateringWidget).getByTestId('catering-meal-totals')).not.toHaveTextContent(
+        'Sample Vegan Bowl'
+      );
+
+      const searchInput = screen.getByLabelText('Search invitation codes');
+
+      // Search matches extra companion #2 name
+      fireEvent.change(searchInput, { target: { value: 'Lizzie Saltzman' } });
+      expect(screen.getByText('Caroline Forbes')).toBeInTheDocument();
+      expect(screen.queryByText('Tyler Lockwood')).not.toBeInTheDocument();
+
+      // Search matches meal label
+      fireEvent.change(searchInput, { target: { value: 'Roasted Herb Chicken' } });
+      expect(screen.getByText('Caroline Forbes')).toBeInTheDocument();
+
+      // Search matches custom answer
+      fireEvent.change(searchInput, { target: { value: 'Dancing Queen' } });
+      expect(screen.getByText('Caroline Forbes')).toBeInTheDocument();
+    });
   });
 
   describe('Household Notes separation & per-guest Send Invite action', () => {

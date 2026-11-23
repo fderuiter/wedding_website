@@ -80,6 +80,12 @@ export interface DispatchResult {
   error?: string;
 }
 
+export interface BroadcastHistoryQueryOptions {
+  page?: number;
+  limit?: number;
+  skip?: number;
+}
+
 export interface BroadcastHistoryItem {
   id: string;
   channel: BroadcastChannel;
@@ -89,6 +95,7 @@ export interface BroadcastHistoryItem {
   status: string;
   totalRecipients: number;
   sentCount: number;
+  viewedCount?: number;
   failedCount: number;
   scheduledFor?: Date | string | null;
   sentAt?: Date | string | null;

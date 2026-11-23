@@ -1,7 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useContext, Suspense } from 'react';
 import * as NextNavigation from 'next/navigation';
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryClientContext,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { AdminViewState } from '@/components/admin/AdminViewState';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Button } from '@/components/ui/Button';
@@ -10,6 +17,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { formatDate } from '@/utils/intl';
 import { formatEntitySectionLabel } from '@/utils/adminLabels';
 import { apiClient } from '@/features/admin';
+import type { BroadcastHistoryItem } from '@/features/broadcast';
 import { useAdminBroadcast } from '@/hooks/admin/useAdminBroadcast';
 import { Dialog } from '@/components/ui/Dialog';
 
@@ -40,6 +48,20 @@ function countViewedRecipients(recipients: unknown): number {
   return recipients.filter(
     (r) => r && typeof r === 'object' && (r as { status?: string }).status === 'VIEWED'
   ).length;
+}
+
+function resolveViewedCount(
+  item: { viewedCount?: number; recipients?: unknown } | null | undefined,
+  overrideRecipients?: unknown
+): number {
+  const recipients = overrideRecipients ?? item?.recipients;
+  if (Array.isArray(recipients) && recipients.length > 0) {
+    return countViewedRecipients(recipients);
+  }
+  if (typeof item?.viewedCount === 'number' && Number.isFinite(item.viewedCount)) {
+    return Math.max(0, Math.trunc(item.viewedCount));
+  }
+  return 0;
 }
 
 function resolveInitialHistoryTab(
@@ -81,10 +103,52 @@ function HistoryTimelineContent({
   const setActiveTab = (nextTab: 'timeline' | 'broadcasts') => {
     setTabSelection({ sourceTab: requestedTab, value: nextTab });
   };
-  const [selectedBroadcast, setSelectedBroadcast] = useState<any>(null);
+  const [selectedBroadcast, setSelectedBroadcast] = useState<BroadcastHistoryItem | null>(null);
 
+  const queryClient = useQueryClient();
   const { addToast, confirm } = useToast();
-  const { history: broadcastHistory, loadingHistory, retryBroadcast, retrying, cancelScheduledBroadcast, cancelling } = useAdminBroadcast();
+  const {
+    history: broadcastHistory,
+    loadingHistory,
+    retryBroadcast,
+    retrying,
+    cancelScheduledBroadcast,
+    cancelling,
+  } = useAdminBroadcast({ fetchHistory: activeTab === 'broadcasts' });
+
+  const selectedBroadcastId = selectedBroadcast?.id ?? null;
+  const hasPreloadedRecipients = Array.isArray(selectedBroadcast?.recipients);
+
+  const {
+    data: fetchedBroadcastDetail,
+    isFetching: loadingBroadcastDetail,
+    error: broadcastDetailError,
+  } = useQuery<BroadcastHistoryItem | null, Error>({
+    queryKey: ['admin-broadcast-detail', selectedBroadcastId],
+    queryFn: async () => {
+      if (!selectedBroadcastId) return null;
+      const detail = await apiClient.get<BroadcastHistoryItem>(
+        `/api/admin/broadcast/${encodeURIComponent(selectedBroadcastId)}`
+      );
+      if (
+        detail &&
+        !Array.isArray(detail) &&
+        typeof detail === 'object' &&
+        'id' in detail &&
+        detail.id === selectedBroadcastId
+      ) {
+        return detail;
+      }
+      return null;
+    },
+    enabled: Boolean(selectedBroadcastId),
+  });
+
+  const resolvedBroadcast = fetchedBroadcastDetail ?? selectedBroadcast;
+  const resolvedRecipients = fetchedBroadcastDetail?.recipients ?? selectedBroadcast?.recipients;
+  const showDetailLoading = loadingBroadcastDetail && !hasPreloadedRecipients && !fetchedBroadcastDetail;
+  const showDetailError =
+    Boolean(broadcastDetailError) && !hasPreloadedRecipients && !fetchedBroadcastDetail;
 
   const handleRestore = async (versionId: string) => {
     if (!(await confirm('Are you sure you want to restore this version? This will instantly replace the Live content.'))) return;
@@ -100,10 +164,11 @@ function HistoryTimelineContent({
   const handleRetryBroadcast = async (broadcastId: string) => {
     try {
       await retryBroadcast({ broadcastId });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-detail'] }),
+      ]);
       addToast('Retry initiated for failed recipients.', 'success');
-      if (selectedBroadcast) {
-        setSelectedBroadcast(null);
-      }
     } catch (e: any) {
       addToast(e.message || 'Retry failed.', 'error');
     }
@@ -114,9 +179,22 @@ function HistoryTimelineContent({
     recipient: { id: string; guestName: string }
   ) => {
     try {
-      const updated = await retryBroadcast({ broadcastId, recipientIds: [recipient.id] });
+      const updated = (await retryBroadcast({
+        broadcastId,
+        recipientIds: [recipient.id],
+      })) as BroadcastHistoryItem | undefined;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-detail'] }),
+      ]);
       addToast(`Resent broadcast to ${recipient.guestName}.`, 'success');
-      if (updated && selectedBroadcast && selectedBroadcast.id === broadcastId) {
+      if (
+        updated &&
+        typeof updated === 'object' &&
+        'id' in updated &&
+        selectedBroadcast &&
+        selectedBroadcast.id === broadcastId
+      ) {
         setSelectedBroadcast(updated);
       }
     } catch (e: any) {
@@ -128,10 +206,11 @@ function HistoryTimelineContent({
     if (!(await confirm('Are you sure you want to cancel this scheduled broadcast?'))) return;
     try {
       await cancelScheduledBroadcast(broadcastId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-broadcast-detail'] }),
+      ]);
       addToast('Scheduled broadcast cancelled.', 'success');
-      if (selectedBroadcast) {
-        setSelectedBroadcast(null);
-      }
     } catch (e: any) {
       addToast(e.message || 'Failed to cancel scheduled broadcast.', 'error');
     }
@@ -288,9 +367,9 @@ function HistoryTimelineContent({
                     </TableCell>
                     <TableCell className="text-sm">
                       <span className="font-semibold">{item.sentCount}</span> / {item.totalRecipients} sent
-                      {countViewedRecipients(item.recipients) > 0 && (
+                      {resolveViewedCount(item) > 0 && (
                         <span className="text-blue-600 dark:text-blue-400 font-semibold ml-1">
-                          ({countViewedRecipients(item.recipients)} viewed)
+                          ({resolveViewedCount(item)} viewed)
                         </span>
                       )}
                       {item.failedCount > 0 && <span className="text-red-500 font-bold ml-1">({item.failedCount} failed)</span>}
@@ -346,47 +425,69 @@ function HistoryTimelineContent({
       </SegmentedTabPanel>
 
       {/* Broadcast Details Modal */}
-      {selectedBroadcast && (
+      {selectedBroadcast && resolvedBroadcast && (
         <Dialog
           isOpen={Boolean(selectedBroadcast)}
           onClose={() => setSelectedBroadcast(null)}
-          title={`Broadcast Log Details (${selectedBroadcast.channel})`}
+          title={`Broadcast Log Details (${resolvedBroadcast.channel})`}
           className="max-w-3xl"
         >
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4 text-sm bg-gray-50 dark:bg-zinc-800 p-3 rounded">
-              <div><strong>Created At:</strong> {formatDate(selectedBroadcast.createdAt)}</div>
-              <div><strong>Status:</strong> {selectedBroadcast.status}</div>
-              {selectedBroadcast.scheduledFor && (
-                <div><strong>Scheduled For:</strong> {formatDate(selectedBroadcast.scheduledFor)}</div>
+              <div><strong>Created At:</strong> {formatDate(resolvedBroadcast.createdAt)}</div>
+              <div><strong>Status:</strong> {resolvedBroadcast.status}</div>
+              {resolvedBroadcast.scheduledFor && (
+                <div><strong>Scheduled For:</strong> {formatDate(resolvedBroadcast.scheduledFor)}</div>
               )}
-              <div><strong>Sent Count:</strong> {selectedBroadcast.sentCount} / {selectedBroadcast.totalRecipients}</div>
-              <div><strong>Viewed Count:</strong> {countViewedRecipients(selectedBroadcast.recipients)}</div>
-              <div><strong>Failed Count:</strong> {selectedBroadcast.failedCount}</div>
+              <div><strong>Sent Count:</strong> {resolvedBroadcast.sentCount} / {resolvedBroadcast.totalRecipients}</div>
+              <div><strong>Viewed Count:</strong> {resolveViewedCount(resolvedBroadcast, resolvedRecipients)}</div>
+              <div><strong>Failed Count:</strong> {resolvedBroadcast.failedCount}</div>
             </div>
 
-            {selectedBroadcast.subject && (
+            {resolvedBroadcast.subject && (
               <div>
                 <span className="text-xs font-semibold text-gray-500 uppercase block">Subject:</span>
-                <p className="font-semibold text-sm">{selectedBroadcast.subject}</p>
+                <p className="font-semibold text-sm">{resolvedBroadcast.subject}</p>
               </div>
             )}
 
             <div>
               <span className="text-xs font-semibold text-gray-500 uppercase block mb-1">Body:</span>
               <div className="p-3 bg-gray-100 dark:bg-zinc-800 text-xs font-mono rounded whitespace-pre-wrap">
-                {selectedBroadcast.body}
+                {resolvedBroadcast.body}
               </div>
             </div>
 
             <div>
               <h3 className="text-sm font-semibold mb-2">Recipient Delivery Statuses:</h3>
               <div className="max-h-60 overflow-y-auto border rounded divide-y dark:divide-zinc-700">
-                {selectedBroadcast.recipients?.map((r: any) => (
+                {showDetailLoading && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="p-4 text-xs text-center text-gray-600 dark:text-gray-300"
+                  >
+                    Loading recipient delivery statuses...
+                  </div>
+                )}
+                {showDetailError && (
+                  <div
+                    role="alert"
+                    className="p-4 text-xs text-center text-red-700 dark:text-red-300"
+                  >
+                    {broadcastDetailError?.message || 'Failed to load recipient delivery statuses.'}
+                  </div>
+                )}
+                {!showDetailLoading && !showDetailError && (!resolvedRecipients || resolvedRecipients.length === 0) && (
+                  <div className="p-4 text-xs text-center text-gray-600 dark:text-gray-300">
+                    No recipient delivery logs recorded.
+                  </div>
+                )}
+                {!showDetailLoading && resolvedRecipients?.map((r) => (
                   <div key={r.id} className="p-2 text-xs flex justify-between items-center gap-2">
                     <div>
                       <span className="font-semibold">{r.guestName}</span> ({r.destination})
-                      {r.error && <span className="block text-red-500 text-[11px] mt-0.5">{r.error}</span>}
+                      {r.error && <span className="block text-red-600 dark:text-red-400 text-[11px] mt-0.5">{r.error}</span>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -400,15 +501,15 @@ function HistoryTimelineContent({
                       }`}>
                         {r.status}
                       </span>
-                      {selectedBroadcast.status !== 'SCHEDULED' &&
-                        selectedBroadcast.status !== 'CANCELLED' && (
+                      {resolvedBroadcast.status !== 'SCHEDULED' &&
+                        resolvedBroadcast.status !== 'CANCELLED' && (
                         <Button
                           size="sm"
                           variant="secondary"
                           className="text-[11px] py-0.5 px-2 h-auto"
                           disabled={retrying}
                           aria-label={`Resend to ${r.guestName}`}
-                          onClick={() => void handleResendRecipient(selectedBroadcast.id, r)}
+                          onClick={() => void handleResendRecipient(resolvedBroadcast.id, r)}
                         >
                           Resend
                         </Button>
@@ -420,13 +521,13 @@ function HistoryTimelineContent({
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t">
-              {selectedBroadcast.status === 'SCHEDULED' && (
-                <Button variant="danger" disabled={cancelling} onClick={() => handleCancelSchedule(selectedBroadcast.id)}>
+              {resolvedBroadcast.status === 'SCHEDULED' && (
+                <Button variant="danger" disabled={cancelling} onClick={() => handleCancelSchedule(resolvedBroadcast.id)}>
                   {cancelling ? 'Cancelling...' : 'Cancel Schedule'}
                 </Button>
               )}
-              {selectedBroadcast.failedCount > 0 && selectedBroadcast.status !== 'CANCELLED' && (
-                <Button variant="danger" disabled={retrying} onClick={() => handleRetryBroadcast(selectedBroadcast.id)}>
+              {resolvedBroadcast.failedCount > 0 && resolvedBroadcast.status !== 'CANCELLED' && (
+                <Button variant="danger" disabled={retrying} onClick={() => handleRetryBroadcast(resolvedBroadcast.id)}>
                   {retrying ? 'Retrying...' : 'Retry Failed Dispatches'}
                 </Button>
               )}
@@ -490,7 +591,7 @@ function formatVersionsError(err: unknown): string {
   return message || 'Failed to load version history.';
 }
 
-export default function HistoryTimelinePage() {
+function HistoryTimelinePageContainer() {
   const [versions, setVersions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -572,5 +673,35 @@ export default function HistoryTimelinePage() {
         />
       </Suspense>
     </AdminViewState>
+  );
+}
+
+export default function HistoryTimelinePage() {
+  const existingQueryClient = useContext(QueryClientContext);
+  const [fallbackQueryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, gcTime: Infinity },
+          mutations: { retry: false, gcTime: Infinity },
+        },
+      })
+  );
+
+  useEffect(() => {
+    if (existingQueryClient) return;
+    return () => {
+      fallbackQueryClient.clear();
+    };
+  }, [existingQueryClient, fallbackQueryClient]);
+
+  if (existingQueryClient) {
+    return <HistoryTimelinePageContainer />;
+  }
+
+  return (
+    <QueryClientProvider client={fallbackQueryClient}>
+      <HistoryTimelinePageContainer />
+    </QueryClientProvider>
   );
 }
