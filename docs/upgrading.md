@@ -1,6 +1,6 @@
 # Downstream Upgrade Guide
 
-This guide explains how adopters who have cloned or forked the `wedding_website` repository can maintain upstream compatibility, pull updates, run database migrations, and handle schema or configuration changes without overwriting local customizations or personal wedding data.
+This guide explains how adopters who have cloned, forked, or containerized the `wedding_website` repository can maintain upstream compatibility, validate local `.env` secrets, apply forward-only database migrations, preserve persistent volumes, and roll back safely across **Docker Compose**, **Standalone Docker**, and **Host Node.js** deployments without losing guest data or uploaded media.
 
 ---
 
@@ -13,11 +13,11 @@ To ensure a smooth upgrade path for downstream adopters, the template adheres to
 ### Personal Content Isolation
 - **Database-Driven Content**: Personal details (e.g., couple's names, wedding date, venue details, story text, hero titles, theme colors, FAQs, wedding party members, attractions, registry items, guest invitations, seating tables, sub-events, RSVPs, broadcasts, and audit snapshots) are stored in PostgreSQL records across all 15 Prisma models (`AppConfig`, `ContentNode`, `Media`, `SeatingTable`, `InvitationCode`, `WeddingPartyMember`, `Attraction`, `RegistryItem`, `Contributor`, `SubEvent`, `SubEventAccess`, `SubEventRsvp`, `BroadcastMessage`, `BroadcastRecipient`, `SnapshotVersion`).
 - **Avoid Hardcoding Details**: Do not hardcode couple names, dates, or custom copy inside core React components (`src/app/` or `src/features/`). Modify content through the **Admin Dashboard** (`/admin/dashboard`) or database seeds rather than core source code files.
-- **Media Storage**: Upload custom images through the Admin Dashboard or store static assets in `public/` using custom file names to avoid upstream merge conflicts.
+- **Media Storage**: Upload custom images through the Admin Dashboard (persisted under `/app/public/uploads` via the `uploads_data` Docker volume or in S3/Cloudflare R2) or store static assets in `public/` using custom file names to avoid upstream merge conflicts.
 
 ### Deployment Isolation
-- **Environment Variables**: Server configuration, credentials, and deployment flags are injected strictly through environment variables (`ADMIN_PASSWORD`, `DATABASE_URL`, `S3_*`, etc.).
-- **Containerization**: Deployments use standard, provider-neutral container setups (`Dockerfile`, `docker-compose.yml`) or standard Node.js hosting environments.
+- **Environment Variables**: Server configuration, credentials, and deployment flags are injected strictly through environment variables (`DB_PASSWORD`, `DATABASE_URL`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `TRUST_PROXY`, `STRIPE_*`, `S3_*`, etc.).
+- **Containerization**: Deployments use hardened, provider-neutral container setups ([`Dockerfile`](../Dockerfile), [`docker-compose.yml`](../docker-compose.yml), [`docker-entrypoint.sh`](../docker-entrypoint.sh)) aligned with [`docs/deployment/docker-vps.md`](./deployment/docker-vps.md) or standard Node.js v22.x LTS host environments.
 
 ---
 
@@ -27,7 +27,7 @@ Follow these step-by-step instructions whenever a new upstream release or update
 
 ### Step 1: Configure Upstream Remote (One-Time Setup)
 
-In your local repository clone, add the official repository as the `upstream` remote:
+In your local or VPS repository clone, add the official repository as the `upstream` remote:
 
 ```bash
 git remote add upstream https://github.com/fderuiter/wedding_website.git
@@ -39,113 +39,220 @@ Verify that the remote was added:
 git remote -v
 ```
 
-### Step 2: Fetch Upstream Changes
+### Step 2: Back Up Data & Tag Current Container Image for Rollback
 
-Fetch the latest branches and release tags from upstream:
+Before pulling upstream code or applying schema migrations:
+
+1. **Export Unified JSON Backup**: In `/admin/dashboard/maintenance`, click **Export All Data** to download a `schemaVersion: "2.0"` full-database JSON export covering all 15 Prisma models.
+2. **Tag Running Container Image (Docker Compose & Standalone Docker)**: Preserve the known-good image as `wedding-website:previous` so you can roll back immediately if needed:
+   ```bash
+   docker tag wedding-website:latest wedding-website:previous
+   ```
+3. **Snapshot PostgreSQL (Recommended for Major Upgrades)**:
+   ```bash
+   # Docker Compose co-located PostgreSQL snapshot
+   docker compose exec -T db pg_dump -U "${DB_USER:-wedding}" "${DB_NAME:-wedding}" > backup-pre-upgrade.sql
+   ```
+
+### Step 3: Fetch & Review Release Notes (`CHANGELOG.md`)
+
+Fetch the latest branches and release tags from upstream and inspect [`CHANGELOG.md`](../CHANGELOG.md) (plus [`docs/versioning.md`](./versioning.md)):
 
 ```bash
 git fetch upstream --tags
-```
-
-### Step 3: Review Release Notes & `CHANGELOG.md`
-
-Before merging, inspect the upstream [`CHANGELOG.md`](../CHANGELOG.md) or release notes on GitHub:
-
-```bash
 git log HEAD..upstream/main --oneline CHANGELOG.md
 ```
 
 Pay special attention to:
-- **Adopter Action Required**: Check if the release is flagged with `Action Required: Yes`.
-- **Breaking Changes**: Check for schema changes, required environment variable additions, or deprecations.
-- **Migration Guide**: Follow any release-specific migration steps provided in the release notes.
+- **Adopter Action Required**: Check if the release is flagged with `Adopter Action Required: Yes`.
+- **Breaking Changes & Migration Guide**: Review new environment variables (`src/env.ts`), Docker Compose `:?` secret guards (`docker-compose.yml`), retired `AppConfig.modules` toggles (`src/lib/modules.ts`), and schema migrations (`prisma/migrations/`).
 
 ### Step 4: Merge Upstream Changes
 
-Ensure your local working directory is clean and checkout your primary main branch:
+Ensure your working directory is clean, check out `main`, and merge the upstream branch (or a specific release tag):
 
 ```bash
 git status
 git checkout main
-```
-
-Merge the upstream main branch (or a specific release tag, e.g., `v1.2.0`):
-
-```bash
 git merge upstream/main
 ```
 
 ### Step 5: Resolve Merge Conflicts (If Any)
 
-If you customized core files inside `src/` or `prisma/`, Git may report merge conflicts:
-
-1. Identify conflicting files:
-   ```bash
-   git status
-   ```
-2. Open the conflicting files and resolve the differences. Preserve your custom logic while accepting core application bug fixes and feature updates.
-3. Mark resolved files and commit the merge:
-   ```bash
-   git add .
-   git commit -m "merge: sync upstream updates (v1.2.0)"
-   ```
-
-### Step 6: Update Dependencies & Apply Database Migrations
-
-After merging, install any updated npm packages and run Prisma database migrations:
+If you customized files inside `src/` or `prisma/`, resolve any Git conflicts before continuing:
 
 ```bash
-# 1. Install updated dependencies
+git status
+# Resolve conflicts in your editor, then stage and commit:
+git add .
+git commit -m "merge: sync upstream updates"
+```
+
+### Step 6: Execute Runtime-Specific Upgrade & Database Migrations
+
+Choose the track matching your deployment topology (**Track A: Docker Compose**, **Track B: Standalone Docker**, or **Track C: Host Node.js**). Before restarting production containers or services, run **Step 7** (`npm run preflight:env`) to verify your `.env` secrets.
+
+#### Track A: Docker Compose (`docker-compose.yml` — Recommended Container Baseline)
+
+[`docker-compose.yml`](../docker-compose.yml) orchestrates `db` (`postgres:15-alpine`), a one-shot `migration` service, and `app` (`wedding-website:latest`, built from [`Dockerfile`](../Dockerfile)):
+
+- **Persistent Volume Retention**: `db_data` (`/var/lib/postgresql/data`) and `uploads_data` (`/app/public/uploads`, UID/GID `1001`) are named Docker volumes that survive `docker compose up -d --build`. **Never run `docker compose down -v` during a production upgrade**, as `-v` deletes `db_data` and `uploads_data`.
+- **Decoupled One-Shot Migrations**: `migration` runs `./node_modules/.bin/prisma migrate deploy` (backed by the isolated `/opt/prisma-cli` stage in `Dockerfile`) with `read_only: true`, `cap_drop: [ALL]`, and `restart: "no"` after `db` reports `service_healthy`. `app` sets `RUN_MIGRATIONS=false` and `E2E_TEST=false` by default and waits for `migration` (`condition: service_completed_successfully`) before starting `node server.js` behind `/usr/bin/tini`.
+
+```bash
+# 1. Validate local .env against production & Docker Compose ":?" guards (see Step 7)
+npx tsx scripts/preflight-env.ts --env-file .env
+
+# 2. Rebuild image, run one-shot migration service, and recreate app while preserving db_data & uploads_data
+docker compose up -d --build
+
+# 3. Verify container liveness (/api/live) and database readiness (/api/health)
+docker compose ps
+curl -fsS http://127.0.0.1:${PORT:-3000}/api/health -H "Host: localhost"
+```
+
+To execute migrations manually on demand (or bypass an external PgBouncer pooler in `DATABASE_URL` using a direct `POSTGRES_URL_NON_POOLING` URI from `prisma.config.ts`):
+
+```bash
+# Standard Compose one-shot migration
+docker compose run --rm migration
+
+# External PgBouncer override using direct PostgreSQL connection
+docker compose run --rm -e DATABASE_URL="$POSTGRES_URL_NON_POOLING" migration env -u POSTGRES_URL_NON_POOLING ./node_modules/.bin/prisma migrate deploy
+```
+
+#### Track B: Standalone Docker Container (`Dockerfile` & `docker-entrypoint.sh`)
+
+When running the image directly via `docker run` without Docker Compose's `migration` service:
+
+- **Runtime Entrypoint Flag (`RUN_MIGRATIONS=true`)**: Passing `-e RUN_MIGRATIONS=true` instructs [`docker-entrypoint.sh`](../docker-entrypoint.sh) to normalize `DATABASE_URL` and execute `./node_modules/.bin/prisma migrate deploy` (linked to `/opt/prisma-cli` in [`Dockerfile`](../Dockerfile)) automatically prior to `node server.js`.
+- **Alternative One-Shot Container Migration**: For multi-replica rollouts, keep `RUN_MIGRATIONS=false` on web containers and run a one-shot migration container first (`docker run --rm --env-file .env wedding-website:latest ./node_modules/.bin/prisma migrate deploy`).
+- **Uploads Persistence & Read-Only Root**: Mount a persistent named volume or UID `1001`-writable host directory (`chown -R 1001:1001 /var/lib/wedding/uploads`) at `/app/public/uploads`, plus `tmpfs` mounts at `/tmp` and `/app/.next/cache:uid=1001,gid=1001,mode=0755`.
+
+```bash
+# 1. Validate standalone .env secrets (skipping Compose-only DB_PASSWORD guard if using DATABASE_URL)
+npx tsx scripts/preflight-env.ts --no-compose --env-file .env
+
+# 2. Build updated image after tagging wedding-website:previous in Step 2
+docker build -t wedding-website:latest .
+
+# 3. Replace running standalone container with RUN_MIGRATIONS=true and persistent uploads volume
+docker stop wedding-app && docker rm wedding-app
+docker run -d --name wedding-app \
+  -p 127.0.0.1:3000:3000 \
+  --read-only \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges:true \
+  --tmpfs /tmp \
+  --tmpfs /app/.next/cache:uid=1001,gid=1001,mode=0755 \
+  -v wedding_uploads:/app/public/uploads \
+  --env-file .env \
+  -e RUN_MIGRATIONS=true \
+  -e E2E_TEST=false \
+  wedding-website:latest
+```
+
+#### Track C: Host Node.js Runtime (Node.js v22.x LTS)
+
+For bare-metal or VM deployments running Node.js directly without Docker:
+
+```bash
+# 1. Install deterministic lockfile dependencies
 npm ci
 
-# 2. Apply pending database migrations safely
+# 2. Validate local .env secrets before migrating/restarting
+npm run preflight:env -- --no-compose --env-file .env
+
+# 3. Apply pending forward-only Prisma migrations and regenerate Prisma Client
 npm run migrate:deploy
-
-# 3. Regenerate Prisma Client types
 npm run prisma:generate
+
+# 4. Build standalone Next.js bundle and restart service
+npm run build
+npm start
 ```
 
-> **Note:** `npm run migrate:deploy` executes `prisma migrate deploy`, which applies all new migration SQL scripts from `prisma/migrations/` in chronological order without modifying existing data records.
+> **Note:** `npm run migrate:deploy` executes `prisma migrate deploy` (configured via `prisma.config.ts`), inspecting `_prisma_migrations` and applying only unapplied SQL files from `prisma/migrations/`. If `DATABASE_URL` points to PgBouncer, run `DATABASE_URL="$POSTGRES_URL_NON_POOLING" env -u POSTGRES_URL_NON_POOLING npx prisma migrate deploy`.
 
-### Step 7: Verify Environment Variables & Configuration
+### Step 7: Verify Local `.env` Secrets & Configuration Preflight
 
-Check if upstream introduced new environment variables by reviewing `.env.example` against your local configuration (`.env.development.local` or production settings):
+Run the read-only environment preflight CLI ([`scripts/preflight-env.ts`](../scripts/preflight-env.ts)) against your local `.env` file before starting or restarting services:
 
 ```bash
-npx tsx scripts/verify-env-docs.ts
+# Docker Compose deployments (checks src/env.ts production rules + docker-compose.yml ":?" guards)
+npm run preflight:env
+# Equivalent explicit invocation:
+npx tsx scripts/preflight-env.ts --env-file .env
+
+# Standalone Docker or Host Node.js deployments (checks src/env.ts production rules + DATABASE_URL)
+npx tsx scripts/preflight-env.ts --no-compose --env-file .env
 ```
 
-If new environment variables were introduced, add them to your local environment file with appropriate values.
+`scripts/preflight-env.ts` never prints raw secret values or password hashes and fails with a non-zero exit code when any of the following are detected:
+- **Missing Docker Compose `:?` Secret Guards**: `DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, or `GUEST_SESSION_SECRET` unset/empty in `.env` (or containing unescaped `$` characters that Docker Compose would interpolate; escape literal `$` as `$$` or use single quotes).
+- **Legacy or Placeholder `ADMIN_PASSWORD` Hashes**: Plaintext passwords, legacy non-64-byte scrypt hashes, `.env.example` dummy hashes, or E2E test hashes (generate a valid 16-byte salt / 64-byte scrypt key with `node scripts/generate-password-hash.mjs "your-strong-password"`).
+- **Blocked `GUEST_PASSCODE` or Weak `GUEST_SESSION_SECRET`**: Default `wedding2026` or placeholder guest passcodes, session secrets shorter than 32 characters (`openssl rand -hex 32`), or `GUEST_SESSION_SECRET` matching `GUEST_PASSCODE`.
+- **Unpaired or Placeholder Integration Keys**: `STRIPE_SECRET_KEY` set without `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (or vice versa), invalid `sk_`/`rk_`/`pk_`/`whsec_` prefixes, incomplete `S3_*` credentials, or `E2E_TEST=true` left enabled in production.
 
-### Step 8: Build & Test
+> **Maintainer Note:** If you are contributing documentation or schema changes to a fork, also run `npx tsx scripts/verify-env-docs.ts` (`npm run check:env-docs`) and `npm run check:runbooks` to verify committed Markdown docs and `.env.example`.
 
-Validate that your site builds cleanly and passes test suites:
+### Step 8: Post-Upgrade Verification & Smoke Checks
+
+Validate that your upgraded instance builds cleanly and passes health/test checks:
 
 ```bash
-# Verify TypeScript types and linting
+# Host / development verification
 npm run lint
 npm run type-check
-
-# Execute local unit and integration tests
 npm test
-
-# Build production bundle
 npm run build
+
+# Live runtime readiness check (expects HTTP 200 with {"success":true,"data":{"status":"ok","database":"connected"}})
+curl -fsS http://127.0.0.1:3000/api/health -H "Host: localhost"
 ```
 
 ---
 
 ## 3. Handling Configuration Schema Changes
 
-Upstream releases may add new configuration fields to `AppConfig` or content schemas.
+Upstream releases may add or refine configuration fields in `AppConfig` or feature module schemas:
 
-- **Non-Breaking Schema Additions**: New configuration fields in `prisma/schema.prisma` include default values (e.g., `@default(true)` or `@default("")`). When `npm run migrate:deploy` runs, PostgreSQL automatically fills existing `AppConfig` records with default values.
-- **Zod Validation Fallbacks**: Zod schemas (`src/features/content/schemas.ts`) use fallback defaults so that missing optional fields in older database records do not cause runtime crashes.
-- **Configuration Migration Scripts**: If a major release restructures configuration fields, a migration script will be provided under `scripts/migrations/` and documented in [`CHANGELOG.md`](../CHANGELOG.md).
+- **Non-Breaking Schema Additions**: New columns in `prisma/schema.prisma` include safe `@default(...)` values or nullable types so forward-only migrations populate existing `AppConfig` rows without downtime.
+- **Persisted Feature Module Toggles (`AppConfig.modules`)**: `ModuleConfigSchema` in `src/lib/modules.ts` persists the 9 feature toggles (`registry`, `groupGifting`, `weather`, `weddingParty`, `attractions`, `gallery`, `countdown`, `addToCalendar`, `interactive3D`) in `AppConfig.modules` (disabling `registry` automatically disables `groupGifting`; guest passcode gating is enforced globally via `GUEST_PASSCODE` and `GUEST_SESSION_SECRET`).
+- **Zod Validation Fallbacks**: Zod schemas (`src/features/content/schemas.ts`) apply defaults gracefully when parsing older database records or snapshots.
 
 ---
 
-## 4. Troubleshooting & Database Recovery
+## 4. Rollback, Troubleshooting & Database Recovery
+
+### Container & Runtime Rollback (`wedding-website:previous`)
+
+If an upgraded deployment fails health checks after Step 6, revert immediately to the `wedding-website:previous` image tagged in Step 2 (aligned with [`docs/deployment/docker-vps.md`](./deployment/docker-vps.md)):
+
+1. **Docker Compose Rollback (Recommended — preserves Compose `db` network, loopback port binding, `db_data`, and `uploads_data`)**:
+   ```bash
+   docker tag wedding-website:previous wedding-website:latest
+   docker compose up -d --no-deps app
+   ```
+2. **Standalone `docker run` Rollback (attaching Compose network, loopback port mapping, and persistent `uploads_data` volume)**:
+   ```bash
+   docker compose stop app
+   docker run -d --name app-rollback \
+     --network wedding_website_default \
+     -p 127.0.0.1:3000:3000 \
+     --read-only \
+     --cap-drop=ALL \
+     --security-opt=no-new-privileges:true \
+     --tmpfs /tmp \
+     --tmpfs /app/.next/cache:uid=1001,gid=1001,mode=0755 \
+     -v wedding_website_uploads_data:/app/public/uploads \
+     --env-file .env \
+     -e DATABASE_URL="postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}" \
+     -e E2E_TEST=false \
+     wedding-website:previous
+   ```
+3. **Host Node.js Rollback**: Check out the previous Git tag or commit (`git checkout <previous-tag-or-sha>`), run `npm ci && npm run build`, and restart `npm start`.
+4. **Forward-Only Database Migrations**: Prisma migrations are strictly forward-only (automatic destructive down-migrations are intentionally unsupported). Additive migrations remain backward-compatible with `wedding-website:previous`; if a major upgrade requires full database recovery, restore from the pre-upgrade `pg_dump` snapshot or `/admin/dashboard/maintenance` backup below.
 
 ### Prisma Migration Drift
 If you edited `prisma/schema.prisma` directly in your local fork without generating a migration, Prisma may report schema drift during upgrade.
@@ -158,8 +265,8 @@ If you edited `prisma/schema.prisma` directly in your local fork without generat
 ### Backup & Restore
 Before performing major version upgrades, export a unified full-database backup from the Admin Dashboard:
 1. Navigate to `/admin/dashboard/maintenance`.
-2. Click **Export All Data** to download a single `schemaVersion: "2.0"` JSON backup covering all 15 database models (site settings, content nodes, media metadata, seating tables, guest invitation codes, wedding party members, attractions and hotel blocks, registry items, gift contributors, sub-events, event access grants, RSVPs, broadcast messages, broadcast recipients, and snapshot history).
-3. Back up your `.env` file (`ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `DATABASE_URL`, `STRIPE_*`, `S3_*`) and outbound messaging provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) separately. For security, raw provider credentials and server environment secrets are redacted from JSON exports (non-secret delivery settings such as `emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, and `twilioFromNumber` are included).
+2. Click **Export All Data** to download a single `schemaVersion: "2.0"` JSON backup (`src/app/api/admin/maintenance/export/route.ts`) covering all 15 database models (site settings, content nodes, media metadata, seating tables, guest invitation codes, wedding party members, attractions and hotel blocks, registry items, gift contributors, sub-events, event access grants, RSVPs, broadcast messages, broadcast recipients, and snapshot history).
+3. Back up your `.env` file (`DB_PASSWORD`, `ADMIN_PASSWORD`, `GUEST_PASSCODE`, `GUEST_SESSION_SECRET`, `DATABASE_URL`, `STRIPE_*`, `S3_*`), persistent `uploads_data` media files, and outbound messaging provider secrets (`smtpPass`, `resendApiKey`, `sendgridApiKey`, `twilioAuthToken`) separately. For security, raw provider credentials and server environment secrets are redacted from JSON exports (non-secret delivery settings such as `emailProvider`, `smtpHost`, `smtpPort`, `smtpUser`, `smtpFrom`, `resendFrom`, `sendgridFrom`, `smsProvider`, `twilioAccountSid`, and `twilioFromNumber` are included).
 4. To restore after an upgrade or into a clean database, select your `.json` backup file on `/admin/dashboard/maintenance`, verify the pre-flight record counts across content, gifts, guests, seating, sub-events, RSVPs, and broadcasts, and click **Import Data** (legacy `1.0` backups are also accepted—obsolete virtual fields are stripped automatically and broken guest links on gifts are cleared when guest records are absent; restoring into an existing database preserves already-stored provider credentials if omitted from the backup). For accidental single-record edits, use `/admin/dashboard/history` to roll back individual versions.
 
 ---
@@ -168,11 +275,10 @@ Before performing major version upgrades, export a unified full-database backup 
 
 Use this checklist for every upstream upgrade:
 
-- [ ] Fetched latest upstream commits (`git fetch upstream`).
-- [ ] Reviewed [`CHANGELOG.md`](../CHANGELOG.md) for breaking changes and adopter action notices.
-- [ ] Merged upstream branch (`git merge upstream/main`).
-- [ ] Resolved any merge conflicts.
-- [ ] Updated npm dependencies (`npm ci`).
-- [ ] Applied database migrations (`npm run migrate:deploy`).
-- [ ] Verified environment variables (`.env.example`).
-- [ ] Passed local tests and production build (`npm test && npm run build`).
+- [ ] Exported a `schemaVersion: "2.0"` backup from `/admin/dashboard/maintenance` (and `pg_dump` snapshot) and tagged `docker tag wedding-website:latest wedding-website:previous`.
+- [ ] Fetched latest upstream commits (`git fetch upstream --tags`).
+- [ ] Reviewed [`CHANGELOG.md`](../CHANGELOG.md) for `Adopter Action Required: Yes`, breaking changes, and new `.env` or `:?` secret guards.
+- [ ] Merged upstream branch (`git merge upstream/main`) and resolved any merge conflicts.
+- [ ] Validated local `.env` secrets via `npm run preflight:env` (`npx tsx scripts/preflight-env.ts --env-file .env`).
+- [ ] Applied forward-only migrations and rebuilt (`docker compose up -d --build` preserving `db_data` & `uploads_data`, standalone `docker run` with `RUN_MIGRATIONS=true`, or `npm ci && npm run migrate:deploy && npm run build`).
+- [ ] Verified `/api/live` and `/api/health` readiness probes (and local `npm test` if running a modified fork).
