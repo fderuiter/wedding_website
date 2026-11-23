@@ -130,6 +130,7 @@ interface ModuleSymbolInventory {
   exportsTypes: Set<string>;
   topLevelDeclarations: Set<string>;
   classAndObjectMembers: Map<string, Set<string>>;
+  typeCallableMembers: Map<string, Set<string>>;
   allClassMemberNames: Set<string>;
   propertyAndConstLiterals: Set<string>;
   exportedConstLiterals: Map<string, string>;
@@ -859,9 +860,12 @@ function getFileSliceInventory(filePath: string): FileSliceInventory {
     } else if (
       (ts.isMethodDeclaration(node) ||
         ts.isPropertyDeclaration(node) ||
+        ts.isPropertySignature(node) ||
+        ts.isMethodSignature(node) ||
         ts.isGetAccessorDeclaration(node) ||
         ts.isSetAccessorDeclaration(node) ||
-        ts.isPropertyAssignment(node)) &&
+        ts.isPropertyAssignment(node) ||
+        ts.isShorthandPropertyAssignment(node)) &&
       node.name &&
       (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
     ) {
@@ -917,6 +921,7 @@ function getModuleSymbolInventory(
   const { values: exportsValues, types: exportsTypes } = collectCachedModuleExports(filePath, rootDir);
   const topLevelDeclarations = new Set<string>([...exportsValues, ...exportsTypes]);
   const classAndObjectMembers = new Map<string, Set<string>>();
+  const typeCallableMembers = new Map<string, Set<string>>();
   const allClassMemberNames = new Set<string>();
   const propertyAndConstLiterals = new Set<string>();
   const exportedConstLiterals = new Map<string, string>();
@@ -930,6 +935,7 @@ function getModuleSymbolInventory(
       exportsTypes,
       topLevelDeclarations,
       classAndObjectMembers,
+      typeCallableMembers,
       allClassMemberNames,
       propertyAndConstLiterals,
       exportedConstLiterals,
@@ -940,6 +946,24 @@ function getModuleSymbolInventory(
   }
 
   const sf = getCachedSourceFile(filePath).sf;
+  const localTypeDecls = new Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>();
+  for (const stmt of sf.statements) {
+    if (
+      ts.isImportDeclaration(stmt) &&
+      ts.isStringLiteral(stmt.moduleSpecifier) &&
+      stmt.importClause?.namedBindings &&
+      ts.isNamedImports(stmt.importClause.namedBindings)
+    ) {
+      for (const el of stmt.importClause.namedBindings.elements) {
+        localImports.set(el.name.text, {
+          specifier: stmt.moduleSpecifier.text,
+          importedName: el.propertyName ? el.propertyName.text : el.name.text,
+        });
+      }
+    } else if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
+      localTypeDecls.set(stmt.name.text, stmt);
+    }
+  }
 
   function recordConstValue(
     map: Map<string, Set<ConstPrimitiveValue>>,
@@ -955,6 +979,190 @@ function getModuleSymbolInventory(
     const set = classAndObjectMembers.get(container) ?? new Set<string>();
     set.add(memberName);
     classAndObjectMembers.set(container, set);
+  }
+
+  function ensureTypeCallableSet(container: string): Set<string> {
+    let set = typeCallableMembers.get(container);
+    if (!set) {
+      set = new Set<string>();
+      typeCallableMembers.set(container, set);
+    }
+    return set;
+  }
+
+  function recordTypeCallableMember(container: string, memberName: string) {
+    ensureTypeCallableSet(container).add(memberName);
+  }
+
+  function isCallableTypeNode(
+    typeNode: ts.TypeNode | undefined,
+    seenTypeRefs: Set<string> = new Set(),
+  ): boolean {
+    if (!typeNode) return false;
+    if (ts.isFunctionTypeNode(typeNode) || ts.isConstructorTypeNode(typeNode)) {
+      return true;
+    }
+    if (ts.isParenthesizedTypeNode(typeNode)) {
+      return isCallableTypeNode(typeNode.type, seenTypeRefs);
+    }
+    if (ts.isUnionTypeNode(typeNode) || ts.isIntersectionTypeNode(typeNode)) {
+      return typeNode.types.some((branch) => isCallableTypeNode(branch, seenTypeRefs));
+    }
+    if (ts.isTypeLiteralNode(typeNode)) {
+      return typeNode.members.some(
+        (m) => ts.isCallSignatureDeclaration(m) || ts.isConstructSignatureDeclaration(m),
+      );
+    }
+    if (ts.isTypeReferenceNode(typeNode)) {
+      const refName = ts.isIdentifier(typeNode.typeName)
+        ? typeNode.typeName.text
+        : ts.isQualifiedName(typeNode.typeName)
+          ? typeNode.typeName.right.text
+          : null;
+      if (
+        refName === 'Function' ||
+        refName === 'CallableFunction' ||
+        refName === 'VoidFunction' ||
+        refName === 'Dispatch'
+      ) {
+        return true;
+      }
+      if (refName && ts.isIdentifier(typeNode.typeName) && !seenTypeRefs.has(refName)) {
+        const localDecl = localTypeDecls.get(refName);
+        if (localDecl) {
+          const nextSeen = new Set(seenTypeRefs);
+          nextSeen.add(refName);
+          if (ts.isTypeAliasDeclaration(localDecl)) {
+            return isCallableTypeNode(localDecl.type, nextSeen);
+          }
+          return localDecl.members.some(
+            (m) => ts.isCallSignatureDeclaration(m) || ts.isConstructSignatureDeclaration(m),
+          );
+        }
+      }
+    }
+    return false;
+  }
+
+  function collectTypeElementSignatures(
+    containerName: string,
+    members: readonly ts.TypeElement[],
+  ) {
+    ensureTypeCallableSet(containerName);
+    for (const member of members) {
+      if (
+        (ts.isPropertySignature(member) || ts.isMethodSignature(member)) &&
+        member.name &&
+        (ts.isIdentifier(member.name) || ts.isStringLiteral(member.name))
+      ) {
+        const memberName = member.name.text;
+        recordMember(containerName, memberName);
+        if (ts.isMethodSignature(member) || isCallableTypeNode(member.type)) {
+          recordTypeCallableMember(containerName, memberName);
+        }
+      }
+    }
+  }
+
+  function mergeReferencedTypeMembers(
+    containerName: string,
+    refName: string,
+    seenTypes: Set<string>,
+  ) {
+    if (seenTypes.has(refName)) return;
+    const localDecl = localTypeDecls.get(refName);
+    if (localDecl) {
+      const nextSeen = new Set(seenTypes);
+      nextSeen.add(refName);
+      if (ts.isTypeAliasDeclaration(localDecl)) {
+        collectMembersFromTypeNode(containerName, localDecl.type, nextSeen);
+      } else {
+        collectInterfaceMembers(containerName, localDecl, nextSeen);
+      }
+      return;
+    }
+    const imp = localImports.get(refName);
+    if (imp) {
+      const targetPath = resolveLocalTsModule(filePath, imp.specifier, rootDir);
+      if (targetPath && !visited.has(`${targetPath}::typeref::${imp.importedName}`)) {
+        const nextVisited = new Set(visited);
+        nextVisited.add(`${targetPath}::typeref::${imp.importedName}`);
+        const subInv = getModuleSymbolInventory(targetPath, rootDir, nextVisited);
+        const subMembers = subInv.classAndObjectMembers.get(imp.importedName);
+        if (subMembers) {
+          for (const m of subMembers) {
+            recordMember(containerName, m);
+          }
+        }
+        const subCallables = subInv.typeCallableMembers.get(imp.importedName);
+        if (subCallables) {
+          ensureTypeCallableSet(containerName);
+          for (const m of subCallables) {
+            recordTypeCallableMember(containerName, m);
+          }
+        }
+      }
+    }
+  }
+
+  function collectInterfaceMembers(
+    containerName: string,
+    iface: ts.InterfaceDeclaration,
+    seenTypes: Set<string>,
+  ) {
+    collectTypeElementSignatures(containerName, iface.members);
+    if (iface.heritageClauses) {
+      for (const clause of iface.heritageClauses) {
+        if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
+        for (const expr of clause.types) {
+          if (ts.isIdentifier(expr.expression)) {
+            const baseName = expr.expression.text;
+            if (
+              (baseName === 'Readonly' ||
+                baseName === 'Partial' ||
+                baseName === 'Required' ||
+                baseName === 'NonNullable') &&
+              expr.typeArguments &&
+              expr.typeArguments.length === 1
+            ) {
+              collectMembersFromTypeNode(containerName, expr.typeArguments[0], seenTypes);
+            } else {
+              mergeReferencedTypeMembers(containerName, baseName, seenTypes);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function collectMembersFromTypeNode(
+    containerName: string,
+    typeNode: ts.TypeNode,
+    seenTypes: Set<string>,
+  ) {
+    if (ts.isParenthesizedTypeNode(typeNode)) {
+      collectMembersFromTypeNode(containerName, typeNode.type, seenTypes);
+    } else if (ts.isTypeLiteralNode(typeNode)) {
+      collectTypeElementSignatures(containerName, typeNode.members);
+    } else if (ts.isIntersectionTypeNode(typeNode)) {
+      for (const branch of typeNode.types) {
+        collectMembersFromTypeNode(containerName, branch, seenTypes);
+      }
+    } else if (ts.isTypeReferenceNode(typeNode) && ts.isIdentifier(typeNode.typeName)) {
+      const refName = typeNode.typeName.text;
+      if (
+        (refName === 'Readonly' ||
+          refName === 'Partial' ||
+          refName === 'Required' ||
+          refName === 'NonNullable') &&
+        typeNode.typeArguments &&
+        typeNode.typeArguments.length === 1
+      ) {
+        collectMembersFromTypeNode(containerName, typeNode.typeArguments[0], seenTypes);
+      } else {
+        mergeReferencedTypeMembers(containerName, refName, seenTypes);
+      }
+    }
   }
 
   function mergeReExportedSymbol(
@@ -987,6 +1195,14 @@ function getModuleSymbolInventory(
       for (const m of members) {
         recordMember(exportedName, m);
         allClassMemberNames.add(m);
+      }
+    }
+
+    const callables = subInv.typeCallableMembers.get(importedName);
+    if (callables) {
+      ensureTypeCallableSet(exportedName);
+      for (const m of callables) {
+        recordTypeCallableMember(exportedName, m);
       }
     }
   }
@@ -1132,6 +1348,14 @@ function getModuleSymbolInventory(
               }
             }
           }
+          for (const [container, callables] of subInv.typeCallableMembers.entries()) {
+            if (subInv.exportsValues.has(container) || subInv.exportsTypes.has(container)) {
+              ensureTypeCallableSet(container);
+              for (const m of callables) {
+                recordTypeCallableMember(container, m);
+              }
+            }
+          }
         }
       } else if (stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
         for (const el of stmt.exportClause.elements) {
@@ -1171,17 +1395,11 @@ function getModuleSymbolInventory(
     } else if (ts.isInterfaceDeclaration(stmt)) {
       const ifaceName = stmt.name.text;
       topLevelDeclarations.add(ifaceName);
-      for (const member of stmt.members) {
-        if (
-          (ts.isPropertySignature(member) || ts.isMethodSignature(member)) &&
-          member.name &&
-          (ts.isIdentifier(member.name) || ts.isStringLiteral(member.name))
-        ) {
-          recordMember(ifaceName, member.name.text);
-        }
-      }
+      collectInterfaceMembers(ifaceName, stmt, new Set([ifaceName]));
     } else if (ts.isTypeAliasDeclaration(stmt)) {
-      topLevelDeclarations.add(stmt.name.text);
+      const aliasName = stmt.name.text;
+      topLevelDeclarations.add(aliasName);
+      collectMembersFromTypeNode(aliasName, stmt.type, new Set([aliasName]));
     } else if (ts.isEnumDeclaration(stmt)) {
       const enumName = stmt.name.text;
       topLevelDeclarations.add(enumName);
@@ -1198,6 +1416,7 @@ function getModuleSymbolInventory(
     exportsTypes,
     topLevelDeclarations,
     classAndObjectMembers,
+    typeCallableMembers,
     allClassMemberNames,
     propertyAndConstLiterals,
     exportedConstLiterals,
@@ -1875,6 +2094,64 @@ function extractSymbolCitationsFromLine(
     }
   }
 
+  // Bind dotted `Container.member` code spans when `Container` is already cited on this line
+  // and resolves to a declaration with indexed members (type alias, interface, class, enum, or object literal).
+  const citedContainers = new Map<string, SymbolCitation>();
+  for (const existing of citations) {
+    const baseContainer = existing.symbol.includes('.')
+      ? existing.symbol.split('.')[0]
+      : existing.symbol;
+    if (!citedContainers.has(baseContainer)) {
+      citedContainers.set(baseContainer, existing);
+    }
+  }
+  if (citedContainers.size > 0) {
+    const ignoredDottedSuffixes = new Set([
+      'ts',
+      'tsx',
+      'js',
+      'jsx',
+      'mjs',
+      'cjs',
+      'json',
+      'md',
+      'css',
+      'scss',
+      'html',
+      'yml',
+      'yaml',
+      'sh',
+      'sql',
+      'test',
+      'spec',
+      'stories',
+      'prototype',
+    ]);
+    for (const span of lineCodeSpans) {
+      const inner = span.code.trim();
+      const dottedMatch = inner.match(
+        /^([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?$/,
+      );
+      if (!dottedMatch) continue;
+      const containerName = dottedMatch[1];
+      const memberName = dottedMatch[2];
+      if (ignoredDottedSuffixes.has(memberName.toLowerCase())) continue;
+      const fullSymbol = `${containerName}.${memberName}`;
+      if (citations.some((c) => c.symbol === fullSymbol)) continue;
+      const baseCitation = citedContainers.get(containerName);
+      if (!baseCitation) continue;
+      const absTarget = path.join(rootDir, baseCitation.srcRelPath);
+      if (!fs.existsSync(absTarget)) continue;
+      const inventory = getModuleSymbolInventory(absTarget, rootDir);
+      if (!inventory.classAndObjectMembers.has(containerName)) continue;
+      pushCitation({
+        symbol: fullSymbol,
+        srcRelPath: baseCitation.srcRelPath,
+        requireExported: false,
+      });
+    }
+  }
+
   return citations;
 }
 
@@ -2027,6 +2304,105 @@ function verifySymbolInModule(
   }
 
   return `Symbol "${citation.symbol}" is not declared or exported in ${citation.srcRelPath}`;
+}
+
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function verifyExclusiveCallableClaimsOnLine(
+  line: string,
+  symbolCitations: SymbolCitation[],
+  rootDir: string,
+): string[] {
+  if (symbolCitations.length === 0) return [];
+
+  const spans = extractInlineCodeSpans(line);
+  let masked = '';
+  let cursor = 0;
+  for (const span of spans) {
+    masked += line.slice(cursor, span.start) + ' '.repeat(span.end - span.start);
+    cursor = span.end;
+  }
+  masked += line.slice(cursor);
+  masked = masked.replace(/\]\([^)]*\)/g, (m) => ' '.repeat(m.length));
+
+  const exposeMatch = /\b(?:exposes\s+only|only\s+exposes)\b/i.exec(masked);
+  if (!exposeMatch) return [];
+
+  const exposeIdx = exposeMatch.index;
+  const afterExpose = line.slice(exposeIdx + exposeMatch[0].length);
+
+  const candidates = new Map<
+    string,
+    { containerName: string; srcRelPath: string; callableMembers: Set<string> }
+  >();
+  for (const citation of symbolCitations) {
+    const containerName = citation.symbol.includes('.')
+      ? citation.symbol.split('.')[0]
+      : citation.symbol;
+    const key = `${containerName}::${citation.srcRelPath}`;
+    if (candidates.has(key)) continue;
+    const absTarget = path.join(rootDir, citation.srcRelPath);
+    if (!fs.existsSync(absTarget)) continue;
+    const inventory = getModuleSymbolInventory(absTarget, rootDir);
+    const callableMembers = inventory.typeCallableMembers.get(containerName);
+    if (!callableMembers || callableMembers.size === 0) continue;
+    candidates.set(key, {
+      containerName,
+      srcRelPath: citation.srcRelPath,
+      callableMembers,
+    });
+  }
+
+  if (candidates.size === 0) return [];
+
+  const prefixBeforeExpose = line.slice(0, exposeIdx);
+  const allCandidates = Array.from(candidates.values());
+  const priorCandidates = allCandidates.filter((cand) =>
+    new RegExp(`\\b${escapeRegExpLiteral(cand.containerName)}\\b`).test(prefixBeforeExpose),
+  );
+  const activeCandidates = priorCandidates.length > 0 ? priorCandidates : allCandidates;
+
+  const afterSymbolEntries = extractBacktickedSymbolEntries(afterExpose);
+  const afterLinks = scanMarkdownLinksInLine(afterExpose);
+
+  const claimErrors: string[] = [];
+  for (const cand of activeCandidates) {
+    const claimedMembers = new Set<string>();
+    for (const entry of afterSymbolEntries) {
+      if (entry.symbol.startsWith(`${cand.containerName}.`)) {
+        claimedMembers.add(entry.symbol.slice(cand.containerName.length + 1));
+      } else if (!entry.symbol.includes('.')) {
+        claimedMembers.add(entry.symbol);
+      }
+    }
+    for (const link of afterLinks) {
+      let label = link.label.trim();
+      if (/^`[^`]+`$/.test(label)) {
+        label = label.slice(1, -1).trim();
+      }
+      if (label.endsWith('()')) {
+        label = label.slice(0, -2);
+      }
+      if (label.startsWith(`${cand.containerName}.`)) {
+        claimedMembers.add(label.slice(cand.containerName.length + 1));
+      } else if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(label)) {
+        claimedMembers.add(label);
+      }
+    }
+
+    const missingCallables = Array.from(cand.callableMembers).filter(
+      (member) => !claimedMembers.has(member),
+    );
+    if (missingCallables.length > 0) {
+      claimErrors.push(
+        `Type "${cand.containerName}" in ${cand.srcRelPath} declares callable member(s) ${missingCallables.map((m) => `"${m}"`).join(', ')} omitted from "exposes only" claim`,
+      );
+    }
+  }
+
+  return claimErrors;
 }
 
 interface UnprotectedRouteSpec {
@@ -2536,6 +2912,9 @@ export function verifySpecContracts(
         if (symError) {
           errors.push(`${specRelPath}:${lineNum}: ${symError}`);
         }
+      }
+      for (const claimError of verifyExclusiveCallableClaimsOnLine(line, symbolCitations, rootDir)) {
+        errors.push(`${specRelPath}:${lineNum}: ${claimError}`);
       }
 
       if (line.trim().endsWith(':') && !/^\s{2,}(?:[-*+]|\d+\.)\s+/.test(line)) {

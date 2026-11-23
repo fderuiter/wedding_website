@@ -556,6 +556,50 @@ export function isProtectedRoute() { return false; }
     ]);
   });
 
+  it('indexes type-alias members across literal, parenthesized, and intersection types and rejects omitted setters on "exposes only" lines', () => {
+    writeFixture(
+      tempDir,
+      'src/components/ThemeProvider.tsx',
+      [
+        "export type ThemeMode = 'light' | 'dark' | 'system';",
+        'type BaseThemeContext = ({',
+        '  themeMode: ThemeMode;',
+        '  setThemeMode: (mode: ThemeMode) => void;',
+        '});',
+        'type ThemeContextType = BaseThemeContext & {',
+        '  glowFilter: string;',
+        '  setPreviewConfig?: (',
+        '    _preview: Record<string, unknown> | null,',
+        '  ) => void;',
+        '};',
+        'export function ThemeProvider() {',
+        '  return null;',
+        '}',
+      ].join('\n'),
+    );
+    writeFixture(
+      tempDir,
+      'docs/THEME_CONTEXT_CONTRACT.md',
+      [
+        '# Theme Context Contract',
+        '- Valid complete exposes-only claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `ThemeContextType.setThemeMode` and `ThemeContextType.setPreviewConfig`, with zero physics setters.',
+        '- Valid multiline signature slice: `ThemeContextType.setPreviewConfig` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx#L8-L10).',
+        '- Incomplete bare setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx) exposes only `setThemeMode` and zero physics setters.',
+        '- Incomplete dotted setter claim: `ThemeContextType` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx#L6-L11) exposes only `ThemeContextType.setThemeMode`.',
+        '- Missing type-alias member: `ThemeContextType.setPhysicsImpulse` in [src/components/ThemeProvider.tsx](../src/components/ThemeProvider.tsx).',
+      ].join('\n'),
+    );
+
+    const result = verifySpecContracts(tempDir, {
+      specFiles: ['docs/THEME_CONTEXT_CONTRACT.md'],
+    });
+    expect(result.errors).toEqual([
+      'docs/THEME_CONTEXT_CONTRACT.md:4: Type "ThemeContextType" in src/components/ThemeProvider.tsx declares callable member(s) "setPreviewConfig" omitted from "exposes only" claim',
+      'docs/THEME_CONTEXT_CONTRACT.md:5: Type "ThemeContextType" in src/components/ThemeProvider.tsx declares callable member(s) "setPreviewConfig" omitted from "exposes only" claim',
+      'docs/THEME_CONTEXT_CONTRACT.md:6: Member "setPhysicsImpulse" on "ThemeContextType" ("ThemeContextType.setPhysicsImpulse") does not exist in src/components/ThemeProvider.tsx',
+    ]);
+  });
+
   it('verifies assigned constant code spans (`CONST = value`) across direct, imported, and drifted module citations', () => {
     writeFixture(
       tempDir,
